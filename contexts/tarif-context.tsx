@@ -1,6 +1,7 @@
 "use client"
 
 import { createContext, useContext, useState, useEffect, ReactNode } from "react"
+import { useRouter } from "next/navigation"
 
 export interface Tarifa {
   id: string
@@ -71,6 +72,7 @@ const TarifContext = createContext<TarifContextType | undefined>(undefined);
 export const TarifProvider = ({ children }: { children: ReactNode }) => {
   const [tarifas, setTarifas] = useState<Tarifa[]>(initialTarifas);
   const [familiasTarifa, setFamiliasTarifa] = useState<FamiliaTarifa[]>(initialFamiliasTarifa);
+  const router = useRouter();
 
   // Cargar desde localStorage si existe
   useEffect(() => {

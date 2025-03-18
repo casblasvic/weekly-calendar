@@ -144,7 +144,10 @@ export default function GestionFamilias() {
                     <div className="flex items-center">
                       {family.name}
                       {!family.isActive && (
-                        <AlertCircle className="ml-2 h-4 w-4 text-amber-500" title="Familia deshabilitada" />
+                        <AlertCircle 
+                          className="ml-2 h-4 w-4 text-amber-500"
+                          aria-label="Familia deshabilitada"
+                        />
                       )}
                     </div>
                   </td>
@@ -207,7 +210,10 @@ export default function GestionFamilias() {
 
       {/* Botones de acción fijos */}
       <div className="fixed bottom-6 right-6 flex space-x-2">
-        <Button variant="outline" onClick={() => router.push(`/configuracion/tarifas/${router.query?.id || ""}`)}>
+        <Button 
+          variant="outline" 
+          onClick={() => router.push(`/configuracion/tarifas/${currentFamily.tarifaId}`)}
+        >
           Volver
         </Button>
         <Button variant="default" className="bg-purple-800 hover:bg-purple-900" onClick={handleOpenNewFamilyDialog}>
