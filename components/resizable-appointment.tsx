@@ -19,6 +19,9 @@ interface ResizableAppointmentProps {
 }
 
 export interface Appointment {
+  roomId: string
+  startTime: string
+  phone: string
   id: string
   name: string
   service: string
@@ -53,7 +56,7 @@ export function ResizableAppointment({
           style={{
             ...provided.draggableProps.style,
             height: `${height}px`,
-            width: `${AGENDA_CONFIG.CELL_WIDTH}px`,
+            width: '100%',
             zIndex: 10,
           }}
           onClick={() => onClick(appointment)}

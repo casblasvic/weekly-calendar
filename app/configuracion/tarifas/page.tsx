@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useRouter } from "next/navigation"
 import { MockData } from "@/lib/mock-data"
 import { ClinicContext } from "@/context/clinic-context"
-import { useTarifas } from "@/contexts/tarif-context"
+import { useTarif } from "@/contexts/tarif-context"
 
 // Interfaces
 interface Tarifa {
@@ -23,7 +23,8 @@ interface Tarifa {
 export default function GestionTarifas() {
   const router = useRouter()
   const clinicContext = useContext(ClinicContext)
-  const { tarifas } = useTarifas()
+  const tarifContext = useTarif()
+  const tarifas = tarifContext.tarifas || []
 
   // Verificamos que el contexto esté disponible y accedemos a las clínicas
   const clinics = clinicContext?.clinics || []
