@@ -2,6 +2,7 @@ import type React from "react"
 import { ClinicProvider } from "@/context/clinic-context"
 import { TarifProvider } from "@/contexts/tarif-context"
 import { FamilyProvider } from "@/contexts/family-context"
+import { IVAProvider } from "@/contexts/iva-context"
 
 export default function TarifasLayout({
   children,
@@ -12,7 +13,9 @@ export default function TarifasLayout({
     <ClinicProvider>
       <TarifProvider>
         <FamilyProvider>
-          {children}
+          <IVAProvider>
+            {children}
+          </IVAProvider>
         </FamilyProvider>
       </TarifProvider>
     </ClinicProvider>
