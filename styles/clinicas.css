@@ -1,0 +1,33 @@
+/* Estilos específicos para la vista de clínicas */
+.table-header-cell {
+  @apply cursor-pointer hover:bg-gray-50 transition-colors duration-200;
+}
+
+.table-row-hover {
+  @apply hover:bg-purple-50/50 transition-colors duration-200;
+}
+
+.action-button {
+  @apply h-8 w-8 text-purple-600 hover:text-purple-700 hover:bg-purple-100 transition-colors duration-200;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .table-container {
+    @apply overflow-x-auto;
+  }
+
+  .table-content {
+    @apply min-w-[800px];
+  }
+}
+
+/* Animations */
+.sort-icon {
+  @apply transition-transform duration-200;
+}
+
+.sort-icon[data-direction="desc"] {
+  @apply rotate-180;
+}
+

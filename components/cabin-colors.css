@@ -1,0 +1,58 @@
+/* Clases predefinidas para colores de cabinas */
+.cabin-color-red {
+  background-color: #ff0000 !important;
+  color: white !important;
+}
+
+.cabin-color-green {
+  background-color: #00ff00 !important;
+  color: white !important;
+}
+
+.cabin-color-blue {
+  background-color: #0000ff !important;
+  color: white !important;
+}
+
+/* Añadir más colores según sea necesario */
+.cabin-color-purple {
+  background-color: #6b46c1 !important;
+  color: white !important;
+}
+
+.cabin-color-yellow {
+  background-color: #ffff00 !important;
+  color: black !important; /* Texto negro para mejor contraste */
+}
+
+.cabin-color-orange {
+  background-color: #ff9900 !important;
+  color: white !important;
+}
+
+.cabin-color-pink {
+  background-color: #ff69b4 !important;
+  color: white !important;
+}
+
+.cabin-color-cyan {
+  background-color: #00ffff !important;
+  color: black !important; /* Texto negro para mejor contraste */
+}
+
+.cabin-color-brown {
+  background-color: #a52a2a !important;
+  color: white !important;
+}
+
+.cabin-color-gray {
+  background-color: #808080 !important;
+  color: white !important;
+}
+
+/* Clase por defecto */
+.cabin-color-default {
+  background-color: #6b46c1 !important;
+  color: white !important;
+}
+

@@ -1,0 +1,209 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 262.1 83.3% 57.8%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 262.1 83.3% 57.8%;
+    --radius: 0.5rem;
+
+    --purple-50: #f5f3ff;
+    --purple-100: #ede9fe;
+    --purple-200: #ddd6fe;
+    --purple-300: #c4b5fd;
+    --purple-400: #a78bfa;
+    --purple-500: #8b5cf6;
+    --purple-600: #7c3aed;
+    --purple-700: #6d28d9;
+    --purple-800: #5b21b6;
+    --purple-900: #4c1d95;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 262.1 83.3% 57.8%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 262.1 83.3% 57.8%;
+  }
+}
+
+@layer utilities {
+  .animate-in {
+    animation: animate-in 0.3s ease-in-out;
+  }
+
+  .slide-in-from-right {
+    animation: slide-in-from-right 0.3s ease-in-out;
+  }
+}
+
+@keyframes animate-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slide-in-from-right {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+/* Input focus styles */
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none !important;
+  border-color: #8b5cf6 !important; /* Purple-600 */
+  box-shadow: 0 0 0 1px #8b5cf6 !important;
+}
+
+/* Override shadcn focus styles */
+.focus-visible\:ring-2:focus-visible,
+.focus-visible\:ring-ring:focus-visible,
+.focus-visible\:ring-offset-2:focus-visible {
+  --tw-ring-color: #8b5cf6 !important;
+  --tw-ring-offset-width: 0px !important;
+  box-shadow: 0 0 0 1px #8b5cf6 !important;
+}
+
+[data-state="open"] > .focus-visible\:ring-2,
+[data-state="open"] > .focus-visible\:ring-ring {
+  --tw-ring-color: #8b5cf6 !important;
+  box-shadow: 0 0 0 1px #8b5cf6 !important;
+}
+
+/* Z-index management */
+.z-header {
+  z-index: 40;
+}
+
+.z-sidebar {
+  z-index: 50;
+}
+
+.z-dropdown {
+  z-index: 1000;
+}
+
+.z-modal {
+  z-index: 1010;
+}
+
+.z-tooltip {
+  z-index: 1020;
+}
+
+.z-popover {
+  z-index: 1030;
+}
+
+.z-sticky {
+  z-index: 30;
+}
+
+.z-fixed {
+  z-index: 20;
+}
+
+.z-default {
+  z-index: 1;
+}
+
+.z-below {
+  z-index: -1;
+}
+
+/* Ajustes para la barra lateral y los submenús */
+#main-sidebar {
+  box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
+}
+
+.submenu {
+  z-index: 1040;
+}
+
+/* Hover states for action buttons */
+.action-button {
+  @apply transition-colors duration-200;
+}
+
+.action-button:hover {
+  @apply bg-opacity-10;
+}
+
+/* Table styles */
+.table-row-hover:hover {
+  @apply bg-purple-50;
+}
+
+/* Button styles */
+.button-purple {
+  @apply bg-purple-600 hover:bg-purple-700 text-white;
+}
+
+/* Input focus styles */
+.input-focus {
+  @apply focus:border-purple-600 focus:ring-1 focus:ring-purple-600;
+}
+
+/* Checkbox styles */
+input[type="checkbox"] {
+  @apply text-purple-600 border-purple-300 rounded focus:ring-purple-600;
+}
+
+/* Tab styles */
+[data-state="active"].tab {
+  @apply bg-purple-600 text-white;
+}
+
+/* Button hover states */
+.button-purple:hover {
+  @apply bg-purple-700;
+}
+
+/* Input and select focus states */
+.input-focus:focus,
+.select-focus:focus {
+  @apply border-purple-600 ring-1 ring-purple-600;
+}
+
