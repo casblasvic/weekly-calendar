@@ -197,35 +197,31 @@ export default function GestionFamilias() {
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <th 
-                scope="col" 
-                className="px-6 py-3 text-left text-xs font-medium text-purple-700 uppercase tracking-wider cursor-pointer"
-                onClick={() => requestSort('code')}
+              <th
+                scope="col"
+                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
               >
-                <div className="flex items-center">
-                  Código
-                  <span className="ml-1">{getSortIcon('code')}</span>
+                <div className="flex items-center cursor-pointer" onClick={() => requestSort('code')}>
+                  Código {getSortIcon('code')}
                 </div>
               </th>
-              <th 
-                scope="col" 
-                className="px-6 py-3 text-left text-xs font-medium text-purple-700 uppercase tracking-wider cursor-pointer"
-                onClick={() => requestSort('name')}
+              <th
+                scope="col"
+                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
               >
-                <div className="flex items-center">
-                  Nombre
-                  <span className="ml-1">{getSortIcon('name')}</span>
+                <div className="flex items-center cursor-pointer" onClick={() => requestSort('name')}>
+                  Nombre {getSortIcon('name')}
                 </div>
               </th>
-              <th 
-                scope="col" 
-                className="px-6 py-3 text-left text-xs font-medium text-purple-700 uppercase tracking-wider"
+              <th
+                scope="col"
+                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
               >
-                Estado
+                Familia Padre
               </th>
-              <th 
-                scope="col" 
-                className="px-6 py-3 text-center text-xs font-medium text-purple-700 uppercase tracking-wider"
+              <th
+                scope="col"
+                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
               >
                 Acciones
               </th>
@@ -233,37 +229,35 @@ export default function GestionFamilias() {
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {filteredAndSortedFamilies.map((family) => (
-              <tr key={family.id} className="hover:bg-purple-50/50">
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+              <tr key={family.id} className={!family.isActive ? "bg-gray-50 text-gray-400" : ""}>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                   {family.code}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                   {family.name}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <button 
-                    onClick={() => handleToggleStatus(family.id)}
-                    className={`rounded-full p-1 flex items-center justify-center ${
-                      family.isActive 
-                        ? 'bg-green-100 text-green-600 hover:bg-green-200' 
-                        : 'bg-red-100 text-red-600 hover:bg-red-200'
-                    }`}
-                    title={family.isActive ? 'Desactivar' : 'Activar'}
-                  >
-                    <Check className={`h-4 w-4 ${family.isActive ? 'text-green-600' : 'text-red-600'}`} />
-                  </button>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {family.parentId 
+                    ? families.find(f => f.id === family.parentId)?.name || "No encontrada" 
+                    : "Ninguna"}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
-                  <div className="flex justify-center space-x-2">
-                    <button 
-                      className="text-purple-600 hover:text-purple-900 focus:outline-none focus:ring-2 focus:ring-purple-600 focus:ring-opacity-50 rounded-full p-1"
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <div className="flex items-center space-x-3">
+                    <Checkbox
+                      id={`family-status-${family.id}`}
+                      checked={family.isActive}
+                      onCheckedChange={() => handleToggleStatus(family.id)}
+                      className="data-[state=checked]:bg-green-600 data-[state=checked]:text-white rounded-sm"
+                    />
+                    <button
+                      className="text-indigo-600 hover:text-indigo-900"
                       onClick={() => handleEditFamily(family)}
                       title="Editar"
                     >
                       <Pencil size={16} />
                     </button>
-                    <button 
-                      className="text-red-600 hover:text-red-900 focus:outline-none focus:ring-2 focus:ring-red-600 focus:ring-opacity-50 rounded-full p-1"
+                    <button
+                      className="text-red-600 hover:text-red-900"
                       onClick={() => handleConfirmDelete(family.id)}
                       title="Eliminar"
                     >
