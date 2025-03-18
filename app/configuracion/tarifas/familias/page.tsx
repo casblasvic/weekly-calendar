@@ -336,17 +336,17 @@ export default function GestionFamilias() {
                 Familia padre (opcional)
               </label>
               <Select 
-                value={currentFamily.parentId || ""} 
+                value={currentFamily.parentId || "none"} 
                 onValueChange={(value) => setCurrentFamily({ 
                   ...currentFamily, 
-                  parentId: value === "" ? null : value 
+                  parentId: value === "none" ? null : value 
                 })}
               >
                 <SelectTrigger className="focus:ring-purple-500 focus:border-purple-500">
                   <SelectValue placeholder="Seleccionar familia padre" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Ninguna</SelectItem>
+                  <SelectItem value="none">Ninguna</SelectItem>
                   {families
                     .filter(f => f.id !== currentFamily.id) // Excluir la familia actual
                     .map((family) => (
