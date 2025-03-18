@@ -1,8 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { useRouter } from "next/navigation"
-import { Search, Pencil, ChevronDown, AlertCircle, Menu, Check } from "lucide-react"
+import { Search, Pencil, ChevronDown, AlertCircle, Menu, Check, Trash2, ChevronUp, ArrowUpDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -17,6 +17,9 @@ export default function GestionFamilias() {
   const [searchTerm, setSearchTerm] = useState("")
   const [showDisabled, setShowDisabled] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false)
+  const [familyToDelete, setFamilyToDelete] = useState<string | null>(null)
+  const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'ascending' | 'descending' } | null>(null)
   const [currentFamily, setCurrentFamily] = useState<{
     id?: string
     name: string
@@ -29,22 +32,74 @@ export default function GestionFamilias() {
     code: "",
     parentId: null,
     isActive: true,
-    tarifaId: "tarifa-california" // Cambiado de "tarifa-1"
+    tarifaId: "tarifa-california" // ID de la tarifa actual
   })
   const [isNewFamily, setIsNewFamily] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
 
   // Obtenemos las familias de la tarifa actual
-  const families = getFamiliasByTarifaId("tarifa-california") // Cambiado de "tarifa-1"
+  const families = getFamiliasByTarifaId("tarifa-california")
 
-  // Filtrar familias según término de búsqueda y estado
-  const filteredFamilies = families.filter((family) => {
-    const matchesSearch = family.name.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesStatus = showDisabled ? true : family.isActive
-    return matchesSearch && matchesStatus
-  })
+  // Solicitar ordenación de una columna
+  const requestSort = (key: string) => {
+    let direction: 'ascending' | 'descending' = 'ascending';
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'ascending') {
+      direction = 'descending';
+    }
+    setSortConfig({ key, direction });
+  };
 
+  // Obtener ícono de ordenación para la columna
+  const getSortIcon = (key: string) => {
+    if (!sortConfig || sortConfig.key !== key) {
+      return <ArrowUpDown size={14} />;
+    }
+    return sortConfig.direction === 'ascending' 
+      ? <ChevronUp size={14} /> 
+      : <ChevronDown size={14} />;
+  };
+
+  // Filtrar y ordenar familias
+  const filteredAndSortedFamilies = useMemo(() => {
+    // Primero filtramos
+    const filtered = families.filter((family) => {
+      const matchesSearch = family.name.toLowerCase().includes(searchTerm.toLowerCase())
+      const matchesStatus = showDisabled ? true : family.isActive
+      return matchesSearch && matchesStatus
+    })
+
+    // Luego ordenamos si hay configuración de ordenación
+    let sorted = [...filtered];
+    if (sortConfig !== null) {
+      sorted.sort((a, b) => {
+        // Determinar los valores a comparar según la clave de ordenación
+        let aValue = a[sortConfig.key as keyof typeof a];
+        let bValue = b[sortConfig.key as keyof typeof b];
+        
+        // Para strings, hacemos comparación insensible a mayúsculas/minúsculas
+        if (typeof aValue === 'string' && typeof bValue === 'string') {
+          aValue = aValue.toLowerCase();
+          bValue = bValue.toLowerCase();
+        }
+        
+        if (aValue !== null && bValue !== null) {
+          if (aValue < bValue) {
+            return sortConfig.direction === 'ascending' ? -1 : 1;
+          }
+          if (aValue > bValue) {
+            return sortConfig.direction === 'ascending' ? 1 : -1;
+          }
+        }
+        return 0;
+      });
+    }
+    
+    return sorted;
+  }, [families, searchTerm, showDisabled, sortConfig]);
+
+  // Abrir diálogo para nueva familia
   const handleOpenNewFamilyDialog = () => {
+    setIsNewFamily(true)
     setCurrentFamily({
       name: "",
       code: "",
@@ -52,140 +107,173 @@ export default function GestionFamilias() {
       isActive: true,
       tarifaId: "tarifa-california"
     })
-    setIsNewFamily(true)
     setIsEditDialogOpen(true)
   }
 
-  const handleOpenEditFamilyDialog = (family: typeof currentFamily & { id: string }) => {
-    setCurrentFamily(family)
+  // Abrir diálogo para editar familia
+  const handleEditFamily = (family: any) => {
     setIsNewFamily(false)
+    setCurrentFamily({
+      id: family.id,
+      name: family.name,
+      code: family.code,
+      parentId: family.parentId,
+      isActive: family.isActive,
+      tarifaId: family.tarifaId
+    })
     setIsEditDialogOpen(true)
   }
 
+  // Guardar familia (nueva o editada)
   const handleSaveFamily = () => {
     setIsSaving(true)
 
+    // Simulamos una operación asíncrona
     setTimeout(() => {
       if (isNewFamily) {
-        addFamiliaTarifa({
-          name: currentFamily.name,
-          code: currentFamily.code,
-          parentId: currentFamily.parentId,
-          isActive: currentFamily.isActive,
-          tarifaId: currentFamily.tarifaId
-        })
+        addFamiliaTarifa(currentFamily)
       } else if (currentFamily.id) {
-        updateFamiliaTarifa(currentFamily.id, {
-          name: currentFamily.name,
-          code: currentFamily.code,
-          parentId: currentFamily.parentId,
-          isActive: currentFamily.isActive
-        })
+        updateFamiliaTarifa(currentFamily.id, currentFamily)
       }
 
       setIsSaving(false)
       setIsEditDialogOpen(false)
-    }, 1000)
+    }, 500)
   }
 
+  // Cambiar estado activo/inactivo
   const handleToggleStatus = (id: string) => {
     toggleFamiliaStatus(id)
   }
 
+  // Confirmar eliminación de familia
+  const handleConfirmDelete = (id: string) => {
+    setFamilyToDelete(id)
+    setIsDeleteConfirmOpen(true)
+  }
+
+  // Eliminar familia
+  const handleDeleteFamily = () => {
+    if (familyToDelete) {
+      updateFamiliaTarifa(familyToDelete, { isActive: false })
+      setIsDeleteConfirmOpen(false)
+      setFamilyToDelete(null)
+    }
+  }
+
   return (
-    <div className="p-6 space-y-6">
-      <h1 className="text-2xl font-bold">Familias de productos</h1>
-
-      <div className="text-sm text-gray-600">
-        Listado de familias de productos: <span className="font-semibold">Tarifa Base</span>
-      </div>
-
-      {/* Buscador */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
-        <Input
-          className="pl-10 pr-4 py-2 w-full"
-          placeholder="Buscar..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-        />
+    <div className="pt-20 px-6 pb-20">
+      <h1 className="text-2xl font-bold mb-6">Gestión de Familias</h1>
+      
+      {/* Filtros */}
+      <div className="mb-6 flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-4">
+        <div className="relative flex-1">
+          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <Search className="h-5 w-5 text-gray-400" />
+          </div>
+          <Input
+            type="text"
+            placeholder="Buscar familias..."
+            className="pl-10"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
+        
+        <div className="flex items-center space-x-2">
+          <Checkbox
+            id="verFamiliasDeshabilitadas"
+            checked={showDisabled}
+            onCheckedChange={(checked) => setShowDisabled(!!checked)}
+          />
+          <label htmlFor="verFamiliasDeshabilitadas" className="text-sm">
+            Ver familias deshabilitadas
+          </label>
+        </div>
       </div>
 
       {/* Tabla de familias */}
-      <div className="overflow-x-auto rounded-md border">
+      <div className="overflow-x-auto bg-white rounded-lg shadow mb-8">
         <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-purple-50">
+          <thead className="bg-gray-50">
             <tr>
-              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Familia a la que pertenece
+              <th 
+                scope="col" 
+                className="px-6 py-3 text-left text-xs font-medium text-purple-700 uppercase tracking-wider cursor-pointer"
+                onClick={() => requestSort('code')}
+              >
+                <div className="flex items-center">
+                  Código
+                  <span className="ml-1">{getSortIcon('code')}</span>
+                </div>
               </th>
-              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Nombre
+              <th 
+                scope="col" 
+                className="px-6 py-3 text-left text-xs font-medium text-purple-700 uppercase tracking-wider cursor-pointer"
+                onClick={() => requestSort('name')}
+              >
+                <div className="flex items-center">
+                  Nombre
+                  <span className="ml-1">{getSortIcon('name')}</span>
+                </div>
               </th>
-              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Código
+              <th 
+                scope="col" 
+                className="px-6 py-3 text-left text-xs font-medium text-purple-700 uppercase tracking-wider"
+              >
+                Estado
               </th>
-              <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th 
+                scope="col" 
+                className="px-6 py-3 text-center text-xs font-medium text-purple-700 uppercase tracking-wider"
+              >
                 Acciones
               </th>
             </tr>
           </thead>
-
           <tbody className="bg-white divide-y divide-gray-200">
-            {filteredFamilies.map((family) => {
-              const parentFamily = family.parentId ? families.find((f) => f.id === family.parentId) : null
-
-              return (
-                <tr key={family.id} className="hover:bg-purple-50/50">
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {parentFamily ? parentFamily.name : "(Ninguna)"}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    <div className="flex items-center">
-                      {family.name}
-                      {!family.isActive && (
-                        <AlertCircle 
-                          className="ml-2 h-4 w-4 text-amber-500"
-                          aria-label="Familia deshabilitada"
-                        />
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{family.code}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
-                    <div className="flex justify-center space-x-2">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <button className="text-purple-600 hover:text-purple-900">
-                            <Menu size={18} />
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => handleOpenEditFamilyDialog(family)}>Editar</DropdownMenuItem>
-                          <DropdownMenuItem>Eliminar</DropdownMenuItem>
-                          <DropdownMenuItem>Añadir subfamilia</DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-
-                      <button
-                        className={`${family.isActive ? "text-green-600" : "text-gray-400"} hover:text-green-900`}
-                        onClick={() => handleToggleStatus(family.id)}
-                      >
-                        <Check size={18} />
-                      </button>
-
-                      <button
-                        className="text-purple-600 hover:text-purple-900"
-                        onClick={() => handleOpenEditFamilyDialog(family)}
-                      >
-                        <Pencil size={18} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              )
-            })}
-            {filteredFamilies.length === 0 && (
+            {filteredAndSortedFamilies.map((family) => (
+              <tr key={family.id} className="hover:bg-purple-50/50">
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  {family.code}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  {family.name}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <button 
+                    onClick={() => handleToggleStatus(family.id)}
+                    className={`rounded-full p-1 flex items-center justify-center ${
+                      family.isActive 
+                        ? 'bg-green-100 text-green-600 hover:bg-green-200' 
+                        : 'bg-red-100 text-red-600 hover:bg-red-200'
+                    }`}
+                    title={family.isActive ? 'Desactivar' : 'Activar'}
+                  >
+                    <Check className={`h-4 w-4 ${family.isActive ? 'text-green-600' : 'text-red-600'}`} />
+                  </button>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
+                  <div className="flex justify-center space-x-2">
+                    <button 
+                      className="text-purple-600 hover:text-purple-900 focus:outline-none focus:ring-2 focus:ring-purple-600 focus:ring-opacity-50 rounded-full p-1"
+                      onClick={() => handleEditFamily(family)}
+                      title="Editar"
+                    >
+                      <Pencil size={16} />
+                    </button>
+                    <button 
+                      className="text-red-600 hover:text-red-900 focus:outline-none focus:ring-2 focus:ring-red-600 focus:ring-opacity-50 rounded-full p-1"
+                      onClick={() => handleConfirmDelete(family.id)}
+                      title="Eliminar"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {filteredAndSortedFamilies.length === 0 && (
               <tr>
                 <td colSpan={4} className="px-6 py-4 text-center text-sm text-gray-500">
                   No se encontraron familias
@@ -194,18 +282,6 @@ export default function GestionFamilias() {
             )}
           </tbody>
         </table>
-      </div>
-
-      {/* Checkbox para mostrar familias deshabilitadas */}
-      <div className="flex items-center space-x-2">
-        <Checkbox
-          id="verFamiliasDeshabilitadas"
-          checked={showDisabled}
-          onCheckedChange={(checked) => setShowDisabled(!!checked)}
-        />
-        <label htmlFor="verFamiliasDeshabilitadas" className="text-sm">
-          Ver familias deshabilitadas
-        </label>
       </div>
 
       {/* Botones de acción fijos */}
@@ -226,67 +302,72 @@ export default function GestionFamilias() {
 
       {/* Modal de edición/creación de familia */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="sm:max-w-md p-6">
-          <DialogHeader className="pb-4">
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
             <DialogTitle>{isNewFamily ? "Nueva familia" : "Editar familia"}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-6 py-4">
+          <div className="p-4 space-y-4">
             <div className="space-y-2">
-              <label htmlFor="parentFamily" className="text-sm font-medium">
-                Familia a la que pertenece
-              </label>
-              <Select
-                value={currentFamily.parentId || ""}
-                onValueChange={(value) => setCurrentFamily({ ...currentFamily, parentId: value || null })}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="(Ninguna)" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">(Ninguna)</SelectItem>
-                  {families.map((family) => (
-                    <SelectItem key={family.id} value={family.id}>
-                      {family.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <label htmlFor="code" className="text-sm font-medium">
+              <label htmlFor="code" className="block text-sm font-medium text-gray-700">
                 Código
               </label>
               <Input
                 id="code"
+                className="focus:ring-purple-500 focus:border-purple-500"
                 value={currentFamily.code}
                 onChange={(e) => setCurrentFamily({ ...currentFamily, code: e.target.value })}
-                className="w-full"
-                maxLength={3}
-                placeholder="Máximo 3 caracteres"
+                placeholder="Código único"
               />
             </div>
-
             <div className="space-y-2">
-              <label htmlFor="name" className="text-sm font-medium">
+              <label htmlFor="name" className="block text-sm font-medium text-gray-700">
                 Nombre
               </label>
               <Input
                 id="name"
+                className="focus:ring-purple-500 focus:border-purple-500"
                 value={currentFamily.name}
                 onChange={(e) => setCurrentFamily({ ...currentFamily, name: e.target.value })}
-                className="w-full"
+                placeholder="Nombre de la familia"
               />
             </div>
-
-            <div className="flex items-center space-x-2 pt-2">
+            <div className="space-y-2">
+              <label htmlFor="parentId" className="block text-sm font-medium text-gray-700">
+                Familia padre (opcional)
+              </label>
+              <Select 
+                value={currentFamily.parentId || ""} 
+                onValueChange={(value) => setCurrentFamily({ 
+                  ...currentFamily, 
+                  parentId: value === "" ? null : value 
+                })}
+              >
+                <SelectTrigger className="focus:ring-purple-500 focus:border-purple-500">
+                  <SelectValue placeholder="Seleccionar familia padre" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Ninguna</SelectItem>
+                  {families
+                    .filter(f => f.id !== currentFamily.id) // Excluir la familia actual
+                    .map((family) => (
+                      <SelectItem key={family.id} value={family.id}>
+                        {family.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center space-x-2">
               <Checkbox
                 id="isActive"
                 checked={currentFamily.isActive}
-                onCheckedChange={(checked) => setCurrentFamily({ ...currentFamily, isActive: !!checked })}
+                onCheckedChange={(checked) => 
+                  setCurrentFamily({ ...currentFamily, isActive: !!checked })
+                }
+                className="data-[state=checked]:bg-purple-600 data-[state=checked]:text-white"
               />
-              <label htmlFor="isActive" className="text-sm font-medium">
-                Deshabilitada
+              <label htmlFor="isActive" className="text-sm font-medium text-gray-700">
+                Activa
               </label>
             </div>
           </div>
@@ -294,40 +375,38 @@ export default function GestionFamilias() {
             <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
               Cancelar
             </Button>
-            <Button
+            <Button 
+              variant="default" 
+              className="bg-purple-700 hover:bg-purple-800"
               onClick={handleSaveFamily}
-              disabled={!currentFamily.name || !currentFamily.code || isSaving}
-              className="relative"
+              disabled={isSaving || !currentFamily.name || !currentFamily.code}
             >
-              {isSaving ? (
-                <>
-                  <span className="opacity-0">Guardar</span>
-                  <span className="absolute inset-0 flex items-center justify-center">
-                    <svg
-                      className="animate-spin h-5 w-5 text-white"
-                      xmlns="http://www.w3.org/2000/svg"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                    >
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                      ></circle>
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                      ></path>
-                    </svg>
-                  </span>
-                </>
-              ) : (
-                "Guardar"
-              )}
+              {isSaving ? "Guardando..." : "Guardar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Diálogo de confirmación para eliminar */}
+      <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Confirmar eliminación</DialogTitle>
+          </DialogHeader>
+          <div className="p-4">
+            <p className="text-sm text-gray-500">
+              ¿Estás seguro de que deseas eliminar esta familia? Esta acción no se puede deshacer.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDeleteConfirmOpen(false)}>
+              Cancelar
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={handleDeleteFamily}
+            >
+              Eliminar
             </Button>
           </DialogFooter>
         </DialogContent>
