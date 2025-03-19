@@ -1,12 +1,12 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useParams } from "next/navigation"
 import { Card } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { SearchInput } from "@/components/SearchInput"
 import { Button } from "@/components/ui/button"
-import { Trash2, Search, Save, Plus } from "lucide-react"
+import { Trash2, Search, ArrowUpDown } from "lucide-react"
 import {
   deleteEquipment as deleteEquipmentInMock,
   addEquipment,
@@ -21,30 +21,30 @@ interface Equipment {
   code: string
   name: string
   description: string
+  serialNumber: string
   clinicId: number
 }
 
-export default function EquipmentPage({ params }: { params: { id: string } }) {
+export default function EquipmentPage() {
   const router = useRouter()
-  const clinicId = Number.parseInt(params.id)
+  const params = useParams()
+  const clinicId = Number.parseInt(params.id as string)
   const [searchTerm, setSearchTerm] = useState("")
-  const [hasChanges, setHasChanges] = useState(false)
-
-  // Get equipment for this clinic from mock data
   const [equipment, setEquipment] = useState<Equipment[]>([])
+  
+  // Añadir estado para ordenación
+  const [sortColumn, setSortColumn] = useState<string>("code")
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc")
 
-  // Initialize with fresh data from mockData
   useEffect(() => {
-    const clinicEquipment = getEquipment(clinicId)
-    setEquipment(clinicEquipment)
-  }, [clinicId])
+    // Get equipment from mock API
+    const equipmentData = getEquipment(clinicId)
+    setEquipment(equipmentData)
 
-  // Listen for data changes
-  useEffect(() => {
+    // Listen for data changes
     const handleDataChange = (e: CustomEvent) => {
       if (e.detail.dataType === "equipment" || e.detail.dataType === "all") {
-        const clinicEquipment = getEquipment(clinicId)
-        setEquipment(clinicEquipment)
+        setEquipment(getEquipment(clinicId))
       }
     }
 
@@ -54,112 +54,102 @@ export default function EquipmentPage({ params }: { params: { id: string } }) {
     }
   }, [clinicId])
 
-  const filteredEquipment = equipment.filter((item) =>
-    Object.values(item).some((value) => String(value).toLowerCase().includes(searchTerm.toLowerCase())),
-  )
+  const filteredEquipment = equipment.filter((item) => {
+    const searchLower = searchTerm.toLowerCase()
+    return (
+      item.code.toLowerCase().includes(searchLower) ||
+      item.name.toLowerCase().includes(searchLower) ||
+      item.description.toLowerCase().includes(searchLower) ||
+      (item.serialNumber?.toLowerCase() || "").includes(searchLower)
+    )
+  }).sort((a, b) => {
+    const aValue = a[sortColumn as keyof Equipment] || "";
+    const bValue = b[sortColumn as keyof Equipment] || "";
+    
+    if (sortDirection === "asc") {
+      return String(aValue).localeCompare(String(bValue));
+    } else {
+      return String(bValue).localeCompare(String(aValue));
+    }
+  });
+
+  const handleSort = (column: string) => {
+    if (sortColumn === column) {
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+    } else {
+      setSortColumn(column);
+      setSortDirection("asc");
+    }
+  };
 
   const deleteEquipmentItem = (id: number) => {
-    if (window.confirm("¿Está seguro de que desea eliminar este equipo?")) {
-      // Delete from mock data
-      const success = deleteEquipmentInMock(id)
-
-      if (success) {
-        // Update local state
-        setEquipment((prev) => prev.filter((item) => item.id !== id))
-        toast.success("Equipo eliminado correctamente")
-      } else {
-        toast.error("Error al eliminar el equipo")
-      }
-
-      setHasChanges(true)
+    const success = deleteEquipmentInMock(id)
+    if (success) {
+      setEquipment(equipment.filter((item) => item.id !== id))
+      toast.success("Equipo eliminado correctamente")
+    } else {
+      toast.error("Error al eliminar el equipo")
     }
   }
 
   const addNewEquipment = () => {
-    const newEquipment = {
-      clinicId,
-      code: "NUEVO",
-      name: "Nuevo Equipo",
-      description: "Descripción del nuevo equipo",
-    }
-
-    // Add to mock data
-    const newId = addEquipment(newEquipment)
-
-    if (newId) {
-      // Add to local state
-      setEquipment([...equipment, { ...newEquipment, id: newId }])
-      toast.success("Nuevo equipo añadido")
-    } else {
-      toast.error("Error al añadir el equipo")
-    }
-
-    setHasChanges(true)
-  }
-
-  const saveChanges = () => {
-    // Save all equipment to mock data
-    let allSuccess = true
-
-    equipment.forEach((item) => {
-      const success = updateEquipment(item)
-      if (!success) allSuccess = false
-    })
-
-    if (allSuccess) {
-      toast.success("Cambios guardados correctamente")
-      setHasChanges(false)
-    } else {
-      toast.error("Error al guardar algunos cambios")
-    }
+    router.push(`/configuracion/clinicas/${params.id}/equipamiento/nuevo`)
   }
 
   return (
-    <div className="flex flex-col h-full bg-background">
-      <div className="flex flex-col gap-2 p-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Equipamiento</h1>
-        <p className="text-sm text-muted-foreground">Listado del equipamiento de la clínica</p>
-      </div>
-
-      <div className="p-6 pt-0">
-        <div className="flex justify-between items-center mb-6">
-          <div className="relative w-full max-w-md">
+    <div className="container mx-auto p-6 space-y-6 max-w-7xl pt-16">
+      <div className="flex flex-col md:flex-row justify-between items-start gap-4">
+        <div className="w-full space-y-4">
+          <h2 className="text-2xl font-semibold">Equipamiento de la clínica</h2>
+          <div className="w-full md:w-80">
             <SearchInput
               placeholder="Buscar equipamiento"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={setSearchTerm}
             />
           </div>
-          <div className="flex gap-2">
-            <Button onClick={addNewEquipment} className="bg-purple-600 hover:bg-purple-700">
-              <Plus className="h-4 w-4 mr-2" />
-              Nuevo equipo
-            </Button>
-            {hasChanges && (
-              <Button onClick={saveChanges} className="bg-purple-600 hover:bg-purple-700">
-                <Save className="h-4 w-4 mr-2" />
-                Guardar cambios
-              </Button>
-            )}
-          </div>
         </div>
+      </div>
 
-        <Card className="p-6">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Código</TableHead>
-                <TableHead>Nombre</TableHead>
-                <TableHead>Descripción</TableHead>
-                <TableHead className="text-right">Acciones</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredEquipment.map((item) => (
-                <TableRow key={item.id}>
-                  <TableCell>{item.code}</TableCell>
+      <Card className="p-4 bg-white">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="cursor-pointer" onClick={() => handleSort("code")}>
+                Código
+                {sortColumn === "code" && (
+                  <ArrowUpDown className={`ml-2 h-4 w-4 inline ${sortDirection === "asc" ? "transform rotate-180" : ""}`} />
+                )}
+              </TableHead>
+              <TableHead className="cursor-pointer" onClick={() => handleSort("name")}>
+                Nombre
+                {sortColumn === "name" && (
+                  <ArrowUpDown className={`ml-2 h-4 w-4 inline ${sortDirection === "asc" ? "transform rotate-180" : ""}`} />
+                )}
+              </TableHead>
+              <TableHead className="cursor-pointer" onClick={() => handleSort("description")}>
+                Descripción
+                {sortColumn === "description" && (
+                  <ArrowUpDown className={`ml-2 h-4 w-4 inline ${sortDirection === "asc" ? "transform rotate-180" : ""}`} />
+                )}
+              </TableHead>
+              <TableHead className="cursor-pointer" onClick={() => handleSort("serialNumber")}>
+                Número de serie
+                {sortColumn === "serialNumber" && (
+                  <ArrowUpDown className={`ml-2 h-4 w-4 inline ${sortDirection === "asc" ? "transform rotate-180" : ""}`} />
+                )}
+              </TableHead>
+              <TableHead className="text-right">Acciones</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filteredEquipment.length > 0 ? (
+              filteredEquipment.map((item) => (
+                <TableRow key={item.id} className="hover:bg-muted/50 cursor-pointer">
+                  <TableCell className="font-medium">{item.code}</TableCell>
                   <TableCell>{item.name}</TableCell>
                   <TableCell>{item.description}</TableCell>
+                  <TableCell>{item.serialNumber || "-"}</TableCell>
                   <TableCell className="text-right space-x-1">
                     <Button
                       variant="ghost"
@@ -181,10 +171,26 @@ export default function EquipmentPage({ params }: { params: { id: string } }) {
                     </Button>
                   </TableCell>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </Card>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center py-6 text-muted-foreground">
+                  No se encontraron equipos
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </Card>
+
+      {/* Botón fijo en la esquina inferior derecha */}
+      <div className="fixed bottom-8 right-8">
+        <Button 
+          onClick={addNewEquipment}
+          className="bg-purple-600 hover:bg-purple-700 text-white"
+        >
+          Nuevo equipamiento
+        </Button>
       </div>
     </div>
   )

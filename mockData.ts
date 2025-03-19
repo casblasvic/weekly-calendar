@@ -88,13 +88,22 @@ export interface Clinic {
   config: ClinicConfig
 }
 
+interface Equipment {
+  id: number
+  code: string
+  name: string
+  description: string
+  serialNumber: string
+  clinicId: number
+}
+
 // Objeto global para almacenar datos mock
 export const MockData: {
   clinicas?: Clinic[]
   tarifas?: Tarifa[]
   servicios?: Servicio[]
   scheduleBlocks?: ScheduleBlock[]
-  equipment?: any[]
+  equipment?: Equipment[]
   [key: string]: any
 } = {
   clinicas: [
@@ -166,12 +175,26 @@ export const MockData: {
   tarifas: [],
   servicios: [],
   scheduleBlocks: [],
-  equipment: [],
+  equipment: [
+    { id: 1, code: "BALLA-1", name: "Ballancer 1", description: "Pressotherapie", serialNumber: "BL-2023-001", clinicId: 1 },
+    { id: 2, code: "BALLA-2", name: "Ballancer 2", description: "Pressotherapie", serialNumber: "BL-2023-002", clinicId: 1 },
+    { id: 3, code: "EVRL-1", name: "Evrl 1", description: "EVRL", serialNumber: "EV-2022-453", clinicId: 1 },
+    { id: 4, code: "FORTE-1", name: "Forte Gem 1", description: "Forte Gem", serialNumber: "FG-2021-789", clinicId: 1 },
+    { id: 5, code: "JFL-1", name: "JETPEEL 1", description: "JETPEEL", serialNumber: "JP-2023-344", clinicId: 1 },
+    { id: 6, code: "LUNUL-1", name: "Lunula Laser 1", description: "Lunula Laser", serialNumber: "LL-2022-567", clinicId: 1 },
+    { id: 7, code: "MICRO-1", name: "MicroMotor 1", description: "MicroMotor", serialNumber: "MM-2023-123", clinicId: 1 },
+    { id: 8, code: "SKNS-1", name: "Skinshape R 1", description: "Skinshape Radiofrequence", serialNumber: "SR-2021-456", clinicId: 1 },
+    { id: 9, code: "VERJU-1", name: "VERJU LASER 1", description: "VERJU LASER", serialNumber: "VL-2022-789", clinicId: 1 },
+    { id: 10, code: "JFL-2", name: "JETPEEL", description: "JETPEEL", serialNumber: "JP-2023-345", clinicId: 2 },
+    { id: 11, code: "LUNUL-2", name: "Lunula Laser", description: "Lunula Laser", serialNumber: "LL-2022-568", clinicId: 2 },
+    { id: 12, code: "MICRO-2", name: "MicroMotor", description: "MicroMotor", serialNumber: "MM-2023-124", clinicId: 3 },
+    { id: 13, code: "SKNS-2", name: "Skinshape R", description: "Skinshape Radiofrequence", serialNumber: "SR-2021-457", clinicId: 3 },
+  ],
 }
 
 export const updateClinic = (updatedClinic: Clinic): boolean => {
   const index = MockData.clinicas?.findIndex((clinic) => clinic.id === updatedClinic.id)
-  if (index === -1) return false
+  if (index === undefined || index === -1) return false
 
   MockData.clinicas = [
     ...(MockData.clinicas || []).slice(0, index),
@@ -190,7 +213,7 @@ export const deleteEquipment = (id: number): boolean => {
 
 let nextEquipmentId = 100 // Start from a high number to avoid conflicts
 
-export const addEquipment = (equipmentData: any): number => {
+export const addEquipment = (equipmentData: Equipment): number => {
   const newId = nextEquipmentId++
   const newEquipment = { ...equipmentData, id: newId }
   MockData.equipment = [...(MockData.equipment || []), newEquipment]
@@ -198,7 +221,7 @@ export const addEquipment = (equipmentData: any): number => {
   return newId
 }
 
-export const updateEquipment = (equipmentData: any): boolean => {
+export const updateEquipment = (equipmentData: Equipment): boolean => {
   const index = (MockData.equipment || []).findIndex((item) => item.id === equipmentData.id)
   if (index === -1) return false
 
@@ -211,7 +234,7 @@ export const updateEquipment = (equipmentData: any): boolean => {
   return true
 }
 
-export const getEquipment = (clinicId: number): any[] => {
+export const getEquipment = (clinicId: number): Equipment[] => {
   return (MockData.equipment || []).filter((item) => item.clinicId === clinicId)
 }
 
@@ -259,14 +282,15 @@ export const deleteScheduleBlock = (id: string): boolean => {
 
 export const updateCabin = (clinicId: number, updatedCabin: Cabin): boolean => {
   const clinicIndex = MockData.clinicas?.findIndex((clinic) => clinic.id === clinicId)
-  if (clinicIndex === -1) return false
+  if (clinicIndex === undefined || clinicIndex === -1) return false
 
-  const clinic = MockData.clinicas[clinicIndex]
+  const clinic = MockData.clinicas?.[clinicIndex]
+  if (!clinic) return false
+
   const cabinIndex = clinic.config.cabins.findIndex((cabin) => cabin.id === updatedCabin.id)
   if (cabinIndex === -1) return false
-
   clinic.config.cabins[cabinIndex] = updatedCabin
-  MockData.clinicas[clinicIndex] = clinic
+  MockData.clinicas![clinicIndex] = clinic
 
   window.dispatchEvent(new CustomEvent("storage-updated"))
   return true
@@ -274,11 +298,13 @@ export const updateCabin = (clinicId: number, updatedCabin: Cabin): boolean => {
 
 export const deleteCabin = (clinicId: number, cabinId: number): boolean => {
   const clinicIndex = MockData.clinicas?.findIndex((clinic) => clinic.id === clinicId)
-  if (clinicIndex === -1) return false
+  if (clinicIndex === undefined || clinicIndex === -1) return false
 
-  const clinic = MockData.clinicas[clinicIndex]
-  clinic.config.cabins = clinic.config.cabins.filter((cabin) => cabin.id !== cabinId)
-  MockData.clinicas[clinicIndex] = clinic
+  const clinic = MockData.clinicas?.[clinicIndex]
+  if (!clinic) return false
+  
+  clinic.config.cabins = clinic.config.cabins.filter((cabin: { id: number }) => cabin.id !== cabinId)
+  MockData.clinicas![clinicIndex] = clinic
 
   window.dispatchEvent(new CustomEvent("storage-updated"))
   return true
