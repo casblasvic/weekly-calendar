@@ -1,3 +1,5 @@
+"use client"
+
 import type React from "react"
 import "@/styles/globals.css"
 import { LastClientProvider } from "@/contexts/last-client-context"
@@ -7,10 +9,8 @@ import { LayoutWrapper } from "@/components/LayoutWrapper"
 import { CabinProvider } from "@/contexts/CabinContext"
 import { ClinicProvider } from "@/contexts/clinic-context"
 import { FamilyProvider } from "@/contexts/family-context"
-
-export const metadata = {
-  generator: "v0.dev",
-}
+import { ServicioProvider } from "@/contexts/servicios-context"
+import { ConsumoServicioProvider } from "@/contexts/consumo-servicio-context"
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -22,7 +22,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <LastClientProvider>
                 <ClientCardProvider>
                   <ThemeProvider>
-                    <LayoutWrapper>{children}</LayoutWrapper>
+                    <ServicioProvider>
+                      <ConsumoServicioProvider>
+                        <LayoutWrapper>{children}</LayoutWrapper>
+                      </ConsumoServicioProvider>
+                    </ServicioProvider>
                   </ThemeProvider>
                 </ClientCardProvider>
               </LastClientProvider>
@@ -33,7 +37,5 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     </html>
   )
 }
-
-
 
 import './globals.css'

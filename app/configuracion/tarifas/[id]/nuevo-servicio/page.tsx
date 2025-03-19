@@ -1,8 +1,8 @@
 "use client"
 
-import { useState, use } from "react"
-import { useRouter } from "next/navigation"
-import { FileQuestion, Plus, Minus, ChevronUp, ChevronDown, MessageSquare, Users, HelpCircle, X, Send } from "lucide-react"
+import { useState, use, useEffect, useRef } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
+import { FileQuestion, Plus, Minus, ChevronUp, ChevronDown, MessageSquare, Users, HelpCircle, X, Send, ShoppingCart, AlertCircle, Save } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -11,7 +11,7 @@ import { useTarif } from "@/contexts/tarif-context"
 import { useIVA } from "@/contexts/iva-context"
 import { useFamily } from "@/contexts/family-context"
 import { Card, CardContent } from "@/components/ui/card"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { 
   Tooltip,
@@ -21,6 +21,9 @@ import {
 } from "@/components/ui/tooltip"
 import { HelpButton } from "@/components/ui/help-button"
 import React from "react"
+import { useServicio } from "@/contexts/servicios-context"
+import { cn } from "@/lib/utils"
+import { toast } from "@/components/ui/use-toast"
 
 // Función para generar IDs únicos sin dependencias externas
 const generateId = () => {
@@ -70,7 +73,10 @@ const agentesSoporte = [
 
 export default function NuevoServicio({ params }: { params: { id: string } }) {
   const router = useRouter()
-  const tarifaId = use(params).id;
+  const resolvedParams = React.use(params)
+  const tarifaId = resolvedParams.id;
+  const searchParams = useSearchParams();
+  const servicioId = searchParams.get('servicioId');
   
   const { getTarifaById } = useTarif()
   const { getTiposIVAByTarifaId } = useIVA()
@@ -84,6 +90,9 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
   const [chatAbierto, setChatAbierto] = useState(false)
   const [mensajeAyuda, setMensajeAyuda] = useState("")
   const [agenteSeleccionado, setAgenteSeleccionado] = useState<string | null>(null)
+  
+  // Estado para guardar el servicioId para navegación
+  const [currentServicioId, setCurrentServicioId] = useState<string | null>(null);
   
   const [servicio, setServicio] = useState({
     nombre: "",
@@ -138,12 +147,23 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
     return `${horas > 0 ? horas + 'h ' : ''}${mins}min`;
   };
 
-  // Manejar cambios en los inputs
+  // Mantener handleInputChange para inputs normales
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type } = e.target
     setServicio({
       ...servicio,
       [name]: type === 'number' ? Number(value) : value
+    })
+  }
+
+  // Función específica para los componentes Select
+  const handleSelectChange = (name: string, value: string) => {
+    // Si recibimos "placeholder", lo convertimos a cadena vacía internamente
+    const valueToStore = value === "placeholder" ? "" : value;
+    
+    setServicio({
+      ...servicio,
+      [name]: valueToStore
     })
   }
 
@@ -156,14 +176,6 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
     });
   }
 
-  // Manejar cambios en los selects
-  const handleSelectChange = (name: string, value: string) => {
-    setServicio({
-      ...servicio,
-      [name]: value
-    });
-  }
-
   // Manejar cambios en los checkboxes
   const handleCheckboxChange = (id: string, checked: boolean) => {
     setServicio({
@@ -172,38 +184,184 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
     })
   }
   
-  // Manejar navegación a otras páginas
-  const handleNavigation = (page: string) => {
-    router.push(`/configuracion/tarifas/${tarifaId}/nuevo-servicio/${page}`)
-  }
+  // Estados para modales
+  const [mostrarModalCamposObligatorios, setMostrarModalCamposObligatorios] = useState(false);
+  const [mostrarModalConfirmacion, setMostrarModalConfirmacion] = useState(false);
+  const [camposFaltantes, setCamposFaltantes] = useState<string[]>([]);
+  const [rutaDestino, setRutaDestino] = useState<string | null>(null);
   
-  // Manejar cancelación
-  const handleCancel = () => {
-    router.push(`/configuracion/tarifas/${tarifaId}`)
-  }
+  // Obtener servicioActual del contexto (no crear uno local)
+  const { 
+    validarCamposObligatorios, 
+    servicioActual, 
+    crearServicio, 
+    actualizarServicio, 
+    setServicioActual,
+    getServicioById
+  } = useServicio();
   
-  // Manejar subida de archivos
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      setServicio({
-        ...servicio,
-        archivoAyuda: file.name
-      })
-    }
-  }
-  // Guardar el servicio
-  const handleSaveServicio = () => {
-    setIsSaving(true)
+  // AHORA es seguro usar servicioActual
+  const servicioGuardado = Boolean(servicioActual?.id);
+
+  // Función para verificar campos obligatorios localmente
+  const verificarCamposObligatoriosLocal = () => {
+    const camposFaltantes = [];
     
-    // Simulación de guardado (reemplazar con llamada real a API)
-    setTimeout(() => {
-      console.log("Servicio guardado:", servicio)
-      setIsSaving(false)
-      router.push(`/configuracion/tarifas/${tarifaId}`)
-    }, 1000)
-  }
+    // Verificar campos obligatorios
+    if (!servicio.nombre || servicio.nombre.trim() === '') {
+      camposFaltantes.push('Nombre');
+    }
+    
+    if (!servicio.codigo || servicio.codigo.trim() === '') {
+      camposFaltantes.push('Código');
+    }
+    
+    if (!servicio.familiaId || servicio.familiaId === '') {
+      camposFaltantes.push('Familia');
+    }
+    
+    return camposFaltantes;
+  };
+
+  // Cargar el servicio existente si hay un ID
+  useEffect(() => {
+    if (servicioId) {
+      setCurrentServicioId(servicioId);
+      const servicioExistente = getServicioById(servicioId);
+      if (servicioExistente) {
+        setServicioActual(servicioExistente);
+        setServicio({
+          ...servicioExistente,
+          tarifaBase: tarifa?.nombre || "Tarifa Base",
+        });
+      }
+    }
+  }, [servicioId, getServicioById, setServicioActual, tarifa?.nombre]);
+
+  // Añadir depuración de familias
+  useEffect(() => {
+    if (familias && familias.length > 0) {
+      console.log("Familias disponibles:", familias);
+      console.log("Primera familia:", familias[0]);
+      // Comprueba si las familias tienen la propiedad 'nombre' o 'name'
+      const propiedadNombre = familias[0].nombre ? 'nombre' : (familias[0].name ? 'name' : 'desconocido');
+      console.log("Propiedad para el nombre:", propiedadNombre);
+    }
+  }, [familias]);
+
+  // Función para navegar manteniendo el ID del servicio
+  const handleNavigation = (ruta: string) => {
+    const servicioId = servicioActual?.id || currentServicioId;
+    
+    // Verificar campos obligatorios antes de navegar
+    const camposFaltantes = verificarCamposObligatoriosLocal();
+    
+    console.log("Campos faltantes:", camposFaltantes);
+    
+    // Si faltan campos obligatorios, mostramos el modal de aviso
+    if (camposFaltantes.length > 0) {
+      setCamposFaltantes(camposFaltantes);
+      setMostrarModalCamposObligatorios(true);
+      return;
+    }
+    
+    // Solo si todos los campos obligatorios están completos,
+    // comprobamos si el servicio está guardado
+    if (!servicioGuardado) {
+      setRutaDestino(`/configuracion/tarifas/${tarifaId}/nuevo-servicio/${ruta}`);
+      setMostrarModalConfirmacion(true);
+      return;
+    }
+    
+    // Si todo está completo y guardado, navegamos manteniendo el ID
+    router.push(`/configuracion/tarifas/${tarifaId}/nuevo-servicio/${ruta}?servicioId=${servicioId}`);
+  };
   
+  // Función verificarCamposYNavegar actualizada
+  const verificarCamposYNavegar = (ruta: string) => {
+    const camposFaltantes = verificarCamposObligatoriosLocal();
+    
+    console.log("Campos faltantes:", camposFaltantes);
+    
+    // Si faltan campos obligatorios, mostramos el modal de aviso
+    if (camposFaltantes.length > 0) {
+      setCamposFaltantes(camposFaltantes);
+      setMostrarModalCamposObligatorios(true);
+      return;
+    }
+    
+    // Solo si todos los campos obligatorios están completos,
+    // comprobamos si el servicio está guardado
+    if (!servicioGuardado) {
+      setRutaDestino(ruta);
+      setMostrarModalConfirmacion(true);
+      return;
+    }
+    
+    // Si todo está completo y guardado, navegamos directamente incluyendo el ID
+    const servicioId = servicioActual?.id || currentServicioId;
+    if (servicioId) {
+      router.push(`${ruta}?servicioId=${servicioId}`);
+    } else {
+      router.push(ruta);
+    }
+  };
+  
+  // Mejorar la función de guardar servicio
+  const handleGuardarServicio = () => {
+    // Validar que los campos obligatorios estén completos
+    if (!servicio.nombre) {
+      alert("Por favor ingresa un nombre para el servicio");
+      return;
+    }
+
+    if (!servicio.ivaId || servicio.ivaId === "") {
+      alert("Por favor selecciona un tipo de IVA");
+      return;
+    }
+
+    // Mostrar estado de guardado
+    setIsSaving(true);
+
+    // Asegurarse de que el servicio tenga todos los datos necesarios
+    const servicioCompleto = {
+      ...servicio,
+      tarifaId: tarifaId,
+      // Asegurarse de que los campos críticos estén presentes
+      ivaId: servicio.ivaId,
+      familiaId: servicio.familiaId || null,
+      precioSinIVA: calcularPrecioSinIVA(servicio.precioConIVA, servicio.ivaId),
+    };
+
+    // Log para debug
+    console.log("Guardando servicio:", servicioCompleto);
+
+    // Guardar usando el contexto
+    if (servicio.id) {
+      // Editar existente
+      actualizarServicio(servicio.id, servicioCompleto);
+    } else {
+      // Crear nuevo
+      crearServicio(servicioCompleto);
+    }
+
+    // Esperar para simular guardado
+    setTimeout(() => {
+      setIsSaving(false);
+      // Redirigir a la página de tarifas
+      router.push(`/configuracion/tarifas/${tarifaId}`);
+    }, 500);
+  };
+
+  // Función auxiliar para calcular el precio sin IVA
+  const calcularPrecioSinIVA = (precioConIVA: number, ivaId: string) => {
+    const tipoIVA = tiposIVA?.find(t => t.id === ivaId);
+    if (!tipoIVA) return precioConIVA;
+    
+    const porcentajeIVA = tipoIVA.porcentaje || 0;
+    return precioConIVA / (1 + (porcentajeIVA / 100));
+  };
+
   // Función para renderizar el agente con tooltip
   const renderAgente = (agente: typeof agentesSoporte[0]) => {
     return (
@@ -240,6 +398,72 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
   const [isPanelOpen, setIsPanelOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('chat');
 
+  // Función para guardar el servicio en el contexto y navegar
+  const guardarServicioYNavegar = async () => {
+    setIsSaving(true);
+    
+    try {
+      // Preparamos los datos del servicio para guardarlo
+      const nuevoServicio = {
+        ...servicio,
+        tarifaId,
+        // Otros campos necesarios
+      };
+      
+      // Crear o actualizar el servicio en el contexto
+      let servicioId;
+      
+      if (servicioActual?.id) {
+        // Si ya existe, actualizamos
+        await actualizarServicio(servicioActual.id, nuevoServicio);
+        servicioId = servicioActual.id;
+      } else {
+        // Si no existe, creamos uno nuevo
+        servicioId = await crearServicio(nuevoServicio);
+      }
+      
+      // Navegar a la ruta de destino incluyendo tanto el ID de tarifa como el ID de servicio
+      if (rutaDestino) {
+        const rutaCompleta = rutaDestino.includes('?') 
+          ? `${rutaDestino}&servicioId=${servicioId}` 
+          : `${rutaDestino}?servicioId=${servicioId}`;
+        
+        router.push(rutaCompleta);
+      }
+    } catch (error) {
+      console.error("Error al guardar el servicio:", error);
+      toast({
+        title: "Error",
+        description: "No se pudo guardar el servicio. Inténtelo de nuevo.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSaving(false);
+      setMostrarModalConfirmacion(false);
+    }
+  };
+
+  // Función para navegar a la página anterior
+  const handleCancel = () => {
+    router.push(`/configuracion/tarifas/${tarifaId}`);
+  };
+  
+  // Agregar la función handleFileUpload
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      const file = files[0];
+      // Para simplicidad, solo guardamos el nombre del archivo
+      setServicio({
+        ...servicio,
+        archivoAyuda: file.name
+      });
+    }
+  };
+  
+  // Referencia para el input de archivo
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   return (
     <div className="max-w-5xl mx-auto py-8 px-4">
       <h1 className="text-xl font-semibold mb-6">Datos del servicio</h1>
@@ -256,7 +480,7 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
               
               <div className="mb-4">
                 <label htmlFor="nombre" className="block text-sm font-medium text-gray-700 mb-1">
-                  Nombre
+                  Nombre <span className="text-red-500">*</span>
                 </label>
                 <Input
                   id="nombre"
@@ -265,38 +489,42 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
                   onChange={handleInputChange}
                   placeholder="Nombre del servicio"
                   className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                  required
                 />
               </div>
               
               <div className="mb-4">
                 <label htmlFor="codigo" className="block text-sm font-medium text-gray-700 mb-1">
-                  Código
+                  Código <span className="text-red-500">*</span>
                 </label>
                 <Input
                   id="codigo"
                   name="codigo"
                   value={servicio.codigo}
                   onChange={handleInputChange}
-                  placeholder="Código del servicio"
+                  placeholder="Ej: SRV001"
                   className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                  required
                 />
               </div>
               
-              <div className="mb-4">
-                <label htmlFor="familia" className="block text-sm font-medium text-gray-700 mb-1">
-                  Familia
+              <div className="space-y-2">
+                <label htmlFor="familia" className="block text-sm font-medium text-gray-700">
+                  Familia <span className="text-red-500">*</span>
                 </label>
                 <Select
-                  value={servicio.familiaId}
-                  onValueChange={(value) => handleSelectChange("familiaId", value)}
+                  value={servicio.familiaId || "placeholder"}
+                  onValueChange={(value) => handleSelectChange('familiaId', value)}
                 >
-                  <SelectTrigger className="w-full focus:ring-indigo-500">
-                    <SelectValue placeholder="Selecciona una familia" />
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Seleccionar familia" />
                   </SelectTrigger>
                   <SelectContent>
-                    {familias && familias.map((familia) => (
+                    <SelectItem value="placeholder">Seleccionar...</SelectItem>
+                    {familias.map((familia) => (
                       <SelectItem key={familia.id} value={familia.id}>
-                        {familia.name}
+                        {/* Usar nombre o name, dependiendo de cuál esté disponible */}
+                        {familia.nombre || familia.name || `Familia ${familia.id}`}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -663,7 +891,7 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
           <Button 
             variant="outline" 
             className={buttonNavClass}
-            onClick={() => handleNavigation('consumos')}
+            onClick={() => verificarCamposYNavegar(`/configuracion/tarifas/${tarifaId}/nuevo-servicio/consumos`)}
           >
             Consumos
           </Button>
@@ -708,7 +936,7 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
           <Button
             variant="default"
             className={buttonPrimaryClass}
-            onClick={handleSaveServicio}
+            onClick={handleGuardarServicio}
             disabled={isSaving}
           >
             {isSaving ? (
@@ -739,6 +967,74 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
           <HelpButton text="Ayuda para la creación de servicios" />
         </div>
       </div>
+
+      {/* Modal de error para campos obligatorios - mejorado */}
+      <Dialog
+        open={mostrarModalCamposObligatorios}
+        onOpenChange={setMostrarModalCamposObligatorios}
+      >
+        <DialogContent className="sm:max-w-md text-center">
+          <DialogHeader className="pb-2">
+            <DialogTitle className="flex items-center justify-center text-red-600">
+              <AlertCircle className="h-6 w-6 mr-2" />
+              Datos incompletos
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <div className="text-sm text-muted-foreground mb-4">
+              <span className="block mb-3">Debe completar los siguientes campos obligatorios antes de configurar consumos:</span>
+              <ul className="list-disc pl-5 mb-3 text-left inline-block">
+                {camposFaltantes.map((campo, index) => (
+                  <li key={index} className="text-red-600">{campo}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+          <DialogFooter className="flex justify-center pt-2">
+            <Button
+              className="w-32"
+              onClick={() => setMostrarModalCamposObligatorios(false)}
+            >
+              Aceptar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal de confirmación para guardar servicio */}
+      <Dialog open={mostrarModalConfirmacion} onOpenChange={setMostrarModalConfirmacion}>
+        <DialogContent className="sm:max-w-md p-6">
+          <DialogHeader className="pb-2">
+            <DialogTitle className="flex items-center text-xl">
+              <Save className="h-5 w-5 mr-2" />
+              Guardar servicio
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-4 px-2">
+            <p className="text-gray-700 mb-3">
+              El servicio no ha sido guardado. Se creará automáticamente para poder continuar.
+            </p>
+            <p className="font-medium text-gray-800">
+              ¿Desea continuar?
+            </p>
+          </div>
+          <DialogFooter className="space-x-3 pt-2">
+            <Button 
+              variant="outline" 
+              onClick={() => setMostrarModalConfirmacion(false)}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              className="bg-indigo-600 hover:bg-indigo-700 text-white"
+              onClick={guardarServicioYNavegar}
+              disabled={isSaving}
+            >
+              {isSaving ? 'Guardando...' : 'Guardar y continuar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

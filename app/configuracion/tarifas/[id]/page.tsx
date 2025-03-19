@@ -1,9 +1,9 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import { use } from "react"
-import { ChevronDown, Pencil, Trash2, ShoppingCart, Package, User, ChevronUp, ArrowUpDown } from "lucide-react"
+import { ChevronDown, Pencil, Trash2, ShoppingCart, Package, User, ChevronUp, ArrowUpDown, ChevronsLeft, ChevronLeft, ChevronRight, ChevronsRight, Wrench, ShoppingBag, SmilePlus, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -14,6 +14,9 @@ import { useFamily } from "@/contexts/family-context"
 import Link from "next/link"
 import { useTarif } from "@/contexts/tarif-context"
 import { Card, CardContent } from "@/components/ui/card"
+import React from 'react'
+import { useServicio } from "@/contexts/servicios-context"
+import { useIVA } from "@/contexts/iva-context"
 
 // Interfaces
 interface Tarifa {
@@ -26,6 +29,7 @@ interface Tarifa {
 interface Servicio {
   id: string
   nombre: string
+  codigo: string
   familia: string
   precio: number
   iva: string
@@ -41,23 +45,107 @@ export interface TipoIVA {
 
 export default function ConfiguracionTarifa({ params }: { params: { id: string } }) {
   const router = useRouter()
-  // Usamos React.use() para desenvolver params
-  const { id: tarifaId } = use(params as any) as { id: string }
+  const tarifaId = React.use(params).id
   
   const { families } = useFamily()
+  const { getTarifaById, getFamiliasByTarifaId } = useTarif()
+  const { getServiciosByTarifaId } = useServicio()
+  const { getTiposIVAByTarifaId } = useIVA()
+  
   const [tarifa, setTarifa] = useState<Tarifa | null>(null)
-  const [servicios, setServicios] = useState<Servicio[]>([])
+  const [serviciosLista, setServiciosLista] = useState<Servicio[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [tipoFiltro, setTipoFiltro] = useState("")
   const [familiaFiltro, setFamiliaFiltro] = useState("")
   const [showDisabled, setShowDisabled] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const [menuOpen, setMenuOpen] = useState(false)
-  const { getTarifaById, getFamiliasByTarifaId } = useTarif()
-  const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'ascending' | 'descending' } | null>(null);
+  const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'ascending' | 'descending' } | null>(null)
+  
+  // Paginación
+  const [currentPage, setCurrentPage] = useState(1)
+  const [itemsPerPage, setItemsPerPage] = useState(50)
+  const [totalPages, setTotalPages] = useState(1)
 
   // Obtener las familias específicas de esta tarifa
-  const tarifaFamilies = getFamiliasByTarifaId ? getFamiliasByTarifaId(tarifaId) : [];
+  const tarifaFamilies = getFamiliasByTarifaId ? getFamiliasByTarifaId(tarifaId) : []
+
+  // Obtener los tipos de IVA
+  const tiposIVATarifa = useMemo(() => {
+    return getTiposIVAByTarifaId(tarifaId);
+  }, [tarifaId, getTiposIVAByTarifaId]);
+
+  // Cargar datos de servicios y productos combinados
+  useEffect(() => {
+    // Obtener la tarifa
+    const tarifaData = getTarifaById(tarifaId)
+    setTarifa(tarifaData)
+    
+    // Obtener servicios reales del contexto
+    const serviciosReales = getServiciosByTarifaId(tarifaId);
+    
+    // Log para depuración
+    console.log("IVAs disponibles:", tiposIVATarifa);
+    
+    // Mapear los servicios con la información correcta
+    const serviciosData = serviciosReales.map(s => {
+      // Obtener información del IVA para mostrar el porcentaje
+      const tipoIVA = tiposIVATarifa?.find(t => t.id === s.ivaId);
+      
+      // Crear una representación más robusta del IVA
+      let ivaDisplay = "N/A";
+      if (tipoIVA) {
+        if (typeof tipoIVA.porcentaje === 'number') {
+          ivaDisplay = `${tipoIVA.porcentaje}%`;
+        } else if (tipoIVA.descripcion) {
+          // Fallback a la descripción si no hay porcentaje
+          ivaDisplay = tipoIVA.descripcion;
+        }
+      }
+      
+      return {
+        id: s.id,
+        nombre: s.nombre,
+        codigo: s.codigo || '',
+        familia: getFamiliaName(s.familiaId),
+        precio: parseFloat(s.precioConIVA) || 0,
+        iva: ivaDisplay,
+        tipo: 'servicio'
+      };
+    });
+    
+    // Log para verificar el mapeo
+    console.log("Servicios mapeados:", serviciosData);
+    
+    // Usar los productos mock mientras no exista el contexto de productos
+    const mockProductos = MockData.productos || [];
+    const productosData = mockProductos
+      .filter(p => p.tarifaId === tarifaId)
+      .map(p => ({
+        id: p.id,
+        nombre: p.nombre,
+        codigo: p.codigo || '', // Incluir código del producto
+        familia: getFamiliaName(p.familiaId),
+        precio: p.precio,
+        iva: p.iva,
+        tipo: 'producto'
+      }));
+    
+    const combinedData = [...serviciosData, ...productosData];
+    setServiciosLista(combinedData);
+    
+    // Calcular el total de páginas
+    setTotalPages(Math.ceil(combinedData.length / itemsPerPage));
+  }, [tarifaId, itemsPerPage, getServiciosByTarifaId, tiposIVATarifa]);
+  
+  // Función para obtener el nombre de la familia
+  const getFamiliaName = (familiaId: string) => {
+    if (!familiaId) return "(Ninguna)";
+    
+    // Buscar en todas las familias disponibles (no solo en tarifaFamilies)
+    const familia = families.find(f => f.id === familiaId);
+    return familia ? (familia.name || familia.nombre) : "(Ninguna)";
+  }
 
   // Funciones para manejar la creación de diferentes tipos
   const handleNuevoServicio = () => {
@@ -95,52 +183,70 @@ export default function ConfiguracionTarifa({ params }: { params: { id: string }
     router.push(`/configuracion/tarifas/${tarifaId}/iva`)
   }
 
-  // Ordenar los servicios cuando cambia la configuración de ordenación
-  const requestSort = (key: string) => {
-    let direction: 'ascending' | 'descending' = 'ascending';
-    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'ascending') {
-      direction = 'descending';
-    }
-    setSortConfig({ key, direction });
-  };
+  // Funciones para la paginación
+  const goToFirstPage = () => setCurrentPage(1)
+  const goToPreviousPage = () => setCurrentPage(prev => Math.max(prev - 1, 1))
+  const goToNextPage = () => setCurrentPage(prev => Math.min(prev + 1, totalPages))
+  const goToLastPage = () => setCurrentPage(totalPages)
 
-  // Obtener el ícono de ordenación para la columna
+  // Aplicar filtros y ordenación
+  const serviciosFiltrados = useMemo(() => {
+    let filteredItems = [...serviciosLista];
+    
+    // Filtro por término de búsqueda
+    if (searchTerm) {
+      filteredItems = filteredItems.filter(item => 
+        item.nombre.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    }
+    
+    // Filtro por tipo
+    if (tipoFiltro && tipoFiltro !== "all") {
+      filteredItems = filteredItems.filter(item => 
+        item.tipo === tipoFiltro
+      );
+    }
+    
+    // Filtro por familia
+    if (familiaFiltro && familiaFiltro !== "all") {
+      filteredItems = filteredItems.filter(item => 
+        item.familia === familiaFiltro
+      );
+    }
+    
+    // Ordenación
+    if (sortConfig) {
+      filteredItems.sort((a, b) => {
+        if (a[sortConfig.key] < b[sortConfig.key]) {
+          return sortConfig.direction === 'ascending' ? -1 : 1;
+        }
+        if (a[sortConfig.key] > b[sortConfig.key]) {
+          return sortConfig.direction === 'ascending' ? 1 : -1;
+        }
+        return 0;
+      });
+    }
+    
+    return filteredItems;
+  }, [serviciosLista, searchTerm, tipoFiltro, familiaFiltro, sortConfig]);
+
+  // Paginación
+  const indexOfLastItem = currentPage * itemsPerPage;
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+  const currentItems = serviciosFiltrados.slice(indexOfFirstItem, indexOfLastItem);
+
+  // Cambiar de página
+  const paginate = (pageNumber: number) => setCurrentPage(pageNumber);
+  
+  // Obtener icono de ordenación
   const getSortIcon = (key: string) => {
     if (!sortConfig || sortConfig.key !== key) {
-      return <ArrowUpDown size={14} />;
+      return <ArrowUpDown size={14} />
     }
     return sortConfig.direction === 'ascending' 
       ? <ChevronUp size={14} /> 
-      : <ChevronDown size={14} />;
-  };
-
-  // Cargar datos de la tarifa
-  useEffect(() => {
-    const tarifaEncontrada = MockData.tarifas?.find((t) => t.id === tarifaId) || null
-    setTarifa(tarifaEncontrada)
-
-    // Cargar servicios (sin datos de ejemplo)
-    const serviciosEjemplo = MockData.servicios || []
-    // Añadir tipo a los servicios para el filtro
-    const serviciosConTipo = serviciosEjemplo.map((servicio) => ({
-      ...servicio,
-      tipo: ["Servicios", "Productos", "Paquetes", "Suscripciones"][Math.floor(Math.random() * 4)],
-    }))
-    setServicios(serviciosConTipo)
-  }, [tarifaId])
-
-  // Filtrar servicios
-  const serviciosFiltrados = servicios.filter((servicio) => {
-    const matchesSearch = servicio.nombre.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesTipo = !tipoFiltro || tipoFiltro === "all" || servicio.tipo === tipoFiltro
-    const matchesFamilia = !familiaFiltro || familiaFiltro === "all" || servicio.familia === familiaFiltro
-    const matchesDisabled = showDisabled ? true : true // Aquí implementaríamos la lógica para productos deshabilitados
-
-    return matchesSearch && matchesTipo && matchesFamilia && matchesDisabled
-  })
-
-  // Obtener tipos únicos para filtros
-  const tiposUnicos = ["Servicios", "Productos", "Paquetes", "Suscripciones"]
+      : <ChevronDown size={14} />
+  }
 
   // Cerrar el menú si se hace clic fuera de él
   useEffect(() => {
@@ -156,8 +262,14 @@ export default function ConfiguracionTarifa({ params }: { params: { id: string }
     }
   }, [menuRef])
 
+  // En la sección de acciones de la tabla donde está el botón de editar
+  const handleEditarServicio = (servicioId: string) => {
+    // Navegar a la página de edición del servicio con el ID correcto
+    router.push(`/configuracion/tarifas/${tarifaId}/nuevo-servicio?servicioId=${servicioId}`);
+  };
+
   return (
-    <div className="pt-20 px-6 pb-20">
+    <div className="container mx-auto p-6 mt-16">
       {/* Card con buscador y botones de acciones */}
       <Card className="mb-6">
         <CardContent className="p-6">
@@ -181,17 +293,14 @@ export default function ConfiguracionTarifa({ params }: { params: { id: string }
                 <label htmlFor="tipo" className="block text-sm font-medium text-gray-700 mb-1">
                   Tipo
                 </label>
-                <Select value={tipoFiltro} onValueChange={setTipoFiltro}>
+                <Select value={tipoFiltro || "all"} onValueChange={setTipoFiltro}>
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="(Todos)" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">(Todos)</SelectItem>
-                    {tiposUnicos.map((tipo) => (
-                      <SelectItem key={tipo} value={tipo}>
-                        {tipo}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="servicio">Servicios</SelectItem>
+                    <SelectItem value="producto">Productos</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -200,15 +309,15 @@ export default function ConfiguracionTarifa({ params }: { params: { id: string }
                 <label htmlFor="familia" className="block text-sm font-medium text-gray-700 mb-1">
                   Familia
                 </label>
-                <Select value={familiaFiltro} onValueChange={setFamiliaFiltro}>
+                <Select value={familiaFiltro || "all"} onValueChange={setFamiliaFiltro}>
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="(Todas)" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">(Todas)</SelectItem>
                     {tarifaFamilies && tarifaFamilies.map((familia) => (
-                      <SelectItem key={familia.id} value={familia.name}>
-                        {familia.name}
+                      <SelectItem key={familia.id} value={familia.name || familia.nombre || `familia-${familia.id}`}>
+                        {familia.name || familia.nombre || `Familia ${familia.id}`}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -236,7 +345,8 @@ export default function ConfiguracionTarifa({ params }: { params: { id: string }
                   className="w-full bg-purple-700 hover:bg-purple-800"
                   onClick={() => setMenuOpen(!menuOpen)}
                 >
-                  Nuevo <ChevronDown className="ml-2 h-4 w-4" />
+                  <Plus className="mr-2 h-4 w-4" />
+                  Nuevo
                 </Button>
                 {menuOpen && (
                   <div className="absolute right-0 mt-2 w-full bg-white rounded-md shadow-lg z-10">
@@ -247,7 +357,7 @@ export default function ConfiguracionTarifa({ params }: { params: { id: string }
                         onClick={handleNuevoServicio}
                       >
                         <div className="flex items-center">
-                          <ShoppingCart size={16} className="mr-2" />
+                          <SmilePlus className="mr-3 h-5 w-5 text-purple-600" />
                           Servicio
                         </div>
                       </button>
@@ -257,7 +367,7 @@ export default function ConfiguracionTarifa({ params }: { params: { id: string }
                         onClick={handleNuevoProducto}
                       >
                         <div className="flex items-center">
-                          <Package size={16} className="mr-2" />
+                          <ShoppingCart className="mr-3 h-5 w-5 text-blue-600" />
                           Producto
                         </div>
                       </button>
@@ -267,7 +377,7 @@ export default function ConfiguracionTarifa({ params }: { params: { id: string }
                         onClick={handleNuevoPaquete}
                       >
                         <div className="flex items-center">
-                          <User size={16} className="mr-2" />
+                          <Package className="mr-3 h-5 w-5 text-green-600" />
                           Paquete
                         </div>
                       </button>
@@ -313,11 +423,36 @@ export default function ConfiguracionTarifa({ params }: { params: { id: string }
         </div>
       </div>
 
+      {/* Selector de elementos por página */}
+      <div className="flex justify-end mb-4 items-center space-x-2">
+        <span className="text-sm text-gray-600">Mostrar</span>
+        <Select value={itemsPerPage.toString()} onValueChange={(value) => setItemsPerPage(Number(value))}>
+          <SelectTrigger className="w-20">
+            <SelectValue placeholder="50" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="10">10</SelectItem>
+            <SelectItem value="25">25</SelectItem>
+            <SelectItem value="50">50</SelectItem>
+            <SelectItem value="100">100</SelectItem>
+          </SelectContent>
+        </Select>
+        <span className="text-sm text-gray-600">elementos por página</span>
+      </div>
+
       {/* Tabla de servicios */}
       <div className="overflow-x-auto bg-white rounded-lg shadow">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
+              <th
+                scope="col"
+                className="px-6 py-3 text-left text-xs font-medium text-purple-700 uppercase tracking-wider cursor-pointer"
+              >
+                <div className="flex items-center space-x-1">
+                  <span>Tipo</span>
+                </div>
+              </th>
               <th
                 scope="col"
                 className="px-6 py-3 text-left text-xs font-medium text-purple-700 uppercase tracking-wider cursor-pointer"
@@ -336,6 +471,16 @@ export default function ConfiguracionTarifa({ params }: { params: { id: string }
                 <div className="flex items-center">
                   Nombre
                   <span className="ml-1">{getSortIcon('nombre')}</span>
+                </div>
+              </th>
+              <th
+                scope="col"
+                className="px-6 py-3 text-left text-xs font-medium text-purple-700 uppercase tracking-wider cursor-pointer"
+                onClick={() => requestSort('codigo')}
+              >
+                <div className="flex items-center">
+                  Código
+                  <span className="ml-1">{getSortIcon('codigo')}</span>
                 </div>
               </th>
               <th
@@ -367,19 +512,46 @@ export default function ConfiguracionTarifa({ params }: { params: { id: string }
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {serviciosFiltrados.map((servicio) => (
-              <tr key={servicio.id} className="hover:bg-purple-50/50">
+            {currentItems.map((servicio) => (
+              <tr 
+                key={servicio.id} 
+                className={`hover:bg-purple-100 transition-colors ${
+                  servicio.tipo === 'servicio' ? 'bg-white' : 
+                  servicio.tipo === 'producto' ? 'bg-blue-50' : 
+                  'bg-green-50'
+                }`}
+              >
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <div className="flex items-center">
+                    {servicio.tipo === 'servicio' ? (
+                      <SmilePlus size={18} className="text-purple-600" />
+                    ) : servicio.tipo === 'producto' ? (
+                      <ShoppingCart size={18} className="text-blue-600" />
+                    ) : (
+                      <Package size={18} className="text-green-600" />
+                    )}
+                    <span className="ml-2 text-xs font-medium text-gray-500 uppercase">
+                      {servicio.tipo}
+                    </span>
+                  </div>
+                </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{servicio.familia || "(Ninguna)"}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{servicio.nombre}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{servicio.codigo}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
-                  {servicio.precio.toFixed(2)}
+                  {typeof servicio.precio === 'number' ? servicio.precio.toFixed(2) : servicio.precio}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{servicio.iva}%</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{servicio.iva}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
                   <div className="flex justify-center space-x-2">
-                    <button className="text-purple-600 hover:text-purple-900">
-                      <Pencil size={18} />
-                    </button>
+                    <Button 
+                      variant="ghost" 
+                      size="icon"
+                      onClick={() => handleEditarServicio(servicio.id)}
+                      className="h-8 w-8 p-0"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
                     <button className="text-red-600 hover:text-red-900">
                       <Trash2 size={18} />
                     </button>
@@ -387,7 +559,7 @@ export default function ConfiguracionTarifa({ params }: { params: { id: string }
                 </td>
               </tr>
             ))}
-            {serviciosFiltrados.length === 0 && (
+            {currentItems.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-6 py-4 text-center text-sm text-gray-500">
                   No se encontraron servicios
@@ -396,6 +568,50 @@ export default function ConfiguracionTarifa({ params }: { params: { id: string }
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* Controles de paginación */}
+      <div className="flex justify-between items-center mt-4">
+        <div className="text-sm text-gray-600">
+          Mostrando {indexOfFirstItem + 1} a {Math.min(indexOfLastItem, serviciosFiltrados.length)} de {serviciosFiltrados.length} elementos
+        </div>
+        <div className="flex space-x-2">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={goToFirstPage} 
+            disabled={currentPage === 1}
+          >
+            <ChevronsLeft size={16} />
+          </Button>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={goToPreviousPage} 
+            disabled={currentPage === 1}
+          >
+            <ChevronLeft size={16} />
+          </Button>
+          <span className="px-4 py-2 text-sm">
+            Página {currentPage} de {totalPages}
+          </span>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={goToNextPage} 
+            disabled={currentPage === totalPages}
+          >
+            <ChevronRight size={16} />
+          </Button>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={goToLastPage} 
+            disabled={currentPage === totalPages}
+          >
+            <ChevronsRight size={16} />
+          </Button>
+        </div>
       </div>
 
       {/* Botones de acción fijos */}
