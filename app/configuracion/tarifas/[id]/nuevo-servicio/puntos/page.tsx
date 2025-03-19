@@ -7,7 +7,7 @@ import { use } from "react"
 
 export default function PuntosPage({ params }: { params: { id: string } }) {
   const router = useRouter()
-  const tarifaId = params.id
+  const tarifaId = use(params).id
   
   const handleVolver = () => {
     router.push(`/configuracion/tarifas/${tarifaId}/nuevo-servicio`)

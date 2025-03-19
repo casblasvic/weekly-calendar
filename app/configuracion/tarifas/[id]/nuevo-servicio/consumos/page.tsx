@@ -1,11 +1,12 @@
 "use client"
 
+import { use } from "react"
 import { useRouter } from "next/navigation"
 import React from "react"
 
 export default function ConsumosPage({ params }: { params: { id: string } }) {
   const router = useRouter()
-  const tarifaId = params.id
+  const tarifaId = use(params).id
   
   const handleVolver = () => {
     router.push(`/configuracion/tarifas/${tarifaId}/nuevo-servicio`)

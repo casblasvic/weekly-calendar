@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, use } from "react"
 import { useRouter } from "next/navigation"
 import { FileQuestion, Plus, Minus, ChevronUp, ChevronDown, MessageSquare, Users, HelpCircle, X, Send } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -70,7 +70,7 @@ const agentesSoporte = [
 
 export default function NuevoServicio({ params }: { params: { id: string } }) {
   const router = useRouter()
-  const tarifaId = params.id;
+  const tarifaId = use(params).id;
   
   const { getTarifaById } = useTarif()
   const { getTiposIVAByTarifaId } = useIVA()
