@@ -334,7 +334,7 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
                   <SelectContent>
                     {tiposIVA && tiposIVA.map((iva) => (
                       <SelectItem key={iva.id} value={iva.id}>
-                        {iva.name}
+                        {iva.descripcion}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -736,7 +736,7 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
               "Guardar"
             )}
           </Button>
-          <HelpButton />
+          <HelpButton text="Ayuda para la creación de servicios" />
         </div>
       </div>
     </div>

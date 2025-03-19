@@ -41,7 +41,8 @@ export interface TipoIVA {
 
 export default function ConfiguracionTarifa({ params }: { params: { id: string } }) {
   const router = useRouter()
-  const tarifaId = params.id
+  // Usamos React.use() para desenvolver params
+  const { id: tarifaId } = use(params as any) as { id: string }
   
   const { families } = useFamily()
   const [tarifa, setTarifa] = useState<Tarifa | null>(null)

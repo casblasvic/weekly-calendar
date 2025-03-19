@@ -61,7 +61,7 @@ export default function GestionTarifas() {
 
       // Actualizar MockData
       MockData.tarifas = [...(MockData.tarifas || []), nuevaTarifaCompleta]
-      tarifContext.setTarifas([...tarifas, nuevaTarifaCompleta])
+      tarifContext.updateTarifa(nuevaTarifaCompleta.id, nuevaTarifaCompleta)
 
       setIsSaving(false)
       setIsNewTarifaOpen(false)
@@ -78,7 +78,10 @@ export default function GestionTarifas() {
 
     // Actualizar MockData
     MockData.tarifas = tarifasActualizadas
-    setTarifas(tarifasActualizadas)
+    // Actualizar el contexto con todas las tarifas
+    tarifasActualizadas.forEach(tarifa => {
+      tarifContext.updateTarifa(tarifa.id, tarifa)
+    })
   }
 
   // Manejar edición de tarifa
