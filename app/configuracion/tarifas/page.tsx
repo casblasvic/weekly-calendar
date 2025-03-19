@@ -61,7 +61,7 @@ export default function GestionTarifas() {
 
       // Actualizar MockData
       MockData.tarifas = [...(MockData.tarifas || []), nuevaTarifaCompleta]
-      setTarifas([...tarifas, nuevaTarifaCompleta])
+      tarifContext.updateTarifa(nuevaTarifaCompleta.id, nuevaTarifaCompleta)
 
       setIsSaving(false)
       setIsNewTarifaOpen(false)
@@ -78,7 +78,10 @@ export default function GestionTarifas() {
 
     // Actualizar MockData
     MockData.tarifas = tarifasActualizadas
-    setTarifas(tarifasActualizadas)
+    // Actualizar el contexto con todas las tarifas
+    tarifasActualizadas.forEach(tarifa => {
+      tarifContext.updateTarifa(tarifa.id, tarifa)
+    })
   }
 
   // Manejar edición de tarifa
@@ -141,7 +144,7 @@ export default function GestionTarifas() {
                   <div className="flex items-center">
                     {tarifa.nombre}
                     {tarifa.deshabilitada && (
-                      <AlertCircle className="ml-2 h-4 w-4 text-amber-500" title="Tarifa deshabilitada" />
+                      <AlertCircle className="ml-2 h-4 w-4 text-amber-500" aria-label="Tarifa deshabilitada" />
                     )}
                   </div>
                 </td>
@@ -219,7 +222,10 @@ export default function GestionTarifas() {
                       <div className="flex items-center">
                         {clinic.prefix} - {clinic.name}
                         {!clinic.isActive && (
-                          <AlertCircle className="ml-2 h-4 w-4 text-amber-500" title="Clínica deshabilitada" />
+                          <AlertCircle 
+                            className="ml-2 h-4 w-4 text-amber-500" 
+                            aria-label="Clínica deshabilitada"
+                          />
                         )}
                       </div>
                     </SelectItem>

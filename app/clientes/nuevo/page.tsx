@@ -125,7 +125,7 @@ const CustomDatePicker = React.forwardRef<
                 >
                   {Array.from({ length: 12 }, (_, i) => (
                     <option key={i} value={i}>
-                      {es.localize?.month(i)}
+                      {es.localize?.month(i as 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11)}
                     </option>
                   ))}
                 </select>
@@ -182,7 +182,7 @@ export default function NuevoClientePage() {
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      fechaNacimiento: null, // Changed from new Date() to null
+      fechaNacimiento: undefined,
       nombre: "",
       primerApellido: "",
       segundoApellido: "",
