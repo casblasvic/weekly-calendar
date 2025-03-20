@@ -1,8 +1,7 @@
 "use client"
 
-import type React from "react"
-import { useState, useCallback } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import React, { useState, useCallback, useEffect } from "react"
+import { useRouter, useSearchParams, useParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -14,7 +13,11 @@ import Image from "next/image"
 import { toast } from "sonner"
 import { useEquipment, DeviceImage } from "@/contexts/equipment-context"
 
-export default function NewEquipmentPage({ params }: { params: { id: string } }) {
+export default function NewEquipmentPage() {
+  // Usar useParams para obtener los parámetros de la URL
+  const routeParams = useParams();
+  const clinicId = routeParams.id as string;
+  
   const router = useRouter()
   const searchParams = useSearchParams()
   const { addEquipment } = useEquipment()
@@ -22,6 +25,16 @@ export default function NewEquipmentPage({ params }: { params: { id: string } })
   const fromGlobal = searchParams.get("from") === "global"
   
   const [isSaving, setIsSaving] = useState(false)
+  const [isFormValid, setIsFormValid] = useState(false)
+  
+  // Estado para gestionar errores de validación
+  const [errors, setErrors] = useState({
+    name: false,
+    code: false,
+    serialNumber: false,
+    description: false,
+  })
+  
   const [equipmentData, setEquipmentData] = useState({
     name: "",
     code: "",
@@ -34,24 +47,53 @@ export default function NewEquipmentPage({ params }: { params: { id: string } })
   const [images, setImages] = useState<DeviceImage[]>([])
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
 
+  // Validar el formulario cuando los datos cambian
+  useEffect(() => {
+    validateForm(false);
+  }, [equipmentData]);
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
     setEquipmentData((prev) => ({ ...prev, [name]: value }))
   }
+  
+  // Función de validación del formulario
+  const validateForm = (showErrors = true): boolean => {
+    const newErrors = {
+      name: equipmentData.name.trim() === "",
+      code: equipmentData.code.trim() === "",
+      serialNumber: equipmentData.serialNumber.trim() === "",
+      description: equipmentData.description.trim() === "",
+    }
+    
+    if (showErrors) {
+      setErrors(newErrors)
+    }
+    
+    const valid = !Object.values(newErrors).some(error => error)
+    setIsFormValid(valid)
+    return valid
+  }
 
   const handleSave = () => {
+    // Validar antes de guardar
+    if (!validateForm()) {
+      toast.error("Por favor, completa todos los campos obligatorios")
+      return
+    }
+    
     setIsSaving(true)
     try {
       const newEquipment = addEquipment({
         ...equipmentData,
-        clinicId: Number(params.id),
+        clinicId: Number(clinicId),
         images
       })
       
       if (newEquipment && newEquipment.id) {
         toast.success("Equipamiento añadido correctamente")
         const fromParam = fromGlobal ? "?from=global" : ""
-        router.push(`/configuracion/clinicas/${params.id}/equipamiento/${newEquipment.id}${fromParam}`)
+        router.push(`/configuracion/clinicas/${clinicId}/equipamiento/${newEquipment.id}${fromParam}`)
       } else {
         toast.error("Error al guardar el equipamiento")
         setIsSaving(false)
@@ -67,7 +109,7 @@ export default function NewEquipmentPage({ params }: { params: { id: string } })
     if (fromGlobal) {
       router.push('/configuracion/equipamiento')
     } else {
-      router.push(`/configuracion/clinicas/${params.id}?tab=equipamiento`)
+      router.push(`/configuracion/clinicas/${clinicId}?tab=equipamiento`)
     }
   }
 
@@ -118,42 +160,58 @@ export default function NewEquipmentPage({ params }: { params: { id: string } })
         </Button>
         <h2 className="text-2xl font-semibold">Nuevo equipamiento</h2>
       </div>
+      
+      <p className="text-sm text-gray-500 mb-2">
+        Los campos marcados con <span className="text-red-500">*</span> son obligatorios
+      </p>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card className="p-6">
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="code">Código</Label>
+                <Label htmlFor="code">Código <span className="text-red-500">*</span></Label>
                 <Input
                   id="code"
                   name="code"
                   value={equipmentData.code}
                   onChange={handleInputChange}
-                  placeholder="BALLA"
+                  placeholder="Código de referencia"
+                  className={errors.code ? 'border-red-500 ring-red-500' : ''}
                 />
+                {errors.code && (
+                  <p className="text-xs text-red-500">Este campo es obligatorio</p>
+                )}
               </div>
               <div className="space-y-2">
-                <Label htmlFor="name">Nombre</Label>
+                <Label htmlFor="name">Nombre <span className="text-red-500">*</span></Label>
                 <Input
                   id="name"
                   name="name"
                   value={equipmentData.name}
                   onChange={handleInputChange}
-                  placeholder="Ballancer Pro 2"
+                  placeholder="Nombre del equipamiento"
+                  className={errors.name ? 'border-red-500 ring-red-500' : ''}
                 />
+                {errors.name && (
+                  <p className="text-xs text-red-500">Este campo es obligatorio</p>
+                )}
               </div>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="serialNumber">Número de serie</Label>
+              <Label htmlFor="serialNumber">Número de serie <span className="text-red-500">*</span></Label>
               <Input
                 id="serialNumber"
                 name="serialNumber"
                 value={equipmentData.serialNumber}
                 onChange={handleInputChange}
-                placeholder="BL-2023-001"
+                placeholder="Número de serie del fabricante"
+                className={errors.serialNumber ? 'border-red-500 ring-red-500' : ''}
               />
+              {errors.serialNumber && (
+                <p className="text-xs text-red-500">Este campo es obligatorio</p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -163,7 +221,7 @@ export default function NewEquipmentPage({ params }: { params: { id: string } })
                 name="weight"
                 value={equipmentData.weight}
                 onChange={handleInputChange}
-                placeholder="1"
+                placeholder="Peso del equipo"
               />
             </div>
 
@@ -185,15 +243,18 @@ export default function NewEquipmentPage({ params }: { params: { id: string } })
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="description">Descripción</Label>
+              <Label htmlFor="description">Descripción <span className="text-red-500">*</span></Label>
               <Textarea
                 id="description"
                 name="description"
                 value={equipmentData.description}
                 onChange={handleInputChange}
-                placeholder="Pressotherapie"
-                className="min-h-[100px] resize-none"
+                placeholder="Descripción del equipamiento"
+                className={`min-h-[100px] resize-none ${errors.description ? 'border-red-500 ring-red-500' : ''}`}
               />
+              {errors.description && (
+                <p className="text-xs text-red-500">Este campo es obligatorio</p>
+              )}
             </div>
           </div>
         </Card>
@@ -330,9 +391,22 @@ export default function NewEquipmentPage({ params }: { params: { id: string } })
           >
             Cancelar
           </Button>
-          <Button onClick={handleSave} className="bg-purple-600 hover:bg-purple-700 text-white">
-            <Save className="h-4 w-4 mr-2" />
-            Guardar
+          <Button 
+            onClick={handleSave} 
+            className="bg-purple-600 hover:bg-purple-700 text-white"
+            disabled={!isFormValid || isSaving}
+          >
+            {isSaving ? (
+              <>
+                <div className="w-4 h-4 mr-2 border-2 border-white rounded-full animate-spin border-t-transparent" />
+                Guardando...
+              </>
+            ) : (
+              <>
+                <Save className="h-4 w-4 mr-2" />
+                Guardar
+              </>
+            )}
           </Button>
         </div>
       </div>

@@ -48,6 +48,15 @@ export function AddEquipmentModal({ isOpen, onClose, onSave, clinics = [], initi
     clinicId: "",
   })
   
+  // Estado para gestionar errores de validación
+  const [errors, setErrors] = useState<Record<string, boolean>>({
+    name: false,
+    code: false,
+    serialNumber: false,
+    description: false,
+    clinicId: false
+  })
+  
   // Estado para gestionar las imágenes
   const [images, setImages] = useState<DeviceImage[]>([])
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
@@ -113,7 +122,29 @@ export function AddEquipmentModal({ isOpen, onClose, onSave, clinics = [], initi
     setEquipmentData((prev) => ({ ...prev, [name]: value }))
   }
 
+  // Función de validación del formulario
+  const validateForm = (): boolean => {
+    const newErrors = {
+      name: equipmentData.name.trim() === "",
+      code: equipmentData.code.trim() === "",
+      serialNumber: equipmentData.serialNumber.trim() === "",
+      description: equipmentData.description.trim() === "",
+      clinicId: equipmentData.clinicId === ""
+    }
+    
+    setErrors(newErrors)
+    
+    // Retorna true si no hay errores (todos los campos requeridos están completos)
+    return !Object.values(newErrors).some(error => error)
+  }
+
   const handleSave = () => {
+    // Validar el formulario antes de proceder
+    if (!validateForm()) {
+      toast.error("Por favor, completa todos los campos obligatorios")
+      return
+    }
+    
     setIsSaving(true)
     
     // Guardar el tiempo de inicio para garantizar un tiempo mínimo de animación
@@ -207,6 +238,13 @@ export function AddEquipmentModal({ isOpen, onClose, onSave, clinics = [], initi
     setImages([])
     setCurrentImageIndex(0)
     setIsFormChanged(false)
+    setErrors({
+      name: false,
+      code: false,
+      serialNumber: false,
+      description: false,
+      clinicId: false
+    })
   }
 
   // Configurar dropzone para la carga de imágenes
@@ -298,67 +336,92 @@ export function AddEquipmentModal({ isOpen, onClose, onSave, clinics = [], initi
               ? "Modifica los detalles del equipamiento seleccionado" 
               : "Introduce los detalles del nuevo equipamiento"}
           </DialogDescription>
+          <p className="mt-2 text-xs text-gray-500">
+            Los campos marcados con <span className="text-red-500">*</span> son obligatorios
+          </p>
         </DialogHeader>
 
         <div className="flex-1 px-6 overflow-y-auto">
           <div className="grid gap-6 py-2">
             <div className="grid grid-cols-2 gap-6">
               <div className="space-y-3">
-                <Label htmlFor="name" className="text-sm font-medium">Nombre</Label>
+                <Label htmlFor="name" className="text-sm font-medium">
+                  Nombre <span className="text-red-500">*</span>
+                </Label>
                 <Input
                   id="name"
                   name="name"
-                  placeholder="Ej: Ballancer Pro"
+                  placeholder="Nombre del equipamiento"
                   value={equipmentData.name}
                   onChange={handleInputChange}
-                  className="h-10"
+                  className={`h-10 ${errors.name ? 'border-red-500 ring-red-500' : ''}`}
                 />
+                {errors.name && (
+                  <p className="text-xs text-red-500">Este campo es obligatorio</p>
+                )}
               </div>
 
               <div className="space-y-3">
-                <Label htmlFor="code" className="text-sm font-medium">Código</Label>
+                <Label htmlFor="code" className="text-sm font-medium">
+                  Código <span className="text-red-500">*</span>
+                </Label>
                 <Input
                   id="code"
                   name="code"
-                  placeholder="Ej: BALLA-01"
+                  placeholder="Código de referencia"
                   value={equipmentData.code}
                   onChange={handleInputChange}
-                  className="h-10"
+                  className={`h-10 ${errors.code ? 'border-red-500 ring-red-500' : ''}`}
                 />
+                {errors.code && (
+                  <p className="text-xs text-red-500">Este campo es obligatorio</p>
+                )}
               </div>
             </div>
 
             <div className="space-y-3">
-              <Label htmlFor="serialNumber" className="text-sm font-medium">Número de serie</Label>
+              <Label htmlFor="serialNumber" className="text-sm font-medium">
+                Número de serie <span className="text-red-500">*</span>
+              </Label>
               <Input
                 id="serialNumber"
                 name="serialNumber"
-                placeholder="Ej: SN-2023-001"
+                placeholder="Número de serie del fabricante"
                 value={equipmentData.serialNumber}
                 onChange={handleInputChange}
-                className="h-10"
+                className={`h-10 ${errors.serialNumber ? 'border-red-500 ring-red-500' : ''}`}
               />
+              {errors.serialNumber && (
+                <p className="text-xs text-red-500">Este campo es obligatorio</p>
+              )}
             </div>
 
             <div className="space-y-3">
-              <Label htmlFor="description" className="text-sm font-medium">Descripción</Label>
+              <Label htmlFor="description" className="text-sm font-medium">
+                Descripción <span className="text-red-500">*</span>
+              </Label>
               <Textarea
                 id="description"
                 name="description"
-                placeholder="Ej: Equipo para presoterapia"
+                placeholder="Descripción del equipamiento"
                 value={equipmentData.description}
                 onChange={handleInputChange}
-                className="min-h-[100px] resize-none"
+                className={`min-h-[100px] resize-none ${errors.description ? 'border-red-500 ring-red-500' : ''}`}
               />
+              {errors.description && (
+                <p className="text-xs text-red-500">Este campo es obligatorio</p>
+              )}
             </div>
 
             <div className="space-y-3">
-              <Label htmlFor="clinicId" className="text-sm font-medium">Clínica</Label>
+              <Label htmlFor="clinicId" className="text-sm font-medium">
+                Clínica <span className="text-red-500">*</span>
+              </Label>
               <Select
                 value={equipmentData.clinicId}
                 onValueChange={(value) => handleSelectChange("clinicId", value)}
               >
-                <SelectTrigger className="h-10">
+                <SelectTrigger className={`h-10 ${errors.clinicId ? 'border-red-500 ring-red-500' : ''}`}>
                   <SelectValue placeholder="Selecciona una clínica" />
                 </SelectTrigger>
                 <SelectContent>
@@ -369,6 +432,9 @@ export function AddEquipmentModal({ isOpen, onClose, onSave, clinics = [], initi
                   ))}
                 </SelectContent>
               </Select>
+              {errors.clinicId && (
+                <p className="text-xs text-red-500">Este campo es obligatorio</p>
+              )}
             </div>
 
             {/* Columna con el carrusel de imágenes */}
