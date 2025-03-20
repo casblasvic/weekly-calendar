@@ -3,6 +3,13 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react"
 import { useRouter } from "next/navigation"
 
+// Interfaz para representar un Consumo
+interface Consumo {
+  id: string
+  cantidad: number
+  tipoConsumo: string
+}
+
 // Interfaz para representar un Servicio
 export interface Servicio {
   id: string
@@ -30,6 +37,7 @@ export interface Servicio {
   precioCoste: string
   tarifaPlanaId: string
   archivoAyuda: string | null
+  consumos: Consumo[]
 }
 
 interface ServicioContextType {

@@ -13,7 +13,7 @@ import { useFamily } from "@/contexts/family-context"
 import { Card, CardContent } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { 
+import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -94,6 +94,7 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
   const [currentServicioId, setCurrentServicioId] = useState<string | null>(null);
   
   const [servicio, setServicio] = useState({
+    id: "",
     nombre: "",
     codigo: "",
     tarifaId: tarifaId,
@@ -232,6 +233,11 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
         setServicio({
           ...servicioExistente,
           tarifaBase: tarifa?.nombre || "Tarifa Base",
+          consumos: servicioExistente.consumos || [{
+            id: generateId(),
+            cantidad: 1,
+            tipoConsumo: "Unidades"
+          }]
         });
       }
     }
@@ -242,9 +248,8 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
     if (familias && familias.length > 0) {
       console.log("Familias disponibles:", familias);
       console.log("Primera familia:", familias[0]);
-      // Comprueba si las familias tienen la propiedad 'nombre' o 'name'
-      const propiedadNombre = familias[0].nombre ? 'nombre' : (familias[0].name ? 'name' : 'desconocido');
-      console.log("Propiedad para el nombre:", propiedadNombre);
+      // Comprueba si las familias tienen la propiedad name
+      console.log("Nombre de la familia:", familias[0].name);
     }
   }, [familias]);
 
@@ -328,8 +333,8 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
       tarifaId: tarifaId,
       // Asegurarse de que los campos críticos estén presentes
       ivaId: servicio.ivaId,
-      familiaId: servicio.familiaId || null,
-      precioSinIVA: calcularPrecioSinIVA(servicio.precioConIVA, servicio.ivaId),
+      familiaId: servicio.familiaId || "",
+      precioSinIVA: calcularPrecioSinIVA(parseFloat(servicio.precioConIVA), servicio.ivaId),
     };
 
     // Log para debug
@@ -366,27 +371,21 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
     return (
       <div key={agente.id} className="relative">
         <TooltipProvider>
-          <Tooltip content={
-            <div>
-              <p>{agente.nombre}</p>
-              <p className="text-xs">{agente.estado === 'disponible' ? 'Disponible' : 'Ocupado'}</p>
-            </div>
-          }>
-            <TooltipTrigger>
-              <Avatar 
-                className={`cursor-pointer ${agenteSeleccionado === agente.id ? 'ring-2 ring-purple-500' : ''} ${agente.estado === 'disponible' ? '' : 'opacity-50'}`}
-                onClick={() => agente.estado === 'disponible' && setAgenteSeleccionado(agente.id)}
-              >
-                <AvatarImage src={agente.avatar} alt={agente.nombre} />
-                <AvatarFallback>{agente.nombre.substring(0, 2)}</AvatarFallback>
-              </Avatar>
-            </TooltipTrigger>
-            <TooltipContent>
+          <Tooltip
+            content={
               <div>
                 <p>{agente.nombre}</p>
                 <p className="text-xs">{agente.estado === 'disponible' ? 'Disponible' : 'Ocupado'}</p>
               </div>
-            </TooltipContent>
+            }
+          >
+            <Avatar 
+              className={`cursor-pointer ${agenteSeleccionado === agente.id ? 'ring-2 ring-purple-500' : ''} ${agente.estado === 'disponible' ? '' : 'opacity-50'}`}
+              onClick={() => agente.estado === 'disponible' && setAgenteSeleccionado(agente.id)}
+            >
+              <AvatarImage src={agente.avatar} alt={agente.nombre} />
+              <AvatarFallback>{agente.nombre.substring(0, 2)}</AvatarFallback>
+            </Avatar>
           </Tooltip>
         </TooltipProvider>
       </div>
@@ -464,8 +463,8 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   return (
-    <div className="max-w-5xl mx-auto py-8 px-4">
-      <h1 className="text-xl font-semibold mb-6">Datos del servicio</h1>
+    <div className="max-w-5xl px-4 py-8 mx-auto">
+      <h1 className="mb-6 text-xl font-semibold">Datos del servicio</h1>
       
       <Card>
         <CardContent className="pt-6 pb-6">
@@ -473,12 +472,12 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
             {/* Columna Izquierda */}
             <div>
               <div className="mb-4">
-                <div className="text-sm text-gray-500 mb-1">Tarifa</div>
+                <div className="mb-1 text-sm text-gray-500">Tarifa</div>
                 <div className="text-sm font-medium">{servicio.tarifaBase}</div>
               </div>
               
               <div className="mb-4">
-                <label htmlFor="nombre" className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="nombre" className="block mb-1 text-sm font-medium text-gray-700">
                   Nombre <span className="text-red-500">*</span>
                 </label>
                 <Input
@@ -487,13 +486,13 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
                   value={servicio.nombre}
                   onChange={handleInputChange}
                   placeholder="Nombre del servicio"
-                  className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                  className="w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                   required
                 />
               </div>
               
               <div className="mb-4">
-                <label htmlFor="codigo" className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="codigo" className="block mb-1 text-sm font-medium text-gray-700">
                   Código <span className="text-red-500">*</span>
                 </label>
                 <Input
@@ -502,7 +501,7 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
                   value={servicio.codigo}
                   onChange={handleInputChange}
                   placeholder="Ej: SRV001"
-                  className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                  className="w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                   required
                 />
               </div>
@@ -522,8 +521,7 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
                     <SelectItem value="placeholder">Seleccionar...</SelectItem>
                     {familias.map((familia) => (
                       <SelectItem key={familia.id} value={familia.id}>
-                        {/* Usar nombre o name, dependiendo de cuál esté disponible */}
-                        {familia.nombre || familia.name || `Familia ${familia.id}`}
+                        {familia.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -531,7 +529,7 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
               </div>
               
               <div className="mb-4">
-                <label htmlFor="precioConIVA" className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="precioConIVA" className="block mb-1 text-sm font-medium text-gray-700">
                   Precio con IVA
                 </label>
                 <Input
@@ -543,12 +541,12 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
                   value={servicio.precioConIVA}
                   onChange={handleInputChange}
                   placeholder="0.00"
-                  className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                  className="w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                 />
               </div>
               
               <div className="mb-4">
-                <label htmlFor="iva" className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="iva" className="block mb-1 text-sm font-medium text-gray-700">
                   IVA
                 </label>
                 <Select
@@ -569,7 +567,7 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
               </div>
               
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block mb-1 text-sm font-medium text-gray-700">
                   Cuando el servicio o producto forma parte de un paquete:
                 </label>
                 <Select
@@ -588,7 +586,7 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
               
               <div className="grid grid-cols-2 gap-4 mb-4">
                 <div>
-                  <label htmlFor="consumo" className="block text-sm font-medium text-gray-700 mb-1">
+                  <label htmlFor="consumo" className="block mb-1 text-sm font-medium text-gray-700">
                     Consumo
                   </label>
                   <Input
@@ -602,11 +600,11 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
                       consumos[0].cantidad = Number(e.target.value);
                       setServicio({...servicio, consumos});
                     }}
-                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                    className="w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                   />
                 </div>
                 <div>
-                  <label htmlFor="tipoConsumo" className="block text-sm font-medium text-gray-700 mb-1">
+                  <label htmlFor="tipoConsumo" className="block mb-1 text-sm font-medium text-gray-700">
                     Tipo de consumo
                   </label>
                   <Select
@@ -632,7 +630,7 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
               </div>
               
               <div className="mb-4">
-                <label htmlFor="precioCoste" className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="precioCoste" className="block mb-1 text-sm font-medium text-gray-700">
                   Precio de coste
                 </label>
                 <Input
@@ -644,7 +642,7 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
                   value={servicio.precioCoste}
                   onChange={handleInputChange}
                   placeholder="0.00"
-                  className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                  className="w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                 />
               </div>
             </div>
@@ -652,7 +650,7 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
             {/* Columna Derecha */}
             <div>
               <div className="mb-4">
-                <label htmlFor="colorAgenda" className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="colorAgenda" className="block mb-1 text-sm font-medium text-gray-700">
                   Color en agenda
                 </label>
                 <Select
@@ -676,44 +674,44 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
               </div>
               
               <div className="mb-4">
-                <label htmlFor="duracion" className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="duracion" className="block mb-1 text-sm font-medium text-gray-700">
                   Duración
                 </label>
                 <div className="flex rounded-md">
-                  <div className="relative flex flex-grow items-stretch focus-within:z-10">
+                  <div className="relative flex items-stretch flex-grow focus-within:z-10">
                     <Input
                       id="duracion"
                       name="duracion"
                       value={formatearDuracion(servicio.duracion)}
                       readOnly
                       placeholder="00:00 (hh:mm)"
-                      className="rounded-md rounded-r-none border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                      className="border-gray-300 rounded-md rounded-r-none shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                     />
                     <div className="absolute inset-y-0 right-0 flex flex-col">
                       <button
                         type="button"
-                        className="flex-1 inline-flex items-center justify-center border border-transparent px-1 text-gray-500 hover:text-gray-700"
+                        className="inline-flex items-center justify-center flex-1 px-1 text-gray-500 border border-transparent hover:text-gray-700"
                         onClick={() => handleDuracionChange(5)}
                       >
-                        <ChevronUp className="h-3 w-3" />
+                        <ChevronUp className="w-3 h-3" />
                       </button>
                       <button
                         type="button"
-                        className="flex-1 inline-flex items-center justify-center border border-transparent px-1 text-gray-500 hover:text-gray-700"
+                        className="inline-flex items-center justify-center flex-1 px-1 text-gray-500 border border-transparent hover:text-gray-700"
                         onClick={() => handleDuracionChange(-5)}
                       >
-                        <ChevronDown className="h-3 w-3" />
+                        <ChevronDown className="w-3 h-3" />
                       </button>
                     </div>
                   </div>
-                  <span className="inline-flex items-center rounded-r-md border border-l-0 border-gray-300 bg-gray-50 px-3 text-sm text-gray-500">
+                  <span className="inline-flex items-center px-3 text-sm text-gray-500 border border-l-0 border-gray-300 rounded-r-md bg-gray-50">
                     Minutos
                   </span>
                 </div>
               </div>
               
               <div className="mb-4">
-                <label htmlFor="equipo" className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="equipo" className="block mb-1 text-sm font-medium text-gray-700">
                   Equipo
                 </label>
                 <Select
@@ -732,7 +730,7 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
               
               <div className="grid grid-cols-2 gap-4 mb-4">
                 <div>
-                  <label htmlFor="tipoComision" className="block text-sm font-medium text-gray-700 mb-1">
+                  <label htmlFor="tipoComision" className="block mb-1 text-sm font-medium text-gray-700">
                     Tipo de comisión
                   </label>
                   <Select
@@ -752,7 +750,7 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
                   </Select>
                 </div>
                 <div>
-                  <label htmlFor="comision" className="block text-sm font-medium text-gray-700 mb-1">
+                  <label htmlFor="comision" className="block mb-1 text-sm font-medium text-gray-700">
                     Comisión
                   </label>
                   <Input
@@ -764,18 +762,18 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
                     value={servicio.comision}
                     onChange={handleInputChange}
                     placeholder={servicio.tipoComision === "Porcentaje" ? "0" : "0.00"}
-                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                    className="w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                   />
                 </div>
               </div>
               
-              <div className="space-y-2 mb-4">
+              <div className="mb-4 space-y-2">
                 <div className="flex items-center">
                   <Checkbox
                     id="requiereParametros"
                     checked={servicio.requiereParametros}
                     onCheckedChange={(checked) => handleCheckboxChange("requiereParametros", !!checked)}
-                    className="border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                    className="text-indigo-600 border-gray-300 focus:ring-indigo-500"
                   />
                   <label htmlFor="requiereParametros" className="ml-2 text-sm">Requiere parámetros</label>
                 </div>
@@ -785,7 +783,7 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
                     id="visitaValoracion"
                     checked={servicio.visitaValoracion}
                     onCheckedChange={(checked) => handleCheckboxChange("visitaValoracion", !!checked)}
-                    className="border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                    className="text-indigo-600 border-gray-300 focus:ring-indigo-500"
                   />
                   <label htmlFor="visitaValoracion" className="ml-2 text-sm">Visita de valoración</label>
                 </div>
@@ -795,7 +793,7 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
                     id="apareceEnApp"
                     checked={servicio.apareceEnApp}
                     onCheckedChange={(checked) => handleCheckboxChange("apareceEnApp", !!checked)}
-                    className="border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                    className="text-indigo-600 border-gray-300 focus:ring-indigo-500"
                   />
                   <label htmlFor="apareceEnApp" className="ml-2 text-sm">Aparece en App / Self</label>
                 </div>
@@ -805,7 +803,7 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
                     id="descuentosAutomaticos"
                     checked={servicio.descuentosAutomaticos}
                     onCheckedChange={(checked) => handleCheckboxChange("descuentosAutomaticos", !!checked)}
-                    className="border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                    className="text-indigo-600 border-gray-300 focus:ring-indigo-500"
                   />
                   <label htmlFor="descuentosAutomaticos" className="ml-2 text-sm">Descuentos automáticos</label>
                 </div>
@@ -815,7 +813,7 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
                     id="descuentosManuales"
                     checked={servicio.descuentosManuales}
                     onCheckedChange={(checked) => handleCheckboxChange("descuentosManuales", !!checked)}
-                    className="border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                    className="text-indigo-600 border-gray-300 focus:ring-indigo-500"
                   />
                   <label htmlFor="descuentosManuales" className="ml-2 text-sm">Descuentos manuales</label>
                 </div>
@@ -825,7 +823,7 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
                     id="aceptaPromociones"
                     checked={servicio.aceptaPromociones}
                     onCheckedChange={(checked) => handleCheckboxChange("aceptaPromociones", !!checked)}
-                    className="border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                    className="text-indigo-600 border-gray-300 focus:ring-indigo-500"
                   />
                   <label htmlFor="aceptaPromociones" className="ml-2 text-sm">Acepta promociones</label>
                 </div>
@@ -835,7 +833,7 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
                     id="aceptaEdicionPVP"
                     checked={servicio.aceptaEdicionPVP}
                     onCheckedChange={(checked) => handleCheckboxChange("aceptaEdicionPVP", !!checked)}
-                    className="border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                    className="text-indigo-600 border-gray-300 focus:ring-indigo-500"
                   />
                   <label htmlFor="aceptaEdicionPVP" className="ml-2 text-sm">Acepta edición PVP</label>
                 </div>
@@ -845,7 +843,7 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
                     id="afectaEstadisticas"
                     checked={servicio.afectaEstadisticas}
                     onCheckedChange={(checked) => handleCheckboxChange("afectaEstadisticas", !!checked)}
-                    className="border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                    className="text-indigo-600 border-gray-300 focus:ring-indigo-500"
                   />
                   <label htmlFor="afectaEstadisticas" className="ml-2 text-sm">Afecta estadísticas</label>
                 </div>
@@ -855,7 +853,7 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
                     id="deshabilitado"
                     checked={servicio.deshabilitado}
                     onCheckedChange={(checked) => handleCheckboxChange("deshabilitado", !!checked)}
-                    className="border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                    className="text-indigo-600 border-gray-300 focus:ring-indigo-500"
                   />
                   <label htmlFor="deshabilitado" className="ml-2 text-sm">Deshabilitado</label>
                 </div>
@@ -864,10 +862,10 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
               <div className="mt-6">
                 <Button
                   type="button"
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                  className="text-white bg-indigo-600 hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
                   onClick={() => {}}
                 >
-                  <FileQuestion className="h-4 w-4 mr-2" />
+                  <FileQuestion className="w-4 h-4 mr-2" />
                   Archivo De Ayuda
                 </Button>
                 <input
@@ -940,8 +938,8 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
           >
             {isSaving ? (
               <>
-                <span className="animate-spin mr-2">
-                  <svg className="h-4 w-4" viewBox="0 0 24 24">
+                <span className="mr-2 animate-spin">
+                  <svg className="w-4 h-4" viewBox="0 0 24 24">
                     <circle 
                       className="opacity-25" 
                       cx="12" 
@@ -963,7 +961,7 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
               "Guardar"
             )}
           </Button>
-          <HelpButton text="Ayuda para la creación de servicios" />
+          <HelpButton content="Ayuda para la creación de servicios" />
         </div>
       </div>
 
@@ -972,17 +970,17 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
         open={mostrarModalCamposObligatorios}
         onOpenChange={setMostrarModalCamposObligatorios}
       >
-        <DialogContent className="sm:max-w-md text-center">
+        <DialogContent className="text-center sm:max-w-md">
           <DialogHeader className="pb-2">
             <DialogTitle className="flex items-center justify-center text-red-600">
-              <AlertCircle className="h-6 w-6 mr-2" />
+              <AlertCircle className="w-6 h-6 mr-2" />
               Datos incompletos
             </DialogTitle>
           </DialogHeader>
           <div className="py-4">
-            <div className="text-sm text-muted-foreground mb-4">
+            <div className="mb-4 text-sm text-muted-foreground">
               <span className="block mb-3">Debe completar los siguientes campos obligatorios antes de configurar consumos:</span>
-              <ul className="list-disc pl-5 mb-3 text-left inline-block">
+              <ul className="inline-block pl-5 mb-3 text-left list-disc">
                 {camposFaltantes.map((campo, index) => (
                   <li key={index} className="text-red-600">{campo}</li>
                 ))}
@@ -1002,22 +1000,22 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
 
       {/* Modal de confirmación para guardar servicio */}
       <Dialog open={mostrarModalConfirmacion} onOpenChange={setMostrarModalConfirmacion}>
-        <DialogContent className="sm:max-w-md p-6">
+        <DialogContent className="p-6 sm:max-w-md">
           <DialogHeader className="pb-2">
             <DialogTitle className="flex items-center text-xl">
-              <Save className="h-5 w-5 mr-2" />
+              <Save className="w-5 h-5 mr-2" />
               Guardar servicio
             </DialogTitle>
           </DialogHeader>
-          <div className="py-4 px-2">
-            <p className="text-gray-700 mb-3">
+          <div className="px-2 py-4">
+            <p className="mb-3 text-gray-700">
               El servicio no ha sido guardado. Se creará automáticamente para poder continuar.
             </p>
             <p className="font-medium text-gray-800">
               ¿Desea continuar?
             </p>
           </div>
-          <DialogFooter className="space-x-3 pt-2">
+          <DialogFooter className="pt-2 space-x-3">
             <Button 
               variant="outline" 
               onClick={() => setMostrarModalConfirmacion(false)}
@@ -1025,7 +1023,7 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
               Cancelar
             </Button>
             <Button 
-              className="bg-indigo-600 hover:bg-indigo-700 text-white"
+              className="text-white bg-indigo-600 hover:bg-indigo-700"
               onClick={guardarServicioYNavegar}
               disabled={isSaving}
             >
