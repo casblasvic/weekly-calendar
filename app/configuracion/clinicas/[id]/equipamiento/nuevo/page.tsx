@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { useState, useCallback } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -11,16 +11,17 @@ import { Card } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { ArrowLeft, Save, HelpCircle, Upload, X, ChevronLeft, ChevronRight, StarIcon } from "lucide-react"
 import Image from "next/image"
-
-// Interfaz para las imágenes
-interface DeviceImage {
-  id: string;
-  url: string;
-  isPrimary: boolean;
-}
+import { toast } from "sonner"
+import { useEquipment, DeviceImage } from "@/contexts/equipment-context"
 
 export default function NewEquipmentPage({ params }: { params: { id: string } }) {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const { addEquipment } = useEquipment()
+  
+  const fromGlobal = searchParams.get("from") === "global"
+  
+  const [isSaving, setIsSaving] = useState(false)
   const [equipmentData, setEquipmentData] = useState({
     name: "",
     code: "",
@@ -30,7 +31,6 @@ export default function NewEquipmentPage({ params }: { params: { id: string } })
     flowwIntegration: "Ninguna",
   })
   
-  // Estado para gestionar las imágenes
   const [images, setImages] = useState<DeviceImage[]>([])
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
 
@@ -40,25 +40,49 @@ export default function NewEquipmentPage({ params }: { params: { id: string } })
   }
 
   const handleSave = () => {
-    // Aquí iría la lógica para guardar el equipamiento incluidas las imágenes
-    console.log("Guardando equipamiento:", equipmentData, images)
-    router.push(`/configuracion/clinicas/${params.id}/equipamiento`)
+    setIsSaving(true)
+    try {
+      const newEquipment = addEquipment({
+        ...equipmentData,
+        clinicId: Number(params.id),
+        images
+      })
+      
+      if (newEquipment && newEquipment.id) {
+        toast.success("Equipamiento añadido correctamente")
+        const fromParam = fromGlobal ? "?from=global" : ""
+        router.push(`/configuracion/clinicas/${params.id}/equipamiento/${newEquipment.id}${fromParam}`)
+      } else {
+        toast.error("Error al guardar el equipamiento")
+        setIsSaving(false)
+      }
+    } catch (error) {
+      console.error("Error:", error)
+      toast.error("Error al añadir el equipamiento")
+      setIsSaving(false)
+    }
   }
 
-  // Función para manejar la carga de archivos
+  const handleBack = () => {
+    if (fromGlobal) {
+      router.push('/configuracion/equipamiento')
+    } else {
+      router.push(`/configuracion/clinicas/${params.id}?tab=equipamiento`)
+    }
+  }
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       const newImages: DeviceImage[] = Array.from(e.target.files).map(file => ({
         id: Math.random().toString(36).substring(2, 9),
         url: URL.createObjectURL(file),
-        isPrimary: images.length === 0 // La primera imagen es la principal por defecto
+        isPrimary: images.length === 0
       }));
       
       setImages([...images, ...newImages]);
     }
   }
 
-  // Función para cambiar la imagen principal
   const setAsPrimary = (id: string) => {
     setImages(images.map(img => ({
       ...img,
@@ -66,7 +90,6 @@ export default function NewEquipmentPage({ params }: { params: { id: string } })
     })));
   }
 
-  // Eliminar una imagen
   const removeImage = (id: string) => {
     setImages(images.filter(img => img.id !== id));
     if (currentImageIndex >= images.length - 1) {
@@ -74,7 +97,6 @@ export default function NewEquipmentPage({ params }: { params: { id: string } })
     }
   }
 
-  // Navegar por el carrusel
   const nextImage = () => {
     if (currentImageIndex < images.length - 1) {
       setCurrentImageIndex(currentImageIndex + 1);
@@ -90,7 +112,7 @@ export default function NewEquipmentPage({ params }: { params: { id: string } })
   return (
     <div className="container mx-auto p-6 space-y-6 max-w-4xl pt-16">
       <div className="flex items-center gap-4 mb-6">
-        <Button variant="ghost" onClick={() => router.back()}>
+        <Button variant="ghost" onClick={handleBack}>
           <ArrowLeft className="h-4 w-4 mr-2" />
           Volver
         </Button>
@@ -98,7 +120,6 @@ export default function NewEquipmentPage({ params }: { params: { id: string } })
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Sección de información de equipamiento */}
         <Card className="p-6">
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
@@ -177,7 +198,6 @@ export default function NewEquipmentPage({ params }: { params: { id: string } })
           </div>
         </Card>
 
-        {/* Sección de imágenes - Carrusel */}
         <Card className="p-6">
           <div className="space-y-4">
             <Label>Imágenes del dispositivo</Label>
@@ -193,7 +213,6 @@ export default function NewEquipmentPage({ params }: { params: { id: string } })
                       className="object-contain"
                     />
                     
-                    {/* Indicador de imagen principal */}
                     {images[currentImageIndex].isPrimary && (
                       <div className="absolute top-2 left-2 bg-yellow-100 text-yellow-700 px-2 py-1 rounded-md text-xs font-medium flex items-center">
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="currentColor" viewBox="0 0 24 24">
@@ -203,7 +222,6 @@ export default function NewEquipmentPage({ params }: { params: { id: string } })
                       </div>
                     )}
                     
-                    {/* Botones de navegación */}
                     {images.length > 1 && (
                       <>
                         <button 
@@ -232,7 +250,6 @@ export default function NewEquipmentPage({ params }: { params: { id: string } })
               )}
             </div>
             
-            {/* Selector de archivos */}
             <div className="flex justify-center">
               <label className="flex items-center justify-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 cursor-pointer">
                 <Upload className="mr-2 h-4 w-4" />
@@ -247,7 +264,6 @@ export default function NewEquipmentPage({ params }: { params: { id: string } })
               </label>
             </div>
             
-            {/* Miniaturas */}
             {images.length > 0 && (
               <div className="grid grid-cols-4 gap-2 mt-4">
                 {images.map((img, index) => (
@@ -294,7 +310,6 @@ export default function NewEquipmentPage({ params }: { params: { id: string } })
         </Card>
       </div>
 
-      {/* Botones de parámetros */}
       <div className="flex gap-2">
         <Button variant="outline" disabled>
           Parámetro I
@@ -307,12 +322,11 @@ export default function NewEquipmentPage({ params }: { params: { id: string } })
         </Button>
       </div>
 
-      {/* Botones fijos inferiores */}
       <div className="fixed bottom-0 left-0 right-0 py-4 px-6 bg-background border-t">
         <div className="flex justify-between container mx-auto max-w-4xl">
           <Button 
             variant="outline" 
-            onClick={() => router.push(`/configuracion/clinicas/${params.id}/equipamiento`)}
+            onClick={handleBack}
           >
             Cancelar
           </Button>

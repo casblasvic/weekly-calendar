@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -10,12 +10,16 @@ import {
   DialogContent, 
   DialogHeader, 
   DialogTitle, 
-  DialogFooter 
+  DialogFooter,
+  DialogDescription
 } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Save, Upload, X, ChevronLeft, ChevronRight, Plus } from "lucide-react"
 import Image from "next/image"
 import { useDropzone } from "react-dropzone"
+import { useEquipment } from "@/contexts/equipment-context"
+import { toast } from "sonner"
+import { useRouter } from "next/navigation"
 
 // Interfaz para las imágenes
 interface DeviceImage {
@@ -30,9 +34,12 @@ interface AddEquipmentModalProps {
   onClose: () => void;
   onSave: (data: any) => void;
   clinics?: { id: number; name: string }[];
+  initialEquipment?: any; // Para edición
+  isEditMode?: boolean; // Para distinguir entre añadir y editar
 }
 
-export function AddEquipmentModal({ isOpen, onClose, onSave, clinics = [] }: AddEquipmentModalProps) {
+export function AddEquipmentModal({ isOpen, onClose, onSave, clinics = [], initialEquipment = null, isEditMode = false }: AddEquipmentModalProps) {
+  const { addEquipment, updateEquipment } = useEquipment()
   const [equipmentData, setEquipmentData] = useState({
     name: "",
     code: "",
@@ -44,6 +51,27 @@ export function AddEquipmentModal({ isOpen, onClose, onSave, clinics = [] }: Add
   // Estado para gestionar las imágenes
   const [images, setImages] = useState<DeviceImage[]>([])
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
+  const router = useRouter()
+  const [isSaving, setIsSaving] = useState(false)
+
+  // Cargar datos iniciales si estamos en modo edición
+  useEffect(() => {
+    if (isEditMode && initialEquipment) {
+      setEquipmentData({
+        name: initialEquipment.name || "",
+        code: initialEquipment.code || "",
+        serialNumber: initialEquipment.serialNumber || "",
+        description: initialEquipment.description || "",
+        clinicId: initialEquipment.clinicId ? String(initialEquipment.clinicId) : "",
+      })
+
+      if (initialEquipment.images && initialEquipment.images.length > 0) {
+        setImages(initialEquipment.images)
+      }
+    } else {
+      resetForm()
+    }
+  }, [isOpen, initialEquipment, isEditMode])
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
@@ -55,16 +83,55 @@ export function AddEquipmentModal({ isOpen, onClose, onSave, clinics = [] }: Add
   }
 
   const handleSave = () => {
-    // Preparamos los datos para enviar, incluyendo las imágenes
-    onSave({
-      ...equipmentData,
-      images: images.map(img => ({
-        file: img.file,
-        isPrimary: img.isPrimary
-      }))
-    })
-    resetForm()
-    onClose()
+    setIsSaving(true)
+    try {
+      if (isEditMode && initialEquipment) {
+        // Actualizar equipamiento existente
+        const success = updateEquipment(initialEquipment.id, {
+          ...equipmentData,
+          id: initialEquipment.id,
+          clinicId: Number(equipmentData.clinicId),
+          images
+        })
+        
+        if (success) {
+          toast.success("Equipamiento actualizado correctamente")
+          // No cerramos el modal aquí para que el usuario pueda seguir editando
+        } else {
+          toast.error("Error al actualizar el equipamiento")
+        }
+      } else {
+        // Añadir nuevo equipamiento
+        const newEquipment = addEquipment({
+          ...equipmentData,
+          clinicId: Number(equipmentData.clinicId),
+          images
+        })
+        
+        if (newEquipment) {
+          toast.success("Equipamiento añadido correctamente")
+          // No cerramos el modal aquí, permitimos que el usuario siga editando
+          
+          // Si es nuevo, actualizamos los datos con el nuevo equipamiento
+          if (!isEditMode) {
+            setEquipmentData({
+              name: newEquipment.name,
+              code: newEquipment.code,
+              serialNumber: newEquipment.serialNumber || "",
+              description: newEquipment.description || "",
+              clinicId: String(newEquipment.clinicId),
+            })
+          }
+        } else {
+          toast.error("Error al añadir el equipamiento")
+        }
+      }
+    } catch (error) {
+      console.error("Error al guardar equipamiento:", error)
+      toast.error(isEditMode ? "Error al actualizar el equipamiento" : "Error al añadir el equipamiento")
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   const resetForm = () => {
@@ -145,118 +212,119 @@ export function AddEquipmentModal({ isOpen, onClose, onSave, clinics = [] }: Add
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-3xl p-8">
+      <DialogContent className="sm:max-w-[650px] p-6">
         <DialogHeader className="mb-6">
-          <DialogTitle className="text-xl">Añadir nuevo equipamiento</DialogTitle>
+          <DialogTitle className="text-xl">{isEditMode ? "Editar equipamiento" : "Añadir nuevo equipamiento"}</DialogTitle>
+          <DialogDescription className="mt-1 text-gray-500">
+            {isEditMode 
+              ? "Modifica los detalles del equipamiento seleccionado" 
+              : "Introduce los detalles del nuevo equipamiento"}
+          </DialogDescription>
         </DialogHeader>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-6">
-          {/* Columna izquierda con los datos del equipo */}
-          <div className="space-y-6">
+        <div className="grid gap-6 py-4">
+          <div className="grid grid-cols-2 gap-6">
             <div className="space-y-3">
-              <Label htmlFor="clinicId" className="text-sm font-medium">Clínica</Label>
-              <Select
-                value={equipmentData.clinicId}
-                onValueChange={(value) => handleSelectChange("clinicId", value)}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Seleccionar clínica" />
-                </SelectTrigger>
-                <SelectContent>
-                  {clinics.map(clinic => (
-                    <SelectItem key={clinic.id} value={clinic.id.toString()}>
-                      {clinic.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-6">
-              <div className="space-y-3">
-                <Label htmlFor="code" className="text-sm font-medium">Código</Label>
-                <Input
-                  id="code"
-                  name="code"
-                  value={equipmentData.code}
-                  onChange={handleInputChange}
-                  placeholder="Ej: BALLA-1"
-                  className="w-full"
-                />
-              </div>
-
-              <div className="space-y-3">
-                <Label htmlFor="name" className="text-sm font-medium">Nombre</Label>
-                <Input
-                  id="name"
-                  name="name"
-                  value={equipmentData.name}
-                  onChange={handleInputChange}
-                  placeholder="Ej: Ballancer"
-                  className="w-full"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <Label htmlFor="serialNumber" className="text-sm font-medium">Número de serie</Label>
+              <Label htmlFor="name" className="text-sm font-medium">Nombre</Label>
               <Input
-                id="serialNumber"
-                name="serialNumber"
-                value={equipmentData.serialNumber}
+                id="name"
+                name="name"
+                placeholder="Ej: Ballancer Pro"
+                value={equipmentData.name}
                 onChange={handleInputChange}
-                placeholder="Ej: BL-2023-001"
-                className="w-full"
+                className="h-10"
               />
             </div>
 
             <div className="space-y-3">
-              <Label htmlFor="description" className="text-sm font-medium">Descripción</Label>
-              <Textarea
-                id="description"
-                name="description"
-                value={equipmentData.description}
+              <Label htmlFor="code" className="text-sm font-medium">Código</Label>
+              <Input
+                id="code"
+                name="code"
+                placeholder="Ej: BALLA-01"
+                value={equipmentData.code}
                 onChange={handleInputChange}
-                placeholder="Descripción del equipamiento"
-                rows={3}
-                className="w-full"
+                className="h-10"
               />
             </div>
           </div>
 
-          {/* Columna derecha con el carrusel de imágenes */}
-          <div className="space-y-4">
-            <Label>Fotografías del equipo</Label>
+          <div className="space-y-3">
+            <Label htmlFor="serialNumber" className="text-sm font-medium">Número de serie</Label>
+            <Input
+              id="serialNumber"
+              name="serialNumber"
+              placeholder="Ej: SN-2023-001"
+              value={equipmentData.serialNumber}
+              onChange={handleInputChange}
+              className="h-10"
+            />
+          </div>
+
+          <div className="space-y-3">
+            <Label htmlFor="description" className="text-sm font-medium">Descripción</Label>
+            <Textarea
+              id="description"
+              name="description"
+              placeholder="Ej: Equipo para presoterapia"
+              value={equipmentData.description}
+              onChange={handleInputChange}
+              className="min-h-[100px] resize-none"
+            />
+          </div>
+
+          <div className="space-y-3">
+            <Label htmlFor="clinicId" className="text-sm font-medium">Clínica</Label>
+            <Select
+              value={equipmentData.clinicId}
+              onValueChange={(value) => handleSelectChange("clinicId", value)}
+            >
+              <SelectTrigger className="h-10">
+                <SelectValue placeholder="Selecciona una clínica" />
+              </SelectTrigger>
+              <SelectContent>
+                {clinics.map((clinic) => (
+                  <SelectItem key={clinic.id} value={String(clinic.id)}>
+                    {clinic.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Columna con el carrusel de imágenes */}
+          <div className="mt-2 space-y-4">
+            <Label className="text-sm font-medium">Fotografías del equipo</Label>
             
             {/* Área para subir imágenes */}
             {images.length === 0 ? (
               <div 
                 {...getRootProps()} 
                 className={`
-                  border-2 border-dashed rounded-lg p-6
+                  border-2 border-dashed rounded-lg p-8
                   transition-colors duration-200 ease-in-out
                   text-center cursor-pointer h-48 flex flex-col items-center justify-center
                   ${isDragActive ? "border-purple-400 bg-purple-50" : "border-gray-300 hover:border-purple-400"}
                 `}
               >
                 <input {...getInputProps()} />
-                <div className="rounded-full bg-purple-100 p-2 mb-2">
-                  <Upload className="h-5 w-5 text-purple-600" />
+                <div className="p-3 mb-3 bg-purple-100 rounded-full">
+                  <Upload className="w-6 h-6 text-purple-600" />
                 </div>
-                <p className="text-sm text-gray-600">
+                <p className="mb-2 text-sm text-gray-600">
                   {isDragActive 
                     ? "Suelta las imágenes aquí..." 
                     : "Arrastra imágenes aquí o haz clic para seleccionarlas"
                   }
                 </p>
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-gray-500">
                   Formatos admitidos: JPG, PNG, GIF. Máximo 5MB.
                 </p>
               </div>
             ) : (
               <div className="space-y-4">
                 {/* Carrusel de imágenes */}
-                <div className="relative aspect-square rounded-md overflow-hidden bg-gray-100">
+                <div className="relative overflow-hidden bg-gray-100 rounded-md aspect-square">
                   <Image
                     src={images[currentImageIndex].url}
                     alt={`Imagen ${currentImageIndex + 1}`}
@@ -266,7 +334,7 @@ export function AddEquipmentModal({ isOpen, onClose, onSave, clinics = [] }: Add
                   
                   {/* Indicador de imagen principal */}
                   {images[currentImageIndex].isPrimary && (
-                    <div className="absolute top-2 left-2 bg-yellow-400 text-black text-xs px-2 py-1 rounded-full">
+                    <div className="absolute px-2 py-1 text-xs text-black bg-yellow-400 rounded-full top-3 left-3">
                       Principal
                     </div>
                   )}
@@ -277,31 +345,37 @@ export function AddEquipmentModal({ isOpen, onClose, onSave, clinics = [] }: Add
                       <Button 
                         variant="outline" 
                         size="icon" 
-                        className="absolute left-2 top-1/2 transform -translate-y-1/2 bg-white/80 rounded-full"
-                        onClick={prevImage}
+                        className="absolute transform -translate-y-1/2 rounded-full left-3 top-1/2 bg-white/80"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          prevImage();
+                        }}
                         disabled={currentImageIndex === 0}
                       >
-                        <ChevronLeft className="h-4 w-4" />
+                        <ChevronLeft className="w-4 h-4" />
                       </Button>
                       <Button 
                         variant="outline" 
                         size="icon" 
-                        className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-white/80 rounded-full"
-                        onClick={nextImage}
+                        className="absolute transform -translate-y-1/2 rounded-full right-3 top-1/2 bg-white/80"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          nextImage();
+                        }}
                         disabled={currentImageIndex === images.length - 1}
                       >
-                        <ChevronRight className="h-4 w-4" />
+                        <ChevronRight className="w-4 h-4" />
                       </Button>
                     </>
                   )}
                 </div>
                 
                 {/* Miniaturas y botones */}
-                <div className="flex gap-2 overflow-x-auto pb-2">
+                <div className="flex gap-3 pb-2 overflow-x-auto">
                   {images.map((img, idx) => (
                     <div 
                       key={img.id} 
-                      className={`relative h-16 w-16 flex-shrink-0 rounded-md overflow-hidden border-2 cursor-pointer
+                      className={`relative h-20 w-20 flex-shrink-0 rounded-md overflow-hidden border-2 cursor-pointer
                         ${idx === currentImageIndex ? 'border-purple-600' : 'border-transparent'}
                       `}
                       onClick={() => setCurrentImageIndex(idx)}
@@ -312,16 +386,16 @@ export function AddEquipmentModal({ isOpen, onClose, onSave, clinics = [] }: Add
                         fill
                         className="object-cover"
                       />
-                      <div className="absolute top-0.5 right-0.5 flex space-x-0.5">
+                      <div className="absolute flex space-x-1 top-1 right-1">
                         <button 
                           onClick={(e) => {
                             e.stopPropagation();
                             setPrimaryImage(img.id);
                           }}
-                          className="bg-white/80 rounded-full p-0.5 text-yellow-500"
+                          className="p-1 text-yellow-500 rounded-full bg-white/80"
                           title="Establecer como principal"
                         >
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill={img.isPrimary ? "currentColor" : "none"} viewBox="0 0 24 24" stroke="currentColor">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" fill={img.isPrimary ? "currentColor" : "none"} viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.196-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
                           </svg>
                         </button>
@@ -330,10 +404,10 @@ export function AddEquipmentModal({ isOpen, onClose, onSave, clinics = [] }: Add
                             e.stopPropagation();
                             removeImage(img.id);
                           }}
-                          className="bg-white/80 rounded-full p-0.5 text-red-500"
+                          className="p-1 text-red-500 rounded-full bg-white/80"
                           title="Eliminar imagen"
                         >
-                          <X className="h-3 w-3" />
+                          <X className="w-3 h-3" />
                         </button>
                       </div>
                     </div>
@@ -342,10 +416,10 @@ export function AddEquipmentModal({ isOpen, onClose, onSave, clinics = [] }: Add
                   {/* Botón para añadir más imágenes */}
                   <div 
                     {...getRootProps()}
-                    className="flex items-center justify-center h-16 w-16 flex-shrink-0 border-2 border-dashed rounded-md cursor-pointer hover:border-purple-400"
+                    className="flex items-center justify-center flex-shrink-0 w-20 h-20 border-2 border-dashed rounded-md cursor-pointer hover:border-purple-400"
                   >
                     <input {...getInputProps()} />
-                    <Plus className="h-5 w-5 text-gray-400" />
+                    <Plus className="w-5 h-5 text-gray-400" />
                   </div>
                 </div>
               </div>
@@ -353,17 +427,26 @@ export function AddEquipmentModal({ isOpen, onClose, onSave, clinics = [] }: Add
           </div>
         </div>
 
-        <DialogFooter className="mt-8 pt-6 border-t">
-          <Button variant="outline" onClick={onClose}>
+        <DialogFooter className="pt-4 mt-6 border-t">
+          <Button type="button" variant="outline" onClick={onClose}>
             Cancelar
           </Button>
           <Button 
             onClick={handleSave} 
-            className="bg-purple-600 hover:bg-purple-700 text-white ml-3"
-            disabled={!equipmentData.name || !equipmentData.code}
+            className="text-white bg-purple-600 hover:bg-purple-700 min-w-[100px]"
+            disabled={isSaving}
           >
-            <Save className="h-4 w-4 mr-2" />
-            Guardar
+            {isSaving ? (
+              <>
+                <div className="w-4 h-4 mr-2 border-2 border-white rounded-full animate-spin border-t-transparent" />
+                Guardando...
+              </>
+            ) : (
+              <>
+                <Save className="w-4 h-4 mr-2" />
+                Guardar
+              </>
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>
