@@ -49,7 +49,8 @@ const productosEjemplo: Producto[] = [
   { id: "prod-5", nombre: "Loción calmante", codigo: "LC005", stock: 45 },
 ];
 
-export default function ConsumosPage({ params }: { params: { id: string } }) {
+export default function ConsumosPage({ params }: { params: Promise<{ id: string }> }) {
+  const resolvedParams = use(params)
   const router = useRouter()
   const searchParams = useSearchParams()
   
@@ -67,7 +68,7 @@ export default function ConsumosPage({ params }: { params: { id: string } }) {
   }
   
   // Obtener productos de la tarifa actual
-  const tarifaId = params.id
+  const tarifaId = resolvedParams.id
   const productosDisponibles = getProductosByTarifaId(tarifaId)
   
   // Estados
