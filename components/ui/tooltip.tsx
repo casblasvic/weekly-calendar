@@ -37,3 +37,5 @@ export function Tooltip({
   )
 }
 
+export { TooltipProvider, TooltipContent, TooltipTrigger }
+
