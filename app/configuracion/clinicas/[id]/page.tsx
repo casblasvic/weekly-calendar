@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback, use } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Button, BackButton } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
@@ -48,6 +48,7 @@ import { cn } from "@/lib/utils"
 import type { WeekSchedule } from "@/types/schedule"
 import { saveToStorage } from "@/utils/storage-utils"
 import { DebugStorage } from "@/components/debug-storage"
+import { getEquipment } from "@/mockData"
 
 const menuItems = [
   { id: "datos", label: "Datos de la clínica", icon: Building2 },
@@ -90,27 +91,12 @@ export default function ClinicaDetailPage({ params }: { params: { id: string } }
   const [cabinFilterText, setCabinFilterText] = useState("")
   const [equipmentFilterText, setEquipmentFilterText] = useState("")
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null)
-  const [equipmentData, setEquipmentData] = useState([
-    { code: "BALLA", name: "Ballancer", description: "Pressotherapie" },
-    { code: "Balla", name: "Ballancer", description: "Pressotherapie" },
-    { code: "Balla", name: "Ballancer", description: "Pressotherapie" },
-    { code: "BALLA", name: "Ballancer", description: "Pressotherapie" },
-    { code: "EVRL", name: "Evrl", description: "EVRL" },
-    { code: "FORTE", name: "Forte Gem", description: "Forte Gem" },
-    { code: "JFL", name: "JETPEEL", description: "JETPEEL" },
-    { code: "LUNUL", name: "Lunula Laser", description: "Lunula Laser" },
-    { code: "MICRO", name: "MicroMotor", description: "MicroMotor" },
-    { code: "sknr", name: "skinshape r", description: "Skinshape Radiofrequence" },
-    { code: "SKNS", name: "Skinshape R", description: "Skinshape Radiofrequence" },
-    { code: "VERJU", name: "VERJU LASER", description: "VERJU LASER" },
-    { code: "VERJU", name: "VERJU LASER", description: "Pressotherapie" },
-    { code: "WOND", name: "Wonder", description: "Electro Stimulation" },
-    { code: "WOND", name: "Wonder", description: "Electro Stimulation" },
-  ])
+  const [equipmentData, setEquipmentData] = useState<any[]>([])
   const [advancedSchedule, setAdvancedSchedule] = useState<WeekSchedule>(DEFAULT_SCHEDULE)
   const [isSaving, setIsSaving] = useState(false)
 
   const router = useRouter()
+  const searchParams = useSearchParams()
   const resolvedParams = use(params)
 
   const clinic = clinics.find((c) => c.id.toString() === resolvedParams.id)
@@ -122,6 +108,21 @@ export default function ClinicaDetailPage({ params }: { params: { id: string } }
       setClinicData(clinic)
     }
   }, [clinic, router])
+
+  useEffect(() => {
+    if (clinicData) {
+      const clinicId = clinicData.id
+      const clinicEquipment = getEquipment(clinicId)
+      setEquipmentData(clinicEquipment)
+    }
+  }, [clinicData])
+
+  useEffect(() => {
+    const tabParam = searchParams.get("tab")
+    if (tabParam && ["informacion", "cabinas", "equipamiento", "usuarios", "debug"].includes(tabParam)) {
+      setActiveTab(tabParam)
+    }
+  }, [searchParams])
 
   const handleAdvancedScheduleChange = (newSchedule: WeekSchedule) => {
     setAdvancedSchedule(newSchedule)
@@ -811,10 +812,11 @@ export default function ClinicaDetailPage({ params }: { params: { id: string } }
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="w-[120px]">Código</TableHead>
+                        <TableHead className="font-medium">Código</TableHead>
                         <TableHead>Nombre</TableHead>
                         <TableHead>Descripción</TableHead>
-                        <TableHead className="w-[100px] text-right">Acciones</TableHead>
+                        <TableHead>Número de serie</TableHead>
+                        <TableHead className="text-right">Acciones</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -823,6 +825,7 @@ export default function ClinicaDetailPage({ params }: { params: { id: string } }
                           <TableCell className="font-medium">{equipment.code}</TableCell>
                           <TableCell>{equipment.name}</TableCell>
                           <TableCell>{equipment.description}</TableCell>
+                          <TableCell>{equipment.serialNumber || "-"}</TableCell>
                           <TableCell className="text-right space-x-1">
                             <Button
                               variant="ghost"
@@ -838,7 +841,7 @@ export default function ClinicaDetailPage({ params }: { params: { id: string } }
                               size="icon"
                               className="h-8 w-8"
                               onClick={() =>
-                                router.push(`/configuracion/clinicas/${resolvedParams.id}/equipamiento/${equipment.code}`)
+                                router.push(`/configuracion/clinicas/${resolvedParams.id}/equipamiento/${equipment.id}`)
                               }
                             >
                               <Search className="h-4 w-4 text-primary" />

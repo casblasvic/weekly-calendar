@@ -3,7 +3,6 @@
 import { Button } from "@/components/ui/button"
 import { useRouter } from "next/navigation"
 import React from "react"
-import { use } from "react"
 
 export default function PuntosPage({ params }: { params: { id: string } }) {
   const router = useRouter()

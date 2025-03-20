@@ -1,20 +1,25 @@
-import type React from "react"
-import { ClinicProvider } from "@/context/clinic-context"
+"use client"
+
+import type { ReactNode } from "react"
+import { ClinicProvider } from "@/contexts/clinic-context"
 import { TarifProvider } from "@/contexts/tarif-context"
 import { FamilyProvider } from "@/contexts/family-context"
 import { IVAProvider } from "@/contexts/iva-context"
+import { ProductoProvider } from "@/contexts/producto-contexto"
 
 export default function TarifasLayout({
   children,
 }: {
-  children: React.ReactNode
+  children: ReactNode
 }) {
   return (
     <ClinicProvider>
       <TarifProvider>
         <FamilyProvider>
           <IVAProvider>
-            {children}
+            <ProductoProvider>
+              {children}
+            </ProductoProvider>
           </IVAProvider>
         </FamilyProvider>
       </TarifProvider>

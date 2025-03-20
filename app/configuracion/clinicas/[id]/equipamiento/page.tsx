@@ -1,191 +1,147 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useState } from "react"
+import { useRouter, useParams } from "next/navigation"
 import { Card } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { SearchInput } from "@/components/SearchInput"
 import { Button } from "@/components/ui/button"
-import { Trash2, Search, Save, Plus } from "lucide-react"
-import {
-  deleteEquipment as deleteEquipmentInMock,
-  addEquipment,
-  updateEquipment,
-  getEquipment,
-  DATA_CHANGE_EVENT,
-} from "@/mockData"
+import { Trash2, ArrowUpDown, Search } from "lucide-react"
 import { toast } from "sonner"
+import { useEquipment } from "@/contexts/equipment-context"
 
-interface Equipment {
-  id: number
-  code: string
-  name: string
-  description: string
-  clinicId: number
-}
-
-export default function EquipmentPage({ params }: { params: { id: string } }) {
+export default function EquipmentPage() {
   const router = useRouter()
-  const clinicId = Number.parseInt(params.id)
+  const params = useParams()
+  const clinicId = Number(params.id as string)
   const [searchTerm, setSearchTerm] = useState("")
-  const [hasChanges, setHasChanges] = useState(false)
+  
+  // Añadir estado para ordenación
+  const [sortColumn, setSortColumn] = useState<string>("code")
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc")
 
-  // Get equipment for this clinic from mock data
-  const [equipment, setEquipment] = useState<Equipment[]>([])
+  const { getClinicEquipment, deleteEquipment } = useEquipment()
+  const clinicEquipment = getClinicEquipment(clinicId)
 
-  // Initialize with fresh data from mockData
-  useEffect(() => {
-    const clinicEquipment = getEquipment(clinicId)
-    setEquipment(clinicEquipment)
-  }, [clinicId])
-
-  // Listen for data changes
-  useEffect(() => {
-    const handleDataChange = (e: CustomEvent) => {
-      if (e.detail.dataType === "equipment" || e.detail.dataType === "all") {
-        const clinicEquipment = getEquipment(clinicId)
-        setEquipment(clinicEquipment)
-      }
+  const handleSort = (column: string) => {
+    if (sortColumn === column) {
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc")
+    } else {
+      setSortColumn(column)
+      setSortDirection("asc")
     }
+  }
 
-    window.addEventListener(DATA_CHANGE_EVENT, handleDataChange as EventListener)
-    return () => {
-      window.removeEventListener(DATA_CHANGE_EVENT, handleDataChange as EventListener)
+  const filteredEquipment = clinicEquipment.filter((item) => {
+    const searchLower = searchTerm.toLowerCase()
+    return (
+      item.code.toLowerCase().includes(searchLower) ||
+      item.name.toLowerCase().includes(searchLower) ||
+      item.description.toLowerCase().includes(searchLower) ||
+      (item.serialNumber?.toLowerCase() || "").includes(searchLower)
+    )
+  }).sort((a, b) => {
+    const aValue = a[sortColumn as keyof typeof a] || ""
+    const bValue = b[sortColumn as keyof typeof b] || ""
+    
+    if (sortDirection === "asc") {
+      return String(aValue).localeCompare(String(bValue))
+    } else {
+      return String(bValue).localeCompare(String(aValue))
     }
-  }, [clinicId])
-
-  const filteredEquipment = equipment.filter((item) =>
-    Object.values(item).some((value) => String(value).toLowerCase().includes(searchTerm.toLowerCase())),
-  )
+  })
 
   const deleteEquipmentItem = (id: number) => {
-    if (window.confirm("¿Está seguro de que desea eliminar este equipo?")) {
-      // Delete from mock data
-      const success = deleteEquipmentInMock(id)
-
-      if (success) {
-        // Update local state
-        setEquipment((prev) => prev.filter((item) => item.id !== id))
-        toast.success("Equipo eliminado correctamente")
-      } else {
-        toast.error("Error al eliminar el equipo")
-      }
-
-      setHasChanges(true)
+    const success = deleteEquipment(id)
+    if (success) {
+      toast.success("Equipo eliminado correctamente")
+    } else {
+      toast.error("Error al eliminar el equipo")
     }
   }
 
   const addNewEquipment = () => {
-    const newEquipment = {
-      clinicId,
-      code: "NUEVO",
-      name: "Nuevo Equipo",
-      description: "Descripción del nuevo equipo",
-    }
-
-    // Add to mock data
-    const newId = addEquipment(newEquipment)
-
-    if (newId) {
-      // Add to local state
-      setEquipment([...equipment, { ...newEquipment, id: newId }])
-      toast.success("Nuevo equipo añadido")
-    } else {
-      toast.error("Error al añadir el equipo")
-    }
-
-    setHasChanges(true)
-  }
-
-  const saveChanges = () => {
-    // Save all equipment to mock data
-    let allSuccess = true
-
-    equipment.forEach((item) => {
-      const success = updateEquipment(item)
-      if (!success) allSuccess = false
-    })
-
-    if (allSuccess) {
-      toast.success("Cambios guardados correctamente")
-      setHasChanges(false)
-    } else {
-      toast.error("Error al guardar algunos cambios")
-    }
+    router.push(`/configuracion/clinicas/${params.id}/equipamiento/nuevo`)
   }
 
   return (
-    <div className="flex flex-col h-full bg-background">
-      <div className="flex flex-col gap-2 p-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Equipamiento</h1>
-        <p className="text-sm text-muted-foreground">Listado del equipamiento de la clínica</p>
-      </div>
-
-      <div className="p-6 pt-0">
-        <div className="flex justify-between items-center mb-6">
-          <div className="relative w-full max-w-md">
+    <div className="container p-6 pt-16 mx-auto space-y-6 max-w-7xl">
+      <div className="flex flex-col items-start justify-between gap-4 md:flex-row">
+        <div className="w-full space-y-4">
+          <h2 className="text-2xl font-semibold">Equipamiento de la clínica</h2>
+          <div className="w-full md:w-80">
             <SearchInput
               placeholder="Buscar equipamiento"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={setSearchTerm}
             />
           </div>
-          <div className="flex gap-2">
-            <Button onClick={addNewEquipment} className="bg-purple-600 hover:bg-purple-700">
-              <Plus className="h-4 w-4 mr-2" />
-              Nuevo equipo
-            </Button>
-            {hasChanges && (
-              <Button onClick={saveChanges} className="bg-purple-600 hover:bg-purple-700">
-                <Save className="h-4 w-4 mr-2" />
-                Guardar cambios
-              </Button>
-            )}
-          </div>
         </div>
+      </div>
 
-        <Card className="p-6">
-          <Table>
-            <TableHeader>
+      <Card className="p-0 overflow-hidden">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-[100px] cursor-pointer" onClick={() => handleSort("code")}>
+                Código {sortColumn === "code" && (
+                  <ArrowUpDown className={`ml-2 h-4 w-4 inline ${sortDirection === "asc" ? "transform rotate-180" : ""}`} />
+                )}
+              </TableHead>
+              <TableHead className="cursor-pointer" onClick={() => handleSort("name")}>
+                Nombre {sortColumn === "name" && (
+                  <ArrowUpDown className={`ml-2 h-4 w-4 inline ${sortDirection === "asc" ? "transform rotate-180" : ""}`} />
+                )}
+              </TableHead>
+              <TableHead>Descripción</TableHead>
+              <TableHead className="cursor-pointer" onClick={() => handleSort("serialNumber")}>
+                Número de serie {sortColumn === "serialNumber" && (
+                  <ArrowUpDown className={`ml-2 h-4 w-4 inline ${sortDirection === "asc" ? "transform rotate-180" : ""}`} />
+                )}
+              </TableHead>
+              <TableHead className="text-right">Acciones</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filteredEquipment.length === 0 ? (
               <TableRow>
-                <TableHead>Código</TableHead>
-                <TableHead>Nombre</TableHead>
-                <TableHead>Descripción</TableHead>
-                <TableHead className="text-right">Acciones</TableHead>
+                <TableCell colSpan={5} className="py-6 text-center">
+                  No hay equipamiento disponible para esta clínica
+                </TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredEquipment.map((item) => (
+            ) : (
+              filteredEquipment.map((item) => (
                 <TableRow key={item.id}>
-                  <TableCell>{item.code}</TableCell>
+                  <TableCell className="font-medium">{item.code}</TableCell>
                   <TableCell>{item.name}</TableCell>
                   <TableCell>{item.description}</TableCell>
-                  <TableCell className="text-right space-x-1">
-                    <Button
+                  <TableCell>{item.serialNumber}</TableCell>
+                  <TableCell className="text-right space-x-2">
+                    <Button 
                       variant="ghost"
                       size="icon"
                       className="h-8 w-8"
-                      onClick={() => deleteEquipmentItem(item.id)}
-                    >
-                      <Trash2 className="h-4 w-4 text-primary" />
-                      <span className="sr-only">Eliminar</span>
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8"
-                      onClick={() => router.push(`/configuracion/clinicas/${params.id}/equipamiento/${item.id}`)}
+                      onClick={() => router.push(`/configuracion/clinicas/${clinicId}/equipamiento/${item.id}`)}
                     >
                       <Search className="h-4 w-4 text-primary" />
-                      <span className="sr-only">Ver</span>
+                      <span className="sr-only">Ver/Editar</span>
+                    </Button>
+                    <Button 
+                      variant="ghost" 
+                      size="icon"
+                      className="h-8 w-8 text-red-500 hover:text-red-600"
+                      onClick={() => deleteEquipmentItem(item.id)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      <span className="sr-only">Eliminar</span>
                     </Button>
                   </TableCell>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </Card>
-      </div>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </Card>
     </div>
   )
 }
