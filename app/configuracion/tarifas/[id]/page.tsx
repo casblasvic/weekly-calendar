@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef, useMemo } from "react"
 import { useRouter } from "next/navigation"
-import { use } from "react"
 import { ChevronDown, Pencil, Trash2, ShoppingCart, Package, User, ChevronUp, ArrowUpDown, ChevronsLeft, ChevronLeft, ChevronRight, ChevronsRight, Wrench, ShoppingBag, SmilePlus, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -45,7 +44,7 @@ export interface TipoIVA {
 
 export default function ConfiguracionTarifa({ params }: { params: { id: string } }) {
   const router = useRouter()
-  const tarifaId = React.use(params).id
+  const tarifaId = params.id
   
   const { families } = useFamily()
   const { getTarifaById, getFamiliasByTarifaId } = useTarif()

@@ -1,3 +1,5 @@
+"use client"
+
 import type { ReactNode } from "react"
 import { ClinicProvider } from "@/contexts/clinic-context"
 import { TarifProvider } from "@/contexts/tarif-context"

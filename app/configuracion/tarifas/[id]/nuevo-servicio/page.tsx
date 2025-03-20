@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, use, useEffect, useRef } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { FileQuestion, Plus, Minus, ChevronUp, ChevronDown, MessageSquare, Users, HelpCircle, X, Send, ShoppingCart, AlertCircle, Save } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -73,8 +73,7 @@ const agentesSoporte = [
 
 export default function NuevoServicio({ params }: { params: { id: string } }) {
   const router = useRouter()
-  const resolvedParams = React.use(params)
-  const tarifaId = resolvedParams.id;
+  const tarifaId = params.id
   const searchParams = useSearchParams();
   const servicioId = searchParams.get('servicioId');
   

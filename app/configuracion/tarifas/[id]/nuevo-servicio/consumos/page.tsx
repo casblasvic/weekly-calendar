@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { use } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -49,10 +48,10 @@ const productosEjemplo: Producto[] = [
   { id: "prod-5", nombre: "Loción calmante", codigo: "LC005", stock: 45 },
 ];
 
-export default function ConsumosPage({ params }: { params: Promise<{ id: string }> }) {
-  const resolvedParams = use(params)
+export default function ConsumosPage({ params }: { params: { id: string } }) {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const tarifaId = params.id
   
   // Usar searchParams para obtener el ID del servicio
   const servicioId = searchParams.get('servicioId')
@@ -68,7 +67,6 @@ export default function ConsumosPage({ params }: { params: Promise<{ id: string 
   }
   
   // Obtener productos de la tarifa actual
-  const tarifaId = resolvedParams.id
   const productosDisponibles = getProductosByTarifaId(tarifaId)
   
   // Estados

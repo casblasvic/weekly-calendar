@@ -1,13 +1,16 @@
+"use client"
+
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { getServicioById, updateServicio } from '@/contexts/servicios-context';
 import { calcularPrecioSinIVA } from '@/utils/utils';
+import { Button } from '@/components/ui/button';
 
-const EditarServicio: React.FC = () => {
+const EditarServicio = ({ params }) => {
   const router = useRouter();
-  const servicioId = 'some-id'; // Replace with actual servicioId
-  const tarifaId = 'some-tarifa-id'; // Replace with actual tarifaId
-  const tiposIVA = []; // Replace with actual tiposIVA
+  const servicioId = params?.id || 'some-id'; // Obtener de params
+  const tarifaId = params?.id || 'some-tarifa-id'; // Obtener de params
+  const tiposIVA = []; // Reemplazar con los tipos de IVA reales
 
   const [servicio, setServicio] = useState({});
   const [isSaving, setIsSaving] = useState(false);
@@ -20,7 +23,7 @@ const EditarServicio: React.FC = () => {
       console.log("Servicio cargado:", servicioExistente);
       console.log("IVA del servicio:", tiposIVA?.find(t => t.id === servicioExistente.ivaId));
     }
-  }, [servicioId, getServicioById, tiposIVA]);
+  }, [servicioId, tiposIVA]);
 
   const handleGuardarServicio = () => {
     if (!servicio.nombre) {

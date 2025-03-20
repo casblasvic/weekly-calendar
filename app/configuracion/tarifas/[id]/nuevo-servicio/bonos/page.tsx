@@ -1,13 +1,12 @@
 "use client"
 
-import { use } from "react"
 import { Button } from "@/components/ui/button"
 import { useRouter } from "next/navigation"
 import React from "react"
 
 export default function BonosPage({ params }: { params: { id: string } }) {
   const router = useRouter()
-  const tarifaId = use(params).id
+  const tarifaId = params.id
   
   const handleVolver = () => {
     router.push(`/configuracion/tarifas/${tarifaId}/nuevo-servicio`)

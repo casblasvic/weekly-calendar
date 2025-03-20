@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, use } from "react"
+import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -11,7 +11,7 @@ import { useIVA } from "@/contexts/iva-context"
 
 export default function TiposIVA({ params }: { params: { id: string } }) {
   const router = useRouter()
-  const tarifaId = use(params).id
+  const tarifaId = params.id
   
   const { getTarifaById } = useTarif()
   const { tiposIVA, addTipoIVA, updateTipoIVA, deleteTipoIVA, getTiposIVAByTarifaId } = useIVA()
