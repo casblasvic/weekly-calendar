@@ -195,11 +195,11 @@ export default function GestionFamilias() {
       {/* Tabla de familias */}
       <div className="overflow-x-auto bg-white rounded-lg shadow mb-8">
         <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
+          <thead className="table-header">
             <tr>
               <th
                 scope="col"
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider"
               >
                 <div className="flex items-center cursor-pointer" onClick={() => requestSort('code')}>
                   Código {getSortIcon('code')}
@@ -207,7 +207,7 @@ export default function GestionFamilias() {
               </th>
               <th
                 scope="col"
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider"
               >
                 <div className="flex items-center cursor-pointer" onClick={() => requestSort('name')}>
                   Nombre {getSortIcon('name')}
@@ -215,13 +215,13 @@ export default function GestionFamilias() {
               </th>
               <th
                 scope="col"
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider"
               >
                 Familia Padre
               </th>
               <th
                 scope="col"
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider"
               >
                 Acciones
               </th>
@@ -229,40 +229,46 @@ export default function GestionFamilias() {
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {filteredAndSortedFamilies.map((family) => (
-              <tr key={family.id} className={!family.isActive ? "bg-gray-50 text-gray-400" : ""}>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+              <tr 
+                key={family.id} 
+                className="table-row-hover"
+              >
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                   {family.code}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                   {family.name}
+                  {!family.isActive && (
+                    <span className="ml-2 px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
+                      Deshabilitada
+                    </span>
+                  )}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {family.parentId 
-                    ? families.find(f => f.id === family.parentId)?.name || "No encontrada" 
-                    : "Ninguna"}
+                  {family.parentId ? (
+                    families.find(f => f.id === family.parentId)?.name || "(Desconocido)"
+                  ) : (
+                    <span className="text-gray-400">(Ninguna)</span>
+                  )}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  <div className="flex items-center space-x-3">
-                    <Checkbox
-                      id={`family-status-${family.id}`}
-                      checked={family.isActive}
-                      onCheckedChange={() => handleToggleStatus(family.id)}
-                      className="data-[state=checked]:bg-green-600 data-[state=checked]:text-white rounded-sm"
-                    />
-                    <button
-                      className="text-indigo-600 hover:text-indigo-900"
+                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                  <div className="flex space-x-2">
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
                       onClick={() => handleEditFamily(family)}
-                      title="Editar"
+                      className="h-8 w-8 p-0"
                     >
-                      <Pencil size={16} />
-                    </button>
-                    <button
-                      className="text-red-600 hover:text-red-900"
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       onClick={() => handleConfirmDelete(family.id)}
-                      title="Eliminar"
+                      className="h-8 w-8 p-0 text-red-600 hover:text-red-900 hover:bg-red-50"
                     >
-                      <Trash2 size={16} />
-                    </button>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
                 </td>
               </tr>

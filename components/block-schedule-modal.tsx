@@ -282,7 +282,7 @@ export function BlockScheduleModal({
         onOpenChange(isOpen)
       }}
     >
-      <DialogContent className="fixed left-[50%] top-[50%] z-50 max-h-[85vh] w-[90vw] max-w-[500px] translate-x-[-50%] translate-y-[-50%] overflow-y-auto rounded-lg bg-white p-6 shadow-lg">
+      <DialogContent className="sm:max-w-[500px] max-h-[85vh] overflow-y-auto">
         <DialogTitle className="text-2xl font-bold mb-4">
           {blockToEdit ? "Editar bloqueo" : "Bloquear agenda"}
         </DialogTitle>

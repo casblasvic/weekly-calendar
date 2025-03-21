@@ -523,8 +523,8 @@ export default function NuevoServicio() {
       if (rutaDestino) {
         router.push(`${rutaDestino}?servicioId=${servicioId}`);
       } else {
-        // Si no hay ruta de destino, volver a la página de servicios
-        router.push(`/configuracion/tarifas/${params.id}?tab=servicios&updated=${Date.now()}`);
+        // Redirigir a la página de tarifa después de guardar
+        redirigirATarifa();
       }
     } catch (error) {
       console.error("Error al guardar servicio:", error);
@@ -1095,6 +1095,12 @@ export default function NuevoServicio() {
       document.documentElement.style.removeProperty('--sidebar-width');
     };
   }, []);
+
+  // Redirigir a la página de tarifa después de guardar
+  const redirigirATarifa = () => {
+    // Insertar un parámetro 'updated' para forzar un refresco de la página en caso de que vuelva a ella 
+    router.push(`/configuracion/tarifas/${Array.isArray(params.id) ? params.id[0] : params.id as string}?tab=servicios&updated=${Date.now()}`);
+  };
 
   return (
     <div className="container mx-auto h-screen flex flex-col" style={{ marginLeft: 'var(--sidebar-width, 0px)' }}>

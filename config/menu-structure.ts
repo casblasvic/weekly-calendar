@@ -172,7 +172,7 @@ export const menuItems: MenuItem[] = [
       {
         id: "tarifas",
         label: "Tarifas",
-        icon: Tags,
+        icon: FileText,
         href: "/configuracion/tarifas",
       },
       {

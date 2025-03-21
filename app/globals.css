@@ -25,6 +25,27 @@
     --ring: 262.1 83.3% 57.8%;
     --radius: 0.5rem;
 
+    /* Colors for new theme elements */
+    --container-background: #f5f5f5;
+    --table-header: #ede9fe;
+    --tab-active: #8b5cf6;
+    --card-background: #ffffff;
+
+    --button-primary: #7c3aed;
+    --button-primary-hover: #6d28d9;
+    --button-secondary: #e5e7eb;
+    --button-secondary-hover: #d1d5db;
+    
+    --table-hover: rgba(124, 58, 237, 0.05); /* 5% de --primary por defecto */
+
+    /* Elementos estructurales */
+    --header-background: #7c3aed;
+    --footer-background: #f8f9fa;
+    --sidebar-background: #f9fafb;
+    --sidebar-text: #111827;
+    --sidebar-hover: #f3f4f6;
+    --input-focus-border: #7c3aed;
+
     --purple-50: #f5f3ff;
     --purple-100: #ede9fe;
     --purple-200: #ddd6fe;
@@ -60,6 +81,126 @@
   }
 }
 
+/* Clases personalizadas para elementos del tema */
+.main-container {
+  background-color: var(--container-background);
+}
+
+.card-container {
+  background-color: var(--card-background);
+}
+
+/* Estilos para tablas */
+.table-header {
+  background-color: var(--table-header);
+}
+
+.table-header th {
+  color: var(--primary);
+  font-weight: 500;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+}
+
+.table-row-hover:hover {
+  background-color: var(--table-hover);
+  cursor: pointer;
+}
+
+/* Aplicamos estilos específicos a las filas de las tablas */
+tr.table-row-hover:hover {
+  background-color: rgba(0, 0, 0, 0.04);
+}
+
+/* Estilos para pestañas */
+.tab-active {
+  background-color: var(--tab-active);
+  color: white;
+}
+
+/* Mejor apariencia para TabsList */
+[role="tabslist"] {
+  background-color: var(--container-background);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.25rem;
+}
+
+/* Efecto hover para las pestañas */
+[role="tab"]:hover:not([data-state="active"]) {
+  background-color: var(--table-hover);
+}
+
+/* Estilos para elementos estructurales */
+.app-header {
+  background-color: var(--header-background);
+  color: white;
+}
+
+.app-footer {
+  background-color: var(--footer-background);
+}
+
+.app-sidebar {
+  background-color: var(--sidebar-background);
+}
+
+.app-sidebar-item {
+  color: var(--sidebar-text);
+}
+
+.app-sidebar-item:hover, .hover\:app-sidebar-hover:hover {
+  background-color: var(--sidebar-hover);
+}
+
+/* Estilos adicionales para menús */
+.app-menu-active {
+  background-color: var(--table-hover);
+  font-weight: 500;
+  color: var(--primary);
+}
+
+[role="tab"][data-state="active"] {
+  background-color: var(--tab-active) !important;
+  color: white !important;
+}
+
+/* Estilos para campos con foco */
+input:focus, 
+textarea:focus, 
+select:focus {
+  outline: none !important;
+  border-color: var(--input-focus-border) !important;
+  box-shadow: 0 0 0 1px var(--input-focus-border) !important;
+}
+
+/* Estilos para botones */
+.btn-primary {
+  background-color: var(--button-primary);
+  color: white;
+  transition: background-color 0.2s ease-in-out;
+}
+
+.btn-primary:hover {
+  background-color: var(--button-primary-hover);
+}
+
+.btn-secondary {
+  background-color: var(--button-secondary);
+  color: var(--foreground);
+  transition: background-color 0.2s ease-in-out;
+}
+
+.btn-secondary:hover {
+  background-color: var(--button-secondary-hover);
+}
+
+.btn-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 @layer utilities {
   .animate-in {
     animation: animate-in 0.3s ease-in-out;
@@ -93,23 +234,23 @@ input:focus,
 textarea:focus,
 select:focus {
   outline: none !important;
-  border-color: #8b5cf6 !important; /* Purple-600 */
-  box-shadow: 0 0 0 1px #8b5cf6 !important;
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 1px var(--primary) !important;
 }
 
 /* Override shadcn focus styles */
 .focus-visible\:ring-2:focus-visible,
 .focus-visible\:ring-ring:focus-visible,
 .focus-visible\:ring-offset-2:focus-visible {
-  --tw-ring-color: #8b5cf6 !important;
+  --tw-ring-color: var(--primary) !important;
   --tw-ring-offset-width: 0px !important;
-  box-shadow: 0 0 0 1px #8b5cf6 !important;
+  box-shadow: 0 0 0 1px var(--primary) !important;
 }
 
 [data-state="open"] > .focus-visible\:ring-2,
 [data-state="open"] > .focus-visible\:ring-ring {
-  --tw-ring-color: #8b5cf6 !important;
-  box-shadow: 0 0 0 1px #8b5cf6 !important;
+  --tw-ring-color: var(--primary) !important;
+  box-shadow: 0 0 0 1px var(--primary) !important;
 }
 
 /* Z-index management */
@@ -171,11 +312,6 @@ select:focus {
   @apply bg-opacity-10;
 }
 
-/* Table styles */
-.table-row-hover:hover {
-  @apply bg-purple-50;
-}
-
 /* Button styles */
 .button-purple {
   @apply bg-purple-600 hover:bg-purple-700 text-white;
@@ -193,7 +329,8 @@ input[type="checkbox"] {
 
 /* Tab styles */
 [data-state="active"].tab {
-  @apply bg-purple-600 text-white;
+  background-color: var(--tab-active);
+  color: white;
 }
 
 /* Button hover states */

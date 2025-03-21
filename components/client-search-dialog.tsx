@@ -77,7 +77,7 @@ export function ClientSearchDialog({ isOpen, onClose, onClientSelect, selectedTi
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent className="sm:max-w-[700px] md:max-w-[900px] p-0">
+        <DialogContent className="sm:max-w-[700px] md:max-w-[900px] p-0 bg-white overflow-hidden">
           <DialogTitle className="p-6 pb-0">Buscar cliente</DialogTitle>
           <div className="p-6 space-y-6">
             <div className="flex flex-col h-full">

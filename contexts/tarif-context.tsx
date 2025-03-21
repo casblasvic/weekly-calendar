@@ -7,7 +7,9 @@ export interface Tarifa {
   id: string
   nombre: string
   clinicaId: string
+  clinicasIds: string[]
   deshabilitada: boolean
+  isActive: boolean
 }
 
 export interface FamiliaTarifa {
@@ -39,7 +41,9 @@ const initialTarifas: Tarifa[] = [
     id: "tarifa-california",
     nombre: "Tarifa Californie",
     clinicaId: "1",
-    deshabilitada: false
+    clinicasIds: ["1"],
+    deshabilitada: false,
+    isActive: true
   }
 ];
 

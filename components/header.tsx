@@ -53,6 +53,24 @@ export function Header({ isSidebarCollapsed, onToggleSidebar }: HeaderProps) {
 
         {!pathname?.startsWith("/clientes/") && <ClientCardWrapper />}
 
+        {/* System User Menu */}
+        <button
+          style={{
+            width: "30px",
+            height: "30px",
+            backgroundColor: "purple",
+            color: "white",
+            fontWeight: "bold",
+            border: "none",
+            borderRadius: "4px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          4
+        </button>
+
         {/* Notifications */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -74,23 +92,6 @@ export function Header({ isSidebarCollapsed, onToggleSidebar }: HeaderProps) {
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {/* System User Menu */}
-        <button
-          style={{
-            width: "30px",
-            height: "30px",
-            backgroundColor: "purple",
-            color: "white",
-            fontWeight: "bold",
-            border: "none",
-            borderRadius: "4px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          4
-        </button>
         <DropdownMenu open={showUserMenu} onOpenChange={setShowUserMenu}>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full p-0">
@@ -99,7 +100,7 @@ export function Header({ isSidebarCollapsed, onToggleSidebar }: HeaderProps) {
               </div>
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent className="w-56" align="end">
+          <DropdownMenuContent className="w-56 bg-white" align="end">
             <div className="flex items-center gap-3 p-3 border-b">
               <div className="h-10 w-10 rounded-lg bg-purple-100 flex items-center justify-center">
                 <span className="text-sm font-medium text-purple-800">RA</span>
@@ -109,38 +110,38 @@ export function Header({ isSidebarCollapsed, onToggleSidebar }: HeaderProps) {
                 <span className="text-xs text-muted-foreground">usuario@example.com</span>
               </div>
             </div>
-            <DropdownMenuItem asChild>
+            <DropdownMenuItem asChild className="text-gray-700 hover:bg-purple-50 hover:text-purple-700">
               <Link href="/perfil/datos-personales">
                 <User className="mr-2 h-4 w-4" />
                 <span>Editar datos personales</span>
               </Link>
             </DropdownMenuItem>
-            <DropdownMenuItem asChild>
+            <DropdownMenuItem asChild className="text-gray-700 hover:bg-purple-50 hover:text-purple-700">
               <Link href="/perfil/suscripcion">
                 <Settings className="mr-2 h-4 w-4" />
                 <span>Mi suscripción</span>
               </Link>
             </DropdownMenuItem>
-            <DropdownMenuItem asChild>
+            <DropdownMenuItem asChild className="text-gray-700 hover:bg-purple-50 hover:text-purple-700">
               <Link href="/perfil/facturacion">
                 <FileText className="mr-2 h-4 w-4" />
                 <span>Datos de facturación</span>
               </Link>
             </DropdownMenuItem>
-            <DropdownMenuItem asChild>
+            <DropdownMenuItem asChild className="text-gray-700 hover:bg-purple-50 hover:text-purple-700">
               <Link href="/perfil/servicios">
                 <Settings className="mr-2 h-4 w-4" />
                 <span>Servicios contratados</span>
               </Link>
             </DropdownMenuItem>
-            <DropdownMenuItem asChild>
+            <DropdownMenuItem asChild className="text-gray-700 hover:bg-purple-50 hover:text-purple-700">
               <Link href="/perfil/facturas">
                 <FileText className="mr-2 h-4 w-4" />
                 <span>Facturas</span>
               </Link>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem className="text-red-600">
+            <DropdownMenuItem className="text-red-600 hover:bg-red-50">
               <LogOut className="mr-2 h-4 w-4" />
               <span>Desconectar</span>
             </DropdownMenuItem>

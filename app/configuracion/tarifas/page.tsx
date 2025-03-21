@@ -4,21 +4,13 @@ import { useState, useEffect, useContext } from "react"
 import { Search, Pencil, Trash2, ChevronDown, AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useRouter } from "next/navigation"
-import { MockData } from "@/lib/mock-data"
+import { MockData } from "@/mockData"
 import { ClinicContext } from "@/context/clinic-context"
-import { useTarif } from "@/contexts/tarif-context"
-
-// Interfaces
-interface Tarifa {
-  id: string
-  nombre: string
-  clinicaId: string
-  deshabilitada: boolean
-}
+import { Tarifa, useTarif } from "@/contexts/tarif-context"
 
 export default function GestionTarifas() {
   const router = useRouter()
@@ -26,18 +18,65 @@ export default function GestionTarifas() {
   const tarifContext = useTarif()
   const tarifas = tarifContext.tarifas || []
 
-  // Verificamos que el contexto esté disponible y accedemos a las clínicas
-  const clinics = clinicContext?.clinics || []
-
-  // Para depuración - mostrar las clínicas en la consola
-  console.log("Clínicas disponibles en el contexto:", clinics)
+  // Obtenemos las clínicas directamente del contexto
+  const [clinics, setClinics] = useState<any[]>([])
+  
+  // Cargar las clínicas cuando el contexto esté disponible
+  useEffect(() => {
+    if (clinicContext && clinicContext.clinics && clinicContext.clinics.length > 0) {
+      setClinics(clinicContext.clinics);
+      console.log("Clínicas cargadas desde el contexto:", clinicContext.clinics.length);
+    } else {
+      console.log("Context no disponible o sin clínicas - usando clínicas hardcoded");
+      
+      // Hardcodear las clínicas que sabemos que existen en defaultClinics
+      const clinicasHardcoded = [
+        {
+          id: 1,
+          prefix: "000001",
+          name: "Californie Multilaser - Organicare",
+          city: "Casablanca",
+          isActive: true
+        },
+        {
+          id: 2,
+          prefix: "Cafc",
+          name: "Cafc Multilaser",
+          city: "Casablanca",
+          isActive: true
+        },
+        {
+          id: 3,
+          prefix: "TEST",
+          name: "CENTRO TEST",
+          city: "Casablanca",
+          isActive: false
+        }
+      ];
+      
+      setClinics(clinicasHardcoded);
+      console.log("Cargadas clínicas hardcoded:", clinicasHardcoded.length);
+    }
+  }, [clinicContext]);
+  
+  // Para depuración
+  console.log("Clínicas disponibles:", clinics)
+  console.log("¿Array de clínicas vacío?", clinics.length === 0)
+  console.log("¿clinicContext es null?", clinicContext === null)
+  console.log("¿clinicContext es undefined?", clinicContext === undefined)
+  console.log("Valores exactos de isActive en clínicas:")
+  clinics.forEach(c => {
+    console.log(`Clínica: ${c.name}, isActive: ${c.isActive}, tipo: ${typeof c.isActive}, es true?: ${c.isActive === true}, es false?: ${c.isActive === false}`)
+  });
 
   const [isNewTarifaOpen, setIsNewTarifaOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
   const [nuevaTarifa, setNuevaTarifa] = useState<Omit<Tarifa, "id">>({
     nombre: "",
     clinicaId: "",
+    clinicasIds: [],
     deshabilitada: false,
+    isActive: true
   })
   const [isSaving, setIsSaving] = useState(false)
 
@@ -45,21 +84,41 @@ export default function GestionTarifas() {
   const tarifasFiltradas = tarifas.filter((tarifa) => tarifa.nombre.toLowerCase().includes(searchTerm.toLowerCase()))
 
   // Filtrar clínicas según el estado del checkbox "Deshabilitada"
-  const clinicasFiltradas = clinics.filter((clinic) => (nuevaTarifa.deshabilitada ? true : clinic.isActive))
+  const clinicasFiltradas = clinics.filter((clinic) => {
+    // Si está marcado "Deshabilitada" o "Incluir clínicas deshabilitadas", mostrar todas
+    if (nuevaTarifa.deshabilitada) {
+      return true;
+    }
+    
+    // De lo contrario, solo mostrar clínicas activas
+    return clinic.isActive === true;
+  });
+  
+  // Depuración de las clínicas filtradas
+  console.log("Clínicas filtradas:", clinicasFiltradas)
+  console.log("Estado de nuevaTarifa:", nuevaTarifa)
+  console.log("Total de clínicas:", clinics.length)
+  console.log("Nombres de clínicas:", clinics.map(c => c.name).join(", "))
 
   // Manejar creación de nueva tarifa
   const handleCrearTarifa = () => {
     setIsSaving(true)
+
+    // Asegurar que tengamos clinicasIds
+    const tarifaToSave = {
+      ...nuevaTarifa,
+      clinicasIds: nuevaTarifa.clinicasIds || [nuevaTarifa.clinicaId].filter(Boolean)
+    };
 
     // Simulamos guardado
     setTimeout(() => {
       const newId = `tarifa-${Date.now()}`
       const nuevaTarifaCompleta = {
         id: newId,
-        ...nuevaTarifa,
+        ...tarifaToSave,
       }
 
-      // Actualizar MockData
+      // Actualizar MockData y el contexto
       MockData.tarifas = [...(MockData.tarifas || []), nuevaTarifaCompleta]
       tarifContext.updateTarifa(nuevaTarifaCompleta.id, nuevaTarifaCompleta)
 
@@ -118,38 +177,91 @@ export default function GestionTarifas() {
       {/* Tabla de tarifas */}
       <div className="overflow-x-auto rounded-md border">
         <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th
-                scope="col"
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-              >
-                <div className="flex items-center space-x-1">
-                  <span>Nombre</span>
-                  <ChevronDown size={14} />
-                </div>
+          <thead>
+            <tr className="table-header">
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">
+                Nombre
               </th>
-              <th
-                scope="col"
-                className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider"
-              >
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">
+                Clínica
+              </th>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">
+                Estado
+              </th>
+              <th scope="col" className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider">
                 Acciones
               </th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {tarifasFiltradas.map((tarifa) => (
-              <tr key={tarifa.id} className="hover:bg-gray-50">
+              <tr key={tarifa.id} className="table-row-hover">
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                  <div className="flex items-center">
-                    {tarifa.nombre}
-                    {tarifa.deshabilitada && (
-                      <AlertCircle className="ml-2 h-4 w-4 text-amber-500" aria-label="Tarifa deshabilitada" />
-                    )}
-                  </div>
+                  {tarifa.nombre}
+                  {tarifa.isActive === false && (
+                    <AlertCircle className="inline-block ml-2 h-4 w-4 text-amber-500" aria-label="Tarifa deshabilitada" />
+                  )}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
-                  <div className="flex justify-center space-x-2">
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {tarifa.clinicasIds && tarifa.clinicasIds.length > 0 ? (
+                    <div className="flex flex-col space-y-1">
+                      {/* Mostrar la clínica principal */}
+                      <div className="flex items-center">
+                        <span className="font-medium">
+                          {clinics.find(c => c.prefix === tarifa.clinicaId)?.name || 
+                           (tarifa.clinicaId ? `${tarifa.clinicaId}` : '-')}
+                        </span>
+                        <span className="ml-1.5 text-xs bg-indigo-100 px-1.5 py-0.5 rounded-full text-indigo-700">
+                          Principal
+                        </span>
+                      </div>
+                      
+                      {/* Mostrar las clínicas adicionales si existen */}
+                      {tarifa.clinicasIds.length > 1 && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {tarifa.clinicasIds
+                            .filter((id: string) => id !== tarifa.clinicaId)
+                            .map((clinicaId: string) => {
+                              const clinic = clinics.find(c => c.prefix === clinicaId);
+                              return clinic ? (
+                                <span 
+                                  key={clinic.prefix} 
+                                  className="text-xs px-1.5 py-0.5 bg-gray-100 rounded-full"
+                                  title={`${clinic.prefix} - ${clinic.name}`}
+                                >
+                                  {clinic.name}
+                                </span>
+                              ) : (
+                                <span 
+                                  key={clinicaId} 
+                                  className="text-xs px-1.5 py-0.5 bg-gray-100 rounded-full"
+                                >
+                                  {clinicaId}
+                                </span>
+                              );
+                            })
+                          }
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <span>{clinics.find(c => c.prefix === tarifa.clinicaId)?.name || 
+                           (tarifa.clinicaId ? `${tarifa.clinicaId}` : '-')}</span>
+                  )}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <span
+                    className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                      tarifa.isActive === false
+                        ? "bg-yellow-100 text-yellow-800"
+                        : "bg-green-100 text-green-800"
+                    }`}
+                  >
+                    {tarifa.isActive === false ? "Desactivada" : "Activa"}
+                  </span>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                  <div className="flex justify-end space-x-2">
                     <button
                       onClick={() => handleEditarTarifa(tarifa.id)}
                       className="text-indigo-600 hover:text-indigo-900"
@@ -165,7 +277,7 @@ export default function GestionTarifas() {
             ))}
             {tarifasFiltradas.length === 0 && (
               <tr>
-                <td colSpan={2} className="px-6 py-4 text-center text-sm text-gray-500">
+                <td colSpan={4} className="px-6 py-4 text-center text-sm text-gray-500">
                   No se encontraron tarifas
                 </td>
               </tr>
@@ -188,11 +300,11 @@ export default function GestionTarifas() {
       {/* Modal de nueva tarifa */}
       <Dialog open={isNewTarifaOpen} onOpenChange={setIsNewTarifaOpen}>
         <DialogContent className="sm:max-w-md p-6">
-          <DialogHeader className="pb-4">
+          <DialogHeader className="mb-4">
             <DialogTitle>Nueva tarifa</DialogTitle>
           </DialogHeader>
-          <div className="space-y-6 py-4">
-            <div className="space-y-2">
+          <div className="space-y-6 mb-6">
+            <div className="space-y-3">
               <label htmlFor="nombre" className="text-sm font-medium">
                 Nombre
               </label>
@@ -204,83 +316,161 @@ export default function GestionTarifas() {
               />
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-3">
               <label htmlFor="clinica" className="text-sm font-medium">
-                Clínica
+                Clínica(s)
               </label>
               <Select
-                value={nuevaTarifa.clinicaId}
-                onValueChange={(value) => setNuevaTarifa({ ...nuevaTarifa, clinicaId: value })}
+                onValueChange={(value) => {
+                  if (value && !nuevaTarifa.clinicasIds.includes(value)) {
+                    // Si es la primera clínica, establecerla como principal también
+                    const isFirst = nuevaTarifa.clinicasIds.length === 0;
+                    
+                    setNuevaTarifa({
+                      ...nuevaTarifa,
+                      clinicasIds: [...nuevaTarifa.clinicasIds, value],
+                      // Establecer como clinicaId principal si es la primera
+                      clinicaId: isFirst ? value : nuevaTarifa.clinicaId || value
+                    });
+                  }
+                }}
               >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="(Ninguna)" />
+                <SelectTrigger id="clinica" className="w-full border-gray-300 bg-white">
+                  <SelectValue placeholder="Añadir clínica" />
                 </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">(Ninguna)</SelectItem>
-                  {clinicasFiltradas.map((clinic) => (
-                    <SelectItem key={clinic.id} value={clinic.prefix}>
-                      <div className="flex items-center">
+                <SelectContent className="bg-white max-h-60 overflow-y-auto">
+                  {clinics
+                    .filter(c => !nuevaTarifa.clinicasIds.includes(c.prefix) && 
+                                 (nuevaTarifa.deshabilitada || c.isActive === true))
+                    .map((clinic) => (
+                      <SelectItem 
+                        key={clinic.id} 
+                        value={clinic.prefix}
+                        className="flex items-center py-2"
+                      >
                         {clinic.prefix} - {clinic.name}
-                        {!clinic.isActive && (
-                          <AlertCircle 
-                            className="ml-2 h-4 w-4 text-amber-500" 
-                            aria-label="Clínica deshabilitada"
-                          />
-                        )}
-                      </div>
-                    </SelectItem>
-                  ))}
+                      </SelectItem>
+                    ))}
+                  {clinics.filter(c => !nuevaTarifa.clinicasIds.includes(c.prefix) && 
+                                 (nuevaTarifa.deshabilitada || c.isActive === true)).length === 0 && (
+                    <div className="p-2 text-sm text-gray-500">
+                      Todas las clínicas disponibles ya han sido seleccionadas
+                    </div>
+                  )}
                 </SelectContent>
               </Select>
+              
+              {/* Mostrar clínicas seleccionadas como chips */}
+              {nuevaTarifa.clinicasIds.length > 0 && (
+                <div className="mt-3">
+                  <label className="text-sm font-medium mb-2 block">Clínicas seleccionadas</label>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {nuevaTarifa.clinicasIds.map((clinicaId) => {
+                      const clinic = clinics.find(c => c.prefix === clinicaId);
+                      const isPrimary = clinicaId === nuevaTarifa.clinicaId;
+                      
+                      return clinic || clinicaId ? (
+                        <div 
+                          key={clinic?.prefix || clinicaId} 
+                          className={`px-3 py-1.5 rounded-full flex items-center gap-1 text-sm ${
+                            isPrimary 
+                              ? 'bg-indigo-100 text-indigo-800 border border-indigo-300' 
+                              : 'bg-gray-100 text-gray-800 border border-gray-200'
+                          }`}
+                        >
+                          <span>{clinic?.name || clinicaId}</span>
+                          {isPrimary && (
+                            <span className="ml-1 text-xs bg-indigo-200 px-1.5 py-0.5 rounded-full text-indigo-800">
+                              Principal
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              // Si eliminamos la clínica principal, asignar otra como principal
+                              let newClinicaId = nuevaTarifa.clinicaId;
+                              if (isPrimary && nuevaTarifa.clinicasIds.length > 1) {
+                                // Encontrar otra clínica que no sea esta para asignarla como principal
+                                const otherClinicId = nuevaTarifa.clinicasIds.find(id => id !== clinicaId);
+                                newClinicaId = otherClinicId || "";
+                              } else if (isPrimary) {
+                                // Si era la única, limpiar clinicaId
+                                newClinicaId = "";
+                              }
+                              
+                              setNuevaTarifa({
+                                ...nuevaTarifa,
+                                clinicasIds: nuevaTarifa.clinicasIds.filter(id => id !== clinicaId),
+                                clinicaId: newClinicaId
+                              });
+                            }}
+                            className="text-gray-500 hover:text-red-500 ml-1"
+                            title="Eliminar clínica"
+                          >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M18 6L6 18"></path>
+                              <path d="M6 6l12 12"></path>
+                            </svg>
+                          </button>
+                          {!isPrimary && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setNuevaTarifa({
+                                  ...nuevaTarifa,
+                                  clinicaId: clinicaId
+                                });
+                              }}
+                              className="text-indigo-500 hover:text-indigo-700 ml-1"
+                              title="Establecer como clínica principal"
+                            >
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path>
+                              </svg>
+                            </button>
+                          )}
+                        </div>
+                      ) : null;
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex items-center space-x-2 pt-2">
               <Checkbox
                 id="deshabilitada"
                 checked={nuevaTarifa.deshabilitada}
-                onCheckedChange={(checked) => setNuevaTarifa({ ...nuevaTarifa, deshabilitada: checked as boolean })}
+                onCheckedChange={(checked) => setNuevaTarifa({ 
+                  ...nuevaTarifa, 
+                  deshabilitada: checked as boolean,
+                  isActive: !(checked as boolean)
+                })}
               />
-              <label htmlFor="deshabilitada" className="text-sm font-medium">
+              <label htmlFor="deshabilitada" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
                 Deshabilitada
               </label>
             </div>
           </div>
-          <div className="flex justify-between items-center pt-4">
+          <DialogFooter>
             <Button variant="outline" onClick={() => setIsNewTarifaOpen(false)}>
               Cancelar
             </Button>
-            <Button onClick={handleCrearTarifa} disabled={!nuevaTarifa.nombre || isSaving} className="relative">
+            <Button 
+              onClick={handleCrearTarifa} 
+              disabled={!nuevaTarifa.nombre || isSaving} 
+              className="btn-primary"
+            >
               {isSaving ? (
-                <>
-                  <span className="opacity-0">Guardar</span>
-                  <span className="absolute inset-0 flex items-center justify-center">
-                    <svg
-                      className="animate-spin h-5 w-5 text-white"
-                      xmlns="http://www.w3.org/2000/svg"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                    >
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                      ></circle>
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                      ></path>
-                    </svg>
-                  </span>
-                </>
+                <div className="flex items-center space-x-2">
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-t-transparent" />
+                  <span>Guardando...</span>
+                </div>
               ) : (
                 "Guardar"
               )}
             </Button>
-          </div>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

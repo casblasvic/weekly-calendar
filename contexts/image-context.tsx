@@ -31,12 +31,34 @@ export const ImageProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     const initStorage = async () => {
       try {
+        console.log('Iniciando inicialización de estructura de almacenamiento...');
+        
         // Llamar al API para inicializar la estructura de almacenamiento
         const response = await fetch('/api/storage/init-system');
-        if (response.ok) {
-          console.log('Estructura de almacenamiento inicializada correctamente');
+        const data = await response.json();
+        
+        if (response.ok && data.success) {
+          console.log('Estructura de almacenamiento inicializada correctamente:', data.message);
         } else {
-          console.error('Error al inicializar estructura de almacenamiento');
+          console.error(
+            'Error al inicializar estructura de almacenamiento:', 
+            data.error || 'Respuesta no exitosa del servidor'
+          );
+          
+          // Intento adicional para reparar la estructura
+          try {
+            console.log('Intentando reparar la estructura de almacenamiento...');
+            const repairResponse = await fetch('/api/storage/init-system?repair=true');
+            const repairData = await repairResponse.json();
+            
+            if (repairResponse.ok && repairData.success) {
+              console.log('Estructura de almacenamiento reparada correctamente:', repairData.message);
+            } else {
+              console.error('No se pudo reparar la estructura de almacenamiento:', repairData.error);
+            }
+          } catch (repairError) {
+            console.error('Error al intentar reparar la estructura:', repairError);
+          }
         }
       } catch (error) {
         console.error('Error al inicializar estructura de almacenamiento:', error);
