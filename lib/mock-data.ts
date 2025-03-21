@@ -16,6 +16,7 @@ export interface Tarifa {
   nombre: string
   clinicaId: string
   deshabilitada: boolean
+  isActive: boolean
 }
 
 export interface Servicio {

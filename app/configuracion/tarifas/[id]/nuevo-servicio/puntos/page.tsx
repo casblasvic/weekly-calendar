@@ -1,12 +1,13 @@
 "use client"
 
 import { Button } from "@/components/ui/button"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import React from "react"
 
 export default function PuntosPage({ params }: { params: { id: string } }) {
   const router = useRouter()
-  const tarifaId = params.id
+  const searchParams = useSearchParams()
+  const tarifaId = Array.isArray(params.id) ? params.id[0] : params.id as string
   
   const handleVolver = () => {
     router.push(`/configuracion/tarifas/${tarifaId}/nuevo-servicio`)

@@ -362,128 +362,113 @@ export function MainSidebar({ className, isCollapsed, onToggle }: SidebarProps) 
 
   return (
     <div
+      ref={menuRef}
       id="main-sidebar"
       className={cn(
-        "h-full flex flex-col border-r bg-white transition-all duration-300 overflow-y-auto relative",
+        "h-full border-r app-sidebar",
         isCollapsed ? "w-16" : "w-64",
-        className,
+        "transition-all duration-300 flex flex-col",
+        className
       )}
     >
-      <div className="flex-1 py-4">
-        <div className="px-3">
-          <h2 className={cn("mb-2 text-xs font-semibold tracking-tight text-gray-500", isCollapsed && "sr-only")}>
-            CENTRO
-          </h2>
-          <div
-            ref={clinicRef}
-            className="relative"
-            onMouseEnter={() => setIsClinicHovered(true)}
-            onMouseLeave={() => setIsClinicHovered(false)}
-          >
-            <Button
-              variant="ghost"
-              className={cn(
-                "w-full justify-start px-3 py-2",
-                isCollapsed ? "h-10 w-10" : "h-10",
-                (isClinicSelectorOpen || isClinicHovered) && "bg-purple-50",
-              )}
-              onClick={() => setIsClinicSelectorOpen(!isClinicSelectorOpen)}
-            >
-              <div className="flex items-center gap-3">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-100 text-sm font-medium text-purple-600">
-                  {getClinicInitials(activeClinic.name)}
-                </div>
-                {!isCollapsed && (
-                  <>
-                    <div className="flex-1 text-sm text-left">
-                      {activeClinic.name.length > 20 ? `${activeClinic.name.slice(0, 20)}...` : activeClinic.name}
+      {/* Clinic selector */}
+      <div
+        ref={clinicRef}
+        className="relative p-2 border-b"
+        onMouseEnter={() => setIsClinicHovered(true)}
+        onMouseLeave={() => setIsClinicHovered(false)}
+      >
+        <div
+          className="flex items-center cursor-pointer p-2 rounded-md app-sidebar-item hover:app-sidebar-hover"
+          onClick={() => setIsClinicSelectorOpen(!isClinicSelectorOpen)}
+        >
+          <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0">
+            <span className="text-sm font-medium text-purple-800">
+              {getClinicInitials(activeClinic?.name || "Clínica")}
+            </span>
+          </div>
+          {!isCollapsed && (
+            <>
+              <div className="ml-3 flex-1 truncate">
+                <div className="font-medium truncate">{activeClinic?.name || "Selecciona clínica"}</div>
+                <div className="text-xs text-gray-500">{activeClinic?.city || ""}</div>
+              </div>
+              <ChevronRight className={cn("h-4 w-4 ml-2", isClinicSelectorOpen && "rotate-90")} />
+            </>
+          )}
+        </div>
+
+        {(isClinicSelectorOpen || isClinicHovered) && (
+          <div ref={clinicMenuRef} className="fixed w-80 rounded-md border bg-white shadow-lg z-[9999]">
+            <div className="p-3">
+              <div className="relative mb-3">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+                <Input
+                  placeholder="Buscar centros..."
+                  value={clinicSearchTerm}
+                  onChange={(e) => setClinicSearchTerm(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+              <div className="max-h-[calc(100vh-120px)] overflow-y-auto">
+                {filteredClinics.map((clinic) => (
+                  <Button
+                    key={clinic.id}
+                    variant="ghost"
+                    className={cn(
+                      "w-full justify-start px-3 py-2",
+                      activeClinic.id === clinic.id ? "bg-green-50" : "hover:bg-purple-50",
+                    )}
+                    onClick={() => handleClinicSelect(clinic)}
+                  >
+                    <div className="flex items-center gap-3 w-full">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-100 text-sm font-medium text-purple-600">
+                        {getClinicInitials(clinic.name)}
+                      </div>
+                      <div className="flex-1 text-left">
+                        <div className="text-sm font-medium">{clinic.name}</div>
+                        <div className="text-xs text-gray-500">{clinic.prefix}</div>
+                      </div>
+                      {activeClinic.id === clinic.id && <div className="h-2 w-2 rounded-full bg-green-500"></div>}
                     </div>
-                    <ChevronRight
-                      className={cn("h-4 w-4 text-gray-400", (isClinicSelectorOpen || isClinicHovered) && "rotate-90")}
-                    />
-                  </>
-                )}
+                  </Button>
+                ))}
               </div>
-            </Button>
-            {(isClinicSelectorOpen || isClinicHovered) && (
-              <div ref={clinicMenuRef} className="fixed w-80 rounded-md border bg-white shadow-lg z-[9999]">
-                <div className="p-3">
-                  <div className="relative mb-3">
-                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
-                    <Input
-                      placeholder="Buscar centros..."
-                      value={clinicSearchTerm}
-                      onChange={(e) => setClinicSearchTerm(e.target.value)}
-                      className="pl-10"
-                    />
-                  </div>
-                  <div className="max-h-[calc(100vh-120px)] overflow-y-auto">
-                    {filteredClinics.map((clinic) => (
-                      <Button
-                        key={clinic.id}
-                        variant="ghost"
-                        className={cn(
-                          "w-full justify-start px-3 py-2",
-                          activeClinic.id === clinic.id ? "bg-green-50" : "hover:bg-purple-50",
-                        )}
-                        onClick={() => handleClinicSelect(clinic)}
-                      >
-                        <div className="flex items-center gap-3 w-full">
-                          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-100 text-sm font-medium text-purple-600">
-                            {getClinicInitials(clinic.name)}
-                          </div>
-                          <div className="flex-1 text-left">
-                            <div className="text-sm font-medium">{clinic.name}</div>
-                            <div className="text-xs text-gray-500">{clinic.prefix}</div>
-                          </div>
-                          {activeClinic.id === clinic.id && <div className="h-2 w-2 rounded-full bg-green-500"></div>}
-                        </div>
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
+            </div>
           </div>
-        </div>
-        <div className="px-3 mt-4">
-          <div className="space-y-1">
-            {menuItems.map((item) => (
-              <MenuItemComponent
-                key={item.id}
-                item={item}
-                isCollapsed={isCollapsed}
-                openMenus={openMenus}
-                toggleMenu={toggleMenu}
-              />
-            ))}
-          </div>
-        </div>
+        )}
       </div>
 
-      {/* User Avatar Menu - at the bottom of sidebar */}
-      <div className="mt-auto px-3 py-4 border-t">
-        <div
-          ref={avatarRef}
-          className="relative"
-          onMouseEnter={() => setShowUserMenu(true)}
-          onMouseLeave={() => setShowUserMenu(false)}
-        >
+      {/* Menu items */}
+      <div className="flex-1 overflow-y-auto py-2">
+        {menuItems.map((item) => (
+          <MenuItemComponent
+            key={item.id}
+            item={item}
+            isCollapsed={isCollapsed}
+            openMenus={openMenus}
+            toggleMenu={toggleMenu}
+          />
+        ))}
+      </div>
+
+      {/* User menu */}
+      <div className="border-t pt-2 pb-4">
+        <div className="relative" ref={avatarRef}>
           <Button
             variant="ghost"
-            className={cn("w-full justify-start", isCollapsed ? "px-2" : "px-3 py-2")}
+            className={cn("w-full justify-start app-sidebar-item hover:app-sidebar-hover", showUserMenu && "bg-purple-50")}
             onClick={() => setShowUserMenu(!showUserMenu)}
           >
-            <div className="flex items-center gap-3">
-              <Avatar className="h-8 w-8">
-                <AvatarFallback>RA</AvatarFallback>
-              </Avatar>
-              {!isCollapsed && (
-                <div className="flex-1 text-sm text-left">
-                  <span className="font-medium">Squad Chafiki</span>
-                </div>
-              )}
-            </div>
+            <Avatar className="h-8 w-8 mr-2">
+              <AvatarFallback>RA</AvatarFallback>
+            </Avatar>
+            {!isCollapsed && (
+              <div className="flex flex-col items-start">
+                <span className="text-sm font-medium">Squad Chafiki</span>
+                <span className="text-xs text-gray-500">usuario@example.com</span>
+              </div>
+            )}
           </Button>
 
           {showUserMenu && (

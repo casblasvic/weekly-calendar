@@ -18,7 +18,7 @@ const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        "fixed z-50 bg-background shadow-lg duration-200",
+        "fixed z-50 bg-white shadow-lg duration-200",
         "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
         "left-[50%] top-[50%] translate-x-[-50%] translate-y-[-50%]",
         "w-[90vw] max-h-[85vh] rounded-md border",

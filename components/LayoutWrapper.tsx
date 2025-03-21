@@ -19,12 +19,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { useTheme } from "@/app/contexts/theme-context"
 
 interface LayoutWrapperProps {
   children: React.ReactNode
 }
 
 export function LayoutWrapper({ children }: LayoutWrapperProps) {
+  const { theme } = useTheme()
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
@@ -32,6 +34,7 @@ export function LayoutWrapper({ children }: LayoutWrapperProps) {
   const [showMobileUserMenu, setShowMobileUserMenu] = useState(false)
   const [currentDate, setCurrentDate] = useState<string>("")
   const [hasMounted, setHasMounted] = useState(false)
+  const [logoError, setLogoError] = useState(false)
   const router = useRouter()
 
   // Verificar si el componente se ha montado en el cliente
@@ -85,23 +88,43 @@ export function LayoutWrapper({ children }: LayoutWrapperProps) {
   return (
     <div className="flex flex-col min-h-screen bg-gray-50 md:flex-row">
       {/* Fixed Header */}
-      <header className="fixed top-0 left-0 right-0 h-16 bg-white border-b z-50">
+      <header className="fixed top-0 left-0 right-0 h-16 border-b z-50 app-header">
         <div className="flex items-center justify-between px-4 h-full">
           <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" onClick={() => setIsDrawerOpen(true)} className="md:hidden">
+            <Button variant="ghost" size="icon" onClick={() => setIsDrawerOpen(true)} className="md:hidden text-white hover:bg-white/10">
               <Menu className="h-6 w-6" />
             </Button>
             <Button
               variant="ghost"
               size="icon"
               onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-              className="hidden md:flex"
+              className="hidden md:flex text-white hover:bg-white/10"
             >
               <Menu className="h-6 w-6" />
             </Button>
             <div className="flex flex-col">
-              <div className="text-xl font-semibold">LOGO</div>
-              <div className="text-xs text-purple-600">
+              <div className="h-8 flex items-center">
+                {hasMounted ? (
+                  <>
+                    {!logoError && theme?.logoUrl ? (
+                      <img 
+                        src={theme.logoUrl} 
+                        alt="Logo" 
+                        className="h-8 object-contain max-w-[140px]"
+                        onError={() => {
+                          // Si hay error, mostrar texto en lugar de imagen
+                          setLogoError(true)
+                        }}
+                      />
+                    ) : (
+                      <div className="text-xl font-semibold text-white">LOGO</div>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-xl font-semibold text-white">LOGO</div>
+                )}
+              </div>
+              <div className="text-xs text-white/80">
                 {hasMounted ? currentDate : ""}
               </div>
             </div>
@@ -112,7 +135,7 @@ export function LayoutWrapper({ children }: LayoutWrapperProps) {
             <div className="relative">
               <button
                 id="notifications-button"
-                className="p-2 rounded-full hover:bg-gray-100 relative"
+                className="p-2 rounded-full hover:bg-white/10 relative text-white"
                 onClick={() => setShowNotifications(!showNotifications)}
               >
                 <Bell className="h-5 w-5" />
@@ -153,7 +176,7 @@ export function LayoutWrapper({ children }: LayoutWrapperProps) {
 
       {/* Main Content */}
       <main
-        className={`flex-1 transition-all duration-300 ${
+        className={`flex-1 transition-all duration-300 main-container ${
           isMobile ? "mt-16 pb-16" : isSidebarCollapsed ? "md:ml-16" : "md:ml-64"
         }`}
       >
@@ -163,10 +186,10 @@ export function LayoutWrapper({ children }: LayoutWrapperProps) {
 
       {/* Mobile Bottom Navigation */}
       {isMobile && (
-        <nav className="fixed bottom-0 left-0 right-0 h-16 bg-white border-t z-50 grid grid-cols-5">
+        <nav className="fixed bottom-0 left-0 right-0 h-16 border-t z-50 grid grid-cols-5 app-footer">
           <Button
             variant="ghost"
-            className="flex flex-col items-center justify-center h-full"
+            className="flex flex-col items-center justify-center h-full app-sidebar-item"
             onClick={() => router.push("/")}
           >
             <Home className="h-5 w-5" />
@@ -174,7 +197,7 @@ export function LayoutWrapper({ children }: LayoutWrapperProps) {
           </Button>
           <Button
             variant="ghost"
-            className="flex flex-col items-center justify-center h-full"
+            className="flex flex-col items-center justify-center h-full app-sidebar-item"
             onClick={() => router.push("/agenda")}
           >
             <Calendar className="h-5 w-5" />
@@ -182,7 +205,7 @@ export function LayoutWrapper({ children }: LayoutWrapperProps) {
           </Button>
           <Button
             variant="ghost"
-            className="flex flex-col items-center justify-center h-full"
+            className="flex flex-col items-center justify-center h-full app-sidebar-item"
             onClick={() => router.push("/clientes")}
           >
             <Users className="h-5 w-5" />
@@ -190,7 +213,7 @@ export function LayoutWrapper({ children }: LayoutWrapperProps) {
           </Button>
           <Button
             variant="ghost"
-            className="flex flex-col items-center justify-center h-full"
+            className="flex flex-col items-center justify-center h-full app-sidebar-item"
             onClick={() => router.push("/estadisticas")}
           >
             <BarChart2 className="h-5 w-5" />
@@ -200,7 +223,7 @@ export function LayoutWrapper({ children }: LayoutWrapperProps) {
           {/* User Avatar Menu in Mobile Navigation */}
           <DropdownMenu open={showMobileUserMenu} onOpenChange={setShowMobileUserMenu}>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="flex flex-col items-center justify-center h-full">
+              <Button variant="ghost" className="flex flex-col items-center justify-center h-full app-sidebar-item">
                 <Avatar className="h-5 w-5">
                   <AvatarFallback className="text-xs">RA</AvatarFallback>
                 </Avatar>

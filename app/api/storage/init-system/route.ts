@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
 // Importar fs y path de forma segura solo en el servidor
 const fs = require('fs');
@@ -8,9 +8,13 @@ const path = require('path');
  * Inicializa la estructura de carpetas para almacenamiento del sistema
  * Esta ruta se llama automáticamente al iniciar la aplicación
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    console.log("API: Inicializando sistema de almacenamiento...");
+    // Verificar si es una solicitud de reparación
+    const { searchParams } = new URL(request.url);
+    const repair = searchParams.get('repair') === 'true';
+    
+    console.log(`API: Inicializando sistema de almacenamiento... ${repair ? '(modo reparación)' : ''}`);
     
     // Inicializar manualmente (no usando el modulo init.ts para evitar problemas de compilación)
     const storagePath = path.join(process.cwd(), 'storage');
@@ -39,16 +43,37 @@ export async function GET() {
       }
     });
     
-    // Crear archivo de metadatos si no existe
-    if (!fs.existsSync(metadataFile)) {
-      console.log("Creando archivo de metadatos:", metadataFile);
-      fs.writeFileSync(metadataFile, JSON.stringify({}, null, 2));
+    // Verificar si el archivo de metadatos existe y es válido
+    let metadataIsValid = false;
+    
+    if (fs.existsSync(metadataFile) && !repair) {
+      try {
+        // Intentar leer y parsear para verificar que es un JSON válido
+        const content = fs.readFileSync(metadataFile, 'utf8');
+        JSON.parse(content);
+        metadataIsValid = true;
+      } catch (e) {
+        console.error("El archivo de metadatos existe pero no es un JSON válido, se recreará:", e);
+        metadataIsValid = false;
+      }
+    }
+    
+    // Crear/recrear archivo de metadatos si no existe o está corrupto o se forzó la reparación
+    if (!fs.existsSync(metadataFile) || !metadataIsValid || repair) {
+      console.log(`${repair ? 'Recreando' : 'Creando'} archivo de metadatos:`, metadataFile);
+      fs.writeFileSync(metadataFile, JSON.stringify({
+        version: "1.0",
+        created: new Date().toISOString(),
+        lastUpdated: new Date().toISOString(),
+        files: {}
+      }, null, 2));
     }
     
     return NextResponse.json({
       success: true,
-      message: 'Estructura de almacenamiento del sistema inicializada correctamente',
-      metadataFile
+      message: `Estructura de almacenamiento del sistema ${repair ? 'reparada' : 'inicializada'} correctamente`,
+      metadataFile,
+      metadataStatus: metadataIsValid ? 'valid' : (repair ? 'repaired' : 'created')
     });
   } catch (error: any) {
     console.error('Error al crear estructura de carpetas del sistema:', error);

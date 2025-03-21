@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent as UIDialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -41,7 +41,7 @@ const DialogContent = forwardRef<
   <DialogPrimitiveContent
     ref={ref}
     className={cn(
-      "fixed z-50 bg-background shadow-lg duration-200",
+      "fixed z-50 bg-white shadow-lg duration-200",
       "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
       "left-[50%] top-[50%] translate-x-[-50%] translate-y-[-50%]",
       "w-[90vw] max-h-[85vh] rounded-lg border",
@@ -175,14 +175,14 @@ export function AppointmentDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[90vw] md:max-w-[800px] h-[85vh] p-0">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-[90vw] md:max-w-[800px] h-[85vh] p-0 overflow-hidden">
+        <DialogHeader className="px-6 py-4 border-b">
           <DialogTitle>Información de la cita</DialogTitle>
         </DialogHeader>
         <span id="dialog-description" className="sr-only">
           Diálogo para gestionar citas de pacientes, seleccionar servicios y configurar detalles de la cita
         </span>
-        <div className="flex flex-col h-full">
+        <div className="flex flex-col h-full overflow-hidden">
           <div className="p-4 border-b">
             <div className="flex justify-between items-start">
               <div className="space-y-2">

@@ -1,7 +1,8 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useRouter, useSearchParams, useParams } from "next/navigation"
+import React from 'react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -14,7 +15,6 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { useServicio } from "@/contexts/servicios-context"
 import { useConsumoServicio } from "@/contexts/consumo-servicio-context"
 import { HelpButton } from "@/components/ui/help-button"
-import React from 'react'
 
 // Interfaz para representar un consumo
 interface Consumo {
@@ -48,10 +48,12 @@ const productosEjemplo: Producto[] = [
   { id: "prod-5", nombre: "Loción calmante", codigo: "LC005", stock: 45 },
 ];
 
-export default function ConsumosPage({ params }: { params: { id: string } }) {
+export default function ConsumosPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const tarifaId = params.id
+  const params = useParams()
+  // Convertir params a un objeto y acceder a id de forma segura
+  const tarifaId = Array.isArray(params.id) ? params.id[0] : params.id as string
   
   // Usar searchParams para obtener el ID del servicio
   const servicioId = searchParams.get('servicioId')

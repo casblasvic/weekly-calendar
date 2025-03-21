@@ -5,16 +5,17 @@ import { Slot } from "@radix-ui/react-slot"
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 import { useRouter } from "next/navigation"
+import { ArrowLeft } from "lucide-react"
 
 const buttonVariants = cva(
   "inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/90",
+        default: "btn-primary",
         destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
         outline: "border border-input bg-background hover:bg-accent hover:text-accent-foreground",
-        secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
+        secondary: "btn-secondary",
         ghost: "hover:bg-accent hover:text-accent-foreground",
         link: "text-primary underline-offset-4 hover:underline",
       },
@@ -51,11 +52,12 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 Button.displayName = "Button"
 
 interface BackButtonProps extends ButtonProps {
-  href?: string
+  href?: string,
+  showIcon?: boolean
 }
 
 const BackButton = React.forwardRef<HTMLButtonElement, BackButtonProps>(
-  ({ className, variant = "outline", size, asChild = false, children, href, ...props }, ref) => {
+  ({ className, variant = "outline", size, asChild = false, children, href, showIcon = true, ...props }, ref) => {
     const router = useRouter()
     const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
       e.preventDefault()
@@ -67,7 +69,13 @@ const BackButton = React.forwardRef<HTMLButtonElement, BackButtonProps>(
     }
 
     return (
-      <Button className={cn(buttonVariants({ variant, size, className }))} ref={ref} onClick={handleClick} {...props}>
+      <Button 
+        className={cn("btn-back", buttonVariants({ variant, size, className }))} 
+        ref={ref} 
+        onClick={handleClick} 
+        {...props}
+      >
+        {showIcon && <ArrowLeft className="h-4 w-4 mr-2" />}
         {children}
       </Button>
     )
