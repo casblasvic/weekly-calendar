@@ -1,3 +1,5 @@
+"use client"
+
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useFiles, BaseFile, ImageFile, FileFilter } from './file-context';
 import { useStorage } from './storage-context';
@@ -31,6 +33,19 @@ export const ImageProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     const initStorage = async () => {
       try {
+        // Verificar si ya se inicializó el almacenamiento en esta sesión
+        if (typeof window !== 'undefined') {
+          const isInitialized = localStorage.getItem('storage_initialized');
+          const lastInit = localStorage.getItem('storage_last_init');
+          const now = new Date().getTime();
+          
+          // Si ya se inicializó en los últimos 30 minutos, no volver a inicializar
+          if (isInitialized && lastInit && (now - parseInt(lastInit)) < 30 * 60 * 1000) {
+            console.log('Sistema de almacenamiento ya inicializado recientemente, omitiendo inicialización');
+            return;
+          }
+        }
+        
         console.log('Iniciando inicialización de estructura de almacenamiento...');
         
         // Llamar al API para inicializar la estructura de almacenamiento
@@ -39,6 +54,12 @@ export const ImageProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         
         if (response.ok && data.success) {
           console.log('Estructura de almacenamiento inicializada correctamente:', data.message);
+          
+          // Guardar en localStorage que se ha inicializado
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('storage_initialized', 'true');
+            localStorage.setItem('storage_last_init', new Date().getTime().toString());
+          }
         } else {
           console.error(
             'Error al inicializar estructura de almacenamiento:', 
@@ -53,6 +74,12 @@ export const ImageProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             
             if (repairResponse.ok && repairData.success) {
               console.log('Estructura de almacenamiento reparada correctamente:', repairData.message);
+              
+              // Guardar en localStorage que se ha inicializado tras reparación
+              if (typeof window !== 'undefined') {
+                localStorage.setItem('storage_initialized', 'true');
+                localStorage.setItem('storage_last_init', new Date().getTime().toString());
+              }
             } else {
               console.error('No se pudo reparar la estructura de almacenamiento:', repairData.error);
             }

@@ -56,6 +56,17 @@
     --purple-700: #6d28d9;
     --purple-800: #5b21b6;
     --purple-900: #4c1d95;
+
+    /* Variables de tema */
+    --theme-primary: #7c3aed;
+    --theme-secondary: #8b5cf6;
+    --theme-accent: #a78bfa;
+    --theme-text: #111827;
+    --theme-background: #ffffff;
+    --theme-header-bg: #7c3aed;
+    --theme-sidebar-bg: #f9fafb;
+    --theme-button-bg: #7c3aed;
+    --theme-button-text: #ffffff;
   }
 
   .dark {
@@ -299,9 +310,8 @@ select:focus {
   box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
 }
 
-.submenu {
-  z-index: 1040;
-}
+/* Se eliminan los estilos .submenu que estaban causando conflictos */
+/* El estilo ahora se aplica directamente en el componente */
 
 /* Hover states for action buttons */
 .action-button {
@@ -342,5 +352,73 @@ input[type="checkbox"] {
 .input-focus:focus,
 .select-focus:focus {
   @apply border-purple-600 ring-1 ring-purple-600;
+}
+
+/* Clases de utilidad para colores del tema */
+.theme-text-primary {
+  color: var(--theme-primary);
+}
+
+.theme-bg-primary {
+  background-color: var(--theme-primary);
+}
+
+.theme-border-primary {
+  border-color: var(--theme-primary);
+}
+
+/* Sobrescribir colores de componentes específicos */
+.appointment {
+  background-color: var(--theme-primary);
+  color: var(--theme-button-text);
+}
+
+.time-indicator {
+  background-color: var(--theme-accent);
+}
+
+.mobile-header {
+  background-color: var(--theme-header-bg);
+}
+
+/* Permitir sobrescritura de colores a nivel de componente */
+.theme-container {
+  --theme-primary: var(--theme-override-primary, #7c3aed);
+  --theme-secondary: var(--theme-override-secondary, #8b5cf6);
+  --theme-accent: var(--theme-override-accent, #a78bfa);
+  --theme-text: var(--theme-override-text, #111827);
+  --theme-background: var(--theme-override-background, #ffffff);
+  --theme-header-bg: var(--theme-override-header-bg, #7c3aed);
+  --theme-sidebar-bg: var(--theme-override-sidebar-bg, #f9fafb);
+}
+
+/* Prevenir recargas accidentales en dispositivos móviles */
+.prevent-reload {
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.prevent-reload * {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Excepciones para elementos que deben ser seleccionables */
+.prevent-reload input,
+.prevent-reload textarea,
+.prevent-reload [contenteditable="true"] {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* Mejorar el renderizado en iOS */
+@supports (-webkit-touch-callout: none) {
+  .ios-scroll-container {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+  }
 }
 

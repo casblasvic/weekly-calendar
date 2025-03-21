@@ -60,24 +60,43 @@ export function AgendaNavBar({
     }
   }, [activeClinic])
 
-  // Función para actualizar la URL sin recargar la página
+  // Función para actualizar la URL sin recargar la página - modificada para evitar cambios durante el renderizado
   const updateUrl = useCallback((newDate: Date, currentView: "week" | "day") => {
-    const formattedDate = format(newDate, "yyyy-MM-dd")
-    const path = currentView === "day" ? `/agenda/dia/${formattedDate}` : `/agenda/semana/${formattedDate}`
-
-    // Usar history.pushState para actualizar la URL sin recargar
-    window.history.pushState({}, "", path)
+    // No hacemos nada directamente aquí, solo preparamos la información
+    return {
+      formattedDate: format(newDate, "yyyy-MM-dd"),
+      view: currentView
+    }
   }, [])
+
+  // Estado para almacenar la última actualización de URL pendiente
+  const [pendingUrlUpdate, setPendingUrlUpdate] = useState<{formattedDate: string, view: "week" | "day"} | null>(null)
+
+  // Efecto para aplicar la actualización de URL después del renderizado
+  useEffect(() => {
+    if (pendingUrlUpdate) {
+      const path = pendingUrlUpdate.view === "day" 
+        ? `/agenda/dia/${pendingUrlUpdate.formattedDate}` 
+        : `/agenda/semana/${pendingUrlUpdate.formattedDate}`
+      
+      // Usar history.pushState para actualizar la URL sin recargar
+      window.history.pushState({}, "", path)
+      
+      // Limpiar la actualización pendiente
+      setPendingUrlUpdate(null)
+    }
+  }, [pendingUrlUpdate])
 
   const changeWeek = useCallback(
     (direction: "next" | "prev") => {
       setCurrentDate((prevDate) => {
         const newDate = new Date(prevDate)
         newDate.setDate(newDate.getDate() + (direction === "next" ? 7 : -7))
-
-        // Actualizar URL sin recargar
-        updateUrl(newDate, view)
-
+        
+        // En lugar de actualizar directamente, programamos la actualización para después del renderizado
+        const urlInfo = updateUrl(newDate, view)
+        setPendingUrlUpdate(urlInfo)
+        
         return newDate
       })
     },
@@ -89,10 +108,11 @@ export function AgendaNavBar({
       setCurrentDate((prevDate) => {
         const newDate = new Date(prevDate)
         newDate.setMonth(newDate.getMonth() + (direction === "next" ? 1 : -1))
-
-        // Actualizar URL sin recargar
-        updateUrl(newDate, view)
-
+        
+        // En lugar de actualizar directamente, programamos la actualización para después del renderizado
+        const urlInfo = updateUrl(newDate, view)
+        setPendingUrlUpdate(urlInfo)
+        
         return newDate
       })
     },
@@ -104,10 +124,11 @@ export function AgendaNavBar({
       setCurrentDate((prevDate) => {
         const newDate = new Date(prevDate)
         newDate.setDate(newDate.getDate() + (direction === "next" ? 1 : -1))
-
-        // Actualizar URL sin recargar
-        updateUrl(newDate, view)
-
+        
+        // En lugar de actualizar directamente, programamos la actualización para después del renderizado
+        const urlInfo = updateUrl(newDate, view)
+        setPendingUrlUpdate(urlInfo)
+        
         return newDate
       })
     },

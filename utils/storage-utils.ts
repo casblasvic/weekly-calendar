@@ -342,4 +342,81 @@ export const saveFile = async (
   }
 };
 
+// Funciones de utilidad para manejar el almacenamiento de datos en el cliente
+
+import { COOKIE_KEYS } from "./cookie-utils"
+
+// Función para verificar si hay datos de clínicas almacenados
+export function hasClinics(): boolean {
+  try {
+    // Verificar localStorage
+    const localStorageData = localStorage.getItem("clinics")
+    if (localStorageData && JSON.parse(localStorageData).length > 0) {
+      return true
+    }
+    
+    // Verificar cookies
+    const cookieData = getCookie(COOKIE_KEYS.CLINICS)
+    if (cookieData && cookieData.length > 5) { // Valor mínimo para datos válidos
+      return true
+    }
+    
+    return false
+  } catch (error) {
+    console.error("Error al verificar clínicas:", error)
+    return false
+  }
+}
+
+// Función para cargar datos de clínicas desde almacenamiento
+export function loadClinicData(): void {
+  try {
+    // Esta función solo asegura que los datos estén disponibles
+    // La lógica de hidratación real está en el contexto de la clínica
+    const localData = localStorage.getItem("clinics")
+    const cookieData = getCookie(COOKIE_KEYS.CLINICS)
+    
+    // Verificar si tenemos datos
+    if (!localData && !cookieData) {
+      console.log("No se encontraron datos de clínicas en el almacenamiento")
+    } else {
+      console.log("Datos de clínicas disponibles para hidratación")
+    }
+  } catch (error) {
+    console.error("Error al cargar datos de clínicas:", error)
+  }
+}
+
+// Función para cargar datos del tema
+export function loadThemeData(): void {
+  try {
+    // Similar a la función anterior, asegura que los datos estén disponibles
+    const themeMode = localStorage.getItem("theme-mode")
+    if (!themeMode) {
+      console.log("No se encontró configuración de tema, usando predeterminado")
+    }
+  } catch (error) {
+    console.error("Error al cargar datos de tema:", error)
+  }
+}
+
+// Función auxiliar para obtener una cookie por nombre
+function getCookie(name: string): string | null {
+  try {
+    if (typeof document === "undefined") return null
+    
+    const cookies = document.cookie.split(";")
+    for (let i = 0; i < cookies.length; i++) {
+      const cookie = cookies[i].trim()
+      if (cookie.startsWith(name + "=")) {
+        return decodeURIComponent(cookie.substring(name.length + 1))
+      }
+    }
+    return null
+  } catch (error) {
+    console.error("Error al leer cookie:", error)
+    return null
+  }
+}
+
 

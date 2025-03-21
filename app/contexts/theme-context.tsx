@@ -1,6 +1,6 @@
 "use client"
 
-import React, { createContext, useContext, useEffect, useState } from 'react'
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import { useLocalStorage } from '@/app/hooks/use-local-storage'
 
 // Definir la estructura del tema
@@ -61,177 +61,68 @@ const defaultTheme: ThemeConfig = {
   inputFocusBorderColor: '#7c3aed',    // Violeta (purple-600)
 }
 
-// Crear el contexto
-interface ThemeContextType {
+// Definir el contexto
+export interface ThemeContextType {
   theme: ThemeConfig;
-  setTheme: (theme: ThemeConfig) => void;
-  updateThemeProperty: <K extends keyof ThemeConfig>(property: K, value: ThemeConfig[K]) => void;
-  resetTheme: () => void;
+  updateTheme: (newTheme: Partial<ThemeConfig>) => void;
 }
 
-const ThemeContext = createContext<ThemeContextType | undefined>(undefined)
+const ThemeContext = createContext<ThemeContextType>({
+  theme: defaultTheme,
+  updateTheme: () => {},
+});
 
 export const useTheme = () => {
-  const context = useContext(ThemeContext)
+  const context = useContext(ThemeContext);
   if (!context) {
-    throw new Error('useTheme debe ser usado dentro de un ThemeProvider')
+    throw new Error('useTheme debe usarse dentro de un ThemeProvider');
   }
-  return context
-}
+  return context;
+};
 
-export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Usar localStorage para persistir el tema
-  const [storedTheme, setStoredTheme] = useLocalStorage<ThemeConfig>('app-theme', defaultTheme)
-  const [theme, setThemeState] = useState<ThemeConfig>(storedTheme)
+export function ThemeProvider({ children }: { children: React.ReactNode }) {
+  const [theme, setTheme] = useState<ThemeConfig>(defaultTheme);
 
-  // Sincronizar el tema con localStorage
+  // Cargar el tema del almacenamiento local cuando se monta el componente
   useEffect(() => {
-    setStoredTheme(theme)
-    applyThemeToDOM(theme)
-  }, [theme, setStoredTheme])
-
-  // Cargar el tema inicial
-  useEffect(() => {
-    setThemeState(storedTheme)
-    applyThemeToDOM(storedTheme)
-  }, [storedTheme])
-
-  // Aplicar el tema al DOM usando variables CSS
-  const applyThemeToDOM = (theme: ThemeConfig) => {
-    const root = document.documentElement
-    
-    // Garantizar que todos los valores del tema estén definidos
-    const safeTheme = {
-      ...defaultTheme,
-      ...theme
-    }
-    
-    // Convertir colores hex a rgba para transparencia
-    const hexToRgba = (hex: string, alpha: number = 1) => {
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme) {
       try {
-        // Verificar si el color es válido
-        if (!hex || typeof hex !== 'string' || !hex.startsWith('#') || hex.length !== 7) {
-          return `rgba(124, 58, 237, ${alpha})`; // Valor predeterminado
-        }
-        
-        // Simple conversión para obtener rgba
-        const r = parseInt(hex.slice(1, 3), 16)
-        const g = parseInt(hex.slice(3, 5), 16)
-        const b = parseInt(hex.slice(5, 7), 16)
-        return `rgba(${r}, ${g}, ${b}, ${alpha})`
-      } catch (e) {
-        console.error('Error en conversión hexToRgba:', e)
-        return `rgba(124, 58, 237, ${alpha})` // Color morado predeterminado
+        const parsedTheme = JSON.parse(savedTheme);
+        setTheme(parsedTheme);
+      } catch (error) {
+        console.error('Error parsing theme from localStorage:', error);
       }
     }
-    
-    // Actualizar variables CSS
-    root.style.setProperty('--primary', safeTheme.primaryColor)
-    root.style.setProperty('--secondary', safeTheme.secondaryColor)
-    root.style.setProperty('--accent', safeTheme.accentColor)
-    root.style.setProperty('--foreground', safeTheme.textColor)
-    root.style.setProperty('--background', safeTheme.backgroundColor)
-    
-    // Logourl como variable CSS - Solo aplicar si no es una URL de blob
-    // Las URLs de blob no se pueden persistir entre sesiones
-    if (safeTheme.logoUrl && !safeTheme.logoUrl.startsWith('blob:')) {
-      root.style.setProperty('--app-logo-url', safeTheme.logoUrl)
-    }
-    
-    // Nuevas variables CSS para los elementos adicionales
-    root.style.setProperty('--container-background', safeTheme.containerBackgroundColor)
-    root.style.setProperty('--table-header', safeTheme.tableHeaderColor)
-    root.style.setProperty('--tab-active', safeTheme.tabActiveColor)
-    root.style.setProperty('--card-background', safeTheme.cardBackgroundColor)
-    
-    // Variables para botones y elementos interactivos
-    root.style.setProperty('--button-primary', safeTheme.buttonPrimaryColor)
-    root.style.setProperty('--button-primary-hover', adjustColor(safeTheme.buttonPrimaryColor, -10)) // Más oscuro para hover
-    root.style.setProperty('--button-secondary', safeTheme.buttonSecondaryColor)
-    root.style.setProperty('--button-secondary-hover', adjustColor(safeTheme.buttonSecondaryColor, -10))
-    root.style.setProperty('--table-hover', hexToRgba(safeTheme.primaryColor, 0.05)) // 5% de opacidad del color primario
-    
-    // Variables para elementos estructurales
-    root.style.setProperty('--header-background', safeTheme.headerBackgroundColor)
-    root.style.setProperty('--footer-background', safeTheme.footerBackgroundColor)
-    root.style.setProperty('--sidebar-background', safeTheme.sidebarBackgroundColor)
-    root.style.setProperty('--sidebar-text', safeTheme.sidebarTextColor)
-    root.style.setProperty('--sidebar-hover', safeTheme.sidebarHoverColor)
-    root.style.setProperty('--input-focus-border', safeTheme.inputFocusBorderColor)
-    
-    // Actualizar colores específicos usados en la app
-    root.style.setProperty('--ring', safeTheme.primaryColor)
-    
-    // Preservar algunos colores críticos para la UI
-    root.style.setProperty('--primary-foreground', '#ffffff') // Texto blanco para el color primario
-    root.style.setProperty('--secondary-foreground', '#111827') // Texto oscuro para el color secundario
-    
-    // Configurar colores para tipos específicos de la UI
-    root.style.setProperty('--purple-600', safeTheme.primaryColor)
-    root.style.setProperty('--purple-500', safeTheme.secondaryColor)
-    root.style.setProperty('--purple-400', safeTheme.accentColor)
-    
-    // Aplicar colores a clases específicas de UI
-    document.body.style.setProperty('--card-bg', safeTheme.cardBackgroundColor)
-  }
-  
-  // Función auxiliar para ajustar un color (oscurecer o aclarar)
-  const adjustColor = (color: string, amount: number): string => {
-    // Implementación simple para oscurecer o aclarar un color
-    try {
-      // Verificar si el color es válido antes de procesarlo
-      if (!color || typeof color !== 'string') {
-        return defaultTheme.primaryColor; // Valor predeterminado en caso de error
-      }
-      
-      const hex = color.replace('#', '')
-      
-      // Verificar que el formato del hex sea válido (6 caracteres hex)
-      if (!/^[0-9A-Fa-f]{6}$/.test(hex)) {
-        return color; // Devolver el color original si no es un hex válido
-      }
-      
-      const r = Math.max(0, Math.min(255, parseInt(hex.slice(0, 2), 16) + amount))
-      const g = Math.max(0, Math.min(255, parseInt(hex.slice(2, 4), 16) + amount))
-      const b = Math.max(0, Math.min(255, parseInt(hex.slice(4, 6), 16) + amount))
-      
-      return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`
-    } catch (e) {
-      console.error('Error ajustando color:', e)
-      return color || defaultTheme.primaryColor
-    }
-  }
+  }, []);
 
-  // Actualizar el tema completo
-  const setTheme = (newTheme: ThemeConfig) => {
-    setThemeState(newTheme)
-  }
+  // Actualizar las variables CSS del tema cuando cambie
+  useEffect(() => {
+    // Actualizar variables CSS para el tema
+    document.documentElement.style.setProperty('--theme-primary', theme.primaryColor);
+    document.documentElement.style.setProperty('--theme-secondary', theme.secondaryColor);
+    document.documentElement.style.setProperty('--theme-accent', theme.accentColor);
+    document.documentElement.style.setProperty('--theme-text', theme.textColor);
+    document.documentElement.style.setProperty('--theme-background', theme.backgroundColor);
+    document.documentElement.style.setProperty('--theme-header-bg', theme.headerBackgroundColor);
+    document.documentElement.style.setProperty('--theme-sidebar-bg', theme.sidebarBackgroundColor);
+    document.documentElement.style.setProperty('--theme-button-bg', theme.buttonPrimaryColor);
+    document.documentElement.style.setProperty('--theme-button-text', '#ffffff');
+    
+    // También guardamos el tema en localStorage
+    localStorage.setItem('theme', JSON.stringify(theme));
+  }, [theme]);
 
-  // Actualizar una propiedad específica del tema
-  const updateThemeProperty = <K extends keyof ThemeConfig>(property: K, value: ThemeConfig[K]) => {
-    setThemeState(prev => ({
-      ...prev,
-      [property]: value
-    }))
-  }
-
-  // Restablecer el tema a los valores predeterminados
-  const resetTheme = () => {
-    setThemeState(defaultTheme)
-  }
+  // Función para actualizar el tema
+  const updateTheme = useCallback((newTheme: Partial<ThemeConfig>) => {
+    setTheme(prevTheme => ({ ...prevTheme, ...newTheme }));
+  }, []);
 
   return (
-    <ThemeContext.Provider
-      value={{
-        theme,
-        setTheme,
-        updateThemeProperty,
-        resetTheme,
-      }}
-    >
+    <ThemeContext.Provider value={{ theme, updateTheme }}>
       {children}
     </ThemeContext.Provider>
-  )
+  );
 }
 
 // Hook personalizado para transformar colores (puede expandirse para conversión hex-hsl)

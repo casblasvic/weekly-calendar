@@ -12,6 +12,45 @@ body {
   }
 }
 
+/* ESTILOS CRÍTICOS - NO MODIFICAR */
+/* Se eliminan los estilos .submenu que estaban causando conflictos */
+/* El estilo ahora se aplica directamente en el componente */
+
+/* Eliminar cualquier estilo que pueda interferir con los submenús */
+.submenu-mobile,
+.submenu-vertical,
+.submenu-inline {
+  display: none !important;
+}
+
+/* Asegurar que otros menús también sean visibles */
+.user-menu, 
+.notifications-menu, 
+.client-card-menu {
+  position: fixed !important;
+  z-index: 9999999 !important;
+  visibility: visible !important;
+  display: block !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+/* Forzar visibilidad de todos los menús */
+[role="menu"],
+.dropdown-menu,
+.popup-menu,
+.context-menu {
+  z-index: 9999999 !important;
+  visibility: visible !important;
+  display: block !important;
+  opacity: 1 !important;
+}
+
+/* Evitar que elementos de fondo bloqueen los clics */
+#main-sidebar * {
+  pointer-events: auto !important;
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;
@@ -156,17 +195,20 @@ body {
 @supports (-webkit-touch-callout: none) {
   /* CSS specific to iOS devices */
   .mobile-agenda-header {
-    position: -webkit-sticky !important; /* Safari */
-    position: sticky !important;
-    top: 112px !important;
-    z-index: 40 !important;
-    background-color: white !important;
+    position: -webkit-sticky;
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    background-color: white;
     transform: translateZ(0);
     -webkit-transform: translateZ(0);
   }
 
   .mobile-agenda-grid {
-    padding-top: 40px !important;
+    padding-top: 0;
+    -webkit-overflow-scrolling: touch;
+    max-height: calc(100vh - 120px); /* Ajustado para quitar footer */
+    overflow-y: auto;
   }
 
   /* Fix for iOS scrolling issues */
@@ -174,5 +216,31 @@ body {
     -webkit-overflow-scrolling: touch;
     overflow-y: auto;
   }
+}
+
+/* Media queries for responsive design */
+@media (max-width: 768px) {
+  .container {
+    padding: 0.5rem;
+  }
+
+  .mobile-agenda-header {
+    top: 0;
+    padding: 0.5rem;
+  }
+
+  .mobile-agenda-grid {
+    margin-top: 0;
+  }
+  
+  /* Eliminados estilos del footer de navegación */
+  .app-footer {
+    display: none !important;
+  }
+}
+
+/* Clase que elimina completamente el footer y su espacio */
+.app-footer {
+  display: none !important;
 }
 

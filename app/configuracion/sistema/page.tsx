@@ -76,7 +76,13 @@ function SistemaPageContent() {
     
     try {
       // Actualizar los temas tanto en el contexto de tema como en el de sistema
-      setTheme(tempTheme);
+      if (typeof setTheme === 'function') {
+        setTheme(tempTheme);
+      } else {
+        console.warn('setTheme no está disponible como función');
+      }
+      
+      // Siempre actualizar usando updateTheme del contexto de sistema
       updateTheme(tempTheme);
       
       // Guardar en la persistencia del sistema

@@ -2,11 +2,11 @@
 
 import type React from "react"
 
-import { useState, useLayoutEffect } from "react"
-import { format } from "date-fns"
+import { useState, useLayoutEffect, useEffect } from "react"
+import { format, addDays, addMonths, startOfWeek, endOfWeek } from "date-fns"
 import { es } from "date-fns/locale"
 import { Button } from "@/components/ui/button"
-import { ChevronLeft, ChevronRight, SkipBack, SkipForward } from "lucide-react"
+import { ChevronLeft, ChevronRight, SkipBack, SkipForward, Calendar } from "lucide-react"
 import { getColorStyle } from "@/utils/color-utils"
 import { CurrentTimeIndicator } from "@/components/current-time-indicator"
 
@@ -55,6 +55,7 @@ export function MobileWeeklyAgenda({ cabins, timeSlots, selectedDate, onBackToWe
     }
   }, [cabins])
 
+  // Función para navegar por días sin actualizar router durante renderizado
   const changeDate = (direction: "prev" | "next") => {
     setCurrentDate((prevDate) => {
       const newDate = new Date(prevDate)
@@ -62,6 +63,29 @@ export function MobileWeeklyAgenda({ cabins, timeSlots, selectedDate, onBackToWe
       return newDate
     })
   }
+
+  // Función para navegar por semanas
+  const changeWeek = (direction: "prev" | "next") => {
+    setCurrentDate((prevDate) => {
+      const newDate = new Date(prevDate)
+      newDate.setDate(newDate.getDate() + (direction === "next" ? 7 : -7))
+      return newDate
+    })
+  }
+
+  // Función para navegar por meses
+  const changeMonth = (direction: "prev" | "next") => {
+    setCurrentDate((prevDate) => {
+      const newDate = new Date(prevDate)
+      newDate.setMonth(newDate.getMonth() + (direction === "next" ? 1 : -1))
+      return newDate
+    })
+  }
+
+  // Calcular el inicio y fin de la semana actual para mostrar el rango
+  const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 })
+  const weekEnd = endOfWeek(currentDate, { weekStartsOn: 1 })
+  const weekRange = `${format(weekStart, "d MMM", { locale: es })} - ${format(weekEnd, "d MMM", { locale: es })}`
 
   // Renderizado simplificado para evitar problemas de hidratación
   return (
@@ -77,51 +101,58 @@ export function MobileWeeklyAgenda({ cabins, timeSlots, selectedDate, onBackToWe
             </Button>
           )}
           <div className="text-sm text-gray-500" suppressHydrationWarning>
-            {isClient ? format(currentDate, "EEEE, d 'de' MMMM yyyy, HH:mm", { locale: es }) : "Cargando..."}
+            {isClient ? format(currentDate, "EEEE, d 'de' MMMM", { locale: es }) : "Cargando..."}
+          </div>
+        </div>
+        
+        {/* Barra de navegación mejorada y más responsive */}
+        <div className="flex items-center justify-between mt-2 mb-2">
+          <div className="flex items-center space-x-1">
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="h-8 w-8" 
+              onClick={() => changeMonth("prev")}
+              aria-label="Mes anterior"
+            >
+              <SkipBack className="h-4 w-4" />
+            </Button>
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="h-8 w-8" 
+              onClick={() => changeWeek("prev")}
+              aria-label="Semana anterior"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+          </div>
+          
+          <span className="text-sm font-medium">{weekRange}</span>
+          
+          <div className="flex items-center space-x-1">
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="h-8 w-8" 
+              onClick={() => changeWeek("next")}
+              aria-label="Semana siguiente"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="h-8 w-8" 
+              onClick={() => changeMonth("next")}
+              aria-label="Mes siguiente"
+            >
+              <SkipForward className="h-4 w-4" />
+            </Button>
           </div>
         </div>
       </header>
 
-      {/* Navegador de fechas */}
-      <div className="flex items-center gap-2 p-2 bg-purple-600 text-white">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="text-white hover:text-white hover:bg-purple-700"
-          onClick={() => changeDate("prev")}
-        >
-          <SkipBack className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="text-white hover:text-white hover:bg-purple-700"
-          onClick={() => changeDate("prev")}
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </Button>
-        <span className="flex-1 text-center text-sm" suppressHydrationWarning>
-          {isClient ? format(currentDate, "EEEE d 'de' MMMM", { locale: es }) : "Cargando..."}
-        </span>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="text-white hover:text-white hover:bg-purple-700"
-          onClick={() => changeDate("next")}
-        >
-          <ChevronRight className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="text-white hover:text-white hover:bg-purple-700"
-          onClick={() => changeDate("next")}
-        >
-          <SkipForward className="h-4 w-4" />
-        </Button>
-      </div>
-
-      {/* Cabecera de cabinas con tabla HTML para mayor compatibilidad */}
       <div className="overflow-x-auto w-full relative">
         {isClient ? (
           <table className="w-full border-collapse">

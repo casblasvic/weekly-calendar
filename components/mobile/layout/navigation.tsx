@@ -5,7 +5,14 @@ import { usePathname } from "next/navigation"
 import { Home, Calendar, Users, BarChart3 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
+/**
+ * COMPONENTE DESACTIVADO - NO USAR
+ */
 export function MobileNavigation() {
+  // Devolver null para que no se muestre nada
+  return null;
+  
+  /*
   const pathname = usePathname()
 
   const items = [
@@ -53,5 +60,6 @@ export function MobileNavigation() {
       </nav>
     </div>
   )
+  */
 }
 
