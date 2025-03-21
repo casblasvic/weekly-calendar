@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { getMockClient } from "@/lib/mock-data"
+import ClientProfileImage from '@/components/ui/client-profile-image'
 
 export default function ClientDetailPage() {
   const router = useRouter()
@@ -17,8 +18,17 @@ export default function ClientDetailPage() {
 
   useEffect(() => {
     const clientId = params.id as string
-    setClient(getMockClient(clientId))
+    const clientInfo = getMockClient(clientId)
+    
+    // Asegurar que el cliente tenga un clinicId asignado
+    if (!clientInfo.clinicId) {
+      clientInfo.clinicId = "1"; // Asignar una clínica por defecto si no tiene
+    }
+    
+    setClient(clientInfo)
     setLoading(false)
+    
+    console.log("Información de cliente cargada:", clientInfo);
   }, [params.id])
 
   const formatDate = (dateString: string) => {
@@ -81,43 +91,19 @@ export default function ClientDetailPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className="lg:col-span-1">
-          <CardHeader>
-            <CardTitle>Información de Contacto</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-start">
-              <Mail className="h-5 w-5 mr-2 text-muted-foreground mt-0.5" />
-              <div>
-                <p className="text-sm font-medium">Email</p>
-                <p className="text-sm text-muted-foreground">{client.email}</p>
-              </div>
-            </div>
-            <div className="flex items-start">
-              <Phone className="h-5 w-5 mr-2 text-muted-foreground mt-0.5" />
-              <div>
-                <p className="text-sm font-medium">Teléfono</p>
-                <p className="text-sm text-muted-foreground">{client.phone}</p>
-              </div>
-            </div>
-            <div className="flex items-start">
-              <MapPin className="h-5 w-5 mr-2 text-muted-foreground mt-0.5" />
-              <div>
-                <p className="text-sm font-medium">Dirección</p>
-                <p className="text-sm text-muted-foreground">{client.address}</p>
-              </div>
-            </div>
-            <div className="flex items-start">
-              <Calendar className="h-5 w-5 mr-2 text-muted-foreground mt-0.5" />
-              <div>
-                <p className="text-sm font-medium">Fecha de Nacimiento</p>
-                <p className="text-sm text-muted-foreground">{formatDate(client.birthDate)}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="flex flex-col items-center">
+          <ClientProfileImage
+            clientId={params.id}
+            clinicId={client.clinicId}
+            initialImage={client.profileImage}
+            editable={true}
+            size="lg"
+            onChange={(image) => {
+              // Aquí podrías actualizar el estado del cliente si es necesario
+            }}
+          />
+        </div>
         <Card className="lg:col-span-2">
           <Tabs defaultValue="visits">
             <CardHeader>

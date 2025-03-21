@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef, useMemo } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useParams } from "next/navigation"
 import { ChevronDown, Pencil, Trash2, ShoppingCart, Package, User, ChevronUp, ArrowUpDown, ChevronsLeft, ChevronLeft, ChevronRight, ChevronsRight, Wrench, ShoppingBag, SmilePlus, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -16,6 +16,9 @@ import { Card, CardContent } from "@/components/ui/card"
 import React from 'react'
 import { useServicio } from "@/contexts/servicios-context"
 import { useIVA } from "@/contexts/iva-context"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { toast } from "@/components/ui/use-toast"
+import { getServiceImages, saveServiceImages, getServiceDocuments, saveServiceDocuments, deleteServiceImages, deleteServiceDocuments } from "@/mockData"
 
 // Interfaces
 interface Tarifa {
@@ -42,13 +45,15 @@ export interface TipoIVA {
   tarifaId: string;
 }
 
-export default function ConfiguracionTarifa({ params }: { params: { id: string } }) {
+export default function ConfiguracionTarifa() {
   const router = useRouter()
-  const tarifaId = params.id
+  const params = useParams()
+  // Extraer el id de forma segura
+  const tarifaId = String(params?.id || "")
   
   const { families } = useFamily()
   const { getTarifaById, getFamiliasByTarifaId } = useTarif()
-  const { getServiciosByTarifaId } = useServicio()
+  const { getServiciosByTarifaId, eliminarServicio, getServicioById, actualizarServicio } = useServicio()
   const { getTiposIVAByTarifaId } = useIVA()
   
   const [tarifa, setTarifa] = useState<Tarifa | null>(null)
@@ -73,6 +78,11 @@ export default function ConfiguracionTarifa({ params }: { params: { id: string }
   const tiposIVATarifa = useMemo(() => {
     return getTiposIVAByTarifaId(tarifaId);
   }, [tarifaId, getTiposIVAByTarifaId]);
+
+  // Estado para el modal de confirmación de eliminación
+  const [servicioAEliminar, setServicioAEliminar] = useState<string | null>(null);
+  const [confirmEliminarOpen, setConfirmEliminarOpen] = useState(false);
+  const [nombreServicioEliminar, setNombreServicioEliminar] = useState("");
 
   // Cargar datos de servicios y productos combinados
   useEffect(() => {
@@ -192,10 +202,11 @@ export default function ConfiguracionTarifa({ params }: { params: { id: string }
   const serviciosFiltrados = useMemo(() => {
     let filteredItems = [...serviciosLista];
     
-    // Filtro por término de búsqueda
+    // Filtro por término de búsqueda (en nombre o código)
     if (searchTerm) {
       filteredItems = filteredItems.filter(item => 
-        item.nombre.toLowerCase().includes(searchTerm.toLowerCase())
+        item.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.codigo.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
     
@@ -216,10 +227,13 @@ export default function ConfiguracionTarifa({ params }: { params: { id: string }
     // Ordenación
     if (sortConfig) {
       filteredItems.sort((a, b) => {
-        if (a[sortConfig.key] < b[sortConfig.key]) {
+        const valA = a[sortConfig.key as keyof typeof a];
+        const valB = b[sortConfig.key as keyof typeof b];
+        
+        if (valA < valB) {
           return sortConfig.direction === 'ascending' ? -1 : 1;
         }
-        if (a[sortConfig.key] > b[sortConfig.key]) {
+        if (valA > valB) {
           return sortConfig.direction === 'ascending' ? 1 : -1;
         }
         return 0;
@@ -236,6 +250,17 @@ export default function ConfiguracionTarifa({ params }: { params: { id: string }
 
   // Cambiar de página
   const paginate = (pageNumber: number) => setCurrentPage(pageNumber);
+  
+  // Función para solicitar ordenamiento
+  const requestSort = (key: string) => {
+    let direction: 'ascending' | 'descending' = 'ascending';
+    
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'ascending') {
+      direction = 'descending';
+    }
+    
+    setSortConfig({ key, direction });
+  };
   
   // Obtener icono de ordenación
   const getSortIcon = (key: string) => {
@@ -263,9 +288,168 @@ export default function ConfiguracionTarifa({ params }: { params: { id: string }
 
   // En la sección de acciones de la tabla donde está el botón de editar
   const handleEditarServicio = (servicioId: string) => {
-    // Navegar a la página de edición del servicio con el ID correcto
-    router.push(`/configuracion/tarifas/${tarifaId}/nuevo-servicio?servicioId=${servicioId}`);
+    // Añadir logs de depuración
+    console.log(`Editando servicio con ID: ${servicioId} de la tarifa ${tarifaId}`);
+    
+    try {
+      // Verificar que el servicio existe antes de navegar
+      const servicioExistente = getServiciosByTarifaId(tarifaId).find(s => s.id === servicioId);
+      
+      if (servicioExistente) {
+        console.log("Servicio encontrado:", servicioExistente);
+        
+        // Verificar que el tarifaId es correcto
+        if (servicioExistente.tarifaId !== tarifaId) {
+          console.warn(`El servicio tiene tarifaId ${servicioExistente.tarifaId} pero pertenece a la tarifa ${tarifaId}. Corrigiendo...`);
+          
+          // Corregir el tarifaId del servicio
+          actualizarServicio(servicioId, { 
+            ...servicioExistente, 
+            tarifaId: tarifaId 
+          });
+          
+          console.log("TarifaId del servicio corregido.");
+        }
+        
+        // Verificar si tiene documento adjunto pero no está guardado correctamente
+        const docs = getServiceDocuments(servicioId);
+        console.log(`El servicio tiene ${docs.length} documentos adjuntos.`);
+        
+        // Navegar a la página de edición del servicio con el ID correcto
+        const rutaEdicion = `/configuracion/tarifas/${tarifaId}/nuevo-servicio?servicioId=${servicioId}`;
+        console.log("Navegando a:", rutaEdicion);
+        router.push(rutaEdicion);
+      } else {
+        console.error(`Error: No se encontró el servicio con ID ${servicioId}`);
+        toast({
+          title: "Error",
+          description: "No se pudo encontrar el servicio para editar",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("Error al editar servicio:", error);
+      toast({
+        title: "Error",
+        description: "Se produjo un error al intentar editar el servicio",
+        variant: "destructive",
+      });
+    }
   };
+
+  // Función para manejar la eliminación de un servicio
+  const handleEliminarServicio = (servicioId: string, nombre: string) => {
+    setServicioAEliminar(servicioId);
+    setNombreServicioEliminar(nombre);
+    setConfirmEliminarOpen(true);
+  };
+  
+  // Función para confirmar la eliminación
+  const confirmarEliminacion = () => {
+    if (servicioAEliminar) {
+      try {
+        // Obtener imágenes y documentos antes de eliminar el servicio
+        const tieneImagenes = deleteServiceImages(servicioAEliminar);
+        const tieneDocumentos = deleteServiceDocuments(servicioAEliminar);
+        
+        // Eliminar el servicio
+        eliminarServicio(servicioAEliminar);
+        
+        // Actualizar la lista de servicios después de eliminar
+        const nuevosServicios = serviciosLista.filter(s => s.id !== servicioAEliminar);
+        setServiciosLista(nuevosServicios);
+        
+        // Calcular el total de páginas
+        setTotalPages(Math.ceil(nuevosServicios.length / itemsPerPage));
+        
+        // Si la página actual ya no tiene elementos y no es la primera página,
+        // volver a la página anterior
+        if (currentItems.length <= 1 && currentPage > 1) {
+          setCurrentPage(prev => prev - 1);
+        }
+        
+        // Preparar mensaje incluyendo info sobre archivos
+        let mensaje = `El servicio "${nombreServicioEliminar}" ha sido eliminado correctamente.`;
+        if (tieneImagenes || tieneDocumentos) {
+          mensaje += ` También se han eliminado ${tieneImagenes ? 'imágenes' : ''}${tieneImagenes && tieneDocumentos ? ' y ' : ''}${tieneDocumentos ? 'documentos' : ''} asociados.`;
+        }
+        
+        toast({
+          title: "Servicio eliminado",
+          description: mensaje,
+        });
+      } catch (error) {
+        console.error("Error al eliminar servicio:", error);
+        toast({
+          title: "Error",
+          description: "No se pudo eliminar el servicio. Inténtelo de nuevo.",
+          variant: "destructive",
+        });
+      } finally {
+        setConfirmEliminarOpen(false);
+        setServicioAEliminar(null);
+        setNombreServicioEliminar("");
+      }
+    }
+  };
+
+  // Escuchar eventos de actualización de servicios
+  useEffect(() => {
+    const handleServiciosUpdated = (event: any) => {
+      const { tarifaId: eventTarifaId, action } = event.detail;
+      
+      console.log(`Evento servicios-updated recibido: ${action} en tarifa ${eventTarifaId}`);
+      
+      // Si la actualización es para esta tarifa, recargar servicios
+      if (eventTarifaId === tarifaId) {
+        console.log("Recargando servicios para esta tarifa...");
+        
+        // Obtener servicios reales del contexto
+        const serviciosReales = getServiciosByTarifaId(tarifaId);
+        console.log("Servicios obtenidos después del evento:", serviciosReales);
+        
+        // Hacer el mapeo igual que en el efecto principal
+        const serviciosData = serviciosReales.map(s => {
+          const tipoIVA = tiposIVATarifa?.find(t => t.id === s.ivaId);
+          
+          let ivaDisplay = "N/A";
+          if (tipoIVA) {
+            if (typeof tipoIVA.porcentaje === 'number') {
+              ivaDisplay = `${tipoIVA.porcentaje}%`;
+            } else if (tipoIVA.descripcion) {
+              ivaDisplay = tipoIVA.descripcion;
+            }
+          }
+          
+          return {
+            id: s.id,
+            nombre: s.nombre,
+            codigo: s.codigo || '',
+            familia: getFamiliaName(s.familiaId),
+            precio: parseFloat(s.precioConIVA) || 0,
+            iva: ivaDisplay,
+            tipo: 'servicio'
+          };
+        });
+        
+        // Mantener los productos como estaban
+        const productosExistentes = serviciosLista.filter(item => item.tipo === 'producto');
+        
+        // Actualizar la lista combinada
+        const combinedData = [...serviciosData, ...productosExistentes];
+        setServiciosLista(combinedData);
+        setTotalPages(Math.ceil(combinedData.length / itemsPerPage));
+      }
+    };
+    
+    // Registrar el listener
+    window.addEventListener('servicios-updated', handleServiciosUpdated);
+    
+    // Limpiar al desmontar
+    return () => {
+      window.removeEventListener('servicios-updated', handleServiciosUpdated);
+    };
+  }, [tarifaId, getServiciosByTarifaId, tiposIVATarifa, itemsPerPage, serviciosLista]);
 
   return (
     <div className="container mx-auto p-6 mt-16">
@@ -314,13 +498,31 @@ export default function ConfiguracionTarifa({ params }: { params: { id: string }
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">(Todas)</SelectItem>
-                    {tarifaFamilies && tarifaFamilies.map((familia) => (
-                      <SelectItem key={familia.id} value={familia.name || familia.nombre || `familia-${familia.id}`}>
-                        {familia.name || familia.nombre || `Familia ${familia.id}`}
+                    {tarifaFamilies.map((familia) => (
+                      <SelectItem key={familia.id} value={familia.name || familia.nombre}>
+                        {familia.name || familia.nombre}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+
+              {/* Botones de Exportar y Buscar */}
+              <div className="flex space-x-2 mt-4">
+                <Button variant="outline" size="sm" className="flex-1">
+                  Exportar
+                </Button>
+                <Button 
+                  variant="default" 
+                  size="sm" 
+                  className="bg-purple-700 hover:bg-purple-800 flex-1"
+                  onClick={() => {
+                    // Reiniciar la página al buscar
+                    setCurrentPage(1);
+                  }}
+                >
+                  Buscar
+                </Button>
               </div>
 
               <div className="flex items-center space-x-2">
@@ -413,12 +615,7 @@ export default function ConfiguracionTarifa({ params }: { params: { id: string }
           <h2 className="text-lg font-semibold">Listado de productos y servicios: {tarifa?.nombre || ""}</h2>
         </div>
         <div className="flex space-x-2">
-          <Button variant="outline" size="sm">
-            Exportar
-          </Button>
-          <Button variant="default" size="sm" className="bg-purple-700 hover:bg-purple-800">
-            Buscar
-          </Button>
+          {/* Botones eliminados para evitar duplicidad */}
         </div>
       </div>
 
@@ -551,9 +748,14 @@ export default function ConfiguracionTarifa({ params }: { params: { id: string }
                     >
                       <Pencil className="h-4 w-4" />
                     </Button>
-                    <button className="text-red-600 hover:text-red-900">
-                      <Trash2 size={18} />
-                    </button>
+                    <Button
+                      variant="ghost" 
+                      size="icon"
+                      onClick={() => handleEliminarServicio(servicio.id, servicio.nombre)}
+                      className="h-8 w-8 p-0 text-red-600 hover:text-red-900 hover:bg-red-50"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
                 </td>
               </tr>
@@ -620,6 +822,38 @@ export default function ConfiguracionTarifa({ params }: { params: { id: string }
         </Button>
         <Button variant="outline">Ayuda</Button>
       </div>
+
+      {/* Modal de confirmación para eliminar servicio */}
+      <Dialog open={confirmEliminarOpen} onOpenChange={setConfirmEliminarOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-red-600">Confirmar eliminación</DialogTitle>
+            <DialogDescription className="pt-2">
+              ¿Está seguro de que desea eliminar el servicio <span className="font-semibold">"{nombreServicioEliminar}"</span>?
+              <p className="mt-2">
+                Esta acción también eliminará todas las imágenes y documentos asociados al servicio.
+              </p>
+              <p className="mt-2 text-red-500 font-medium">
+                Esta acción no se puede deshacer.
+              </p>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="sm:justify-end">
+            <Button
+              variant="outline"
+              onClick={() => setConfirmEliminarOpen(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmarEliminacion}
+            >
+              Eliminar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

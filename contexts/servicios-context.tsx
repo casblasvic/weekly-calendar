@@ -102,12 +102,33 @@ export const ServicioProvider = ({ children }: { children: ReactNode }) => {
     const id = generateSequentialId(servicios.map(s => s.id));
     const nuevoServicio = { ...servicio, id };
     
+    console.log("Creando nuevo servicio con ID:", id);
+    console.log("Datos del servicio a crear:", nuevoServicio);
+    
+    // Crear copia actualizada de servicios para evitar problemas de concurrencia
+    const serviciosActualizados = [...servicios, nuevoServicio as Servicio];
+    
     // Actualizar el estado
-    setServicios(prev => [...prev, nuevoServicio as Servicio]);
+    setServicios(serviciosActualizados);
     setServicioActual(nuevoServicio as Servicio);
     
     // Guardar en localStorage inmediatamente
-    localStorage.setItem("servicios", JSON.stringify([...servicios, nuevoServicio]));
+    try {
+      localStorage.setItem("servicios", JSON.stringify(serviciosActualizados));
+      console.log("Servicios guardados en localStorage. Total:", serviciosActualizados.length);
+      console.log("Lista de servicios actualizada:", serviciosActualizados);
+    } catch (error) {
+      console.error("Error al guardar servicios en localStorage:", error);
+    }
+    
+    // Disparar evento para notificar cambio en datos
+    try {
+      window.dispatchEvent(new CustomEvent("servicios-updated", {
+        detail: { tarifaId: servicio.tarifaId, action: 'create' }
+      }));
+    } catch (error) {
+      console.error("Error al disparar evento de actualización:", error);
+    }
     
     return id;
   };
@@ -148,7 +169,17 @@ export const ServicioProvider = ({ children }: { children: ReactNode }) => {
 
   // Obtener servicios por tarifa ID
   const getServiciosByTarifaId = (tarifaId: string) => {
-    return servicios.filter(servicio => servicio.tarifaId === tarifaId);
+    console.log(`Buscando servicios para tarifaId: ${tarifaId}`);
+    console.log(`Total servicios disponibles: ${servicios.length}`);
+    
+    const serviciosFiltrados = servicios.filter(servicio => {
+      const coincide = servicio.tarifaId === tarifaId;
+      console.log(`Servicio ${servicio.id} (${servicio.nombre}) - tarifaId: ${servicio.tarifaId}, coincide: ${coincide}`);
+      return coincide;
+    });
+    
+    console.log(`Encontrados ${serviciosFiltrados.length} servicios para tarifa ${tarifaId}`);
+    return serviciosFiltrados;
   };
 
   // Guardar el servicio actual (crear si es nuevo o actualizar si existe)

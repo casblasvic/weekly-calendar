@@ -43,6 +43,7 @@ import {
   Trash2,
   Clock,
   Database,
+  FolderOpen,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { WeekSchedule } from "@/types/schedule"
@@ -62,7 +63,7 @@ const menuItems = [
   { id: "email", label: "Notificaciones e-mail", icon: Mail },
   { id: "whatsapp", label: "Notificaciones WhatsApp", icon: Phone },
   { id: "otros", label: "Otros APIs", icon: Globe },
-  { id: "debug", label: "Depuración de almacenamiento", icon: Database },
+  { id: "almacenamiento", label: "Almacenamiento", icon: Database },
 ]
 
 interface Cabin {
@@ -250,6 +251,15 @@ export default function ClinicaDetailPage({ params }: { params: { id: string } }
     setIsSaving(false)
     // Aquí iría la lógica real de guardado
   }
+
+  const tabs = [
+    { id: "info", label: "Información" },
+    { id: "sedes", label: "Sedes" },
+    { id: "cabinas", label: "Cabinas" },
+    { id: "equipamiento", label: "Equipamiento" },
+    { id: "almacenamiento", label: "Almacenamiento" },
+    { id: "depuracion", label: "Depuración" },
+  ]
 
   return (
     <div className="flex flex-col md:flex-row min-h-screen bg-gray-50">
@@ -674,7 +684,17 @@ export default function ClinicaDetailPage({ params }: { params: { id: string } }
               <div className="space-y-4">
                 <div className="space-y-2">
                   <Label className="text-sm">Espacio de almacenamiento</Label>
-                  <div className="text-sm text-gray-600">100 Mb (0 Mb libres)</div>
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm text-gray-600">100 Mb (0 Mb libres)</div>
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => router.push(`/configuracion/clinicas/${params.id}/almacenamiento`)}
+                    >
+                      <FolderOpen className="w-4 h-4 mr-2" />
+                      Gestionar almacenamiento
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="space-y-2">
@@ -863,17 +883,10 @@ export default function ClinicaDetailPage({ params }: { params: { id: string } }
             </Card>
           )}
 
-          {activeTab === "debug" && (
-            <Card className="p-6">
-              <SectionTitle
-                icon={Database}
-                title="Depuración de Almacenamiento"
-                color="text-purple-600 border-purple-600"
-              />
-              <div className="space-y-4">
-                <DebugStorage />
-              </div>
-            </Card>
+          {activeTab === "almacenamiento" && (
+            <div className="space-y-4">
+              <DebugStorage clinicId={clinic.id} />
+            </div>
           )}
         </div>
       </div>

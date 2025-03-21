@@ -12,30 +12,35 @@ import { FamilyProvider } from "@/contexts/family-context"
 import { ServicioProvider } from "@/contexts/servicios-context"
 import { ConsumoServicioProvider } from "@/contexts/consumo-servicio-context"
 import { EquipmentProvider } from "@/contexts/equipment-context"
+import { AppProviders } from '@/contexts'
+import { StorageInitializer } from "@/components/storage-initializer"
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="es">
       <body>
-        <EquipmentProvider>
-          <ClinicProvider>
-            <FamilyProvider>
-              <CabinProvider>
-                <LastClientProvider>
-                  <ClientCardProvider>
-                    <ThemeProvider>
-                      <ServicioProvider>
-                        <ConsumoServicioProvider>
-                          <LayoutWrapper>{children}</LayoutWrapper>
-                        </ConsumoServicioProvider>
-                      </ServicioProvider>
-                    </ThemeProvider>
-                  </ClientCardProvider>
-                </LastClientProvider>
-              </CabinProvider>
-            </FamilyProvider>
-          </ClinicProvider>
-        </EquipmentProvider>
+        <StorageInitializer />
+        <AppProviders>
+          <EquipmentProvider>
+            <ClinicProvider>
+              <FamilyProvider>
+                <CabinProvider>
+                  <LastClientProvider>
+                    <ClientCardProvider>
+                      <ThemeProvider>
+                        <ServicioProvider>
+                          <ConsumoServicioProvider>
+                            <LayoutWrapper>{children}</LayoutWrapper>
+                          </ConsumoServicioProvider>
+                        </ServicioProvider>
+                      </ThemeProvider>
+                    </ClientCardProvider>
+                  </LastClientProvider>
+                </CabinProvider>
+              </FamilyProvider>
+            </ClinicProvider>
+          </EquipmentProvider>
+        </AppProviders>
       </body>
     </html>
   )
