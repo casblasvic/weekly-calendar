@@ -79,9 +79,14 @@ const agentesSoporte = [
   { id: "agent3", nombre: "María López", estado: "ocupado", avatar: "/avatars/maria.png" }
 ];
 
+interface PageParams {
+  id: string;
+  [key: string]: string | string[];
+}
+
 export default function NuevoServicio() {
   const router = useRouter()
-  const params = useParams()
+  const params = useParams<PageParams>()
   const tarifaId = String(params?.id || "")
   const searchParams = useSearchParams();
   const servicioId = searchParams.get('servicioId');

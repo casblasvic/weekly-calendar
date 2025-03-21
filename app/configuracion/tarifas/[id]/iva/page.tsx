@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -9,9 +9,15 @@ import { Pencil, Trash2, ChevronDown } from "lucide-react"
 import { useTarif } from "@/contexts/tarif-context"
 import { useIVA } from "@/contexts/iva-context"
 
-export default function TiposIVA({ params }: { params: { id: string } }) {
+interface PageParams {
+  id: string;
+  [key: string]: string | string[];
+}
+
+export default function TiposIVA() {
   const router = useRouter()
-  const tarifaId = params.id
+  const params = useParams<PageParams>()
+  const tarifaId = String(params?.id || "")
   
   const { getTarifaById } = useTarif()
   const { tiposIVA, addTipoIVA, updateTipoIVA, deleteTipoIVA, getTiposIVAByTarifaId } = useIVA()
