@@ -24,18 +24,35 @@ interface LayoutWrapperProps {
   children: React.ReactNode
 }
 
-// Dummy MobileAvatarMenu component to resolve the error
-const MobileAvatarMenu = () => {
-  return <div>{/* Add your mobile avatar menu content here */}</div>
-}
-
 export function LayoutWrapper({ children }: LayoutWrapperProps) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
   const [showMobileUserMenu, setShowMobileUserMenu] = useState(false)
+  const [currentDate, setCurrentDate] = useState<string>("")
+  const [hasMounted, setHasMounted] = useState(false)
   const router = useRouter()
+
+  // Verificar si el componente se ha montado en el cliente
+  useEffect(() => {
+    setHasMounted(true)
+  }, [])
+
+  useEffect(() => {
+    // Sólo ejecutar en el cliente después del montaje
+    if (hasMounted) {
+      // Actualizamos la fecha solo en el cliente para evitar errores de hidratación
+      setCurrentDate(format(new Date(), "EEEE, d 'de' MMMM 'de' yyyy, HH:mm", { locale: es }))
+      
+      // Actualizar la fecha cada minuto
+      const intervalId = setInterval(() => {
+        setCurrentDate(format(new Date(), "EEEE, d 'de' MMMM 'de' yyyy, HH:mm", { locale: es }))
+      }, 60000)
+      
+      return () => clearInterval(intervalId)
+    }
+  }, [hasMounted])
 
   useEffect(() => {
     if (typeof window === "undefined") return
@@ -85,7 +102,7 @@ export function LayoutWrapper({ children }: LayoutWrapperProps) {
             <div className="flex flex-col">
               <div className="text-xl font-semibold">LOGO</div>
               <div className="text-xs text-purple-600">
-                {format(new Date(), "EEEE, d 'de' MMMM 'de' yyyy, HH:mm", { locale: es })}
+                {hasMounted ? currentDate : ""}
               </div>
             </div>
           </div>
@@ -243,7 +260,6 @@ export function LayoutWrapper({ children }: LayoutWrapperProps) {
           </DropdownMenu>
         </nav>
       )}
-      {isMobile && <MobileAvatarMenu />}
     </div>
   )
 }

@@ -11,7 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ArrowLeft, HelpCircle, Save, Upload, X, ChevronLeft, ChevronRight } from "lucide-react"
 import { toast } from "sonner"
 import Image from "next/image"
-import { useEquipment, DeviceImage } from "@/contexts/equipment-context"
+import { useEquipment, DeviceImage, Equipment } from "@/contexts/equipment-context"
+import { MockData, getEquipmentImages } from "@/mockData"
 
 interface DeviceData {
   name: string
@@ -57,15 +58,37 @@ export default function DevicePage() {
 
   // Función para manejar la carga de archivos
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      const newImages: DeviceImage[] = Array.from(e.target.files).map(file => ({
-        id: Math.random().toString(36).substring(2, 9),
-        url: URL.createObjectURL(file),
-        isPrimary: images.length === 0, // La primera imagen es la principal por defecto
-        file
-      }));
+    if (e.target.files && e.target.files.length > 0) {
+      console.log(`Subiendo ${e.target.files.length} archivos para clínica ID: ${clinicId}`);
       
-      setImages([...images, ...newImages]);
+      const newImages: DeviceImage[] = Array.from(e.target.files).map(file => {
+        const imageId = Math.random().toString(36).substring(2, 9);
+        console.log(`Imagen ${imageId}: ${file.name} (${file.size} bytes, ${file.type})`);
+        
+        // Importante: Crear un objeto File nuevo para asegurarnos que el archivo se sube correctamente
+        const fileObject = new File([file], file.name, { 
+          type: file.type,
+          lastModified: file.lastModified 
+        });
+        
+        return {
+          id: imageId,
+          url: URL.createObjectURL(file),
+          isPrimary: images.length === 0, // La primera imagen es la principal por defecto
+          file: fileObject  // Guardar referencia explícita al archivo original
+        };
+      });
+      
+      // Imprimir información sobre las nuevas imágenes
+      console.log("Añadiendo nuevas imágenes:", newImages.map(img => ({
+        id: img.id,
+        hasFile: !!img.file,
+        url: img.url,
+        isPrimary: img.isPrimary
+      })));
+      
+      // Añadir las nuevas imágenes al estado
+      setImages(prevImages => [...prevImages, ...newImages]);
     }
   }
 
@@ -109,6 +132,33 @@ export default function DevicePage() {
       setIsLoading(true)
       const numDeviceId = Number(deviceId)
       
+      // Cargar las imágenes directamente desde MockData
+      try {
+        const deviceImages = getEquipmentImages(numDeviceId);
+        if (deviceImages && deviceImages.length > 0) {
+          console.log(`Cargadas ${deviceImages.length} imágenes para dispositivo ${numDeviceId} desde MockData`);
+          
+          // Asegurar que las rutas de las imágenes sean correctas
+          const validImages = deviceImages.filter(img => img && img.url && img.id).map(img => ({
+            id: img.id,
+            url: img.url.startsWith('blob:') ? 
+              // Si es una URL de blob temporal, intentar usar la URL persistente
+              (img.path ? `/api/storage/file?path=${img.path}` : img.url) : 
+              img.url,
+            isPrimary: !!img.isPrimary,
+            path: img.path
+          }));
+          
+          console.log(`${validImages.length} imágenes válidas cargadas desde MockData`);
+          setImages(validImages);
+        } else {
+          console.log(`No se encontraron imágenes para el dispositivo ${numDeviceId} en MockData`);
+        }
+      } catch (error) {
+        console.error(`Error al cargar imágenes desde MockData:`, error);
+      }
+      
+      // Cargar datos del dispositivo
       const device = getEquipmentById(numDeviceId)
       
       if (device) {
@@ -121,12 +171,25 @@ export default function DevicePage() {
           serialNumber: device.serialNumber || ""
         })
         
-        if (device.images) {
-          setImages(device.images.map(img => ({
+        // Si no se cargaron imágenes desde MockData, intentar cargarlas desde el contexto
+        if (images.length === 0 && device.images && device.images.length > 0) {
+          console.log(`Cargando ${device.images.length} imágenes para dispositivo ${numDeviceId} desde contexto (fallback)`);
+          
+          // Asegurar que las rutas de las imágenes sean correctas
+          const validImages = device.images.filter(img => img.url && img.id).map(img => ({
             id: img.id,
-            url: img.url,
-            isPrimary: img.isPrimary
-          })));
+            url: img.url.startsWith('blob:') ? 
+              // Si es una URL de blob temporal, intentar usar la URL persistente
+              (img.path ? `/api/storage/file?path=${img.path}` : img.url) : 
+              img.url,
+            isPrimary: img.isPrimary,
+            path: img.path
+          }));
+          
+          console.log(`${validImages.length} imágenes válidas cargadas del contexto`);
+          setImages(validImages);
+        } else if (images.length === 0) {
+          console.log(`No se encontraron imágenes para el dispositivo ${numDeviceId}`);
         }
       } else {
         toast.error("No se encontró el dispositivo solicitado")
@@ -147,22 +210,38 @@ export default function DevicePage() {
     }
   }, [deviceId, params.id, router, getEquipmentById, searchParams])
 
-  const handleSave = () => {
-    setIsSaving(true) // Iniciar animación de guardado
+  const handleSave = async () => {
+    setIsSaving(true)
     
     try {
+      console.log(`Guardando equipamiento en clínica ID: ${clinicId}`);
+      
+      // Verificar las imágenes antes de guardar
+      const imagesWithFiles = [...images]; // Hacer una copia para no modificar el original
+      
+      // Imprimir información detallada sobre cada imagen
+      console.log("Imágenes que se están guardando:", imagesWithFiles.map(img => ({
+        id: img.id,
+        hasFile: !!img.file,
+        url: img.url,
+        isPrimary: img.isPrimary
+      })));
+      
+      console.log(`Total de imágenes a guardar: ${imagesWithFiles.length}`);
+      
       if (isNew) {
-        // Añadimos el equipo y obtenemos el ID del nuevo equipo
-        const newEquipment = addEquipment({
+        // Añadir nuevo equipamiento
+        const newEquipment = await addEquipment({
           ...deviceData,
           clinicId,
-          images
+          images: imagesWithFiles
         })
         
         if (newEquipment && newEquipment.id) {
           toast.success("Dispositivo añadido correctamente")
+          console.log(`Equipamiento creado con ID: ${newEquipment.id}`);
           
-          // Actualizar la URL sin recargar la página para mantener al usuario en la página de edición
+          // Redirigir sin recargar
           if (fromGlobalList) {
             router.replace(`/configuracion/clinicas/${clinicId}/equipamiento/${newEquipment.id}?from=global`, { scroll: false })
           } else {
@@ -172,43 +251,36 @@ export default function DevicePage() {
           toast.error("Error al añadir el dispositivo")
         }
       } else {
-        // Actualizamos el equipo existente con el ID actual
-        const success = updateEquipment(Number(deviceId), {
-          id: Number(deviceId), // Añadimos el ID explícitamente
+        // Actualizar equipamiento existente
+        console.log(`Actualizando equipamiento ${deviceId} con ${imagesWithFiles.length} imágenes`);
+        
+        // Crear objeto de datos completo con imágenes incluidas
+        const equipmentData: Partial<Equipment> = {
+          id: Number(deviceId),
           ...deviceData,
           clinicId,
-          images
-        })
+          // Es importante incluir las imágenes dentro del objeto principal
+          images: imagesWithFiles
+        };
+        
+        console.log("Objeto de equipamiento completo a actualizar:", {
+          id: equipmentData.id,
+          name: equipmentData.name,
+          imagesCount: equipmentData.images?.length || 0,
+        });
+        
+        // Pasar el objeto completo con imágenes
+        const success = await updateEquipment(Number(deviceId), equipmentData);
         
         if (success) {
           toast.success("Dispositivo actualizado correctamente")
-          
-          // Refrescar los datos para comprobar que se guardaron correctamente
-          const updatedDevice = getEquipmentById(Number(deviceId))
-          if (updatedDevice) {
-            setDeviceData({
-              name: updatedDevice.name,
-              code: updatedDevice.code,
-              weight: "1", // Valor por defecto si no existe
-              description: updatedDevice.description,
-              flowwIntegration: "Ninguna", // Valor por defecto si no existe
-              serialNumber: updatedDevice.serialNumber || ""
-            })
-            
-            if (updatedDevice.images) {
-              setImages(updatedDevice.images.map(img => ({
-                id: img.id,
-                url: img.url,
-                isPrimary: img.isPrimary
-              })));
-            }
-          }
+          console.log(`Equipamiento actualizado: ID ${deviceId}, clínica ${clinicId}`);
         } else {
           toast.error("No se pudo actualizar el dispositivo")
         }
       }
       
-      // Detener la animación después de un breve retraso
+      // Detener la animación después de un breve retardo
       setTimeout(() => {
         setIsSaving(false)
       }, 500)
@@ -244,20 +316,24 @@ export default function DevicePage() {
           <Card className="p-6 space-y-6">
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="name">Nombre</Label>
+                <Label htmlFor="name-input">Nombre</Label>
                 <Input
-                  id="name"
+                  id="name-input"
+                  name="name"
                   value={deviceData.name}
                   onChange={(e) => setDeviceData((prev) => ({ ...prev, name: e.target.value }))}
+                  autoComplete="off"
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="code">Código</Label>
+                <Label htmlFor="code-input">Código</Label>
                 <Input
-                  id="code"
+                  id="code-input"
+                  name="code"
                   value={deviceData.code}
                   onChange={(e) => setDeviceData((prev) => ({ ...prev, code: e.target.value }))}
+                  autoComplete="off"
                 />
               </div>
 
@@ -367,15 +443,18 @@ export default function DevicePage() {
               
               {/* Selector de archivos */}
               <div className="flex justify-center">
-                <label className="flex items-center justify-center px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm cursor-pointer hover:bg-gray-50">
+                <label htmlFor="file-upload" className="flex items-center justify-center px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm cursor-pointer hover:bg-gray-50">
                   <Upload className="w-4 h-4 mr-2" />
                   Subir imágenes
                   <input
+                    id="file-upload"
+                    name="file-upload"
                     type="file"
                     className="sr-only"
                     multiple
                     accept="image/*"
                     onChange={handleFileUpload}
+                    autoComplete="off"
                   />
                 </label>
               </div>

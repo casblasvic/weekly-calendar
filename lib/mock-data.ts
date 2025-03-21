@@ -64,6 +64,7 @@ export const getMockClient = (id: string) => {
     phone: "555-123-4567",
     email: "ejemplo@mail.com",
     clinic: "Clínica Principal",
+    clinicId: "1", // Asignar una clínica por defecto
     address: "Dirección de ejemplo",
     birthDate: "1990-01-01",
     notes: "Notas de ejemplo",

@@ -7,53 +7,17 @@ const PROTECTED_ROUTES = ["/dashboard", "/settings", "/appointments", "/clients"
 // Rutas públicas (no requieren autenticación)
 const PUBLIC_ROUTES = ["/login", "/register", "/forgot-password", "/reset-password"]
 
-// Este middleware se ejecuta en cada solicitud
+// Esta función se ejecuta antes de cada petición
 export function middleware(request: NextRequest) {
-  const response = NextResponse.next()
-
-  // Obtener la ruta actual
-  const { pathname } = request.nextUrl
-
-  // Verificar si es una ruta protegida
-  const isProtectedRoute = PROTECTED_ROUTES.some((route) => pathname.startsWith(route))
-
-  // Verificar si es una ruta pública
-  const isPublicRoute = PUBLIC_ROUTES.some((route) => pathname.startsWith(route))
-
-  // Verificar si el usuario está autenticado
-  const authCookie = request.cookies.get("auth_user")
-  const isAuthenticated = !!authCookie
-
-  // Redirigir según el estado de autenticación
-  if (isProtectedRoute && !isAuthenticated) {
-    // Redirigir a la página de login si intenta acceder a una ruta protegida sin autenticación
-    return NextResponse.redirect(new URL("/login", request.url))
-  }
-
-  if (isPublicRoute && isAuthenticated) {
-    // Redirigir al dashboard si intenta acceder a una ruta pública estando autenticado
-    return NextResponse.redirect(new URL("/dashboard", request.url))
-  }
-
-  // Añadir encabezados de seguridad para cookies
-  response.headers.set("X-Content-Type-Options", "nosniff")
-  response.headers.set("X-Frame-Options", "DENY")
-  response.headers.set("X-XSS-Protection", "1; mode=block")
-
-  return response
+  // Simplemente pasamos la petición sin modificarla
+  return NextResponse.next();
 }
 
-// Configurar en qué rutas se ejecuta el middleware
+// Configurar para que se ejecute en todas las rutas excepto las de API y las estáticas
 export const config = {
   matcher: [
-    /*
-     * Coincide con todas las rutas excepto:
-     * 1. /api (rutas API)
-     * 2. /_next (archivos internos de Next.js)
-     * 3. /_static (si usas imágenes estáticas)
-     * 4. /favicon.ico, /robots.txt, etc.
-     */
-    "/((?!api|_next|_static|favicon.ico|robots.txt).*)",
-  ],
-}
+    // Excluyendo rutas de API, archivos estáticos e imágenes
+    '/((?!api|_next/static|_next/image|favicon.ico|.*\\.png$).*)'
+  ]
+};
 

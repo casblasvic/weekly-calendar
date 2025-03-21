@@ -118,7 +118,8 @@ export default function NewEquipmentPage() {
       const newImages: DeviceImage[] = Array.from(e.target.files).map(file => ({
         id: Math.random().toString(36).substring(2, 9),
         url: URL.createObjectURL(file),
-        isPrimary: images.length === 0
+        isPrimary: images.length === 0,
+        file  // Añadir referencia al archivo original
       }));
       
       setImages([...images, ...newImages]);

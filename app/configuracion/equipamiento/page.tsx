@@ -14,13 +14,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { AddEquipmentModal } from "@/components/modals/add-equipment-modal"
+import AddEquipmentModal from "@/components/modals/add-equipment-modal"
 import { SearchInput } from "@/components/SearchInput"
 import { useEquipment, Equipment } from "@/contexts/equipment-context"
 
 export default function EquipmentPage() {
   const router = useRouter()
-  const { allEquipment, deleteEquipment, clinics } = useEquipment()
+  const { allEquipment, deleteEquipment, clinics, addEquipment } = useEquipment()
   const [searchTerm, setSearchTerm] = useState("")
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
@@ -183,7 +183,6 @@ export default function EquipmentPage() {
         onClose={() => setIsAddModalOpen(false)}
         onSave={(data) => {
           try {
-            const { addEquipment } = useEquipment()
             addEquipment(data)
             toast.success("Equipamiento añadido correctamente")
             setIsAddModalOpen(false)

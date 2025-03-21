@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useRouter, useSearchParams, useParams } from "next/navigation"
 import { FileQuestion, Plus, Minus, ChevronUp, ChevronDown, MessageSquare, Users, HelpCircle, X, Send, ShoppingCart, AlertCircle, Save } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -24,6 +24,14 @@ import React from "react"
 import { useServicio } from "@/contexts/servicios-context"
 import { cn } from "@/lib/utils"
 import { toast } from "@/components/ui/use-toast"
+import { useImages } from "@/contexts/image-context"
+import { useDocuments } from "@/contexts/document-context"
+import ImageGallery from "@/components/ui/image-gallery"
+import DocumentList from "@/components/ui/document-list"
+import FileUploader from "@/components/ui/file-uploader"
+import { ImageFile } from "@/contexts/file-context"
+import { DocumentFile } from "@/contexts/file-context"
+import { getServiceImages, saveServiceImages, getServiceDocuments, saveServiceDocuments, MockData } from "@/mockData"
 
 // Función para generar IDs únicos sin dependencias externas
 const generateId = () => {
@@ -71,9 +79,10 @@ const agentesSoporte = [
   { id: "agent3", nombre: "María López", estado: "ocupado", avatar: "/avatars/maria.png" }
 ];
 
-export default function NuevoServicio({ params }: { params: { id: string } }) {
+export default function NuevoServicio() {
   const router = useRouter()
-  const tarifaId = params.id
+  const params = useParams()
+  const tarifaId = String(params?.id || "")
   const searchParams = useSearchParams();
   const servicioId = searchParams.get('servicioId');
   
@@ -203,42 +212,126 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
   // AHORA es seguro usar servicioActual
   const servicioGuardado = Boolean(servicioActual?.id);
 
-  // Función para verificar campos obligatorios localmente
-  const verificarCamposObligatoriosLocal = () => {
-    const camposFaltantes = [];
-    
-    // Verificar campos obligatorios
-    if (!servicio.nombre || servicio.nombre.trim() === '') {
-      camposFaltantes.push('Nombre');
-    }
-    
-    if (!servicio.codigo || servicio.codigo.trim() === '') {
-      camposFaltantes.push('Código');
-    }
-    
-    if (!servicio.familiaId || servicio.familiaId === '') {
-      camposFaltantes.push('Familia');
-    }
-    
-    return camposFaltantes;
-  };
-
+  // Obtener funcionalidades de imágenes y documentos
+  const { uploadImage, getImagesByEntity, setPrimaryImage } = useImages();
+  const { uploadDocument, getDocumentsByEntity } = useDocuments();
+  
+  // Agregar estados para imágenes y documentos
+  const [serviceImages, setServiceImages] = useState<ImageFile[]>([]);
+  const [serviceDocuments, setServiceDocuments] = useState<DocumentFile[]>([]);
+  const [isLoadingAssets, setIsLoadingAssets] = useState(false);
+  
   // Cargar el servicio existente si hay un ID
   useEffect(() => {
     if (servicioId) {
+      console.log("Intentando cargar servicio con ID:", servicioId);
       setCurrentServicioId(servicioId);
       const servicioExistente = getServicioById(servicioId);
+      console.log("Servicio encontrado:", servicioExistente);
+      
       if (servicioExistente) {
+        // Guardar en el contexto global
         setServicioActual(servicioExistente);
-        setServicio({
+        
+        // Convertir explícitamente valores numéricos
+        const servicioFormateado = {
           ...servicioExistente,
           tarifaBase: tarifa?.nombre || "Tarifa Base",
           consumos: servicioExistente.consumos || [{
             id: generateId(),
             cantidad: 1,
             tipoConsumo: "Unidades"
-          }]
-        });
+          }],
+          // Asegurar que valores como precioConIVA sean string para el formulario
+          precioConIVA: servicioExistente.precioConIVA?.toString() || "",
+          precioCoste: servicioExistente.precioCoste?.toString() || "",
+          comision: servicioExistente.comision?.toString() || ""
+        };
+        
+        console.log("Servicio formateado para el formulario:", servicioFormateado);
+        setServicio(servicioFormateado);
+        
+        // Cargar explícitamente las imágenes del servicio
+        console.log("Cargando imágenes para servicio ID:", servicioId);
+        try {
+          // Intentar cargar imágenes desde localStorage primero
+          const storedImages = localStorage.getItem(`serviceImages_${servicioId}`);
+          if (storedImages) {
+            console.log("Imágenes encontradas en localStorage:", storedImages);
+            setServiceImages(JSON.parse(storedImages));
+          }
+          
+          // También cargar usando la función getServiceImages como respaldo
+          const serviceImgs = getServiceImages(servicioId);
+          if (serviceImgs && serviceImgs.length > 0) {
+            console.log("Imágenes recuperadas desde getServiceImages:", serviceImgs);
+            setServiceImages(serviceImgs as ImageFile[]);
+          } else {
+            console.log("No se encontraron imágenes para el servicio", servicioId);
+          }
+        } catch (error) {
+          console.error("Error al cargar imágenes del servicio:", error);
+        }
+        
+        // Cargar documentos del servicio
+        console.log("Cargando documentos para servicio ID:", servicioId);
+        try {
+          console.log("Llamando a getServiceDocuments para ID:", servicioId);
+          
+          // También cargar usando función getServiceDocuments como respaldo
+          const serviceDocs = getServiceDocuments(servicioId);
+          console.log("Resultado getServiceDocuments:", serviceDocs);
+          
+          // Intentar cargar documentos desde localStorage
+          const storedDocs = localStorage.getItem(`service_docs_${servicioId}_default`);
+          console.log("Documentos en localStorage:", storedDocs);
+          
+          if (storedDocs) {
+            console.log("Documentos encontrados en localStorage:", storedDocs);
+            const parsedDocs = JSON.parse(storedDocs);
+            setServiceDocuments(parsedDocs);
+            
+            // Verificar también que los documentos tienen el entityId correcto
+            if (parsedDocs.length > 0 && parsedDocs[0].entityId !== servicioId) {
+              console.warn("El entityId de los documentos no coincide con el servicioId. Corrigiendo...");
+              const correctedDocs = parsedDocs.map((doc: DocumentFile) => ({
+                ...doc,
+                entityId: servicioId
+              }));
+              setServiceDocuments(correctedDocs);
+              
+              // Guardar los documentos corregidos
+              saveServiceDocuments(servicioId, correctedDocs);
+              localStorage.setItem(`service_docs_${servicioId}_default`, JSON.stringify(correctedDocs));
+            }
+          } else if (serviceDocs && serviceDocs.length > 0) {
+            console.log("Documentos recuperados desde getServiceDocuments:", serviceDocs);
+            setServiceDocuments(serviceDocs as unknown as DocumentFile[]);
+          } else {
+            // Último intento: buscar en storage
+            console.log("Buscando documentos en almacenamiento alternativo para servicio:", servicioId);
+            
+            // Verificar en MockData directamente
+            if (typeof MockData !== 'undefined' && MockData.entityDocuments) {
+              console.log("Estructura de MockData.entityDocuments:", MockData.entityDocuments);
+              const serviceDocsFromMockData = 
+                MockData.entityDocuments['service'] && 
+                MockData.entityDocuments['service'][servicioId] && 
+                MockData.entityDocuments['service'][servicioId]['default'];
+              
+              if (serviceDocsFromMockData) {
+                console.log("Documentos encontrados en MockData:", serviceDocsFromMockData);
+                setServiceDocuments(serviceDocsFromMockData as unknown as DocumentFile[]);
+              } else {
+                console.log("No se encontraron documentos en MockData para el servicio", servicioId);
+              }
+            }
+          }
+        } catch (error) {
+          console.error("Error al cargar documentos del servicio:", error);
+        }
+      } else {
+        console.warn("No se encontró el servicio con ID:", servicioId);
       }
     }
   }, [servicioId, getServicioById, setServicioActual, tarifa?.nombre]);
@@ -283,9 +376,9 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
   
   // Función verificarCamposYNavegar actualizada
   const verificarCamposYNavegar = (ruta: string) => {
+    // Verificar primero si tenemos los campos obligatorios
     const camposFaltantes = verificarCamposObligatoriosLocal();
-    
-    console.log("Campos faltantes:", camposFaltantes);
+    console.log("Verificando campos obligatorios para navegación:", camposFaltantes);
     
     // Si faltan campos obligatorios, mostramos el modal de aviso
     if (camposFaltantes.length > 0) {
@@ -297,7 +390,9 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
     // Solo si todos los campos obligatorios están completos,
     // comprobamos si el servicio está guardado
     if (!servicioGuardado) {
+      // Guardar la ruta de destino para usarla después de guardar
       setRutaDestino(ruta);
+      // Mostrar la confirmación para guardar antes de navegar
       setMostrarModalConfirmacion(true);
       return;
     }
@@ -311,59 +406,131 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
     }
   };
   
-  // Mejorar la función de guardar servicio
-  const handleGuardarServicio = () => {
-    // Validar que los campos obligatorios estén completos
-    if (!servicio.nombre) {
-      alert("Por favor ingresa un nombre para el servicio");
-      return;
-    }
-
-    if (!servicio.ivaId || servicio.ivaId === "") {
-      alert("Por favor selecciona un tipo de IVA");
-      return;
-    }
-
-    // Mostrar estado de guardado
-    setIsSaving(true);
-
-    // Asegurarse de que el servicio tenga todos los datos necesarios
-    const servicioCompleto = {
-      ...servicio,
-      tarifaId: tarifaId,
-      // Asegurarse de que los campos críticos estén presentes
-      ivaId: servicio.ivaId,
-      familiaId: servicio.familiaId || "",
-      precioSinIVA: calcularPrecioSinIVA(parseFloat(servicio.precioConIVA), servicio.ivaId),
-    };
-
-    // Log para debug
-    console.log("Guardando servicio:", servicioCompleto);
-
-    // Guardar usando el contexto
-    if (servicio.id) {
-      // Editar existente
-      actualizarServicio(servicio.id, servicioCompleto);
-    } else {
-      // Crear nuevo
-      crearServicio(servicioCompleto);
-    }
-
-    // Esperar para simular guardado
-    setTimeout(() => {
-      setIsSaving(false);
-      // Redirigir a la página de tarifas
-      router.push(`/configuracion/tarifas/${tarifaId}`);
-    }, 500);
-  };
-
-  // Función auxiliar para calcular el precio sin IVA
-  const calcularPrecioSinIVA = (precioConIVA: number, ivaId: string) => {
-    const tipoIVA = tiposIVA?.find(t => t.id === ivaId);
-    if (!tipoIVA) return precioConIVA;
+  // Manejar el guardado del servicio
+  const handleGuardar = async () => {
+    // Validar campos obligatorios
+    const resultado = validarCamposObligatorios();
     
-    const porcentajeIVA = tipoIVA.porcentaje || 0;
-    return precioConIVA / (1 + (porcentajeIVA / 100));
+    if (resultado.camposFaltantes.length > 0) {
+      // Mostrar modal de campos faltantes (no el de confirmación)
+      setCamposFaltantes(resultado.camposFaltantes);
+      setMostrarModalCamposObligatorios(true);
+      return;
+    }
+    
+    // Indicar que estamos guardando
+    setIsSaving(true);
+    
+    try {
+      let servicioId: string;
+      let esNuevo = false;
+      
+      if (servicioActual?.id) {
+        // Actualizar servicio existente
+        const servicioUpdated = actualizarServicio(servicioActual.id, servicio);
+        servicioId = servicioActual.id;
+        console.log("Servicio actualizado correctamente:", servicioUpdated);
+      } else {
+        // Crear nuevo servicio
+        servicioId = crearServicio(servicio);
+        esNuevo = true;
+        console.log("Servicio creado correctamente con ID:", servicioId);
+      }
+      
+      // Disparar evento para notificar el cambio en servicios
+      if (typeof window !== 'undefined') {
+        console.log(`Disparando evento servicios-updated para tarifa ${tarifaId}`);
+        window.dispatchEvent(new CustomEvent("servicios-updated", {
+          detail: { tarifaId: tarifaId, action: esNuevo ? 'create' : 'update' }
+        }));
+      }
+      
+      // Guardar imágenes
+      if (serviceImages.length > 0) {
+        console.log(`Guardando ${serviceImages.length} imágenes para servicio ID: ${servicioId}`);
+        
+        // Si es un nuevo servicio o las imágenes tienen entityId temporal, actualizarlo
+        const updatedImages = serviceImages.map(img => ({
+          ...img,
+          entityId: servicioId,
+          entityType: 'service' as 'service'  // Asegurar que el tipo sea el literal 'service'
+        }));
+        
+        console.log("Imágenes a guardar:", updatedImages);
+        
+        // Guardar imágenes con el ID correcto
+        const saveResult = saveServiceImages(servicioId, updatedImages);
+        console.log("Resultado de guardar imágenes:", saveResult);
+        
+        // También en localStorage directo como respaldo
+        localStorage.setItem(`serviceImages_${servicioId}`, JSON.stringify(updatedImages));
+        
+        // Verificar que se guardaron correctamente
+        const savedImages = getServiceImages(servicioId);
+        console.log("Imágenes guardadas verificadas:", savedImages);
+        
+        // Notificar al sistema de archivos global
+        if (typeof window !== 'undefined' && window.dispatchEvent) {
+          window.dispatchEvent(new CustomEvent('files-updated', { 
+            detail: { entityType: 'service', entityId: servicioId }
+          }));
+        }
+        
+        setServiceImages(updatedImages);
+      } else {
+        console.log("No hay imágenes para guardar");
+      }
+      
+      // Guardar documentos
+      if (serviceDocuments.length > 0) {
+        console.log(`Guardando ${serviceDocuments.length} documentos para servicio ID: ${servicioId}`);
+        
+        // Actualizar entityId en los documentos
+        const updatedDocs = serviceDocuments.map(doc => ({
+          ...doc,
+          entityId: servicioId
+        }));
+        
+        // Guardar documentos usando la función de MockData
+        const saveResult = saveServiceDocuments(servicioId, updatedDocs);
+        console.log("Resultado de guardar documentos:", saveResult);
+        
+        setServiceDocuments(updatedDocs);
+      } else {
+        console.log("No hay documentos para guardar");
+      }
+      
+      // Actualizar el estado global
+      const servicioGuardado = getServicioById(servicioId);
+      if (servicioGuardado) {
+        setServicioActual(servicioGuardado);
+      }
+      
+      // Mostrar mensaje de éxito
+      toast({
+        title: esNuevo ? "Servicio creado" : "Servicio guardado",
+        description: esNuevo 
+          ? "El servicio se ha creado correctamente"
+          : "El servicio se ha actualizado correctamente",
+      });
+      
+      // Navegar a la página de destino después de guardar
+      if (rutaDestino) {
+        router.push(`${rutaDestino}?servicioId=${servicioId}`);
+      } else {
+        // Si no hay ruta de destino, volver a la página de servicios
+        router.push(`/configuracion/tarifas/${params.id}?tab=servicios&updated=${Date.now()}`);
+      }
+    } catch (error) {
+      console.error("Error al guardar servicio:", error);
+      toast({
+        title: "Error",
+        description: "Ocurrió un error al guardar el servicio",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   // Función para renderizar el agente con tooltip
@@ -398,36 +565,119 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
 
   // Función para guardar el servicio en el contexto y navegar
   const guardarServicioYNavegar = async () => {
+    // Mostrar estado de guardado
     setIsSaving(true);
     
     try {
+      console.log("Guardando servicio para navegación a:", rutaDestino);
+      
+      // Validar una vez más por si acaso
+      const camposFaltantes = verificarCamposObligatoriosLocal();
+      if (camposFaltantes.length > 0) {
+        setMostrarModalConfirmacion(false);
+        setCamposFaltantes(camposFaltantes);
+        setMostrarModalCamposObligatorios(true);
+        return;
+      }
+      
       // Preparamos los datos del servicio para guardarlo
       const nuevoServicio = {
         ...servicio,
         tarifaId,
-        // Otros campos necesarios
       };
       
       // Crear o actualizar el servicio en el contexto
-      let servicioId;
+      let servicioId: string;
+      let esNuevo = false;
       
       if (servicioActual?.id) {
         // Si ya existe, actualizamos
-        await actualizarServicio(servicioActual.id, nuevoServicio);
+        actualizarServicio(servicioActual.id, nuevoServicio);
         servicioId = servicioActual.id;
+        console.log("Servicio actualizado para navegación:", servicioId);
       } else {
         // Si no existe, creamos uno nuevo
-        servicioId = await crearServicio(nuevoServicio);
+        servicioId = crearServicio(nuevoServicio);
+        esNuevo = true;
+        console.log("Servicio creado para navegación:", servicioId);
       }
       
-      // Navegar a la ruta de destino incluyendo tanto el ID de tarifa como el ID de servicio
-      if (rutaDestino) {
-        const rutaCompleta = rutaDestino.includes('?') 
-          ? `${rutaDestino}&servicioId=${servicioId}` 
-          : `${rutaDestino}?servicioId=${servicioId}`;
-        
-        router.push(rutaCompleta);
+      // Disparar evento para notificar el cambio en servicios
+      if (typeof window !== 'undefined') {
+        console.log(`Disparando evento servicios-updated para tarifa ${tarifaId}`);
+        window.dispatchEvent(new CustomEvent("servicios-updated", {
+          detail: { tarifaId: tarifaId, action: esNuevo ? 'create' : 'update' }
+        }));
       }
+      
+      // Guardar imágenes si hay
+      if (serviceImages.length > 0) {
+        console.log(`Guardando ${serviceImages.length} imágenes para servicio ${servicioId}`);
+        
+        // Si es un nuevo servicio, actualizar entityId en imágenes
+        const updatedImages = serviceImages.map(img => ({
+          ...img,
+          entityId: servicioId,
+          entityType: 'service' as 'service'  // Asegurar que el tipo sea el literal 'service'
+        }));
+        
+        // Guardar imágenes usando la función de mockData
+        saveServiceImages(servicioId, updatedImages);
+        
+        // También guardar en localStorage directo
+        localStorage.setItem(`serviceImages_${servicioId}`, JSON.stringify(updatedImages));
+        
+        setServiceImages(updatedImages);
+        
+        // Verificar guardado
+        const savedImages = getServiceImages(servicioId);
+        console.log("Imágenes guardadas verificadas:", savedImages);
+        
+        // Notificar al sistema de archivos global
+        if (typeof window !== 'undefined' && window.dispatchEvent) {
+          window.dispatchEvent(new CustomEvent('files-updated', { 
+            detail: { entityType: 'service', entityId: servicioId }
+          }));
+        }
+      }
+      
+      // Guardar documentos si hay
+      if (serviceDocuments.length > 0) {
+        console.log(`Guardando ${serviceDocuments.length} documentos para servicio ${servicioId}`);
+        
+        // Actualizar documentos con el nuevo ID
+        const updatedDocs = serviceDocuments.map(doc => ({
+          ...doc,
+          entityId: servicioId
+        }));
+        
+        setServiceDocuments(updatedDocs);
+        
+        // Guardar documentos usando la función de MockData
+        const saveResult = saveServiceDocuments(servicioId, updatedDocs);
+        console.log("Resultado de guardar documentos:", saveResult);
+        
+        // También guardar en localStorage directo como respaldo
+        localStorage.setItem(`service_docs_${servicioId}_default`, JSON.stringify(updatedDocs));
+        console.log("Documentos guardados en localStorage:", updatedDocs);
+      }
+      
+      // Mostrar mensaje de éxito
+      toast({
+        title: esNuevo ? "Servicio creado" : "Servicio actualizado",
+        description: "El servicio se ha guardado correctamente. Redirigiendo...",
+      });
+      
+      // Navegar a la ruta de destino incluyendo tanto el ID de tarifa como el ID de servicio
+      setTimeout(() => {
+        if (rutaDestino) {
+          const rutaCompleta = rutaDestino.includes('?') 
+            ? `${rutaDestino}&servicioId=${servicioId}` 
+            : `${rutaDestino}?servicioId=${servicioId}`;
+          
+          router.push(rutaCompleta);
+        }
+      }, 500); // Breve retardo para permitir que el toast se muestre
     } catch (error) {
       console.error("Error al guardar el servicio:", error);
       toast({
@@ -462,8 +712,354 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
   // Referencia para el input de archivo
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Reemplazar la sección de "Archivo De Ayuda" por una sección de documentos
+  const renderDocumentsSection = () => (
+    <div className="mt-6">
+      <label className="block mb-2 text-sm font-medium text-gray-700">
+        Documentos de ayuda
+      </label>
+      {isLoadingAssets ? (
+        <div className="flex items-center justify-center p-4 rounded-md bg-gray-50">
+          <div className="inline-block w-6 h-6 border-2 border-purple-600 rounded-full animate-spin border-t-transparent"></div>
+          <span className="ml-2 text-sm text-gray-500">Cargando documentos...</span>
+        </div>
+      ) : (
+        <DocumentList
+          documents={serviceDocuments}
+          onAddDocuments={handleAddDocuments}
+          onRemove={handleRemoveDocument}
+          onView={handleViewDocument}
+          editable={true}
+          compact={true}
+        />
+      )}
+    </div>
+  );
+
+  // Funciones para manejar imágenes
+  const handleAddImages = async (files: File[]) => {
+    if (!servicio.tarifaId) {
+      toast({
+        title: "Error",
+        description: "Por favor, primero asegúrate de tener una tarifa seleccionada",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // Indicar que estamos cargando
+    setIsLoadingAssets(true);
+    
+    try {
+      console.log("Archivos seleccionados para subir:", files.map(f => ({nombre: f.name, tipo: f.type, tamaño: f.size})));
+      const uploadedImages: ImageFile[] = [];
+      
+      for (const file of files) {
+        // Asegurar que tenemos un ID válido para la entidad
+        const entityId = servicioActual?.id || 'temp-id';
+        
+        console.log("Subiendo imagen para entidad:", entityId, "tipo:", 'service', "tarifa:", servicio.tarifaId);
+        console.log("Archivo a subir:", file.name, file.type, file.size);
+        
+        // Verificar que el archivo sea realmente una imagen
+        if (!file.type.startsWith('image/')) {
+          console.error("El archivo no es una imagen:", file.type);
+          toast({
+            title: "Error de archivo",
+            description: `El archivo ${file.name} no es una imagen válida`,
+            variant: "destructive",
+          });
+          continue; // Pasar al siguiente archivo
+        }
+        
+        try {
+          const newImage = await uploadImage(
+            file, 
+            'service', 
+            entityId,
+            servicio.tarifaId,
+            { isPrimary: serviceImages.length === 0 && uploadedImages.length === 0 }
+          );
+          
+          console.log("Imagen subida con éxito:", newImage);
+          uploadedImages.push(newImage);
+        } catch (uploadError) {
+          console.error("Error al subir imagen individual:", uploadError);
+        }
+      }
+      
+      console.log(`Se subieron ${uploadedImages.length} imágenes con éxito`);
+      
+      if (uploadedImages.length === 0) {
+        toast({
+          title: "Advertencia",
+          description: "No se pudo subir ninguna imagen. Verifica los formatos de archivo.",
+          variant: "destructive",
+        });
+        // Finalizar el estado de carga
+        setIsLoadingAssets(false);
+        return;
+      }
+      
+      // Actualizar estado local
+      const updatedImages = [...serviceImages, ...uploadedImages];
+      setServiceImages(updatedImages);
+      
+      // Guardar explícitamente en localStorage
+      if (servicioActual?.id) {
+        console.log("Guardando imágenes para servicio ID:", servicioActual.id);
+        const saveResult = saveServiceImages(servicioActual.id, updatedImages);
+        console.log("Resultado de guardar imágenes:", saveResult);
+        
+        // También guardar en localStorage directo como copia de seguridad
+        localStorage.setItem(`serviceImages_${servicioActual.id}`, JSON.stringify(updatedImages));
+        console.log("Imágenes guardadas en localStorage:", updatedImages);
+        
+        // Verificar que se guardaron correctamente
+        const verificarImgs = getServiceImages(servicioActual.id);
+        console.log("Imágenes verificadas después de guardar:", verificarImgs);
+      } else {
+        console.log("No se guardaron imágenes en localStorage porque no hay ID de servicio");
+      }
+      
+      toast({
+        title: "Imágenes subidas",
+        description: `${uploadedImages.length} imagen(es) subida(s) correctamente`,
+      });
+    } catch (error) {
+      console.error("Error al subir imágenes:", error);
+      toast({
+        title: "Error",
+        description: "No se pudieron subir las imágenes. Intenta nuevamente.",
+        variant: "destructive",
+      });
+    } finally {
+      // Asegurarse de desactivar el estado de carga
+      setIsLoadingAssets(false);
+    }
+  };
+
+  // Función para establecer una imagen como principal
+  const handleSetPrimaryImage = async (imageId: string) => {
+    try {
+      await setPrimaryImage(imageId);
+      
+      // Actualizar estado local
+      const updatedImages = serviceImages.map(img => ({
+        ...img,
+        isPrimary: img.id === imageId
+      }));
+      
+      setServiceImages(updatedImages);
+      
+      // Guardar en localStorage
+      if (servicioActual?.id) {
+        saveServiceImages(servicioActual.id, updatedImages);
+        localStorage.setItem(`serviceImages_${servicioActual.id}`, JSON.stringify(updatedImages));
+      }
+      
+      toast({
+        title: "Imagen actualizada",
+        description: "Imagen principal establecida correctamente",
+      });
+    } catch (error) {
+      console.error("Error al establecer imagen principal:", error);
+      toast({
+        title: "Error",
+        description: "No se pudo establecer la imagen principal",
+        variant: "destructive",
+      });
+    }
+  };
+  
+  // Función para eliminar una imagen
+  const handleRemoveImage = async (imageId: string) => {
+    try {
+      // Eliminar del estado local
+      const updatedImages = serviceImages.filter(img => img.id !== imageId);
+      setServiceImages(updatedImages);
+      
+      // Guardar en localStorage
+      if (servicioActual?.id) {
+        saveServiceImages(servicioActual.id, updatedImages);
+        localStorage.setItem(`serviceImages_${servicioActual.id}`, JSON.stringify(updatedImages));
+        
+        // Notificar a la aplicación que se ha eliminado un archivo
+        if (typeof window !== 'undefined' && window.dispatchEvent) {
+          window.dispatchEvent(new CustomEvent('file-deleted', { 
+            detail: { 
+              fileId: imageId,
+              entityType: 'service', 
+              entityId: servicioActual.id 
+            }
+          }));
+        }
+      }
+      
+      toast({
+        title: "Imagen eliminada",
+        description: "Imagen eliminada correctamente",
+      });
+    } catch (error) {
+      console.error("Error al eliminar imagen:", error);
+      toast({
+        title: "Error",
+        description: "No se pudo eliminar la imagen",
+        variant: "destructive",
+      });
+    }
+  };
+  
+  // Función para agregar documentos
+  const handleAddDocuments = async (files: File[]) => {
+    if (!servicio.tarifaId) {
+      toast({
+        title: "Error",
+        description: "Por favor, primero asegúrate de tener una tarifa seleccionada",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    try {
+      console.log("Documentos seleccionados para subir:", files.map(f => ({nombre: f.name, tipo: f.type, tamaño: f.size})));
+      const uploadedDocs: DocumentFile[] = [];
+      
+      for (const file of files) {
+        const entityId = servicioActual?.id || 'temp-id';
+        console.log("Subiendo documento para entidad:", entityId, "tipo:", 'service', "tarifa:", servicio.tarifaId);
+        
+        try {
+          const newDoc = await uploadDocument(
+            file, 
+            'service', 
+            entityId,
+            servicio.tarifaId,
+            'help_documents'
+          );
+          console.log("Documento subido con éxito:", newDoc);
+          uploadedDocs.push(newDoc);
+        } catch (uploadError) {
+          console.error("Error al subir documento individual:", uploadError);
+        }
+      }
+      
+      console.log(`Se subieron ${uploadedDocs.length} documentos con éxito`);
+      
+      if (uploadedDocs.length === 0) {
+        toast({
+          title: "Advertencia",
+          description: "No se pudo subir ningún documento. Verifica los formatos de archivo.",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      // Actualizar estado local
+      const updatedDocs = [...serviceDocuments, ...uploadedDocs];
+      setServiceDocuments(updatedDocs);
+      
+      // Guardar en almacenamiento persistente
+      if (servicioActual?.id) {
+        console.log("Guardando documentos para servicio ID:", servicioActual.id);
+        const saveResult = saveServiceDocuments(servicioActual.id, updatedDocs);
+        console.log("Resultado de guardar documentos:", saveResult);
+        
+        // También guardar en localStorage como respaldo
+        localStorage.setItem(`service_docs_${servicioActual.id}_default`, JSON.stringify(updatedDocs));
+        console.log("Documentos guardados en localStorage:", updatedDocs);
+      } else {
+        console.log("No se guardaron documentos en localStorage porque no hay ID de servicio");
+      }
+      
+      // Actualizar también el nombre del archivo de ayuda en el estado principal
+      if (uploadedDocs.length > 0) {
+        setServicio({
+          ...servicio,
+          archivoAyuda: uploadedDocs[0].fileName
+        });
+      }
+      
+      toast({
+        title: "Documentos subidos",
+        description: `${uploadedDocs.length} documento(s) subido(s) correctamente`,
+      });
+    } catch (error) {
+      console.error("Error al subir documentos:", error);
+      toast({
+        title: "Error",
+        description: "No se pudieron subir los documentos. Intenta nuevamente.",
+        variant: "destructive",
+      });
+    }
+  };
+  
+  // Función para eliminar un documento
+  const handleRemoveDocument = async (docId: string) => {
+    try {
+      // Eliminar del estado local
+      const updatedDocs = serviceDocuments.filter(doc => doc.id !== docId);
+      setServiceDocuments(updatedDocs);
+      
+      // Si era el único o el primer documento, actualizar el estado principal
+      if (serviceDocuments.length <= 1) {
+        setServicio({
+          ...servicio,
+          archivoAyuda: null
+        });
+      }
+      
+      // Guardar los cambios en MockData
+      if (servicioActual?.id) {
+        console.log(`Guardando documentos actualizados después de eliminar para servicio ID: ${servicioActual.id}`);
+        const saveResult = saveServiceDocuments(servicioActual.id, updatedDocs);
+        console.log("Resultado de guardar documentos:", saveResult);
+        
+        // También guardar en localStorage directo como copia de seguridad
+        localStorage.setItem(`service_docs_${servicioActual.id}_default`, JSON.stringify(updatedDocs));
+        console.log("Documentos guardados en localStorage:", updatedDocs);
+      }
+      
+      toast({
+        title: "Documento eliminado",
+        description: "Documento eliminado correctamente",
+      });
+    } catch (error) {
+      console.error("Error al eliminar documento:", error);
+      toast({
+        title: "Error",
+        description: "No se pudo eliminar el documento",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Función para verificar campos obligatorios localmente
+  const verificarCamposObligatoriosLocal = () => {
+    const camposFaltantes = [];
+    
+    // Verificar campos obligatorios
+    if (!servicio.nombre || servicio.nombre.trim() === '') {
+      camposFaltantes.push('Nombre');
+    }
+    
+    if (!servicio.codigo || servicio.codigo.trim() === '') {
+      camposFaltantes.push('Código');
+    }
+    
+    if (!servicio.familiaId || servicio.familiaId === '') {
+      camposFaltantes.push('Familia');
+    }
+    
+    return camposFaltantes;
+  };
+
+  const handleViewDocument = (doc: any) => {
+    window.open(doc.url, '_blank');
+  };
+
   return (
-    <div className="max-w-5xl px-4 py-8 mx-auto">
+    <div className="max-w-5xl px-4 py-8 mx-auto pb-24">
       <h1 className="mb-6 text-xl font-semibold">Datos del servicio</h1>
       
       <Card>
@@ -474,6 +1070,35 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
               <div className="mb-4">
                 <div className="mb-1 text-sm text-gray-500">Tarifa</div>
                 <div className="text-sm font-medium">{servicio.tarifaBase}</div>
+              </div>
+              
+              <div className="mb-4">
+                <label className="block mb-1 text-sm font-medium text-gray-700">
+                  Imágenes del servicio
+                </label>
+                {isLoadingAssets ? (
+                  <div className="flex items-center justify-center p-2 rounded-md bg-gray-50 h-28">
+                    <div className="inline-block w-5 h-5 border-2 border-purple-600 rounded-full animate-spin border-t-transparent"></div>
+                    <span className="ml-2 text-xs text-gray-500">Cargando...</span>
+                  </div>
+                ) : (
+                  <div className="flex flex-col">
+                    <ImageGallery
+                      images={serviceImages}
+                      onAddImages={handleAddImages}
+                      onSetPrimary={handleSetPrimaryImage}
+                      onRemove={handleRemoveImage}
+                      editable={true}
+                      layout="carousel"
+                    />
+                  </div>
+                )}
+                {/* Texto explicativo */}
+                <p className="mt-1 text-xs text-gray-500 italic">
+                  {serviceImages.length > 0 
+                    ? `${serviceImages.length} ${serviceImages.length === 1 ? 'imagen cargada' : 'imágenes cargadas'}. Puedes añadir más.` 
+                    : "Haz clic para subir imágenes (se permiten múltiples archivos)"}
+                </p>
               </div>
               
               <div className="mb-4">
@@ -859,109 +1484,94 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
                 </div>
               </div>
               
-              <div className="mt-6">
-                <Button
-                  type="button"
-                  className="text-white bg-indigo-600 hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-                  onClick={() => {}}
-                >
-                  <FileQuestion className="w-4 h-4 mr-2" />
-                  Archivo De Ayuda
-                </Button>
-                <input
-                  id="archivoAyuda"
-                  type="file"
-                  className="hidden"
-                  onChange={handleFileUpload}
-                />
-                <div className="mt-1 text-xs text-gray-500">Nombre</div>
-                <div className="text-sm">{servicio.archivoAyuda || "(Ninguno)"}</div>
-              </div>
+              {renderDocumentsSection()}
             </div>
           </div>
         </CardContent>
       </Card>
       
-      {/* Botones de navegación y acción */}
-      <div className="flex justify-between mt-6">
-        <div className="flex space-x-2">
-          <Button 
-            variant="outline" 
-            className={buttonNavClass}
-            onClick={() => verificarCamposYNavegar(`/configuracion/tarifas/${tarifaId}/nuevo-servicio/consumos`)}
-          >
-            Consumos
-          </Button>
-          <Button 
-            variant="outline" 
-            className={buttonNavClass}
-            onClick={() => handleNavigation('puntos')}
-          >
-            Puntos
-          </Button>
-          <Button 
-            variant="outline" 
-            className={buttonNavClass}
-            onClick={() => handleNavigation('bonos')}
-          >
-            Bonos
-          </Button>
-          <Button 
-            variant="outline" 
-            className={buttonNavClass}
-            onClick={() => handleNavigation('suscripciones')}
-          >
-            Suscripciones
-          </Button>
-          <Button 
-            variant="outline" 
-            className={buttonNavClass}
-            onClick={() => handleNavigation('datos-app')}
-          >
-            Datos App
-          </Button>
-        </div>
-        
-        <div className="flex space-x-2">
-          <Button
-            variant="outline"
-            className={buttonSecondaryClass}
-            onClick={handleCancel}
-          >
-            Volver
-          </Button>
-          <Button
-            variant="default"
-            className={buttonPrimaryClass}
-            onClick={handleGuardarServicio}
-            disabled={isSaving}
-          >
-            {isSaving ? (
-              <>
-                <span className="mr-2 animate-spin">
-                  <svg className="w-4 h-4" viewBox="0 0 24 24">
-                    <circle 
-                      className="opacity-25" 
-                      cx="12" 
-                      cy="12" 
-                      r="10" 
-                      stroke="currentColor" 
-                      strokeWidth="4"
-                    />
-                    <path 
-                      className="opacity-75" 
-                      fill="currentColor" 
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    />
-                  </svg>
-                </span>
-                <span>Guardando...</span>
-              </>
-            ) : (
-              "Guardar"
-            )}
-          </Button>
-          <HelpButton content="Ayuda para la creación de servicios" />
+      {/* Botones de navegación y acción - POSICIÓN FIJA */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 z-10 shadow-[0_-2px_10px_rgba(0,0,0,0.1)]">
+        <div className="max-w-5xl mx-auto flex justify-between">
+          <div className="flex space-x-2 overflow-x-auto pb-1 flex-nowrap">
+            <Button 
+              variant="outline" 
+              className={buttonNavClass}
+              onClick={() => verificarCamposYNavegar(`/configuracion/tarifas/${tarifaId}/nuevo-servicio/consumos`)}
+            >
+              Consumos
+            </Button>
+            <Button 
+              variant="outline" 
+              className={buttonNavClass}
+              onClick={() => handleNavigation('puntos')}
+            >
+              Puntos
+            </Button>
+            <Button 
+              variant="outline" 
+              className={buttonNavClass}
+              onClick={() => handleNavigation('bonos')}
+            >
+              Bonos
+            </Button>
+            <Button 
+              variant="outline" 
+              className={buttonNavClass}
+              onClick={() => handleNavigation('suscripciones')}
+            >
+              Suscripciones
+            </Button>
+            <Button 
+              variant="outline" 
+              className={buttonNavClass}
+              onClick={() => handleNavigation('datos-app')}
+            >
+              Datos App
+            </Button>
+          </div>
+          
+          <div className="flex space-x-2 ml-2 flex-shrink-0">
+            <Button
+              variant="outline"
+              className={buttonSecondaryClass}
+              onClick={handleCancel}
+            >
+              Volver
+            </Button>
+            <Button
+              variant="default"
+              className={buttonPrimaryClass}
+              onClick={handleGuardar}
+              disabled={isSaving}
+            >
+              {isSaving ? (
+                <>
+                  <span className="mr-2 animate-spin">
+                    <svg className="w-4 h-4" viewBox="0 0 24 24">
+                      <circle 
+                        className="opacity-25" 
+                        cx="12" 
+                        cy="12" 
+                        r="10" 
+                        stroke="currentColor" 
+                        strokeWidth="4"
+                      />
+                      <path 
+                        className="opacity-75" 
+                        fill="currentColor" 
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                      />
+                    </svg>
+                  </span>
+                  <span>Guardando...</span>
+                </>
+              ) : (
+                "Guardar"
+              )}
+            </Button>
+            <HelpButton content="Ayuda para la creación de servicios" />
+          </div>
         </div>
       </div>
 
@@ -979,12 +1589,15 @@ export default function NuevoServicio({ params }: { params: { id: string } }) {
           </DialogHeader>
           <div className="py-4">
             <div className="mb-4 text-sm text-muted-foreground">
-              <span className="block mb-3">Debe completar los siguientes campos obligatorios antes de configurar consumos:</span>
+              <span className="block mb-3">Debe completar los siguientes campos obligatorios:</span>
               <ul className="inline-block pl-5 mb-3 text-left list-disc">
                 {camposFaltantes.map((campo, index) => (
                   <li key={index} className="text-red-600">{campo}</li>
                 ))}
               </ul>
+              <p className="mt-2 text-sm text-gray-600">
+                Estos campos son necesarios para poder guardar y continuar.
+              </p>
             </div>
           </div>
           <DialogFooter className="flex justify-center pt-2">

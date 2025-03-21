@@ -23,6 +23,7 @@ import {
   Terminal,
   Search,
   UserPlus,
+  HardDrive,
 } from "lucide-react"
 
 export interface MenuItem {
@@ -235,6 +236,12 @@ export const menuItems: MenuItem[] = [
         label: "Importar productos",
         icon: Package2,
         href: "/configuracion/importar-productos",
+      },
+      {
+        id: "almacenamiento",
+        label: "Almacenamiento",
+        icon: HardDrive,
+        href: "/configuracion/almacenamiento",
       },
       {
         id: "sistema",

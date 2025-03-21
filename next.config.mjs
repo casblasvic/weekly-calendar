@@ -21,6 +21,15 @@ const nextConfig = {
     parallelServerBuildTraces: true,
     parallelServerCompiles: true,
   },
+  // Configuración del servidor para usar Node.js
+  serverRuntimeConfig: {
+    // Solo será visible en el lado servidor
+    useNodeRuntime: true
+  },
+  publicRuntimeConfig: {
+    // Será visible tanto en cliente como en servidor
+    appName: 'Weekly Calendar'
+  }
 }
 
 mergeConfig(nextConfig, userConfig)
