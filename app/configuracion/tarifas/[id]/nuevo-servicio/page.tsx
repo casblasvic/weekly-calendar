@@ -1058,497 +1058,565 @@ export default function NuevoServicio() {
     window.open(doc.url, '_blank');
   };
 
+  // Efecto para actualizar la variable CSS del sidebar
+  useEffect(() => {
+    const updateSidebarWidth = () => {
+      const sidebar = document.querySelector('[data-sidebar]');
+      if (sidebar) {
+        const sidebarWidth = sidebar.getBoundingClientRect().width;
+        document.documentElement.style.setProperty('--sidebar-width', `${sidebarWidth}px`);
+      } else {
+        document.documentElement.style.setProperty('--sidebar-width', '0px');
+      }
+    };
+
+    // Actualizar inicialmente
+    updateSidebarWidth();
+
+    // Crear un observer para detectar cambios en el DOM
+    const observer = new MutationObserver(updateSidebarWidth);
+    observer.observe(document.body, { 
+      childList: true, 
+      subtree: true,
+      attributes: true 
+    });
+
+    // Escuchar cambios de tamaño de ventana
+    window.addEventListener('resize', updateSidebarWidth);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updateSidebarWidth);
+      document.documentElement.style.removeProperty('--sidebar-width');
+    };
+  }, []);
+
   return (
-    <div className="max-w-5xl px-4 py-8 mx-auto pb-24">
-      <h1 className="mb-6 text-xl font-semibold">Datos del servicio</h1>
-      
-      <Card>
-        <CardContent className="pt-6 pb-6">
-          <div className="grid grid-cols-2 gap-x-8 gap-y-4">
-            {/* Columna Izquierda */}
-            <div>
-              <div className="mb-4">
-                <div className="mb-1 text-sm text-gray-500">Tarifa</div>
-                <div className="text-sm font-medium">{servicio.tarifaBase}</div>
-              </div>
-              
-              <div className="mb-4">
-                <label className="block mb-1 text-sm font-medium text-gray-700">
-                  Imágenes del servicio
-                </label>
-                {isLoadingAssets ? (
-                  <div className="flex items-center justify-center p-2 rounded-md bg-gray-50 h-28">
-                    <div className="inline-block w-5 h-5 border-2 border-purple-600 rounded-full animate-spin border-t-transparent"></div>
-                    <span className="ml-2 text-xs text-gray-500">Cargando...</span>
-                  </div>
-                ) : (
-                  <div className="flex flex-col">
-                    <ImageGallery
-                      images={serviceImages}
-                      onAddImages={handleAddImages}
-                      onSetPrimary={handleSetPrimaryImage}
-                      onRemove={handleRemoveImage}
-                      editable={true}
-                      layout="carousel"
-                    />
-                  </div>
-                )}
-                {/* Texto explicativo */}
-                <p className="mt-1 text-xs text-gray-500 italic">
-                  {serviceImages.length > 0 
-                    ? `${serviceImages.length} ${serviceImages.length === 1 ? 'imagen cargada' : 'imágenes cargadas'}. Puedes añadir más.` 
-                    : "Haz clic para subir imágenes (se permiten múltiples archivos)"}
-                </p>
-              </div>
-              
-              <div className="mb-4">
-                <label htmlFor="nombre" className="block mb-1 text-sm font-medium text-gray-700">
-                  Nombre <span className="text-red-500">*</span>
-                </label>
-                <Input
-                  id="nombre"
-                  name="nombre"
-                  value={servicio.nombre}
-                  onChange={handleInputChange}
-                  placeholder="Nombre del servicio"
-                  className="w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                  required
-                />
-              </div>
-              
-              <div className="mb-4">
-                <label htmlFor="codigo" className="block mb-1 text-sm font-medium text-gray-700">
-                  Código <span className="text-red-500">*</span>
-                </label>
-                <Input
-                  id="codigo"
-                  name="codigo"
-                  value={servicio.codigo}
-                  onChange={handleInputChange}
-                  placeholder="Ej: SRV001"
-                  className="w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                  required
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <label htmlFor="familia" className="block text-sm font-medium text-gray-700">
-                  Familia <span className="text-red-500">*</span>
-                </label>
-                <Select
-                  value={servicio.familiaId || "placeholder"}
-                  onValueChange={(value) => handleSelectChange('familiaId', value)}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Seleccionar familia" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="placeholder">Seleccionar...</SelectItem>
-                    {familias.map((familia) => (
-                      <SelectItem key={familia.id} value={familia.id}>
-                        {familia.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              
-              <div className="mb-4">
-                <label htmlFor="precioConIVA" className="block mb-1 text-sm font-medium text-gray-700">
-                  Precio con IVA
-                </label>
-                <Input
-                  id="precioConIVA"
-                  name="precioConIVA"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={servicio.precioConIVA}
-                  onChange={handleInputChange}
-                  placeholder="0.00"
-                  className="w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                />
-              </div>
-              
-              <div className="mb-4">
-                <label htmlFor="iva" className="block mb-1 text-sm font-medium text-gray-700">
-                  IVA
-                </label>
-                <Select
-                  value={servicio.ivaId}
-                  onValueChange={(value) => handleSelectChange("ivaId", value)}
-                >
-                  <SelectTrigger className="w-full focus:ring-indigo-500">
-                    <SelectValue placeholder="Selecciona un IVA" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {tiposIVA && tiposIVA.map((iva) => (
-                      <SelectItem key={iva.id} value={iva.id}>
-                        {iva.descripcion}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              
-              <div className="mb-4">
-                <label className="block mb-1 text-sm font-medium text-gray-700">
-                  Cuando el servicio o producto forma parte de un paquete:
-                </label>
-                <Select
-                  value={servicio.tarifaPlanaId}
-                  onValueChange={(value) => handleSelectChange("tarifaPlanaId", value)}
-                >
-                  <SelectTrigger className="w-full focus:ring-indigo-500">
-                    <SelectValue placeholder="Pertenece a la tarifa plana" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="(Ninguna)">(Ninguna)</SelectItem>
-                    {/* Aquí irían las tarifas planas disponibles */}
-                  </SelectContent>
-                </Select>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label htmlFor="consumo" className="block mb-1 text-sm font-medium text-gray-700">
-                    Consumo
+    <div className="container mx-auto h-screen flex flex-col" style={{ marginLeft: 'var(--sidebar-width, 0px)' }}>
+      <div className="flex-1 overflow-y-auto px-4 py-8">
+        <h1 className="mb-6 text-xl font-semibold">Datos del servicio</h1>
+        
+        <Card>
+          <CardContent className="pt-6 pb-6">
+            <div className="grid grid-cols-2 gap-x-8 gap-y-4">
+              {/* Columna Izquierda */}
+              <div>
+                <div className="mb-4">
+                  <div className="mb-1 text-sm text-gray-500">Tarifa</div>
+                  <div className="text-sm font-medium">{servicio.tarifaBase}</div>
+                </div>
+                
+                <div className="mb-4">
+                  <label className="block mb-1 text-sm font-medium text-gray-700">
+                    Imágenes del servicio
+                  </label>
+                  {isLoadingAssets ? (
+                    <div className="flex items-center justify-center p-2 rounded-md bg-gray-50 h-28">
+                      <div className="inline-block w-5 h-5 border-2 border-purple-600 rounded-full animate-spin border-t-transparent"></div>
+                      <span className="ml-2 text-xs text-gray-500">Cargando...</span>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col">
+                      <ImageGallery
+                        images={serviceImages}
+                        onAddImages={handleAddImages}
+                        onSetPrimary={handleSetPrimaryImage}
+                        onRemove={handleRemoveImage}
+                        editable={true}
+                        layout="carousel"
+                      />
+                    </div>
+                  )}
+                  {/* Texto explicativo */}
+                  <p className="mt-1 text-xs text-gray-500 italic">
+                    {serviceImages.length > 0 
+                      ? `${serviceImages.length} ${serviceImages.length === 1 ? 'imagen cargada' : 'imágenes cargadas'}. Puedes añadir más.` 
+                      : "Haz clic para subir imágenes (se permiten múltiples archivos)"}
+                  </p>
+                </div>
+                
+                <div className="mb-4">
+                  <label htmlFor="nombre" className="block mb-1 text-sm font-medium text-gray-700">
+                    Nombre <span className="text-red-500">*</span>
                   </label>
                   <Input
-                    id="consumo"
-                    name="consumo"
-                    type="number"
-                    min="1"
-                    value={servicio.consumos[0].cantidad}
-                    onChange={(e) => {
-                      const consumos = [...servicio.consumos];
-                      consumos[0].cantidad = Number(e.target.value);
-                      setServicio({...servicio, consumos});
-                    }}
+                    id="nombre"
+                    name="nombre"
+                    value={servicio.nombre}
+                    onChange={handleInputChange}
+                    placeholder="Nombre del servicio"
                     className="w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                    required
                   />
                 </div>
-                <div>
-                  <label htmlFor="tipoConsumo" className="block mb-1 text-sm font-medium text-gray-700">
-                    Tipo de consumo
-                  </label>
-                  <Select
-                    value={servicio.consumos[0].tipoConsumo}
-                    onValueChange={(value) => {
-                      const consumos = [...servicio.consumos];
-                      consumos[0].tipoConsumo = value;
-                      setServicio({...servicio, consumos});
-                    }}
-                  >
-                    <SelectTrigger className="w-full focus:ring-indigo-500">
-                      <SelectValue placeholder="Selecciona tipo" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {tiposConsumo.map((tipo) => (
-                        <SelectItem key={tipo.id} value={tipo.id}>
-                          {tipo.nombre}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              
-              <div className="mb-4">
-                <label htmlFor="precioCoste" className="block mb-1 text-sm font-medium text-gray-700">
-                  Precio de coste
-                </label>
-                <Input
-                  id="precioCoste"
-                  name="precioCoste"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={servicio.precioCoste}
-                  onChange={handleInputChange}
-                  placeholder="0.00"
-                  className="w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                />
-              </div>
-            </div>
-            
-            {/* Columna Derecha */}
-            <div>
-              <div className="mb-4">
-                <label htmlFor="colorAgenda" className="block mb-1 text-sm font-medium text-gray-700">
-                  Color en agenda
-                </label>
-                <Select
-                  value={servicio.colorAgenda}
-                  onValueChange={(value) => handleSelectChange("colorAgenda", value)}
-                >
-                  <SelectTrigger className="w-full focus:ring-indigo-500">
-                    <SelectValue placeholder="Selecciona un color" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {coloresAgenda.map((color) => (
-                      <SelectItem key={color.id} value={color.id}>
-                        <div className="flex items-center">
-                          <div className={`w-4 h-4 mr-2 rounded-full ${color.clase}`}></div>
-                          {color.nombre}
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              
-              <div className="mb-4">
-                <label htmlFor="duracion" className="block mb-1 text-sm font-medium text-gray-700">
-                  Duración
-                </label>
-                <div className="flex rounded-md">
-                  <div className="relative flex items-stretch flex-grow focus-within:z-10">
-                    <Input
-                      id="duracion"
-                      name="duracion"
-                      value={formatearDuracion(servicio.duracion)}
-                      readOnly
-                      placeholder="00:00 (hh:mm)"
-                      className="border-gray-300 rounded-md rounded-r-none shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                    />
-                    <div className="absolute inset-y-0 right-0 flex flex-col">
-                      <button
-                        type="button"
-                        className="inline-flex items-center justify-center flex-1 px-1 text-gray-500 border border-transparent hover:text-gray-700"
-                        onClick={() => handleDuracionChange(5)}
-                      >
-                        <ChevronUp className="w-3 h-3" />
-                      </button>
-                      <button
-                        type="button"
-                        className="inline-flex items-center justify-center flex-1 px-1 text-gray-500 border border-transparent hover:text-gray-700"
-                        onClick={() => handleDuracionChange(-5)}
-                      >
-                        <ChevronDown className="w-3 h-3" />
-                      </button>
-                    </div>
-                  </div>
-                  <span className="inline-flex items-center px-3 text-sm text-gray-500 border border-l-0 border-gray-300 rounded-r-md bg-gray-50">
-                    Minutos
-                  </span>
-                </div>
-              </div>
-              
-              <div className="mb-4">
-                <label htmlFor="equipo" className="block mb-1 text-sm font-medium text-gray-700">
-                  Equipo
-                </label>
-                <Select
-                  value={servicio.equipoId}
-                  onValueChange={(value) => handleSelectChange("equipoId", value)}
-                >
-                  <SelectTrigger className="w-full focus:ring-indigo-500">
-                    <SelectValue placeholder="Selecciona un equipo" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="(Todos)">(Todos)</SelectItem>
-                    {/* Aquí irían los equipos disponibles */}
-                  </SelectContent>
-                </Select>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label htmlFor="tipoComision" className="block mb-1 text-sm font-medium text-gray-700">
-                    Tipo de comisión
-                  </label>
-                  <Select
-                    value={servicio.tipoComision}
-                    onValueChange={(value) => handleSelectChange("tipoComision", value)}
-                  >
-                    <SelectTrigger className="w-full focus:ring-indigo-500">
-                      <SelectValue placeholder="Tipo" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {tiposComision.map((tipo) => (
-                        <SelectItem key={tipo.id} value={tipo.id}>
-                          {tipo.nombre}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <label htmlFor="comision" className="block mb-1 text-sm font-medium text-gray-700">
-                    Comisión
+                
+                <div className="mb-4">
+                  <label htmlFor="codigo" className="block mb-1 text-sm font-medium text-gray-700">
+                    Código <span className="text-red-500">*</span>
                   </label>
                   <Input
-                    id="comision"
-                    name="comision"
+                    id="codigo"
+                    name="codigo"
+                    value={servicio.codigo}
+                    onChange={handleInputChange}
+                    placeholder="Ej: SRV001"
+                    className="w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                    required
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <label htmlFor="familia" className="block text-sm font-medium text-gray-700">
+                    Familia <span className="text-red-500">*</span>
+                  </label>
+                  <Select
+                    value={servicio.familiaId || "placeholder"}
+                    onValueChange={(value) => handleSelectChange('familiaId', value)}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Seleccionar familia" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="placeholder">Seleccionar...</SelectItem>
+                      {familias.map((familia) => (
+                        <SelectItem key={familia.id} value={familia.id}>
+                          {familia.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="mb-4">
+                  <label htmlFor="precioConIVA" className="block mb-1 text-sm font-medium text-gray-700">
+                    Precio con IVA
+                  </label>
+                  <Input
+                    id="precioConIVA"
+                    name="precioConIVA"
                     type="number"
                     min="0"
                     step="0.01"
-                    value={servicio.comision}
+                    value={servicio.precioConIVA}
                     onChange={handleInputChange}
-                    placeholder={servicio.tipoComision === "Porcentaje" ? "0" : "0.00"}
+                    placeholder="0.00"
+                    className="w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                  />
+                </div>
+                
+                <div className="mb-4">
+                  <label htmlFor="iva" className="block mb-1 text-sm font-medium text-gray-700">
+                    IVA
+                  </label>
+                  <Select
+                    value={servicio.ivaId}
+                    onValueChange={(value) => handleSelectChange("ivaId", value)}
+                  >
+                    <SelectTrigger className="w-full focus:ring-indigo-500">
+                      <SelectValue placeholder="Selecciona un IVA" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {tiposIVA && tiposIVA.map((iva) => (
+                        <SelectItem key={iva.id} value={iva.id}>
+                          {iva.descripcion}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="mb-4">
+                  <label className="block mb-1 text-sm font-medium text-gray-700">
+                    Cuando el servicio o producto forma parte de un paquete:
+                  </label>
+                  <Select
+                    value={servicio.tarifaPlanaId}
+                    onValueChange={(value) => handleSelectChange("tarifaPlanaId", value)}
+                  >
+                    <SelectTrigger className="w-full focus:ring-indigo-500">
+                      <SelectValue placeholder="Pertenece a la tarifa plana" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="(Ninguna)">(Ninguna)</SelectItem>
+                      {/* Aquí irían las tarifas planas disponibles */}
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label htmlFor="consumo" className="block mb-1 text-sm font-medium text-gray-700">
+                      Consumo
+                    </label>
+                    <Input
+                      id="consumo"
+                      name="consumo"
+                      type="number"
+                      min="1"
+                      value={servicio.consumos[0].cantidad}
+                      onChange={(e) => {
+                        const consumos = [...servicio.consumos];
+                        consumos[0].cantidad = Number(e.target.value);
+                        setServicio({...servicio, consumos});
+                      }}
+                      className="w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="tipoConsumo" className="block mb-1 text-sm font-medium text-gray-700">
+                      Tipo de consumo
+                    </label>
+                    <Select
+                      value={servicio.consumos[0].tipoConsumo}
+                      onValueChange={(value) => {
+                        const consumos = [...servicio.consumos];
+                        consumos[0].tipoConsumo = value;
+                        setServicio({...servicio, consumos});
+                      }}
+                    >
+                      <SelectTrigger className="w-full focus:ring-indigo-500">
+                        <SelectValue placeholder="Selecciona tipo" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {tiposConsumo.map((tipo) => (
+                          <SelectItem key={tipo.id} value={tipo.id}>
+                            {tipo.nombre}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                
+                <div className="mb-4">
+                  <label htmlFor="precioCoste" className="block mb-1 text-sm font-medium text-gray-700">
+                    Precio de coste
+                  </label>
+                  <Input
+                    id="precioCoste"
+                    name="precioCoste"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={servicio.precioCoste}
+                    onChange={handleInputChange}
+                    placeholder="0.00"
                     className="w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                   />
                 </div>
               </div>
               
-              <div className="mb-4 space-y-2">
-                <div className="flex items-center">
-                  <Checkbox
-                    id="requiereParametros"
-                    checked={servicio.requiereParametros}
-                    onCheckedChange={(checked) => handleCheckboxChange("requiereParametros", !!checked)}
-                    className="text-indigo-600 border-gray-300 focus:ring-indigo-500"
-                  />
-                  <label htmlFor="requiereParametros" className="ml-2 text-sm">Requiere parámetros</label>
+              {/* Columna Derecha */}
+              <div>
+                <div className="mb-4">
+                  <label htmlFor="colorAgenda" className="block mb-1 text-sm font-medium text-gray-700">
+                    Color en agenda
+                  </label>
+                  <Select
+                    value={servicio.colorAgenda}
+                    onValueChange={(value) => handleSelectChange("colorAgenda", value)}
+                  >
+                    <SelectTrigger className="w-full focus:ring-indigo-500">
+                      <SelectValue placeholder="Selecciona un color" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {coloresAgenda.map((color) => (
+                        <SelectItem key={color.id} value={color.id}>
+                          <div className="flex items-center">
+                            <div className={`w-4 h-4 mr-2 rounded-full ${color.clase}`}></div>
+                            {color.nombre}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 
-                <div className="flex items-center">
-                  <Checkbox
-                    id="visitaValoracion"
-                    checked={servicio.visitaValoracion}
-                    onCheckedChange={(checked) => handleCheckboxChange("visitaValoracion", !!checked)}
-                    className="text-indigo-600 border-gray-300 focus:ring-indigo-500"
-                  />
-                  <label htmlFor="visitaValoracion" className="ml-2 text-sm">Visita de valoración</label>
+                <div className="mb-4">
+                  <label htmlFor="duracion" className="block mb-1 text-sm font-medium text-gray-700">
+                    Duración
+                  </label>
+                  <div className="flex rounded-md">
+                    <div className="relative flex items-stretch flex-grow focus-within:z-10">
+                      <Input
+                        id="duracion"
+                        name="duracion"
+                        value={formatearDuracion(servicio.duracion)}
+                        readOnly
+                        placeholder="00:00 (hh:mm)"
+                        className="border-gray-300 rounded-md rounded-r-none shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                      />
+                      <div className="absolute inset-y-0 right-0 flex flex-col">
+                        <button
+                          type="button"
+                          className="inline-flex items-center justify-center flex-1 px-1 text-gray-500 border border-transparent hover:text-gray-700"
+                          onClick={() => handleDuracionChange(5)}
+                        >
+                          <ChevronUp className="w-3 h-3" />
+                        </button>
+                        <button
+                          type="button"
+                          className="inline-flex items-center justify-center flex-1 px-1 text-gray-500 border border-transparent hover:text-gray-700"
+                          onClick={() => handleDuracionChange(-5)}
+                        >
+                          <ChevronDown className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                    <span className="inline-flex items-center px-3 text-sm text-gray-500 border border-l-0 border-gray-300 rounded-r-md bg-gray-50">
+                      Minutos
+                    </span>
+                  </div>
                 </div>
                 
-                <div className="flex items-center">
-                  <Checkbox
-                    id="apareceEnApp"
-                    checked={servicio.apareceEnApp}
-                    onCheckedChange={(checked) => handleCheckboxChange("apareceEnApp", !!checked)}
-                    className="text-indigo-600 border-gray-300 focus:ring-indigo-500"
-                  />
-                  <label htmlFor="apareceEnApp" className="ml-2 text-sm">Aparece en App / Self</label>
+                <div className="mb-4">
+                  <label htmlFor="equipo" className="block mb-1 text-sm font-medium text-gray-700">
+                    Equipo
+                  </label>
+                  <Select
+                    value={servicio.equipoId}
+                    onValueChange={(value) => handleSelectChange("equipoId", value)}
+                  >
+                    <SelectTrigger className="w-full focus:ring-indigo-500">
+                      <SelectValue placeholder="Selecciona un equipo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="(Todos)">(Todos)</SelectItem>
+                      {/* Aquí irían los equipos disponibles */}
+                    </SelectContent>
+                  </Select>
                 </div>
                 
-                <div className="flex items-center">
-                  <Checkbox
-                    id="descuentosAutomaticos"
-                    checked={servicio.descuentosAutomaticos}
-                    onCheckedChange={(checked) => handleCheckboxChange("descuentosAutomaticos", !!checked)}
-                    className="text-indigo-600 border-gray-300 focus:ring-indigo-500"
-                  />
-                  <label htmlFor="descuentosAutomaticos" className="ml-2 text-sm">Descuentos automáticos</label>
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label htmlFor="tipoComision" className="block mb-1 text-sm font-medium text-gray-700">
+                      Tipo de comisión
+                    </label>
+                    <Select
+                      value={servicio.tipoComision}
+                      onValueChange={(value) => handleSelectChange("tipoComision", value)}
+                    >
+                      <SelectTrigger className="w-full focus:ring-indigo-500">
+                        <SelectValue placeholder="Tipo" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {tiposComision.map((tipo) => (
+                          <SelectItem key={tipo.id} value={tipo.id}>
+                            {tipo.nombre}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label htmlFor="comision" className="block mb-1 text-sm font-medium text-gray-700">
+                      Comisión
+                    </label>
+                    <Input
+                      id="comision"
+                      name="comision"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={servicio.comision}
+                      onChange={handleInputChange}
+                      placeholder={servicio.tipoComision === "Porcentaje" ? "0" : "0.00"}
+                      className="w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                    />
+                  </div>
                 </div>
                 
-                <div className="flex items-center">
-                  <Checkbox
-                    id="descuentosManuales"
-                    checked={servicio.descuentosManuales}
-                    onCheckedChange={(checked) => handleCheckboxChange("descuentosManuales", !!checked)}
-                    className="text-indigo-600 border-gray-300 focus:ring-indigo-500"
-                  />
-                  <label htmlFor="descuentosManuales" className="ml-2 text-sm">Descuentos manuales</label>
+                <div className="mb-4 space-y-2">
+                  <div className="flex items-center">
+                    <Checkbox
+                      id="requiereParametros"
+                      checked={servicio.requiereParametros}
+                      onCheckedChange={(checked) => handleCheckboxChange("requiereParametros", !!checked)}
+                      className="text-indigo-600 border-gray-300 focus:ring-indigo-500"
+                    />
+                    <label htmlFor="requiereParametros" className="ml-2 text-sm">Requiere parámetros</label>
+                  </div>
+                  
+                  <div className="flex items-center">
+                    <Checkbox
+                      id="visitaValoracion"
+                      checked={servicio.visitaValoracion}
+                      onCheckedChange={(checked) => handleCheckboxChange("visitaValoracion", !!checked)}
+                      className="text-indigo-600 border-gray-300 focus:ring-indigo-500"
+                    />
+                    <label htmlFor="visitaValoracion" className="ml-2 text-sm">Visita de valoración</label>
+                  </div>
+                  
+                  <div className="flex items-center">
+                    <Checkbox
+                      id="apareceEnApp"
+                      checked={servicio.apareceEnApp}
+                      onCheckedChange={(checked) => handleCheckboxChange("apareceEnApp", !!checked)}
+                      className="text-indigo-600 border-gray-300 focus:ring-indigo-500"
+                    />
+                    <label htmlFor="apareceEnApp" className="ml-2 text-sm">Aparece en App / Self</label>
+                  </div>
+                  
+                  <div className="flex items-center">
+                    <Checkbox
+                      id="descuentosAutomaticos"
+                      checked={servicio.descuentosAutomaticos}
+                      onCheckedChange={(checked) => handleCheckboxChange("descuentosAutomaticos", !!checked)}
+                      className="text-indigo-600 border-gray-300 focus:ring-indigo-500"
+                    />
+                    <label htmlFor="descuentosAutomaticos" className="ml-2 text-sm">Descuentos automáticos</label>
+                  </div>
+                  
+                  <div className="flex items-center">
+                    <Checkbox
+                      id="descuentosManuales"
+                      checked={servicio.descuentosManuales}
+                      onCheckedChange={(checked) => handleCheckboxChange("descuentosManuales", !!checked)}
+                      className="text-indigo-600 border-gray-300 focus:ring-indigo-500"
+                    />
+                    <label htmlFor="descuentosManuales" className="ml-2 text-sm">Descuentos manuales</label>
+                  </div>
+                  
+                  <div className="flex items-center">
+                    <Checkbox
+                      id="aceptaPromociones"
+                      checked={servicio.aceptaPromociones}
+                      onCheckedChange={(checked) => handleCheckboxChange("aceptaPromociones", !!checked)}
+                      className="text-indigo-600 border-gray-300 focus:ring-indigo-500"
+                    />
+                    <label htmlFor="aceptaPromociones" className="ml-2 text-sm">Acepta promociones</label>
+                  </div>
+                  
+                  <div className="flex items-center">
+                    <Checkbox
+                      id="aceptaEdicionPVP"
+                      checked={servicio.aceptaEdicionPVP}
+                      onCheckedChange={(checked) => handleCheckboxChange("aceptaEdicionPVP", !!checked)}
+                      className="text-indigo-600 border-gray-300 focus:ring-indigo-500"
+                    />
+                    <label htmlFor="aceptaEdicionPVP" className="ml-2 text-sm">Acepta edición PVP</label>
+                  </div>
+                  
+                  <div className="flex items-center">
+                    <Checkbox
+                      id="afectaEstadisticas"
+                      checked={servicio.afectaEstadisticas}
+                      onCheckedChange={(checked) => handleCheckboxChange("afectaEstadisticas", !!checked)}
+                      className="text-indigo-600 border-gray-300 focus:ring-indigo-500"
+                    />
+                    <label htmlFor="afectaEstadisticas" className="ml-2 text-sm">Afecta estadísticas</label>
+                  </div>
+                  
+                  <div className="flex items-center">
+                    <Checkbox
+                      id="deshabilitado"
+                      checked={servicio.deshabilitado}
+                      onCheckedChange={(checked) => handleCheckboxChange("deshabilitado", !!checked)}
+                      className="text-indigo-600 border-gray-300 focus:ring-indigo-500"
+                    />
+                    <label htmlFor="deshabilitado" className="ml-2 text-sm">Deshabilitado</label>
+                  </div>
                 </div>
                 
-                <div className="flex items-center">
-                  <Checkbox
-                    id="aceptaPromociones"
-                    checked={servicio.aceptaPromociones}
-                    onCheckedChange={(checked) => handleCheckboxChange("aceptaPromociones", !!checked)}
-                    className="text-indigo-600 border-gray-300 focus:ring-indigo-500"
-                  />
-                  <label htmlFor="aceptaPromociones" className="ml-2 text-sm">Acepta promociones</label>
-                </div>
-                
-                <div className="flex items-center">
-                  <Checkbox
-                    id="aceptaEdicionPVP"
-                    checked={servicio.aceptaEdicionPVP}
-                    onCheckedChange={(checked) => handleCheckboxChange("aceptaEdicionPVP", !!checked)}
-                    className="text-indigo-600 border-gray-300 focus:ring-indigo-500"
-                  />
-                  <label htmlFor="aceptaEdicionPVP" className="ml-2 text-sm">Acepta edición PVP</label>
-                </div>
-                
-                <div className="flex items-center">
-                  <Checkbox
-                    id="afectaEstadisticas"
-                    checked={servicio.afectaEstadisticas}
-                    onCheckedChange={(checked) => handleCheckboxChange("afectaEstadisticas", !!checked)}
-                    className="text-indigo-600 border-gray-300 focus:ring-indigo-500"
-                  />
-                  <label htmlFor="afectaEstadisticas" className="ml-2 text-sm">Afecta estadísticas</label>
-                </div>
-                
-                <div className="flex items-center">
-                  <Checkbox
-                    id="deshabilitado"
-                    checked={servicio.deshabilitado}
-                    onCheckedChange={(checked) => handleCheckboxChange("deshabilitado", !!checked)}
-                    className="text-indigo-600 border-gray-300 focus:ring-indigo-500"
-                  />
-                  <label htmlFor="deshabilitado" className="ml-2 text-sm">Deshabilitado</label>
-                </div>
+                {renderDocumentsSection()}
               </div>
-              
-              {renderDocumentsSection()}
             </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Botones de navegación y acción - Ahora fijos en la parte inferior del contenedor principal */}
+      <div className="border-t border-gray-200 bg-white p-4">
+        <div className="flex justify-between items-center gap-2">
+          {/* Menú desplegable para móvil */}
+          <div className="block md:hidden">
+            <Select
+              onValueChange={(value) => {
+                if (value === 'consumos') {
+                  verificarCamposYNavegar(`/configuracion/tarifas/${tarifaId}/nuevo-servicio/consumos`);
+                } else {
+                  handleNavigation(value);
+                }
+              }}
+            >
+              <SelectTrigger className="w-[130px] bg-gray-50">
+                <SelectValue placeholder="Navegación" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="consumos">Consumos</SelectItem>
+                <SelectItem value="puntos">Puntos</SelectItem>
+                <SelectItem value="bonos">Bonos</SelectItem>
+                <SelectItem value="suscripciones">Suscripciones</SelectItem>
+                <SelectItem value="datos-app">Datos App</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
-        </CardContent>
-      </Card>
-      
-      {/* Botones de navegación y acción - POSICIÓN FIJA */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 z-10 shadow-[0_-2px_10px_rgba(0,0,0,0.1)]">
-        <div className="max-w-5xl mx-auto flex justify-between">
-          <div className="flex space-x-2 overflow-x-auto pb-1 flex-nowrap">
+
+          {/* Botones de navegación para desktop */}
+          <div className="hidden md:flex space-x-2 overflow-x-auto">
             <Button 
               variant="outline" 
-              className={buttonNavClass}
+              size="sm"
+              className={`${buttonNavClass} whitespace-nowrap text-xs`}
               onClick={() => verificarCamposYNavegar(`/configuracion/tarifas/${tarifaId}/nuevo-servicio/consumos`)}
             >
               Consumos
             </Button>
             <Button 
-              variant="outline" 
-              className={buttonNavClass}
+              variant="outline"
+              size="sm" 
+              className={`${buttonNavClass} whitespace-nowrap text-xs`}
               onClick={() => handleNavigation('puntos')}
             >
               Puntos
             </Button>
             <Button 
-              variant="outline" 
-              className={buttonNavClass}
+              variant="outline"
+              size="sm" 
+              className={`${buttonNavClass} whitespace-nowrap text-xs`}
               onClick={() => handleNavigation('bonos')}
             >
               Bonos
             </Button>
             <Button 
-              variant="outline" 
-              className={buttonNavClass}
+              variant="outline"
+              size="sm" 
+              className={`${buttonNavClass} whitespace-nowrap text-xs`}
               onClick={() => handleNavigation('suscripciones')}
             >
               Suscripciones
             </Button>
             <Button 
-              variant="outline" 
-              className={buttonNavClass}
+              variant="outline"
+              size="sm" 
+              className={`${buttonNavClass} whitespace-nowrap text-xs`}
               onClick={() => handleNavigation('datos-app')}
             >
               Datos App
             </Button>
           </div>
           
-          <div className="flex space-x-2 ml-2 flex-shrink-0">
+          {/* Botones de acción (siempre visibles) */}
+          <div className="flex space-x-2 flex-shrink-0">
             <Button
               variant="outline"
-              className={buttonSecondaryClass}
+              size="sm"
+              className={`${buttonSecondaryClass} text-xs px-3 py-1`}
               onClick={handleCancel}
             >
               Volver
             </Button>
             <Button
               variant="default"
-              className={buttonPrimaryClass}
+              size="sm"
+              className={`${buttonPrimaryClass} text-xs px-3 py-1`}
               onClick={handleGuardar}
               disabled={isSaving}
             >
               {isSaving ? (
                 <>
-                  <span className="mr-2 animate-spin">
-                    <svg className="w-4 h-4" viewBox="0 0 24 24">
+                  <span className="mr-1 animate-spin">
+                    <svg className="w-3 h-3" viewBox="0 0 24 24">
                       <circle 
                         className="opacity-25" 
                         cx="12" 
