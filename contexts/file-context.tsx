@@ -398,10 +398,20 @@ export const FileProvider: React.FC<{ children: React.ReactNode }> = ({ children
   
   // Obtener estadísticas de almacenamiento
   const getStorageStats = (clinicId?: string) => {
+    console.log(`Calculando estadísticas para clínica: ${clinicId} (${typeof clinicId})`);
+    console.log(`Total archivos disponibles: ${files.length}`);
+    
     // Filtrar por clínica si se especifica
     const relevantFiles = clinicId 
-      ? files.filter(f => f.clinicId === clinicId && !f.isDeleted)
+      ? files.filter(f => {
+          // Convertir ambos a string para comparar correctamente
+          const fileClinicId = String(f.clinicId || '');
+          const targetClinicId = String(clinicId);
+          return fileClinicId === targetClinicId && !f.isDeleted;
+        })
       : files.filter(f => !f.isDeleted);
+    
+    console.log(`Archivos relevantes encontrados: ${relevantFiles.length}`);
     
     // Calcular uso total
     const totalUsed = relevantFiles.reduce((sum, file) => sum + file.fileSize, 0);

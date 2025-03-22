@@ -4,15 +4,26 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
-import { Database, HardDrive, Network, Upload } from 'lucide-react';
+import { Database, HardDrive, Network, Upload, ArrowLeft } from 'lucide-react';
 import { useFiles, BaseFile } from '@/contexts/file-context';
 import EnhancedFilesTable from '@/components/storage/enhanced-files-table';
 import StorageStatusCard from '@/components/storage/storage-status-card';
 import StorageTypeChart from '@/components/storage/storage-type-chart';
 import { getClinic } from '@/mockData';
+import { useRouter, useParams } from 'next/navigation';
 
-export default function AlmacenamientoClinicaPage({ params }: { params: { id: string } }) {
-  const clinicId = params.id;
+interface AlmacenamientoClinicaPageProps {
+  clinicId?: string;
+}
+
+export default function AlmacenamientoClinicaPage({ clinicId: propClinicId }: AlmacenamientoClinicaPageProps = {}) {
+  // Usar los params si no se proporciona clinicId como prop
+  const params = useParams();
+  const routeClinicId = typeof params?.id === 'string' ? params.id : '';
+  
+  // Priorizar el prop sobre el param de la ruta
+  const clinicId = propClinicId || routeClinicId;
+  
   const { files, getFilesByFilter, deleteFile, getStorageStats } = useFiles();
   const [clinicFiles, setClinicFiles] = useState<BaseFile[]>([]);
   const [activeTab, setActiveTab] = useState('files');
@@ -52,33 +63,19 @@ export default function AlmacenamientoClinicaPage({ params }: { params: { id: st
       console.log(`Cargando archivos para clínica ID: ${clinicId}`);
       console.log(`Total de archivos disponibles: ${files.length}`);
       
-      // Listar todos los archivos y sus propiedades para depuración
-      files.forEach(file => {
-        console.log(`Archivo: ${file.fileName}, clinicId: ${file.clinicId} (${typeof file.clinicId}), entityType: ${file.entityType}, deleted: ${file.isDeleted}`);
-      });
-      
-      // Modificar el filtro para comparar clinicId como string o número
+      // Filtramos los archivos que corresponden a esta clínica
       const filesForClinic = files.filter(file => {
-        const matchesClinic = 
-          file.clinicId === clinicId || 
-          file.clinicId === parseInt(clinicId) || 
-          file.clinicId?.toString() === clinicId;
+        // Aseguramos que ambos sean strings para la comparación
+        const fileClinicIdStr = String(file.clinicId || '');
+        const currentClinicId = String(clinicId);
         
-        return !file.isDeleted && matchesClinic;
+        return !file.isDeleted && fileClinicIdStr === currentClinicId;
       });
       
       console.log(`Se encontraron ${filesForClinic.length} archivos para la clínica ${clinicId}`);
       console.log("Archivos encontrados:", filesForClinic);
       
-      // Asegurar que todos los archivos tengan el clinicId como string para consistencia
-      const cleanedFiles = filesForClinic.map(file => {
-        if (typeof file.clinicId === 'number') {
-          return { ...file, clinicId: file.clinicId.toString() };
-        }
-        return file;
-      });
-      
-      setClinicFiles(cleanedFiles);
+      setClinicFiles(filesForClinic);
     };
     
     loadClinicFiles();
@@ -102,12 +99,30 @@ export default function AlmacenamientoClinicaPage({ params }: { params: { id: st
     window.open(file.url, '_blank');
   };
   
+  // Determinar si estamos dentro de una pestaña o como página independiente
+  const isStandalone = !propClinicId;
+  
   return (
-    <div className="container p-6 mx-auto">
+    <div className={isStandalone ? "container p-6 mx-auto" : ""}>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">
-          Almacenamiento - {clinic?.name || `Clínica ${clinicId}`}
-        </h1>
+        <div className="flex items-center gap-2">
+          {isStandalone && (
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => {
+                const router = useRouter();
+                router.push(`/configuracion/clinicas/${clinicId}`);
+              }}
+            >
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Volver a configuración
+            </Button>
+          )}
+          <h1 className={`${isStandalone ? "text-2xl" : "text-xl"} font-bold`}>
+            Almacenamiento - {clinic?.name || `Clínica ${clinicId}`}
+          </h1>
+        </div>
         <Button variant="outline">
           <Upload className="w-4 h-4 mr-2" />
           Subir archivo
@@ -125,13 +140,13 @@ export default function AlmacenamientoClinicaPage({ params }: { params: { id: st
             />
             
             <StorageStatusCard
-              used={clinicFiles.length * 100 * 1024} // Ejemplo
+              used={clinicFiles.length > 0 ? clinicFiles.reduce((sum, file) => sum + file.fileSize, 0) : 0}
               total={1024 * 1024}
               isUnlimited={false}
             />
             
             <StorageStatusCard
-              used={5 * 1024 * 1024} // Ejemplo
+              used={clinicFiles.length > 0 ? storageStats.used : 0}
               total={10 * 1024 * 1024}
               isUnlimited={false}
             />
@@ -178,14 +193,11 @@ export default function AlmacenamientoClinicaPage({ params }: { params: { id: st
                 </CardHeader>
                 <CardContent>
                   <StorageTypeChart
-                    data={Object.entries(entityStats).map(([key, value], index) => {
+                    data={Object.entries(entityStats).reduce((acc, [key, value], index) => {
                       const colors = ['#3498db', '#2ecc71', '#e74c3c', '#f39c12', '#9b59b6', '#1abc9c'];
-                      return {
-                        name: key.charAt(0).toUpperCase() + key.slice(1),
-                        value,
-                        color: colors[index % colors.length]
-                      };
-                    })}
+                      acc[key] = value; // Guardamos como un object Record<string, number>
+                      return acc;
+                    }, {} as Record<string, number>)}
                   />
                 </CardContent>
               </Card>
