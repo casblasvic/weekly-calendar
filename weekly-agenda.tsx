@@ -197,7 +197,7 @@ export function WeeklyAgenda({
       const blockEnd = convertTimeToMinutes(block.endTime)
       const cellTime = convertTimeToMinutes(time)
 
-      return cellTime >= blockStart && cellTime < blockEnd
+      return cellTime >= blockStart && cellTime <= blockEnd
     })
   }
 

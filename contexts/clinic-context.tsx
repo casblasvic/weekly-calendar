@@ -1,6 +1,7 @@
 "use client"
 
 import { createContext, useContext, useState, type ReactNode, useEffect } from "react"
+import { DEFAULT_SCHEDULE } from "@/types/schedule"
 
 // Definición de tipos
 interface ClinicConfig {
@@ -59,7 +60,8 @@ interface ClinicContextType {
 }
 
 // Valores por defecto
-const DEFAULT_SCHEDULE = {}
+// Usamos DEFAULT_SCHEDULE importado en lugar de un objeto vacío
+// const DEFAULT_SCHEDULE = {}
 
 const defaultClinics: Clinic[] = [
   {

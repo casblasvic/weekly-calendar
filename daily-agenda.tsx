@@ -164,7 +164,7 @@ export default function DailyAgenda({
       const blockStart = parse(block.startTime, "HH:mm", new Date())
       const blockEnd = parse(block.endTime, "HH:mm", new Date())
 
-      return timeDate >= blockStart && timeDate < blockEnd
+      return timeDate >= blockStart && timeDate <= blockEnd
     })
 
     return matchingBlocks.length > 0 ? matchingBlocks[0] : null
