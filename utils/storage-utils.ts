@@ -419,4 +419,30 @@ function getCookie(name: string): string | null {
   }
 }
 
+/**
+ * Lee y analiza de forma segura un valor JSON de localStorage
+ * @param key Clave para buscar en localStorage
+ * @param defaultValue Valor por defecto si no existe o hay error
+ */
+export function getStorageItemSafe<T>(key: string, defaultValue: T): T {
+  if (typeof window === 'undefined') return defaultValue;
+  
+  try {
+    const item = localStorage.getItem(key);
+    if (!item) return defaultValue;
+    
+    try {
+      return JSON.parse(item) as T;
+    } catch (parseError) {
+      console.warn(`Error analizando JSON de localStorage para la clave ${key}:`, parseError);
+      // Si hay error de análisis, limpiar el valor corrupto
+      localStorage.removeItem(key);
+      return defaultValue;
+    }
+  } catch (error) {
+    console.warn(`Error al leer de localStorage:`, error);
+    return defaultValue;
+  }
+}
+
 

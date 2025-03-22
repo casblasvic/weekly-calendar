@@ -122,49 +122,65 @@ export function removeCookie(key: string, options?: Omit<CookieOptions, "expires
  * - En el cliente: lee de localStorage y actualiza cookies
  * - En el servidor: las cookies ya están disponibles
  */
-export function syncDataWithCookies<T>(key: string, defaultValue: T, options?: CookieOptions): T {
-  if (!isBrowser) {
-    // En el servidor, no podemos acceder a localStorage
-    return defaultValue
-  }
+export function syncDataWithCookies<T>(key: string, defaultValue: T, options: CookieOptions = {}): T {
+  if (typeof window === 'undefined') return defaultValue;
 
   try {
-    // Primero intentamos leer de cookies (prioridad)
-    const cookieData = getCookie<T>(key, defaultValue)
+    // Primero, intentar obtener de cookies
+    const cookieValue = getCookie<T>(key, defaultValue);
+    const localData = localStorage.getItem(key);
 
-    // Si encontramos datos en cookies, usamos esos
-    if (cookieData !== defaultValue) {
-      // Actualizamos localStorage para mantener sincronización
+    // Si hay datos en la cookie, sincronizar con localStorage y devolver
+    if (cookieValue && typeof cookieValue === 'string') {
+      // Parsear datos de la cookie
+      const parsedData = parseJSONSafe<T>(cookieValue, defaultValue);
+      
+      // Sincronizar con localStorage
       try {
-        localStorage.setItem(key, JSON.stringify(cookieData))
+        localStorage.setItem(key, JSON.stringify(parsedData));
       } catch (e) {
-        console.warn(`No se pudo actualizar localStorage para ${key}:`, e)
+        console.warn(`No se pudo almacenar en localStorage: ${e}`);
       }
-      return cookieData
+      
+      return parsedData;
     }
-
-    // Si no hay datos en cookies, intentamos leer de localStorage
+    
+    // Si hay datos en localStorage pero no en cookie, sincronizar y devolver
+    if (localData) {
+      const localParsedData = parseJSONSafe<T>(localData, defaultValue);
+      
+      // Guardar en cookie
+      setCookie(key, localParsedData, options);
+      
+      return localParsedData;
+    }
+    
+    // Si no hay datos, establecer los valores por defecto
+    setCookie(key, defaultValue, options);
     try {
-      const localData = localStorage.getItem(key)
-
-      if (localData) {
-        // Si hay datos en localStorage, los parseamos
-        const parsedData = JSON.parse(localData) as T
-
-        // Actualizamos la cookie con estos datos
-        setCookie(key, parsedData, options)
-
-        return parsedData
-      }
+      localStorage.setItem(key, JSON.stringify(defaultValue));
     } catch (e) {
-      console.warn(`Error al leer/parsear localStorage para ${key}:`, e)
+      console.warn(`No se pudo almacenar en localStorage: ${e}`);
     }
-
-    // Si no hay datos en ningún lado, devolvemos el valor por defecto
-    return defaultValue
+    
+    return defaultValue;
   } catch (error) {
-    console.error(`Error al sincronizar datos (${key}):`, error)
-    return defaultValue
+    console.warn(`Error al sincronizar datos: ${error}`);
+    return defaultValue;
+  }
+}
+
+/**
+ * Parsea datos JSON de forma segura, manejando errores
+ */
+export function parseJSONSafe<T>(jsonString: string | null, defaultValue: T): T {
+  if (!jsonString) return defaultValue;
+  
+  try {
+    return JSON.parse(jsonString) as T;
+  } catch (error) {
+    console.warn('Error al parsear JSON:', error);
+    return defaultValue;
   }
 }
 

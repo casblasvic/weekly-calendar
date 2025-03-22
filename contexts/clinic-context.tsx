@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
 import { type WeekSchedule, DEFAULT_SCHEDULE } from "@/types/schedule"
-import { setCookie, syncDataWithCookies, COOKIE_KEYS, type CookieOptions } from "@/utils/cookie-utils"
+import { setCookie, syncDataWithCookies, COOKIE_KEYS, type CookieOptions, parseJSONSafe } from "@/utils/cookie-utils"
 import { isBrowser, runOnlyInBrowser } from "@/utils/client-utils"
 import { compressData, estimateSize } from "@/utils/compression-utils"
 

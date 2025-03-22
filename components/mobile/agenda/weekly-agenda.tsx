@@ -96,7 +96,7 @@ export function MobileWeeklyAgenda({ cabins, timeSlots, selectedDate, onBackToWe
           <div className="font-bold">LOGO</div>
           {onBackToWeekView && (
             <Button variant="outline" size="sm" onClick={onBackToWeekView} className="mb-2">
-              <ChevronLeft className="h-4 w-4 mr-1" />
+              <ChevronLeft className="w-4 h-4 mr-1" />
               Vista semanal
             </Button>
           )}
@@ -111,20 +111,20 @@ export function MobileWeeklyAgenda({ cabins, timeSlots, selectedDate, onBackToWe
             <Button 
               variant="ghost" 
               size="icon" 
-              className="h-8 w-8" 
+              className="w-8 h-8" 
               onClick={() => changeMonth("prev")}
               aria-label="Mes anterior"
             >
-              <SkipBack className="h-4 w-4" />
+              <SkipBack className="w-4 h-4" />
             </Button>
             <Button 
               variant="ghost" 
               size="icon" 
-              className="h-8 w-8" 
+              className="w-8 h-8" 
               onClick={() => changeWeek("prev")}
               aria-label="Semana anterior"
             >
-              <ChevronLeft className="h-4 w-4" />
+              <ChevronLeft className="w-4 h-4" />
             </Button>
           </div>
           
@@ -134,35 +134,35 @@ export function MobileWeeklyAgenda({ cabins, timeSlots, selectedDate, onBackToWe
             <Button 
               variant="ghost" 
               size="icon" 
-              className="h-8 w-8" 
+              className="w-8 h-8" 
               onClick={() => changeWeek("next")}
               aria-label="Semana siguiente"
             >
-              <ChevronRight className="h-4 w-4" />
+              <ChevronRight className="w-4 h-4" />
             </Button>
             <Button 
               variant="ghost" 
               size="icon" 
-              className="h-8 w-8" 
+              className="w-8 h-8" 
               onClick={() => changeMonth("next")}
               aria-label="Mes siguiente"
             >
-              <SkipForward className="h-4 w-4" />
+              <SkipForward className="w-4 h-4" />
             </Button>
           </div>
         </div>
       </header>
 
-      <div className="overflow-x-auto w-full relative">
+      <div className="relative w-full overflow-x-auto">
         {isClient ? (
           <table className="w-full border-collapse">
             <thead>
               <tr>
-                <th className="p-2 text-sm font-medium text-gray-500 border-r text-left w-20">Hora</th>
+                <th className="w-20 p-2 text-sm font-medium text-left text-gray-500 border-r">Hora</th>
                 {activeCabins.map((cabin) => (
                   <th
                     key={`cabin-header-${cabin.id}`}
-                    className="text-white text-xs p-2 text-center font-medium border-r last:border-r-0"
+                    className="p-2 text-xs font-medium text-center text-white border-r last:border-r-0"
                     style={getColorStyle(cabin.color)}
                   >
                     {cabin.code}
@@ -173,7 +173,7 @@ export function MobileWeeklyAgenda({ cabins, timeSlots, selectedDate, onBackToWe
             <tbody>
               {timeSlots.map((time) => (
                 <tr key={time} className="border-b">
-                  <td className="p-2 text-sm text-purple-600 font-medium border-r" data-time={time}>
+                  <td className="p-2 text-sm font-medium text-purple-600 border-r" data-time={time}>
                     {time}
                   </td>
                   {activeCabins.map((cabin) => (

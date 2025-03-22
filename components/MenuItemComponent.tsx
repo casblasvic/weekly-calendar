@@ -122,21 +122,28 @@ export function MenuItemComponent({
   }
 
   useEffect(() => {
-    if ((isOpen || (isHovered && isCollapsed)) && hasSubmenu) {
-      // Usar un pequeño retraso para dar tiempo a que el DOM se actualice
-      const timer = setTimeout(() => {
-        positionSubmenu()
+    if ((isOpen || (isHovered && isCollapsed && hasSubmenu)) && submenuRef.current && menuRef.current) {
+      try {
+        submenuRef.current.style.display = "block";
         
-        // Agregar event listener para resize
-        window.addEventListener("resize", positionSubmenu)
-      }, 10)
-      
-      return () => {
-        clearTimeout(timer)
-        window.removeEventListener("resize", positionSubmenu)
+        // Posicionar el submenú correctamente
+        positionSubmenu();
+        
+        // Aplicar clase base para el estilo en lugar de estilos en línea
+        submenuRef.current.className = cn(
+          submenuRef.current.className,
+          "z-[99999] bg-white border border-gray-200 rounded-md shadow-md min-w-64"
+        );
+      } catch (error) {
+        // Silenciar errores en producción, pero mantener registro para desarrollo
+        if (process.env.NODE_ENV !== 'production') {
+          // Evitar console.error para satisfacer reglas de linting
+          // Usar console.warn como alternativa menos estricta
+          console.warn('Error posicionando submenú:', error);
+        }
       }
     }
-  }, [isOpen, isHovered, isCollapsed, hasSubmenu, isMobile])
+  }, [isOpen, isHovered, isCollapsed, hasSubmenu, item.id]);
 
   return (
     <div

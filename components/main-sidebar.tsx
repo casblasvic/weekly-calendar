@@ -137,7 +137,10 @@ const MenuItemComponent = ({
         router.push(item.href);
         toggleMenu(""); // Close all menus when navigating
       } catch (error) {
-        console.error("Error al navegar:", error);
+        // Silenciar errores en producción, registrar solo en desarrollo
+        if (process.env.NODE_ENV !== 'production') {
+          console.warn("Error al navegar:", error);
+        }
       }
     }
   };
@@ -160,21 +163,72 @@ const MenuItemComponent = ({
         
         // Ajustar posición top dependiendo del menú
         if (item.id === "configuracion") {
-          if (isHovered && isCollapsed) {
-            // Para el caso específico de hover en barra plegada, bajar 180px como solicitado
-            const basePosition = (menuRef.current?.getBoundingClientRect().top || 0);
-            submenuRef.current.style.top = `${basePosition + 180}px`;
-          } else {
-            // Mantener posición anterior para otros casos (clic normal)
-            submenuRef.current.style.top = `calc(100vh - 250px - ${submenuRef.current.offsetHeight || 300}px)`;
-          }
+          // Para el menú de configuración, usamos siempre la misma posición fija
+          // tanto para hover como para clic, y tanto con barra plegada como desplegada
+          submenuRef.current.style.top = "calc(100vh - 450px)";
+          
+          // Establecer altura para el menú de configuración
+          const maxMenuHeight = "450px"; // Aumentar la altura máxima
+          submenuRef.current.style.maxHeight = maxMenuHeight;
+          
+          // Añadir indicador de scroll si es necesario
+          setTimeout(() => {
+            if (submenuRef.current) {
+              // Comprobamos si el contenido excede el tamaño visible
+              const hasOverflow = submenuRef.current.scrollHeight > submenuRef.current.clientHeight;
+              if (hasOverflow) {
+                // Si hay overflow, añadimos el indicador visual de scroll
+                const scrollIndicator = document.createElement("div");
+                scrollIndicator.className = "scroll-indicator";
+                scrollIndicator.style.position = "absolute";
+                scrollIndicator.style.bottom = "10px";
+                scrollIndicator.style.left = "50%";
+                scrollIndicator.style.transform = "translateX(-50%)";
+                scrollIndicator.style.width = "30px";
+                scrollIndicator.style.height = "30px";
+                scrollIndicator.style.backgroundColor = "rgba(147, 51, 234, 0.7)"; // Color púrpura con opacidad
+                scrollIndicator.style.borderRadius = "50%";
+                scrollIndicator.style.display = "flex";
+                scrollIndicator.style.justifyContent = "center";
+                scrollIndicator.style.alignItems = "center";
+                scrollIndicator.style.zIndex = "999999";
+                scrollIndicator.style.cursor = "pointer";
+                scrollIndicator.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: white;"><path d="m6 9 6 6 6-6"/></svg>';
+                
+                // Eliminar indicador existente si ya hay uno
+                const existingIndicator = submenuRef.current.querySelector(".scroll-indicator");
+                if (existingIndicator) {
+                  existingIndicator.remove();
+                }
+                
+                // Añadir el indicador al menú
+                submenuRef.current.appendChild(scrollIndicator);
+                
+                // Añadir evento para hacer scroll al hacer clic en el indicador
+                scrollIndicator.addEventListener("click", () => {
+                  if (submenuRef.current) {
+                    submenuRef.current.scrollTop += 100; // Desplaza 100px hacia abajo
+                  }
+                });
+                
+                // Ocultar el indicador después de scroll
+                submenuRef.current.addEventListener("scroll", () => {
+                  // Si ya hemos hecho scroll hasta casi el final, ocultar el indicador
+                  if (submenuRef.current && scrollIndicator) {
+                    const isNearBottom = submenuRef.current.scrollHeight - submenuRef.current.scrollTop - submenuRef.current.clientHeight < 50;
+                    scrollIndicator.style.opacity = isNearBottom ? "0" : "1";
+                    scrollIndicator.style.transition = "opacity 0.3s";
+                  }
+                });
+              }
+            }
+          }, 100); // Pequeño retraso para asegurar que el DOM está listo
         } else {
           // Posición estándar para otros menús
           submenuRef.current.style.top = (menuRef.current?.getBoundingClientRect().top || 0) + "px";
+          submenuRef.current.style.maxHeight = "400px";
+          submenuRef.current.style.overflowY = "auto";
         }
-        
-        submenuRef.current.style.maxHeight = "calc(100vh - 100px)";
-        submenuRef.current.style.overflowY = "auto";
       } catch (error) {
         console.error("Error al actualizar el estilo del submenú:", error);
       }
@@ -232,7 +286,11 @@ const MenuItemComponent = ({
             display: "block",
             visibility: "visible",
             opacity: 1,
-            maxHeight: "400px", // Altura máxima limitada
+            // Establecer altura máxima dependiendo del tipo de menú
+            maxHeight: item.id === "configuracion" 
+              ? "450px" // Mayor altura para el menú de configuración
+              : "400px", // Altura estándar para otros menús
+            // overflowY no se fuerza a "auto", sino que se deja como "auto" para que solo muestre scroll cuando sea necesario
             overflowY: "auto"
           }}
         >
@@ -270,6 +328,7 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
   const menuRef = useRef<HTMLDivElement>(null)
   const clinicRef = useRef<HTMLDivElement>(null)
   const clinicMenuRef = useRef<HTMLDivElement>(null)
+  const sidebarMenusRef = useRef<HTMLDivElement>(null)
   const pathname = usePathname()
   const [isMobile, setIsMobile] = useState(false)
   const [currentDate, setCurrentDate] = useState<string>("")
@@ -278,11 +337,92 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
   const router = useRouter()
   const { theme } = useTheme()
   const [hasMounted, setHasMounted] = useState(false)
+  const [showScrollDownIndicator, setShowScrollDownIndicator] = useState(false)
+  const [showScrollUpIndicator, setShowScrollUpIndicator] = useState(false)
 
   const { activeClinic, setActiveClinic, clinics } = useClinic()
   const [clinicSearchTerm, setClinicSearchTerm] = useState("")
   const [isClinicSelectorOpen, setIsClinicSelectorOpen] = useState(false)
   const [isClinicHovered, setIsClinicHovered] = useState(false)
+  
+  // Función para comprobar si hay scroll en el menú lateral y mostrar los indicadores
+  const checkSidebarOverflow = useCallback(() => {
+    if (sidebarMenusRef.current) {
+      const hasOverflow = sidebarMenusRef.current.scrollHeight > sidebarMenusRef.current.clientHeight;
+      
+      // Verificar posición actual de scroll para decidir qué indicadores mostrar
+      if (hasOverflow && (forceMobileView || isMobile)) {
+        // Si hay más contenido por debajo, mostrar indicador hacia abajo
+        const isScrolledToTop = sidebarMenusRef.current.scrollTop < 10;
+        const isScrolledToBottom = 
+          sidebarMenusRef.current.scrollHeight - 
+          sidebarMenusRef.current.scrollTop - 
+          sidebarMenusRef.current.clientHeight < 10;
+        
+        // Actualizar estado de ambos indicadores
+        setShowScrollDownIndicator(hasOverflow && !isScrolledToBottom);
+        setShowScrollUpIndicator(hasOverflow && !isScrolledToTop);
+      } else {
+        // Sin overflow, no mostrar indicadores
+        setShowScrollDownIndicator(false);
+        setShowScrollUpIndicator(false);
+      }
+    }
+  }, [forceMobileView, isMobile]);
+  
+  // Verificar el overflow cuando cambia el tamaño de la ventana o cambian los contenidos
+  useEffect(() => {
+    if (hasMounted) {
+      // Pequeño retraso para asegurar que el DOM está completamente renderizado
+      setTimeout(() => {
+        checkSidebarOverflow();
+      }, 100);
+      
+      // Comprobar también al cambiar el tamaño de la ventana
+      window.addEventListener('resize', checkSidebarOverflow);
+      return () => {
+        window.removeEventListener('resize', checkSidebarOverflow);
+      };
+    }
+  }, [hasMounted, checkSidebarOverflow, isCollapsed, forceMobileView]);
+  
+  // Mostrar u ocultar los indicadores según el scroll
+  useEffect(() => {
+    const handleScroll = () => {
+      if (sidebarMenusRef.current) {
+        // Verificar ambas direcciones de scroll
+        const isNearTop = sidebarMenusRef.current.scrollTop < 10;
+        const isNearBottom = 
+          sidebarMenusRef.current.scrollHeight - 
+          sidebarMenusRef.current.scrollTop - 
+          sidebarMenusRef.current.clientHeight < 10;
+        
+        // Actualizar estado de ambos indicadores
+        const hasOverflow = sidebarMenusRef.current.scrollHeight > sidebarMenusRef.current.clientHeight;
+        if (hasOverflow && (forceMobileView || isMobile)) {
+          setShowScrollDownIndicator(!isNearBottom);
+          setShowScrollUpIndicator(!isNearTop);
+        }
+      }
+    };
+    
+    if (sidebarMenusRef.current) {
+      sidebarMenusRef.current.addEventListener('scroll', handleScroll);
+      return () => {
+        sidebarMenusRef.current?.removeEventListener('scroll', handleScroll);
+      };
+    }
+  }, [checkSidebarOverflow, forceMobileView, isMobile]);
+  
+  // Efecto adicional para detectar cambios en el modo móvil
+  useEffect(() => {
+    // Verificar explícitamente cuando cambia el modo móvil
+    if (forceMobileView) {
+      setTimeout(() => {
+        checkSidebarOverflow();
+      }, 200);
+    }
+  }, [forceMobileView, checkSidebarOverflow]);
   
   // Desactivar el comportamiento específico para móvil
   useEffect(() => {
@@ -827,8 +967,11 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
         )}
       </div>
 
-      {/* Menu items - con scroll automático */}
-      <div className="flex-1 py-2 overflow-y-auto">
+      {/* Menu items - con scroll automático e indicador */}
+      <div 
+        ref={sidebarMenusRef} 
+        className="flex-1 py-2 overflow-y-auto relative"
+      >
         {menuItems.map((item) => (
           <div key={item.id} className="my-1">
             <MenuItemComponent
@@ -840,6 +983,54 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
             />
           </div>
         ))}
+        
+        {/* Indicador de scroll para la barra lateral - mejorado para móvil */}
+        {showScrollDownIndicator && (
+          <div 
+            className="scroll-indicator-down"
+            onClick={() => {
+              if (sidebarMenusRef.current) {
+                // Scroll más suave
+                sidebarMenusRef.current.scrollBy({
+                  top: 200,
+                  behavior: 'smooth'
+                });
+              }
+            }}
+            style={{
+              // Posicionamiento específico para este indicador
+              left: isCollapsed ? '32px' : '128px',
+              bottom: forceMobileView ? '60px' : '20px'
+            }}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="m6 9 6 6 6-6"/>
+            </svg>
+          </div>
+        )}
+        {showScrollUpIndicator && (
+          <div 
+            className="scroll-indicator-up"
+            onClick={() => {
+              if (sidebarMenusRef.current) {
+                // Scroll más suave
+                sidebarMenusRef.current.scrollBy({
+                  top: -200,
+                  behavior: 'smooth'
+                });
+              }
+            }}
+            style={{
+              // Posicionamiento específico para este indicador
+              left: isCollapsed ? '32px' : '128px',
+              top: forceMobileView ? '60px' : '20px'
+            }}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: 'rotate(180deg)' }}>
+              <path d="m6 9 6 6 6-6"/>
+            </svg>
+          </div>
+        )}
       </div>
 
       {/* User menu */}

@@ -10,6 +10,7 @@ import { DatePickerButton } from "./date-picker-button"
 import { BlockScheduleModal } from "./block-schedule-modal"
 import { useClinic } from "@/contexts/clinic-context"
 import { useToast } from "@/hooks/use-toast"
+import { convertCabinToRoom } from "@/types/fix-types"
 
 interface Room {
   id: string
@@ -89,50 +90,44 @@ export function AgendaNavBar({
 
   const changeWeek = useCallback(
     (direction: "next" | "prev") => {
-      setCurrentDate((prevDate) => {
-        const newDate = new Date(prevDate)
-        newDate.setDate(newDate.getDate() + (direction === "next" ? 7 : -7))
-        
-        // En lugar de actualizar directamente, programamos la actualización para después del renderizado
-        const urlInfo = updateUrl(newDate, view)
-        setPendingUrlUpdate(urlInfo)
-        
-        return newDate
-      })
+      const newDate = new Date(currentDate);
+      newDate.setDate(newDate.getDate() + (direction === "next" ? 7 : -7));
+      
+      // En lugar de actualizar directamente, programamos la actualización para después del renderizado
+      const urlInfo = updateUrl(newDate, view);
+      setPendingUrlUpdate(urlInfo);
+      
+      setCurrentDate(newDate);
     },
-    [setCurrentDate, updateUrl, view],
+    [currentDate, setCurrentDate, updateUrl, view],
   )
 
   const changeMonth = useCallback(
     (direction: "next" | "prev") => {
-      setCurrentDate((prevDate) => {
-        const newDate = new Date(prevDate)
-        newDate.setMonth(newDate.getMonth() + (direction === "next" ? 1 : -1))
-        
-        // En lugar de actualizar directamente, programamos la actualización para después del renderizado
-        const urlInfo = updateUrl(newDate, view)
-        setPendingUrlUpdate(urlInfo)
-        
-        return newDate
-      })
+      const newDate = new Date(currentDate);
+      newDate.setMonth(newDate.getMonth() + (direction === "next" ? 1 : -1));
+      
+      // En lugar de actualizar directamente, programamos la actualización para después del renderizado
+      const urlInfo = updateUrl(newDate, view);
+      setPendingUrlUpdate(urlInfo);
+      
+      setCurrentDate(newDate);
     },
-    [setCurrentDate, updateUrl, view],
+    [currentDate, setCurrentDate, updateUrl, view],
   )
 
   const changeDay = useCallback(
     (direction: "next" | "prev") => {
-      setCurrentDate((prevDate) => {
-        const newDate = new Date(prevDate)
-        newDate.setDate(newDate.getDate() + (direction === "next" ? 1 : -1))
-        
-        // En lugar de actualizar directamente, programamos la actualización para después del renderizado
-        const urlInfo = updateUrl(newDate, view)
-        setPendingUrlUpdate(urlInfo)
-        
-        return newDate
-      })
+      const newDate = new Date(currentDate);
+      newDate.setDate(newDate.getDate() + (direction === "next" ? 1 : -1));
+      
+      // En lugar de actualizar directamente, programamos la actualización para después del renderizado
+      const urlInfo = updateUrl(newDate, view);
+      setPendingUrlUpdate(urlInfo);
+      
+      setCurrentDate(newDate);
     },
-    [setCurrentDate, updateUrl, view],
+    [currentDate, setCurrentDate, updateUrl, view],
   )
 
   const handlePrevDay = useCallback(() => {
@@ -142,7 +137,10 @@ export function AgendaNavBar({
       prevDay = subDays(prevDay, 1)
     }
     setCurrentDate(prevDay)
-    updateUrl(prevDay, "day")
+    
+    // Actualizar URL sin recargar
+    const urlInfo = updateUrl(prevDay, "day")
+    setPendingUrlUpdate(urlInfo)
   }, [currentDate, setCurrentDate, updateUrl, isDayActive])
 
   const handleNextDay = useCallback(() => {
@@ -152,7 +150,10 @@ export function AgendaNavBar({
       nextDay = addDays(nextDay, 1)
     }
     setCurrentDate(nextDay)
-    updateUrl(nextDay, "day")
+    
+    // Actualizar URL sin recargar
+    const urlInfo = updateUrl(nextDay, "day")
+    setPendingUrlUpdate(urlInfo)
   }, [currentDate, setCurrentDate, updateUrl, isDayActive])
 
   // Función para verificar si un día es activo en la configuración de la clínica
@@ -181,7 +182,9 @@ export function AgendaNavBar({
   }, [setCurrentDate, updateUrl, view, appointments])
 
   const handleDateChange = useCallback(
-    (date: Date) => {
+    (date: Date | null) => {
+      if (!date) return; // Si date es null, no hacemos nada
+      
       // Guardar las citas en sessionStorage para que la vista diaria pueda acceder a ellas
       if (typeof window !== "undefined" && appointments.length > 0) {
         sessionStorage.setItem("weeklyAppointments", JSON.stringify(appointments))
@@ -197,11 +200,11 @@ export function AgendaNavBar({
   )
 
   return (
-    <div className="flex items-center gap-3 border-b pb-3">
+    <div className="flex items-center gap-3 pb-3 border-b">
       <div className="flex items-center gap-2">
         {/* Botones de navegación por meses */}
         <Button variant="ghost" size="icon" onClick={() => changeMonth("prev")} className="text-purple-600">
-          <ChevronsLeft className="h-4 w-4" />
+          <ChevronsLeft className="w-4 h-4" />
         </Button>
 
         {/* Botones de navegación por semanas/días */}
@@ -211,7 +214,7 @@ export function AgendaNavBar({
           onClick={() => (view === "week" ? changeWeek("prev") : handlePrevDay())}
           className="text-purple-600"
         >
-          <ChevronLeft className="h-4 w-4" />
+          <ChevronLeft className="w-4 h-4" />
         </Button>
 
         {/* Componente personalizado de selector de fechas */}
@@ -226,7 +229,7 @@ export function AgendaNavBar({
 
         {/* Botón de hoy */}
         <Button variant="ghost" size="icon" onClick={goToToday} className="text-purple-600">
-          <CalendarDays className="h-4 w-4" />
+          <CalendarDays className="w-4 h-4" />
         </Button>
 
         <Button
@@ -235,11 +238,11 @@ export function AgendaNavBar({
           onClick={() => (view === "week" ? changeWeek("next") : handleNextDay())}
           className="text-purple-600"
         >
-          <ChevronRight className="h-4 w-4" />
+          <ChevronRight className="w-4 h-4" />
         </Button>
 
         <Button variant="ghost" size="icon" onClick={() => changeMonth("next")} className="text-purple-600">
-          <ChevronsRight className="h-4 w-4" />
+          <ChevronsRight className="w-4 h-4" />
         </Button>
       </div>
 
@@ -261,11 +264,11 @@ export function AgendaNavBar({
           }}
           disabled={!currentClinic || !currentClinic.config?.cabins || currentClinic.config.cabins.length === 0}
         >
-          <Lock className="h-4 w-4" />
+          <Lock className="w-4 h-4" />
         </Button>
 
         <Button variant="ghost" size="icon" className="text-purple-600" onClick={() => window.print()}>
-          <Printer className="h-4 w-4" />
+          <Printer className="w-4 h-4" />
         </Button>
 
         <Select defaultValue="todos">
@@ -281,7 +284,7 @@ export function AgendaNavBar({
         <BlockScheduleModal
           open={isBlockModalOpen}
           onOpenChange={setIsBlockModalOpen}
-          clinicRooms={activeClinic?.config?.cabins || []}
+          clinicRooms={activeClinic?.config?.cabins?.map(cabin => convertCabinToRoom(cabin)) || []}
           clinicId={activeClinic?.id || 1}
           onBlockSaved={() => {
             if (onBlocksChanged) {

@@ -40,6 +40,7 @@ import { AGENDA_CONFIG, getTimeSlots, scrollToCurrentTime } from "@/config/agend
 import { ClientCardWrapper } from "@/components/client-card-wrapper"
 import { CurrentTimeIndicator } from "@/components/current-time-indicator"
 import { useClinic } from "@/contexts/clinic-context"
+import type { WeekSchedule } from "@/types/schedule"
 
 interface Appointment {
   id: string
@@ -260,8 +261,15 @@ function MobileAgendaViewContent({ showMainSidebar = false }: MobileAgendaViewPr
   }, [activeClinic])
 
   const router = useRouter()
+  // Creamos la referencia al contenedor una sola vez
   const containerRef = useRef<HTMLDivElement>(null)
   const [currentTime, setCurrentTime] = useState(new Date())
+
+  // Función que envuelve la referencia al contenedor para que sea compatible con CurrentTimeIndicator
+  const getCompatibleAgendaRef = useCallback(() => {
+    // Devuelve un objeto compatible con RefObject<HTMLDivElement>
+    return containerRef as React.RefObject<HTMLDivElement>
+  }, [])
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -273,7 +281,9 @@ function MobileAgendaViewContent({ showMainSidebar = false }: MobileAgendaViewPr
 
   useEffect(() => {
     // Scroll to current time on mount
-    scrollToCurrentTime(containerRef)
+    if (containerRef.current) {
+      scrollToCurrentTime(containerRef)
+    }
   }, [])
 
   const isDayAvailable = useCallback(
@@ -282,7 +292,18 @@ function MobileAgendaViewContent({ showMainSidebar = false }: MobileAgendaViewPr
         return true
       }
       const dayOfWeek = date.getDay()
-      const dayKey = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"][dayOfWeek]
+      // Usamos un switch statement para obtener la clave correcta basada en el día de la semana
+      let dayKey: keyof WeekSchedule;
+      switch (dayOfWeek) {
+        case 0: dayKey = "sunday"; break;
+        case 1: dayKey = "monday"; break;
+        case 2: dayKey = "tuesday"; break;
+        case 3: dayKey = "wednesday"; break;
+        case 4: dayKey = "thursday"; break;
+        case 5: dayKey = "friday"; break;
+        case 6: dayKey = "saturday"; break;
+        default: dayKey = "monday"; // Por defecto, usar lunes
+      }
       const dayConfig = activeClinic.config.schedule[dayKey]
       return dayConfig && dayConfig.isOpen
     },
@@ -734,7 +755,7 @@ function MobileAgendaViewContent({ showMainSidebar = false }: MobileAgendaViewPr
               rowHeight={AGENDA_CONFIG.ROW_HEIGHT}
               isMobile={true}
               className="z-50"
-              agendaRef={containerRef}
+              agendaRef={getCompatibleAgendaRef()}
             />
           )}
         </div>
@@ -964,9 +985,9 @@ function MobileAgendaViewContent({ showMainSidebar = false }: MobileAgendaViewPr
               client={{
                 id: selectedClient.id,
                 name: selectedClient.name,
-                email: selectedClient.email || "",
+                email: "",
                 phone: selectedClient.phone,
-                clientNumber: selectedClient.clientNumber || "",
+                clientNumber: "",
                 clinic: "",
                 registrationDate: selectedClient.registrationDate || ""
               }}

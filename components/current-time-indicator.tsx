@@ -10,7 +10,7 @@ interface CurrentTimeIndicatorProps {
   rowHeight: number
   isMobile: boolean
   className?: string
-  agendaRef: React.RefObject<HTMLDivElement>
+  agendaRef: React.RefObject<HTMLDivElement | null> | React.RefObject<HTMLDivElement>
   clinicOpenTime?: string
   clinicCloseTime?: string
 }
@@ -83,17 +83,17 @@ export const CurrentTimeIndicator: React.FC<CurrentTimeIndicatorProps> = ({
 
   // Función para calcular la posición del indicador
   const updatePosition = useCallback(() => {
-    if (!timeSlots.length || !agendaRef.current) {
-      console.log("No hay slots de tiempo o referencia de agenda disponible")
+    if (!timeSlots.length) {
+      console.log("No hay slots de tiempo disponibles")
+      return
+    }
+    
+    if (!agendaRef.current) {
+      console.log("No hay referencia a la agenda disponible")
       return
     }
 
     const getCurrentTimePosition = () => {
-      if (!timeSlots.length) {
-        console.log("No hay slots de tiempo disponibles")
-        return { position: null, slotTime: null, isWithinRange: false }
-      }
-
       const currentTimeString = format(currentTime, "HH:mm")
       console.log("Calculando posición para:", currentTimeString)
 
