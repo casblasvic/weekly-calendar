@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useMemo } from "react"
 import WeeklyAgenda from "@/components/weekly-agenda"
 import { HydrationWrapper } from "@/components/hydration-wrapper"
 import { useClinic } from "@/contexts/clinic-context"
-import { ThemeProvider } from "@/app/contexts/theme-context"
+import { ThemeProvider } from "@/contexts/theme"
 
 // Colores por defecto (fallback)
 const defaultThemeColors = {
@@ -20,22 +20,28 @@ const defaultThemeColors = {
 export default function AgendaPage() {
   const [hasError, setHasError] = useState(false)
   const [errorMessage, setErrorMessage] = useState("")
-  const { activeClinic, _hydrated } = useClinic()
+  const { activeClinic } = useClinic()
   const [retryCount, setRetryCount] = useState(0)
   const [isInitialized, setIsInitialized] = useState(false)
+  const [isHydrated, setIsHydrated] = useState(false)
+  
+  // Efecto para detectar hidratación
+  useEffect(() => {
+    setIsHydrated(true)
+  }, [])
   
   // Inicialización de componentes
   useEffect(() => {
     if (typeof window === "undefined") return
     
-    console.log("[AgendaPage] Inicializando: hydrated =", _hydrated)
+    console.log("[AgendaPage] Inicializando: hydrated =", isHydrated)
     console.log("[AgendaPage] Datos de clínica activa:", activeClinic)
     
-    if (_hydrated && !isInitialized) {
+    if (isHydrated && !isInitialized) {
       console.log("[AgendaPage] Ejecutando inicialización completa")
       setIsInitialized(true)
     }
-  }, [_hydrated, activeClinic, isInitialized])
+  }, [isHydrated, activeClinic, isInitialized])
 
   // Manejo de errores mejorado
   useEffect(() => {
@@ -45,7 +51,7 @@ export default function AgendaPage() {
       console.error("[AgendaPage] Error detectado:", event.error)
       
       // No mostrar errores durante la hidratación
-      if (!_hydrated) return
+      if (!isHydrated) return
       
       // No mostrar errores durante la inicialización
       if (!isInitialized) return
@@ -61,7 +67,7 @@ export default function AgendaPage() {
       console.log("[AgendaPage] Eliminando detector de errores")
       window.removeEventListener('error', handleError)
     }
-  }, [_hydrated, isInitialized])
+  }, [isHydrated, isInitialized])
 
   // Fallback mientras se carga
   const loadingFallback = (
@@ -99,7 +105,7 @@ export default function AgendaPage() {
       fallback={loadingFallback}
       timeout={5000}
     >
-      {(_hydrated && isInitialized) ? (
+      {(isHydrated && isInitialized) ? (
         <WeeklyAgenda key={`desktop-view-${retryCount}`} />
       ) : (
         loadingFallback

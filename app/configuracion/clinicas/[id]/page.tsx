@@ -14,6 +14,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { CabinEditDialog } from "@/components/cabin-edit-dialog"
 import { useClinic } from "@/contexts/clinic-context"
+import type { Clinic } from "@/contexts/clinic-context"
 import { SearchInput } from "@/components/SearchInput"
 import { ScheduleConfig } from "@/components/schedule-config"
 import { DEFAULT_SCHEDULE } from "@/types/schedule"
@@ -82,13 +83,19 @@ const SectionTitle = ({ icon: Icon, title, color }: { icon: any; title: string; 
   </div>
 )
 
-export default function ClinicaDetailPage({ params }: { params: { id: string } }) {
-  const { clinics, updateClinic, updateClinicConfig } = useClinic()
+export default function ClinicaDetailPage({ params }: { params: any }) {
+  const clinicContext = useClinic()
+  const { clinics, updateClinicConfig } = clinicContext
+  const updateClinic = clinicContext.updateClinic
+  
+  console.log("ClinicaDetailPage - Contexto recibido:", clinicContext)
+  console.log("ClinicaDetailPage - updateClinic:", updateClinic)
+  
   const { templates } = useTemplates()
   const [activeTab, setActiveTab] = useState("datos")
   const [isCabinDialogOpen, setIsCabinDialogOpen] = useState(false)
   const [editingCabin, setEditingCabin] = useState<Cabin | null>(null)
-  const [clinicData, setClinicData] = useState<typeof clinic | null>(null)
+  const [clinicData, setClinicData] = useState<Clinic | null>(null)
   const [cabinFilterText, setCabinFilterText] = useState("")
   const [equipmentFilterText, setEquipmentFilterText] = useState("")
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null)
@@ -98,9 +105,10 @@ export default function ClinicaDetailPage({ params }: { params: { id: string } }
 
   const router = useRouter()
   const searchParams = useSearchParams()
-  const resolvedParams = use(params)
-
-  const clinic = clinics.find((c) => c.id.toString() === resolvedParams.id)
+  const resolvedParams = use(params) as { id: string }
+  const clinicId = resolvedParams.id
+  
+  const clinic = clinics.find((c) => c.id.toString() === clinicId)
 
   useEffect(() => {
     if (!clinic) {
@@ -861,7 +869,7 @@ export default function ClinicaDetailPage({ params }: { params: { id: string } }
                               size="icon"
                               className="h-8 w-8"
                               onClick={() =>
-                                router.push(`/configuracion/clinicas/${resolvedParams.id}/equipamiento/${equipment.id}`)
+                                router.push(`/configuracion/clinicas/${params.id}/equipamiento/${equipment.id}`)
                               }
                             >
                               <Search className="h-4 w-4 text-primary" />
@@ -885,7 +893,7 @@ export default function ClinicaDetailPage({ params }: { params: { id: string } }
 
           {activeTab === "almacenamiento" && (
             <div className="space-y-4">
-              <DebugStorage clinicId={clinic.id} />
+              <DebugStorage clinicId={clinic.id.toString()} />
             </div>
           )}
         </div>
@@ -922,7 +930,7 @@ export default function ClinicaDetailPage({ params }: { params: { id: string } }
           <Button
             className="bg-purple-600 hover:bg-purple-700 text-white text-sm py-2 px-4 rounded-md shadow-md"
             onClick={() => {
-              router.push(`/configuracion/clinicas/${resolvedParams.id}/equipamiento/nuevo`)
+              router.push(`/configuracion/clinicas/${params.id}/equipamiento/nuevo`)
             }}
           >
             <Plus className="h-4 w-4 mr-2" />

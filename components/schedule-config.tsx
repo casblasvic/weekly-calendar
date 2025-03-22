@@ -171,15 +171,15 @@ export function ScheduleConfig({ value, onChange, showTemplateSelector = false }
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div className="flex items-center space-x-4">
                 <Checkbox
-                  checked={value[day].isOpen}
+                  checked={value[day as keyof WeekSchedule]?.isOpen || false}
                   onCheckedChange={(checked) =>
-                    updateDaySchedule(day, {
-                      ...value[day],
+                    updateDaySchedule(day as keyof WeekSchedule, {
+                      ...(value[day as keyof WeekSchedule] || { ranges: [] }),
                       isOpen: checked as boolean,
                       ranges: checked
-                        ? value[day].ranges.length
-                          ? value[day].ranges
-                          : [{ start: openTime, end: closeTime }]
+                        ? (value[day as keyof WeekSchedule]?.ranges?.length
+                          ? value[day as keyof WeekSchedule].ranges
+                          : [{ start: openTime, end: closeTime }])
                         : [],
                     })
                   }
@@ -194,7 +194,7 @@ export function ScheduleConfig({ value, onChange, showTemplateSelector = false }
                   value=""
                   onValueChange={(copyFrom) => {
                     if (copyFrom) {
-                      copySchedule(copyFrom as keyof WeekSchedule, day)
+                      copySchedule(copyFrom as keyof WeekSchedule, day as keyof WeekSchedule)
                     }
                   }}
                 >
@@ -215,9 +215,9 @@ export function ScheduleConfig({ value, onChange, showTemplateSelector = false }
               </div>
             </div>
 
-            {expandedDays.includes(day) && value[day].isOpen && (
+            {expandedDays.includes(day) && value[day as keyof WeekSchedule]?.isOpen && (
               <div className="mt-4 space-y-4">
-                {value[day].ranges.map((range, index) => (
+                {value[day as keyof WeekSchedule].ranges.map((range, index) => (
                   <div key={index} className="flex items-center space-x-4">
                     <Clock className="h-4 w-4 text-gray-500" />
                     <div className="grid grid-cols-2 gap-4 flex-1">
@@ -226,7 +226,7 @@ export function ScheduleConfig({ value, onChange, showTemplateSelector = false }
                         <Input
                           type="time"
                           value={range.start}
-                          onChange={(e) => updateTimeRange(day, index, "start", e.target.value)}
+                          onChange={(e) => updateTimeRange(day as keyof WeekSchedule, index, "start", e.target.value)}
                           className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2"
                         />
                       </div>
@@ -235,17 +235,17 @@ export function ScheduleConfig({ value, onChange, showTemplateSelector = false }
                         <Input
                           type="time"
                           value={range.end}
-                          onChange={(e) => updateTimeRange(day, index, "end", e.target.value)}
+                          onChange={(e) => updateTimeRange(day as keyof WeekSchedule, index, "end", e.target.value)}
                           className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2"
                         />
                       </div>
                     </div>
-                    <Button variant="ghost" size="icon" onClick={() => removeTimeRange(day, index)}>
+                    <Button variant="ghost" size="icon" onClick={() => removeTimeRange(day as keyof WeekSchedule, index)}>
                       <Trash className="h-4 w-4" />
                     </Button>
                   </div>
                 ))}
-                <Button variant="outline" size="sm" onClick={() => addTimeRange(day)} className="w-full">
+                <Button variant="outline" size="sm" onClick={() => addTimeRange(day as keyof WeekSchedule)} className="w-full">
                   <Plus className="mr-2 h-4 w-4" />
                   Añadir rango horario
                 </Button>

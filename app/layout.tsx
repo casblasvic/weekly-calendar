@@ -9,10 +9,10 @@ import { FamilyProvider } from "@/contexts/family-context"
 import { ServicioProvider } from "@/contexts/servicios-context"
 import { ConsumoServicioProvider } from "@/contexts/consumo-servicio-context"
 import { EquipmentProvider } from "@/contexts/equipment-context"
-import { SystemProvider } from "@/app/contexts/system-context"
+import { SystemProvider } from "@/contexts/system"
 import { StorageInitializer } from "@/components/storage-initializer"
 import { Toaster } from "@/app/components/ui/toaster"
-import { ThemeProvider as AppThemeProvider } from "@/app/contexts/theme-context"
+import { ThemeProvider as AppThemeProvider } from "@/contexts/theme"
 import { AppProviders } from '@/contexts'
 import { LayoutWrapper } from "@/components/LayoutWrapper"
 

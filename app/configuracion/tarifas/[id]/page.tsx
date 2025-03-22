@@ -19,7 +19,7 @@ import { useIVA } from "@/contexts/iva-context"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { toast } from "@/components/ui/use-toast"
 import { getServiceImages, saveServiceImages, getServiceDocuments, saveServiceDocuments, deleteServiceImages, deleteServiceDocuments } from "@/mockData"
-import { ClinicContext } from "@/context/clinic-context"
+import { useClinic } from "@/contexts/clinic-context"
 
 // Interfaces
 interface Tarifa {
@@ -58,7 +58,7 @@ export default function ConfiguracionTarifa() {
   const { getTarifaById, getFamiliasByTarifaId, updateTarifa } = useTarif()
   const { getServiciosByTarifaId, eliminarServicio, getServicioById, actualizarServicio } = useServicio()
   const { getTiposIVAByTarifaId } = useIVA()
-  const clinicContextValue = React.useContext(ClinicContext)
+  const { clinics } = useClinic()
   
   const [tarifa, setTarifa] = useState<Tarifa | null>(null)
   const [serviciosLista, setServiciosLista] = useState<Servicio[]>([])
@@ -76,7 +76,6 @@ export default function ConfiguracionTarifa() {
   
   // Estado para controlar el modal de edición de clínicas
   const [editingClinics, setEditingClinics] = useState(false)
-  const [clinics, setClinics] = useState<any[]>([])
   const [includeDisabledClinics, setIncludeDisabledClinics] = useState(false)
   
   // Paginación
@@ -175,9 +174,8 @@ export default function ConfiguracionTarifa() {
   // Cargar las clínicas disponibles
   useEffect(() => {
     // Cargar clínicas desde el contexto de clínicas
-    if (clinicContextValue && clinicContextValue.clinics && clinicContextValue.clinics.length > 0) {
-      setClinics(clinicContextValue.clinics);
-      console.log("Clínicas cargadas desde el contexto:", clinicContextValue.clinics.length);
+    if (clinics && clinics.length > 0) {
+      console.log("Clínicas cargadas desde el contexto:", clinics.length);
     } else {
       console.log("Context no disponible o sin clínicas - usando clínicas hardcoded");
       
@@ -206,10 +204,9 @@ export default function ConfiguracionTarifa() {
         }
       ];
       
-      setClinics(clinicasHardcoded);
       console.log("Cargadas clínicas hardcoded:", clinicasHardcoded.length);
     }
-  }, [clinicContextValue]);
+  }, [clinics]);
 
   // Funciones para manejar la creación de diferentes tipos
   const handleNuevoServicio = () => {

@@ -9,7 +9,7 @@ import { Calendar, Clock, Search, Minus, Plus } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
-import { useTheme } from "@/app/contexts/theme-context"
+import { useTheme } from "@/contexts/theme"
 // Actualizar importaciones
 import { MobileTimePicker } from "@/components/mobile/common/time-picker"
 import { MobileDatePickerSheet } from "@/components/mobile/common/date-picker-sheet"
