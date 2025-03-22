@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
 import { CustomDatePicker } from "@/components/custom-date-picker"
+import { HelpCircle } from "lucide-react"
 
 interface NotificationSetting {
   id: string
@@ -109,14 +110,19 @@ export default function AvisosPage() {
         </div>
       </Card>
 
-      {/* Action Buttons */}
-      <div className="fixed bottom-4 right-4 flex items-center gap-2">
-        <BackButton>Volver</BackButton>
-        <Button className="bg-purple-600 hover:bg-purple-700" onClick={handleSubmit}>
+      {/* Action Buttons - Footer style */}
+      <div className="fixed bottom-0 md:bottom-8 right-0 md:right-8 flex items-center gap-1 z-40 w-full md:w-auto justify-end px-4 py-2 bg-white/80 backdrop-blur-md border-t border-gray-200 md:border-0 md:bg-transparent md:backdrop-blur-0 md:py-0">
+        <BackButton size="sm" className="h-8 px-2 rounded-md text-xs">Volver</BackButton>
+        <Button size="sm" className="h-8 px-2 bg-purple-600 hover:bg-purple-700 rounded-md text-xs" onClick={handleSubmit}>
           Guardar
         </Button>
-        <Button className="rounded-full bg-black text-white hover:bg-gray-800">Ayuda</Button>
+        <Button variant="outline" size="sm" className="h-8 w-8 p-0 rounded-full bg-black text-white hover:bg-gray-800">
+          <HelpCircle className="h-4 w-4" />
+        </Button>
       </div>
+      
+      {/* Spacer to prevent content from being hidden behind fixed buttons */}
+      <div className="h-12"></div>
     </div>
   )
 }

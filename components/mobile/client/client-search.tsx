@@ -1,10 +1,11 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef } from "react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Search, Calendar, DollarSign } from "lucide-react"
 import { useRouter } from "next/navigation"
+import { ScrollIndicator } from "@/components/ui/scroll-indicator"
 
 interface Client {
   id: string
@@ -29,6 +30,7 @@ export function MobileClientSearch({ onClientSelect, onClose }: MobileClientSear
     numeroCliente: "",
   })
   const router = useRouter()
+  const resultsContainerRef = useRef<HTMLDivElement>(null)
 
   const mockClients: Client[] = [
     {
@@ -114,7 +116,10 @@ export function MobileClientSearch({ onClientSelect, onClose }: MobileClientSear
         />
       </div>
 
-      <div className="flex-1 overflow-auto px-4">
+      <div 
+        ref={resultsContainerRef}
+        className="flex-1 overflow-auto px-4 relative"
+      >
         {mockClients.map((client) => (
           <div key={client.id} className="bg-white rounded-lg border p-4 mb-3 space-y-2">
             <div className="flex justify-between items-start">
@@ -165,6 +170,12 @@ export function MobileClientSearch({ onClientSelect, onClose }: MobileClientSear
             </div>
           </div>
         ))}
+        
+        <ScrollIndicator 
+          containerRef={resultsContainerRef}
+          position="right"
+          offset={{ right: 10, bottom: 100, top: 10 }}
+        />
       </div>
 
       <div className="fixed bottom-0 left-0 right-0 p-4 border-t bg-white">

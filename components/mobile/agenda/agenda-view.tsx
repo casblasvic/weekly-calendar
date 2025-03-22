@@ -2,9 +2,9 @@
 
 import { useRouter } from "next/navigation"
 
-import React, { useMemo } from "react"
+import React, { useMemo, useRef, useCallback } from "react"
 
-import { useState, useEffect, useRef, useCallback, ErrorInfo } from "react"
+import { useState, useEffect, ErrorInfo } from "react"
 import { format, addDays, addMonths, isSameDay, subDays } from "date-fns"
 import { es } from "date-fns/locale"
 import {
@@ -41,6 +41,7 @@ import { ClientCardWrapper } from "@/components/client-card-wrapper"
 import { CurrentTimeIndicator } from "@/components/current-time-indicator"
 import { useClinic } from "@/contexts/clinic-context"
 import type { WeekSchedule } from "@/types/schedule"
+import { ScrollIndicator } from "@/components/ui/scroll-indicator"
 
 interface Appointment {
   id: string
@@ -669,26 +670,66 @@ function MobileAgendaViewContent({ showMainSidebar = false }: MobileAgendaViewPr
     })
   }, [timeSlots]) // Dependencia de timeSlots para re-calcular si cambian los slots de tiempo
 
-  // Renderizado de los headers con colores del tema
+  // Modificar renderTableHeaders para agregar indicador de scroll horizontal
+  const tableHeadersRef = useRef<HTMLDivElement>(null);
+  
+  // Función para manejar scroll horizontal de las cabinas
+  const handleScrollCabins = useCallback((direction: 'left' | 'right') => {
+    if (!tableHeadersRef.current) return;
+    
+    const scrollAmount = direction === 'left' ? -100 : 100;
+    tableHeadersRef.current.scrollBy({
+      left: scrollAmount,
+      behavior: 'smooth'
+    });
+  }, []);
+  
+  // Componente para indicadores de scroll horizontal
+  const HorizontalScrollIndicator = ({ direction }: { direction: 'left' | 'right' }) => {
+    return (
+      <div 
+        className={`absolute top-1/2 -translate-y-1/2 z-50 bg-purple-600 bg-opacity-70 rounded-full w-8 h-8 
+                   flex items-center justify-center cursor-pointer shadow-md ${direction === 'left' ? 'left-0' : 'right-0'}`}
+        style={{ opacity: 0.8 }}
+        onClick={() => handleScrollCabins(direction)}
+      >
+        {direction === 'left' ? (
+          <ChevronLeft className="w-5 h-5 text-white" />
+        ) : (
+          <ChevronRight className="w-5 h-5 text-white" />
+        )}
+      </div>
+    );
+  };
+
   const renderTableHeaders = () => (
-    <div
-      className="grid border-b sticky top-[112px] bg-white z-30"
-      style={{
-        gridTemplateColumns: `80px repeat(${serviceRooms.length}, 1fr)`,
-        height: "40px",
-        minWidth: "fit-content",
-      }}
-    >
-      <div className="p-2 text-sm font-medium border-r" style={{ color: appColors.primary }}>Hora</div>
-      {serviceRooms.map((room) => (
-        <div
-          key={room.id}
-          className="p-2 text-xs font-medium text-center text-white border-r last:border-r-0"
-          style={{ backgroundColor: room.color }}
-        >
-          {room.abbrev}
-        </div>
-      ))}
+    <div className="relative">
+      {/* Indicadores de scroll horizontal */}
+      <HorizontalScrollIndicator direction="left" />
+      <HorizontalScrollIndicator direction="right" />
+      
+      <div
+        ref={tableHeadersRef}
+        className="grid border-b sticky top-[112px] bg-white z-30 overflow-x-auto"
+        style={{
+          gridTemplateColumns: `80px repeat(${serviceRooms.length}, 1fr)`,
+          height: "40px",
+          minWidth: "fit-content",
+          scrollbarWidth: "none", // Firefox
+          msOverflowStyle: "none", // IE/Edge
+        }}
+      >
+        <div className="p-2 text-sm font-medium border-r" style={{ color: appColors.primary }}>Hora</div>
+        {serviceRooms.map((room) => (
+          <div
+            key={room.id}
+            className="p-2 text-xs font-medium text-center text-white border-r last:border-r-0"
+            style={{ backgroundColor: room.color }}
+          >
+            {room.abbrev}
+          </div>
+        ))}
+      </div>
     </div>
   )
 
@@ -940,6 +981,14 @@ function MobileAgendaViewContent({ showMainSidebar = false }: MobileAgendaViewPr
               }}
             >
               {view === "list" ? renderListView() : renderCalendarView()}
+              
+              {/* Agregar indicador de scroll para el contenedor principal */}
+              <ScrollIndicator 
+                containerRef={containerRef} 
+                position="right"
+                offset={{ right: 15, bottom: 80, top: 15 }}
+                scrollAmount={300}
+              />
             </div>
 
             {/* Floating action button para añadir cita */}

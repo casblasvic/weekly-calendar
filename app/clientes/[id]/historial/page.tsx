@@ -233,36 +233,31 @@ export default function HistorialPage() {
           </Table>
         </Card>
 
-        {/* Bottom controls */}
-        <div className="fixed bottom-16 md:bottom-0 left-0 right-0 bg-white border-t p-4 flex items-center justify-between z-50">
-          {/* Pagination - only shown if needed */}
-          <div className="flex items-center gap-2">
+        {/* Bottom controls - Footer style menu */}
+        <div className="fixed bottom-0 md:bottom-8 right-0 md:right-8 flex flex-row md:flex-row gap-1 z-40 w-full md:w-auto px-4 py-2 bg-white/80 backdrop-blur-md border-t border-gray-200 md:border-0 md:bg-transparent md:backdrop-blur-0 md:py-0">
+          <div className="flex items-center gap-1 flex-wrap justify-end w-full">
             {showPagination && (
-              <>
-                <Button variant="outline" size="sm" disabled={currentPage === 1}>
-                  <ArrowLeft className="mr-2 h-4 w-4" />
-                  Anterior
+              <div className="flex items-center gap-1 mr-auto md:mr-2">
+                <Button variant="ghost" size="sm" disabled={currentPage === 1} className="h-8 w-8 p-0">
+                  <ArrowLeft className="h-3 w-3" />
                 </Button>
-                <span className="text-sm text-gray-600">
-                  Página {currentPage} de {totalPages}
+                <span className="text-xs text-gray-600 px-1">
+                  {currentPage}/{totalPages}
                 </span>
-                <Button variant="outline" size="sm" disabled={currentPage === totalPages}>
-                  Siguiente
-                  <ArrowLeft className="ml-2 h-4 w-4 rotate-180" />
+                <Button variant="ghost" size="sm" disabled={currentPage === totalPages} className="h-8 w-8 p-0">
+                  <ArrowLeft className="h-3 w-3 rotate-180" />
                 </Button>
-              </>
+              </div>
             )}
-          </div>
 
-          {/* Action buttons - always visible */}
-          <div className="flex items-center gap-2">
-            <BackButton>Volver</BackButton>
-            <Button variant="outline">Exportar</Button>
-            <Button className="bg-purple-600 hover:bg-purple-700">Nueva conversión</Button>
+            {/* Action buttons - always visible */}
+            <BackButton size="sm" className="h-8 px-2 rounded-md text-xs">Volver</BackButton>
+            <Button variant="outline" size="sm" className="h-8 px-2 rounded-md text-xs">Exportar</Button>
+            <Button size="sm" className="h-8 px-2 bg-purple-600 hover:bg-purple-700 rounded-md text-xs">Conversión</Button>
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
               <DialogTrigger asChild>
-                <Button onClick={() => setDialogOpen(true)} className="bg-purple-600 hover:bg-purple-700">
-                  Nuevo comentario
+                <Button onClick={() => setDialogOpen(true)} size="sm" className="h-8 px-2 bg-purple-600 hover:bg-purple-700 rounded-md text-xs">
+                  Comentario
                 </Button>
               </DialogTrigger>
               <DialogContent className="sm:max-w-[500px]">
@@ -293,15 +288,14 @@ export default function HistorialPage() {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
-            <Button variant="outline" className="rounded-full bg-black text-white hover:bg-gray-800">
+            <Button variant="outline" size="sm" className="h-8 w-8 p-0 rounded-full bg-black text-white hover:bg-gray-800">
               <HelpCircle className="h-4 w-4" />
-              Ayuda
             </Button>
           </div>
         </div>
 
         {/* Spacer to prevent content from being hidden behind fixed buttons */}
-        <div className="h-32 md:h-20"></div>
+        <div className="h-12"></div>
       </div>
     </div>
   )

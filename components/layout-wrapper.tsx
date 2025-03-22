@@ -1,22 +1,8 @@
 "use client"
 
-import type React from "react"
 import { useState, useEffect } from "react"
+import { usePathname } from "next/navigation"
 import { MainSidebar } from "@/components/main-sidebar"
-import { Button } from "@/components/ui/button"
-import { Home, Calendar, Users, BarChart2, User, LogOut, Settings, FileText } from "lucide-react"
-import { useRouter, usePathname } from "next/navigation"
-import Link from "next/link"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { cn } from "@/lib/utils"
-import { MobileDrawerMenu } from "@/components/mobile/layout/drawer-menu"
 import { MobileClinicButton } from "@/components/mobile-clinic-button"
 
 interface LayoutWrapperProps {
@@ -36,6 +22,7 @@ export function LayoutWrapper({ children }: LayoutWrapperProps) {
     
     const checkMobile = () => {
       const mobile = window.innerWidth < 768
+      console.log("Detectado móvil:", mobile)
       setIsMobile(mobile)
       
       // En móvil, colapsar la barra lateral y ocultarla
@@ -59,8 +46,14 @@ export function LayoutWrapper({ children }: LayoutWrapperProps) {
   
   // Manejar el cambio de visibilidad de la barra lateral en móvil
   const toggleMobileSidebar = () => {
+    console.log("Toggling sidebar de:", isSidebarVisible, "a:", !isSidebarVisible)
     setIsSidebarVisible(!isSidebarVisible)
   }
+
+  // Efecto para depurar
+  useEffect(() => {
+    console.log("Estado actual: Mobile:", isMobile, "Sidebar visible:", isSidebarVisible)
+  }, [isMobile, isSidebarVisible])
 
   // Si no estamos montados, mostrar un layout básico
   if (!hasMounted) {
@@ -122,5 +115,4 @@ export function LayoutWrapper({ children }: LayoutWrapperProps) {
       </main>
     </div>
   )
-}
-
+} 
