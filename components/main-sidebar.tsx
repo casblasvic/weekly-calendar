@@ -608,7 +608,7 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
                     "font-semibold truncate transition-all duration-300", 
                     isCollapsed ? "text-base w-6" : "text-lg"
                   )}>
-                    {isCollapsed ? "H" : "HOHBERG"}
+                    {isCollapsed ? "L" : "LOGO"}
                   </div>
                 )}
               </div>
@@ -618,27 +618,6 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
                 <div className="text-xs truncate text-white/90 text-center">{currentDate}</div>
               )}
             </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Tarjeta del último cliente - sección destacada */}
-      <div className="p-2 overflow-hidden border-b bg-purple-50">
-        <div className="flex items-center justify-between">
-          <div className={cn(
-            "text-sm font-medium w-full", 
-            isCollapsed ? "mx-auto text-center" : ""
-          )}>
-            {isCollapsed ? (
-              <div className="flex flex-col items-center">
-                <ClientCardWrapper isCompact={true} />
-              </div>
-            ) : (
-              <div className="w-full overflow-hidden">
-                <div className="mb-1 text-xs text-purple-700 truncate">Último cliente</div>
-                <ClientCardWrapper isCompact={false} />
-              </div>
-            )}
           </div>
         </div>
       </div>

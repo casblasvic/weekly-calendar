@@ -3,6 +3,7 @@
 import type React from "react"
 import { useState, useEffect } from "react"
 import { MainSidebar } from "@/components/main-sidebar"
+import { FloatingClientMenu } from "@/components/floating-client-menu"
 import { Button } from "@/components/ui/button"
 import { Home, Calendar, Users, BarChart2, User, LogOut, Settings, FileText } from "lucide-react"
 import { useRouter, usePathname } from "next/navigation"
@@ -62,6 +63,17 @@ export function LayoutWrapper({ children }: LayoutWrapperProps) {
     setIsSidebarVisible(!isSidebarVisible)
   }
 
+  const handleOutsideClick = () => {
+    // En móvil, ocultar la barra lateral
+    if (isMobile) {
+      setIsSidebarVisible(false)
+    }
+    // En escritorio, colapsar la barra si está expandida
+    else if (!isSidebarCollapsed) {
+      setIsSidebarCollapsed(true)
+    }
+  }
+
   // Si no estamos montados, mostrar un layout básico
   if (!hasMounted) {
     return <div className="min-h-screen">{children}</div>
@@ -108,6 +120,9 @@ export function LayoutWrapper({ children }: LayoutWrapperProps) {
           onClick={() => setIsSidebarVisible(false)}
         />
       )}
+
+      {/* Menú flotante de cliente */}
+      <FloatingClientMenu onOutsideClick={handleOutsideClick} />
 
       {/* Contenido principal */}
       <main
