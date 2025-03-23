@@ -332,9 +332,17 @@ export function FloatingStaffMenu({ className, onOutsideClick, offsetY, autoColl
     const staffIndex = mockStaff.findIndex(s => s.id === staffId)
     if (staffIndex === -1) return { top: 72 }
     
-    // Ajustar la posición vertical según el índice para alinear con el avatar correspondiente
+    // Obtener el elemento DOM del avatar actual si es posible
+    const avatarElement = document.querySelector(`[data-staff-id="${staffId}"]`)
+    if (avatarElement) {
+      const rect = avatarElement.getBoundingClientRect()
+      // Alinear verticalmente con el centro del avatar
+      return { top: rect.top + window.scrollY + (rect.height / 2) - 20 }
+    }
+    
+    // Fallback si no podemos obtener la posición exacta del elemento
     const baseOffset = offsetY ? offsetY + 50 : 62
-    const itemHeight = 40 // Altura aproximada de un elemento de avatar con espacio
+    const itemHeight = 46 // Altura aproximada de un elemento de avatar con espacio
     const verticalPosition = baseOffset + (staffIndex * itemHeight)
     
     return { top: verticalPosition }
@@ -402,6 +410,7 @@ export function FloatingStaffMenu({ className, onOutsideClick, offsetY, autoColl
               }}
               onMouseEnter={() => handleStaffHover(person.id)}
               onMouseLeave={() => handleStaffHover(null)}
+              data-staff-id={person.id}
             >
               <StaffTooltip 
                 person={person} 
@@ -423,7 +432,7 @@ export function FloatingStaffMenu({ className, onOutsideClick, offsetY, autoColl
             transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
             className="fixed z-[99999]"
             style={{ 
-              right: "87px", // Acercada más a los avatares
+              right: "95px", // Más separado de los avatares para facilitar navegación
               top: `${activeCardPosition.top}px`,
               boxShadow: "0 8px 30px rgba(0, 0, 0, 0.16)"
             }}
@@ -434,10 +443,10 @@ export function FloatingStaffMenu({ className, onOutsideClick, offsetY, autoColl
             <div 
               className="absolute"
               style={{
-                right: "-15px",
-                top: "0",
-                width: "15px",
-                height: "100%",
+                right: "-25px",
+                top: "-10px",
+                width: "30px",
+                height: "calc(100% + 20px)",
                 background: "transparent",
                 zIndex: 10
               }}

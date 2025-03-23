@@ -203,7 +203,7 @@ export function FloatingMenuBase({
             )}
             style={{
               right: color === "blue" ? "35px" : "60px", // Posición del menú - Personal más a la derecha
-              top: color === "blue" ? "20px" : "0px", // Menú de personal más hacia abajo
+              top: color === "blue" ? "10px" : "0px", // Menú de personal más hacia abajo
               transform: "translateY(0)",
               boxShadow: color === "purple" ? "0 8px 30px rgba(0, 0, 0, 0.16)" : "none",
               zIndex: 999999,
