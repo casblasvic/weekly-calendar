@@ -264,47 +264,30 @@ export const StorageProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
   
   // Establecer o modificar cuota
-  const setQuota = (entityType: 'global' | 'clinic', entityId?: string, size: number = 0, isUnlimited: boolean = false): boolean => {
+  const setQuota = (entityType: 'global' | 'clinic', entityId: string | undefined, size: number, isUnlimited: boolean): boolean => {
     try {
-      // Log para depuración
-      console.log(`Setting quota for ${entityType}${entityId ? ` with ID ${entityId}` : ''}. Size: ${formatBytes(size)}, Unlimited: ${isUnlimited}`);
-      
       // Generar ID para la cuota
       const quotaId = entityType === 'global' ? 'global' : `clinic-${entityId}`;
       
-      // Verificar si tenemos suficiente espacio en el sistema
-      if (!isUnlimited && entityType === 'clinic') {
-        const totalSystem = getTotalSystemStorage();
-        const currentQuotaSize = quotas.find(q => q.id === quotaId)?.quotaSize || 0;
-        const totalAssigned = getTotalAssignedStorage() - currentQuotaSize; // Restamos la cuota actual si existe
-        
-        // Verificar si hay suficiente espacio disponible
-        if (totalAssigned + size > totalSystem) {
-          console.error(`Error: No hay suficiente espacio disponible para asignar ${formatBytes(size)} a ${entityType} ${entityId}`);
-          return false;
-        }
-      }
-      
-      // Buscar si ya existe esta cuota
-      const existingQuotaIndex = quotas.findIndex(q => q.id === quotaId);
-      
-      // Crear nueva cuota o actualizar existente
+      // Crear objeto de cuota actualizado
       const updatedQuota: StorageQuota = {
         id: quotaId,
         entityType,
-        entityId,
+        entityId: entityId || 'global',
         quotaSize: size,
         isUnlimited
       };
       
-      // Copia actual de las cuotas para actualizar
+      // Buscar si ya existe una cuota con este ID
+      const existingQuotaIndex = quotas.findIndex(q => q.id === quotaId);
       let updatedQuotas: StorageQuota[];
       
       // Actualizar el estado
       if (existingQuotaIndex !== -1) {
         // Actualizar cuota existente
-        updatedQuotas = [...quotas];
-        updatedQuotas[existingQuotaIndex] = updatedQuota;
+        updatedQuotas = quotas.map((q, index) => 
+          index === existingQuotaIndex ? updatedQuota : q
+        );
       } else {
         // Crear nueva cuota
         updatedQuotas = [...quotas, updatedQuota];
@@ -315,25 +298,20 @@ export const StorageProvider: React.FC<{ children: React.ReactNode }> = ({ child
       
       // En caso de cuota global, actualizar la configuración también
       if (entityType === 'global') {
-        setQuotaSettings({
+        const newSettings = {
           ...quotaSettings,
           defaultQuotaSize: size,
           defaultIsUnlimited: isUnlimited
-        });
+        };
+        setQuotaSettings(newSettings);
+        
+        // Persistir configuración global
+        localStorage.setItem('appQuotaSettings', JSON.stringify(newSettings));
       }
       
-      // Actualizar inmediatamente el localStorage para asegurar persistencia
-      try {
-        localStorage.setItem('appStorageQuotas', JSON.stringify(updatedQuotas));
-        console.log(`Cuota ${quotaId} actualizada con éxito. Tamaño: ${formatBytes(size)}, Ilimitada: ${isUnlimited}`);
-      } catch (saveError) {
-        console.error("Error saving updated quotas to localStorage:", saveError);
-      }
-      
-      // Forzar un timeout para asegurar que React registre el cambio
-      setTimeout(() => {
-        console.log("Estado actualizado después del timeout:", updatedQuotas);
-      }, 0);
+      // Actualizar inmediatamente el localStorage
+      localStorage.setItem('appStorageQuotas', JSON.stringify(updatedQuotas));
+      console.log(`Cuota ${quotaId} actualizada con éxito. Tamaño: ${formatBytes(size)}, Ilimitada: ${isUnlimited}`);
       
       return true;
     } catch (error) {

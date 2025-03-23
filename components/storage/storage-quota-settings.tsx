@@ -80,7 +80,7 @@ const StorageQuotaSettings: React.FC<StorageQuotaSettingsProps> = ({
   const [totalAssigned, setTotalAssigned] = useState(initialData.totalAssigned);
   
   // Estados para el formulario
-  const [sizeValue, setSizeValue] = useState(initialData.globalQuota.quotaSize / BYTES_IN_GB); // Convertir a GB
+  const [sizeValue, setSizeValue] = useState<string>('');
   const [sizeUnit, setSizeUnit] = useState('GB');
   const [unlimited, setUnlimited] = useState(initialData.globalQuota.isUnlimited);
   const [saving, setSaving] = useState(false);
@@ -111,11 +111,12 @@ const StorageQuotaSettings: React.FC<StorageQuotaSettingsProps> = ({
   // Validar que la cuota no exceda el límite del sistema
   useEffect(() => {
     if (!unlimited) {
-      let sizeInBytes = sizeValue;
+      const numericValue = parseFloat(sizeValue) || 0;
+      let sizeInBytes = numericValue;
       if (sizeUnit === 'GB') {
-        sizeInBytes = sizeValue * BYTES_IN_GB;
+        sizeInBytes = numericValue * BYTES_IN_GB;
       } else if (sizeUnit === 'MB') {
-        sizeInBytes = sizeValue * BYTES_IN_MB;
+        sizeInBytes = numericValue * BYTES_IN_MB;
       }
       
       // Para cuotas múltiples, verificar el espacio total
@@ -268,14 +269,15 @@ const StorageQuotaSettings: React.FC<StorageQuotaSettingsProps> = ({
     setSaving(true);
     
     // Convertir a bytes según la unidad seleccionada
-    let sizeInBytes = sizeValue;
+    const numericValue = parseFloat(sizeValue) || 0;
+    let sizeInBytes = numericValue;
     if (sizeUnit === 'GB') {
-      sizeInBytes = sizeValue * BYTES_IN_GB;
+      sizeInBytes = numericValue * BYTES_IN_GB;
     } else if (sizeUnit === 'MB') {
-      sizeInBytes = sizeValue * BYTES_IN_MB;
+      sizeInBytes = numericValue * BYTES_IN_MB;
     }
     
-    console.log(`Aplicando configuración: ${sizeValue} ${sizeUnit} = ${formatBytes(sizeInBytes)}, Sin límite: ${unlimited}`);
+    console.log(`Aplicando configuración: ${numericValue} ${sizeUnit} = ${formatBytes(sizeInBytes)}, Sin límite: ${unlimited}`);
     console.log(`Clínicas seleccionadas (${selectedClinics.length}): ${selectedClinics.join(', ')}`);
     
     try {
@@ -374,6 +376,26 @@ const StorageQuotaSettings: React.FC<StorageQuotaSettingsProps> = ({
   // Renderizar componente con key basado en datos para forzar remontaje cuando cambian
   const tableKey = `table-${JSON.stringify(clinicQuotas)}-${Date.now()}`;
   
+  // Efecto para actualizar los datos cuando cambian en el contexto
+  useEffect(() => {
+    try {
+      const settings = storageContext.getQuotaSettings();
+      const clinicQuotas = storageContext.getClinicQuotas();
+      let assignedTotal = 0;
+      
+      clinicQuotas.forEach(quota => {
+        if (!quota.isUnlimited) {
+          assignedTotal += quota.quotaSize;
+        }
+      });
+      
+      setClinicQuotas(clinicQuotas);
+      setTotalAssigned(assignedTotal);
+    } catch (error) {
+      console.error("Error actualizando datos:", error);
+    }
+  }, [storageContext]);
+  
   return (
     <Card className="shadow-sm" data-component="storage-quota-settings">
       {showTotalInfo && (
@@ -399,11 +421,8 @@ const StorageQuotaSettings: React.FC<StorageQuotaSettingsProps> = ({
                   id="quota-size"
                   type="number"
                   min="0"
-                  value={sizeValue === 0 ? "" : sizeValue}
-                  onChange={(e) => {
-                    const value = e.target.value === "" ? 0 : parseFloat(e.target.value);
-                    setSizeValue(value);
-                  }}
+                  value={sizeValue}
+                  onChange={(e) => setSizeValue(e.target.value)}
                   disabled={unlimited}
                   className="h-8"
                   data-test="quota-size-input"
