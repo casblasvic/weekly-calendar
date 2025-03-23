@@ -100,23 +100,27 @@ const useMenuState = () => {
   return { openMenus, toggleMenu, closeAllMenus }
 }
 
-// Reemplazar la lógica del componente MenuItemComponent con una versión mejorada
+// Reemplazar completamente la implementación del MenuItemComponent
 const MenuItemComponent = ({
   item,
   depth = 0,
   isCollapsed = false,
   openMenus,
   toggleMenu,
+  closeAllMenus,
   isMobile = false,
   onToggle,
+  onMenuHover,
 }: {
   item: MenuItem
   depth?: number
   isCollapsed?: boolean
   openMenus: Set<string>
   toggleMenu: (id: string) => void
+  closeAllMenus: () => void
   isMobile?: boolean
   onToggle?: () => void
+  onMenuHover?: (hasSubmenu: boolean) => void
 }) => {
   const router = useRouter()
   const pathname = usePathname()
@@ -127,115 +131,72 @@ const MenuItemComponent = ({
   const menuRef = useRef<HTMLDivElement>(null)
   const submenuRef = useRef<HTMLDivElement>(null)
 
-  // Nuevo manejador de click que fuerza la visibilidad del submenú
+  // Optimización del handleClick para manejar todos los casos
   const handleClick = (e: React.MouseEvent) => {
-    e.preventDefault();
     e.stopPropagation();
+    e.preventDefault();
     
+    // CASO 1: Ítem con submenú - solo toggle del menú, no cerrar barra
     if (hasSubmenu) {
-      // Solo toggle del submenú, sin plegar la barra
+      // Simplemente alternamos la apertura/cierre del submenú
       toggleMenu(item.id);
-    } else if (item.href) {
-      try {
-        // Si vamos a navegar a una ruta, cerramos menús y plegamos la barra
-        router.push(item.href);
-        toggleMenu(""); // Close all menus when navigating
-        // Plegar la barra SOLO si vamos a una ruta y no es modo móvil
-        if (!isMobile && !isCollapsed && onToggle) {
-          onToggle();
-        }
-      } catch (error) {
-        if (process.env.NODE_ENV !== 'production') {
-          console.warn("Error al navegar:", error);
-        }
+      return;
+    }
+    
+    // CASO 2: Ítem final con ruta - navegar a la ruta
+    if (item.href) {
+      // Cerrar todos los menús antes de navegar
+      closeAllMenus();
+      
+      // Emitimos el evento route-change directamente
+      const mainSidebar = document.getElementById('main-sidebar');
+      if (mainSidebar) {
+        const routeChangeEvent = new CustomEvent('route-change', {
+          detail: { 
+            path: item.href,
+            // Forzar colapso de la barra lateral en submenús
+            forced: depth > 0 
+          }
+        });
+        mainSidebar.dispatchEvent(routeChangeEvent);
       }
+      
+      // Navegar a la ruta usando el router
+      router.push(item.href);
     }
   };
 
+  // Efecto para cerrar submenús cuando cambia el estado de la barra lateral
+  useEffect(() => {
+    // Si la barra está colapsada y no está hovered, ocultar el submenú
+    if (isCollapsed && !isHovered && submenuRef.current) {
+      submenuRef.current.style.display = 'none';
+      submenuRef.current.style.visibility = 'hidden'; 
+      submenuRef.current.style.opacity = '0';
+    }
+  }, [isCollapsed, isHovered]);
+
   // Efecto para posicionar y mostrar el submenú cuando está abierto o con hover
   useEffect(() => {
-    if ((isOpen || (isHovered && isCollapsed && hasSubmenu)) && submenuRef.current && menuRef.current) {
+    if ((isOpen || (isHovered && hasSubmenu)) && submenuRef.current && menuRef.current) {
       try {
+        const rect = menuRef.current.getBoundingClientRect();
         submenuRef.current.style.display = "block";
         submenuRef.current.style.position = "fixed";
-        submenuRef.current.style.left = (menuRef.current?.getBoundingClientRect().right || 0) + "px";
+        submenuRef.current.style.left = `${rect.right}px`;
+        submenuRef.current.style.top = item.id === "configuracion" 
+          ? "calc(100vh - 450px)"
+          : `${rect.top}px`;
         submenuRef.current.style.zIndex = "99999";
         submenuRef.current.style.backgroundColor = "white";
         submenuRef.current.style.border = "1px solid #e5e7eb";
         submenuRef.current.style.borderRadius = "0.375rem";
         submenuRef.current.style.boxShadow = "0 4px 6px rgba(0,0,0,0.1)";
         submenuRef.current.style.minWidth = "16rem";
+        submenuRef.current.style.maxHeight = item.id === "configuracion" ? "450px" : "400px";
+        submenuRef.current.style.overflowY = "auto";
         submenuRef.current.style.visibility = "visible";
         submenuRef.current.style.opacity = "1";
-        
-        // Ajustar posición top dependiendo del menú
-        if (item.id === "configuracion") {
-          // Para el menú de configuración, usamos siempre la misma posición fija
-          // tanto para hover como para clic, y tanto con barra plegada como desplegada
-          submenuRef.current.style.top = "calc(100vh - 450px)";
-          
-          // Establecer altura para el menú de configuración
-          const maxMenuHeight = "450px"; // Aumentar la altura máxima
-          submenuRef.current.style.maxHeight = maxMenuHeight;
-          
-          // Añadir indicador de scroll si es necesario
-          setTimeout(() => {
-            if (submenuRef.current) {
-              // Comprobamos si el contenido excede el tamaño visible
-              const hasOverflow = submenuRef.current.scrollHeight > submenuRef.current.clientHeight;
-              if (hasOverflow) {
-                // Si hay overflow, añadimos el indicador visual de scroll
-                const scrollIndicator = document.createElement("div");
-                scrollIndicator.className = "scroll-indicator";
-                scrollIndicator.style.position = "absolute";
-                scrollIndicator.style.bottom = "10px";
-                scrollIndicator.style.left = "50%";
-                scrollIndicator.style.transform = "translateX(-50%)";
-                scrollIndicator.style.width = "30px";
-                scrollIndicator.style.height = "30px";
-                scrollIndicator.style.backgroundColor = "rgba(147, 51, 234, 0.7)"; // Color púrpura con opacidad
-                scrollIndicator.style.borderRadius = "50%";
-                scrollIndicator.style.display = "flex";
-                scrollIndicator.style.justifyContent = "center";
-                scrollIndicator.style.alignItems = "center";
-                scrollIndicator.style.zIndex = "999999";
-                scrollIndicator.style.cursor = "pointer";
-                scrollIndicator.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: white;"><path d="m6 9 6 6 6-6"/></svg>';
-                
-                // Eliminar indicador existente si ya hay uno
-                const existingIndicator = submenuRef.current.querySelector(".scroll-indicator");
-                if (existingIndicator) {
-                  existingIndicator.remove();
-                }
-                
-                // Añadir el indicador al menú
-                submenuRef.current.appendChild(scrollIndicator);
-                
-                // Añadir evento para hacer scroll al hacer clic en el indicador
-                scrollIndicator.addEventListener("click", () => {
-                  if (submenuRef.current) {
-                    submenuRef.current.scrollTop += 100; // Desplaza 100px hacia abajo
-                  }
-                });
-                
-                // Ocultar el indicador después de scroll
-                submenuRef.current.addEventListener("scroll", () => {
-                  // Si ya hemos hecho scroll hasta casi el final, ocultar el indicador
-                  if (submenuRef.current && scrollIndicator) {
-                    const isNearBottom = submenuRef.current.scrollHeight - submenuRef.current.scrollTop - submenuRef.current.clientHeight < 50;
-                    scrollIndicator.style.opacity = isNearBottom ? "0" : "1";
-                    scrollIndicator.style.transition = "opacity 0.3s";
-                  }
-                });
-              }
-            }
-          }, 100); // Pequeño retraso para asegurar que el DOM está listo
-        } else {
-          // Posición estándar para otros menús
-          submenuRef.current.style.top = (menuRef.current?.getBoundingClientRect().top || 0) + "px";
-          submenuRef.current.style.maxHeight = "400px";
-          submenuRef.current.style.overflowY = "auto";
-        }
       } catch (error) {
         console.error("Error al actualizar el estilo del submenú:", error);
       }
@@ -246,12 +207,17 @@ const MenuItemComponent = ({
     <div 
       ref={menuRef} 
       className="relative my-1"
-      onMouseEnter={() => setIsHovered(true)}
+      onMouseEnter={() => {
+        setIsHovered(true);
+        // Notificar que este elemento tiene hover
+        if (onMenuHover) {
+          onMenuHover(hasSubmenu);
+        }
+      }}
       onMouseLeave={() => setIsHovered(false)}
     >
       <Button
         variant="ghost"
-        id={item.id === "sistema" ? "submenu-item-sistema" : `submenu-item-${item.id}`}
         className={cn(
           "w-full justify-start",
           isActive && "bg-purple-50 text-purple-600",
@@ -261,7 +227,25 @@ const MenuItemComponent = ({
         )}
         onClick={handleClick}
       >
-        {item.icon && <item.icon className={cn("mr-2 h-4 w-4 text-purple-600", isCollapsed && "mr-0")} />}
+        <div className="relative">
+          {item.icon && <item.icon className={cn(
+            "text-purple-600 transition-all duration-200", 
+            isCollapsed 
+              ? "h-5 w-5 mx-auto" 
+              : "h-4 w-4 mr-2"
+          )} />}
+          {/* Pequeño triángulo indicador para ítems con submenú */}
+          {hasSubmenu && isCollapsed && (
+            <div 
+              className="absolute -right-0.5 -bottom-0.5 w-0 h-0 border-solid" 
+              style={{
+                borderWidth: '0 0 5px 5px',
+                borderColor: 'transparent transparent #9333ea transparent',
+                transform: 'rotate(0deg)'
+              }}
+            />
+          )}
+        </div>
         {(!isCollapsed || depth > 0) && <span className="flex-1 text-left">{item.label}</span>}
         {(!isCollapsed || depth > 0) && item.badge && (
           <span className="px-2 py-1 ml-2 text-xs text-white bg-red-500 rounded-full">{item.badge}</span>
@@ -269,20 +253,22 @@ const MenuItemComponent = ({
         {(!isCollapsed || depth > 0) && hasSubmenu && (
           <ChevronRight className={cn("h-4 w-4 transition-transform", isOpen && "rotate-90")} />
         )}
+        {/* Indicador visual para submenús cuando NO está colapsado */}
+        {!isCollapsed && hasSubmenu && depth === 0 && !isOpen && (
+          <div className="absolute top-1 right-9 w-1 h-1 rounded-full bg-purple-600"></div>
+        )}
       </Button>
       
-      {/* Submenú con visualización al hover cuando está colapsado */}
-      {hasSubmenu && (isOpen || (isHovered && isCollapsed)) && (
+      {/* Submenú con visualización al hover siempre */}
+      {hasSubmenu && (isOpen || (isHovered && hasSubmenu)) && (
         <div 
           ref={submenuRef} 
-          id={`submenu-${item.id}`}
           className="submenu"
           style={{ 
             position: "fixed",
             left: (menuRef.current?.getBoundingClientRect().right || 0) + "px",
-            // Posición forzada a la parte inferior de la pantalla
             top: item.id === "configuracion" 
-              ? "calc(100vh - 450px)" // Valor fijo muy bajo para que aparezca cerca del final de la pantalla
+              ? "calc(100vh - 450px)"
               : (menuRef.current?.getBoundingClientRect().top || 0) + "px",
             zIndex: 99999,
             backgroundColor: "white",
@@ -290,14 +276,10 @@ const MenuItemComponent = ({
             borderRadius: "0.375rem",
             boxShadow: "0 4px 6px rgba(0,0,0,0.1)",
             minWidth: "16rem",
-            display: "block",
-            visibility: "visible",
-            opacity: 1,
-            // Establecer altura máxima dependiendo del tipo de menú
-            maxHeight: item.id === "configuracion" 
-              ? "450px" // Mayor altura para el menú de configuración
-              : "400px", // Altura estándar para otros menús
-            // overflowY no se fuerza a "auto", sino que se deja como "auto" para que solo muestre scroll cuando sea necesario
+            display: isCollapsed && !isHovered && !isOpen ? "none" : "block",
+            visibility: isCollapsed && !isHovered && !isOpen ? "hidden" : "visible",
+            opacity: isCollapsed && !isHovered && !isOpen ? 0 : 1,
+            maxHeight: item.id === "configuracion" ? "450px" : "400px",
             overflowY: "auto"
           }}
         >
@@ -309,8 +291,11 @@ const MenuItemComponent = ({
               isCollapsed={false}
               openMenus={openMenus}
               toggleMenu={toggleMenu}
+              closeAllMenus={closeAllMenus}
               isMobile={isMobile}
+              // Pasar el onToggle también a los elementos de submenú
               onToggle={onToggle}
+              onMenuHover={onMenuHover}
             />
           ))}
         </div>
@@ -348,8 +333,30 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
   const [isClinicSelectorOpen, setIsClinicSelectorOpen] = useState(false)
   const [isClinicHovered, setIsClinicHovered] = useState(false)
   const [clinicSearchTerm, setClinicSearchTerm] = useState("")
-
+  
+  // Restauramos esta línea para evitar errores
   const { activeClinic, setActiveClinic, clinics } = useClinic()
+  
+  // Función ultra simple para la hamburguesa
+  const handleHamburgerClick = (e: React.MouseEvent) => {
+    console.log("Hamburger clicked");
+    
+    if (onToggle) {
+      // Llamamos directamente a la función onToggle
+      onToggle();
+    }
+  };
+  
+  // Restauramos la función de manejo de menús
+  const handleMenuClick = (menuId: string) => {
+    // Cerrar otros menús desplegables si están abiertos
+    setIsUserMenuOpen(false)
+    setShowNotifications(false)
+    setIsClinicSelectorOpen(false)
+    
+    // Abrir o cerrar el menú seleccionado
+    toggleMenu(menuId)
+  }
 
   // Verificar si el componente se ha montado en el cliente
   useEffect(() => {
@@ -380,17 +387,6 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
       return () => clearInterval(intervalId);
     }
   }, [hasMounted]);
-
-  // Manejar la acción de clic en un menú
-  const handleMenuClick = (menuId: string) => {
-    // Cerrar otros menús desplegables si están abiertos
-    setIsUserMenuOpen(false)
-    setShowNotifications(false)
-    setIsClinicSelectorOpen(false)
-    
-    // Abrir o cerrar el menú seleccionado
-    toggleMenu(menuId)
-  }
 
   // Filtrar clínicas por disponibilidad
   const activeClinics = useMemo(() => {
@@ -429,37 +425,111 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
     )
   }, [activeClinics, clinicSearchTerm])
 
-  // Position the user menu when it's shown
+  // Asegurarse de que el menú de usuario se cierre cuando se hace clic en el contenido principal
   useEffect(() => {
-    if (isUserMenuOpen && menuRef.current && avatarRef.current) {
-      const avatarRect = avatarRef.current.getBoundingClientRect()
-      const menuHeight = menuRef.current.offsetHeight
+    if (!isUserMenuOpen) return;
 
-      // Calcular el extremo superior de la ventana y el menú de configuración (si existe)
-      const configMenuBottom = document.querySelector('.app-sidebar-config-menu')?.getBoundingClientRect().bottom || 0
-      
-      // Posicionar para evitar sobreposición con menú de configuración
-      const avatarBottom = avatarRect.bottom
-      const spaceForMenu = Math.max(100, window.innerHeight - avatarBottom - 100)
-      
-      if (menuHeight > spaceForMenu) {
-        // Si no hay suficiente espacio debajo, mostrar arriba
-        menuRef.current.style.top = "auto"
-        menuRef.current.style.bottom = `${window.innerHeight - avatarRect.top + 10}px`
-      } else {
-        // Si hay espacio suficiente, mostrar abajo
-        menuRef.current.style.bottom = "auto"
-        menuRef.current.style.top = `${avatarRect.bottom + 5}px`
+    const mainContent = document.querySelector('main');
+    if (!mainContent) return;
+
+    const handleMainContentClick = () => {
+      setIsUserMenuOpen(false);
+    };
+
+    mainContent.addEventListener('click', handleMainContentClick);
+    
+    // Función para manejar clics en cualquier lugar del documento
+    const handleGlobalClick = (e: MouseEvent) => {
+      // No cerramos si el clic es dentro del menú o dentro del botón
+      if (
+        (menuRef.current && menuRef.current.contains(e.target as Node)) ||
+        (avatarRef.current && avatarRef.current.contains(e.target as Node))
+      ) {
+        return;
       }
+      
+      // Si el clic es fuera, cerrar el menú
+      setIsUserMenuOpen(false);
+    };
+    
+    // Agregamos el listener con un pequeño retraso para evitar que el mismo
+    // clic que abre el menú lo cierre inmediatamente
+    const timerId = setTimeout(() => {
+      document.addEventListener('mousedown', handleGlobalClick);
+    }, 100);
+    
+    return () => {
+      mainContent.removeEventListener('click', handleMainContentClick);
+      document.removeEventListener('mousedown', handleGlobalClick);
+      clearTimeout(timerId);
+    };
+  }, [isUserMenuOpen]);
 
-      // Ajustar posición horizontal
-      if (isCollapsed) {
-        menuRef.current.style.left = "16px"
-      } else {
-        menuRef.current.style.left = "64px"
+  // Cerrar el menú de usuario cuando cambia la ruta
+  useEffect(() => {
+    setIsUserMenuOpen(false);
+  }, [pathname]);
+
+  // Posicionar correctamente el menú de usuario - hacia arriba
+  useEffect(() => {
+    if (isUserMenuOpen && avatarRef.current) {
+      const rect = avatarRef.current.getBoundingClientRect();
+      const menuElement = document.querySelector('.user-menu') as HTMLElement;
+      
+      if (menuElement) {
+        // Temporalmente colocar el menú fuera de vista para medir su altura natural
+        menuElement.style.position = "fixed";
+        menuElement.style.left = "-9999px";
+        menuElement.style.top = "0";
+        menuElement.style.visibility = "hidden";
+        menuElement.style.maxHeight = "none";
+        
+        // Forzar reflow para obtener dimensiones reales
+        document.body.appendChild(document.createTextNode(''));
+        const menuHeight = menuElement.scrollHeight;
+        
+        if (forceMobileView) {
+          // En móvil, posicionar encima del avatar
+          menuElement.style.left = "0px";
+          menuElement.style.width = "100%";
+          menuElement.style.bottom = `${window.innerHeight - rect.top + 5}px`;
+          menuElement.style.top = "auto";
+        } else {
+          // En escritorio, posicionar encima del avatar
+          // Ajustar la posición horizontal según si la barra está plegada o desplegada
+          if (isCollapsed) {
+            // Cuando la barra está plegada, posicionar más a la derecha
+            menuElement.style.left = "65px"; // Ajustado para mejor alineación
+          } else {
+            menuElement.style.left = "64px";
+          }
+          
+          // Ajustar el ancho según el estado de la barra
+          menuElement.style.width = isCollapsed ? "260px" : "240px";
+          
+          // Posicionar verticalmente - mucho más cerca del avatar cuando la barra está plegada
+          const verticalOffset = isCollapsed ? 5 : 20;
+          menuElement.style.bottom = `${window.innerHeight - rect.top + verticalOffset}px`;
+          menuElement.style.top = "auto";
+          
+          // Ajustar espacio disponible según el estado de la barra
+          const topMargin = isCollapsed ? 10 : 40;
+          const availableSpace = rect.top - topMargin;
+          
+          if (menuHeight > availableSpace) {
+            menuElement.style.maxHeight = `${availableSpace}px`;
+            menuElement.style.overflowY = "auto";
+          } else {
+            menuElement.style.maxHeight = "none";
+            menuElement.style.overflowY = "visible";
+          }
+        }
+        
+        // Mostrar el menú
+        menuElement.style.visibility = "visible";
       }
     }
-  }, [isUserMenuOpen, isCollapsed])
+  }, [isUserMenuOpen, isCollapsed, forceMobileView]);
 
   // Position the clinic menu when it's shown
   useEffect(() => {
@@ -491,100 +561,165 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
     }
   }, [isClinicSelectorOpen, isClinicHovered, isCollapsed, isMobile])
 
-  // Manejar clics fuera del sidebar
+  // Limpiar todos los menús cuando cambie la barra
   useEffect(() => {
-    const handleClickOutsideSidebar = (event: MouseEvent) => {
-      const target = event.target as Node
-      const sidebarElement = document.getElementById("main-sidebar")
-      
-      // Si el clic es fuera de la barra lateral
-      if (sidebarElement && !sidebarElement.contains(target)) {
-        // Cerrar todos los menús
-        closeAllMenus()
-        setIsUserMenuOpen(false)
-        setIsClinicSelectorOpen(false)
-        setIsClinicHovered(false)
-        // Plegar la barra si no está en modo móvil
-        if (!forceMobileView && onToggle && !isCollapsed) {
-          onToggle()
-        }
-      }
-    }
-
-    document.addEventListener("mousedown", handleClickOutsideSidebar)
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutsideSidebar)
-    }
-  }, [closeAllMenus, forceMobileView, onToggle, isCollapsed])
-
-  // Cierre global de menús cuando se navega
-  useEffect(() => {
-    const handleRouteChange = () => {
-      closeAllMenus()
-      setIsUserMenuOpen(false)
-      setIsClinicSelectorOpen(false)
-      setIsClinicHovered(false)
-    }
-
-    window.addEventListener("popstate", handleRouteChange)
-    return () => {
-      window.removeEventListener("popstate", handleRouteChange)
-    }
-  }, [closeAllMenus])
-
-  // Cerrar todos los menús cuando se colapsa o expande la barra lateral
-  useEffect(() => {
+    // Solo cerrar menús, no afectar la barra
     closeAllMenus();
     setIsUserMenuOpen(false);
     setShowNotifications(false);
     setIsClinicSelectorOpen(false);
+    
+    // Ocultar explícitamente todos los submenús cuando la barra se colapsa
+    if (isCollapsed) {
+      const submenus = document.querySelectorAll('.submenu');
+      submenus.forEach(submenu => {
+        if (submenu instanceof HTMLElement) {
+          submenu.style.display = 'none';
+          submenu.style.visibility = 'hidden';
+          submenu.style.opacity = '0';
+        }
+      });
+    }
   }, [isCollapsed, closeAllMenus]);
-
+  
+  // Escuchar el evento de cambio de ruta para cerrar todos los menús
+  useEffect(() => {
+    const handleRouteChange = (event: Event) => {
+      // Cerrar todos los menús desplegables
+      closeAllMenus();
+      setIsUserMenuOpen(false);
+      setShowNotifications(false);
+      setIsClinicSelectorOpen(false);
+      setIsClinicHovered(false);
+      setHoveredMenu(null);
+      
+      // Forzar que desaparezcan todos los submenús visibles
+      const submenus = document.querySelectorAll('.submenu');
+      submenus.forEach(submenu => {
+        if (submenu instanceof HTMLElement) {
+          submenu.style.display = 'none';
+          submenu.style.visibility = 'hidden';
+          submenu.style.opacity = '0';
+        }
+      });
+      
+      // Si el evento tiene el flag forced, asegurarnos de colapsar la barra si no estamos en móvil
+      if (
+        !forceMobileView && 
+        !isCollapsed && 
+        onToggle && 
+        (event as CustomEvent)?.detail?.forced
+      ) {
+        // Pequeño timeout para permitir que la navegación ocurra primero
+        setTimeout(() => {
+          if (onToggle) onToggle();
+        }, 50);
+      }
+    };
+    
+    const sidebarElement = document.getElementById("main-sidebar");
+    if (sidebarElement) {
+      sidebarElement.addEventListener("route-change", handleRouteChange);
+      return () => {
+        sidebarElement.removeEventListener("route-change", handleRouteChange);
+      };
+    }
+  }, [closeAllMenus, isCollapsed, forceMobileView, onToggle]);
+  
+  // Limpiar cuando el ratón sale del sidebar - eliminar o modificar
   useEffect(() => {
     const handleMouseLeave = () => {
-      closeAllMenus()
-      setHoveredMenu(null)
+      // Solo cerrar menús, no afectar la barra
+      if (isCollapsed) {
+        closeAllMenus();
+        setHoveredMenu(null);
+      }
+    };
+    
+    const sidebarElement = document.getElementById("main-sidebar");
+    if (sidebarElement) {
+      sidebarElement.addEventListener("mouseleave", handleMouseLeave);
+      return () => {
+        sidebarElement.removeEventListener("mouseleave", handleMouseLeave);
+      };
     }
+  }, [isCollapsed, closeAllMenus]);
 
-    document.getElementById("main-sidebar")?.addEventListener("mouseleave", handleMouseLeave)
-
-    return () => {
-      document.getElementById("main-sidebar")?.removeEventListener("mouseleave", handleMouseLeave)
+  // Posicionar correctamente el menú de notificaciones
+  useEffect(() => {
+    if (showNotifications) {
+      const buttonElement = document.getElementById('notifications-button');
+      if (buttonElement) {
+        const rect = buttonElement.getBoundingClientRect();
+        const menuElement = document.querySelector('.notifications-menu') as HTMLElement;
+        if (menuElement) {
+          // En móvil, el menú se posiciona debajo del botón
+          if (forceMobileView) {
+            menuElement.style.left = "0px";
+            menuElement.style.width = "100%";
+            menuElement.style.top = `${rect.bottom + 5}px`;
+          } else {
+            // En escritorio, a la derecha alineado con los otros menús
+            menuElement.style.left = `${rect.right}px`;
+            menuElement.style.top = `${rect.top}px`;
+          }
+        }
+      }
     }
-  }, [closeAllMenus])
+  }, [showNotifications, isCollapsed, forceMobileView]);
+
+  // Posicionar correctamente el selector de clínicas
+  useEffect(() => {
+    if ((isClinicSelectorOpen || isClinicHovered) && clinicRef.current) {
+      const rect = clinicRef.current.getBoundingClientRect();
+      const menuElement = document.querySelector('.clinic-selector-menu') as HTMLElement;
+      if (menuElement) {
+        // En móvil, el menú se posiciona debajo del selector
+        if (forceMobileView) {
+          menuElement.style.left = "0px";
+          menuElement.style.width = "100%";
+          menuElement.style.top = `${rect.bottom + 5}px`;
+        } else {
+          // En escritorio, a la derecha alineado con los otros menús
+          menuElement.style.left = `${rect.right}px`;
+          menuElement.style.top = `${rect.top}px`;
+        }
+      }
+    }
+  }, [isClinicSelectorOpen, isClinicHovered, isCollapsed, forceMobileView]);
 
   return (
     <div
       id="main-sidebar"
       className={cn(
         "bg-white border-r flex flex-col h-screen", 
-        !forceMobileView && "fixed left-0", // Sólo fijar posición si no es modo móvil forzado
-        isCollapsed ? "w-16" : "w-64",
+        !forceMobileView && "fixed left-0",
+        isCollapsed ? "w-14" : "w-64",
         "transition-all duration-300 ease-in-out z-40",
         className,
       )}
       style={{ 
         top: 0,
-        bottom: forceMobileView ? undefined : 0, // Sólo fijar bottom si no es modo móvil forzado
+        bottom: forceMobileView ? undefined : 0,
         overflowY: "auto",
       }}
     >
-      {/* Header integrado en barra lateral */}
+      {/* Header con botón hamburguesa */}
       <div className="p-2 overflow-hidden text-white bg-purple-600 border-b">
         <div className="flex items-center justify-between">
-          {/* Logo y menú hamburguesa */}
           <div className="flex items-center w-full">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onToggle}
-              className={cn(
-                "hover:bg-white/10 mr-2 flex-shrink-0",
-                isCollapsed ? "text-white" : "text-white"
-              )}
+            {/* Botón hamburguesa completamente nuevo */}
+            <div
+              onClick={() => {
+                console.log("TOGGLE BUTTON CLICKED");
+                if (onToggle) {
+                  onToggle();
+                }
+              }}
+              className="inline-flex items-center justify-center p-1.5 mr-2 text-white rounded-md cursor-pointer hover:bg-white/10"
             >
               <Menu className="w-5 h-5" />
-            </Button>
+            </div>
             
             {/* Logo optimizado para ser visible colapsado y expandido */}
             <div className="flex flex-col min-w-0 flex-1">
@@ -595,7 +730,7 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
                     alt="Logo" 
                     className={cn(
                       "object-contain transition-all duration-300", 
-                      isCollapsed ? "h-6 max-w-[24px]" : "h-8 max-w-[120px]"
+                      isCollapsed ? "h-5 max-w-[20px]" : "h-8 max-w-[120px]"
                     )}
                     style={{
                       imageRendering: '-webkit-optimize-contrast',
@@ -606,9 +741,9 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
                 ) : (
                   <div className={cn(
                     "font-semibold truncate transition-all duration-300", 
-                    isCollapsed ? "text-base w-6" : "text-lg"
+                    isCollapsed ? "text-sm w-4" : "text-lg"
                   )}>
-                    {isCollapsed ? "L" : "LOGO"}
+                    {isCollapsed ? "•" : "LOGO"}
                   </div>
                 )}
               </div>
@@ -633,13 +768,13 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
           <div 
             className="relative flex-shrink-0"
             onMouseEnter={() => !isMobile && setShowNotifications(true)}
-            onMouseLeave={() => !isMobile && setShowNotifications(false)}
+            onMouseLeave={() => !isMobile && setTimeout(() => setShowNotifications(false), 800)}
           >
             <button
               id="notifications-button"
               className={cn(
                 "relative rounded-full hover:bg-purple-100 transition-all duration-300",
-                isCollapsed ? "p-3" : "p-2"
+                isCollapsed ? "p-2.5" : "p-2"
               )}
               style={{
                 transform: 'translate3d(0,0,0)',
@@ -655,10 +790,12 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
                 // Alternar este menú
                 setShowNotifications(!showNotifications);
               }}
+              onMouseEnter={() => setShowNotifications(true)}
+              onMouseLeave={() => setTimeout(() => setShowNotifications(false), 800)}
             >
               <Bell className={cn(
                 "text-purple-600 transition-all duration-300",
-                isCollapsed ? "w-6 h-6" : "w-5 h-5"
+                isCollapsed ? "w-5 h-5" : "w-5 h-5"
               )} />
               <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
             </button>
@@ -668,9 +805,9 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
                 className="fixed mt-2 w-80 bg-white rounded-md shadow-lg border overflow-hidden notifications-menu"
                 style={{
                   position: "fixed", 
-                  left: isCollapsed ? "4.5rem" : "17rem", // ~70px : ~270px
-                  top: "50px",
-                  zIndex: 999999,
+                  left: "auto",
+                  top: "auto",
+                  zIndex: 99999,
                   display: "block",
                   visibility: "visible",
                   opacity: 1,
@@ -682,8 +819,8 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
                   pointerEvents: 'auto'
                 }}
                 onClick={(e) => e.stopPropagation()}
-                onMouseEnter={() => !isMobile && setShowNotifications(true)}
-                onMouseLeave={() => !isMobile && setShowNotifications(false)}
+                onMouseEnter={() => setShowNotifications(true)}
+                onMouseLeave={() => setTimeout(() => setShowNotifications(false), 800)}
               >
                 <div className="flex items-center justify-between p-3 border-b">
                   <h3 className="font-semibold">Notificaciones</h3>
@@ -784,16 +921,22 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
             // Alternar este menú
             setIsClinicSelectorOpen(!isClinicSelectorOpen);
           }}
-          onMouseEnter={() => !isMobile && !isClinicSelectorOpen && setIsClinicHovered(true)}
+          onMouseEnter={() => {
+            if (!isMobile) {
+              // Cerrar cualquier menú abierto antes de mostrar el selector de clínicas
+              closeAllMenus();
+              setIsClinicHovered(true);
+            }
+          }}
           onMouseLeave={() => !isMobile && setIsClinicHovered(false)}
         >
           <div className={cn(
             "flex items-center justify-center flex-shrink-0 bg-purple-100 rounded-full transition-all duration-300",
-            isCollapsed ? "w-10 h-10" : "w-8 h-8"
+            isCollapsed ? "w-9 h-9" : "w-8 h-8"
           )}>
             <span className={cn(
               "font-medium text-purple-800 transition-all duration-300",
-              isCollapsed ? "text-base" : "text-sm"
+              isCollapsed ? "text-sm" : "text-sm"
             )}>
               {getClinicInitials(activeClinic?.name || "Clínica")}
             </span>
@@ -819,10 +962,9 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
             className="fixed w-80 rounded-md border bg-white shadow-lg clinic-selector-menu"
             style={{
               position: "fixed", 
-              left: isCollapsed ? "4.5rem" : "17rem", // ~70px : ~270px
-              top: "50px",
-              marginLeft: "8px", // Añadir margen para separar de la barra
-              zIndex: 999999,
+              left: "auto",
+              top: "auto",
+              zIndex: 99999,
               display: "block",
               visibility: "visible",
               opacity: 1,
@@ -832,7 +974,7 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
               backfaceVisibility: 'hidden',
               willChange: 'transform',
               pointerEvents: 'auto',
-              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
+              boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
             }}
             onClick={(e) => e.stopPropagation()}
             onMouseEnter={() => !isMobile && setIsClinicHovered(true)}
@@ -912,8 +1054,16 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
               isCollapsed={isCollapsed}
               openMenus={openMenus}
               toggleMenu={handleMenuClick}
+              closeAllMenus={closeAllMenus}
               isMobile={forceMobileView}
               onToggle={onToggle}
+              onMenuHover={(hasSubmenu) => {
+                // Si el elemento tiene submenú y hay hover, cerrar otros menús
+                if (hasSubmenu) {
+                  setShowNotifications(false);
+                  setIsClinicSelectorOpen(false);
+                }
+              }}
             />
           </div>
         ))}
@@ -942,20 +1092,20 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
         >
           <Button
             variant="ghost"
-            className={cn("w-full justify-start app-sidebar-item hover:app-sidebar-hover", isUserMenuOpen && "bg-purple-50")}
+            className={cn("w-full justify-start app-sidebar-item hover:app-sidebar-hover user-menu-button", isUserMenuOpen && "bg-purple-50")}
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              // Cerrar otros menús
+              // Cerrar otros menús desplegables si están abiertos
               setShowNotifications(false);
               setIsClinicSelectorOpen(false);
               // Alternar este menú
               setIsUserMenuOpen(!isUserMenuOpen);
             }}
             onMouseEnter={() => !isMobile && setIsUserMenuOpen(true)}
-            onMouseLeave={() => !isMobile && setTimeout(() => setIsUserMenuOpen(false), 300)}
+            onMouseLeave={() => !isMobile && setTimeout(() => setIsUserMenuOpen(false), 1500)}
           >
-            <Avatar className="w-8 h-8 mr-2">
+            <Avatar className={cn("mr-2", isCollapsed ? "w-7 h-7" : "w-8 h-8")}>
               <AvatarFallback>RA</AvatarFallback>
             </Avatar>
             {!isCollapsed && (
@@ -969,50 +1119,67 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
           {isUserMenuOpen && (
             <div
               ref={menuRef}
-              className="fixed rounded-md border bg-white shadow-lg z-[999999] w-64 visible"
+              className="fixed user-menu rounded-md border bg-white shadow-lg z-[99999] visible"
               style={{ 
                 position: "fixed", 
-                left: isCollapsed ? "4.5rem" : "17rem", // ~70px : ~270px
-                top: "auto", 
-                bottom: "80px",
+                left: "auto",
+                top: "auto",
+                bottom: "auto",
+                width: "280px",
                 display: "block",
                 visibility: "visible" as const,
                 opacity: 1,
                 pointerEvents: "auto" as const,
-                maxHeight: "calc(100vh - 100px)",
-                overflowY: "auto"
+                overflowY: "auto",
+                boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+                borderRadius: '0.375rem',
+                transformOrigin: 'bottom center'
               }}
               onClick={(e) => e.stopPropagation()}
+              onMouseEnter={() => setIsUserMenuOpen(true)}
+              onMouseLeave={() => setTimeout(() => setIsUserMenuOpen(false), 1500)}
             >
-              <div className="flex items-center gap-3 p-3 border-b">
-                <Avatar className="w-10 h-10">
-                  <AvatarFallback>RA</AvatarFallback>
-                </Avatar>
-                <div className="flex flex-col">
-                  <span className="text-sm font-medium">Squad Chafiki</span>
-                  <span className="text-xs text-muted-foreground">usuario@example.com</span>
+              <div className="flex flex-col">
+                <div className="flex items-center gap-3 p-3 border-b">
+                  <Avatar className="w-10 h-10">
+                    <AvatarFallback>RA</AvatarFallback>
+                  </Avatar>
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium">Squad Chafiki</span>
+                    <span className="text-xs text-muted-foreground">usuario@example.com</span>
+                  </div>
                 </div>
-              </div>
-              <div className="py-1">
-                {userMenuItems.map((item) => (
-                  <Link
-                    key={item.id}
-                    href={item.href}
-                    className={cn(
-                      "flex items-center px-4 py-2 text-sm hover:bg-purple-50 hover:text-purple-600 transition-colors duration-200",
-                      pathname === item.href && "bg-purple-50 text-purple-600",
-                    )}
+                <div className="py-1">
+                  {userMenuItems.map((item) => (
+                    <Link
+                      key={item.id}
+                      href={item.href}
+                      className={cn(
+                        "flex items-center px-4 py-2.5 text-sm hover:bg-purple-50 hover:text-purple-600 transition-colors duration-200",
+                        pathname === item.href && "bg-purple-50 text-purple-600",
+                      )}
+                      onClick={(e) => {
+                        e.stopPropagation(); // Evitar propagación del clic
+                      }}
+                    >
+                      <item.icon className="w-4 h-4 mr-3 text-purple-600" />
+                      <span>{item.label}</span>
+                    </Link>
+                  ))}
+                </div>
+                <div className="py-1 border-t">
+                  <button 
+                    className="flex items-center w-full px-4 py-2.5 text-sm text-red-600 transition-colors duration-200 hover:bg-red-50"
+                    onClick={(e) => {
+                      e.stopPropagation(); // Evitar propagación
+                      // Lógica de desconexión
+                      console.log("Desconectando usuario");
+                    }}
                   >
-                    <item.icon className="w-4 h-4 mr-2 text-purple-600" />
-                    <span>{item.label}</span>
-                  </Link>
-                ))}
-              </div>
-              <div className="py-1 border-t">
-                <button className="flex items-center w-full px-4 py-2 text-sm text-red-600 transition-colors duration-200 hover:bg-red-50">
-                  <LogOut className="w-4 h-4 mr-2" />
-                  <span>Desconectar</span>
-                </button>
+                    <LogOut className="w-4 h-4 mr-2" />
+                    <span>Desconectar</span>
+                  </button>
+                </div>
               </div>
             </div>
           )}

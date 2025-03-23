@@ -24,6 +24,9 @@ import {
   Search,
   UserPlus,
   HardDrive,
+  Briefcase,
+  Database,
+  CircleDollarSign,
 } from "lucide-react"
 
 export interface MenuItem {
@@ -45,7 +48,7 @@ export const menuItems: MenuItem[] = [
   {
     id: "crm",
     label: "CRM",
-    icon: Users,
+    icon: Briefcase,
     href: "/crm",
     submenu: [
       {
