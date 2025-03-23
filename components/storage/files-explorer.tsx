@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Download, Eye, FileText, FolderOpen, Image, Search, Trash2, Film, Archive } from 'lucide-react';
+import { Download, Eye, FileText, FolderOpen, Image, Search, Trash2, Film, Archive, ChevronLeft, ChevronRight } from 'lucide-react';
 import { BaseFile } from '@/contexts/file-context';
+import { MockData, getClinics } from '@/mockData';
 
 interface FilesExplorerProps {
   files: BaseFile[];
@@ -29,19 +30,25 @@ const formatBytes = (bytes: number) => {
 // Mapa de iconos por tipo de archivo
 const getFileIcon = (mimeType: string) => {
   if (mimeType.startsWith('image/')) {
-    return <Image className="h-4 w-4 text-blue-500" />;
+    return <Image className="w-4 h-4 text-blue-500" />;
   } else if (mimeType.startsWith('video/')) {
-    return <Film className="h-4 w-4 text-red-500" />;
+    return <Film className="w-4 h-4 text-red-500" />;
   } else if (mimeType.includes('pdf')) {
-    return <FileText className="h-4 w-4 text-orange-500" />;
+    return <FileText className="w-4 h-4 text-orange-500" />;
   } else if (mimeType.includes('word') || mimeType.includes('document')) {
-    return <FileText className="h-4 w-4 text-blue-700" />;
+    return <FileText className="w-4 h-4 text-blue-700" />;
   } else if (mimeType.includes('sheet') || mimeType.includes('excel')) {
-    return <FileText className="h-4 w-4 text-green-600" />;
+    return <FileText className="w-4 h-4 text-green-600" />;
   } else if (mimeType.includes('zip') || mimeType.includes('compressed')) {
-    return <Archive className="h-4 w-4 text-gray-600" />;
+    return <Archive className="w-4 h-4 text-gray-600" />;
   }
-  return <FileText className="h-4 w-4 text-gray-500" />;
+  return <FileText className="w-4 h-4 text-gray-500" />;
+};
+
+// Función para obtener el nombre de la clínica
+const getClinicName = (clinicId: string) => {
+  const clinic = MockData.clinicas?.find((c) => c.id.toString() === clinicId);
+  return clinic ? clinic.name : clinicId;
 };
 
 const FilesExplorer: React.FC<FilesExplorerProps> = ({
@@ -52,8 +59,33 @@ const FilesExplorer: React.FC<FilesExplorerProps> = ({
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
+  const [clinicFilter, setClinicFilter] = useState('all');
   const [sortBy, setSortBy] = useState('date');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  
+  // Estado para paginación
+  const [pageSize, setPageSize] = useState(50);
+  const [currentPage, setCurrentPage] = useState(1);
+  
+  // Lista de clínicas disponibles
+  const [availableClinics, setAvailableClinics] = useState<{id: string, name: string}[]>([]);
+  
+  useEffect(() => {
+    // Cargar todas las clínicas disponibles en el sistema
+    if (showClinic) {
+      // Obtener clínicas del sistema
+      const allClinics = getClinics();
+      
+      // Convertir IDs a string para consistencia
+      const clinicsFormatted = allClinics.map(clinic => ({
+        id: clinic.id.toString(),
+        name: clinic.name
+      }));
+      
+      console.log('FilesExplorer - Todas las clínicas disponibles:', clinicsFormatted);
+      setAvailableClinics(clinicsFormatted);
+    }
+  }, [showClinic]);
   
   // Aplicar filtros y ordenación
   const filteredFiles = files
@@ -83,7 +115,10 @@ const FilesExplorer: React.FC<FilesExplorerProps> = ({
           file.mimeType.includes('excel')
         ));
       
-      return matchesSearch && matchesType;
+      // Filtro por clínica
+      const matchesClinic = !showClinic || clinicFilter === 'all' || file.clinicId === clinicFilter;
+      
+      return matchesSearch && matchesType && matchesClinic;
     })
     .sort((a, b) => {
       // Ordenación
@@ -103,12 +138,29 @@ const FilesExplorer: React.FC<FilesExplorerProps> = ({
       return 0;
     });
   
+  // Calcular el número total de páginas
+  const totalPages = Math.ceil(filteredFiles.length / pageSize);
+  
+  // Obtener los archivos para la página actual
+  const paginatedFiles = filteredFiles.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
+  
+  // Cambiar a la primera página cuando cambian los filtros
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, typeFilter, clinicFilter, pageSize]);
+  
   return (
     <Card className="col-span-3">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <FolderOpen className="h-5 w-5" />
+          <FolderOpen className="w-5 h-5" />
           Explorador de archivos
+          <span className="ml-2 text-sm font-normal text-gray-500">
+            {filteredFiles.length} {filteredFiles.length === 1 ? 'archivo' : 'archivos'}
+          </span>
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -144,6 +196,25 @@ const FilesExplorer: React.FC<FilesExplorerProps> = ({
                 </SelectContent>
               </Select>
             </div>
+            
+            {showClinic && (
+              <div>
+                <Label htmlFor="clinic-filter" className="sr-only">Clínica</Label>
+                <Select value={clinicFilter} onValueChange={setClinicFilter}>
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="Filtrar por clínica" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas las clínicas</SelectItem>
+                    {availableClinics.map((clinic) => (
+                      <SelectItem key={clinic.id} value={clinic.id}>
+                        {clinic.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             
             <div>
               <Label htmlFor="sort-by" className="sr-only">Ordenar por</Label>
@@ -182,15 +253,15 @@ const FilesExplorer: React.FC<FilesExplorerProps> = ({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredFiles.length === 0 && (
+                {paginatedFiles.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={showClinic ? 6 : 5} className="text-center py-8 text-gray-500">
+                    <TableCell colSpan={showClinic ? 6 : 5} className="py-8 text-center text-gray-500">
                       No se encontraron archivos
                     </TableCell>
                   </TableRow>
                 )}
                 
-                {filteredFiles.map((file) => (
+                {paginatedFiles.map((file) => (
                   <TableRow key={file.id}>
                     <TableCell className="flex items-center gap-2">
                       {getFileIcon(file.mimeType)}
@@ -199,7 +270,7 @@ const FilesExplorer: React.FC<FilesExplorerProps> = ({
                     
                     {showClinic && (
                       <TableCell>
-                        {file.clinicId || '-'}
+                        {getClinicName(file.clinicId)}
                       </TableCell>
                     )}
                     
@@ -215,7 +286,7 @@ const FilesExplorer: React.FC<FilesExplorerProps> = ({
                             size="icon"
                             onClick={() => onView(file)}
                           >
-                            <Eye className="h-4 w-4" />
+                            <Eye className="w-4 h-4" />
                           </Button>
                         )}
                         
@@ -224,7 +295,7 @@ const FilesExplorer: React.FC<FilesExplorerProps> = ({
                           size="icon"
                           onClick={() => window.open(file.url, '_blank')}
                         >
-                          <Download className="h-4 w-4" />
+                          <Download className="w-4 h-4" />
                         </Button>
                         
                         {onDelete && (
@@ -233,7 +304,7 @@ const FilesExplorer: React.FC<FilesExplorerProps> = ({
                             size="icon"
                             onClick={() => onDelete(file.id)}
                           >
-                            <Trash2 className="h-4 w-4" />
+                            <Trash2 className="w-4 h-4" />
                           </Button>
                         )}
                       </div>
@@ -243,6 +314,52 @@ const FilesExplorer: React.FC<FilesExplorerProps> = ({
               </TableBody>
             </Table>
           </div>
+          
+          {/* Paginación */}
+          {filteredFiles.length > 0 && (
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-500">Mostrar</span>
+                <Select value={pageSize.toString()} onValueChange={(value) => setPageSize(Number(value))}>
+                  <SelectTrigger className="w-[80px]">
+                    <SelectValue placeholder={pageSize.toString()} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="10">10</SelectItem>
+                    <SelectItem value="20">20</SelectItem>
+                    <SelectItem value="50">50</SelectItem>
+                  </SelectContent>
+                </Select>
+                <span className="text-sm text-gray-500">por página</span>
+              </div>
+              
+              <div className="flex items-center">
+                <div className="mr-4 text-sm text-gray-500">
+                  Página {currentPage} de {totalPages}
+                </div>
+                
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                    disabled={currentPage === 1}
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </Button>
+                  
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                    disabled={currentPage === totalPages}
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>

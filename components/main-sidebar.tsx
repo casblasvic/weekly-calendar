@@ -76,7 +76,7 @@ const userMenuItems = [
   },
 ]
 
-// Modificar la función useMenuState para simplificarla como en la versión anterior
+// Restaurar la función useMenuState a su implementación original
 const useMenuState = () => {
   const [openMenus, setOpenMenus] = useState<Set<string>>(new Set())
 
@@ -267,11 +267,11 @@ const MenuItemComponent = ({
       
       {/* Submenú con visualización al hover cuando está colapsado */}
       {hasSubmenu && (isOpen || (isHovered && isCollapsed)) && (
-        <div
-          ref={submenuRef}
+        <div 
+          ref={submenuRef} 
           id={`submenu-${item.id}`}
           className="submenu"
-          style={{
+          style={{ 
             position: "fixed",
             left: (menuRef.current?.getBoundingClientRect().right || 0) + "px",
             // Posición forzada a la parte inferior de la pantalla
@@ -343,17 +343,6 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
   const [clinicSearchTerm, setClinicSearchTerm] = useState("")
 
   const { activeClinic, setActiveClinic, clinics } = useClinic()
-  
-  // Manejar la acción de clic en un menú
-  const handleMenuClick = useCallback((menuId: string) => {
-    // Cerrar otros menús desplegables si están abiertos
-    setIsUserMenuOpen(false)
-    setShowNotifications(false)
-    setIsClinicSelectorOpen(false)
-    
-    // Abrir o cerrar el menú seleccionado
-    toggleMenu(menuId)
-  }, [toggleMenu])
 
   // Verificar si el componente se ha montado en el cliente
   useEffect(() => {
@@ -385,6 +374,17 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
     }
   }, [hasMounted]);
 
+  // Manejar la acción de clic en un menú
+  const handleMenuClick = (menuId: string) => {
+    // Cerrar otros menús desplegables si están abiertos
+    setIsUserMenuOpen(false)
+    setShowNotifications(false)
+    setIsClinicSelectorOpen(false)
+    
+    // Abrir o cerrar el menú seleccionado
+    toggleMenu(menuId)
+  }
+
   // Filtrar clínicas por disponibilidad
   const activeClinics = useMemo(() => {
     // Obtenemos todas las clínicas y asumimos que todas deben mostrarse a menos que decidamos lo contrario
@@ -408,63 +408,14 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
     )
   }, [clinics, clinicSearchTerm])
 
-  useEffect(() => {
-    const handleMouseLeave = () => {
-      closeAllMenus()
-      setHoveredMenu(null)
-    }
-
-    document.getElementById("main-sidebar")?.addEventListener("mouseleave", handleMouseLeave)
-
-    return () => {
-      document.getElementById("main-sidebar")?.removeEventListener("mouseleave", handleMouseLeave)
-    }
-  }, [closeAllMenus])
-
-  // Handle clicks outside the user menu
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (isUserMenuOpen) {
-        const target = event.target as Node
-        const sidebarElement = document.getElementById("main-sidebar")
-        if (sidebarElement && !sidebarElement.contains(target)) {
-          setIsUserMenuOpen(false)
-        }
-      }
-    }
-
-    document.addEventListener("mousedown", handleClickOutside)
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside)
-    }
-  }, [isUserMenuOpen])
-
-  // Handle clicks outside the clinic menu
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (isClinicSelectorOpen || isClinicHovered) {
-        const target = event.target as Node
-        const sidebarElement = document.getElementById("main-sidebar")
-        if (sidebarElement && !sidebarElement.contains(target)) {
-          setIsClinicSelectorOpen(false)
-          setIsClinicHovered(false)
-        }
-      }
-    }
-
-    document.addEventListener("mousedown", handleClickOutside)
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside)
-    }
-  }, [isClinicSelectorOpen, isClinicHovered])
-
-  // Close clinic menu when another menu is opened
-  useEffect(() => {
-    if (openMenus.size > 0 || isUserMenuOpen) {
-      setIsClinicSelectorOpen(false)
-      setIsClinicHovered(false)
-    }
-  }, [openMenus, isUserMenuOpen])
+  // Aplicar búsqueda solo a las clínicas activas
+  const filteredActiveClinics = useMemo(() => {
+    return activeClinics.filter(
+      (clinic) =>
+        clinic.name.toLowerCase().includes(clinicSearchTerm.toLowerCase()) ||
+        clinic.prefix.toLowerCase().includes(clinicSearchTerm.toLowerCase()),
+    )
+  }, [activeClinics, clinicSearchTerm])
 
   // Position the user menu when it's shown
   useEffect(() => {
@@ -528,16 +479,7 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
     }
   }, [isClinicSelectorOpen, isClinicHovered, isCollapsed, isMobile])
 
-  // Aplicar búsqueda solo a las clínicas activas
-  const filteredActiveClinics = useMemo(() => {
-    return activeClinics.filter(
-      (clinic) =>
-        clinic.name.toLowerCase().includes(clinicSearchTerm.toLowerCase()) ||
-        clinic.prefix.toLowerCase().includes(clinicSearchTerm.toLowerCase()),
-    )
-  }, [activeClinics, clinicSearchTerm])
-
-  // Mejorar el cierre de menús cuando se hace clic fuera
+  // Manejar clics fuera del sidebar
   useEffect(() => {
     const handleClickOutsideSidebar = (event: MouseEvent) => {
       const target = event.target as Node
@@ -580,6 +522,19 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
     setShowNotifications(false);
     setIsClinicSelectorOpen(false);
   }, [isCollapsed, closeAllMenus]);
+
+  useEffect(() => {
+    const handleMouseLeave = () => {
+      closeAllMenus()
+      setHoveredMenu(null)
+    }
+
+    document.getElementById("main-sidebar")?.addEventListener("mouseleave", handleMouseLeave)
+
+    return () => {
+      document.getElementById("main-sidebar")?.removeEventListener("mouseleave", handleMouseLeave)
+    }
+  }, [closeAllMenus])
 
   return (
     <div
@@ -677,8 +632,6 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
           
           <div 
             className="relative flex-shrink-0"
-            onMouseEnter={() => setShowNotifications(true)}
-            onMouseLeave={() => setTimeout(() => setShowNotifications(false), 300)}
           >
             <button
               id="notifications-button"
@@ -782,8 +735,6 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
       <div
         ref={clinicRef}
         className="relative p-2 border-b"
-        onMouseEnter={() => setIsClinicHovered(true)}
-        onMouseLeave={() => setIsClinicHovered(false)}
       >
         <div
           className="flex items-center p-2 rounded-md cursor-pointer app-sidebar-item hover:app-sidebar-hover"
@@ -796,6 +747,8 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
             // Alternar este menú
             setIsClinicSelectorOpen(!isClinicSelectorOpen);
           }}
+          onMouseEnter={() => setIsClinicHovered(true)}
+          onMouseLeave={() => setIsClinicHovered(false)}
         >
           <div className="flex items-center justify-center flex-shrink-0 w-8 h-8 bg-purple-100 rounded-full">
             <span className="text-sm font-medium text-purple-800">
@@ -843,10 +796,10 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
                 />
               </div>
               <div className="max-h-[calc(100vh-250px)] overflow-y-auto">
-                {filteredActiveClinics.length === 0 ? (
+                {filteredClinics.length === 0 ? (
                   <div className="p-2 text-sm text-gray-500">No hay clínicas activas</div>
                 ) : (
-                  filteredActiveClinics.map((clinic) => (
+                  filteredClinics.map((clinic) => (
                     <Button
                       key={clinic.id}
                       variant="ghost"
@@ -911,8 +864,6 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
         <div 
           className="relative" 
           ref={avatarRef}
-          onMouseEnter={() => !isMobile && setIsUserMenuOpen(true)}
-          onMouseLeave={() => !isMobile && setTimeout(() => setIsUserMenuOpen(false), 300)}
         >
           <Button
             variant="ghost"
@@ -926,6 +877,8 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
               // Alternar este menú
               setIsUserMenuOpen(!isUserMenuOpen);
             }}
+            onMouseEnter={() => !isMobile && setIsUserMenuOpen(true)}
+            onMouseLeave={() => !isMobile && setTimeout(() => setIsUserMenuOpen(false), 300)}
           >
             <Avatar className="w-8 h-8 mr-2">
               <AvatarFallback>RA</AvatarFallback>

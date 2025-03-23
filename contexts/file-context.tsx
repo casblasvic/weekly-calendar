@@ -115,6 +115,17 @@ export const FileProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }, 100);
     }
     
+    // Validación de clinicId
+    if (!metadata.clinicId) {
+      console.error("Error: clinicId es requerido para subir archivos");
+      throw new Error("clinicId es requerido para subir archivos");
+    }
+    
+    // Asegurar que clinicId sea string
+    metadata.clinicId = String(metadata.clinicId);
+    
+    console.log(`Subiendo archivo asociado a clínica: ${metadata.clinicId}`);
+    
     // Crear una URL temporal (en producción sería un upload real)
     const fileUrl = URL.createObjectURL(file);
     

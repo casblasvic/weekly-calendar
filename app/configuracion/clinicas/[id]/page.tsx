@@ -272,31 +272,8 @@ export default function ClinicaDetailPage() {
 
   return (
     <div className="container px-0 pb-8 pt-4">
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <BackButton href="/configuracion/clinicas" />
-          <h1 className="text-2xl font-bold">Configuración de Clínica: {clinicData?.name}</h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button 
-            variant="default" 
-            onClick={handleSaveClinic}
-            disabled={isSaving}
-          >
-            {isSaving ? (
-              <>Guardando...</>
-            ) : (
-              <>
-                <Save className="mr-2 h-4 w-4" />
-                Guardar cambios
-              </>
-            )}
-          </Button>
-          
-          <Button variant="outline">
-            <HelpCircle className="h-4 w-4" />
-          </Button>
-        </div>
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold">Configuración de Clínica: {clinicData?.name}</h1>
       </div>
 
       <div className="flex items-start gap-6">
