@@ -64,9 +64,14 @@ export function MobileClinicButton({ onClick, isOpen }: MobileClinicButtonProps)
         onClick()
       }}
       className={cn(
-        "fixed bottom-16 left-4 z-50 rounded-full w-12 h-12 p-0 shadow-lg flex items-center justify-center transition-all duration-300",
+        "fixed bottom-16 left-4 z-50 rounded-full w-12 h-12 p-0 shadow-lg flex items-center justify-center transition-all duration-300 MobileClinicButton",
         isOpen ? "bg-white text-purple-600 border border-purple-300" : "bg-purple-600 text-white"
       )}
+      style={{
+        transform: 'translateZ(0)',
+        WebkitTransform: 'translateZ(0)' as any,
+        backfaceVisibility: 'hidden' as any
+      }}
     >
       {isOpen ? (
         <X size={20} />

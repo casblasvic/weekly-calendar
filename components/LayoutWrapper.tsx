@@ -122,10 +122,25 @@ export function LayoutWrapper({ children }: LayoutWrapperProps) {
   }, [pathname, isMobile, isSidebarCollapsed]);
   
   // Manejar el cambio de visibilidad de la barra lateral en móvil
-  const toggleMobileSidebar = () => {
-    setIsSidebarVisible(prev => !prev);
+  const toggleMobileSidebar = useCallback(() => {
     console.log("Toggle mobile sidebar");
-  }
+    
+    // Para iOS, forzar reflow y restablecer posición
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+    if (isIOS) {
+      // Forzar reflow y mejorar posicionamiento
+      document.body.style.webkitTransform = 'scale(1)';
+      
+      // Pequeño retraso antes de cambiar el estado
+      setTimeout(() => {
+        setIsSidebarVisible(prev => !prev);
+        document.body.style.webkitTransform = '';
+      }, 10);
+    } else {
+      // En otros navegadores, comportamiento normal
+      setIsSidebarVisible(prev => !prev);
+    }
+  }, []);
 
   // Manejar clic fuera de la barra lateral
   const handleOutsideClick = useCallback((e: MouseEvent) => {
@@ -214,9 +229,20 @@ export function LayoutWrapper({ children }: LayoutWrapperProps) {
       {/* Overlay para cerrar sidebar al hacer click fuera */}
       {isMobile && isSidebarVisible && (
         <div 
-          className="fixed inset-0 bg-black bg-opacity-50 z-40"
+          className="fixed inset-0 bg-black bg-opacity-50 z-40 ios-backdrop-fix"
           onClick={() => {
-            setIsSidebarVisible(false);
+            // En iOS, usar el método optimizado
+            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+            if (isIOS) {
+              // Forzar reflow para iOS
+              document.body.style.webkitTransform = 'scale(1)';
+              setTimeout(() => {
+                setIsSidebarVisible(false);
+                document.body.style.webkitTransform = '';
+              }, 10);
+            } else {
+              setIsSidebarVisible(false);
+            }
             console.log("Click en overlay");
           }}
         />
