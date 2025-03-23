@@ -100,7 +100,11 @@ export function isTimeInRange(time: string, startTime: string, endTime: string, 
     const startDate = parse(startTime, "HH:mm", new Date())
     const endDate = addMinutes(parse(endTime, "HH:mm", new Date()), extraMinutes)
 
-    return isWithinInterval(timeDate, { start: startDate, end: endDate })
+    // Verificar si el tiempo es igual a la hora de inicio o de fin, o está entre ambas
+    if (format(timeDate, "HH:mm") === format(endDate, "HH:mm")) {
+      return true;
+    }
+    return isWithinInterval(timeDate, { start: startDate, end: endDate });
   } catch (error) {
     return false
   }

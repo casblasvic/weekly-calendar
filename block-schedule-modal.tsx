@@ -140,7 +140,7 @@ export function BlockScheduleModal({
     let currentMinutes = convertTimeToMinutes(startTime)
     const endMinutes = convertTimeToMinutes(endTime)
 
-    while (currentMinutes < endMinutes) {
+    while (currentMinutes <= endMinutes) {
       const hours = Math.floor(currentMinutes / 60)
       const minutes = currentMinutes % 60
       slots.push(`${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`)

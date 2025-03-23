@@ -81,11 +81,21 @@ export function getLocalStorage<T>(key: string, defaultValue: T): T {
   if (!isBrowser) return defaultValue
 
   try {
-    const item = localStorage.getItem(key)
-    return item ? JSON.parse(item) : defaultValue
+    const item = localStorage.getItem(key);
+    if (!item) return defaultValue;
+    
+    // Verificar si el string es un JSON válido antes de parsearlo
+    try {
+      return JSON.parse(item) as T;
+    } catch (parseError) {
+      console.warn(`Error al analizar JSON de localStorage para la clave ${key}:`, parseError);
+      // Si hay un error al parsear, eliminar el valor corrupto
+      localStorage.removeItem(key);
+      return defaultValue;
+    }
   } catch (error) {
-    console.error(`Error al leer de localStorage (${key}):`, error)
-    return defaultValue
+    console.warn(`Error al leer de localStorage (${key}):`, error);
+    return defaultValue;
   }
 }
 

@@ -21,6 +21,7 @@ interface Cabin {
   name: string
   color: string
   isActive: boolean
+  order?: number
 }
 
 export function CabinEditDialog({ isOpen, onClose, cabin, onSave }: CabinEditDialogProps) {

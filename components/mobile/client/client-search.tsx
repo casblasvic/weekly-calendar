@@ -1,10 +1,11 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef } from "react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Search, Calendar, DollarSign } from "lucide-react"
 import { useRouter } from "next/navigation"
+import { ScrollIndicator } from "@/components/ui/scroll-indicator"
 
 interface Client {
   id: string
@@ -29,6 +30,7 @@ export function MobileClientSearch({ onClientSelect, onClose }: MobileClientSear
     numeroCliente: "",
   })
   const router = useRouter()
+  const resultsContainerRef = useRef<HTMLDivElement>(null)
 
   const mockClients: Client[] = [
     {
@@ -49,14 +51,39 @@ export function MobileClientSearch({ onClientSelect, onClose }: MobileClientSear
     },
   ]
 
-  const handleClientDetails = (client: Client) => {
-    router.push(`/clientes/${client.id}`)
-    onClose()
+  const handleClientDetails = (client: Client, e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    
+    console.log("Cliente seleccionado para cita:", client);
+    onClientSelect(client);
   }
 
-  const handleClientSelect = (client: Client) => {
-    onClientSelect(client)
-    onClose()
+  const handleClientSelect = (client: Client, e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    
+    console.log("Cliente seleccionado para cita:", client);
+    onClientSelect(client);
+  }
+
+  const handleCancel = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    console.log("Cancelando búsqueda de cliente");
+    onClose();
+  }
+
+  const handleSearch = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    console.log("Realizando búsqueda con parámetros:", searchParams);
   }
 
   return (
@@ -89,11 +116,17 @@ export function MobileClientSearch({ onClientSelect, onClose }: MobileClientSear
         />
       </div>
 
-      <div className="flex-1 overflow-auto px-4">
+      <div 
+        ref={resultsContainerRef}
+        className="flex-1 overflow-auto px-4 relative"
+      >
         {mockClients.map((client) => (
           <div key={client.id} className="bg-white rounded-lg border p-4 mb-3 space-y-2">
             <div className="flex justify-between items-start">
-              <div onClick={() => handleClientSelect(client)} className="cursor-pointer">
+              <div 
+                onClick={(e) => handleClientSelect(client, e)} 
+                className="cursor-pointer"
+              >
                 <h3 className="font-medium text-purple-600">{client.name}</h3>
                 <p className="text-sm text-gray-500">Nº: {client.clientNumber}</p>
               </div>
@@ -102,18 +135,29 @@ export function MobileClientSearch({ onClientSelect, onClose }: MobileClientSear
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8 text-purple-600"
-                  onClick={() => handleClientSelect(client)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleClientSelect(client, e);
+                  }}
                 >
                   <Calendar className="h-4 w-4" />
                 </Button>
-                <Button variant="ghost" size="icon" className="h-8 w-8 text-green-600">
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="h-8 w-8 text-green-600"
+                  onClick={(e) => e.stopPropagation()}
+                >
                   <DollarSign className="h-4 w-4" />
                 </Button>
                 <Button
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8 text-blue-600"
-                  onClick={() => handleClientDetails(client)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleClientSelect(client, e);
+                  }}
                 >
                   <Search className="h-4 w-4" />
                 </Button>
@@ -126,14 +170,28 @@ export function MobileClientSearch({ onClientSelect, onClose }: MobileClientSear
             </div>
           </div>
         ))}
+        
+        <ScrollIndicator 
+          containerRef={resultsContainerRef}
+          position="right"
+          offset={{ right: 10, bottom: 100, top: 10 }}
+        />
       </div>
 
       <div className="fixed bottom-0 left-0 right-0 p-4 border-t bg-white">
         <div className="grid grid-cols-2 gap-3">
-          <Button variant="outline" onClick={onClose}>
+          <Button 
+            variant="outline" 
+            onClick={handleCancel}
+          >
             Cancelar
           </Button>
-          <Button className="bg-purple-600 hover:bg-purple-700">Buscar</Button>
+          <Button 
+            className="bg-purple-600 hover:bg-purple-700"
+            onClick={handleSearch}
+          >
+            Buscar
+          </Button>
         </div>
       </div>
     </div>

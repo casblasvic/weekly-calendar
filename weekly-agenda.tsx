@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { format, addDays, startOfWeek } from "date-fns"
 import { es } from "date-fns/locale"
 import { Button } from "@/components/ui/button"
@@ -14,6 +14,11 @@ import { NewClientModal } from "./new-client-modal"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { useToast } from "@/components/ui/use-toast"
 import { useRouter } from "next/navigation"
+import dynamic from "next/dynamic"
+import { useMobileDetection } from "@/hooks/use-mobile-detection"
+
+// Importar dinámicamente el componente MobileWeeklyAgenda
+const MobileWeeklyAgenda = dynamic(() => import("../mobile-weekly-agenda"), { ssr: false })
 
 interface WeeklyAgendaProps {
   rooms: Room[]
@@ -78,6 +83,25 @@ export function WeeklyAgenda({
   } | null>(null)
   const { toast } = useToast()
   const router = useRouter()
+  const { isMobile } = useMobileDetection()
+
+  const getTimeSlots = (startTime: string, endTime: string, intervalMinutes: number): string[] => {
+    const slots: string[] = []
+    const [startHour, startMinute] = startTime.split(":").map(Number)
+    const [endHour, endMinute] = endTime.split(":").map(Number)
+
+    let totalStartMinutes = startHour * 60 + startMinute
+    const totalEndMinutes = endHour * 60 + endMinute
+
+    while (totalStartMinutes < totalEndMinutes) {
+      const currentHour = Math.floor(totalStartMinutes / 60)
+      const currentMinute = totalStartMinutes % 60
+      slots.push(`${currentHour.toString().padStart(2, "0")}:${currentMinute.toString().padStart(2, "0")}`)
+      totalStartMinutes += intervalMinutes
+    }
+
+    return slots
+  }
 
   const timeSlots = getTimeSlots(clinicConfig?.openTime || "09:00", clinicConfig?.closeTime || "20:00", 15)
 
@@ -173,28 +197,13 @@ export function WeeklyAgenda({
       const blockEnd = convertTimeToMinutes(block.endTime)
       const cellTime = convertTimeToMinutes(time)
 
-      return cellTime >= blockStart && cellTime < blockEnd
+      return cellTime >= blockStart && cellTime <= blockEnd
     })
   }
 
   const convertTimeToMinutes = (time: string): number => {
     const [hours, minutes] = time.split(":").map(Number)
     return hours * 60 + minutes
-  }
-
-  const getTimeSlots = (startTime: string, endTime: string, intervalMinutes: number): string[] => {
-    const slots: string[] = []
-    let currentMinutes = convertTimeToMinutes(startTime)
-    const endMinutes = convertTimeToMinutes(endTime)
-
-    while (currentMinutes < endMinutes) {
-      const hours = Math.floor(currentMinutes / 60)
-      const minutes = currentMinutes % 60
-      slots.push(`${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`)
-      currentMinutes += intervalMinutes
-    }
-
-    return slots
   }
 
   const handleViewDayClick = (date: Date) => {
@@ -266,114 +275,128 @@ export function WeeklyAgenda({
 
   return (
     <div className="container mx-auto p-4">
-      <div className="flex justify-between items-center mb-4">
-        <div className="flex items-center space-x-2">
-          <Button variant="outline" size="icon" onClick={handlePrevWeek} aria-label="Semana anterior">
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
-            <PopoverTrigger asChild>
-              <Button
-                variant={"outline"}
-                className={cn(
-                  "w-[240px] justify-start text-left font-normal",
-                  !selectedDate && "text-muted-foreground",
-                )}
-              >
-                <CalendarIcon className="mr-2 h-4 w-4" />
-                {selectedDate ? format(selectedDate, "PPP", { locale: es }) : <span>Seleccionar fecha</span>}
+      {!isMobile && (
+        <>
+          <div className="flex justify-between items-center mb-4">
+            <div className="flex items-center space-x-2">
+              <Button variant="outline" size="icon" onClick={handlePrevWeek} aria-label="Semana anterior">
+                <ChevronLeft className="h-4 w-4" />
               </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="start">
-              <Calendar mode="single" selected={selectedDate} onSelect={handleDateSelect} initialFocus />
-            </PopoverContent>
-          </Popover>
-          <Button variant="outline" size="icon" onClick={handleNextWeek} aria-label="Semana siguiente">
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
+              <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant={"outline"}
+                    className={cn(
+                      "w-[240px] justify-start text-left font-normal",
+                      !selectedDate && "text-muted-foreground",
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {selectedDate ? format(selectedDate, "PPP", { locale: es }) : <span>Seleccionar fecha</span>}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar mode="single" selected={selectedDate} onSelect={handleDateSelect} initialFocus />
+                </PopoverContent>
+              </Popover>
+              <Button variant="outline" size="icon" onClick={handleNextWeek} aria-label="Semana siguiente">
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
 
-      <div className="overflow-x-auto">
-        <table className="min-w-full border-collapse">
-          <thead>
-            <tr>
-              <th className="border border-gray-300 p-2 bg-gray-100 w-20"></th>
-              {weekDays.map((day) => (
-                <th key={day.toString()} className="border border-gray-300 p-2 bg-gray-100">
-                  <div className="flex flex-col items-center">
-                    <span className="font-medium">{format(day, "EEE", { locale: es })}</span>
-                    <Button variant="link" className="p-0 h-auto" onClick={() => handleViewDayClick(day)}>
-                      {format(day, "d/M")}
-                    </Button>
-                  </div>
-                </th>
-              ))}
-            </tr>
-            <tr>
-              <th className="border border-gray-300 p-2 bg-gray-100"></th>
-              {weekDays.map((day, dayIndex) => (
-                <th key={`header-${dayIndex}`} className="border border-gray-300 p-1 bg-gray-100">
-                  <div className="flex justify-around">
-                    {rooms.map((room) => (
-                      <div
-                        key={`${dayIndex}-${room.id}`}
-                        className={`w-16 text-center text-xs font-medium text-white p-1 bg-${room.color}-500 rounded`}
-                      >
-                        {room.name}
+          <div className="overflow-x-auto">
+            <table className="min-w-full border-collapse">
+              <thead>
+                <tr>
+                  <th className="border border-gray-300 p-2 bg-gray-100 w-20"></th>
+                  {weekDays.map((day) => (
+                    <th key={day.toString()} className="border border-gray-300 p-2 bg-gray-100">
+                      <div className="flex flex-col items-center">
+                        <span className="font-medium">{format(day, "EEE", { locale: es })}</span>
+                        <Button variant="link" className="p-0 h-auto" onClick={() => handleViewDayClick(day)}>
+                          {format(day, "d/M")}
+                        </Button>
                       </div>
-                    ))}
-                  </div>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {timeSlots.map((time, timeIndex) => (
-              <tr key={time}>
-                <td className="border border-gray-300 p-1 text-center text-sm">{time}</td>
-                {weekDays.map((day, dayIndex) => (
-                  <td key={`${dayIndex}-${time}`} className="border border-gray-300 p-0">
-                    <div className="flex justify-around">
-                      {rooms.map((room) => (
-                        <div key={`${dayIndex}-${time}-${room.id}`} className="w-16">
-                          {renderCell(day, time, room.id, timeIndex)}
+                    </th>
+                  ))}
+                </tr>
+                <tr>
+                  <th className="border border-gray-300 p-2 bg-gray-100"></th>
+                  {weekDays.map((day, dayIndex) => (
+                    <th key={`header-${dayIndex}`} className="border border-gray-300 p-1 bg-gray-100">
+                      <div className="flex justify-around">
+                        {rooms.map((room) => (
+                          <div
+                            key={`${dayIndex}-${room.id}`}
+                            className={`w-16 text-center text-xs font-medium text-white p-1 bg-${room.color}-500 rounded`}
+                          >
+                            {room.name}
+                          </div>
+                        ))}
+                      </div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {timeSlots.map((time, timeIndex) => (
+                  <tr key={time}>
+                    <td className="border border-gray-300 p-1 text-center text-sm">{time}</td>
+                    {weekDays.map((day, dayIndex) => (
+                      <td key={`${dayIndex}-${time}`} className="border border-gray-300 p-0">
+                        <div className="flex justify-around">
+                          {rooms.map((room) => (
+                            <div key={`${dayIndex}-${time}-${room.id}`} className="w-16">
+                              {renderCell(day, time, room.id, timeIndex)}
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
-                  </td>
+                      </td>
+                    ))}
+                  </tr>
                 ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
 
-      {isBlockModalOpen && (
-        <BlockScheduleModal
-          isOpen={isBlockModalOpen}
-          onClose={() => {
-            setIsBlockModalOpen(false)
-            setSelectedCell(null)
-            setSelectedBlock(null)
-          }}
-          selectedBlock={selectedBlock}
-          selectedCell={selectedCell}
+      {isMobile && (
+        <MobileWeeklyAgenda
+          timeSlots={timeSlots}
+          currentDate={currentDate}
+          onPrevWeek={handlePrevWeek}
+          onNextWeek={handleNextWeek}
+          onCellClick={handleCellClick}
           rooms={rooms}
-          clinicConfig={clinicConfig}
-          onCreateBlock={handleCreateBlock}
-          onUpdateBlock={handleUpdateBlock}
-          onDeleteBlock={handleDeleteBlock}
-          onDeleteAllBlocks={handleDeleteAllBlocks}
-          onOpenNewClientDialog={() => setIsNewClientDialogOpen(true)}
+          blocks={blocks}
+          findBlockForCell={findBlockForCell}
         />
       )}
+
+      <BlockScheduleModal
+        isOpen={isBlockModalOpen}
+        onClose={() => {
+          setIsBlockModalOpen(false)
+          setSelectedBlock(null)
+          setSelectedCell(null)
+        }}
+        rooms={rooms}
+        selectedBlock={selectedBlock}
+        selectedCell={selectedCell}
+        onCreateBlock={handleCreateBlock}
+        onUpdateBlock={handleUpdateBlock}
+        onDeleteBlock={handleDeleteBlock}
+        onDeleteAllBlocks={handleDeleteAllBlocks}
+        onNewClient={() => setIsNewClientDialogOpen(true)}
+      />
 
       {isNewClientDialogOpen && (
         <NewClientModal
           isOpen={isNewClientDialogOpen}
           onClose={() => setIsNewClientDialogOpen(false)}
-          onCreateClient={handleCreateClient}
+          onClientCreated={handleCreateClient}
         />
       )}
     </div>

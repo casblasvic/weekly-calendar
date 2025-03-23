@@ -208,7 +208,7 @@ export default function WeeklyAgenda({
       if (!daySchedule?.isOpen) return false
 
       // Verificar si el horario está dentro de algún rango definido para ese día
-      return daySchedule.ranges.some((range) => time >= range.start && time < range.end)
+      return daySchedule.ranges.some((range) => time >= range.start && time <= range.end)
     },
     [clinicConfig.schedule],
   )
@@ -248,7 +248,7 @@ export default function WeeklyAgenda({
         }
 
         // Verificar hora
-        if (time < block.startTime || time >= block.endTime) {
+        if (time < block.startTime || time > block.endTime) {
           return false
         }
 

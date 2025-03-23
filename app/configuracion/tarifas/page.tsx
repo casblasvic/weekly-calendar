@@ -9,12 +9,12 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useRouter } from "next/navigation"
 import { MockData } from "@/mockData"
-import { ClinicContext } from "@/context/clinic-context"
+import { useClinic } from "@/contexts/clinic-context"
 import { Tarifa, useTarif } from "@/contexts/tarif-context"
 
 export default function GestionTarifas() {
   const router = useRouter()
-  const clinicContext = useContext(ClinicContext)
+  const clinicContext = useClinic()
   const tarifContext = useTarif()
   const tarifas = tarifContext.tarifas || []
 

@@ -1,6 +1,12 @@
-import AgendaContainer from "@/components/agenda-container"
+import ResponsiveAgendaView from "@/components/responsive-agenda-view"
 
-export default function WeeklyAgendaPage({ params }: { params: { date: string } }) {
-  return <AgendaContainer initialDate={params.date} initialView="week" />
+export default async function WeeklyAgendaPage({ params }: { params: { date: string } }) {
+  // En Next.js 14, el objeto params completo debe ser esperado primero
+  const resolvedParams = await params;
+  
+  // Ahora podemos acceder a date de manera segura
+  const date = resolvedParams.date || "";
+  
+  return <ResponsiveAgendaView date={date} initialView="week" />
 }
 

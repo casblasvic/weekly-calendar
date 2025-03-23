@@ -74,38 +74,38 @@ export default function ClientLayout({ children, params }: { children: React.Rea
   if (!client) return null
 
   return (
-    <div className="container mx-auto px-4 md:px-8 py-4 mt-16 mb-16 md:mb-0">
-      {" "}
-      {/* Añadido mt-16 para dar espacio debajo del header */}
-      {/* Tabs */}
-      <div className={`mb-6 border-b ${isMobile ? "sticky top-16 bg-white z-10" : ""}`}>
-        {" "}
-        {/* Cambiado top-0 a top-16 */}
-        <div
-          ref={tabsRef}
-          className={`flex ${isMobile ? "overflow-x-auto scrollbar-hide" : "flex-wrap"} space-x-2 md:space-x-4 pb-2`}
-        >
-          {tabs.map((tab) => {
-            const isActive = pathname === `/clientes/${client.id}${tab.path}`
-            return (
-              <button
-                key={tab.path}
-                onClick={() => handleTabChange(tab.path)}
-                className={`flex-shrink-0 px-3 py-2 text-sm font-medium rounded-full transition-colors duration-200 ${
-                  isActive ? "bg-purple-600 text-white" : "text-gray-500 hover:text-purple-600 hover:bg-purple-100"
-                } ${isMobile ? "whitespace-nowrap" : ""}`}
-                aria-current={isActive ? "page" : undefined}
-              >
-                {tab.label}
-              </button>
-            )
-          })}
+    <div className="min-h-screen flex flex-col">
+      {/* Tabs como menú principal */}
+      <div className={`border-b ${isMobile ? "sticky top-0 bg-white z-10" : "bg-white"}`}>
+        <div className="container mx-auto px-4 md:px-8">
+          <div
+            ref={tabsRef}
+            className={`flex ${isMobile ? "overflow-x-auto scrollbar-hide" : "flex-wrap"} space-x-2 md:space-x-4 py-3`}
+          >
+            {tabs.map((tab) => {
+              const isActive = pathname === `/clientes/${client.id}${tab.path}`
+              return (
+                <button
+                  key={tab.path}
+                  onClick={() => handleTabChange(tab.path)}
+                  className={`flex-shrink-0 px-4 py-2 text-sm font-medium rounded-full transition-colors duration-200 ${
+                    isActive ? "bg-purple-600 text-white" : "text-gray-500 hover:text-purple-600 hover:bg-purple-100"
+                  } ${isMobile ? "whitespace-nowrap" : ""}`}
+                  aria-current={isActive ? "page" : undefined}
+                >
+                  {tab.label}
+                </button>
+              )
+            })}
+          </div>
         </div>
       </div>
+
       {/* Page content */}
-      <div className="rounded-lg bg-white p-4 md:p-6 shadow-sm">
-        {children}
-        {/* Los botones específicos de cada pestaña se renderizarán dentro de 'children' */}
+      <div className="flex-1 container mx-auto px-4 md:px-8 py-6">
+        <div className="rounded-lg bg-white p-4 md:p-6 shadow-sm">
+          {children}
+        </div>
       </div>
     </div>
   )

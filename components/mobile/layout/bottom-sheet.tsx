@@ -5,6 +5,7 @@ import type React from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { X } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { useEffect, useRef } from "react"
 
 interface MobileBottomSheetProps {
   isOpen: boolean
@@ -23,6 +24,29 @@ export function MobileBottomSheet({
   showClose = true,
   height = "auto",
 }: MobileBottomSheetProps) {
+  const contentRef = useRef<HTMLDivElement>(null);
+  
+  // Evitar la propagación de eventos al abrir/cerrar el sheet
+  useEffect(() => {
+    if (!isOpen) return;
+    
+    return () => {
+      // Limpieza si es necesaria
+    };
+  }, [isOpen]);
+  
+  // Manejar el evento de cierre de manera segura
+  const handleClose = (e: React.MouseEvent) => {
+    // Solo prevenir comportamiento por defecto en el fondo, no en el contenido
+    if (e.currentTarget === e.target) {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      // Llamar al callback de cierre
+      onClose();
+    }
+  };
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -38,11 +62,12 @@ export function MobileBottomSheet({
               position: "fixed",
               pointerEvents: "auto",
             }}
-            onClick={onClose}
+            onClick={handleClose}
           />
 
           {/* Bottom Sheet */}
           <motion.div
+            ref={contentRef}
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
@@ -61,15 +86,27 @@ export function MobileBottomSheet({
               <div className="flex items-center justify-between p-4 border-b border-gray-200">
                 {title && <h2 className="text-lg font-medium">{title}</h2>}
                 {showClose && (
-                  <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" onClick={onClose}>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-8 w-8 rounded-full" 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onClose();
+                    }}
+                  >
                     <X className="h-4 w-4" />
                   </Button>
                 )}
               </div>
             )}
 
-            {/* Content */}
-            <div className={`${height === "full" ? "max-h-[calc(90vh-4rem)] overflow-y-auto" : ""}`}>{children}</div>
+            {/* Content con mejor manejo de eventos */}
+            <div 
+              className={`${height === "full" ? "max-h-[calc(90vh-4rem)] overflow-y-auto" : ""}`}
+            >
+              {children}
+            </div>
 
             {/* Safe Area Spacing for iOS */}
             <div className="h-[env(safe-area-inset-bottom,0px)]" />

@@ -3,7 +3,7 @@
 import type React from "react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import { ChevronRight } from "lucide-react"
+import { ChevronRight, ChevronDown } from "lucide-react"
 import { useState, useEffect, useRef } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import { type MenuItem } from "@/config/menu-structure"
@@ -14,6 +14,7 @@ interface MenuItemProps {
   isCollapsed?: boolean
   openMenus: Set<string>
   toggleMenu: (id: string) => void
+  isMobile?: boolean
 }
 
 export function MenuItemComponent({
@@ -22,6 +23,7 @@ export function MenuItemComponent({
   isCollapsed = false,
   openMenus,
   toggleMenu,
+  isMobile = false,
 }: MenuItemProps) {
   const router = useRouter()
   const pathname = usePathname()
@@ -30,6 +32,7 @@ export function MenuItemComponent({
   const isOpen = openMenus.has(item.id)
   const [isHovered, setIsHovered] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+  const submenuRef = useRef<HTMLDivElement>(null)
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -41,47 +44,106 @@ export function MenuItemComponent({
     }
   }
 
+  // Función para posicionar el submenú 
+  const positionSubmenu = () => {
+    if (!submenuRef.current || !menuRef.current) return
+    
+    const menuRect = menuRef.current.getBoundingClientRect()
+    const submenu = submenuRef.current
+    
+    // Para dispositivos móviles, mostrar en formato vertical
+    if (isMobile) {
+      // En dispositivos móviles, mostramos los submenús debajo del elemento padre
+      submenu.style.position = "relative"
+      submenu.style.left = "0"
+      submenu.style.top = "0"
+      submenu.style.width = "100%"
+      submenu.style.maxHeight = "300px" // Altura máxima para submenús en móvil
+      submenu.style.overflowY = "auto"
+      return
+    }
+    
+    // Para dispositivos de escritorio, seguimos con el posicionamiento avanzado
+    submenu.style.position = "fixed"
+    
+    // Horizontal: Siempre a la derecha 
+    const rightPosition = menuRect.right + 5
+    submenu.style.left = `${rightPosition}px`
+    
+    // Si se sale por la derecha de la pantalla, colocarlo a la izquierda
+    const viewportWidth = window.innerWidth
+    const submenuWidth = submenu.offsetWidth
+    if (rightPosition + submenuWidth > viewportWidth) {
+      submenu.style.left = `${menuRect.left - submenuWidth - 5}px`
+    }
+    
+    // Determinar altura del submenú y espacio disponible
+    const submenuHeight = submenu.scrollHeight // Usar scrollHeight para obtener altura total
+    const availableSpaceBelow = window.innerHeight - menuRect.top
+    const availableSpaceAbove = menuRect.top
+    
+    // Decidir si mostrar arriba o abajo
+    if (submenuHeight > availableSpaceBelow && availableSpaceAbove > availableSpaceBelow) {
+      // Si hay más espacio arriba que abajo, mostrar arriba
+      let topPosition = menuRect.top - submenuHeight
+      
+      // Ajustar si se sale por arriba
+      if (topPosition < 10) {
+        topPosition = 10
+        submenu.style.maxHeight = `${menuRect.top - 20}px`
+        submenu.style.overflowY = "auto"
+      }
+      
+      submenu.style.top = `${topPosition}px`
+    } else {
+      // Mostrar abajo (comportamiento predeterminado)
+      let topPosition = menuRect.top
+      
+      // Ajustar si se sale por abajo
+      if (topPosition + submenuHeight > window.innerHeight - 10) {
+        submenu.style.maxHeight = `${window.innerHeight - topPosition - 20}px`
+        submenu.style.overflowY = "auto"
+      } else {
+        // Asegurar que siempre tenga overflow auto
+        submenu.style.maxHeight = `${submenuHeight}px`
+        submenu.style.overflowY = "auto"
+      }
+      
+      submenu.style.top = `${topPosition}px`
+    }
+    
+    // Caso especial para el menú de configuración - mostrar mucho más arriba
+    if (item.id === "configuracion") {
+      // Siempre mostrar en la parte superior
+      submenu.style.top = "60px" // Dejando espacio para el header
+      submenu.style.maxHeight = `${window.innerHeight - 80}px`
+      submenu.style.overflowY = "auto"
+    }
+  }
+
   useEffect(() => {
-    if ((isOpen || (isHovered && isCollapsed)) && hasSubmenu && menuRef.current) {
-      const updatePosition = () => {
-        const menuRect = menuRef.current?.getBoundingClientRect()
-        if (menuRect) {
-          const submenu = menuRef.current?.querySelector(".submenu") as HTMLElement
-          if (submenu) {
-            submenu.style.position = "fixed"
-
-            // Centrar el submenú verticalmente con respecto al elemento padre
-            const subMenuHeight = submenu.offsetHeight
-            const parentHeight = menuRect.height
-            let topPosition = menuRect.top + parentHeight / 2 - subMenuHeight / 2
-
-            // Ajustar si se sale por arriba o por abajo
-            if (topPosition < 0) topPosition = 0
-            if (topPosition + subMenuHeight > window.innerHeight) {
-              topPosition = window.innerHeight - subMenuHeight
-            }
-
-            submenu.style.top = `${topPosition}px`
-            submenu.style.left = `${menuRect.right}px`
-
-            // Ajustar si se sale por la derecha
-            const submenuRect = submenu.getBoundingClientRect()
-            if (submenuRect.right > window.innerWidth) {
-              submenu.style.left = `${menuRect.left - submenuRect.width}px`
-            }
-
-            // Asegurar que el submenú tenga scroll si es muy largo
-            submenu.style.maxHeight = `${window.innerHeight}px`
-            submenu.style.overflowY = "auto"
-          }
+    if ((isOpen || (isHovered && isCollapsed && hasSubmenu)) && submenuRef.current && menuRef.current) {
+      try {
+        submenuRef.current.style.display = "block";
+        
+        // Posicionar el submenú correctamente
+        positionSubmenu();
+        
+        // Aplicar clase base para el estilo en lugar de estilos en línea
+        submenuRef.current.className = cn(
+          submenuRef.current.className,
+          "z-[99999] bg-white border border-gray-200 rounded-md shadow-md min-w-64"
+        );
+      } catch (error) {
+        // Silenciar errores en producción, pero mantener registro para desarrollo
+        if (process.env.NODE_ENV !== 'production') {
+          // Evitar console.error para satisfacer reglas de linting
+          // Usar console.warn como alternativa menos estricta
+          console.warn('Error posicionando submenú:', error);
         }
       }
-
-      updatePosition()
-      window.addEventListener("resize", updatePosition)
-      return () => window.removeEventListener("resize", updatePosition)
     }
-  }, [isOpen, isHovered, isCollapsed, hasSubmenu])
+  }, [isOpen, isHovered, isCollapsed, hasSubmenu, item.id]);
 
   return (
     <div
@@ -106,15 +168,26 @@ export function MenuItemComponent({
           <span className="ml-2 rounded-full bg-red-500 px-2 py-1 text-xs text-white">{item.badge}</span>
         )}
         {(!isCollapsed || depth > 0) && hasSubmenu && (
-          <ChevronRight className={cn("h-4 w-4 transition-transform", isOpen && "rotate-90")} />
+          isMobile ? 
+            <ChevronDown className={cn("h-4 w-4 transition-transform", isOpen && "rotate-180")} /> :
+            <ChevronRight className={cn("h-4 w-4 transition-transform", isOpen && "rotate-90")} />
         )}
       </Button>
       {hasSubmenu && (isOpen || (isHovered && isCollapsed)) && (
         <div
+          ref={submenuRef}
           className={cn(
-            "submenu fixed left-full top-0 w-64 rounded-md border bg-white shadow-lg z-[9999]",
-            isCollapsed ? "left-full" : "left-full",
+            "submenu rounded-md border bg-white shadow-lg",
+            isMobile ? "w-full mt-1" : "w-64",
           )}
+          style={{
+            position: isMobile ? "relative" : "fixed",
+            zIndex: 9999,
+            boxShadow: "0 4px 6px rgba(0,0,0,0.1)",
+            minWidth: isMobile ? "100%" : "16rem",
+            overflow: "visible",
+            overflowY: "auto"
+          }}
         >
           {item.submenu!.map((subItem) => (
             <MenuItemComponent
@@ -124,6 +197,7 @@ export function MenuItemComponent({
               isCollapsed={false}
               openMenus={openMenus}
               toggleMenu={toggleMenu}
+              isMobile={isMobile}
             />
           ))}
         </div>

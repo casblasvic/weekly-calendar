@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -9,6 +9,7 @@ import { Calendar, Clock, Search, Minus, Plus } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
+import { useTheme } from "@/contexts/theme"
 // Actualizar importaciones
 import { MobileTimePicker } from "@/components/mobile/common/time-picker"
 import { MobileDatePickerSheet } from "@/components/mobile/common/date-picker-sheet"
@@ -20,16 +21,15 @@ interface Client {
 }
 
 interface AppointmentDialogProps {
-  isOpen: boolean
-  onClose: () => void
   client: Client | null
   selectedDate: Date
   selectedTime?: string
+  onClose: () => void
   onSearchClick: () => void
   onNewClientClick: () => void
   onDelete?: () => void
   onSave?: (appointment: {
-    client: Client
+    client: Client | null
     services: { id: string; name: string; category: string }[]
     date: Date
     time: string
@@ -40,11 +40,10 @@ interface AppointmentDialogProps {
 }
 
 export function MobileAppointmentDialog({
-  isOpen,
-  onClose,
   client,
   selectedDate: initialSelectedDate,
   selectedTime,
+  onClose,
   onSearchClick,
   onNewClientClick,
   onDelete,
@@ -59,6 +58,20 @@ export function MobileAppointmentDialog({
   const [duration, setDuration] = useState(1)
   const [professional, setProfessional] = useState("")
   const [searchTerm, setSearchTerm] = useState("")
+
+  const { theme } = useTheme()
+  
+  const appColors = useMemo(() => {
+    return {
+      primary: theme?.primaryColor || '#7c3aed',
+      secondary: theme?.secondaryColor || '#8b5cf6',
+      accent: theme?.accentColor || '#a78bfa',
+      text: theme?.textColor || '#111827',
+      background: theme?.backgroundColor || '#ffffff',
+      headerBg: theme?.headerBackgroundColor || '#7c3aed',
+      buttonBg: theme?.buttonPrimaryColor || '#7c3aed',
+    }
+  }, [theme])
 
   useEffect(() => {
     if (selectedTime) {
@@ -115,179 +128,227 @@ export function MobileAppointmentDialog({
     {} as typeof services,
   )
 
-  if (!isOpen) return null
+  if (!client) return null
 
   return (
-    <MobileBottomSheet isOpen={isOpen} onClose={onClose} title="Nueva Cita" height="auto">
-      <div className="sr-only" id="mobile-appointment-description">
-        Formulario para crear o editar una cita en la versión móvil, incluyendo selección de cliente, fecha, hora y
-        servicios
-      </div>
-      <div className="flex flex-col h-full">
-        <div className="flex-grow overflow-y-auto p-4 space-y-6">
-          {/* Cliente */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-purple-600">Cliente</h2>
-              <Button variant="outline" onClick={onSearchClick} className="text-purple-600 hover:text-purple-700">
-                Buscar
-              </Button>
+    <MobileBottomSheet isOpen={!!client} onClose={onClose} title="Nueva cita" height="full">
+      <div className="p-4 space-y-6">
+        {/* Sección de Cliente */}
+        <div className="space-y-3">
+          <label className="text-sm font-medium" style={{ color: appColors.primary }}>Cliente</label>
+          <div className="p-4 border rounded-md flex items-center justify-between">
+            <div>
+              <h3 className="font-semibold">{client.name}</h3>
+              <p className="text-sm text-gray-500">{client.phone}</p>
             </div>
-            {client && (
-              <div className="bg-purple-50 p-4 rounded-lg">
-                <h3 className="text-lg font-medium text-purple-600">{client.name}</h3>
-                <p className="text-sm text-gray-600">{client.phone}</p>
-              </div>
-            )}
-          </div>
-
-          {/* Fecha y Hora */}
-          <div className="space-y-2">
-            <h2 className="text-lg font-semibold text-purple-600">Fecha y Hora</h2>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="relative">
-                <Input
-                  value={format(selectedDate, "dd/MM/yyyy", { locale: es })}
-                  readOnly
-                  className="pl-4 pr-10 cursor-pointer bg-white"
-                  onClick={() => setIsDatePickerOpen(true)}
-                />
-                <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 h-5 w-5 text-purple-600 pointer-events-none" />
-              </div>
-              <div className="relative">
-                <Input
-                  value={appointmentTime}
-                  readOnly
-                  className="pl-4 pr-10 cursor-pointer bg-white"
-                  onClick={() => setIsTimePickerOpen(true)}
-                />
-                <Clock className="absolute right-3 top-1/2 -translate-y-1/2 h-5 w-5 text-purple-600 pointer-events-none" />
-              </div>
-            </div>
-          </div>
-
-          {/* Duración */}
-          <div className="space-y-2">
-            <h2 className="text-lg font-semibold text-purple-600">Duración (módulos)</h2>
-            <div className="flex items-center space-x-4">
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => setDuration(Math.max(1, duration - 1))}
-                className="h-8 w-8 text-purple-600 border-purple-600"
-              >
-                <Minus className="h-4 w-4" />
-              </Button>
-              <span className="text-lg font-medium">{duration}</span>
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => setDuration(duration + 1)}
-                className="h-8 w-8 text-purple-600 border-purple-600"
-              >
-                <Plus className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-
-          {/* Servicios */}
-          <div className="space-y-2">
-            <h2 className="text-lg font-semibold text-purple-600">Servicios</h2>
-            <div className="relative">
-              <Input
-                type="text"
-                placeholder="Buscar servicios..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-            </div>
-            <Tabs value={activeTab} onValueChange={setActiveTab}>
-              <TabsList className="grid w-full grid-cols-3 rounded-lg bg-purple-100 p-1">
-                <TabsTrigger
-                  value="sin-parametros"
-                  className={cn(
-                    "rounded-md transition-colors",
-                    "data-[state=active]:bg-purple-600 data-[state=active]:text-white",
-                  )}
-                >
-                  Sin parámetros
-                </TabsTrigger>
-                <TabsTrigger
-                  value="con-parametros"
-                  className={cn(
-                    "rounded-md transition-colors",
-                    "data-[state=active]:bg-purple-600 data-[state=active]:text-white",
-                  )}
-                >
-                  Con parámetros
-                </TabsTrigger>
-                <TabsTrigger
-                  value="paquetes"
-                  className={cn(
-                    "rounded-md transition-colors",
-                    "data-[state=active]:bg-purple-600 data-[state=active]:text-white",
-                  )}
-                >
-                  Paquetes
-                </TabsTrigger>
-              </TabsList>
-              {Object.entries(filteredServices).map(([tabKey, tabServices]) => (
-                <TabsContent
-                  key={tabKey}
-                  value={tabKey.toLowerCase().replace(" ", "-")}
-                  className="mt-4 space-y-2 max-h-60 overflow-y-auto"
-                >
-                  {tabServices.map((service) => (
-                    <label key={service.id} className="flex items-center gap-3 p-3 border rounded-lg bg-white">
-                      <input
-                        type="checkbox"
-                        checked={selectedServices.some((s) => s.id === service.id)}
-                        onChange={() => {
-                          setSelectedServices((prev) =>
-                            prev.some((s) => s.id === service.id)
-                              ? prev.filter((s) => s.id !== service.id)
-                              : [...prev, service],
-                          )
-                        }}
-                        className="h-5 w-5 rounded border-purple-300 text-purple-600 focus:ring-purple-600"
-                      />
-                      <span className="text-base flex-1">{service.name}</span>
-                      <span className="text-sm text-gray-500">{service.category}</span>
-                    </label>
-                  ))}
-                </TabsContent>
-              ))}
-            </Tabs>
-          </div>
-
-          {/* Profesional */}
-          <div className="space-y-2">
-            <h2 className="text-lg font-semibold text-purple-600">Profesional</h2>
-            <Select value={professional} onValueChange={setProfessional}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Seleccionar profesional" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="prof1">Profesional 1</SelectItem>
-                <SelectItem value="prof2">Profesional 2</SelectItem>
-                <SelectItem value="prof3">Profesional 3</SelectItem>
-              </SelectContent>
-            </Select>
+            <Button 
+              size="sm" 
+              variant="ghost" 
+              onClick={onSearchClick} 
+              style={{ color: appColors.primary }}
+            >
+              Cambiar
+            </Button>
           </div>
         </div>
 
-        {/* Botones de acción */}
-        <div className="p-4 border-t bg-white">
-          <div className="grid grid-cols-2 gap-4">
-            <Button variant="outline" onClick={onClose} className="w-full">
-              Cancelar
+        {/* Sección de Fecha y Hora */}
+        <div className="space-y-3">
+          <label className="text-sm font-medium" style={{ color: appColors.primary }}>Fecha y hora</label>
+          <div className="grid grid-cols-2 gap-2">
+            <div 
+              className="p-4 bg-gray-50 rounded-md flex items-center cursor-pointer"
+              onClick={() => setIsDatePickerOpen(true)}
+            >
+              <Calendar className="h-5 w-5 mr-2" style={{ color: appColors.primary }} />
+              <div>
+                <div className="text-sm text-gray-500">Fecha</div>
+                <div className="font-medium">
+                  {selectedDate
+                    ? format(selectedDate, "EEE d MMM", { locale: es })
+                    : "Selecciona una fecha"}
+                </div>
+              </div>
+            </div>
+            <div 
+              className="p-4 bg-gray-50 rounded-md flex items-center cursor-pointer"
+              onClick={() => setIsTimePickerOpen(true)}
+            >
+              <Clock className="h-5 w-5 mr-2" style={{ color: appColors.primary }} />
+              <div>
+                <div className="text-sm text-gray-500">Hora</div>
+                <div className="font-medium">
+                  {appointmentTime || "Seleccionar"}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Duración */}
+        <div className="space-y-2">
+          <h2 className="text-lg font-semibold" style={{ color: appColors.primary }}>Duración (módulos)</h2>
+          <div className="flex items-center space-x-4">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setDuration(Math.max(1, duration - 1))}
+              className="h-8 w-8 border"
+              style={{ color: appColors.primary, borderColor: appColors.primary }}
+            >
+              <Minus className="h-4 w-4" />
             </Button>
-            <Button onClick={handleSave} className="w-full bg-purple-600 hover:bg-purple-700 text-white">
-              Guardar
+            <span className="text-lg font-medium">{duration}</span>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setDuration(duration + 1)}
+              className="h-8 w-8 border"
+              style={{ color: appColors.primary, borderColor: appColors.primary }}
+            >
+              <Plus className="h-4 w-4" />
             </Button>
           </div>
+        </div>
+
+        {/* Servicios */}
+        <div className="space-y-2">
+          <h2 className="text-lg font-semibold" style={{ color: appColors.primary }}>Servicios</h2>
+          <div className="relative">
+            <Input
+              type="text"
+              placeholder="Buscar servicios..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10"
+            />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+          </div>
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList className="grid w-full grid-cols-3 rounded-lg p-1" style={{ backgroundColor: `${appColors.primary}20` }}>
+              <TabsTrigger
+                value="sin-parametros"
+                className={cn(
+                  "rounded-md transition-colors",
+                  "data-[state=active]:text-white"
+                )}
+                style={{
+                  ["--tw-ring-color" as any]: appColors.primary
+                }}
+              >
+                <div 
+                  className="w-full h-full" 
+                  style={{ 
+                    backgroundColor: activeTab === "sin-parametros" ? appColors.primary : "transparent" 
+                  }}
+                >
+                  Sin parámetros
+                </div>
+              </TabsTrigger>
+              <TabsTrigger
+                value="con-parametros"
+                className={cn(
+                  "rounded-md transition-colors",
+                  "data-[state=active]:text-white"
+                )}
+                style={{
+                  ["--tw-ring-color" as any]: appColors.primary
+                }}
+              >
+                <div 
+                  className="w-full h-full" 
+                  style={{ 
+                    backgroundColor: activeTab === "con-parametros" ? appColors.primary : "transparent" 
+                  }}
+                >
+                  Con parámetros
+                </div>
+              </TabsTrigger>
+              <TabsTrigger
+                value="paquetes"
+                className={cn(
+                  "rounded-md transition-colors",
+                  "data-[state=active]:text-white"
+                )}
+                style={{
+                  ["--tw-ring-color" as any]: appColors.primary
+                }}
+              >
+                <div 
+                  className="w-full h-full" 
+                  style={{ 
+                    backgroundColor: activeTab === "paquetes" ? appColors.primary : "transparent" 
+                  }}
+                >
+                  Paquetes
+                </div>
+              </TabsTrigger>
+            </TabsList>
+            {Object.entries(filteredServices).map(([tabKey, tabServices]) => (
+              <TabsContent
+                key={tabKey}
+                value={tabKey.toLowerCase().replace(" ", "-")}
+                className="mt-4 space-y-2 max-h-60 overflow-y-auto"
+              >
+                {tabServices.map((service) => (
+                  <label key={service.id} className="flex items-center gap-3 p-3 border rounded-lg bg-white">
+                    <input
+                      type="checkbox"
+                      checked={selectedServices.some((s) => s.id === service.id)}
+                      onChange={() => {
+                        setSelectedServices((prev) =>
+                          prev.some((s) => s.id === service.id)
+                            ? prev.filter((s) => s.id !== service.id)
+                            : [...prev, service],
+                        )
+                      }}
+                      className="h-5 w-5 rounded border"
+                      style={{ 
+                        borderColor: `${appColors.primary}60`,
+                        color: appColors.primary,
+                        ["--tw-ring-color" as any]: appColors.primary
+                      }}
+                    />
+                    <span className="text-base flex-1">{service.name}</span>
+                    <span className="text-sm text-gray-500">{service.category}</span>
+                  </label>
+                ))}
+              </TabsContent>
+            ))}
+          </Tabs>
+        </div>
+
+        {/* Profesional */}
+        <div className="space-y-2">
+          <h2 className="text-lg font-semibold" style={{ color: appColors.primary }}>Profesional</h2>
+          <Select value={professional} onValueChange={setProfessional}>
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Seleccionar profesional" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="prof1">Profesional 1</SelectItem>
+              <SelectItem value="prof2">Profesional 2</SelectItem>
+              <SelectItem value="prof3">Profesional 3</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Botones de guardar y cancelar */}
+        <div className="pt-4 space-y-2">
+          <Button 
+            className="w-full text-white" 
+            style={{ backgroundColor: appColors.buttonBg }}
+            onClick={handleSave}
+          >
+            Guardar cita
+          </Button>
+          <Button 
+            variant="outline" 
+            className="w-full" 
+            onClick={onClose}
+          >
+            Cancelar
+          </Button>
         </div>
       </div>
 
