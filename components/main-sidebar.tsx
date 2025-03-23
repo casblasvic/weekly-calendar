@@ -470,63 +470,44 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
     setIsUserMenuOpen(false);
   }, [pathname]);
 
-  // Posicionar correctamente el menú de usuario - hacia arriba
+  // Posicionar correctamente el menú de usuario
   useEffect(() => {
     if (isUserMenuOpen && avatarRef.current) {
       const rect = avatarRef.current.getBoundingClientRect();
       const menuElement = document.querySelector('.user-menu') as HTMLElement;
-      
       if (menuElement) {
-        // Temporalmente colocar el menú fuera de vista para medir su altura natural
-        menuElement.style.position = "fixed";
-        menuElement.style.left = "-9999px";
-        menuElement.style.top = "0";
-        menuElement.style.visibility = "hidden";
-        menuElement.style.maxHeight = "none";
-        
-        // Forzar reflow para obtener dimensiones reales
-        document.body.appendChild(document.createTextNode(''));
-        const menuHeight = menuElement.scrollHeight;
+        const viewportHeight = window.innerHeight;
         
         if (forceMobileView) {
-          // En móvil, posicionar encima del avatar
+          // En móvil, posicionar en la parte superior de la pantalla
           menuElement.style.left = "0px";
+          menuElement.style.top = "0px";
           menuElement.style.width = "100%";
-          menuElement.style.bottom = `${window.innerHeight - rect.top + 5}px`;
-          menuElement.style.top = "auto";
+          menuElement.style.maxHeight = "100vh";
+          menuElement.style.height = "auto";
+          menuElement.style.position = "fixed";
         } else {
-          // En escritorio, posicionar encima del avatar
-          // Ajustar la posición horizontal según si la barra está plegada o desplegada
-          if (isCollapsed) {
-            // Cuando la barra está plegada, posicionar más a la derecha
-            menuElement.style.left = "65px"; // Ajustado para mejor alineación
-          } else {
-            menuElement.style.left = "64px";
-          }
-          
-          // Ajustar el ancho según el estado de la barra
-          menuElement.style.width = isCollapsed ? "260px" : "240px";
-          
-          // Posicionar verticalmente - mucho más cerca del avatar cuando la barra está plegada
-          const verticalOffset = isCollapsed ? 5 : 20;
-          menuElement.style.bottom = `${window.innerHeight - rect.top + verticalOffset}px`;
+          // En escritorio, posicionar al lado del menú lateral
+          const sidebarWidth = isCollapsed ? 56 : 256;
+          menuElement.style.left = `${sidebarWidth}px`;
           menuElement.style.top = "auto";
           
-          // Ajustar espacio disponible según el estado de la barra
-          const topMargin = isCollapsed ? 10 : 40;
-          const availableSpace = rect.top - topMargin;
+          // Ajustar para que quede a la altura del botón de usuario
+          const buttonBottom = rect.bottom;
+          const menuHeight = Math.min(350, viewportHeight - 100); // Altura máxima razonable
+          const topPosition = buttonBottom - menuHeight + 10;
           
-          if (menuHeight > availableSpace) {
-            menuElement.style.maxHeight = `${availableSpace}px`;
-            menuElement.style.overflowY = "auto";
-          } else {
-            menuElement.style.maxHeight = "none";
-            menuElement.style.overflowY = "visible";
-          }
+          menuElement.style.top = `${topPosition > 10 ? topPosition : 10}px`;
+          menuElement.style.maxHeight = `${menuHeight}px`;
+          menuElement.style.width = "280px";
+          menuElement.style.position = "fixed";
         }
         
-        // Mostrar el menú
+        // Asegurarse de que sea visible
+        menuElement.style.zIndex = "9999";
+        menuElement.style.overflowY = "auto";
         menuElement.style.visibility = "visible";
+        menuElement.style.opacity = "1";
       }
     }
   }, [isUserMenuOpen, isCollapsed, forceMobileView]);
@@ -655,14 +636,33 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
         if (menuElement) {
           // En móvil, el menú se posiciona debajo del botón
           if (forceMobileView) {
-            menuElement.style.left = "0px";
-            menuElement.style.width = "100%";
-            menuElement.style.top = `${rect.bottom + 5}px`;
+            const viewportHeight = window.innerHeight;
+            const menuHeight = 320; // Altura aproximada del menú
+            
+            // Si no hay suficiente espacio abajo, posicionarlo arriba
+            if (rect.bottom + menuHeight > viewportHeight) {
+              menuElement.style.left = "0px";
+              menuElement.style.width = "100%";
+              menuElement.style.bottom = `${viewportHeight - rect.top}px`;
+              menuElement.style.top = "auto";
+              menuElement.style.maxHeight = `${rect.top - 10}px`;
+            } else {
+              menuElement.style.left = "0px";
+              menuElement.style.width = "100%";
+              menuElement.style.top = `${rect.bottom + 5}px`;
+              menuElement.style.bottom = "auto";
+              menuElement.style.maxHeight = `${viewportHeight - rect.bottom - 15}px`;
+            }
           } else {
             // En escritorio, a la derecha alineado con los otros menús
             menuElement.style.left = `${rect.right}px`;
             menuElement.style.top = `${rect.top}px`;
+            menuElement.style.maxHeight = "80vh";
           }
+          
+          // Asegurarse de que sea visible
+          menuElement.style.zIndex = "9999";
+          menuElement.style.overflowY = "auto";
         }
       }
     }
@@ -676,14 +676,33 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
       if (menuElement) {
         // En móvil, el menú se posiciona debajo del selector
         if (forceMobileView) {
-          menuElement.style.left = "0px";
-          menuElement.style.width = "100%";
-          menuElement.style.top = `${rect.bottom + 5}px`;
+          const viewportHeight = window.innerHeight;
+          const menuHeight = 300; // Altura aproximada del menú
+          
+          // Si no hay suficiente espacio abajo, posicionarlo arriba
+          if (rect.bottom + menuHeight > viewportHeight) {
+            menuElement.style.left = "0px";
+            menuElement.style.width = "100%";
+            menuElement.style.bottom = `${viewportHeight - rect.top}px`;
+            menuElement.style.top = "auto";
+            menuElement.style.maxHeight = `${rect.top - 10}px`;
+          } else {
+            menuElement.style.left = "0px";
+            menuElement.style.width = "100%";
+            menuElement.style.top = `${rect.bottom + 5}px`;
+            menuElement.style.bottom = "auto";
+            menuElement.style.maxHeight = `${viewportHeight - rect.bottom - 15}px`;
+          }
         } else {
           // En escritorio, a la derecha alineado con los otros menús
           menuElement.style.left = `${rect.right}px`;
           menuElement.style.top = `${rect.top}px`;
+          menuElement.style.maxHeight = "80vh";
         }
+        
+        // Asegurarse de que sea visible
+        menuElement.style.zIndex = "9999";
+        menuElement.style.overflowY = "auto";
       }
     }
   }, [isClinicSelectorOpen, isClinicHovered, isCollapsed, forceMobileView]);
@@ -1122,22 +1141,23 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
               className="fixed user-menu rounded-md border bg-white shadow-lg z-[99999] visible"
               style={{ 
                 position: "fixed", 
-                left: "auto",
+                left: forceMobileView ? "0" : "auto",
                 top: "auto",
                 bottom: "auto",
-                width: "280px",
+                width: forceMobileView ? "100%" : "280px",
                 display: "block",
                 visibility: "visible" as const,
                 opacity: 1,
                 pointerEvents: "auto" as const,
                 overflowY: "auto",
+                maxHeight: "calc(100vh - 150px)",
                 boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
                 borderRadius: '0.375rem',
                 transformOrigin: 'bottom center'
               }}
               onClick={(e) => e.stopPropagation()}
-              onMouseEnter={() => setIsUserMenuOpen(true)}
-              onMouseLeave={() => setTimeout(() => setIsUserMenuOpen(false), 1500)}
+              onMouseEnter={() => !forceMobileView && setIsUserMenuOpen(true)}
+              onMouseLeave={() => !forceMobileView && setTimeout(() => setIsUserMenuOpen(false), 1500)}
             >
               <div className="flex flex-col">
                 <div className="flex items-center gap-3 p-3 border-b">

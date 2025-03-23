@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { getServicioById, updateServicio } from '@/contexts/servicios-context';
+import { useServicio, Servicio } from '@/contexts/servicios-context';
 import { calcularPrecioSinIVA } from '@/utils/utils';
 import { Button } from '@/components/ui/button';
 
@@ -11,8 +11,9 @@ const EditarServicio = ({ params }) => {
   const servicioId = params?.id || 'some-id'; // Obtener de params
   const tarifaId = params?.id || 'some-tarifa-id'; // Obtener de params
   const tiposIVA = []; // Reemplazar con los tipos de IVA reales
+  const { getServicioById, actualizarServicio } = useServicio();
 
-  const [servicio, setServicio] = useState({});
+  const [servicio, setServicio] = useState<Partial<Servicio>>({});
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -23,7 +24,7 @@ const EditarServicio = ({ params }) => {
       console.log("Servicio cargado:", servicioExistente);
       console.log("IVA del servicio:", tiposIVA?.find(t => t.id === servicioExistente.ivaId));
     }
-  }, [servicioId, tiposIVA]);
+  }, [servicioId, tiposIVA, getServicioById]);
 
   const handleGuardarServicio = () => {
     if (!servicio.nombre) {
@@ -41,12 +42,12 @@ const EditarServicio = ({ params }) => {
     const servicioActualizado = {
       ...servicio,
       ivaId: servicio.ivaId,
-      precioSinIVA: calcularPrecioSinIVA(servicio.precioConIVA, servicio.ivaId),
+      precioSinIVA: calcularPrecioSinIVA(parseFloat(servicio.precioConIVA || "0"), servicio.ivaId),
     };
 
     console.log("Actualizando servicio:", servicioActualizado);
 
-    updateServicio(servicioId, servicioActualizado);
+    actualizarServicio(servicioId, servicioActualizado);
 
     setTimeout(() => {
       setIsSaving(false);
