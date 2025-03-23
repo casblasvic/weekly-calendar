@@ -204,8 +204,31 @@ export function LayoutWrapper({ children }: LayoutWrapperProps) {
 
       {/* Menús flotantes */}
       <div className="fixed right-0 top-0 z-[9999] space-y-1 p-3">
-        <FloatingClientMenu onOutsideClick={() => {}} autoCollapseTimeout={8000} />
-        <FloatingStaffMenu onOutsideClick={() => {}} offsetY={60} autoCollapseTimeout={8000} />
+        <FloatingClientMenu 
+          onOutsideClick={() => {}}
+          autoCollapseTimeout={8000}
+          onMenuToggle={() => {
+            // Cerrar el menú de personal cuando se abre el menú de cliente
+            const staffMenuElement = document.querySelector('.floating-staff-menu');
+            if (staffMenuElement) {
+              const event = new CustomEvent('close-menu', { bubbles: true });
+              staffMenuElement.dispatchEvent(event);
+            }
+          }}
+        />
+        <FloatingStaffMenu 
+          onOutsideClick={() => {}} 
+          offsetY={60}
+          autoCollapseTimeout={8000}
+          onMenuToggle={() => {
+            // Cerrar el menú de cliente cuando se abre el menú de personal
+            const clientMenuElement = document.querySelector('.floating-client-menu');
+            if (clientMenuElement) {
+              const event = new CustomEvent('close-menu', { bubbles: true });
+              clientMenuElement.dispatchEvent(event);
+            }
+          }}
+        />
       </div>
 
       {/* Contenido principal */}

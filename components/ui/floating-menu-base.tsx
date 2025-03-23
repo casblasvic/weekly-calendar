@@ -15,6 +15,7 @@ interface FloatingMenuBaseProps {
   children?: React.ReactNode
   offsetY?: number // Nueva prop para posicionamiento vertical
   autoCollapseTimeout?: number // Tiempo en ms para colapsar automáticamente
+  onMenuToggle?: (isOpen?: boolean) => void // Callback para notificar apertura/cierre del menú con parámetro opcional
 }
 
 export function FloatingMenuBase({ 
@@ -26,7 +27,8 @@ export function FloatingMenuBase({
   label,
   children,
   offsetY = 0,
-  autoCollapseTimeout = 5000 // 5 segundos por defecto
+  autoCollapseTimeout = 5000, // 5 segundos por defecto
+  onMenuToggle,
 }: FloatingMenuBaseProps) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [isOpen, setIsOpen] = useState(false)
@@ -35,6 +37,21 @@ export function FloatingMenuBase({
 
   // Si no es visible, no renderizamos nada
   if (!isVisible) return null
+
+  // Efecto para escuchar el evento 'close-menu'
+  useEffect(() => {
+    const handleCloseMenu = () => {
+      setIsOpen(false);
+      setIsExpanded(false);
+    };
+
+    if (menuRef.current) {
+      menuRef.current.addEventListener('close-menu', handleCloseMenu);
+      return () => {
+        menuRef.current?.removeEventListener('close-menu', handleCloseMenu);
+      };
+    }
+  }, []);
 
   // Efecto para colapsar automáticamente después de un tiempo de inactividad
   useEffect(() => {
@@ -50,6 +67,7 @@ export function FloatingMenuBase({
         autoCollapseTimerRef.current = setTimeout(() => {
           setIsExpanded(false);
           setIsOpen(false);
+          onMenuToggle?.(false); // Notificar el cierre
         }, autoCollapseTimeout);
       }
     };
@@ -82,7 +100,7 @@ export function FloatingMenuBase({
         menuRef.current.removeEventListener('click', resetTimer);
       }
     };
-  }, [isExpanded, autoCollapseTimeout]);
+  }, [isExpanded, autoCollapseTimeout, onMenuToggle]);
 
   // Cerrar el menú cuando se hace clic fuera
   useEffect(() => {
@@ -113,7 +131,8 @@ export function FloatingMenuBase({
         className
       )}
       style={{
-        top: `${12 + offsetY}px`
+        top: `${4 + offsetY}px`,
+        right: '2px'
       }}
     >
       <div className="relative flex items-center">
@@ -130,10 +149,16 @@ export function FloatingMenuBase({
               variant="ghost"
               size="icon"
               className={cn(
-                "w-12 h-12 rounded-full relative group",
+                "w-12 h-12 rounded-full relative group shadow-lg",
                 `bg-${color}-600 text-white hover:bg-${color}-700`
               )}
-              onClick={() => setIsOpen(!isOpen)}
+              style={{
+                boxShadow: `0 4px 14px rgba(0, 0, 0, 0.15)`
+              }}
+              onClick={() => {
+                setIsOpen(!isOpen)
+                onMenuToggle?.(!isOpen)
+              }}
               title={label}
             >
               {icon}
@@ -148,6 +173,7 @@ export function FloatingMenuBase({
                   e.stopPropagation()
                   setIsExpanded(false)
                   setIsOpen(false)
+                  onMenuToggle?.(false)
                 }}
               >
                 <ChevronRight className="w-4 h-4" />
@@ -157,7 +183,7 @@ export function FloatingMenuBase({
             // Flecha de expansión cuando está plegado
             <div 
               className={cn(
-                "w-8 h-12 -ml-2 flex items-center justify-center cursor-pointer",
+                "w-8 h-12 -ml-2 flex items-center justify-center cursor-pointer shadow-md",
                 "rounded-l-lg transition-colors",
                 `bg-${color}-600 hover:bg-${color}-700 text-white`
               )}
@@ -168,15 +194,59 @@ export function FloatingMenuBase({
           )}
         </div>
 
-        {/* Contenido del menú */}
+        {/* Contenido del menú - ajustado para aparecer a la izquierda del botón */}
         {isExpanded && isOpen && (
           <div 
             className={cn(
-              "absolute right-0 top-14",
-              "animate-in fade-in-0 slide-in-from-right-1/4 duration-200"
+              "absolute overflow-hidden",
+              color === "purple" ? "bg-white rounded-md border" : "bg-transparent"
             )}
+            style={{
+              right: color === "blue" ? "35px" : "60px", // Posición del menú - Personal más a la derecha
+              top: color === "blue" ? "20px" : "0px", // Menú de personal más hacia abajo
+              transform: "translateY(0)",
+              boxShadow: color === "purple" ? "0 8px 30px rgba(0, 0, 0, 0.16)" : "none",
+              zIndex: 999999,
+              minWidth: color === "purple" ? "200px" : "85px", // Más estrecho para el menú de personal
+              maxWidth: color === "purple" ? "220px" : "85px", // Más estrecho para el menú de personal
+              // No permite que se salga de la pantalla a la izquierda
+              maxHeight: "calc(100vh - 20px)",
+              width: "auto"
+            }}
           >
-            {children}
+            <style jsx global>{`
+              @keyframes floatingMenuAppear {
+                0% { 
+                  opacity: 0; 
+                  transform: translateX(10px) scale(0.96);
+                }
+                100% { 
+                  opacity: 1; 
+                  transform: translateX(0) scale(1);
+                }
+              }
+              
+              /* Animación más suave y elegante */
+              .menu-content-appear {
+                animation: floatingMenuAppear 0.25s cubic-bezier(0.15, 1.15, 0.6, 1.0) forwards;
+              }
+            `}</style>
+            
+            {/* Indicador triangular que apunta hacia la derecha - solo para el menú de clientes */}
+            {color === "purple" && (
+              <div className="absolute top-6 -right-[6px] z-10">
+                <div 
+                  className="w-3 h-3 rotate-45 bg-white border-r border-t"
+                  style={{
+                    boxShadow: "2px -1px 2px rgba(0, 0, 0, 0.03)"
+                  }}
+                ></div>
+              </div>
+            )}
+            
+            <div className="menu-content-appear">
+              {children}
+            </div>
           </div>
         )}
       </div>
