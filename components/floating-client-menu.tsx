@@ -126,21 +126,12 @@ export function FloatingClientMenu({ className, onOutsideClick }: FloatingClient
         className
       )}
     >
-      <div 
-        className={cn(
-          "transition-all duration-300 ease-in-out relative",
-          isOpen ? "w-80" : "w-12",
-          "bg-white rounded-lg shadow-lg border"
-        )}
-      >
+      <div className="relative">
         {/* Botón circular para abrir/cerrar */}
         <Button
           variant="ghost"
           size="icon"
-          className={cn(
-            "w-12 h-12 rounded-full bg-purple-600 text-white hover:bg-purple-700",
-            isOpen ? "absolute right-0 top-0" : "relative"
-          )}
+          className="w-12 h-12 rounded-full bg-purple-600 text-white hover:bg-purple-700"
           onClick={() => setIsOpen(!isOpen)}
         >
           <User className="w-6 h-6" />
@@ -148,9 +139,9 @@ export function FloatingClientMenu({ className, onOutsideClick }: FloatingClient
 
         {/* Contenido del menú */}
         {isOpen && (
-          <div className="pl-4 pr-16 mt-2">
+          <div className="absolute right-0 top-14 w-80 bg-white rounded-lg shadow-lg border">
             {/* Información del cliente */}
-            <div className="py-4">
+            <div className="p-4">
               <div className="flex items-center space-x-3">
                 <div className="flex items-center justify-center w-10 h-10 text-lg font-medium text-purple-600 bg-purple-100 rounded-full">
                   {lastClient.name.charAt(0)}
@@ -165,7 +156,7 @@ export function FloatingClientMenu({ className, onOutsideClick }: FloatingClient
             </div>
 
             {/* Menú de opciones */}
-            <div className="pb-4 space-y-1">
+            <div className="px-4 pb-4 space-y-1">
               {menuItems.map((item) => (
                 <Button
                   key={item.id}
