@@ -111,7 +111,27 @@ export function FloatingClientMenu({ className, onOutsideClick, autoCollapseTime
     const url = item.href.replace('[id]', lastClient.id)
     router.push(url)
     setActiveSection(null)
+    
+    // Plegar todos los menús flotantes
+    foldAllFloatingMenus()
   }
+  
+  // Función para plegar todos los menús flotantes
+  const foldAllFloatingMenus = () => {
+    // Cerrar los menús flotantes de cliente
+    const clientMenuElement = document.querySelector('.floating-client-menu');
+    if (clientMenuElement) {
+      const event = new CustomEvent('close-menu', { bubbles: true });
+      clientMenuElement.dispatchEvent(event);
+    }
+    
+    // Cerrar los menús flotantes de personal
+    const staffMenuElement = document.querySelector('.floating-staff-menu');
+    if (staffMenuElement) {
+      const event = new CustomEvent('close-menu', { bubbles: true });
+      staffMenuElement.dispatchEvent(event);
+    }
+  };
 
   const menuContent = (
     <div className="bg-white rounded-md overflow-hidden" style={{ width: "210px" }}>

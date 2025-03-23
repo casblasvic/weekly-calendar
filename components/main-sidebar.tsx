@@ -477,15 +477,27 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
       const menuElement = document.querySelector('.user-menu') as HTMLElement;
       if (menuElement) {
         const viewportHeight = window.innerHeight;
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
         
         if (forceMobileView) {
-          // En móvil, posicionar en la parte superior de la pantalla
-          menuElement.style.left = "0px";
-          menuElement.style.top = "0px";
-          menuElement.style.width = "100%";
-          menuElement.style.maxHeight = "100vh";
-          menuElement.style.height = "auto";
+          // En móvil, posicionar en la parte superior
           menuElement.style.position = "fixed";
+          menuElement.style.left = "0px";
+          menuElement.style.top = isIOS ? "50px" : "0px"; // En iOS dar un margen superior
+          menuElement.style.width = "100%";
+          menuElement.style.maxHeight = isIOS ? "90vh" : "100vh";
+          menuElement.style.height = "auto";
+          menuElement.style.overflowY = "auto";
+          // Mejorar scroll en iOS con propiedad vendor prefixed
+          (menuElement.style as any).WebkitOverflowScrolling = "touch";
+          
+          // Para iPhone/iOS, asegurar que esté en el viewport
+          if (isIOS) {
+            menuElement.style.transform = "translateZ(0)"; // Activar hardware acceleration
+            setTimeout(() => {
+              window.scrollTo(0, 0); // Asegurar scroll al inicio
+            }, 100);
+          }
         } else {
           // En escritorio, posicionar al lado del menú lateral
           const sidebarWidth = isCollapsed ? 56 : 256;
@@ -494,7 +506,7 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
           
           // Ajustar para que quede a la altura del botón de usuario
           const buttonBottom = rect.bottom;
-          const menuHeight = Math.min(350, viewportHeight - 100); // Altura máxima razonable
+          const menuHeight = Math.min(350, viewportHeight - 100);
           const topPosition = buttonBottom - menuHeight + 10;
           
           menuElement.style.top = `${topPosition > 10 ? topPosition : 10}px`;
@@ -504,7 +516,7 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
         }
         
         // Asegurarse de que sea visible
-        menuElement.style.zIndex = "9999";
+        menuElement.style.zIndex = "99999"; // Mayor z-index
         menuElement.style.overflowY = "auto";
         menuElement.style.visibility = "visible";
         menuElement.style.opacity = "1";
@@ -634,24 +646,36 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
         const rect = buttonElement.getBoundingClientRect();
         const menuElement = document.querySelector('.notifications-menu') as HTMLElement;
         if (menuElement) {
-          // En móvil, el menú se posiciona debajo del botón
+          const viewportHeight = window.innerHeight;
+          const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+          
+          // En móvil, posicionar debajo o arriba según el espacio disponible
           if (forceMobileView) {
-            const viewportHeight = window.innerHeight;
-            const menuHeight = 320; // Altura aproximada del menú
-            
-            // Si no hay suficiente espacio abajo, posicionarlo arriba
-            if (rect.bottom + menuHeight > viewportHeight) {
+            // En iOS, dar más margen y usar hardware acceleration
+            if (isIOS) {
+              menuElement.style.position = "fixed";
               menuElement.style.left = "0px";
+              menuElement.style.top = "50px";
               menuElement.style.width = "100%";
-              menuElement.style.bottom = `${viewportHeight - rect.top}px`;
-              menuElement.style.top = "auto";
-              menuElement.style.maxHeight = `${rect.top - 10}px`;
+              menuElement.style.maxHeight = "80vh";
+              menuElement.style.transform = "translateZ(0)";
+              (menuElement.style as any).WebkitOverflowScrolling = "touch";
             } else {
+              const menuHeight = 320; // Altura aproximada del menú
+              
+              // Si no hay suficiente espacio abajo, posicionarlo arriba
+              if (rect.bottom + menuHeight > viewportHeight) {
+                menuElement.style.bottom = `${viewportHeight - rect.top}px`;
+                menuElement.style.top = "auto";
+                menuElement.style.maxHeight = `${rect.top - 10}px`;
+              } else {
+                // Hay espacio abajo, mostrar debajo
+                menuElement.style.top = `${rect.bottom + 5}px`;
+                menuElement.style.bottom = "auto";
+                menuElement.style.maxHeight = `${viewportHeight - rect.bottom - 15}px`;
+              }
               menuElement.style.left = "0px";
               menuElement.style.width = "100%";
-              menuElement.style.top = `${rect.bottom + 5}px`;
-              menuElement.style.bottom = "auto";
-              menuElement.style.maxHeight = `${viewportHeight - rect.bottom - 15}px`;
             }
           } else {
             // En escritorio, a la derecha alineado con los otros menús
@@ -661,7 +685,7 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
           }
           
           // Asegurarse de que sea visible
-          menuElement.style.zIndex = "9999";
+          menuElement.style.zIndex = "99999";
           menuElement.style.overflowY = "auto";
         }
       }
@@ -674,24 +698,35 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
       const rect = clinicRef.current.getBoundingClientRect();
       const menuElement = document.querySelector('.clinic-selector-menu') as HTMLElement;
       if (menuElement) {
-        // En móvil, el menú se posiciona debajo del selector
+        const viewportHeight = window.innerHeight;
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+        
+        // En móvil, posicionar el menú
         if (forceMobileView) {
-          const viewportHeight = window.innerHeight;
-          const menuHeight = 300; // Altura aproximada del menú
-          
-          // Si no hay suficiente espacio abajo, posicionarlo arriba
-          if (rect.bottom + menuHeight > viewportHeight) {
+          // En iOS, dar más margen y usar hardware acceleration
+          if (isIOS) {
+            menuElement.style.position = "fixed";
             menuElement.style.left = "0px";
+            menuElement.style.top = "50px";
             menuElement.style.width = "100%";
-            menuElement.style.bottom = `${viewportHeight - rect.top}px`;
-            menuElement.style.top = "auto";
-            menuElement.style.maxHeight = `${rect.top - 10}px`;
+            menuElement.style.maxHeight = "80vh";
+            menuElement.style.transform = "translateZ(0)";
+            (menuElement.style as any).WebkitOverflowScrolling = "touch";
           } else {
+            const menuHeight = 300; // Altura aproximada del menú
+            
+            // Si no hay suficiente espacio abajo, posicionarlo arriba
+            if (rect.bottom + menuHeight > viewportHeight) {
+              menuElement.style.bottom = `${viewportHeight - rect.top}px`;
+              menuElement.style.top = "auto";
+              menuElement.style.maxHeight = `${rect.top - 10}px`;
+            } else {
+              menuElement.style.top = `${rect.bottom + 5}px`;
+              menuElement.style.bottom = "auto";
+              menuElement.style.maxHeight = `${viewportHeight - rect.bottom - 15}px`;
+            }
             menuElement.style.left = "0px";
             menuElement.style.width = "100%";
-            menuElement.style.top = `${rect.bottom + 5}px`;
-            menuElement.style.bottom = "auto";
-            menuElement.style.maxHeight = `${viewportHeight - rect.bottom - 15}px`;
           }
         } else {
           // En escritorio, a la derecha alineado con los otros menús
@@ -701,11 +736,67 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
         }
         
         // Asegurarse de que sea visible
-        menuElement.style.zIndex = "9999";
+        menuElement.style.zIndex = "99999";
         menuElement.style.overflowY = "auto";
+        menuElement.style.visibility = "visible";
+        menuElement.style.opacity = "1";
       }
     }
   }, [isClinicSelectorOpen, isClinicHovered, isCollapsed, forceMobileView]);
+
+  // Efecto para evitar problemas de scroll en iOS cuando hay un menú abierto
+  useEffect(() => {
+    // Comprobar si es un dispositivo iOS
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+    
+    // Solo aplicar en iOS y en modo móvil
+    if (isIOS && forceMobileView) {
+      const isAnyMenuOpen = isUserMenuOpen || showNotifications || isClinicSelectorOpen;
+      const body = document.body;
+      
+      if (isAnyMenuOpen) {
+        // Guardar la posición actual del scroll
+        const scrollPos = window.scrollY;
+        body.style.position = 'fixed';
+        body.style.top = `-${scrollPos}px`;
+        body.style.width = '100%';
+        body.style.height = '100%';
+        body.style.overflow = 'hidden';
+        
+        // Guardar la posición del scroll como atributo de datos
+        body.dataset.scrollPos = scrollPos.toString();
+      } else {
+        // Restaurar la posición del scroll
+        if (body.style.position === 'fixed') {
+          body.style.position = '';
+          body.style.top = '';
+          body.style.width = '';
+          body.style.height = '';
+          body.style.overflow = '';
+          
+          // Recuperar la posición del scroll guardada
+          const scrollPos = parseInt(body.dataset.scrollPos || '0', 10);
+          window.scrollTo(0, scrollPos);
+        }
+      }
+    }
+    
+    return () => {
+      // Limpiar en el desmontaje
+      if (isIOS && forceMobileView) {
+        const body = document.body;
+        if (body.style.position === 'fixed') {
+          const scrollPos = parseInt(body.dataset.scrollPos || '0', 10);
+          body.style.position = '';
+          body.style.top = '';
+          body.style.width = '';
+          body.style.height = '';
+          body.style.overflow = '';
+          window.scrollTo(0, scrollPos);
+        }
+      }
+    };
+  }, [isUserMenuOpen, showNotifications, isClinicSelectorOpen, forceMobileView]);
 
   return (
     <div

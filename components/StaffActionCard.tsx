@@ -73,6 +73,23 @@ export function StaffActionCard({ person, onClose }: StaffActionCardProps) {
     item => person.isOnline || item.showWhenOffline
   );
 
+  // Función para plegar todos los menús flotantes
+  const foldAllFloatingMenus = () => {
+    // Cerrar los menús flotantes de personal
+    const staffMenuElement = document.querySelector('.floating-staff-menu');
+    if (staffMenuElement) {
+      const event = new CustomEvent('close-menu', { bubbles: true });
+      staffMenuElement.dispatchEvent(event);
+    }
+    
+    // Cerrar los menús flotantes de cliente
+    const clientMenuElement = document.querySelector('.floating-client-menu');
+    if (clientMenuElement) {
+      const event = new CustomEvent('close-menu', { bubbles: true });
+      clientMenuElement.dispatchEvent(event);
+    }
+  };
+
   return (
     <div 
       className="w-[170px] bg-white rounded-lg shadow-lg overflow-hidden"
@@ -122,6 +139,8 @@ export function StaffActionCard({ person, onClose }: StaffActionCardProps) {
               e.stopPropagation();
               action.action(person.id);
               onClose();
+              // Plegar todos los menús flotantes
+              foldAllFloatingMenus();
             }}
           >
             <action.icon className="w-3.5 h-3.5 mr-2 text-blue-500" />
