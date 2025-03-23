@@ -108,6 +108,7 @@ const MenuItemComponent = ({
   openMenus,
   toggleMenu,
   isMobile = false,
+  onToggle,
 }: {
   item: MenuItem
   depth?: number
@@ -115,6 +116,7 @@ const MenuItemComponent = ({
   openMenus: Set<string>
   toggleMenu: (id: string) => void
   isMobile?: boolean
+  onToggle?: () => void
 }) => {
   const router = useRouter()
   const pathname = usePathname()
@@ -131,14 +133,18 @@ const MenuItemComponent = ({
     e.stopPropagation();
     
     if (hasSubmenu) {
-      // Toggle submenu
+      // Solo toggle del submenú, sin plegar la barra
       toggleMenu(item.id);
     } else if (item.href) {
       try {
+        // Si vamos a navegar a una ruta, cerramos menús y plegamos la barra
         router.push(item.href);
         toggleMenu(""); // Close all menus when navigating
+        // Plegar la barra SOLO si vamos a una ruta y no es modo móvil
+        if (!isMobile && !isCollapsed && onToggle) {
+          onToggle();
+        }
       } catch (error) {
-        // Silenciar errores en producción, registrar solo en desarrollo
         if (process.env.NODE_ENV !== 'production') {
           console.warn("Error al navegar:", error);
         }
@@ -304,6 +310,7 @@ const MenuItemComponent = ({
               openMenus={openMenus}
               toggleMenu={toggleMenu}
               isMobile={isMobile}
+              onToggle={onToggle}
             />
           ))}
         </div>
@@ -398,6 +405,11 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
     setIsClinicSelectorOpen(false)
     setIsClinicHovered(false)
     setClinicSearchTerm("")
+    
+    // Plegar la barra si no está en modo móvil
+    if (!forceMobileView && !isCollapsed && onToggle) {
+      onToggle()
+    }
   }
 
   const filteredClinics = useMemo(() => {
@@ -485,12 +497,17 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
       const target = event.target as Node
       const sidebarElement = document.getElementById("main-sidebar")
       
-      // Si el clic es fuera de la barra lateral, cerrar todos los menús
+      // Si el clic es fuera de la barra lateral
       if (sidebarElement && !sidebarElement.contains(target)) {
+        // Cerrar todos los menús
         closeAllMenus()
         setIsUserMenuOpen(false)
         setIsClinicSelectorOpen(false)
         setIsClinicHovered(false)
+        // Plegar la barra si no está en modo móvil
+        if (!forceMobileView && onToggle && !isCollapsed) {
+          onToggle()
+        }
       }
     }
 
@@ -498,7 +515,7 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
     return () => {
       document.removeEventListener("mousedown", handleClickOutsideSidebar)
     }
-  }, [closeAllMenus])
+  }, [closeAllMenus, forceMobileView, onToggle, isCollapsed])
 
   // Cierre global de menús cuando se navega
   useEffect(() => {
@@ -570,31 +587,35 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
             </Button>
             
             {/* Logo optimizado para ser visible colapsado y expandido */}
-            <div className="flex flex-col min-w-0">
-              <div className="flex items-center">
+            <div className="flex flex-col min-w-0 flex-1">
+              <div className="flex items-center justify-center">
                 {hasMounted && theme?.logoUrl && !logoError ? (
                   <img 
                     src={theme.logoUrl} 
                     alt="Logo" 
                     className={cn(
-                      "h-8 object-contain", 
-                      isCollapsed ? "max-w-[30px]" : "max-w-[100px]"
+                      "object-contain transition-all duration-300", 
+                      isCollapsed ? "h-6 max-w-[24px]" : "h-8 max-w-[120px]"
                     )}
+                    style={{
+                      imageRendering: '-webkit-optimize-contrast',
+                      backfaceVisibility: 'hidden'
+                    }}
                     onError={() => setLogoError(true)}
                   />
                 ) : (
                   <div className={cn(
-                    "font-semibold truncate", 
+                    "font-semibold truncate transition-all duration-300", 
                     isCollapsed ? "text-base w-6" : "text-lg"
                   )}>
-                    {isCollapsed ? "L" : "LOGO"}
+                    {isCollapsed ? "H" : "HOHBERG"}
                   </div>
                 )}
               </div>
               
               {/* Mostrar fecha en dos líneas si no está colapsado */}
               {!isCollapsed && (
-                <div className="text-xs truncate text-white/90">{currentDate}</div>
+                <div className="text-xs truncate text-white/90 text-center">{currentDate}</div>
               )}
             </div>
           </div>
@@ -632,10 +653,20 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
           
           <div 
             className="relative flex-shrink-0"
+            onMouseEnter={() => !isMobile && setShowNotifications(true)}
+            onMouseLeave={() => !isMobile && setShowNotifications(false)}
           >
             <button
               id="notifications-button"
-              className="relative p-2 rounded-full hover:bg-purple-100"
+              className={cn(
+                "relative rounded-full hover:bg-purple-100 transition-all duration-300",
+                isCollapsed ? "p-3" : "p-2"
+              )}
+              style={{
+                transform: 'translate3d(0,0,0)',
+                backfaceVisibility: 'hidden',
+                willChange: 'transform'
+              }}
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -646,22 +677,34 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
                 setShowNotifications(!showNotifications);
               }}
             >
-              <Bell className="w-5 h-5 text-purple-600" />
-              <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full" />
+              <Bell className={cn(
+                "text-purple-600 transition-all duration-300",
+                isCollapsed ? "w-6 h-6" : "w-5 h-5"
+              )} />
+              <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
             </button>
 
             {showNotifications && (
               <div 
-                className="fixed mt-2 w-80 bg-white rounded-md shadow-lg border overflow-hidden z-[999999] notifications-menu"
+                className="fixed mt-2 w-80 bg-white rounded-md shadow-lg border overflow-hidden notifications-menu"
                 style={{
-                  top: "50px", // Posición fija desde arriba
-                  left: isCollapsed ? "70px" : "270px", // Cambiado de right a left para alinearlo con la barra lateral
+                  position: "fixed", 
+                  left: isCollapsed ? "4.5rem" : "17rem", // ~70px : ~270px
+                  top: "50px",
+                  zIndex: 999999,
+                  display: "block",
+                  visibility: "visible",
+                  opacity: 1,
                   maxHeight: "calc(100vh - 100px)",
                   overflowY: "auto",
-                  display: "block",
-                  visibility: "visible" as const,
+                  transform: 'translate3d(0,0,0)',
+                  backfaceVisibility: 'hidden',
+                  willChange: 'transform',
+                  pointerEvents: 'auto'
                 }}
                 onClick={(e) => e.stopPropagation()}
+                onMouseEnter={() => !isMobile && setShowNotifications(true)}
+                onMouseLeave={() => !isMobile && setShowNotifications(false)}
               >
                 <div className="flex items-center justify-between p-3 border-b">
                   <h3 className="font-semibold">Notificaciones</h3>
@@ -735,9 +778,24 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
       <div
         ref={clinicRef}
         className="relative p-2 border-b"
+        style={{ 
+          isolation: 'isolate',
+          position: 'relative',
+          zIndex: 50 // Aseguramos que el contenedor tenga un z-index base
+        }}
       >
         <div
-          className="flex items-center p-2 rounded-md cursor-pointer app-sidebar-item hover:app-sidebar-hover"
+          className={cn(
+            "flex items-center rounded-md cursor-pointer app-sidebar-item hover:app-sidebar-hover transition-all duration-300",
+            isCollapsed ? "p-3 justify-center" : "p-2"
+          )}
+          style={{
+            transform: 'translate3d(0,0,0)',
+            backfaceVisibility: 'hidden',
+            willChange: 'transform',
+            position: 'relative',
+            zIndex: 50
+          }}
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -747,11 +805,17 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
             // Alternar este menú
             setIsClinicSelectorOpen(!isClinicSelectorOpen);
           }}
-          onMouseEnter={() => setIsClinicHovered(true)}
-          onMouseLeave={() => setIsClinicHovered(false)}
+          onMouseEnter={() => !isMobile && !isClinicSelectorOpen && setIsClinicHovered(true)}
+          onMouseLeave={() => !isMobile && setIsClinicHovered(false)}
         >
-          <div className="flex items-center justify-center flex-shrink-0 w-8 h-8 bg-purple-100 rounded-full">
-            <span className="text-sm font-medium text-purple-800">
+          <div className={cn(
+            "flex items-center justify-center flex-shrink-0 bg-purple-100 rounded-full transition-all duration-300",
+            isCollapsed ? "w-10 h-10" : "w-8 h-8"
+          )}>
+            <span className={cn(
+              "font-medium text-purple-800 transition-all duration-300",
+              isCollapsed ? "text-base" : "text-sm"
+            )}>
               {getClinicInitials(activeClinic?.name || "Clínica")}
             </span>
           </div>
@@ -769,21 +833,31 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
           )}
         </div>
 
-        {/* Menú selector de clínicas - siempre horizontal */}
+        {/* Menú selector de clínicas */}
         {(isClinicSelectorOpen || isClinicHovered) && (
           <div 
             ref={clinicMenuRef} 
-            className="fixed z-[999999] w-80 rounded-md border bg-white shadow-lg clinic-selector-menu"
+            className="fixed w-80 rounded-md border bg-white shadow-lg clinic-selector-menu"
             style={{
               position: "fixed", 
-              left: isCollapsed ? "70px" : "270px", 
-              top: "150px",
+              left: isCollapsed ? "4.5rem" : "17rem", // ~70px : ~270px
+              top: "50px",
+              marginLeft: "8px", // Añadir margen para separar de la barra
+              zIndex: 999999,
               display: "block",
-              visibility: "visible" as const,
+              visibility: "visible",
               opacity: 1,
-              maxHeight: "calc(100vh - 200px)",
-              overflowY: "auto"
+              maxHeight: "calc(100vh - 100px)",
+              overflowY: "auto",
+              transform: 'translate3d(0,0,0)',
+              backfaceVisibility: 'hidden',
+              willChange: 'transform',
+              pointerEvents: 'auto',
+              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
             }}
+            onClick={(e) => e.stopPropagation()}
+            onMouseEnter={() => !isMobile && setIsClinicHovered(true)}
+            onMouseLeave={() => !isMobile && setIsClinicHovered(false)}
           >
             <div className="p-3">
               <div className="relative mb-3">
@@ -805,9 +879,10 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
                       variant="ghost"
                       className={cn(
                         "w-full justify-start px-3 py-2",
-                        activeClinic.id === clinic.id ? "bg-green-50" : "hover:bg-purple-50",
+                        activeClinic?.id === clinic.id ? "bg-green-50" : "hover:bg-purple-50",
                       )}
                       onClick={() => handleClinicSelect(clinic)}
+                      style={{ isolation: 'isolate' }}
                     >
                       <div className="flex items-center w-full gap-3">
                         <div className="flex items-center justify-center w-8 h-8 text-sm font-medium text-purple-600 bg-purple-100 rounded-lg">
@@ -817,7 +892,7 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
                           <div className="text-sm font-medium">{clinic.name}</div>
                           <div className="text-xs text-gray-500">{clinic.prefix}</div>
                         </div>
-                        {activeClinic.id === clinic.id && <div className="w-2 h-2 bg-green-500 rounded-full"></div>}
+                        {activeClinic?.id === clinic.id && <div className="w-2 h-2 bg-green-500 rounded-full"></div>}
                       </div>
                     </Button>
                   ))
@@ -828,35 +903,56 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
         )}
       </div>
 
-      {/* Menu items - con scroll automático e indicador */}
+      {/* Menu items - con scroll automático e indicador solo para dispositivos táctiles */}
       <div 
         ref={sidebarMenusRef} 
-        className="flex-1 py-2 overflow-y-auto relative"
+        className={cn(
+          "flex-1 overflow-y-auto relative",
+          "py-1", // Reducido el padding vertical
+          "[&>div]:mb-0.5" // Reducir el espacio entre elementos
+        )}
+        style={{
+          // Ocultar scrollbar en webkit pero mantener funcionalidad
+          WebkitOverflowScrolling: 'touch',
+          scrollbarWidth: 'thin',
+          scrollbarColor: 'rgba(0,0,0,0.2) transparent',
+          position: 'relative',
+          zIndex: 40 // Menor que el selector de clínicas
+        }}
       >
         {menuItems.map((item) => (
-          <div key={item.id} className="my-1">
+          <div 
+            key={item.id} 
+            className={cn(
+              isCollapsed && "flex justify-center"
+            )}
+            style={{ position: 'relative', zIndex: 40 }}
+          >
             <MenuItemComponent
               item={item}
               isCollapsed={isCollapsed}
               openMenus={openMenus}
               toggleMenu={handleMenuClick}
               isMobile={forceMobileView}
+              onToggle={onToggle}
             />
           </div>
         ))}
         
-        {/* Reemplazar indicadores manuales con el componente ScrollIndicator */}
-        <ScrollIndicator 
-          containerRef={sidebarMenusRef}
-          position="left"
-          offset={{ 
-            left: isCollapsed ? 32 : 128, 
-            top: forceMobileView ? 60 : 20, 
-            bottom: forceMobileView ? 60 : 20 
-          }}
-          scrollAmount={200}
-          className="z-[9999]"
-        />
+        {/* ScrollIndicator solo para dispositivos móviles/táctiles */}
+        {forceMobileView && (
+          <ScrollIndicator 
+            containerRef={sidebarMenusRef}
+            position="left"
+            offset={{ 
+              left: isCollapsed ? 32 : 128, 
+              top: 20, 
+              bottom: 20 
+            }}
+            scrollAmount={200}
+            className="z-[40]"
+          />
+        )}
       </div>
 
       {/* User menu */}
@@ -897,7 +993,7 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
               className="fixed rounded-md border bg-white shadow-lg z-[999999] w-64 visible"
               style={{ 
                 position: "fixed", 
-                left: isCollapsed ? "60px" : "260px", 
+                left: isCollapsed ? "4.5rem" : "17rem", // ~70px : ~270px
                 top: "auto", 
                 bottom: "80px",
                 display: "block",
