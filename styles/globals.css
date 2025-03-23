@@ -429,3 +429,41 @@ body {
   }
 }
 
+/* Estilos para el menú móvil de personal */
+.mobile-staff-menu {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  max-height: 75vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(37, 99, 235, 0.3) transparent;
+}
+
+.mobile-staff-menu::-webkit-scrollbar {
+  width: 4px;
+}
+
+.mobile-staff-menu::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.mobile-staff-menu::-webkit-scrollbar-thumb {
+  background-color: rgba(37, 99, 235, 0.3);
+  border-radius: 10px;
+}
+
+/* Mejorar la apariencia en dispositivos móviles */
+@media (max-width: 767px) {
+  .floating-staff-menu,
+  .floating-client-menu {
+    right: 2px !important;
+  }
+  
+  .mobile-staff-menu {
+    border-radius: 0 0 12px 12px;
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+  }
+}
+

@@ -16,6 +16,7 @@ interface FloatingMenuBaseProps {
   offsetY?: number // Nueva prop para posicionamiento vertical
   autoCollapseTimeout?: number // Tiempo en ms para colapsar automáticamente
   onMenuToggle?: (isOpen?: boolean) => void // Callback para notificar apertura/cierre del menú con parámetro opcional
+  isMobileView?: boolean // Indica si estamos en vista móvil
 }
 
 export function FloatingMenuBase({ 
@@ -29,6 +30,7 @@ export function FloatingMenuBase({
   offsetY = 0,
   autoCollapseTimeout = 5000, // 5 segundos por defecto
   onMenuToggle,
+  isMobileView,
 }: FloatingMenuBaseProps) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [isOpen, setIsOpen] = useState(false)
@@ -199,19 +201,18 @@ export function FloatingMenuBase({
           <div 
             className={cn(
               "absolute overflow-hidden",
-              color === "purple" ? "bg-white rounded-md border" : "bg-transparent"
+              color === "purple" ? "bg-white rounded-md border" : (isMobileView ? "bg-transparent rounded-b-lg" : "bg-transparent")
             )}
             style={{
-              right: color === "blue" ? "35px" : "60px", // Posición del menú - Personal más a la derecha
-              top: color === "blue" ? "10px" : "0px", // Menú de personal más hacia abajo
+              right: isMobileView ? 0 : (color === "blue" ? "35px" : "60px"), // En móvil, posición justo debajo
+              top: isMobileView ? "100%" : (color === "blue" ? "10px" : "0px"), // Menú de personal más hacia abajo
+              width: isMobileView ? "100%" : "auto",
               transform: "translateY(0)",
-              boxShadow: color === "purple" ? "0 8px 30px rgba(0, 0, 0, 0.16)" : "none",
+              boxShadow: color === "purple" ? "0 8px 30px rgba(0, 0, 0, 0.16)" : (isMobileView ? "0 8px 16px rgba(0, 0, 0, 0.1)" : "none"),
               zIndex: 999999,
-              minWidth: color === "purple" ? "200px" : "85px", // Más estrecho para el menú de personal
-              maxWidth: color === "purple" ? "220px" : "85px", // Más estrecho para el menú de personal
-              // No permite que se salga de la pantalla a la izquierda
-              maxHeight: "calc(100vh - 20px)",
-              width: "auto"
+              minWidth: isMobileView ? "100%" : (color === "purple" ? "200px" : "85px"), // Anchura completa en móvil
+              maxWidth: isMobileView ? "100%" : (color === "purple" ? "220px" : "85px"),
+              maxHeight: "calc(100vh - 20px)"
             }}
           >
             <style jsx global>{`
@@ -230,10 +231,26 @@ export function FloatingMenuBase({
               .menu-content-appear {
                 animation: floatingMenuAppear 0.25s cubic-bezier(0.15, 1.15, 0.6, 1.0) forwards;
               }
+              
+              /* Animación vertical para móvil */
+              @keyframes mobileMenuAppear {
+                0% { 
+                  opacity: 0; 
+                  transform: translateY(-10px);
+                }
+                100% { 
+                  opacity: 1; 
+                  transform: translateY(0);
+                }
+              }
+              
+              .mobile-menu-appear {
+                animation: mobileMenuAppear 0.25s cubic-bezier(0.15, 1.15, 0.6, 1.0) forwards;
+              }
             `}</style>
             
-            {/* Indicador triangular que apunta hacia la derecha - solo para el menú de clientes */}
-            {color === "purple" && (
+            {/* Indicador triangular que apunta hacia la derecha - solo para el menú de clientes y versión de escritorio */}
+            {color === "purple" && !isMobileView && (
               <div className="absolute top-6 -right-[6px] z-10">
                 <div 
                   className="w-3 h-3 rotate-45 bg-white border-r border-t"
@@ -244,7 +261,7 @@ export function FloatingMenuBase({
               </div>
             )}
             
-            <div className="menu-content-appear">
+            <div className={isMobileView ? "mobile-menu-appear" : "menu-content-appear"}>
               {children}
             </div>
           </div>

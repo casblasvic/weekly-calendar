@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/hover-card"
 import { motion, AnimatePresence } from "framer-motion"
 import { StaffActionCard } from "@/components/StaffActionCard"
+import { StaffActionCardMobile } from "@/components/StaffActionCardMobile"
 
 // Datos de ejemplo del personal
 const mockStaff = [
@@ -277,14 +278,51 @@ export function FloatingStaffMenu({ className, onOutsideClick, offsetY, autoColl
   const [selectedStaffId, setSelectedStaffId] = useState<number | null>(null)
   const [hoveredStaffId, setHoveredStaffId] = useState<number | null>(null)
   const staffContainerRef = useRef<HTMLDivElement>(null)
-  const isMobile = typeof window !== 'undefined' ? window.innerWidth < 768 : false
+  const [isMobileView, setIsMobileView] = useState(false)
+  const [showScrollUp, setShowScrollUp] = useState(false)
+  const [showScrollDown, setShowScrollDown] = useState(false)
+  const staffMenuRef = useRef<HTMLDivElement>(null)
   
   // Detectar si es dispositivo móvil (táctil)
   const [isTouchDevice, setIsTouchDevice] = useState(false)
   
+  // Detector de dispositivo móvil basado en tamaño de pantalla
   useEffect(() => {
+    const checkMobile = () => {
+      const isMobile = window.innerWidth < 768
+      setIsMobileView(isMobile)
+    }
+    
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    
     setIsTouchDevice('ontouchstart' in window || navigator.maxTouchPoints > 0)
+    
+    return () => {
+      window.removeEventListener('resize', checkMobile)
+    }
   }, [])
+
+  // Comprobar si se necesitan los botones de scroll
+  useEffect(() => {
+    if (staffMenuRef.current && isMobileView) {
+      const checkScrollButtons = () => {
+        const container = staffMenuRef.current
+        if (container) {
+          setShowScrollUp(container.scrollTop > 20)
+          setShowScrollDown(container.scrollTop < (container.scrollHeight - container.clientHeight - 20))
+        }
+      }
+      
+      const container = staffMenuRef.current
+      container.addEventListener('scroll', checkScrollButtons)
+      checkScrollButtons()
+      
+      return () => {
+        container.removeEventListener('scroll', checkScrollButtons)
+      }
+    }
+  }, [isMobileView])
 
   const handleStaffSelect = (staffId: number) => {
     // Si ya está seleccionado, deseleccionar
@@ -328,28 +366,38 @@ export function FloatingStaffMenu({ className, onOutsideClick, offsetY, autoColl
 
   // Calcular la posición de la tarjeta basada en el empleado seleccionado
   const getCardPosition = (staffId: number) => {
-    // Encontrar el índice del empleado en la lista
-    const staffIndex = mockStaff.findIndex(s => s.id === staffId)
-    if (staffIndex === -1) return { top: 72 }
-    
-    // Obtener el elemento DOM del avatar actual si es posible
-    const avatarElement = document.querySelector(`[data-staff-id="${staffId}"]`)
-    if (avatarElement) {
-      const rect = avatarElement.getBoundingClientRect()
-      // Alinear verticalmente con el centro del avatar
-      return { top: rect.top + window.scrollY + (rect.height / 2) - 20 }
+    // Si estamos en móvil, la tarjeta se mostrará debajo del avatar en el menú desplegable
+    if (isMobileView) {
+      return { position: 'relative', top: 0, right: 0 }
     }
     
-    // Fallback si no podemos obtener la posición exacta del elemento
+    // Encontrar el índice del empleado en la lista
+    const staffIndex = mockStaff.findIndex(s => s.id === staffId)
+    if (staffIndex === -1) return { position: 'fixed', top: 72, right: 87 }
+    
+    // Ajustar la posición vertical según el índice para alinear con el avatar correspondiente
     const baseOffset = offsetY ? offsetY + 50 : 62
-    const itemHeight = 46 // Altura aproximada de un elemento de avatar con espacio
+    const itemHeight = 40 // Altura aproximada de un elemento de avatar con espacio
     const verticalPosition = baseOffset + (staffIndex * itemHeight)
     
-    return { top: verticalPosition }
+    return { position: 'fixed', top: verticalPosition, right: 87 }
   }
 
   // Posición de la tarjeta activa
-  const activeCardPosition = activeStaffId ? getCardPosition(activeStaffId) : { top: 72 }
+  const activeCardPosition = activeStaffId ? getCardPosition(activeStaffId) : { position: 'fixed', top: 72, right: 87 }
+
+  // Funciones para manejar el scroll
+  const handleScrollUp = () => {
+    if (staffMenuRef.current) {
+      staffMenuRef.current.scrollTop -= 100
+    }
+  }
+  
+  const handleScrollDown = () => {
+    if (staffMenuRef.current) {
+      staffMenuRef.current.scrollTop += 100
+    }
+  }
 
   return (
     <>
@@ -367,64 +415,159 @@ export function FloatingStaffMenu({ className, onOutsideClick, offsetY, autoColl
         offsetY={offsetY}
         autoCollapseTimeout={autoCollapseTimeout}
         onMenuToggle={handleMenuToggle}
+        isMobileView={isMobileView}
       >
-        <div 
-          ref={staffContainerRef}
-          className="py-2 flex flex-col items-center space-y-4" 
-          style={{ 
-            paddingTop: "4px", 
-            paddingBottom: "4px", 
-            background: "transparent", 
-            border: "none",
-            maxHeight: "400px", // Altura máxima antes de mostrar scroll
-            overflowY: "auto", // Añadir scroll cuando sea necesario
-            scrollbarWidth: "thin", // Scroll más delgado en Firefox
-            msOverflowStyle: "none" // Ocultar scrollbar en IE/Edge
-          }}
-        >
-          <style jsx global>{`
-            /* Estilo para scrollbar delgado en Chrome/Safari */
-            div::-webkit-scrollbar {
-              width: 4px;
-            }
-            div::-webkit-scrollbar-track {
-              background: transparent;
-            }
-            div::-webkit-scrollbar-thumb {
-              background-color: rgba(0, 0, 0, 0.2);
-              border-radius: 10px;
-            }
-          `}</style>
-          
-          {mockStaff.map((person, index) => (
-            <div 
-              key={person.id}
-              className={cn(
-                "transition-all duration-200 ease-in-out",
-                (selectedStaffId === person.id || hoveredStaffId === person.id) ? "scale-110" : ""
-              )}
-              style={{ 
-                filter: (selectedStaffId === person.id || hoveredStaffId === person.id) ? 
-                  "drop-shadow(0 4px 8px rgba(0, 0, 0, 0.2))" : "",
-                marginBottom: "4px"
-              }}
-              onMouseEnter={() => handleStaffHover(person.id)}
-              onMouseLeave={() => handleStaffHover(null)}
-              data-staff-id={person.id}
-            >
-              <StaffTooltip 
-                person={person} 
-                onSelect={handleStaffSelect}
-                index={index}
-              />
-            </div>
-          ))}
-        </div>
+        {isMobileView ? (
+          // Versión móvil - despliegue vertical con scroll
+          <div 
+            ref={staffMenuRef}
+            className="relative py-2 flex flex-col items-center space-y-4 mobile-staff-menu"
+            style={{ 
+              maxHeight: "60vh",
+              overflowY: "auto",
+              scrollBehavior: "smooth",
+              width: "100%",
+              background: "#fff",
+              borderRadius: "0 0 8px 8px",
+              boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+              paddingBottom: "16px"
+            }}
+          >
+            {showScrollUp && (
+              <button
+                className="absolute top-0 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-blue-600 text-white rounded-full w-8 h-8 flex items-center justify-center shadow-md z-10"
+                onClick={handleScrollUp}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="m18 15-6-6-6 6"/>
+                </svg>
+              </button>
+            )}
+            
+            {mockStaff.map((person, index) => (
+              <div key={person.id} className="w-full px-4 py-2">
+                <div className="flex items-center justify-between border-b pb-2">
+                  <div 
+                    className={cn(
+                      "transition-all duration-200 ease-in-out flex items-center",
+                      selectedStaffId === person.id ? "scale-105" : ""
+                    )}
+                    data-staff-id={person.id}
+                    onClick={() => handleStaffSelect(person.id)}
+                  >
+                    <StaffAvatar 
+                      person={person} 
+                      onClick={() => handleStaffSelect(person.id)} 
+                      index={index} 
+                    />
+                    <div className="ml-3">
+                      <div className="text-sm font-medium">{person.name}</div>
+                      <div className="text-xs text-gray-500">{person.role}</div>
+                    </div>
+                  </div>
+                  
+                  <button 
+                    className={cn(
+                      "w-8 h-8 rounded-full flex items-center justify-center transition-colors",
+                      selectedStaffId === person.id ? "bg-blue-100 text-blue-600" : "text-gray-400 hover:text-blue-600"
+                    )}
+                    onClick={() => handleStaffSelect(person.id)}
+                  >
+                    {selectedStaffId === person.id ? (
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="m18 15-6-6-6 6"/>
+                      </svg>
+                    ) : (
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="m6 9 6 6 6-6"/>
+                      </svg>
+                    )}
+                  </button>
+                </div>
+                
+                {/* Acciones desplegadas verticalmente bajo cada persona */}
+                {selectedStaffId === person.id && (
+                  <div className="mt-2 pl-12 pr-2 py-2 bg-gray-50 rounded-md">
+                    <StaffActionCardMobile 
+                      person={person} 
+                      onClose={handleCloseActionCard} 
+                    />
+                  </div>
+                )}
+              </div>
+            ))}
+            
+            {showScrollDown && (
+              <button
+                className="absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-1/2 bg-blue-600 text-white rounded-full w-8 h-8 flex items-center justify-center shadow-md z-10"
+                onClick={handleScrollDown}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="m6 9 6 6 6-6"/>
+                </svg>
+              </button>
+            )}
+          </div>
+        ) : (
+          // Versión desktop - avatares flotantes vertical
+          <div 
+            ref={staffContainerRef}
+            className="py-2 flex flex-col items-center space-y-4" 
+            style={{ 
+              paddingTop: "4px", 
+              paddingBottom: "4px", 
+              background: "transparent", 
+              border: "none",
+              maxHeight: "400px", // Altura máxima antes de mostrar scroll
+              overflowY: "auto", // Añadir scroll cuando sea necesario
+              scrollbarWidth: "thin", // Scroll más delgado en Firefox
+              msOverflowStyle: "none" // Ocultar scrollbar en IE/Edge
+            }}
+          >
+            <style jsx global>{`
+              /* Estilo para scrollbar delgado en Chrome/Safari */
+              div::-webkit-scrollbar {
+                width: 4px;
+              }
+              div::-webkit-scrollbar-track {
+                background: transparent;
+              }
+              div::-webkit-scrollbar-thumb {
+                background-color: rgba(0, 0, 0, 0.2);
+                border-radius: 10px;
+              }
+            `}</style>
+            
+            {mockStaff.map((person, index) => (
+              <div 
+                key={person.id}
+                className={cn(
+                  "transition-all duration-200 ease-in-out",
+                  (selectedStaffId === person.id || hoveredStaffId === person.id) ? "scale-110" : ""
+                )}
+                style={{ 
+                  filter: (selectedStaffId === person.id || hoveredStaffId === person.id) ? 
+                    "drop-shadow(0 4px 8px rgba(0, 0, 0, 0.2))" : "",
+                  marginBottom: "4px"
+                }}
+                onMouseEnter={() => handleStaffHover(person.id)}
+                onMouseLeave={() => handleStaffHover(null)}
+                data-staff-id={person.id}
+              >
+                <StaffTooltip 
+                  person={person} 
+                  onSelect={handleStaffSelect}
+                  index={index}
+                />
+              </div>
+            ))}
+          </div>
+        )}
       </FloatingMenuBase>
       
-      {/* Tarjeta de acciones - aparece a la izquierda del avatar seleccionado con animación */}
-      <AnimatePresence>
-        {activeStaff && (
+      {/* Tarjeta de acciones - solo para desktop */}
+      {!isMobileView && activeStaff && (
+        <AnimatePresence>
           <motion.div
             initial={{ opacity: 0, x: -10, scale: 0.95 }}
             animate={{ opacity: 1, x: 0, scale: 1 }}
@@ -432,7 +575,7 @@ export function FloatingStaffMenu({ className, onOutsideClick, offsetY, autoColl
             transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
             className="fixed z-[99999]"
             style={{ 
-              right: "95px", // Más separado de los avatares para facilitar navegación
+              right: "87px", // Acercada más a los avatares
               top: `${activeCardPosition.top}px`,
               boxShadow: "0 8px 30px rgba(0, 0, 0, 0.16)"
             }}
@@ -467,8 +610,8 @@ export function FloatingStaffMenu({ className, onOutsideClick, offsetY, autoColl
               onClose={handleCloseActionCard} 
             />
           </motion.div>
-        )}
-      </AnimatePresence>
+        </AnimatePresence>
+      )}
     </>
   )
 } 
