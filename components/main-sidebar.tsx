@@ -798,6 +798,22 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
     };
   }, [isUserMenuOpen, showNotifications, isClinicSelectorOpen, forceMobileView]);
 
+  // Manejar el cambio de visibilidad de la barra lateral en móvil
+  const toggleMobileSidebar = () => {
+    setIsSidebarVisible(prev => !prev);
+    console.log("Toggle mobile sidebar");
+    
+    // Para iOS, forzar reflow y restablecer posición
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+    if (isIOS) {
+      // Forzar reflow y mejorar posicionamiento
+      document.body.style.webkitTransform = 'scale(1)';
+      setTimeout(() => {
+        document.body.style.webkitTransform = '';
+      }, 0);
+    }
+  }
+
   return (
     <div
       id="main-sidebar"
