@@ -54,11 +54,31 @@ export function LayoutWrapper({ children }: LayoutWrapperProps) {
         setIsSidebarCollapsed(true)
         setIsSidebarVisible(false)
       }
+      
+      // Ajustes específicos para iOS
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+      if (isIOS && mobile) {
+        // Forzar el recálculo del viewport para iOS
+        const vh = window.innerHeight * 0.01;
+        document.documentElement.style.setProperty('--vh', `${vh}px`);
+        
+        // Agregar clase CSS específica para iOS
+        document.documentElement.classList.add('ios-device');
+      }
     }
     
     checkMobile()
     window.addEventListener('resize', checkMobile)
-    return () => window.removeEventListener('resize', checkMobile)
+    
+    // Asegurarse de que el viewport esté correctamente establecido en iOS
+    window.addEventListener('orientationchange', () => {
+      setTimeout(checkMobile, 100);
+    });
+    
+    return () => {
+      window.removeEventListener('resize', checkMobile)
+      window.removeEventListener('orientationchange', () => {});
+    }
   }, [])
   
   // Cerrar la barra lateral cuando cambia la ruta
