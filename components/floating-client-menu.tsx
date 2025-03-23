@@ -14,76 +14,84 @@ interface FloatingClientMenuProps {
 
 const menuItems = [
   {
+    id: "datos",
+    label: "Datos del cliente",
+    icon: User,
+    href: "/clientes/[id]"
+  },
+  {
     id: "historial",
     label: "Historial",
     icon: ClipboardList,
-    href: "/clientes"
+    href: "/clientes/[id]/historial"
   },
   {
     id: "consentimientos",
     label: "Consentimientos",
     icon: FileText,
-    href: "/clientes"
+    href: "/clientes/[id]/consentimientos"
   },
   {
-    id: "citas",
-    label: "Citas",
+    id: "aplazado",
+    label: "Aplazado",
     icon: Calendar,
-    href: "/clientes"
+    href: "/clientes/[id]/aplazado"
   },
   {
     id: "mensajes-app",
     label: "Enviar mensaje App",
     icon: MessageCircle,
-    href: "/clientes"
+    href: "/mensajes/app/[id]",
+    isAction: true
   },
   {
     id: "bonos",
     label: "Bonos",
     icon: Gift,
-    href: "/clientes"
+    href: "/clientes/[id]/bonos"
   },
   {
     id: "whatsapp",
     label: "Enviar mensaje WhatsApp",
     icon: MessageCircle,
-    href: "/clientes"
+    href: "/mensajes/whatsapp/[id]",
+    isAction: true
   },
   {
     id: "suscripciones",
     label: "Suscripciones",
     icon: Users,
-    href: "/clientes"
+    href: "/clientes/[id]/suscripciones"
   },
   {
     id: "recibos",
     label: "Recibos pendientes",
     icon: Receipt,
-    href: "/clientes"
+    href: "/clientes/[id]/recibos"
   },
   {
     id: "fotos",
     label: "Fotografías",
     icon: Camera,
-    href: "/clientes"
+    href: "/clientes/[id]/fotografias"
   },
   {
     id: "documentos",
     label: "Documentos",
     icon: File,
-    href: "/clientes"
+    href: "/clientes/[id]/documentos"
   },
   {
     id: "avisos",
     label: "Avisos",
     icon: Bell,
-    href: "/clientes"
+    href: "/clientes/[id]/avisos"
   },
   {
     id: "facturacion",
     label: "Facturación",
     icon: CreditCard,
-    href: "/clientes"
+    href: "/clientes/[id]/facturacion"
   }
 ]
 
@@ -112,8 +120,9 @@ export function FloatingClientMenu({ className, onOutsideClick }: FloatingClient
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [onOutsideClick])
 
-  const handleMenuItemClick = (href: string) => {
-    router.push(`${href}/${lastClient.id}`)
+  const handleMenuItemClick = (item: typeof menuItems[0]) => {
+    const url = item.href.replace('[id]', lastClient.id)
+    router.push(url)
     setActiveSection(null)
     setIsOpen(false)
   }
@@ -165,7 +174,7 @@ export function FloatingClientMenu({ className, onOutsideClick }: FloatingClient
                     "w-full justify-start hover:bg-purple-50 hover:text-purple-600",
                     activeSection === item.id && "bg-purple-50 text-purple-600"
                   )}
-                  onClick={() => handleMenuItemClick(item.href)}
+                  onClick={() => handleMenuItemClick(item)}
                 >
                   <item.icon className="w-4 h-4 mr-2" />
                   <span className="flex-1 text-left">{item.label}</span>
