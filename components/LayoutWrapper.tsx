@@ -3,8 +3,6 @@
 import type React from "react"
 import { useState, useEffect, useCallback, useRef } from "react"
 import { MainSidebar } from "@/components/main-sidebar"
-import { FloatingClientMenu } from "@/components/floating-client-menu"
-import { FloatingStaffMenu } from "@/components/floating-staff-menu"
 import { Button } from "@/components/ui/button"
 import { Home, Calendar, Users, BarChart2, User, LogOut, Settings, FileText } from "lucide-react"
 import { useRouter, usePathname } from "next/navigation"
@@ -20,6 +18,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { cn } from "@/lib/utils"
 import { MobileDrawerMenu } from "@/components/mobile/layout/drawer-menu"
 import { MobileClinicButton } from "@/components/mobile-clinic-button"
+import { FloatingMenu } from "./ui/floating-menu"
 
 interface LayoutWrapperProps {
   children: React.ReactNode
@@ -204,17 +203,17 @@ export function LayoutWrapper({ children }: LayoutWrapperProps) {
         ref={sidebarRef}
         className="transition-all duration-300 ease-in-out"
         style={{
-          position: isMobile ? 'fixed' : 'relative',
-          left: isMobile ? (isSidebarVisible ? 0 : '-100%') : 0,
+          position: 'relative',
+          left: 0,
           top: 0,
           height: '100%',
-          zIndex: 50,
-          visibility: isMobile && !isSidebarVisible ? 'hidden' : 'visible',
-          width: isMobile ? '85%' : 'auto'
+          zIndex: 45,
+          visibility: 'visible',
+          width: 'auto'
         }}
       >
         <MainSidebar
-          isCollapsed={isSidebarCollapsed}
+          isCollapsed={isMobile ? !isSidebarVisible : isSidebarCollapsed}
           onToggle={toggleSidebar}
           forceMobileView={isMobile}
         />
@@ -226,64 +225,20 @@ export function LayoutWrapper({ children }: LayoutWrapperProps) {
         isOpen={isSidebarVisible}
       />
 
-      {/* Overlay para cerrar sidebar al hacer click fuera */}
-      {isMobile && isSidebarVisible && (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-50 z-40 ios-backdrop-fix"
-          onClick={() => {
-            // En iOS, usar el método optimizado
-            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
-            if (isIOS) {
-              // Forzar reflow para iOS
-              document.body.style.webkitTransform = 'scale(1)';
-              setTimeout(() => {
-                setIsSidebarVisible(false);
-                document.body.style.webkitTransform = '';
-              }, 10);
-            } else {
-              setIsSidebarVisible(false);
-            }
-            console.log("Click en overlay");
-          }}
-        />
-      )}
-
       {/* Menús flotantes */}
       <div className="fixed right-0 top-0 z-[9999] space-y-1 p-3">
-        <FloatingClientMenu 
-          onOutsideClick={() => {}}
-          autoCollapseTimeout={8000}
-          onMenuToggle={() => {
-            // Cerrar el menú de personal cuando se abre el menú de cliente
-            const staffMenuElement = document.querySelector('.floating-staff-menu');
-            if (staffMenuElement) {
-              const event = new CustomEvent('close-menu', { bubbles: true });
-              staffMenuElement.dispatchEvent(event);
-            }
-          }}
-        />
-        <FloatingStaffMenu 
-          onOutsideClick={() => {}} 
-          offsetY={60}
-          autoCollapseTimeout={8000}
-          onMenuToggle={() => {
-            // Cerrar el menú de cliente cuando se abre el menú de personal
-            const clientMenuElement = document.querySelector('.floating-client-menu');
-            if (clientMenuElement) {
-              const event = new CustomEvent('close-menu', { bubbles: true });
-              clientMenuElement.dispatchEvent(event);
-            }
-          }}
-        />
+        <FloatingMenu />
       </div>
 
       {/* Contenido principal */}
       <main
         className="flex-1 overflow-auto"
         style={{
-          marginLeft: isMobile ? 0 : (isSidebarCollapsed ? "3.5rem" : "16rem"),
+          marginLeft: isMobile ? (isSidebarVisible ? "3.5rem" : "0") : (isSidebarCollapsed ? "3.5rem" : "16rem"),
           transition: "margin-left 0.3s ease-in-out",
-          width: isMobile ? "100%" : `calc(100% - ${isSidebarCollapsed ? "3.5rem" : "16rem"})`,
+          width: isMobile ? 
+            (isSidebarVisible ? "calc(100% - 3.5rem)" : "100%") : 
+            `calc(100% - ${isSidebarCollapsed ? "3.5rem" : "16rem"})`,
         }}
       >
         {children}

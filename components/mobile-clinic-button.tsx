@@ -64,8 +64,8 @@ export function MobileClinicButton({ onClick, isOpen }: MobileClinicButtonProps)
         onClick()
       }}
       className={cn(
-        "fixed bottom-16 left-4 z-50 rounded-full w-12 h-12 p-0 shadow-lg flex items-center justify-center transition-all duration-300 MobileClinicButton",
-        isOpen ? "bg-white text-purple-600 border border-purple-300" : "bg-purple-600 text-white"
+        "fixed bottom-6 left-4 z-40 rounded-full w-10 h-10 p-0 shadow-lg flex items-center justify-center transition-all duration-300 MobileClinicButton",
+        isOpen ? "bg-white text-purple-600 border border-purple-300" : "bg-purple-600/90 text-white"
       )}
       style={{
         transform: 'translateZ(0)',
@@ -74,13 +74,9 @@ export function MobileClinicButton({ onClick, isOpen }: MobileClinicButtonProps)
       }}
     >
       {isOpen ? (
-        <X size={20} />
+        <X size={16} />
       ) : (
-        <div className="flex items-center justify-center">
-          <span className="text-sm font-bold">
-            {clinicInitials}
-          </span>
-        </div>
+        <Menu size={16} />
       )}
     </Button>
   )
