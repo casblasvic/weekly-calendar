@@ -185,14 +185,16 @@ export function FloatingMenu({ className }: FloatingMenuProps) {
                 size="icon"
                 className={cn(
                   "w-12 h-12 rounded-md relative group shadow-lg",
-                  activeMenu === "client" ? "bg-purple-700" : "bg-purple-600 hover:bg-purple-700",
+                  lastClient 
+                    ? (activeMenu === "client" ? "bg-purple-700" : "bg-purple-600 hover:bg-purple-700") 
+                    : "bg-gray-400 cursor-not-allowed",
                   "text-white"
                 )}
                 style={{
                   boxShadow: `0 4px 14px rgba(0, 0, 0, 0.15)`
                 }}
-                onClick={() => handleMenuSelect("client")}
-                title="Cliente activo"
+                onClick={() => lastClient && handleMenuSelect("client")}
+                title={lastClient ? "Cliente activo" : "No hay cliente seleccionado"}
               >
                 <User className="w-6 h-6" />
               </Button>
