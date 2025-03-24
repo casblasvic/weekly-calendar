@@ -72,6 +72,9 @@ export function FloatingMenu({ className }: FloatingMenuProps) {
 
   // Manejador para seleccionar un menú
   const handleMenuSelect = (menuId: string) => {
+    // No permitir seleccionar el menú de cliente si no hay cliente
+    if (menuId === "client" && !lastClient) return;
+    
     setActiveMenu(activeMenu === menuId ? null : menuId)
   }
 
@@ -302,8 +305,8 @@ export function FloatingMenu({ className }: FloatingMenuProps) {
             }}
           >
             <div className="menu-content-appear">
-              {/* Menú de cliente */}
-              {activeMenu === "client" && lastClient && (
+              {/* Menú de cliente - solo mostrar si hay lastClient */}
+              {activeMenu === "client" && lastClient ? (
                 <div className="w-full">
                   {/* Encabezado con información del cliente */}
                   <div className="p-2.5 border-b bg-gradient-to-r from-purple-50 to-white">
@@ -345,7 +348,7 @@ export function FloatingMenu({ className }: FloatingMenuProps) {
                     ))}
                   </div>
                 </div>
-              )}
+              ) : null}
 
               {/* Menú de personal */}
               {activeMenu === "staff" && (
