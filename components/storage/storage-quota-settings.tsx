@@ -401,7 +401,7 @@ const StorageQuotaSettings: React.FC<StorageQuotaSettingsProps> = ({
       {showTotalInfo && (
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
-            <HardDrive className="h-4 w-4" />
+            <HardDrive className="w-4 h-4" />
             Espacio total disponible: {formatBytes(systemTotal)}
           </CardTitle>
           <CardDescription className="text-xs">
@@ -410,8 +410,8 @@ const StorageQuotaSettings: React.FC<StorageQuotaSettingsProps> = ({
           </CardDescription>
         </CardHeader>
       )}
-      <CardContent className="space-y-4 pt-3">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <CardContent className="pt-3 space-y-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
           <div className="col-span-1 md:col-span-2">
             {/* Tamaño de cuota */}
             <div className="space-y-1">
@@ -467,14 +467,14 @@ const StorageQuotaSettings: React.FC<StorageQuotaSettingsProps> = ({
               <Button 
                 onClick={handleSave} 
                 disabled={saving || selectedClinics.length === 0}
-                className="w-full h-8 relative bg-blue-600 hover:bg-blue-700 text-white transition-all duration-200 transform active:scale-95"
+                className="relative w-full h-8 text-white transition-all duration-200 transform bg-blue-600 hover:bg-blue-700 active:scale-95"
                 data-test="apply-button"
                 variant="default"
               >
                 {saving ? (
                   <div className="flex items-center space-x-2">
                     <svg 
-                      className="animate-spin h-3 w-3" 
+                      className="w-3 h-3 animate-spin" 
                       xmlns="http://www.w3.org/2000/svg" 
                       fill="none" 
                       viewBox="0 0 24 24"
@@ -490,7 +490,7 @@ const StorageQuotaSettings: React.FC<StorageQuotaSettingsProps> = ({
                   </div>
                 ) : (
                   <div className="flex items-center">
-                    <Save className="mr-2 h-3 w-3" />
+                    <Save className="w-3 h-3 mr-2" />
                     <span>Aplicar</span>
                   </div>
                 )}
@@ -504,7 +504,7 @@ const StorageQuotaSettings: React.FC<StorageQuotaSettingsProps> = ({
         
         {error && (
           <Alert variant="destructive" className="py-2">
-            <AlertCircle className="h-4 w-4" />
+            <AlertCircle className="w-4 h-4" />
             <AlertDescription className="text-xs">
               {error}
             </AlertDescription>
@@ -517,7 +517,7 @@ const StorageQuotaSettings: React.FC<StorageQuotaSettingsProps> = ({
             <h3 className="text-sm font-medium">Clínicas</h3>
           </div>
           
-          <div className="border rounded-md overflow-hidden" key={tableKey}>
+          <div className="overflow-hidden border rounded-md" key={tableKey}>
             <Table>
               <TableHeader className="bg-gray-50">
                 <TableRow>
@@ -589,12 +589,12 @@ const StorageQuotaSettings: React.FC<StorageQuotaSettingsProps> = ({
                       <TableCell className="py-2">
                         {hasCustomQuota ? (
                           clinicQuota?.isUnlimited ? (
-                            <Badge variant="outline" className="bg-blue-50 text-xs">Sin límite</Badge>
+                            <Badge variant="outline" className="text-xs bg-blue-50">Sin límite</Badge>
                           ) : (
                             <span className="text-sm">{formatBytes(clinicQuota?.quotaSize || 0)}</span>
                           )
                         ) : (
-                          <Badge variant="outline" className="bg-gray-50 text-xs">Sin límite (compartido)</Badge>
+                          <Badge variant="outline" className="text-xs bg-gray-50">Sin límite (compartido)</Badge>
                         )}
                       </TableCell>
                       <TableCell className="py-2">
@@ -634,7 +634,7 @@ const StorageQuotaSettings: React.FC<StorageQuotaSettingsProps> = ({
                 
                 {clinics.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-4 text-gray-500">
+                    <TableCell colSpan={6} className="py-4 text-center text-gray-500">
                       No hay clínicas disponibles
                     </TableCell>
                   </TableRow>
@@ -643,7 +643,7 @@ const StorageQuotaSettings: React.FC<StorageQuotaSettingsProps> = ({
             </Table>
           </div>
           
-          <div className="mt-3 text-xs text-gray-500 grid grid-cols-1 md:grid-cols-2 gap-2 border-t pt-3">
+          <div className="grid grid-cols-1 gap-2 pt-3 mt-3 text-xs text-gray-500 border-t md:grid-cols-2">
             <div>
               <div className="flex items-center gap-1 mb-1">
                 <span className="font-medium">Sin límite</span>: 
@@ -656,11 +656,11 @@ const StorageQuotaSettings: React.FC<StorageQuotaSettingsProps> = ({
             </div>
             <div>
               <div className="flex items-center gap-1 mb-1">
-                <span className="w-2 h-2 rounded-full bg-blue-500 inline-block"></span>
+                <span className="inline-block w-2 h-2 bg-blue-500 rounded-full"></span>
                 <span>% de cuota: Porcentaje usado de la cuota asignada</span>
               </div>
               <div className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-purple-500 inline-block"></span>
+                <span className="inline-block w-2 h-2 bg-purple-500 rounded-full"></span>
                 <span>% del sistema: Porcentaje usado del total del sistema</span>
               </div>
             </div>
