@@ -290,13 +290,8 @@ export function FloatingMenu({ className }: FloatingMenuProps) {
         {/* Contenido del menú - ajustado para aparecer a la izquierda */}
         {isExpanded && activeMenu && (
           <div 
-            className="absolute overflow-hidden bg-white border rounded-md"
+            className={`absolute overflow-hidden bg-white border rounded-md menu-position menu-${activeMenu}`}
             style={{
-              right: "60px",
-              top: activeMenu === "notifications" ? "170px" : 
-                   activeMenu === "favorites" ? "115px" : 
-                   activeMenu === "staff" ? "60px" : "0",
-              transform: "translateY(0)",
               boxShadow: "0 8px 30px rgba(0, 0, 0, 0.16)",
               zIndex: 999999,
               minWidth: "220px",
@@ -472,6 +467,47 @@ export function FloatingMenu({ className }: FloatingMenuProps) {
         
         .menu-content-appear {
           animation: floatingMenuAppear 0.25s cubic-bezier(0.15, 1.15, 0.6, 1.0) forwards;
+        }
+
+        /* Posicionamiento para menús desplegables */
+        .menu-position {
+          right: 60px;
+        }
+        
+        .menu-client {
+          top: 0;
+        }
+        
+        .menu-staff {
+          top: 60px;
+        }
+        
+        .menu-favorites {
+          top: 115px;
+        }
+        
+        .menu-notifications {
+          top: 170px;
+        }
+
+        /* Media query para dispositivos móviles */
+        @media (max-width: 768px) {
+          .menu-position {
+            position: fixed;
+            left: 10px;
+            right: 60px;
+            width: calc(100vw - 70px);
+            max-width: none;
+          }
+          
+          /* Ajustes específicos para cada menú en móvil */
+          .menu-client,
+          .menu-staff,
+          .menu-favorites,
+          .menu-notifications {
+            top: 50%;
+            transform: translateY(-50%);
+          }
         }
       `}</style>
     </div>
