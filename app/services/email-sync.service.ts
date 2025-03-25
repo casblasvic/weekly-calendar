@@ -68,6 +68,10 @@ class EmailSyncService {
     if (!this.config) return
 
     try {
+      if (typeof window !== 'undefined') {
+        throw new Error('Este servicio solo puede ejecutarse en el servidor');
+      }
+
       const response = await fetch("/api/email/sync", {
         method: "POST",
         headers: {

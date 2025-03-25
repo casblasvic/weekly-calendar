@@ -47,6 +47,7 @@
     "cmdk": "1.0.4",
     "date-fns": "latest",
     "embla-carousel-react": "8.5.1",
+    "encoding": "^0.1.13",
     "framer-motion": "^12.5.0",
     "imap": "^0.8.19",
     "input-otp": "1.4.1",
