@@ -184,9 +184,27 @@ const MenuItemComponent = ({
         submenuRef.current.style.display = "block";
         submenuRef.current.style.position = "fixed";
         submenuRef.current.style.left = `${rect.right}px`;
-        submenuRef.current.style.top = item.id === "configuracion" 
-          ? "calc(100vh - 450px)"
-          : `${rect.top}px`;
+        
+        // Modificación para el posicionamiento del submenú de configuración
+        if (item.id === "configuracion") {
+          // Calcular la posición óptima considerando el espacio disponible
+          const menuHeight = 450; // Altura aproximada del submenú
+          const windowHeight = window.innerHeight;
+          
+          // Si hay suficiente espacio debajo del elemento padre, alinear desde arriba
+          if (rect.bottom + 20 < windowHeight) {
+            submenuRef.current.style.top = `${rect.top}px`;
+          } else {
+            // Si no hay suficiente espacio, alinear desde abajo
+            // Garantizar que no se salga de la pantalla
+            const topPosition = Math.max(10, rect.bottom - menuHeight);
+            submenuRef.current.style.top = `${topPosition}px`;
+          }
+        } else {
+          // Para otros menús, mantener el comportamiento original
+          submenuRef.current.style.top = `${rect.top}px`;
+        }
+        
         submenuRef.current.style.zIndex = "99999";
         submenuRef.current.style.backgroundColor = "white";
         submenuRef.current.style.border = "1px solid #e5e7eb";
