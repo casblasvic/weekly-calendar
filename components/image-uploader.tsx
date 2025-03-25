@@ -1,26 +1,15 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useImages } from '@/contexts/image-context';
-import { 
-  getEntityImages, 
-  saveEntityImages,
-  getServiceImages,
-  saveServiceImages,
-  getTarifaImages,
-  saveTarifaImages,
-  getClientImages,
-  saveClientImages 
-} from '@/mockData';
+import { useImages, ImageFile } from '@/contexts/image-context';
 import { Upload, X, Star } from 'lucide-react';
 import Image from 'next/image';
-import { DeviceImage } from '@/contexts/equipment-context';
 
 interface ImageUploaderProps {
   entityType: 'equipment' | 'service' | 'tarifa' | 'client';
   entityId: string | number;
   clinicId: string | number;
-  onChange?: (images: DeviceImage[]) => void;
+  onChange?: (images: ImageFile[]) => void;
   maxImages?: number;
   className?: string;
 }
@@ -33,34 +22,19 @@ export function ImageUploader({
   maxImages = 10,
   className = ''
 }: ImageUploaderProps) {
-  const { uploadImage } = useImages();
-  const [images, setImages] = useState<DeviceImage[]>([]);
+  const { uploadImage, getImagesByEntity, reorderImages } = useImages();
+  const [images, setImages] = useState<ImageFile[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
 
   // Cargar imágenes existentes al montar el componente
   useEffect(() => {
-    const loadImages = () => {
+    const loadImages = async () => {
       try {
         console.log(`Intentando cargar imágenes para ${entityType} ${entityId} (clínica: ${clinicId})`);
-        let entityImages: DeviceImage[] = [];
         
-        // Obtener imágenes según el tipo de entidad
-        switch (entityType) {
-          case 'equipment':
-            entityImages = getEntityImages('equipment', entityId);
-            break;
-          case 'service':
-            entityImages = getServiceImages(entityId.toString());
-            console.log(`Imágenes para servicio ${entityId}: `, entityImages);
-            break;
-          case 'tarifa':
-            entityImages = getTarifaImages(entityId.toString());
-            break;
-          case 'client':
-            entityImages = getClientImages(entityId.toString());
-            break;
-        }
+        // Obtener imágenes usando el contexto de imágenes
+        const entityImages = await getImagesByEntity(entityType, entityId.toString());
         
         if (entityImages && entityImages.length > 0) {
           // Procesar las imágenes para asegurar que tienen URLs válidas
@@ -89,7 +63,7 @@ export function ImageUploader({
     if (entityId) {
       loadImages();
     }
-  }, [entityType, entityId, clinicId, onChange]);
+  }, [entityType, entityId, clinicId, onChange, getImagesByEntity]);
 
   // Manejar la carga de nuevas imágenes
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -99,7 +73,7 @@ export function ImageUploader({
     
     try {
       const files = Array.from(e.target.files);
-      const newImages: DeviceImage[] = [];
+      const newImages: ImageFile[] = [];
       
       // Verificar si no excedemos el límite de imágenes
       const totalImages = images.length + files.length;
@@ -146,25 +120,8 @@ export function ImageUploader({
       const updatedImages = [...images, ...newImages];
       setImages(updatedImages);
       
-      // Guardar las imágenes en MockData según el tipo de entidad
-      switch (entityType) {
-        case 'equipment':
-          saveEntityImages('equipment', entityId, updatedImages);
-          break;
-        case 'service':
-          console.log(`Guardando imágenes de servicio ${entityId}:`, updatedImages);
-          const saveResult = saveServiceImages(entityId.toString(), updatedImages);
-          console.log(`Resultado de guardar imágenes para servicio ${entityId}:`, saveResult);
-          // Verificar que se guardaron correctamente
-          console.log(`Verificando imágenes guardadas para servicio ${entityId}:`, getServiceImages(entityId.toString()));
-          break;
-        case 'tarifa':
-          saveTarifaImages(entityId.toString(), updatedImages);
-          break;
-        case 'client':
-          saveClientImages(entityId.toString(), updatedImages);
-          break;
-      }
+      // Actualizar el orden de las imágenes usando el contexto de imágenes
+      await reorderImages(entityType, entityId.toString(), updatedImages.map(img => img.id));
       
       // Notificar al componente padre
       if (onChange) {
@@ -178,7 +135,7 @@ export function ImageUploader({
   };
 
   // Establecer imagen como principal
-  const setAsPrimary = (id: string) => {
+  const setAsPrimary = async (id: string) => {
     const updatedImages = images.map(img => ({
       ...img,
       isPrimary: img.id === id
@@ -186,30 +143,21 @@ export function ImageUploader({
     
     setImages(updatedImages);
     
-    // Guardar cambios en MockData
-    switch (entityType) {
-      case 'equipment':
-        saveEntityImages('equipment', entityId, updatedImages);
-        break;
-      case 'service':
-        saveServiceImages(entityId.toString(), updatedImages);
-        break;
-      case 'tarifa':
-        saveTarifaImages(entityId.toString(), updatedImages);
-        break;
-      case 'client':
-        saveClientImages(entityId.toString(), updatedImages);
-        break;
-    }
-    
-    // Notificar al componente padre
-    if (onChange) {
-      onChange(updatedImages);
+    // Actualizar el orden con la nueva imagen principal
+    try {
+      await reorderImages(entityType, entityId.toString(), updatedImages.map(img => img.id));
+      
+      // Notificar al componente padre
+      if (onChange) {
+        onChange(updatedImages);
+      }
+    } catch (error) {
+      console.error(`Error al actualizar imagen principal para ${entityType} ${entityId}:`, error);
     }
   };
 
   // Eliminar imagen
-  const removeImage = (id: string) => {
+  const removeImage = async (id: string) => {
     const updatedImages = images.filter(img => img.id !== id);
     setImages(updatedImages);
     
@@ -218,25 +166,18 @@ export function ImageUploader({
       setCurrentIndex(Math.max(0, updatedImages.length - 1));
     }
     
-    // Guardar cambios en MockData
-    switch (entityType) {
-      case 'equipment':
-        saveEntityImages('equipment', entityId, updatedImages);
-        break;
-      case 'service':
-        saveServiceImages(entityId.toString(), updatedImages);
-        break;
-      case 'tarifa':
-        saveTarifaImages(entityId.toString(), updatedImages);
-        break;
-      case 'client':
-        saveClientImages(entityId.toString(), updatedImages);
-        break;
-    }
-    
-    // Notificar al componente padre
-    if (onChange) {
-      onChange(updatedImages);
+    // Actualizar las imágenes sin la que se eliminó
+    try {
+      if (updatedImages.length > 0) {
+        await reorderImages(entityType, entityId.toString(), updatedImages.map(img => img.id));
+      }
+      
+      // Notificar al componente padre
+      if (onChange) {
+        onChange(updatedImages);
+      }
+    } catch (error) {
+      console.error(`Error al eliminar imagen para ${entityType} ${entityId}:`, error);
     }
   };
 

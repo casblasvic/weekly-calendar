@@ -22,13 +22,13 @@ export interface Room {
 }
 
 export function convertCabinToRoom(cabin: {
-  id: number;
+  id: string | number;
   name: string;
   color?: string;
   [key: string]: any;
 }): Room {
   return {
-    id: cabin.id.toString(),
+    id: String(cabin.id),
     name: cabin.name,
     color: cabin.color
   };

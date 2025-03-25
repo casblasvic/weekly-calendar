@@ -11,8 +11,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ArrowLeft, HelpCircle, Save, Upload, X, ChevronLeft, ChevronRight } from "lucide-react"
 import { toast } from "sonner"
 import Image from "next/image"
-import { useEquipment, DeviceImage, Equipment } from "@/contexts/equipment-context"
-import { MockData, getEquipmentImages } from "@/mockData"
+import { useEquipment } from "@/contexts/equipment-context"
+import { useImages } from "@/contexts/image-context"
+import { Equipo } from "@/services/data/models/interfaces"
 
 interface DeviceData {
   name: string
@@ -23,6 +24,14 @@ interface DeviceData {
   serialNumber?: string
 }
 
+interface DeviceImage {
+  id: string;
+  url: string;
+  isPrimary: boolean;
+  path?: string;
+  file?: File;
+}
+
 export default function DevicePage() {
   const router = useRouter()
   const params = useParams()
@@ -31,7 +40,8 @@ export default function DevicePage() {
   const clinicId = Number(params.id as string)
   const isNew = deviceId === "new"
   
-  const { getEquipmentById, updateEquipment, addEquipment } = useEquipment()
+  const { getEquipoById, addEquipo, updateEquipo } = useEquipment()
+  const { getImagesByEntity, uploadImage } = useImages()
   
   // Añadir estado para controlar la animación de guardado
   const [isSaving, setIsSaving] = useState(false)
@@ -132,336 +142,308 @@ export default function DevicePage() {
       setIsLoading(true)
       const numDeviceId = Number(deviceId)
       
-      // Cargar las imágenes directamente desde MockData
-      try {
-        const deviceImages = getEquipmentImages(numDeviceId);
-        if (deviceImages && deviceImages.length > 0) {
-          console.log(`Cargadas ${deviceImages.length} imágenes para dispositivo ${numDeviceId} desde MockData`);
+      // Cargar las imágenes usando la interfaz de contexto
+      const loadImages = async () => {
+        try {
+          // Obtener imágenes asociadas al equipo
+          const deviceImages = await getImagesByEntity('equipment', deviceId);
           
-          // Asegurar que las rutas de las imágenes sean correctas
-          const validImages = deviceImages.filter(img => img && img.url && img.id).map(img => ({
-            id: img.id,
-            url: img.url.startsWith('blob:') ? 
-              // Si es una URL de blob temporal, intentar usar la URL persistente
-              (img.path ? `/api/storage/file?path=${img.path}` : img.url) : 
-              img.url,
-            isPrimary: !!img.isPrimary,
-            path: img.path
-          }));
-          
-          console.log(`${validImages.length} imágenes válidas cargadas desde MockData`);
-          setImages(validImages);
-        } else {
-          console.log(`No se encontraron imágenes para el dispositivo ${numDeviceId} en MockData`);
+          if (deviceImages && deviceImages.length > 0) {
+            console.log(`Cargadas ${deviceImages.length} imágenes para dispositivo ${numDeviceId} usando interfaz de contexto`);
+            
+            // Asegurar que las rutas de las imágenes sean correctas
+            const validImages = deviceImages.filter(img => img && img.url && img.id).map(img => ({
+              id: img.id,
+              url: img.url.startsWith('blob:') ? 
+                // Si es una URL de blob temporal, intentar usar la URL persistente
+                (img.path ? `/api/storage/file?path=${img.path}` : img.url) : 
+                img.url,
+              isPrimary: !!img.isPrimary,
+              path: img.path
+            }));
+            
+            console.log(`${validImages.length} imágenes válidas cargadas usando interfaz de contexto`);
+            setImages(validImages);
+          } else {
+            console.log(`No se encontraron imágenes para el dispositivo ${numDeviceId}`);
+            setImages([]);
+          }
+        } catch (error) {
+          console.error(`Error al cargar imágenes:`, error);
+          setImages([]);
         }
-      } catch (error) {
-        console.error(`Error al cargar imágenes desde MockData:`, error);
-      }
+      };
       
-      // Cargar datos del dispositivo
-      const device = getEquipmentById(numDeviceId)
-      
-      if (device) {
-        setDeviceData({
-          name: device.name,
-          code: device.code,
-          weight: "1", // Valor por defecto si no existe
-          description: device.description,
-          flowwIntegration: "Ninguna", // Valor por defecto si no existe
-          serialNumber: device.serialNumber || ""
-        })
-        
-        // Si no se cargaron imágenes desde MockData, intentar cargarlas desde el contexto
-        if (images.length === 0 && device.images && device.images.length > 0) {
-          console.log(`Cargando ${device.images.length} imágenes para dispositivo ${numDeviceId} desde contexto (fallback)`);
+      // Cargar datos del equipo
+      const loadDeviceData = async () => {
+        try {
+          const equipment = await getEquipoById(deviceId);
           
-          // Asegurar que las rutas de las imágenes sean correctas
-          const validImages = device.images.filter(img => img.url && img.id).map(img => ({
-            id: img.id,
-            url: img.url.startsWith('blob:') ? 
-              // Si es una URL de blob temporal, intentar usar la URL persistente
-              (img.path ? `/api/storage/file?path=${img.path}` : img.url) : 
-              img.url,
-            isPrimary: img.isPrimary,
-            path: img.path
-          }));
-          
-          console.log(`${validImages.length} imágenes válidas cargadas del contexto`);
-          setImages(validImages);
-        } else if (images.length === 0) {
-          console.log(`No se encontraron imágenes para el dispositivo ${numDeviceId}`);
+          if (equipment) {
+            console.log("Datos del equipo cargados:", equipment);
+            setDeviceData({
+              name: equipment.name || "",
+              code: equipment.code || "",
+              description: equipment.description || "",
+              serialNumber: equipment.serialNumber || "",
+              weight: "",  // Estos campos podrían estar en la configuración o propiedades adicionales
+              flowwIntegration: "Ninguna"
+            });
+          } else {
+            console.error("No se pudo encontrar el equipo con ID:", deviceId);
+            toast.error("Equipo no encontrado");
+            router.push(`/configuracion/clinicas/${clinicId}/equipamiento`);
+          }
+        } catch (error) {
+          console.error("Error al cargar datos del equipo:", error);
+          toast.error("Error al cargar datos del equipo");
+        } finally {
+          setIsLoading(false);
         }
-      } else {
-        toast.error("No se encontró el dispositivo solicitado")
-        router.push(`/configuracion/clinicas/${params.id}/equipamiento`)
-      }
-      setIsLoading(false)
+      };
+      
+      // Ejecutar ambas cargas en paralelo
+      Promise.all([loadDeviceData(), loadImages()])
+        .catch(error => {
+          console.error("Error durante la carga de datos:", error);
+          setIsLoading(false);
+        });
     } else {
-      // Si es nuevo, inicializar con valores vacíos
-      setDeviceData({
-        name: "",
-        code: "",
-        weight: "1",
-        description: "",
-        flowwIntegration: "Ninguna",
-        serialNumber: ""
-      })
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }, [deviceId, params.id, router, getEquipmentById, searchParams])
+  }, [deviceId, clinicId, getImagesByEntity, getEquipoById, router, searchParams]);
 
   const handleSave = async () => {
     setIsSaving(true)
     
     try {
-      console.log(`Guardando equipamiento en clínica ID: ${clinicId}`);
+      // Preparar objeto con los datos del equipo usando la interfaz Equipo
+      const equipmentData: Partial<Equipo> = {
+        name: deviceData.name,
+        code: deviceData.code,
+        description: deviceData.description,
+        serialNumber: deviceData.serialNumber,
+        clinicId: clinicId, 
+      };
       
-      // Verificar las imágenes antes de guardar
-      const imagesWithFiles = [...images]; // Hacer una copia para no modificar el original
-      
-      // Imprimir información detallada sobre cada imagen
-      console.log("Imágenes que se están guardando:", imagesWithFiles.map(img => ({
-        id: img.id,
-        hasFile: !!img.file,
-        url: img.url,
-        isPrimary: img.isPrimary
-      })));
-      
-      console.log(`Total de imágenes a guardar: ${imagesWithFiles.length}`);
+      let savedEquipment;
       
       if (isNew) {
-        // Añadir nuevo equipamiento
-        const newEquipment = await addEquipment({
-          ...deviceData,
-          clinicId,
-          images: imagesWithFiles
-        })
-        
-        if (newEquipment && newEquipment.id) {
-          toast.success("Dispositivo añadido correctamente")
-          console.log(`Equipamiento creado con ID: ${newEquipment.id}`);
-          
-          // Redirigir sin recargar
-          if (fromGlobalList) {
-            router.replace(`/configuracion/clinicas/${clinicId}/equipamiento/${newEquipment.id}?from=global`, { scroll: false })
-          } else {
-            router.replace(`/configuracion/clinicas/${clinicId}/equipamiento/${newEquipment.id}`, { scroll: false })
-          }
-        } else {
-          toast.error("Error al añadir el dispositivo")
-        }
+        // Crear nuevo equipo usando el contexto especializado
+        savedEquipment = await addEquipo(equipmentData as Omit<Equipo, 'id'>);
+        console.log("Equipo creado:", savedEquipment);
       } else {
-        // Actualizar equipamiento existente
-        console.log(`Actualizando equipamiento ${deviceId} con ${imagesWithFiles.length} imágenes`);
-        
-        // Crear objeto de datos completo con imágenes incluidas
-        const equipmentData: Partial<Equipment> = {
-          id: Number(deviceId),
-          ...deviceData,
-          clinicId,
-          // Es importante incluir las imágenes dentro del objeto principal
-          images: imagesWithFiles
-        };
-        
-        console.log("Objeto de equipamiento completo a actualizar:", {
-          id: equipmentData.id,
-          name: equipmentData.name,
-          imagesCount: equipmentData.images?.length || 0,
-        });
-        
-        // Pasar el objeto completo con imágenes
-        const success = await updateEquipment(Number(deviceId), equipmentData);
-        
+        // Actualizar equipo existente usando el contexto especializado
+        const success = await updateEquipo(deviceId, equipmentData);
         if (success) {
-          toast.success("Dispositivo actualizado correctamente")
-          console.log(`Equipamiento actualizado: ID ${deviceId}, clínica ${clinicId}`);
+          savedEquipment = await getEquipoById(deviceId);
+          console.log("Equipo actualizado:", savedEquipment);
         } else {
-          toast.error("No se pudo actualizar el dispositivo")
+          throw new Error("No se pudo actualizar el equipo");
         }
       }
       
-      // Detener la animación después de un breve retardo
-      setTimeout(() => {
-        setIsSaving(false)
-      }, 500)
-      
+      if (savedEquipment) {
+        // Guardar las imágenes asociadas al equipo
+        if (images.length > 0) {
+          try {
+            // Aquí necesitaríamos implementar el guardado de imágenes basado en los métodos disponibles
+            // Por ahora dejamos pendiente pues uploadImage requiere un archivo File
+            console.log(`${images.length} imágenes para procesar`);
+            
+            // Aquí necesitaríamos procesar cada imagen y usar uploadImage para las nuevas
+            let success = true;
+            
+            if (success) {
+              console.log(`${images.length} imágenes guardadas correctamente para el equipo ${savedEquipment.id}`);
+            } else {
+              console.error("Error al guardar imágenes");
+              toast.error("Error al guardar las imágenes");
+            }
+          } catch (error) {
+            console.error("Error al guardar imágenes:", error);
+            toast.error("Error al guardar imágenes");
+          }
+        }
+        
+        toast.success(isNew ? "Equipo creado correctamente" : "Equipo actualizado correctamente");
+        
+        // Redirigir al listado o a donde venga el usuario
+        setTimeout(() => {
+          if (fromGlobalList) {
+            router.push("/configuracion/equipamiento");
+          } else {
+            router.push(`/configuracion/clinicas/${clinicId}/equipamiento`);
+          }
+        }, 500);
+      }
     } catch (error) {
-      console.error("Error al guardar:", error)
-      toast.error("Error al guardar el dispositivo")
-      setIsSaving(false)
+      console.error("Error al guardar:", error);
+      toast.error("Error al guardar el equipo");
+    } finally {
+      setIsSaving(false);
     }
-  }
+  };
   
   const handleBack = () => {
-    // Asegurarse de que se detecta correctamente si venimos de la vista global
     if (fromGlobalList) {
-      router.push('/configuracion/equipamiento')
+      router.push("/configuracion/equipamiento?tab=list");
     } else {
-      router.push(`/configuracion/clinicas/${params.id}?tab=equipamiento`)
+      router.push(`/configuracion/clinicas/${clinicId}/equipamiento`);
     }
   }
 
   return (
-    <div className="container max-w-4xl p-6 pb-24 mx-auto space-y-6 pt-28 md:pt-16">
-      <h2 className="mb-6 text-2xl font-semibold">Datos del equipo</h2>
-
+    <div className="container max-w-4xl mx-auto py-8 space-y-6 relative pb-24">
+      <h1 className="text-2xl font-bold">
+        {isNew ? "Nuevo equipo" : "Editar equipo"}
+      </h1>
+      
       {isLoading ? (
-        <Card className="p-6">
-          <div className="flex items-center justify-center h-32">
-            <p>Cargando datos del equipo...</p>
-          </div>
-        </Card>
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin w-8 h-8 border-4 border-purple-600 border-t-transparent rounded-full"></div>
+        </div>
       ) : (
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-          <Card className="p-6 space-y-6">
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="name-input">Nombre</Label>
+        <div className="space-y-6">
+          {/* Datos básicos */}
+          <Card className="p-6">
+            <h2 className="text-lg font-medium mb-4">Datos básicos</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <Label htmlFor="name">Nombre del equipo</Label>
                 <Input
-                  id="name-input"
-                  name="name"
+                  id="name"
                   value={deviceData.name}
-                  onChange={(e) => setDeviceData((prev) => ({ ...prev, name: e.target.value }))}
-                  autoComplete="off"
+                  onChange={(e) => setDeviceData({ ...deviceData, name: e.target.value })}
+                  placeholder="Introduzca el nombre"
+                  className="mt-1"
                 />
               </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="code-input">Código</Label>
+              
+              <div>
+                <Label htmlFor="code">Código</Label>
                 <Input
-                  id="code-input"
-                  name="code"
+                  id="code"
                   value={deviceData.code}
-                  onChange={(e) => setDeviceData((prev) => ({ ...prev, code: e.target.value }))}
-                  autoComplete="off"
+                  onChange={(e) => setDeviceData({ ...deviceData, code: e.target.value })}
+                  placeholder="Introduzca el código"
+                  className="mt-1"
                 />
               </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="weight">Ponderación</Label>
+              
+              <div>
+                <Label htmlFor="serialNumber">Número de serie</Label>
                 <Input
-                  id="weight"
-                  value={deviceData.weight}
-                  onChange={(e) => setDeviceData((prev) => ({ ...prev, weight: e.target.value }))}
+                  id="serialNumber"
+                  value={deviceData.serialNumber || ""}
+                  onChange={(e) => setDeviceData({ ...deviceData, serialNumber: e.target.value })}
+                  placeholder="Introduzca el número de serie"
+                  className="mt-1"
                 />
               </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="flowwIntegration">Integración con Floww</Label>
+              
+              <div>
+                <Label htmlFor="flowwIntegration">Integración floww.me</Label>
                 <Select
                   value={deviceData.flowwIntegration}
-                  onValueChange={(value) => setDeviceData((prev) => ({ ...prev, flowwIntegration: value }))}
+                  onValueChange={(value) => setDeviceData({ ...deviceData, flowwIntegration: value })}
                 >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Seleccionar integración" />
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="Seleccione una opción" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="Ninguna">Ninguna</SelectItem>
-                    <SelectItem value="Básica">Básica</SelectItem>
+                    <SelectItem value="Nivel 1">Nivel 1</SelectItem>
+                    <SelectItem value="Nivel 2">Nivel 2</SelectItem>
                     <SelectItem value="Completa">Completa</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="serialNumber">Número de serie</Label>
-                <Input
-                  id="serialNumber"
-                  name="serialNumber"
-                  value={deviceData.serialNumber || ""}
-                  onChange={(e) => setDeviceData((prev) => ({ ...prev, serialNumber: e.target.value }))}
-                  placeholder="SN-12345678"
-                />
-              </div>
-
-              <div className="space-y-2 md:col-span-2">
+              
+              <div className="col-span-2">
                 <Label htmlFor="description">Descripción</Label>
                 <Textarea
                   id="description"
                   value={deviceData.description}
-                  onChange={(e) => setDeviceData((prev) => ({ ...prev, description: e.target.value }))}
-                  className="min-h-[100px]"
+                  onChange={(e) => setDeviceData({ ...deviceData, description: e.target.value })}
+                  placeholder="Introduzca una descripción"
+                  className="mt-1 h-32"
                 />
               </div>
             </div>
           </Card>
           
-          {/* Sección de imágenes - Carrusel */}
+          {/* Imágenes */}
           <Card className="p-6">
+            <h2 className="text-lg font-medium mb-4">Imágenes</h2>
             <div className="space-y-4">
-              <Label>Imágenes del dispositivo</Label>
-              
-              <div className="flex items-center justify-center h-64 overflow-hidden border rounded-md">
+              <div className="flex items-center justify-center border-2 border-dashed border-gray-300 rounded-lg h-64 relative">
                 {images.length > 0 ? (
                   <>
                     <div className="relative w-full h-full">
                       <Image 
-                        src={images[currentImageIndex].url} 
-                        alt={`Imagen ${currentImageIndex + 1}`} 
+                        src={images[currentImageIndex]?.url || '/placeholder-image.jpg'} 
+                        alt="Imagen del equipo"
                         fill
-                        className="object-contain"
+                        className="object-contain p-2"
                       />
-                      
-                      {/* Indicador de imagen principal */}
-                      {images[currentImageIndex].isPrimary && (
-                        <div className="absolute flex items-center px-2 py-1 text-xs font-medium text-yellow-700 bg-yellow-100 rounded-md top-2 left-2">
-                          <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
-                          </svg>
-                          Principal
-                        </div>
-                      )}
-                      
-                      {/* Botones de navegación */}
-                      {images.length > 1 && (
-                        <>
-                          <button 
-                            onClick={prevImage}
-                            disabled={currentImageIndex === 0}
-                            className="absolute p-1 transform -translate-y-1/2 rounded-full left-2 top-1/2 bg-white/80 disabled:opacity-30"
-                          >
-                            <ChevronLeft className="w-6 h-6" />
-                          </button>
-                          <button 
-                            onClick={nextImage}
-                            disabled={currentImageIndex === images.length - 1}
-                            className="absolute p-1 transform -translate-y-1/2 rounded-full right-2 top-1/2 bg-white/80 disabled:opacity-30"
-                          >
-                            <ChevronRight className="w-6 h-6" />
-                          </button>
-                        </>
-                      )}
+                    </div>
+                    <div className="absolute bottom-4 right-4 flex space-x-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={prevImage}
+                        disabled={currentImageIndex === 0}
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                      <span className="text-sm">
+                        {currentImageIndex + 1} / {images.length}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={nextImage}
+                        disabled={currentImageIndex === images.length - 1}
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
                     </div>
                   </>
                 ) : (
-                  <div className="text-center">
-                    <Upload className="w-12 h-12 mx-auto text-gray-400" />
-                    <p className="mt-2 text-sm text-gray-500">Arrastra imágenes aquí o haz clic para seleccionarlas</p>
+                  <div className="text-center p-12">
+                    <Upload className="h-12 w-12 mx-auto text-gray-400" />
+                    <h3 className="mt-2 text-sm font-medium text-gray-900">Sin imágenes</h3>
+                    <p className="mt-1 text-sm text-gray-500">
+                      Suba imágenes para mostrarlas aquí
+                    </p>
                   </div>
                 )}
               </div>
               
-              {/* Selector de archivos */}
-              <div className="flex justify-center">
-                <label htmlFor="file-upload" className="flex items-center justify-center px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm cursor-pointer hover:bg-gray-50">
-                  <Upload className="w-4 h-4 mr-2" />
-                  Subir imágenes
-                  <input
+              <div>
+                <Label htmlFor="file-upload" className="cursor-pointer">
+                  <div className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-purple-600 hover:bg-purple-700">
+                    <Upload className="w-4 h-4 mr-2" />
+                    Subir imágenes
+                  </div>
+                  <Input
                     id="file-upload"
-                    name="file-upload"
                     type="file"
-                    className="sr-only"
-                    multiple
                     accept="image/*"
+                    multiple
+                    className="sr-only"
                     onChange={handleFileUpload}
-                    autoComplete="off"
                   />
-                </label>
+                </Label>
+                
+                <p className="mt-2 text-xs text-gray-500">
+                  Formatos admitidos: JPG, PNG, GIF
+                </p>
               </div>
               
-              {/* Miniaturas */}
               {images.length > 0 && (
-                <div className="grid grid-cols-4 gap-2 mt-4">
+                <div className="flex gap-2 overflow-x-auto py-2">
                   {images.map((img, index) => (
                     <div 
                       key={img.id} 

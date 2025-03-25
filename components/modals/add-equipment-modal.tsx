@@ -33,7 +33,7 @@ interface AddEquipmentModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (data: any) => void;
-  clinics?: { id: number; name: string }[];
+  clinics?: { id: string; name: string }[];
   initialEquipment?: any; // Para edición
   isEditMode?: boolean; // Para distinguir entre añadir y editar
 }
@@ -46,7 +46,7 @@ export default function AddEquipmentModal({
   clinics = []
 }: AddEquipmentModalProps) {
   const router = useRouter()
-  const { addEquipment, updateEquipment } = useEquipment()
+  const { addEquipo, updateEquipo } = useEquipment()
   const { uploadImage, getImagesByEntity, setPrimaryImage, getEntityPrimaryImage } = useImages()
   
   // Estados para el formulario y validación
@@ -77,12 +77,16 @@ export default function AddEquipmentModal({
   // Cargar datos iniciales
   useEffect(() => {
     if (isEditMode && initialEquipment) {
+      const clinicId = initialEquipment.clinicId;
+      // Asegurar que clinicId siempre es un string válido
+      const validClinicId = clinicId ? String(clinicId) : "";
+      
       const initData = {
         name: initialEquipment.name || "",
         code: initialEquipment.code || "",
         serialNumber: initialEquipment.serialNumber || "",
         description: initialEquipment.description || "",
-        clinicId: initialEquipment.clinicId ? String(initialEquipment.clinicId) : "",
+        clinicId: validClinicId
       }
       
       setEquipmentData(initData)
@@ -103,10 +107,11 @@ export default function AddEquipmentModal({
   const loadImages = async (equipmentId) => {
     setIsLoadingImages(true)
     try {
-      const equipmentImages = getImagesByEntity('equipment', equipmentId)
-      setImages(equipmentImages)
+      const equipmentImages = await getImagesByEntity('equipment', equipmentId)
+      setImages(equipmentImages || [])
     } catch (error) {
       console.error("Error al cargar imágenes:", error)
+      setImages([])
     } finally {
       setIsLoadingImages(false)
     }
@@ -160,7 +165,7 @@ export default function AddEquipmentModal({
   }
   
   // Función para guardar
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!validateForm()) {
       toast.error("Por favor, completa todos los campos obligatorios")
       return
@@ -173,12 +178,16 @@ export default function AddEquipmentModal({
     const minAnimationTime = 700 // Tiempo mínimo en ms para mostrar la animación
     
     try {
+      // Usar el clinicId directamente como string
+      const clinicId = equipmentData.clinicId;
+      
       if (isEditMode && initialEquipment) {
-        const success = updateEquipment(initialEquipment.id, {
+        // Actualizar equipo existente
+        const success = await updateEquipo(initialEquipment.id, {
           ...equipmentData,
           id: initialEquipment.id,
-          clinicId: Number(equipmentData.clinicId),
-        })
+          clinicId: clinicId,
+        });
         
         // Asegurar tiempo mínimo de animación
         const endOperation = () => {
@@ -199,35 +208,49 @@ export default function AddEquipmentModal({
         
         endOperation()
       } else {
-        const newEquipment = addEquipment({
-          ...equipmentData,
-          clinicId: Number(equipmentData.clinicId),
-        })
-        
-        // Asegurar tiempo mínimo de animación
-        const elapsedTime = Date.now() - startTime
-        const remainingTime = Math.max(0, minAnimationTime - elapsedTime)
-        
-        setTimeout(() => {
-          if (newEquipment) {
-            toast.success("Equipamiento añadido correctamente")
-            
-            // Actualizar los datos con el nuevo equipamiento
-            setEquipmentData({
-              name: newEquipment.name,
-              code: newEquipment.code,
-              serialNumber: newEquipment.serialNumber || "",
-              description: newEquipment.description || "",
-              clinicId: String(newEquipment.clinicId),
-            })
-            
-            // Restablecer el estado del formulario a no cambiado
-            setIsFormChanged(false)
-          } else {
+        // Crear nuevo equipo
+        try {
+          const newEquipment = await addEquipo({
+            ...equipmentData,
+            clinicId: clinicId,
+          });
+          
+          // Asegurar tiempo mínimo de animación
+          const elapsedTime = Date.now() - startTime
+          const remainingTime = Math.max(0, minAnimationTime - elapsedTime)
+          
+          setTimeout(() => {
+            if (newEquipment && newEquipment.id) {
+              toast.success("Equipamiento añadido correctamente")
+              
+              // Actualizar los datos con el nuevo equipamiento
+              setEquipmentData({
+                name: newEquipment.name || "",
+                code: newEquipment.code || "",
+                serialNumber: newEquipment.serialNumber || "",
+                description: newEquipment.description || "",
+                clinicId: newEquipment.clinicId || "",
+              })
+              
+              // Restablecer el estado del formulario a no cambiado
+              setIsFormChanged(false)
+            } else {
+              toast.error("Error al añadir el equipamiento")
+            }
+            setIsSaving(false)
+          }, remainingTime)
+        } catch (error) {
+          console.error("Error al añadir equipamiento:", error)
+          
+          // Manejar error específico
+          const elapsedTime = Date.now() - startTime
+          const remainingTime = Math.max(0, minAnimationTime - elapsedTime)
+          
+          setTimeout(() => {
             toast.error("Error al añadir el equipamiento")
-          }
-          setIsSaving(false)
-        }, remainingTime)
+            setIsSaving(false)
+          }, remainingTime)
+        }
       }
     } catch (error) {
       console.error("Error al guardar equipamiento:", error)
@@ -272,12 +295,14 @@ export default function AddEquipmentModal({
     
     try {
       const uploadedImages = []
+      const clinicIdString = equipmentData.clinicId || "";
+      
       for (const file of files) {
         const newImage = await uploadImage(
           file, 
           'equipment', 
           initialEquipment?.id || 'temp-id', 
-          equipmentData.clinicId,
+          clinicIdString,
           { isPrimary: images.length === 0 }
         )
         uploadedImages.push(newImage)
@@ -427,11 +452,16 @@ export default function AddEquipmentModal({
                   <SelectValue placeholder="Selecciona una clínica" />
                 </SelectTrigger>
                 <SelectContent>
-                  {clinics.map((clinic) => (
-                    <SelectItem key={clinic.id} value={String(clinic.id)}>
-                      {clinic.name}
-                    </SelectItem>
-                  ))}
+                  {clinics.map((clinic, index) => {
+                    // Generar una clave única usando el índice del array para garantizar unicidad
+                    const uniqueKey = `clinic-${index}-${clinic.id || 'unknown'}`;
+                    
+                    return (
+                      <SelectItem key={uniqueKey} value={clinic.id || ''}>
+                        {clinic.name || 'Clínica sin nombre'}
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
               {errors.clinicId && (
@@ -488,4 +518,4 @@ export default function AddEquipmentModal({
       </DialogContent>
     </Dialog>
   )
-} 
+}

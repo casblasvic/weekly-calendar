@@ -1,9 +1,8 @@
 "use client"
 
-import React from "react"
+import React, { useMemo, useEffect, useState, useCallback, useRef } from "react"
 
-import { useState, useEffect, useCallback, useRef } from "react"
-import { format, parse, addDays, startOfWeek } from "date-fns"
+import { format, parse, addDays, startOfWeek, isSameDay, differenceInDays } from "date-fns"
 import { es } from "date-fns/locale"
 import { useClinic } from "@/contexts/clinic-context"
 import { AgendaNavBar } from "./agenda-nav-bar"
@@ -17,8 +16,7 @@ import { AppointmentDialog } from "@/components/appointment-dialog"
 import { NewClientDialog } from "@/components/new-client-dialog"
 import { ResizableAppointment } from "./resizable-appointment"
 import { DragDropContext, Droppable } from "react-beautiful-dnd"
-import type { ScheduleBlock } from "@/mockData"
-import { getScheduleBlocks } from "@/mockData" 
+import { ScheduleBlock, useScheduleBlocks } from "@/contexts/schedule-blocks-context"
 import { Lock } from "lucide-react"
 import { parseISO, isAfter, isBefore, getDay, getDate } from "date-fns"
 import { useToast } from "@/hooks/use-toast"
@@ -68,14 +66,27 @@ interface WeeklyAgendaProps {
   initialDate?: string
   containerMode?: boolean
   onAppointmentsChange?: (appointments: Appointment[]) => void
+  initialClinic?: {
+    id: string | number
+    config?: any
+  }
 }
 
 export default function WeeklyAgenda({
   initialDate = format(new Date(), "yyyy-MM-dd"),
   containerMode = false,
   onAppointmentsChange,
+  initialClinic,
 }: WeeklyAgendaProps) {
   const router = useRouter()
+  const { activeClinic } = useClinic()
+  const { getBlocksByDateRange } = useScheduleBlocks()
+  
+  // Añadir state para controlar transiciones
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const [transitionDirection, setTransitionDirection] = useState<'left' | 'right' | null>(null);
+  
+  // Resto de estados existentes
   const [currentDate, setCurrentDate] = useState(() => {
     try {
       return parse(initialDate, "yyyy-MM-dd", new Date())
@@ -84,15 +95,38 @@ export default function WeeklyAgenda({
     }
   })
 
-  // Añadir un efecto para actualizar currentDate cuando cambia la prop initialDate
+  // Usar initialClinic si se proporciona, de lo contrario usar activeClinic del contexto
+  // Esto es crucial para evitar ciclos de renderizado cuando cambia activeClinic,
+  // ya que podemos recibir una versión estable a través de props
+  const effectiveClinic = useMemo(() => initialClinic || activeClinic, [initialClinic, activeClinic]);
+
+  // Añadir una nueva optimización para reducir renderizados innecesarios
+  // Cerca del inicio del componente, justo después de las referencias al useClinic
+  const prevDateRef = useRef<string | null>(null);
+  const needsFullRerenderRef = useRef(false);
+
+  // Optimizar el efecto para actualizar la fecha cuando cambia initialDate
   useEffect(() => {
     try {
-      const parsedDate = parse(initialDate, "yyyy-MM-dd", new Date())
-      setCurrentDate(parsedDate)
+      // Si ya estamos en transición, no iniciar otra para evitar parpadeos
+      if (isTransitioning) return;
+
+      const parsedDate = parse(initialDate, "yyyy-MM-dd", new Date());
+      const initialDateStr = format(parsedDate, "yyyy-MM-dd");
+      
+      // Solo actualizar si la fecha realmente cambió para evitar re-renderizados innecesarios
+      if (!isSameDay(parsedDate, currentDate)) {
+        // Actualizar referencia sin transición visual
+        prevDateRef.current = initialDateStr;
+        
+        // Actualizar fecha directamente, sin animaciones ni efectos visuales
+        // Esto es más rápido y evita parpadeos al navegar entre semanas
+        setCurrentDate(parsedDate);
+      }
     } catch (error) {
       // Error silencioso
     }
-  }, [initialDate])
+  }, [initialDate, currentDate, isTransitioning]);
 
   // Estados para diálogos y selección
   const [selectedSlot, setSelectedSlot] = useState<{
@@ -141,8 +175,15 @@ export default function WeeklyAgenda({
     }
   }, [appointments, onAppointmentsChange])
 
-  const { activeClinic } = useClinic()
-  const clinicConfig = activeClinic?.config || {}
+  const clinicConfig = effectiveClinic?.config || {
+    openTime: "09:00",
+    closeTime: "18:00",
+    slotDuration: 15,
+    cabins: [],
+    schedule: {},
+    weekendOpenTime: "10:00",
+    weekendCloseTime: "14:00"
+  };
 
   // Obtener configuración de horarios
   const openTime = clinicConfig.openTime || "09:00"
@@ -230,13 +271,92 @@ export default function WeeklyAgenda({
   // Añadir este estado cerca de los otros estados al inicio del componente
   const [updateKey, setUpdateKey] = useState(0)
 
-  // Añadir este efecto para cargar los bloqueos:
+  // Efecto para realizar limpieza cuando el componente se desmonta o cambia de clínica
   useEffect(() => {
-    if (activeClinic?.id) {
-      const blocks = getScheduleBlocks(activeClinic.id)
-      setScheduleBlocks(blocks)
-    }
-  }, [activeClinic?.id, updateKey])
+    console.log("[WeeklyAgenda] Inicializado con clínica:", effectiveClinic?.id);
+    
+    // Esta función se ejecutará al desmontar el componente o cuando cambie effectiveClinic
+    return () => {
+      console.log("[WeeklyAgenda] Limpiando recursos para clínica:", effectiveClinic?.id);
+      
+      // Limpiar todos los estados con datos específicos de la clínica
+      setScheduleBlocks([]);
+      setSelectedBlock(null);
+      setIsBlockModalOpen(false);
+      setSelectedSlot(null);
+      setSelectedClient(null);
+      setIsSearchDialogOpen(false);
+      setIsAppointmentDialogOpen(false);
+      setIsNewClientDialogOpen(false);
+      
+      // Reiniciar otros estados sensibles a la clínica
+      setTimeSlots([]);
+      
+      // Forzar limpieza de memory heap
+      if (typeof window !== 'undefined') {
+        try {
+          // Sugerir al garbage collector que se ejecute (solo es una sugerencia)
+          if (window.gc) {
+            window.gc();
+          }
+        } catch (e) {
+          // Ignorar errores - gc() no está disponible en todos los navegadores
+        }
+      }
+    };
+  }, [effectiveClinic?.id]);
+
+  // Efecto adicional de limpieza
+  useEffect(() => {
+    // Función para limpiar
+    const cleanupResources = () => {
+      // Código de limpieza (si es necesario)
+      console.log("[WeeklyAgenda] Limpiando recursos");
+    };
+    
+    // Devolver función de limpieza para ejecutar al desmontar
+    return () => {
+      cleanupResources();
+    };
+  }, []);
+
+  // En el efecto donde se obtienen los bloques de horario
+  // Asegurar que solo se actualizan cuando hay cambios reales
+  useEffect(() => {
+    const fetchBlocks = async () => {
+      try {
+        if (!effectiveClinic?.id) return;
+        
+        // Calcular fechas para el rango
+        const monday = startOfWeek(currentDate, { weekStartsOn: 1 });
+        const sunday = addDays(monday, 6);
+        
+        // Formatear fechas para la llamada a la API
+        const startDate = format(monday, "yyyy-MM-dd");
+        const endDate = format(sunday, "yyyy-MM-dd");
+        
+        // Usar el ID de la clínica desde la propiedad o contexto
+        const clinicId = String(effectiveClinic.id);
+        
+        // Obtener bloques de horario
+        const blocks = await getBlocksByDateRange(clinicId, startDate, endDate);
+        
+        // Verificar si hay cambios antes de actualizar el estado
+        const currentBlockIds = scheduleBlocks.map(block => block.id).sort().join(',');
+        const newBlockIds = blocks.map(block => block.id).sort().join(',');
+        
+        if (currentBlockIds !== newBlockIds) {
+          setScheduleBlocks(blocks);
+          // Forzar actualización de la vista
+          setUpdateKey(prev => prev + 1);
+        }
+      } catch (error) {
+        console.error("Error al obtener bloques de horario:", error);
+      }
+    };
+    
+    fetchBlocks();
+  }, [effectiveClinic?.id, currentDate, getBlocksByDateRange]);
 
   // Corregir la función findBlockForCell
   const findBlockForCell = (date: string, time: string, roomId: string): ScheduleBlock | null => {
@@ -416,7 +536,17 @@ export default function WeeklyAgenda({
   const renderWeeklyGrid = () => (
     <div className="flex-1 overflow-auto">
       <DragDropContext onDragEnd={onDragEnd}>
-        <div ref={agendaRef} className="relative z-0" style={{ scrollBehavior: "smooth" }}>
+        <div 
+          ref={agendaRef} 
+          className="relative z-0" 
+          style={{ 
+            scrollBehavior: "smooth",
+            willChange: "transform",
+            transform: "translateZ(0)",
+            // Añadir contain para optimizar renderizado
+            contain: "paint layout style"
+          }}
+        >
           <div className="min-w-[800px] relative">
             <div
               className="grid"
@@ -424,6 +554,8 @@ export default function WeeklyAgenda({
                 gridTemplateColumns: `auto repeat(${weekDays.length}, 1fr)`,
                 minWidth: "800px",
                 width: "100%",
+                willChange: "contents", // Optimizar para cambios de contenido
+                contain: "layout style paint" // Contener efectos visuales
               }}
             >
               {/* Columna de tiempo */}
@@ -529,6 +661,7 @@ export default function WeeklyAgenda({
                           style={{
                             height: `${AGENDA_CONFIG.ROW_HEIGHT}px`,
                             gridTemplateColumns: `repeat(${activeCabins.length}, 1fr)`,
+                            transform: needsFullRerenderRef.current ? 'none' : 'translateZ(0)', // Activa hardware acceleration
                           }}
                         >
                           {activeCabins.map((cabin, cabinIndex) => {
@@ -648,8 +781,8 @@ export default function WeeklyAgenda({
             timeSlots={timeSlots}
             rowHeight={AGENDA_CONFIG.ROW_HEIGHT}
             isMobile={false}
-            className="z-10"
-            agendaRef={agendaRef as React.RefObject<HTMLDivElement>}
+            className="current-time-indicator"
+            agendaRef={agendaRef}
             clinicOpenTime={openTime}
             clinicCloseTime={closeTime}
           />
@@ -658,102 +791,231 @@ export default function WeeklyAgenda({
     </div>
   )
 
+  // Modificar la función handleAppointmentAdd para ser más eficiente
+  const handleAppointmentAdd = useCallback((appointment) => {
+    // Usar un callback para evitar que React tenga que recrear todo el array
+    setAppointments(prevAppointments => {
+      // Si la cita ya existe, reemplazarla
+      const exists = prevAppointments.some(apt => apt.id === appointment.id);
+      if (exists) {
+        return prevAppointments.map(apt => 
+          apt.id === appointment.id ? appointment : apt
+        );
+      }
+      // Si no existe, añadirla
+      return [...prevAppointments, appointment];
+    });
+  }, []);
+
+  // Mejorar la función de setCurrentDateWithTransition para hacerla más eficiente
+  const setCurrentDateWithTransition = useCallback((newDate: Date) => {
+    // Si ya estamos en transición, actualizar directamente sin efectos
+    if (isTransitioning) {
+      setCurrentDate(newDate);
+      return;
+    }
+    
+    // Determinar dirección de la transición
+    const direction = newDate > currentDate ? 'left' : 'right';
+    
+    // Aplicar un enfoque más directo para minimizar parpadeos
+    setIsTransitioning(true);
+    setTransitionDirection(direction);
+    
+    // Actualizar la fecha inmediatamente
+    setCurrentDate(newDate);
+    
+    // Terminar transición después de un tiempo breve
+    // Sin usar requestAnimationFrame adicionales para evitar un ciclo extra de renderizado
+    setTimeout(() => {
+      setIsTransitioning(false);
+      setTransitionDirection(null);
+    }, 100);
+  }, [currentDate, isTransitioning]);
+
+  // Optimizar los estilos de transición para minimizar el efecto visual
+  const transitionStyles = useMemo(() => ({
+    transition: isTransitioning ? 'opacity 100ms ease-out' : 'none',
+    opacity: isTransitioning ? 0.98 : 1, // Casi imperceptible para evitar parpadeo
+    // No usar transform para evitar forzar repintados innecesarios
+    willChange: isTransitioning ? 'opacity' : 'auto'
+  }), [isTransitioning]);
+
+  // Efecto para centrar el indicador de tiempo actual sólo cuando sea necesario
+  useEffect(() => {
+    // Solo ejecutar si no estamos en transición y el componente está montado
+    if (isTransitioning || !agendaRef.current) return;
+    
+    // Crear un ID único para este intento de scroll
+    const scrollId = Symbol('timeIndicatorScroll');
+    let scrollCancelled = false;
+    
+    // Usar una función específica para este scroll
+    const scrollToTimeIndicator = () => {
+      // No ejecutar si se ha cancelado o el componente se ha desmontado
+      if (scrollCancelled || !agendaRef.current) return;
+      
+      // Buscar el indicador de tiempo actual - sin logging para evitar renders adicionales
+      const timeIndicator = agendaRef.current.querySelector('.current-time-indicator');
+      
+      // Si encontramos el indicador, hacer scroll hasta él
+      if (timeIndicator) {
+        const indicatorPosition = (timeIndicator as HTMLElement).offsetTop;
+        const agendaHeight = agendaRef.current.clientHeight;
+        
+        // Calcular la posición para centrar la línea en la pantalla
+        const scrollPosition = Math.max(0, indicatorPosition - (agendaHeight / 2));
+        
+        // Hacer scroll sin animación para evitar parpadeos
+        agendaRef.current.scrollTo({
+          top: scrollPosition,
+          behavior: 'auto'
+        });
+      }
+    };
+    
+    // Esperar a que el DOM se estabilice, pero no usar setTimeout que puede causar parpadeos
+    // En su lugar, usar requestAnimationFrame para sincronizar con el ciclo de pintado
+    let frameId: number;
+    
+    // Usar dos frames para asegurar que el DOM está completamente actualizado
+    frameId = requestAnimationFrame(() => {
+      if (scrollCancelled) return;
+      
+      frameId = requestAnimationFrame(() => {
+        if (scrollCancelled) return;
+        scrollToTimeIndicator();
+      });
+    });
+    
+    // Limpiar para evitar scrolls múltiples o después del desmontaje
+    return () => {
+      scrollCancelled = true;
+      cancelAnimationFrame(frameId);
+    };
+  }, [isTransitioning]); // Solo depender de isTransitioning para evitar múltiples ejecuciones
+
   if (containerMode) {
     return (
-      <HydrationWrapper fallback={<div>Cargando agenda semanal...</div>}>
-        <div className="flex flex-col h-full bg-white">
-          {renderWeeklyGrid()}
+      <div className="h-full" style={transitionStyles}>
+        <HydrationWrapper fallback={<div>Cargando agenda semanal...</div>}>
+          <div className="flex flex-col h-full bg-white">
+            {/* En modo contenedor, no mostramos el encabezado ni la barra de navegación
+               ya que estos serán proporcionados por el AgendaContainer padre */}
+            {renderWeeklyGrid()}
 
-          {/* Dialogs */}
-          <ClientSearchDialog
-            isOpen={isSearchDialogOpen}
-            onClose={() => setIsSearchDialogOpen(false)}
-            onClientSelect={handleClientSelect}
-            selectedTime={selectedSlot?.time}
-          />
+            {/* Diálogos y modales */}
+            {isSearchDialogOpen && (
+              <ClientSearchDialog
+                isOpen={isSearchDialogOpen}
+                onClose={() => setIsSearchDialogOpen(false)}
+                onClientSelect={handleClientSelect}
+                selectedTime={selectedSlot?.time}
+              />
+            )}
 
-          <AppointmentDialog
-            isOpen={isAppointmentDialogOpen}
-            onClose={() => setIsAppointmentDialogOpen(false)}
-            client={selectedClient}
-            selectedTime={selectedSlot?.time}
-            onSearchClick={() => {
-              setIsAppointmentDialogOpen(false)
-              setIsSearchDialogOpen(true)
-            }}
-            onNewClientClick={() => {
-              setIsAppointmentDialogOpen(false)
-              setIsNewClientDialogOpen(true)
-            }}
-            onDelete={handleDeleteAppointment}
-            onSave={handleSaveAppointment}
-          />
+            {isAppointmentDialogOpen && selectedSlot && (
+              <AppointmentDialog
+                isOpen={isAppointmentDialogOpen}
+                onClose={() => setIsAppointmentDialogOpen(false)}
+                client={selectedClient}
+                selectedTime={selectedSlot?.time}
+                onSearchClick={() => {
+                  setIsAppointmentDialogOpen(false)
+                  setIsSearchDialogOpen(true)
+                }}
+                onNewClientClick={() => {
+                  setIsAppointmentDialogOpen(false)
+                  setIsNewClientDialogOpen(true)
+                }}
+                onDelete={handleDeleteAppointment}
+                onSave={handleSaveAppointment}
+              />
+            )}
 
-          <NewClientDialog isOpen={isNewClientDialogOpen} onClose={() => setIsNewClientDialogOpen(false)} />
-        </div>
-        <BlockScheduleModal
-          open={isBlockModalOpen}
-          onOpenChange={(open) => {
-            setIsBlockModalOpen(open)
-            // Si se cierra el modal, recargar los bloques para actualizar la UI
-            if (!open && activeClinic?.id) {
-              setScheduleBlocks(getScheduleBlocks(activeClinic.id))
-              setUpdateKey((prev) => prev + 1)
-            }
-          }}
-          clinicRooms={activeCabins.map(cabin => ({
-            ...cabin,
-            id: cabin.id.toString()
-          }))}
-          blockToEdit={selectedBlock}
-          clinicId={activeClinic?.id || 1}
-          onBlockSaved={() => {
-            // Recargar los bloques
-            if (activeClinic?.id) {
-              setScheduleBlocks(getScheduleBlocks(activeClinic.id))
-              setUpdateKey((prev) => prev + 1)
-            }
-          }}
-          clinicConfig={{
-            openTime: clinicConfig.openTime || "09:00",
-            closeTime: clinicConfig.closeTime || "20:00",
-            weekendOpenTime: clinicConfig.weekendOpenTime || "09:00",
-            weekendCloseTime: clinicConfig.weekendCloseTime || "14:00",
-          }}
-        />
-      </HydrationWrapper>
+            {isNewClientDialogOpen && (
+              <NewClientDialog 
+                isOpen={isNewClientDialogOpen} 
+                onClose={() => setIsNewClientDialogOpen(false)} 
+              />
+            )}
+
+            {isBlockModalOpen && selectedBlock && (
+              <BlockScheduleModal
+                open={isBlockModalOpen}
+                onOpenChange={setIsBlockModalOpen}
+                clinicRooms={activeCabins.map(cabin => ({
+                  name: cabin.name,
+                  id: cabin.id.toString()
+                }))}
+                blockToEdit={selectedBlock}
+                clinicId={effectiveClinic?.id ? String(effectiveClinic.id) : ""}
+                onBlockSaved={() => {
+                  // Recargar los bloques
+                  if (effectiveClinic?.id) {
+                    // Usar el contexto especializado para obtener bloques
+                    const startDate = format(weekDays[0], "yyyy-MM-dd");
+                    const endDate = format(weekDays[6], "yyyy-MM-dd");
+                    
+                    getBlocksByDateRange(
+                      String(effectiveClinic.id),
+                      startDate,
+                      endDate
+                    ).then(blocks => {
+                      if (Array.isArray(blocks)) {
+                        setScheduleBlocks(blocks);
+                      }
+                      setUpdateKey((prev) => prev + 1);
+                    }).catch(error => {
+                      console.error("Error al cargar bloques:", error);
+                    });
+                  }
+                }}
+                clinicConfig={{
+                  openTime: clinicConfig.openTime || "09:00",
+                  closeTime: clinicConfig.closeTime || "20:00",
+                  weekendOpenTime: clinicConfig.weekendOpenTime || "09:00",
+                  weekendCloseTime: clinicConfig.weekendCloseTime || "14:00",
+                }}
+              />
+            )}
+          </div>
+        </HydrationWrapper>
+      </div>
     )
   }
 
   // Return original para cuando se usa de forma independiente
   return (
-    <HydrationWrapper fallback={<div>Cargando agenda semanal...</div>}>
-      <div className="flex flex-col h-screen bg-white">
-        <header className="px-4 py-3 z-30 relative bg-white border-b">
-          <div className="px-4 py-3">
-            <h1 className="text-2xl font-medium mb-4">Agenda semanal</h1>
-            <div className="text-sm text-gray-500">
-              {format(weekDays[0], "d 'de' MMMM", { locale: es })} -{" "}
-              {format(weekDays[6], "d 'de' MMMM 'de' yyyy", { locale: es })}
-            </div>
-          </div>
-
-          {/* Usar el componente compartido AgendaNavBar */}
-          <AgendaNavBar
-            currentDate={currentDate}
-            setCurrentDate={setCurrentDate}
-            view="week"
-            isDayActive={isDayActive}
-            appointments={appointments}
-            onBlocksChanged={() => {
-              if (activeClinic?.id) {
-                setScheduleBlocks(getScheduleBlocks(activeClinic.id))
-                setUpdateKey((prev) => prev + 1)
-              }
-            }}
-          />
-        </header>
-
+    <HydrationWrapper>
+      <div style={transitionStyles}>
+        <AgendaNavBar
+          currentDate={currentDate}
+          setCurrentDate={setCurrentDateWithTransition}
+          view="week"
+          isDayActive={isDayActive}
+          appointments={appointments}
+          onBlocksChanged={() => {
+            if (effectiveClinic?.id) {
+              // Usar el contexto especializado para obtener bloques
+              const startDate = format(weekDays[0], "yyyy-MM-dd");
+              const endDate = format(weekDays[6], "yyyy-MM-dd");
+              
+              getBlocksByDateRange(
+                String(effectiveClinic.id),
+                startDate,
+                endDate
+              ).then(blocks => {
+                if (Array.isArray(blocks)) {
+                  setScheduleBlocks(blocks);
+                }
+                setUpdateKey((prev) => prev + 1);
+              }).catch(error => {
+                console.error("Error al cargar bloques:", error);
+              });
+            }
+          }}
+        />
         {renderWeeklyGrid()}
 
         {/* Dialogs */}
@@ -788,9 +1050,23 @@ export default function WeeklyAgenda({
         onOpenChange={(open) => {
           setIsBlockModalOpen(open)
           // Si se cierra el modal, recargar los bloques para actualizar la UI
-          if (!open && activeClinic?.id) {
-            setScheduleBlocks(getScheduleBlocks(activeClinic.id))
-            setUpdateKey((prev) => prev + 1)
+          if (!open && effectiveClinic?.id) {
+            // Usar el contexto especializado para obtener bloques
+            const startDate = format(weekDays[0], "yyyy-MM-dd");
+            const endDate = format(weekDays[6], "yyyy-MM-dd");
+            
+            getBlocksByDateRange(
+              String(effectiveClinic.id),
+              startDate,
+              endDate
+            ).then(blocks => {
+              if (Array.isArray(blocks)) {
+                setScheduleBlocks(blocks);
+              }
+              setUpdateKey((prev) => prev + 1);
+            }).catch(error => {
+              console.error("Error al cargar bloques:", error);
+            });
           }
         }}
         clinicRooms={activeCabins.map(cabin => ({
@@ -798,12 +1074,26 @@ export default function WeeklyAgenda({
           id: cabin.id.toString()
         }))}
         blockToEdit={selectedBlock}
-        clinicId={activeClinic?.id || 1}
+        clinicId={effectiveClinic?.id ? String(effectiveClinic.id) : ""}
         onBlockSaved={() => {
           // Recargar los bloques
-          if (activeClinic?.id) {
-            setScheduleBlocks(getScheduleBlocks(activeClinic.id))
-            setUpdateKey((prev) => prev + 1)
+          if (effectiveClinic?.id) {
+            // Usar el contexto especializado para obtener bloques
+            const startDate = format(weekDays[0], "yyyy-MM-dd");
+            const endDate = format(weekDays[6], "yyyy-MM-dd");
+            
+            getBlocksByDateRange(
+              String(effectiveClinic.id),
+              startDate,
+              endDate
+            ).then(blocks => {
+              if (Array.isArray(blocks)) {
+                setScheduleBlocks(blocks);
+              }
+              setUpdateKey((prev) => prev + 1);
+            }).catch(error => {
+              console.error("Error al cargar bloques:", error);
+            });
           }
         }}
         clinicConfig={{

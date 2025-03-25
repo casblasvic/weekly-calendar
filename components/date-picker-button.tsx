@@ -38,10 +38,17 @@ export function DatePickerButton({
   // Actualizar el mes actual cuando cambia la fecha seleccionada
   useEffect(() => {
     if (currentDate) {
-      setCurrentMonth(new Date(currentDate))
-      setSelectedYear(currentDate.getFullYear())
+      const newMonth = new Date(currentDate);
+      // Comparar solo año y mes para evitar actualizaciones innecesarias
+      if (
+        newMonth.getFullYear() !== currentMonth.getFullYear() ||
+        newMonth.getMonth() !== currentMonth.getMonth()
+      ) {
+        setCurrentMonth(newMonth);
+        setSelectedYear(newMonth.getFullYear());
+      }
     }
-  }, [currentDate])
+  }, [currentDate, currentMonth]);
 
   // Cerrar el calendario al hacer clic fuera
   useEffect(() => {

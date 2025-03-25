@@ -14,7 +14,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { CabinEditDialog } from "@/components/cabin-edit-dialog"
 import { useClinic } from "@/contexts/clinic-context"
-import type { Clinic } from "@/contexts/clinic-context"
+import { Clinica } from "@/services/data/models/interfaces"
 import { SearchInput } from "@/components/SearchInput"
 import { ScheduleConfig } from "@/components/schedule-config"
 import { DEFAULT_SCHEDULE } from "@/types/schedule"
@@ -50,8 +50,8 @@ import { cn } from "@/lib/utils"
 import type { WeekSchedule } from "@/types/schedule"
 import { saveToStorage } from "@/utils/storage-utils"
 import { DebugStorage } from "@/components/debug-storage"
-import { getEquipment } from "@/mockData"
 import AlmacenamientoClinicaContent from "@/app/configuracion/clinicas/[id]/almacenamiento/page"
+import { useEquipment } from "@/contexts/equipment-context"
 
 const menuItems = [
   { id: "datos", label: "Datos de la clínica", icon: Building2 },
@@ -86,17 +86,16 @@ const SectionTitle = ({ icon: Icon, title, color }: { icon: any; title: string; 
 
 export default function ClinicaDetailPage() {
   const clinicContext = useClinic()
-  const { clinics, updateClinicConfig } = clinicContext
-  const updateClinic = clinicContext.updateClinic
+  const { clinics, updateClinicConfig, updateClinica } = clinicContext
   
   console.log("ClinicaDetailPage - Contexto recibido:", clinicContext)
-  console.log("ClinicaDetailPage - updateClinic:", updateClinic)
+  console.log("ClinicaDetailPage - updateClinica:", updateClinica)
   
   const { templates } = useTemplates()
   const [activeTab, setActiveTab] = useState("datos")
   const [isCabinDialogOpen, setIsCabinDialogOpen] = useState(false)
   const [editingCabin, setEditingCabin] = useState<Cabin | null>(null)
-  const [clinicData, setClinicData] = useState<Clinic | null>(null)
+  const [clinicData, setClinicData] = useState<Clinica | null>(null)
   const [cabinFilterText, setCabinFilterText] = useState("")
   const [equipmentFilterText, setEquipmentFilterText] = useState("")
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null)
@@ -111,6 +110,8 @@ export default function ClinicaDetailPage() {
   
   const clinic = clinics.find((c) => c.id.toString() === clinicId)
 
+  const { getEquiposByClinicaId } = useEquipment()
+
   useEffect(() => {
     if (!clinic) {
       router.push("/configuracion/clinicas")
@@ -122,10 +123,18 @@ export default function ClinicaDetailPage() {
   useEffect(() => {
     if (clinicData) {
       const clinicId = clinicData.id
-      const clinicEquipment = getEquipment(clinicId)
-      setEquipmentData(clinicEquipment)
+      const loadEquipment = async () => {
+        try {
+          const equipmentList = await getEquiposByClinicaId(clinicId)
+          setEquipmentData(Array.isArray(equipmentList) ? equipmentList : [])
+        } catch (error) {
+          console.error("Error al cargar equipamiento:", error)
+          setEquipmentData([])
+        }
+      }
+      loadEquipment()
     }
-  }, [clinicData])
+  }, [clinicData, getEquiposByClinicaId])
 
   useEffect(() => {
     const tabParam = searchParams.get("tab")
@@ -203,27 +212,28 @@ export default function ClinicaDetailPage() {
     setEquipmentData((prevData) => prevData.filter((_, i) => i !== index))
   }, [])
 
-  const filteredEquipment = equipmentData.filter((equipment) =>
-    Object.values(equipment).some((value) => String(value).toLowerCase().includes(equipmentFilterText.toLowerCase())),
-  )
+  const filteredEquipment = Array.isArray(equipmentData) 
+    ? equipmentData.filter((equipment) =>
+        Object.values(equipment).some((value) => 
+          value !== null && String(value).toLowerCase().includes(equipmentFilterText.toLowerCase())
+        )
+      )
+    : []
 
   const handleSaveClinic = useCallback(async () => {
     setIsSaving(true)
     try {
-      // Simular una operación de guardado que toma tiempo
-      await new Promise((resolve) => setTimeout(resolve, 2000))
-
       if (clinicData) {
-        if (typeof updateClinic !== "function") {
-          console.error("updateClinic is not a function", updateClinic)
-          throw new Error("updateClinic is not a function")
+        if (typeof updateClinica !== "function") {
+          console.error("updateClinica is not a function", updateClinica)
+          throw new Error("updateClinica is not a function")
         }
 
-        const success = updateClinic(clinicData)
+        const clinicId = String(clinicData.id)
+        
+        const success = await updateClinica(clinicId, clinicData)
 
-        const directSave = saveToStorage(`clinic_${clinicData.id}`, clinicData)
-
-        if (success || directSave) {
+        if (success) {
           toast({
             title: "Configuración guardada",
             description: "Los cambios han sido guardados exitosamente.",
@@ -242,7 +252,7 @@ export default function ClinicaDetailPage() {
     } finally {
       setIsSaving(false)
     }
-  }, [clinicData, updateClinic])
+  }, [clinicData, updateClinica])
 
   if (!clinicData) {
     return null

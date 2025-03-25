@@ -1,11 +1,11 @@
 "use client"
 
 import { Button } from "@/components/ui/button"
-import { CalendarDays, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Lock, Printer } from "lucide-react"
+import { CalendarDays, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Lock, Printer, ChevronDown } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { format, subDays, addDays, getDay } from "date-fns"
 import { useRouter } from "next/navigation"
-import { useCallback, useState, useEffect } from "react"
+import { useCallback, useState, useEffect, useRef } from "react"
 import { DatePickerButton } from "./date-picker-button"
 import { BlockScheduleModal } from "./block-schedule-modal"
 import { useClinic } from "@/contexts/clinic-context"
@@ -24,6 +24,7 @@ interface AgendaNavBarProps {
   isDayActive: (date: Date) => boolean
   appointments?: any[]
   onBlocksChanged?: () => void
+  onViewChange?: (newView: "week" | "day", newDate?: Date) => void
 }
 
 export function AgendaNavBar({
@@ -33,6 +34,7 @@ export function AgendaNavBar({
   isDayActive,
   appointments = [],
   onBlocksChanged,
+  onViewChange,
 }: AgendaNavBarProps) {
   const router = useRouter()
   const [isBlockModalOpen, setIsBlockModalOpen] = useState(false)
@@ -40,6 +42,8 @@ export function AgendaNavBar({
   const [clinicRooms, setClinicRooms] = useState<Room[]>([])
   const currentClinic = activeClinic // Declared currentClinic
   const { toast } = useToast()
+  const [filterView, setFilterView] = useState("todos")
+  const isUpdatingRef = useRef(false)
 
   // Efecto para obtener las cabinas de la clínica activa
   useEffect(() => {
@@ -61,100 +65,163 @@ export function AgendaNavBar({
     }
   }, [activeClinic])
 
-  // Función para actualizar la URL sin recargar la página - modificada para evitar cambios durante el renderizado
-  const updateUrl = useCallback((newDate: Date, currentView: "week" | "day") => {
-    // No hacemos nada directamente aquí, solo preparamos la información
-    return {
-      formattedDate: format(newDate, "yyyy-MM-dd"),
-      view: currentView
+  // Actualizar URL sin recargar la página - versión simplificada
+  const updatePathSilently = useCallback((path: string) => {
+    if (typeof window !== 'undefined' && !isUpdatingRef.current) {
+      isUpdatingRef.current = true;
+      try {
+        window.history.pushState({}, "", path);
+      } finally {
+        // Asegurar que se restablece la bandera incluso en caso de error
+        setTimeout(() => {
+          isUpdatingRef.current = false;
+        }, 0);
+      }
     }
-  }, [])
-
-  // Estado para almacenar la última actualización de URL pendiente
-  const [pendingUrlUpdate, setPendingUrlUpdate] = useState<{formattedDate: string, view: "week" | "day"} | null>(null)
-
-  // Efecto para aplicar la actualización de URL después del renderizado
-  useEffect(() => {
-    if (pendingUrlUpdate) {
-      const path = pendingUrlUpdate.view === "day" 
-        ? `/agenda/dia/${pendingUrlUpdate.formattedDate}` 
-        : `/agenda/semana/${pendingUrlUpdate.formattedDate}`
-      
-      // Usar history.pushState para actualizar la URL sin recargar
-      window.history.pushState({}, "", path)
-      
-      // Limpiar la actualización pendiente
-      setPendingUrlUpdate(null)
-    }
-  }, [pendingUrlUpdate])
+  }, []);
 
   const changeWeek = useCallback(
     (direction: "next" | "prev") => {
+      if (isUpdatingRef.current) return;
+      
+      // Marcar que estamos actualizando para evitar múltiples llamadas
+      isUpdatingRef.current = true;
+      
       const newDate = new Date(currentDate);
       newDate.setDate(newDate.getDate() + (direction === "next" ? 7 : -7));
       
-      // En lugar de actualizar directamente, programamos la actualización para después del renderizado
-      const urlInfo = updateUrl(newDate, view);
-      setPendingUrlUpdate(urlInfo);
-      
-      setCurrentDate(newDate);
+      // Si tenemos onViewChange, lo usamos para transición suave
+      if (onViewChange) {
+        // Usar requestAnimationFrame para evitar bloqueos de UI
+        requestAnimationFrame(() => {
+          onViewChange("week", newDate);
+          // Desbloquear después del siguiente frame de animación
+          requestAnimationFrame(() => {
+            isUpdatingRef.current = false;
+          });
+        });
+      } else {
+        // Fallback al comportamiento anterior
+        setCurrentDate(newDate);
+        
+        // Actualizar URL silenciosamente
+        const formattedDate = format(newDate, "yyyy-MM-dd");
+        updatePathSilently(`/agenda/semana/${formattedDate}`);
+        
+        // Desbloquear después de un breve retraso
+        setTimeout(() => {
+          isUpdatingRef.current = false;
+        }, 50);
+      }
     },
-    [currentDate, setCurrentDate, updateUrl, view],
-  )
+    [currentDate, setCurrentDate, updatePathSilently, onViewChange],
+  );
 
   const changeMonth = useCallback(
     (direction: "next" | "prev") => {
+      if (isUpdatingRef.current) return;
+      
+      // Marcar que estamos actualizando
+      isUpdatingRef.current = true;
+      
       const newDate = new Date(currentDate);
       newDate.setMonth(newDate.getMonth() + (direction === "next" ? 1 : -1));
       
-      // En lugar de actualizar directamente, programamos la actualización para después del renderizado
-      const urlInfo = updateUrl(newDate, view);
-      setPendingUrlUpdate(urlInfo);
-      
-      setCurrentDate(newDate);
+      // Si tenemos onViewChange, lo usamos para transición suave
+      if (onViewChange) {
+        // Usar requestAnimationFrame para sincronizar con el ciclo de renderizado
+        requestAnimationFrame(() => {
+          onViewChange(view, newDate);
+          // Desbloquear después del siguiente frame
+          requestAnimationFrame(() => {
+            isUpdatingRef.current = false;
+          });
+        });
+      } else {
+        // Fallback
+        setCurrentDate(newDate);
+        
+        // Actualizar URL silenciosamente
+        const formattedDate = format(newDate, "yyyy-MM-dd");
+        const path = view === "day" 
+          ? `/agenda/dia/${formattedDate}` 
+          : `/agenda/semana/${formattedDate}`;
+        updatePathSilently(path);
+        
+        // Desbloquear después de un breve retraso
+        setTimeout(() => {
+          isUpdatingRef.current = false;
+        }, 50);
+      }
     },
-    [currentDate, setCurrentDate, updateUrl, view],
-  )
+    [currentDate, setCurrentDate, updatePathSilently, view, onViewChange],
+  );
 
   const changeDay = useCallback(
     (direction: "next" | "prev") => {
+      if (isUpdatingRef.current) return;
+      
       const newDate = new Date(currentDate);
       newDate.setDate(newDate.getDate() + (direction === "next" ? 1 : -1));
       
-      // En lugar de actualizar directamente, programamos la actualización para después del renderizado
-      const urlInfo = updateUrl(newDate, view);
-      setPendingUrlUpdate(urlInfo);
-      
-      setCurrentDate(newDate);
+      // Si tenemos onViewChange, lo usamos para transición suave
+      if (onViewChange) {
+        onViewChange("day", newDate);
+      } else {
+        // Fallback al comportamiento anterior
+        setCurrentDate(newDate);
+        
+        // Actualizar URL silenciosamente
+        const formattedDate = format(newDate, "yyyy-MM-dd");
+        updatePathSilently(`/agenda/dia/${formattedDate}`);
+      }
     },
-    [currentDate, setCurrentDate, updateUrl, view],
-  )
+    [currentDate, setCurrentDate, updatePathSilently, onViewChange],
+  );
 
   const handlePrevDay = useCallback(() => {
-    let prevDay = subDays(currentDate, 1)
+    if (isUpdatingRef.current) return;
+    
+    let prevDay = subDays(currentDate, 1);
     // Buscar el día activo anterior
     while (!isDayActive(prevDay)) {
-      prevDay = subDays(prevDay, 1)
+      prevDay = subDays(prevDay, 1);
     }
-    setCurrentDate(prevDay)
     
-    // Actualizar URL sin recargar
-    const urlInfo = updateUrl(prevDay, "day")
-    setPendingUrlUpdate(urlInfo)
-  }, [currentDate, setCurrentDate, updateUrl, isDayActive])
+    // Si tenemos onViewChange, lo usamos para transición suave
+    if (onViewChange) {
+      onViewChange("day", prevDay);
+    } else {
+      // Fallback al comportamiento anterior
+      setCurrentDate(prevDay);
+      
+      // Actualizar URL silenciosamente
+      const formattedDate = format(prevDay, "yyyy-MM-dd");
+      updatePathSilently(`/agenda/dia/${formattedDate}`);
+    }
+  }, [currentDate, setCurrentDate, isDayActive, updatePathSilently, onViewChange]);
 
   const handleNextDay = useCallback(() => {
-    let nextDay = addDays(currentDate, 1)
+    if (isUpdatingRef.current) return;
+    
+    let nextDay = addDays(currentDate, 1);
     // Buscar el día activo siguiente
     while (!isDayActive(nextDay)) {
-      nextDay = addDays(nextDay, 1)
+      nextDay = addDays(nextDay, 1);
     }
-    setCurrentDate(nextDay)
     
-    // Actualizar URL sin recargar
-    const urlInfo = updateUrl(nextDay, "day")
-    setPendingUrlUpdate(urlInfo)
-  }, [currentDate, setCurrentDate, updateUrl, isDayActive])
+    // Si tenemos onViewChange, lo usamos para transición suave
+    if (onViewChange) {
+      onViewChange("day", nextDay);
+    } else {
+      // Fallback al comportamiento anterior
+      setCurrentDate(nextDay);
+      
+      // Actualizar URL silenciosamente
+      const formattedDate = format(nextDay, "yyyy-MM-dd");
+      updatePathSilently(`/agenda/dia/${formattedDate}`);
+    }
+  }, [currentDate, setCurrentDate, isDayActive, updatePathSilently, onViewChange]);
 
   // Función para verificar si un día es activo en la configuración de la clínica
   const isActiveDayInClinic = (date: Date) => {
@@ -167,37 +234,63 @@ export function AgendaNavBar({
   }
 
   const goToToday = useCallback(() => {
-    const today = new Date()
+    if (isUpdatingRef.current) return;
+    
+    const today = new Date();
 
-    // Actualizar el estado con la fecha de hoy
-    setCurrentDate(today)
+    // Si tenemos onViewChange, lo usamos para transición suave
+    if (onViewChange) {
+      onViewChange(view, today);
+    } else {
+      // Fallback al comportamiento anterior
+      // Actualizar el estado con la fecha de hoy
+      setCurrentDate(today);
 
-    // Actualizar URL sin recargar
-    updateUrl(today, view)
+      // Actualizar URL silenciosamente
+      const formattedDate = format(today, "yyyy-MM-dd");
+      const path = view === "day" 
+        ? `/agenda/dia/${formattedDate}` 
+        : `/agenda/semana/${formattedDate}`;
+      updatePathSilently(path);
 
-    // Guardar las citas en sessionStorage si es necesario
-    if (typeof window !== "undefined" && appointments.length > 0) {
-      sessionStorage.setItem("weeklyAppointments", JSON.stringify(appointments))
+      // Guardar las citas en sessionStorage si es necesario
+      if (typeof window !== "undefined" && appointments.length > 0) {
+        sessionStorage.setItem("weeklyAppointments", JSON.stringify(appointments));
+      }
     }
-  }, [setCurrentDate, updateUrl, view, appointments])
+  }, [setCurrentDate, updatePathSilently, view, appointments, onViewChange]);
 
   const handleDateChange = useCallback(
     (date: Date | null) => {
-      if (!date) return; // Si date es null, no hacemos nada
+      if (!date || isUpdatingRef.current) return;
       
-      // Guardar las citas en sessionStorage para que la vista diaria pueda acceder a ellas
-      if (typeof window !== "undefined" && appointments.length > 0) {
-        sessionStorage.setItem("weeklyAppointments", JSON.stringify(appointments))
+      // Si tenemos onViewChange, lo usamos para transición suave
+      if (onViewChange) {
+        onViewChange(view, date);
+      } else {
+        // Fallback al comportamiento anterior
+        // Guardar las citas en sessionStorage para que la vista diaria pueda acceder a ellas
+        if (typeof window !== "undefined" && appointments.length > 0) {
+          sessionStorage.setItem("weeklyAppointments", JSON.stringify(appointments));
+        }
+
+        // Actualizar el estado con la nueva fecha
+        setCurrentDate(date);
+
+        // Actualizar URL silenciosamente
+        const formattedDate = format(date, "yyyy-MM-dd");
+        const path = view === "day" 
+          ? `/agenda/dia/${formattedDate}` 
+          : `/agenda/semana/${formattedDate}`;
+        updatePathSilently(path);
       }
-
-      // Actualizar el estado con la nueva fecha
-      setCurrentDate(date)
-
-      // Actualizar URL sin recargar la página
-      updateUrl(date, view)
     },
-    [setCurrentDate, updateUrl, view, appointments],
-  )
+    [setCurrentDate, updatePathSilently, view, appointments, onViewChange],
+  );
+
+  const handleFilterChange = useCallback((value: string) => {
+    setFilterView(value);
+  }, []);
 
   return (
     <div className="flex items-center gap-3 pb-3 border-b">
@@ -271,21 +364,20 @@ export function AgendaNavBar({
           <Printer className="w-4 h-4" />
         </Button>
 
-        <Select defaultValue="todos">
-          <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="(Todos)" />
-          </SelectTrigger>
-          <SelectContent className="z-50">
-            <SelectItem value="todos">(Todos)</SelectItem>
-          </SelectContent>
-        </Select>
+        <Button 
+          variant="outline" 
+          className="w-[180px] text-left justify-between"
+        >
+          <span>(Todos)</span>
+          <ChevronDown className="h-4 w-4 opacity-50" />
+        </Button>
       </div>
       {isBlockModalOpen && (
         <BlockScheduleModal
           open={isBlockModalOpen}
           onOpenChange={setIsBlockModalOpen}
           clinicRooms={activeClinic?.config?.cabins?.map(cabin => convertCabinToRoom(cabin)) || []}
-          clinicId={activeClinic?.id || 1}
+          clinicId={activeClinic?.id ? String(activeClinic.id) : ""}
           onBlockSaved={() => {
             if (onBlocksChanged) {
               onBlocksChanged()

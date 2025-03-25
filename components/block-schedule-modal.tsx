@@ -6,12 +6,13 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { DatePickerButton } from "./date-picker-button"
 import { useState, useEffect, useCallback, useMemo } from "react"
 import { Label } from "@/components/ui/label"
-import { Loader2, Trash2 } from "lucide-react"
-import { format, parseISO, addDays } from "date-fns"
-import type { ScheduleBlock } from "@/types/schedule-block"
-import { createScheduleBlock, updateScheduleBlock, deleteScheduleBlock } from "@/mockData"
+import { Loader2, Trash2, AlertTriangle } from "lucide-react"
+import { format, parseISO, addDays, startOfDay, endOfDay, isValid } from "date-fns"
+import { ScheduleBlock, useScheduleBlocks } from "@/contexts/schedule-blocks-context"
 import { useToast } from "@/hooks/use-toast"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { useClinic } from "@/contexts/clinic-context"
+import { useInterfaz } from "@/contexts/interfaz-Context"
 
 interface Room {
   id: string
@@ -24,7 +25,7 @@ interface BlockScheduleModalProps {
   onOpenChange: (open: boolean) => void
   clinicRooms: Room[]
   blockToEdit?: ScheduleBlock | null
-  clinicId?: number
+  clinicId?: string
   onBlockSaved?: () => void
   clinicConfig?: {
     openTime?: string
@@ -39,11 +40,12 @@ export function BlockScheduleModal({
   onOpenChange,
   clinicRooms,
   blockToEdit = null,
-  clinicId = 1,
+  clinicId = "",
   onBlockSaved,
   clinicConfig = {},
 }: BlockScheduleModalProps) {
   const { toast } = useToast()
+  const { createBlock, updateBlock, deleteBlock } = useScheduleBlocks()
   const [date, setDate] = useState<Date>(new Date())
   const [isRecurring, setIsRecurring] = useState(false)
   const [selectedRooms, setSelectedRooms] = useState<string[]>([])
@@ -156,76 +158,53 @@ export function BlockScheduleModal({
   }, [date, clinicConfig, isWeekendDay])
 
   const handleSave = async () => {
+    if (!date || !startTime || !endTime || selectedRooms.length === 0) {
+      toast({
+        title: "Error",
+        description: "Por favor, complete todos los campos obligatorios",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setIsSaving(true)
+
     try {
-      setIsSaving(true)
-
-      // Validaciones básicas
-      if (selectedRooms.length === 0) {
-        toast({
-          title: "Error",
-          description: "Debe seleccionar al menos una cabina",
-          variant: "destructive",
-        })
-        return
-      }
-
-      if (startTime >= endTime) {
-        toast({
-          title: "Error",
-          description: "La hora de inicio debe ser anterior a la hora de fin",
-          variant: "destructive",
-        })
-        return
-      }
-
-      if (isRecurring && selectedDays.length === 0) {
-        toast({
-          title: "Error",
-          description: "Debe seleccionar al menos un día para la recurrencia",
-          variant: "destructive",
-        })
-        return
-      }
-
-      // Preparar los datos del bloque
-      const blockData: Omit<ScheduleBlock, "id" | "createdAt"> = {
-        clinicId,
+      const blockData = {
+        clinicId: String(clinicId),
         date: format(date, "yyyy-MM-dd"),
         startTime,
         endTime,
         roomIds: selectedRooms,
         description,
         recurring: isRecurring,
+        recurrencePattern: isRecurring
+          ? {
+              frequency: "weekly" as const,
+              daysOfWeek: selectedDays,
+              endDate: endDate ? format(endDate, "yyyy-MM-dd") : undefined,
+            }
+          : undefined,
+        createdAt: new Date().toISOString(),
       }
 
-      // Añadir patrón de recurrencia si es necesario
-      if (isRecurring) {
-        blockData.recurrencePattern = {
-          frequency: "weekly",
-          daysOfWeek: selectedDays,
-        }
-
-        if (endDate) {
-          blockData.recurrencePattern.endDate = format(endDate, "yyyy-MM-dd")
-        }
-      }
-
-      // Crear o actualizar el bloque
       if (blockToEdit) {
-        updateScheduleBlock(blockToEdit.id, blockData)
+        // Actualizar bloque existente
+        await updateBlock(String(blockToEdit.id), blockData)
         toast({
-          title: "Bloqueo actualizado",
-          description: "El bloqueo se ha actualizado correctamente",
+          title: "Bloque actualizado",
+          description: "El bloque se ha actualizado correctamente",
         })
       } else {
-        createScheduleBlock(blockData)
+        // Crear nuevo bloque
+        await createBlock(blockData)
         toast({
-          title: "Bloqueo creado",
-          description: "El bloqueo se ha creado correctamente",
+          title: "Bloque creado",
+          description: "El bloque se ha creado correctamente",
         })
       }
 
-      // Notificar que se ha guardado el bloque
+      // Llamar al callback si existe
       if (onBlockSaved) {
         onBlockSaved()
       }
@@ -233,10 +212,10 @@ export function BlockScheduleModal({
       // Cerrar el modal
       onOpenChange(false)
     } catch (error) {
-      console.error("Error al guardar el bloqueo:", error)
+      console.error("Error al guardar el bloque:", error)
       toast({
         title: "Error",
-        description: "Ha ocurrido un error al guardar el bloqueo",
+        description: "Hubo un problema al guardar el bloque",
         variant: "destructive",
       })
     } finally {
@@ -244,31 +223,41 @@ export function BlockScheduleModal({
     }
   }
 
-  const handleDelete = () => {
-    if (blockToEdit && confirm("¿Está seguro de eliminar el bloqueo de esta celda específica?")) {
-      // Aquí debería estar la lógica para eliminar solo la celda específica
-      deleteScheduleBlock(blockToEdit.id)
-      onOpenChange(false)
-      if (onBlockSaved) {
-        onBlockSaved()
-      }
-    }
-  }
+  const handleDelete = async () => {
+    if (!blockToEdit) return
 
-  // Añadir nueva función para eliminar toda la serie
-  const handleDeleteAll = () => {
-    if (blockToEdit && blockToEdit.recurring && confirm("¿Está seguro de eliminar TODA la serie de bloqueos?")) {
-      // Eliminar todo el bloqueo recurrente
-      deleteScheduleBlock(blockToEdit.id)
-      onOpenChange(false)
+    setIsSaving(true)
+
+    try {
+      // Eliminar bloque
+      await deleteBlock(String(blockToEdit.id))
+      
+      toast({
+        title: "Bloque eliminado",
+        description: "El bloque se ha eliminado correctamente",
+      })
+
+      // Llamar al callback si existe
       if (onBlockSaved) {
         onBlockSaved()
       }
+
+      // Cerrar el modal
+      onOpenChange(false)
+    } catch (error) {
+      console.error("Error al eliminar el bloque:", error)
+      toast({
+        title: "Error",
+        description: "Hubo un problema al eliminar el bloque",
+        variant: "destructive",
+      })
+    } finally {
+      setIsSaving(false)
     }
   }
 
   const onClose = () => {
-    onOpenChange(false)
+    onOpenChange(false);
   }
 
   return (
@@ -309,7 +298,15 @@ export function BlockScheduleModal({
                 Hora Inicio
               </Label>
               <div className="mt-1">
-                <Select value={startTime} onValueChange={setStartTime}>
+                <Select 
+                  value={startTime} 
+                  onValueChange={(value) => {
+                    if (value !== startTime) {
+                      setStartTime(value);
+                    }
+                  }}
+                  defaultValue={startTime}
+                >
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Seleccione hora" />
                   </SelectTrigger>
@@ -328,7 +325,15 @@ export function BlockScheduleModal({
                 Hora Fin
               </Label>
               <div className="mt-1">
-                <Select value={endTime} onValueChange={setEndTime}>
+                <Select 
+                  value={endTime} 
+                  onValueChange={(value) => {
+                    if (value !== endTime) {
+                      setEndTime(value);
+                    }
+                  }}
+                  defaultValue={endTime}
+                >
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Seleccione hora" />
                   </SelectTrigger>
@@ -497,12 +502,6 @@ export function BlockScheduleModal({
                   <Trash2 className="mr-2 h-4 w-4" />
                   Borrar
                 </Button>
-                {blockToEdit.recurring && (
-                  <Button variant="destructive" onClick={handleDeleteAll} size="sm">
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Borrar todo
-                  </Button>
-                )}
               </div>
             )}
           </div>

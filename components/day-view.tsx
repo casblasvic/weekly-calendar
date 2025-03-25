@@ -3,26 +3,35 @@
 import React from "react"
 
 import { useState, useEffect, useCallback, useRef } from "react"
-import { format, parse } from "date-fns"
+import { format, parse, parseISO, isAfter, isBefore, getDay, getDate, isSameDay, addDays, subDays, set, addMinutes, isEqual } from "date-fns"
 import { es } from "date-fns/locale"
 import { useClinic } from "@/contexts/clinic-context"
-import { AgendaNavBar } from "./agenda-nav-bar"
+import { AgendaNavBar } from "@/components/agenda-nav-bar"
 import { HydrationWrapper } from "@/components/hydration-wrapper"
 import { useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { AGENDA_CONFIG } from "@/config/agenda-config"
 import { CurrentTimeIndicator } from "@/components/current-time-indicator"
-import { ClientSearchDialog } from "@/components/client-search-dialog"
+import { ClientSearchDialog } from "./client-search-dialog"
 import { AppointmentDialog } from "@/components/appointment-dialog"
 import { NewClientDialog } from "@/components/new-client-dialog"
 import { ResizableAppointment } from "./resizable-appointment"
 import { DragDropContext, Droppable } from "react-beautiful-dnd"
 import { Calendar } from "lucide-react"
-import { getScheduleBlocks, type ScheduleBlock } from "@/mockData"
+import { ScheduleBlock, useScheduleBlocks } from "@/contexts/schedule-blocks-context"
 import { Lock } from "lucide-react"
-import { parseISO, isAfter, isBefore, getDay, getDate } from "date-fns"
 import { useToast } from "@/hooks/use-toast"
 import { BlockScheduleModal } from "./block-schedule-modal"
+import { useInterfaz } from "@/contexts/interfaz-Context"
+import { Button } from "@/components/ui/button"
+import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Search, Calendar as CalendarIcon } from "lucide-react"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Separator } from "@/components/ui/separator"
+import { useSchedule } from "@/hooks/use-schedule"
+import { Modal } from "@/components/ui/modal"
+import { AppointmentDialog as AppointmentDialogType } from "@/components/appointment-dialog"
+import { ResizableAppointment as ResizableAppointmentType } from "@/components/resizable-appointment"
+import { CustomDatePicker } from "@/components/custom-date-picker"
 
 // Función para generar slots de tiempo
 function getTimeSlots(startTime: string, endTime: string, interval = 15): string[] {
@@ -105,7 +114,7 @@ interface DayViewProps {
   clinicConfig?: ClinicConfig
   onAddAppointment?: (startTime: Date, endTime: Date, cabinId: string) => void
   onAppointmentClick?: (appointment: Appointment) => void
-  onViewChange?: (view: "weekly" | "daily") => void
+  onViewChange?: (view: "weekly" | "day") => void
 }
 
 // Modificar la firma de la función para aceptar props
@@ -121,10 +130,13 @@ export default function DayView({
   onViewChange,
 }: DayViewProps) {
   const router = useRouter()
+  const { activeClinic } = useClinic()
+  const { getBlocksByDateRange, createBlock, updateBlock, deleteBlock } = useScheduleBlocks()
   const [currentDate, setCurrentDate] = useState(() => {
     try {
-      return parse(date, "yyyy-MM-dd", new Date())
+      return parseISO(date)
     } catch (error) {
+      console.error("Error al parsear fecha:", error)
       return new Date()
     }
   })
@@ -133,11 +145,14 @@ export default function DayView({
   useEffect(() => {
     try {
       const parsedDate = parse(date, "yyyy-MM-dd", new Date())
-      setCurrentDate(parsedDate)
+      // Solo actualizar si la fecha realmente cambió
+      if (!isSameDay(parsedDate, currentDate)) {
+        setCurrentDate(parsedDate)
+      }
     } catch (error) {
       // Error silencioso
     }
-  }, [date])
+  }, [date, currentDate])
 
   // Estados para diálogos y selección
   const [selectedSlot, setSelectedSlot] = useState<{
@@ -190,31 +205,33 @@ export default function DayView({
 
   // Actualizar appointments cuando cambian initialAppointments
   useEffect(() => {
-    if (initialAppointments.length > 0) {
-      setAppointments(initialAppointments)
+    if (initialAppointments && initialAppointments.length > 0) {
+      // Verificar si realmente hay cambios antes de actualizar
+      const currentIds = appointments.map(apt => apt.id).sort().join(',');
+      const newIds = initialAppointments.map(apt => apt.id).sort().join(',');
+      
+      if (currentIds !== newIds) {
+        setAppointments(initialAppointments)
+      }
     }
-  }, [initialAppointments])
+  }, [initialAppointments, appointments])
 
-  const { activeClinic } = useClinic()
-  const clinicConfigContext = activeClinic?.config || {}
-
-  // Añadir este efecto para cargar los bloqueos:
-  useEffect(() => {
-    if (activeClinic?.id) {
-      const blocks = getScheduleBlocks(activeClinic.id)
-      setScheduleBlocks(blocks)
-    }
-  }, [activeClinic?.id, date, updateKey])
-
-  // Obtener configuración de horarios
-  const openTime = clinicConfig.openTime || clinicConfigContext.openTime || "09:00"
-  const closeTime = clinicConfig.closeTime || clinicConfigContext.closeTime || "18:00"
-  const slotDuration = clinicConfig.slotDuration || clinicConfigContext.slotDuration || 15
-
-  // Obtener cabinas activas
-  const activeCabins = (cabins.length > 0 ? cabins : clinicConfigContext.cabins || [])
-    .filter((cabin) => cabin.isActive)
-    .sort((a, b) => a.order - b.order)
+  // Usar la configuración de la clínica activa o los valores proporcionados como props
+  const effectiveClinicConfig: ClinicConfig = {
+    openTime: activeClinic?.config?.openTime || clinicConfig?.openTime || "09:00",
+    closeTime: activeClinic?.config?.closeTime || clinicConfig?.closeTime || "20:00",
+    slotDuration: activeClinic?.config?.slotDuration || clinicConfig?.slotDuration || 15,
+    cabins: activeClinic?.config?.cabins || clinicConfig?.cabins || [],
+    schedule: activeClinic?.config?.schedule || clinicConfig?.schedule || {}
+  };
+  
+  // Reemplazar todas las referencias a clinicConfigContext por effectiveClinicConfig
+  const openTime = effectiveClinicConfig.openTime;
+  const closeTime = effectiveClinicConfig.closeTime;
+  const slotDuration = effectiveClinicConfig.slotDuration;
+  
+  // Obtener cabinas de la configuración efectiva
+  const effectiveCabins = cabins.length > 0 ? cabins : effectiveClinicConfig.cabins;
 
   // Generar slots de tiempo
   const [timeSlots, setTimeSlots] = useState<string[]>([])
@@ -243,9 +260,9 @@ export default function DayView({
         domingo: "sunday",
       }
       const dayKey = dayMap[day] || day
-      return (clinicConfig.schedule || clinicConfigContext.schedule)?.[dayKey]?.isOpen ?? false
+      return effectiveClinicConfig.schedule?.[dayKey]?.isOpen ?? false
     },
-    [clinicConfig.schedule, clinicConfigContext.schedule],
+    [effectiveClinicConfig.schedule],
   )
 
   // Función para verificar si un horario está disponible
@@ -262,18 +279,46 @@ export default function DayView({
         domingo: "sunday",
       }
       const dayKey = dayMap[day] || day
-      const daySchedule = (clinicConfig.schedule || clinicConfigContext.schedule)?.[dayKey]
+      const daySchedule = effectiveClinicConfig.schedule?.[dayKey]
 
       if (!daySchedule?.isOpen) return false
 
       // Verificar si el horario está dentro de algún rango definido para ese día
       return daySchedule.ranges.some((range) => time >= range.start && time <= range.end)
     },
-    [clinicConfig.schedule, clinicConfigContext.schedule],
+    [effectiveClinicConfig.schedule],
   )
 
   // Referencia para el contenedor de la agenda
   const agendaRef = useRef<HTMLDivElement>(null)
+
+  // Efecto para centrar automáticamente en la línea de tiempo actual al cargar
+  useEffect(() => {
+    if (agendaRef.current) {
+      // Dar tiempo para que se complete el renderizado
+      const timeoutId = setTimeout(() => {
+        // Buscar el indicador de tiempo actual
+        const timeIndicator = agendaRef.current.querySelector('.current-time-indicator');
+        
+        // Si encontramos el indicador, hacer scroll hasta él
+        if (timeIndicator) {
+          const indicatorPosition = (timeIndicator as HTMLElement).offsetTop;
+          const agendaHeight = agendaRef.current.clientHeight;
+          
+          // Calcular la posición para centrar la línea en la pantalla
+          const scrollPosition = Math.max(0, indicatorPosition - (agendaHeight / 2));
+          
+          // Hacer scroll
+          agendaRef.current.scrollTo({
+            top: scrollPosition,
+            behavior: 'auto'
+          });
+        }
+      }, 300); // Dar tiempo para que se renderice todo
+      
+      return () => clearTimeout(timeoutId);
+    }
+  }, []);
 
   // Filtrar citas para el día actual
   const dayAppointments = appointments.filter((apt) => apt.date.toDateString() === currentDate.toDateString())
@@ -425,12 +470,12 @@ export default function DayView({
     if (!isTimeSlotAvailable(date, time)) return
 
     // Intentar diferentes formas de comparación para encontrar la cabina
-    const cabin = activeCabins.find((c) => {
+    const cabin = effectiveCabins.find((c) => {
       return c.id === roomId || c.id.toString() === roomId || String(c.id) === roomId
     })
 
     // Si encontramos una cabina, o si forzamos la apertura del diálogo
-    if (cabin || activeCabins.length > 0) {
+    if (cabin || effectiveCabins.length > 0) {
       setSelectedSlot({ date, time, roomId })
       setIsSearchDialogOpen(true)
     }
@@ -467,12 +512,12 @@ export default function DayView({
       if (selectedSlot) {
         // Modificar esta parte para usar la primera cabina activa si no se encuentra la específica
         const cabin =
-          activeCabins.find(
+          effectiveCabins.find(
             (c) =>
               c.id === selectedSlot.roomId ||
               c.id.toString() === selectedSlot.roomId ||
               String(c.id) === selectedSlot.roomId,
-          ) || activeCabins[0]
+          ) || effectiveCabins[0]
 
         if (cabin) {
           const newAppointment: Appointment = {
@@ -491,7 +536,7 @@ export default function DayView({
         }
       }
     },
-    [selectedSlot, activeCabins],
+    [selectedSlot, effectiveCabins],
   )
 
   const handleAppointmentResize = (id: string, newDuration: number) => {
@@ -611,10 +656,10 @@ export default function DayView({
                 <div
                   className="grid border-t border-gray-200"
                   style={{
-                    gridTemplateColumns: `repeat(${activeCabins.length}, 1fr)`,
+                    gridTemplateColumns: `repeat(${effectiveCabins.length}, 1fr)`,
                   }}
                 >
-                  {activeCabins.map((cabin) => (
+                  {effectiveCabins.map((cabin) => (
                     <div
                       key={cabin.id}
                       className="text-white text-xs py-2 px-1 text-center font-medium"
@@ -647,10 +692,10 @@ export default function DayView({
                         className="grid"
                         style={{
                           height: `${AGENDA_CONFIG.ROW_HEIGHT}px`,
-                          gridTemplateColumns: `repeat(${activeCabins.length}, 1fr)`,
+                          gridTemplateColumns: `repeat(${effectiveCabins.length}, 1fr)`,
                         }}
                       >
-                        {activeCabins.map((cabin, cabinIndex) => {
+                        {effectiveCabins.map((cabin, cabinIndex) => {
                           const isAvailable = isTimeSlotAvailable(currentDate, time)
                           const dayString = format(currentDate, "yyyy-MM-dd")
 
@@ -784,7 +829,7 @@ export default function DayView({
             timeSlots={timeSlots}
             rowHeight={AGENDA_CONFIG.ROW_HEIGHT}
             isMobile={false}
-            className="z-10"
+            className="current-time-indicator"
             agendaRef={agendaRef}
             clinicOpenTime={openTime}
             clinicCloseTime={closeTime}
@@ -794,103 +839,41 @@ export default function DayView({
     </div>
   )
 
-  if (containerMode) {
+  // Añadir este efecto para cargar los bloqueos:
+  useEffect(() => {
+    const loadBlocks = async () => {
+      if (!activeClinic?.id) return;
+      
+      try {
+        // Obtener la fecha formateada
+        const dateStr = format(currentDate, "yyyy-MM-dd");
+        
+        // Usar el contexto especializado para obtener bloques
+        const blocks = await getBlocksByDateRange(
+          String(activeClinic.id),
+          dateStr,
+          dateStr
+        );
+        
+        if (Array.isArray(blocks)) {
+          setScheduleBlocks(blocks);
+        } else {
+          console.error("Los bloques devueltos no son un array:", blocks);
+          setScheduleBlocks([]);
+        }
+      } catch (error) {
+        console.error("Error al cargar bloques de agenda:", error);
+        setScheduleBlocks([]);
+      }
+    };
+    
+    loadBlocks();
+  }, [activeClinic?.id, currentDate, getBlocksByDateRange, updateKey]);
+
+  // Implementar una función que renderice los modales para evitar duplicación
+  const renderModals = () => {
     return (
-      <HydrationWrapper fallback={<div>Cargando vista diaria...</div>}>
-        <div className="flex flex-col h-full bg-white">
-          {renderDayGrid()}
-
-          {/* Dialogs */}
-          <ClientSearchDialog
-            isOpen={isSearchDialogOpen}
-            onClose={() => setIsSearchDialogOpen(false)}
-            onClientSelect={handleClientSelect}
-            selectedTime={selectedSlot?.time}
-          />
-
-          <AppointmentDialog
-            isOpen={isAppointmentDialogOpen}
-            onClose={() => setIsAppointmentDialogOpen(false)}
-            client={selectedClient}
-            selectedTime={selectedSlot?.time}
-            onSearchClick={() => {
-              setIsAppointmentDialogOpen(false)
-              setIsSearchDialogOpen(true)
-            }}
-            onNewClientClick={() => {
-              setIsAppointmentDialogOpen(false)
-              setIsNewClientDialogOpen(true)
-            }}
-            onDelete={handleDeleteAppointment}
-            onSave={handleSaveAppointment}
-          />
-
-          <NewClientDialog isOpen={isNewClientDialogOpen} onClose={() => setIsNewClientDialogOpen(false)} />
-
-          {/* Añadir el modal de bloqueo aquí también para el modo contenedor */}
-          <BlockScheduleModal
-            open={isBlockModalOpen}
-            onOpenChange={(open) => {
-              setIsBlockModalOpen(open)
-              // Si se cierra el modal, recargar los bloques para actualizar la UI
-              if (!open && activeClinic?.id) {
-                setScheduleBlocks(getScheduleBlocks(activeClinic.id))
-                setUpdateKey((prev) => prev + 1)
-              }
-            }}
-            clinicRooms={activeCabins}
-            blockToEdit={selectedBlock}
-            clinicId={activeClinic?.id || 1}
-            onBlockSaved={() => {
-              // Recargar los bloques
-              if (activeClinic?.id) {
-                setScheduleBlocks(getScheduleBlocks(activeClinic.id))
-                setUpdateKey((prev) => prev + 1)
-              }
-            }}
-            clinicConfig={{
-              openTime: clinicConfig.openTime || "09:00",
-              closeTime: clinicConfig.closeTime || "20:00",
-              weekendOpenTime: clinicConfig.weekendOpenTime || "09:00",
-              weekendCloseTime: clinicConfig.weekendCloseTime || "14:00",
-            }}
-          />
-        </div>
-      </HydrationWrapper>
-    )
-  }
-
-  // Return original para cuando se usa de forma independiente
-  return (
-    <HydrationWrapper fallback={<div>Cargando vista diaria...</div>}>
-      <div className="flex flex-col h-screen bg-white">
-        <header className="px-4 py-3 z-30 relative bg-white border-b">
-          <div className="px-4 py-3">
-            <h1 className="text-2xl font-medium mb-4">Agenda diaria</h1>
-            <div className="text-sm text-gray-500">
-              {format(currentDate, "EEEE, d 'de' MMMM 'de' yyyy", { locale: es })}
-            </div>
-          </div>
-
-          {/* Usar el componente compartido AgendaNavBar */}
-          <AgendaNavBar
-            currentDate={currentDate}
-            setCurrentDate={setCurrentDate}
-            view="day"
-            isDayActive={isDayActive}
-            appointments={appointments}
-            onBlocksChanged={() => {
-              if (activeClinic?.id) {
-                setScheduleBlocks(getScheduleBlocks(activeClinic.id))
-                setUpdateKey((prev) => prev + 1)
-              }
-            }}
-          />
-        </header>
-
-        {renderDayGrid()}
-
-        {/* Dialogs */}
+      <>
         <ClientSearchDialog
           isOpen={isSearchDialogOpen}
           onClose={() => setIsSearchDialogOpen(false)}
@@ -915,35 +898,122 @@ export default function DayView({
           onSave={handleSaveAppointment}
         />
 
-        <NewClientDialog isOpen={isNewClientDialogOpen} onClose={() => setIsNewClientDialogOpen(false)} />
-        {/* Añadir el modal de bloqueo al final del componente, justo antes del cierre del return: */}
+        <NewClientDialog 
+          isOpen={isNewClientDialogOpen} 
+          onClose={() => setIsNewClientDialogOpen(false)} 
+        />
+
         <BlockScheduleModal
           open={isBlockModalOpen}
           onOpenChange={(open) => {
             setIsBlockModalOpen(open)
             // Si se cierra el modal, recargar los bloques para actualizar la UI
             if (!open && activeClinic?.id) {
-              setScheduleBlocks(getScheduleBlocks(activeClinic.id))
-              setUpdateKey((prev) => prev + 1)
+              // Recargar bloques usando la interfaz
+              const formattedDate = format(currentDate, "yyyy-MM-dd");
+              getBlocksByDateRange(
+                String(activeClinic.id),
+                formattedDate,
+                formattedDate
+              ).then(blocks => {
+                if (Array.isArray(blocks)) {
+                  setScheduleBlocks(blocks);
+                }
+                setUpdateKey((prev) => prev + 1);
+              }).catch(error => {
+                console.error("Error al recargar bloques:", error);
+              });
             }
           }}
-          clinicRooms={activeCabins}
+          clinicRooms={effectiveCabins}
           blockToEdit={selectedBlock}
-          clinicId={activeClinic?.id || 1}
+          clinicId={activeClinic?.id ? String(activeClinic.id) : ""}
           onBlockSaved={() => {
             // Recargar los bloques
             if (activeClinic?.id) {
-              setScheduleBlocks(getScheduleBlocks(activeClinic.id))
-              setUpdateKey((prev) => prev + 1)
+              // Recargar bloques usando la interfaz
+              const formattedDate = format(currentDate, "yyyy-MM-dd");
+              getBlocksByDateRange(
+                String(activeClinic.id),
+                formattedDate,
+                formattedDate
+              ).then(blocks => {
+                if (Array.isArray(blocks)) {
+                  setScheduleBlocks(blocks);
+                }
+                setUpdateKey((prev) => prev + 1);
+              }).catch(error => {
+                console.error("Error al recargar bloques después de guardar:", error);
+              });
             }
           }}
           clinicConfig={{
-            openTime: clinicConfig.openTime || "09:00",
-            closeTime: clinicConfig.closeTime || "20:00",
-            weekendOpenTime: clinicConfig.weekendOpenTime || "09:00",
-            weekendCloseTime: clinicConfig.weekendCloseTime || "14:00",
+            openTime: effectiveClinicConfig.openTime || "09:00",
+            closeTime: effectiveClinicConfig.closeTime || "20:00",
+            weekendOpenTime: effectiveClinicConfig.openTime || "09:00",
+            weekendCloseTime: effectiveClinicConfig.closeTime || "14:00",
           }}
         />
+      </>
+    );
+  };
+
+  if (containerMode) {
+    return (
+      <div className="flex flex-col h-full" style={{ transition: "opacity 0.2s ease", opacity: 1 }}>
+        {/* Renderizar solo el contenido, sin la barra de navegación */}
+        <div className="flex-1 overflow-auto">
+          {renderDayGrid()}
+        </div>
+        
+        {/* Modals */}
+        {renderModals()}
+      </div>
+    )
+  }
+
+  // Return normal para cuando se usa de forma independiente
+  return (
+    <HydrationWrapper>
+      <div className="flex flex-col h-screen">
+        {/* Encabezado */}
+        <header className="p-4 border-b">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h1 className="text-2xl font-bold">Agenda Diaria</h1>
+              <p className="text-gray-500 capitalize">
+                {format(currentDate, "EEEE, d 'de' MMMM 'de' yyyy", { locale: es })}
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              onClick={() => onViewChange ? onViewChange("weekly") : router.push(`/agenda/semana/${format(currentDate, "yyyy-MM-dd")}`)}
+            >
+              <Calendar className="mr-2 h-4 w-4" />
+              Vista Semanal
+            </Button>
+          </div>
+          
+          {/* Barra de navegación */}
+          <AgendaNavBar
+            currentDate={currentDate}
+            setCurrentDate={(date) => {
+              setCurrentDate(date)
+              router.push(`/agenda/dia/${format(date, "yyyy-MM-dd")}`)
+            }}
+            view="day"
+            isDayActive={isDayActive}
+            appointments={appointments}
+          />
+        </header>
+        
+        {/* Contenido */}
+        <div className="flex-1 overflow-auto">
+          {renderDayGrid()}
+        </div>
+        
+        {/* Modals */}
+        {renderModals()}
       </div>
     </HydrationWrapper>
   )

@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Download, Eye, FileText, FolderOpen, Image, Search, Trash2, Film, Archive, ChevronLeft, ChevronRight } from 'lucide-react';
 import { BaseFile } from '@/contexts/file-context';
-import { MockData, getClinics } from '@/mockData';
+import { useStorage } from '@/contexts/storage-context';
 
 interface FilesExplorerProps {
   files: BaseFile[];
@@ -46,9 +46,8 @@ const getFileIcon = (mimeType: string) => {
 };
 
 // Función para obtener el nombre de la clínica
-const getClinicName = (clinicId: string) => {
-  const clinic = MockData.clinicas?.find((c) => c.id.toString() === clinicId);
-  return clinic ? clinic.name : clinicId;
+const getClinicNameSync = (clinicId: string, clinicNames: Record<string, string>) => {
+  return clinicNames[clinicId] || clinicId;
 };
 
 const FilesExplorer: React.FC<FilesExplorerProps> = ({
@@ -57,6 +56,7 @@ const FilesExplorer: React.FC<FilesExplorerProps> = ({
   onView,
   showClinic = false
 }) => {
+  const { getActiveClinicas } = useStorage();
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
   const [clinicFilter, setClinicFilter] = useState('all');
@@ -69,23 +69,42 @@ const FilesExplorer: React.FC<FilesExplorerProps> = ({
   
   // Lista de clínicas disponibles
   const [availableClinics, setAvailableClinics] = useState<{id: string, name: string}[]>([]);
+  // Estado para almacenar los nombres de las clínicas por ID
+  const [clinicNames, setClinicNames] = useState<Record<string, string>>({});
   
+  // Cargar todas las clínicas disponibles
   useEffect(() => {
     // Cargar todas las clínicas disponibles en el sistema
     if (showClinic) {
-      // Obtener clínicas del sistema
-      const allClinics = getClinics();
+      const loadClinics = async () => {
+        try {
+          // Obtener clínicas usando el contexto de almacenamiento
+          const allClinics = await getActiveClinicas();
+          
+          // Asegurar que los IDs sean string para consistencia
+          const clinicsFormatted = allClinics.map(clinic => ({
+            id: String(clinic.id),
+            name: clinic.name
+          }));
+          
+          console.log('FilesExplorer - Todas las clínicas disponibles:', clinicsFormatted);
+          setAvailableClinics(clinicsFormatted);
+          
+          // Crear mapa de nombres de clínicas para acceso rápido
+          const namesMap: Record<string, string> = {};
+          allClinics.forEach(clinic => {
+            namesMap[String(clinic.id)] = clinic.name;
+          });
+          setClinicNames(namesMap);
+        } catch (error) {
+          console.error("Error al cargar clínicas:", error);
+          setAvailableClinics([]);
+        }
+      };
       
-      // Convertir IDs a string para consistencia
-      const clinicsFormatted = allClinics.map(clinic => ({
-        id: clinic.id.toString(),
-        name: clinic.name
-      }));
-      
-      console.log('FilesExplorer - Todas las clínicas disponibles:', clinicsFormatted);
-      setAvailableClinics(clinicsFormatted);
+      loadClinics();
     }
-  }, [showClinic]);
+  }, [showClinic, getActiveClinicas]);
   
   // Aplicar filtros y ordenación
   const filteredFiles = files
@@ -270,7 +289,7 @@ const FilesExplorer: React.FC<FilesExplorerProps> = ({
                     
                     {showClinic && (
                       <TableCell>
-                        {getClinicName(file.clinicId)}
+                        {getClinicNameSync(file.clinicId, clinicNames)}
                       </TableCell>
                     )}
                     

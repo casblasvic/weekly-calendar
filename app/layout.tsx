@@ -9,21 +9,28 @@ import { FamilyProvider } from "@/contexts/family-context"
 import { ServicioProvider } from "@/contexts/servicios-context"
 import { ConsumoServicioProvider } from "@/contexts/consumo-servicio-context"
 import { EquipmentProvider } from "@/contexts/equipment-context"
-import { SystemProvider } from "@/contexts/system"
+import { SystemProvider } from "@/app/contexts/system-context"
 import { StorageInitializer } from "@/components/storage-initializer"
 import { Toaster } from "@/app/components/ui/toaster"
-import { ThemeProvider as AppThemeProvider } from "@/contexts/theme"
+import { ThemeProvider } from "@/app/contexts/theme-context"
 import { AppProviders } from '@/contexts'
 import { LayoutWrapper } from "@/components/LayoutWrapper"
-import { Toaster as SonnerToaster } from "sonner"
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  
+  // Inicializar el servicio de datos al cargar la aplicación
+  useEffect(() => {
+    initializeDataService().catch(error => {
+      console.error('Error al inicializar el servicio de datos:', error);
+    });
+  }, []);
+  
   return (
     <html lang="es" suppressHydrationWarning>
       <body>
         <StorageInitializer />
-        <AppThemeProvider>
-          <AppProviders>
+        <ThemeProvider>
+          <DatabaseProvider>
             <SystemProvider>
               <EquipmentProvider>
                 <ClinicProvider>
@@ -35,7 +42,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                             <ConsumoServicioProvider>
                               <LayoutWrapper>{children}</LayoutWrapper>
                               <Toaster />
-                              <SonnerToaster />
                             </ConsumoServicioProvider>
                           </ServicioProvider>
                         </ClientCardProvider>
@@ -45,8 +51,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 </ClinicProvider>
               </EquipmentProvider>
             </SystemProvider>
-          </AppProviders>
-        </AppThemeProvider>
+          </DatabaseProvider>
+        </ThemeProvider>
       </body>
     </html>
   )

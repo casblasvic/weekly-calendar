@@ -14,7 +14,7 @@ import FilesExplorer from '@/components/storage/files-explorer';
 import { StorageSettings } from '@/components/storage/storage-settings';
 import { HardDrive, Database, Cloud, Settings, Briefcase, Server } from 'lucide-react';
 import Link from 'next/link';
-import { getClinics } from '@/mockData';
+import { useClinic } from "@/contexts/clinic-context";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ActionButtons } from '@/app/components/ui/action-buttons';
 import { useRouter } from 'next/navigation';
@@ -38,6 +38,7 @@ export default function GlobalStoragePage() {
   const router = useRouter();
   const storage = useStorage();
   const files = useFiles();
+  const { clinics: availableClinics } = useClinic();
   
   const [activeTab, setActiveTab] = useState('overview');
   const [savingConfig, setSavingConfig] = useState(false);
@@ -64,8 +65,7 @@ export default function GlobalStoragePage() {
     const loadInitialData = async () => {
       try {
         // Obtener clínicas
-        const availableClinics = getClinics();
-        setClinics(availableClinics);
+        setClinics(availableClinics || []);
         
         // Obtener estadísticas globales
         const stats = storage.getStorageStats();
@@ -88,21 +88,23 @@ export default function GlobalStoragePage() {
         
         // Cargar estadísticas para cada clínica
         for (const clinic of availableClinics) {
-          const clinicId = clinic.id.toString();
-          try {
-            const clinicQuota = storage.getQuota('clinic', clinicId);
-            quotasMap[clinicId] = clinicQuota;
-            
-            // Cargar estadísticas de cada clínica
-            const clinicStatsData = storage.getStorageStats(clinicId);
-            statsMap[clinicId] = clinicStatsData;
-            
-            // Sumar al total asignado si tiene cuota específica
-            if (clinicQuota && clinicQuota.id !== 'global' && !clinicQuota.isUnlimited) {
-              assignedQuotaTotal += clinicQuota.quotaSize;
+          if (clinic && clinic.id) {  // Verificar que la clínica sea válida
+            const clinicId = clinic.id.toString();
+            try {
+              const clinicQuota = storage.getQuota('clinic', clinicId);
+              quotasMap[clinicId] = clinicQuota;
+              
+              // Cargar estadísticas de cada clínica
+              const clinicStatsData = storage.getStorageStats(clinicId);
+              statsMap[clinicId] = clinicStatsData;
+              
+              // Sumar al total asignado si tiene cuota específica
+              if (clinicQuota && clinicQuota.id !== 'global' && !clinicQuota.isUnlimited) {
+                assignedQuotaTotal += clinicQuota.quotaSize;
+              }
+            } catch (error) {
+              console.error(`Error obteniendo datos para clínica ${clinicId}:`, error);
             }
-          } catch (error) {
-            console.error(`Error obteniendo datos para clínica ${clinicId}:`, error);
           }
         }
         
@@ -344,40 +346,42 @@ export default function GlobalStoragePage() {
                   {/* Información por clínica */}
                   <div className="space-y-3">
                     <h3 className="text-sm font-medium">Espacio por clínica</h3>
-                    {clinics.slice(0, 3).map(clinic => {
-                      const clinicId = clinic.id.toString();
-                      // Usar datos precargados en vez de llamar durante renderización
-                      const clinicStatsData = clinicStats[clinicId] || { used: 0 };
-                      const clinicQuota = clinicQuotas[clinicId] || {};
-                      const hasCustomQuota = clinicQuota.id && clinicQuota.id !== 'global';
-                      const clinicQuotaToUse = hasCustomQuota ? clinicQuota : quota;
-                      const percentUsed = clinicQuotaToUse?.isUnlimited 
-                        ? 0 
-                        : Math.min(100, (clinicStatsData.used / (clinicQuotaToUse?.quotaSize || 1)) * 100);
-                      
-                      return (
-                        <div key={clinic.id} className="space-y-1">
-                          <div className="flex justify-between items-center text-xs">
-                            <span className="font-medium">{clinic.name}</span>
-                            <span>
-                              {formatBytes(clinicStatsData.used)} / 
-                              {clinicQuotaToUse?.isUnlimited 
-                                ? '∞' 
-                                : formatBytes(clinicQuotaToUse?.quotaSize || 0)} 
-                              ({percentUsed.toFixed(1)}%)
-                            </span>
-                          </div>
-                          <div className="bg-gray-200 rounded-full h-1.5 w-full">
-                            <div 
-                              className="bg-green-500 h-1.5 rounded-full" 
-                              style={{ width: `${percentUsed}%` }}
-                            ></div>
-                          </div>
-                        </div>
-                      );
-                    })}
+                    {Array.isArray(clinics) && clinics.length > 0 
+                      ? clinics.slice(0, 3).map(clinic => {
+                          if (!clinic || !clinic.id) return null;
+                          const clinicId = clinic.id.toString();
+                          // Usar datos precargados en vez de llamar durante renderización
+                          const clinicStatsData = clinicStats[clinicId] || { used: 0 };
+                          const clinicQuota = clinicQuotas[clinicId] || {};
+                          const hasCustomQuota = clinicQuota.id && clinicQuota.id !== 'global';
+                          const clinicQuotaToUse = hasCustomQuota ? clinicQuota : quota;
+                          const percentUsed = clinicQuotaToUse?.isUnlimited 
+                            ? 0 
+                            : Math.min(100, (clinicStatsData.used / (clinicQuotaToUse?.quotaSize || 1)) * 100);
+                          
+                          return (
+                            <div key={clinic.id} className="space-y-1">
+                              <div className="flex justify-between items-center text-xs">
+                                <span className="font-medium">{clinic.name}</span>
+                                <span>
+                                  {formatBytes(clinicStatsData.used)} / 
+                                  {clinicQuotaToUse?.isUnlimited 
+                                    ? '∞' 
+                                    : formatBytes(clinicQuotaToUse?.quotaSize || 0)} 
+                                  ({percentUsed.toFixed(1)}%)
+                                </span>
+                              </div>
+                              <div className="bg-gray-200 rounded-full h-1.5 w-full">
+                                <div 
+                                  className="bg-green-500 h-1.5 rounded-full" 
+                                  style={{ width: `${percentUsed}%` }}
+                                ></div>
+                              </div>
+                            </div>
+                          );
+                        }) : <div className="text-sm text-gray-500">No hay clínicas disponibles</div>}
                     
-                    {clinics.length > 3 && (
+                    {Array.isArray(clinics) && clinics.length > 3 && (
                       <div className="text-xs text-center text-blue-600 hover:text-blue-800 cursor-pointer mt-1" onClick={() => setActiveTab('quotas')}>
                         Ver todas las clínicas ({clinics.length})
                       </div>
