@@ -20,8 +20,8 @@ export default function EquipmentPage() {
   const [sortColumn, setSortColumn] = useState<string>("code")
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc")
 
-  const { getClinicEquipment, deleteEquipment } = useEquipment()
-  const clinicEquipment = getClinicEquipment(clinicId)
+  const { getClinicEquipos, deleteEquipo } = useEquipment()
+  const clinicEquipment = getClinicEquipos(clinicId.toString())
 
   const handleSort = (column: string) => {
     if (sortColumn === column) {
@@ -35,9 +35,9 @@ export default function EquipmentPage() {
   const filteredEquipment = clinicEquipment.filter((item) => {
     const searchLower = searchTerm.toLowerCase()
     return (
-      item.code.toLowerCase().includes(searchLower) ||
-      item.name.toLowerCase().includes(searchLower) ||
-      item.description.toLowerCase().includes(searchLower) ||
+      item.code?.toLowerCase().includes(searchLower) ||
+      item.name?.toLowerCase().includes(searchLower) ||
+      item.description?.toLowerCase().includes(searchLower) ||
       (item.serialNumber?.toLowerCase() || "").includes(searchLower)
     )
   }).sort((a, b) => {
@@ -51,13 +51,17 @@ export default function EquipmentPage() {
     }
   })
 
-  const deleteEquipmentItem = (id: number) => {
-    const success = deleteEquipment(id)
-    if (success) {
-      toast.success("Equipo eliminado correctamente")
-    } else {
-      toast.error("Error al eliminar el equipo")
-    }
+  const deleteEquipmentItem = (id: string) => {
+    deleteEquipo(id).then(success => {
+      if (success) {
+        toast.success("Equipo eliminado correctamente")
+      } else {
+        toast.error("Error al eliminar el equipo")
+      }
+    }).catch(error => {
+      console.error("Error al eliminar equipo:", error);
+      toast.error("Error al eliminar el equipo");
+    });
   }
 
   const addNewEquipment = () => {

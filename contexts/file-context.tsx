@@ -1,24 +1,12 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+"use client"
+
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { v4 as uuidv4 } from 'uuid';
+import { useInterfaz } from './interfaz-Context';
+import { BaseEntity, EntityImage, EntityDocument } from "@/services/data/models/interfaces";
 
-// Importar funciones necesarias para manejar archivos específicos
-let deleteEntityImages: ((entityType: string, entityId: string) => boolean) | undefined;
-let deleteEntityDocuments: ((entityType: string, entityId: string) => boolean) | undefined;
-
-try {
-  // Importar dinámicamente desde mockData si está disponible
-  const mockDataModule = require('@/mockData');
-  if (mockDataModule) {
-    deleteEntityImages = mockDataModule.deleteEntityImages;
-    deleteEntityDocuments = mockDataModule.deleteEntityDocuments;
-  }
-} catch (error) {
-  console.warn('No se pudieron importar funciones de mockData:', error);
-}
-
-// Tipos básicos
-export interface BaseFile {
-  id: string;
+// Definición de tipos basados en el modelo central
+export interface BaseFile extends BaseEntity {
   fileName: string;
   fileSize: number;
   mimeType: string;
@@ -63,484 +51,533 @@ export interface FileFilter {
   searchText?: string;
 }
 
+// Interfaz del contexto
 interface FileContextType {
   files: BaseFile[];
   uploadFile: (file: File, metadata: any, onProgress?: (progress: number) => void) => Promise<BaseFile>;
   deleteFile: (fileId: string, hardDelete?: boolean) => Promise<boolean>;
   restoreFile: (fileId: string) => Promise<boolean>;
-  getFileById: (fileId: string) => BaseFile | undefined;
-  getFilesByFilter: (filter: FileFilter) => BaseFile[];
-  updateFileMetadata: (fileId: string, metadata: Partial<BaseFile>) => Promise<BaseFile>;
-  getStorageStats: (clinicId?: string) => { used: number, byType: Record<string, number> };
-  addFileToContext: (fileData: BaseFile) => void;
+  getFileById: (fileId: string) => Promise<BaseFile | null>;
+  getFilesByFilter: (filter: FileFilter) => Promise<BaseFile[]>;
+  updateFileMetadata: (fileId: string, metadata: Partial<BaseFile>) => Promise<BaseFile | null>;
+  getStorageStats: (clinicId?: string) => Promise<{ used: number, byType: Record<string, number> }>;
+  refreshFiles: () => Promise<void>;
 }
 
+// Crear el contexto
 const FileContext = createContext<FileContextType | undefined>(undefined);
 
-export const FileProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+// Helper para convertir EntityDocument a BaseFile
+const convertToBaseFile = (doc: EntityDocument): BaseFile => {
+  return {
+    id: doc.id,
+    fileName: doc.fileName,
+    fileSize: doc.fileSize,
+    mimeType: doc.mimeType,
+    url: doc.url,
+    path: doc.path || '',
+    entityType: doc.entityType as any,
+    entityId: doc.entityId,
+    clinicId: '',
+    categories: [],
+    tags: [],
+    storageProvider: 'local',
+    createdAt: doc.createdAt,
+    updatedAt: doc.updatedAt || doc.createdAt,
+    createdBy: '',
+    isDeleted: false,
+    isPublic: false,
+    metadata: {}
+  };
+};
+
+// Provider del contexto
+export const FileProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [files, setFiles] = useState<BaseFile[]>([]);
+  const [dataFetched, setDataFetched] = useState(false);
+  const interfaz = useInterfaz();
   
-  // Cargar datos de localStorage al inicio
+  // Cargar datos iniciales utilizando la interfaz
   useEffect(() => {
-    const savedFiles = localStorage.getItem('appFiles');
-    if (savedFiles) {
-      try {
-        setFiles(JSON.parse(savedFiles));
-      } catch (error) {
-        console.error("Error parsing saved files:", error);
-        // Inicializar con array vacío en caso de error
-        setFiles([]);
+    const loadFiles = async () => {
+      if (interfaz.initialized && !dataFetched) {
+        try {
+          const loadedFiles = await interfaz.getAllFiles();
+          // Asegurar que los datos se conviertan al formato correcto
+          const baseFiles: BaseFile[] = loadedFiles ? 
+            loadedFiles.map(file => {
+              if ('categories' in file) {
+                return file as BaseFile;
+              }
+              return convertToBaseFile(file as EntityDocument);
+            }) : [];
+          setFiles(baseFiles);
+          setDataFetched(true);
+          console.log("FileContext: Datos cargados correctamente");
+        } catch (error) {
+          console.error("Error al cargar archivos:", error);
+          setFiles([]);
+        }
       }
-    }
-  }, []);
-  
-  // Guardar cambios en localStorage
-  useEffect(() => {
-    localStorage.setItem('appFiles', JSON.stringify(files));
-  }, [files]);
-  
-  // Simular subida de archivo
-  const uploadFile = async (
-    file: File, 
-    metadata: any, 
-    onProgress?: (progress: number) => void
-  ): Promise<BaseFile> => {
-    // Simular carga progresiva
-    if (onProgress) {
-      let progress = 0;
-      const interval = setInterval(() => {
-        progress += 10;
-        onProgress(Math.min(progress, 100));
-        if (progress >= 100) clearInterval(interval);
-      }, 100);
-    }
-    
-    // Validación de clinicId
-    if (!metadata.clinicId) {
-      console.error("Error: clinicId es requerido para subir archivos");
-      throw new Error("clinicId es requerido para subir archivos");
-    }
-    
-    // Asegurar que clinicId sea string
-    metadata.clinicId = String(metadata.clinicId);
-    
-    console.log(`Subiendo archivo asociado a clínica: ${metadata.clinicId}`);
-    
-    // Crear una URL temporal (en producción sería un upload real)
-    const fileUrl = URL.createObjectURL(file);
-    
-    // Generar una miniatura para imágenes (en producción sería procesamiento real)
-    let thumbnailUrl;
-    if (file.type.startsWith('image/')) {
-      thumbnailUrl = fileUrl; // En un sistema real, sería una versión optimizada
-    }
-    
-    // Determinar tipo de archivo
-    const isImage = file.type.startsWith('image/');
-    const isDocument = file.type === 'application/pdf' || 
-                       file.type.includes('word') || 
-                       file.type.includes('excel');
-    
-    // Crear objeto de archivo base con fecha actual
-    const timestamp = new Date().toISOString();
-    
-    // Generar estructura de ruta virtual basada en entidad y fecha
-    const year = new Date().getFullYear();
-    const month = new Date().getMonth() + 1;
-    const basePath = `/${metadata.clinicId}/${metadata.entityType}/${metadata.entityId}`;
-    const typeFolder = isImage ? 'images' : isDocument ? 'documents' : 'files';
-    const path = `${basePath}/${typeFolder}/${year}/${month}/${file.name}`;
-    
-    // Crear el objeto base
-    const newFile: BaseFile = {
-      id: uuidv4(),
-      fileName: file.name,
-      fileSize: file.size,
-      mimeType: file.type,
-      url: fileUrl,
-      thumbnailUrl,
-      path,
-      categories: metadata.categories || [],
-      tags: metadata.tags || [],
-      entityType: metadata.entityType,
-      entityId: metadata.entityId,
-      clinicId: metadata.clinicId,
-      storageProvider: 'local',
-      createdAt: timestamp,
-      updatedAt: timestamp,
-      createdBy: metadata.userId || 'unknown',
-      isDeleted: false,
-      isPublic: metadata.isPublic || false,
-      metadata: {},
     };
     
-    // Agregar metadatos específicos según el tipo de archivo
-    let specificFile: BaseFile | ImageFile | DocumentFile = newFile;
-    
-    if (isImage) {
-      // Determinar si esta imagen debe ser la principal
-      const existingImages = files.filter(f => 
-        f.entityType === metadata.entityType && 
-        f.entityId === metadata.entityId &&
-        f.mimeType.startsWith('image/') &&
-        !f.isDeleted
-      );
+    loadFiles();
+  }, [interfaz.initialized, dataFetched]);
+  
+  // Función para disparar eventos de actualización
+  const dispatchUpdateEvent = (fileId: string = '', entityId: string = '', action: string) => {
+    try {
+      window.dispatchEvent(new CustomEvent("files-updated", {
+        detail: { fileId, entityId, action }
+      }));
+    } catch (eventError) {
+      console.error("Error al disparar evento de actualización de archivos:", eventError);
+      // No bloqueamos la operación principal por un error en el evento
+    }
+  };
+  
+  // Refrescar archivos
+  const refreshFiles = async (): Promise<void> => {
+    try {
+      const refreshedFiles = await interfaz.getAllFiles();
+      // Convertir a BaseFile
+      const baseFiles: BaseFile[] = refreshedFiles ? 
+        refreshedFiles.map(file => {
+          if ('categories' in file) {
+            return file as BaseFile;
+          }
+          return convertToBaseFile(file as EntityDocument);
+        }) : [];
+      setFiles(baseFiles);
+      console.log("Archivos refrescados correctamente");
+    } catch (error) {
+      console.error("Error al refrescar archivos:", error);
+    }
+  };
+  
+  // Subir archivo
+  const uploadFile = async (
+    file: File,
+    metadata: any,
+    onProgress?: (progress: number) => void
+  ): Promise<BaseFile> => {
+    try {
+      // Validar metadata
+      if (!metadata.clinicId) {
+        throw new Error("clinicId es requerido para subir archivos");
+      }
       
-      const imageFile: ImageFile = {
-        ...newFile,
-        isPrimary: metadata.isPrimary || existingImages.length === 0,
-        position: metadata.position || existingImages.length,
+      // Asegurar que clinicId sea string
+      metadata.clinicId = String(metadata.clinicId);
+      
+      // Simular progreso si se proporciona un callback
+      if (onProgress) {
+        let progress = 0;
+        const interval = setInterval(() => {
+          progress += 10;
+          onProgress(Math.min(progress, 100));
+          if (progress >= 100) clearInterval(interval);
+        }, 100);
+      }
+      
+      // Generar ID para el archivo si no tiene
+      const fileId = metadata.id || uuidv4();
+      
+      // Crear estructura de ruta
+      const timestamp = new Date().toISOString();
+      const year = new Date().getFullYear();
+      const month = new Date().getMonth() + 1;
+      const isImage = file.type.startsWith('image/');
+      const isDocument = file.type === 'application/pdf' || 
+                         file.type.includes('word') || 
+                         file.type.includes('excel');
+      const typeFolder = isImage ? 'images' : isDocument ? 'documents' : 'files';
+      const basePath = `/${metadata.clinicId}/${metadata.entityType}/${metadata.entityId}`;
+      const path = `${basePath}/${typeFolder}/${year}/${month}/${file.name}`;
+      
+      // Preparar objeto de documento para la interfaz
+      const documentData: Omit<EntityDocument, "id"> = {
+        fileName: file.name,
+        fileSize: file.size,
+        mimeType: file.type,
+        url: '', // La URL será generada por el servidor
+        path,
+        entityType: metadata.entityType,
+        entityId: metadata.entityId,
+        category: metadata.category || 'default',
+        createdAt: timestamp
       };
       
-      // Si esta imagen es primaria, actualizar las demás
-      if (imageFile.isPrimary) {
+      // Guardar archivo usando interfaz
+      const savedDocs = await interfaz.saveEntityDocuments(
+        metadata.entityType,
+        metadata.entityId,
+        [{ ...documentData, id: fileId }],
+        metadata.category || 'default'
+      );
+      
+      if (!savedDocs || !Array.isArray(savedDocs) || savedDocs.length === 0) {
+        throw new Error("No se pudo guardar el archivo");
+      }
+      
+      // Convertir el documento guardado a BaseFile
+      const baseFile: BaseFile = {
+        id: savedDocs[0].id,
+        fileName: savedDocs[0].fileName,
+        fileSize: savedDocs[0].fileSize,
+        mimeType: savedDocs[0].mimeType,
+        url: savedDocs[0].url,
+        path: savedDocs[0].path || path,
+        entityType: metadata.entityType as any,
+        entityId: metadata.entityId,
+        clinicId: metadata.clinicId,
+        categories: metadata.categories || [],
+        tags: metadata.tags || [],
+        storageProvider: metadata.storageProvider || 'local',
+        createdAt: savedDocs[0].createdAt,
+        updatedAt: savedDocs[0].updatedAt || timestamp,
+        createdBy: metadata.userId || 'unknown',
+        isDeleted: false,
+        isPublic: metadata.isPublic || false,
+        metadata: { ...metadata }
+      };
+      
+      // Para imágenes, añadir propiedades específicas
+      if (isImage) {
+        baseFile.metadata.isPrimary = metadata.isPrimary || false;
+        baseFile.metadata.position = metadata.position || 0;
+        baseFile.metadata.width = metadata.width;
+        baseFile.metadata.height = metadata.height;
+      }
+      
+      // Para documentos, añadir propiedades específicas
+      if (isDocument) {
+        baseFile.metadata.pageCount = metadata.pageCount || 1;
+      }
+      
+      // Actualizar estado local
+      setFiles(prev => [...prev, baseFile]);
+      
+      // Disparar evento de actualización
+      dispatchUpdateEvent(baseFile.id, baseFile.entityId, 'create');
+      
+      return baseFile;
+    } catch (error) {
+      console.error("Error al subir archivo:", error);
+      throw error;
+    }
+  };
+  
+  // Eliminar archivo
+  const deleteFile = async (fileId: string, hardDelete = false): Promise<boolean> => {
+    try {
+      // Validar ID
+      if (!fileId) {
+        console.warn("Se intentó eliminar un archivo con ID vacío");
+        return false;
+      }
+      
+      // Buscar archivo para obtener información antes de eliminarlo
+      const fileToDelete = files.find(f => f.id === fileId);
+      if (!fileToDelete) {
+        console.warn(`Archivo con ID ${fileId} no encontrado para eliminación`);
+        return false;
+      }
+      
+      // Eliminar a través de la interfaz
+      const success = await interfaz.deleteFile(fileId);
+      
+      if (success) {
+        if (hardDelete) {
+          // Eliminación permanente del estado local
+          setFiles(prevFiles => prevFiles.filter(f => f.id !== fileId));
+        } else {
+          // Marcar como eliminado en el estado local
+          setFiles(prevFiles => 
+            prevFiles.map(f => 
+              f.id === fileId 
+                ? { ...f, isDeleted: true, updatedAt: new Date().toISOString() } 
+                : f
+            )
+          );
+        }
+        
+        // Disparar evento de actualización
+        dispatchUpdateEvent(fileId, fileToDelete.entityId, hardDelete ? 'delete' : 'mark-deleted');
+      }
+      
+      return success;
+    } catch (error) {
+      console.error("Error al eliminar archivo:", error);
+      return false;
+    }
+  };
+  
+  // Restaurar archivo
+  const restoreFile = async (fileId: string): Promise<boolean> => {
+    try {
+      // Validar ID
+      if (!fileId) {
+        console.warn("Se intentó restaurar un archivo con ID vacío");
+        return false;
+      }
+      
+      // Buscar archivo para obtener información antes de restaurarlo
+      const fileToRestore = files.find(f => f.id === fileId);
+      if (!fileToRestore) {
+        console.warn(`Archivo con ID ${fileId} no encontrado para restauración`);
+        return false;
+      }
+      
+      // Restaurar a través de la interfaz
+      const success = await interfaz.restoreFile(fileId);
+      
+      if (success) {
+        // Actualizar estado local
         setFiles(prevFiles => 
           prevFiles.map(f => 
-            (f.entityType === metadata.entityType && 
-             f.entityId === metadata.entityId && 
-             f.mimeType.startsWith('image/') && 
-             !f.isDeleted) 
-              ? { ...f, metadata: { ...f.metadata, isPrimary: false } } 
+            f.id === fileId 
+              ? { ...f, isDeleted: false, updatedAt: new Date().toISOString() } 
               : f
           )
         );
+        
+        // Disparar evento de actualización
+        dispatchUpdateEvent(fileId, fileToRestore.entityId, 'restore');
       }
       
-      specificFile = imageFile;
-    } else if (isDocument) {
-      // Para documentos PDF u otros, podríamos agregar metadatos específicos
-      const documentFile: DocumentFile = {
-        ...newFile,
-        pageCount: 1, // En un sistema real se extraería del documento
-      };
-      specificFile = documentFile;
-    }
-    
-    // Agregar archivo al state
-    setFiles(prevFiles => [...prevFiles, specificFile]);
-    
-    return specificFile;
-  };
-  
-  // Eliminar archivo (soft delete o hard delete)
-  const deleteFile = async (fileId: string, hardDelete = false): Promise<boolean> => {
-    // Buscar el archivo primero para obtener sus metadatos
-    const fileToDelete = files.find(f => f.id === fileId);
-    
-    if (!fileToDelete) {
-      console.warn(`Archivo con ID ${fileId} no encontrado para eliminación`);
+      return success;
+    } catch (error) {
+      console.error("Error al restaurar archivo:", error);
       return false;
     }
-    
-    // Guardar información importante sobre el archivo para eliminación de almacenes específicos
-    const { entityType, entityId, mimeType } = fileToDelete;
-    console.log(`Eliminando archivo ${fileId} de tipo ${entityType} para entidad ${entityId}`);
-    
-    // Eliminar del contexto principal de archivos
-    if (hardDelete) {
-      setFiles(prevFiles => prevFiles.filter(f => f.id !== fileId));
-      
-      // Intentar eliminar también de localStorage
-      try {
-        // Eliminar el archivo del localStorage de la entidad específica
-        if (mimeType.startsWith('image/') && deleteEntityImages) {
-          deleteEntityImages(entityType, entityId);
-          console.log(`Eliminadas imágenes para ${entityType}/${entityId} del almacén específico`);
-        } else if (deleteEntityDocuments) {
-          deleteEntityDocuments(entityType, entityId);
-          console.log(`Eliminados documentos para ${entityType}/${entityId} del almacén específico`);
-        }
-        
-        // Eliminar de localStorage general
-        const allFilesKey = 'files';
-        const storedFiles = localStorage.getItem(allFilesKey);
-        if (storedFiles) {
-          const filesData = JSON.parse(storedFiles);
-          const updatedFiles = filesData.filter((f: any) => f.id !== fileId);
-          localStorage.setItem(allFilesKey, JSON.stringify(updatedFiles));
-        }
-      } catch (error) {
-        console.error('Error al eliminar archivo de localStorage:', error);
-      }
-    } else {
-      // Soft delete - solo marcar como eliminado
-      setFiles(prevFiles => 
-        prevFiles.map(f => 
-          f.id === fileId 
-            ? { ...f, isDeleted: true, updatedAt: new Date().toISOString() } 
-            : f
-        )
-      );
-      
-      // Actualizar localStorage
-      try {
-        const allFilesKey = 'files';
-        const storedFiles = localStorage.getItem(allFilesKey);
-        if (storedFiles) {
-          const filesData = JSON.parse(storedFiles);
-          const updatedFiles = filesData.map((f: any) => 
-            f.id === fileId 
-              ? { ...f, isDeleted: true, updatedAt: new Date().toISOString() } 
-              : f
-          );
-          localStorage.setItem(allFilesKey, JSON.stringify(updatedFiles));
-        }
-      } catch (error) {
-        console.error('Error al actualizar archivo en localStorage:', error);
-      }
-    }
-    
-    return true;
-  };
-  
-  // Restaurar archivo eliminado
-  const restoreFile = async (fileId: string): Promise<boolean> => {
-    setFiles(prevFiles => 
-      prevFiles.map(f => 
-        f.id === fileId 
-          ? { ...f, isDeleted: false, updatedAt: new Date().toISOString() } 
-          : f
-      )
-    );
-    return true;
   };
   
   // Obtener archivo por ID
-  const getFileById = (fileId: string): BaseFile | undefined => {
-    return files.find(f => f.id === fileId);
+  const getFileById = async (fileId: string): Promise<BaseFile | null> => {
+    try {
+      // Validar ID
+      if (!fileId) {
+        console.warn("Se solicitó un archivo con ID vacío");
+        return null;
+      }
+      
+      // Intentar obtener archivo de la interfaz primero
+      const file = await interfaz.getFileById(fileId);
+      
+      if (file) {
+        // Convertir a BaseFile si es necesario
+        return 'categories' in file ? 
+          file as BaseFile : 
+          convertToBaseFile(file as EntityDocument);
+      }
+      
+      // Si no se encontró en la interfaz, buscar en el estado local
+      const localFile = files.find(f => f.id === fileId);
+      if (localFile) {
+        console.log("Archivo recuperado del estado local:", fileId);
+        return localFile;
+      }
+      
+      return null;
+    } catch (error) {
+      console.error(`Error al obtener archivo ${fileId}:`, error);
+      
+      // Intentar recuperar del estado local en caso de error
+      const localFile = files.find(f => f.id === fileId);
+      if (localFile) {
+        console.log("Archivo recuperado del estado local tras error:", fileId);
+        return localFile;
+      }
+      
+      return null;
+    }
   };
   
-  // Obtener archivos por filtro
-  const getFilesByFilter = (filter: FileFilter): BaseFile[] => {
-    return files.filter(file => {
-      // Filtrar por borrados solo si se especifica
-      if (filter.isDeleted !== undefined && file.isDeleted !== filter.isDeleted) {
-        return false;
-      }
+  // Obtener archivos según filtros
+  const getFilesByFilter = async (filter: FileFilter): Promise<BaseFile[]> => {
+    try {
+      // Usar la interfaz para obtener archivos filtrados
+      const filteredDocs = await interfaz.getFilesByFilter(filter);
       
-      // Filtrar por tipo de entidad
-      if (filter.entityType && file.entityType !== filter.entityType) {
-        return false;
-      }
-      
-      // Filtrar por ID de entidad
-      if (filter.entityId && file.entityId !== filter.entityId) {
-        return false;
-      }
-      
-      // Filtrar por clínica
-      if (filter.clinicId) {
-        // Permitir comparación entre string y number convirtiendo ambos a string
-        const fileClinicIdStr = file.clinicId?.toString() || '';
-        const filterClinicIdStr = filter.clinicId.toString();
-        if (fileClinicIdStr !== filterClinicIdStr) {
-          return false;
-        }
-      }
-      
-      // Filtrar por tipo MIME
-      if (filter.mimeType) {
-        if (filter.mimeType.endsWith('/*')) {
-          // Para tipos como 'image/*'
-          const prefix = filter.mimeType.split('/')[0];
-          if (!file.mimeType.startsWith(`${prefix}/`)) {
-            return false;
+      if (filteredDocs && filteredDocs.length > 0) {
+        // Convertir a BaseFile si es necesario
+        return filteredDocs.map(file => {
+          if ('categories' in file) {
+            return file as BaseFile;
           }
-        } else if (file.mimeType !== filter.mimeType) {
-          return false;
-        }
+          return convertToBaseFile(file as EntityDocument);
+        });
       }
       
-      // Filtrar por categorías
+      // Si no se encontraron archivos o hubo un problema, intentar filtrar del estado local
+      let localFilteredFiles = [...files];
+      
+      // Aplicar filtros
+      if (filter.entityType) {
+        localFilteredFiles = localFilteredFiles.filter(f => f.entityType === filter.entityType);
+      }
+      
+      if (filter.entityId) {
+        localFilteredFiles = localFilteredFiles.filter(f => f.entityId === filter.entityId);
+      }
+      
+      if (filter.clinicId) {
+        localFilteredFiles = localFilteredFiles.filter(f => f.clinicId === filter.clinicId);
+      }
+      
+      if (filter.mimeType) {
+        localFilteredFiles = localFilteredFiles.filter(f => f.mimeType.includes(filter.mimeType!));
+      }
+      
       if (filter.categories && filter.categories.length > 0) {
-        const hasCategory = filter.categories.some(cat => file.categories.includes(cat));
-        if (!hasCategory) {
-          return false;
-        }
+        localFilteredFiles = localFilteredFiles.filter(f => 
+          filter.categories!.some(cat => f.categories.includes(cat))
+        );
       }
       
-      // Filtrar por texto
+      if (filter.isDeleted !== undefined) {
+        localFilteredFiles = localFilteredFiles.filter(f => f.isDeleted === filter.isDeleted);
+      }
+      
+      if (filter.startDate) {
+        const startDate = new Date(filter.startDate).getTime();
+        localFilteredFiles = localFilteredFiles.filter(f => 
+          new Date(f.createdAt).getTime() >= startDate
+        );
+      }
+      
+      if (filter.endDate) {
+        const endDate = new Date(filter.endDate).getTime();
+        localFilteredFiles = localFilteredFiles.filter(f => 
+          new Date(f.createdAt).getTime() <= endDate
+        );
+      }
+      
       if (filter.searchText) {
         const searchLower = filter.searchText.toLowerCase();
-        const nameMatch = file.fileName.toLowerCase().includes(searchLower);
-        const tagMatch = file.tags.some(tag => tag.toLowerCase().includes(searchLower));
-        if (!nameMatch && !tagMatch) {
-          return false;
-        }
+        localFilteredFiles = localFilteredFiles.filter(f => 
+          f.fileName.toLowerCase().includes(searchLower) || 
+          f.tags.some(tag => tag.toLowerCase().includes(searchLower))
+        );
       }
       
-      // Filtrar por fecha de creación
-      if (filter.startDate && new Date(file.createdAt) < new Date(filter.startDate)) {
-        return false;
-      }
-      
-      if (filter.endDate && new Date(file.createdAt) > new Date(filter.endDate)) {
-        return false;
-      }
-      
-      return true;
-    });
+      return localFilteredFiles;
+    } catch (error) {
+      console.error("Error al obtener archivos filtrados:", error);
+      return [];
+    }
   };
   
-  // Actualizar metadatos de archivo
-  const updateFileMetadata = async (fileId: string, metadata: Partial<BaseFile>): Promise<BaseFile> => {
-    let updatedFile: BaseFile | undefined;
-    
-    setFiles(prevFiles => 
-      prevFiles.map(f => {
-        if (f.id === fileId) {
-          updatedFile = {
-            ...f,
-            ...metadata,
-            updatedAt: new Date().toISOString()
-          };
-          return updatedFile;
-        }
-        return f;
-      })
-    );
-    
-    if (!updatedFile) {
-      throw new Error(`File with id ${fileId} not found`);
+  // Actualizar metadatos de un archivo
+  const updateFileMetadata = async (fileId: string, metadata: Partial<BaseFile>): Promise<BaseFile | null> => {
+    try {
+      // Validar ID
+      if (!fileId) {
+        console.warn("Se intentó actualizar un archivo con ID vacío");
+        return null;
+      }
+      
+      // Obtener el archivo actual para conocer su tipo
+      const currentFile = files.find(f => f.id === fileId);
+      if (!currentFile) {
+        console.warn(`Archivo con ID ${fileId} no encontrado para actualización de metadatos`);
+        return null;
+      }
+      
+      // Preparar datos para la interfaz
+      const updateData: Partial<EntityDocument> = {
+        fileName: metadata.fileName,
+        fileSize: metadata.fileSize,
+        mimeType: metadata.mimeType,
+        url: metadata.url,
+        path: metadata.path,
+        category: metadata.metadata?.category
+      };
+      
+      // Actualizar a través de la interfaz
+      const success = await interfaz.updateFileMetadata(fileId, updateData);
+      
+      if (success) {
+        // Actualizar estado local
+        const updatedFile: BaseFile = {
+          ...currentFile,
+          ...metadata,
+          updatedAt: new Date().toISOString()
+        };
+        
+        setFiles(prevFiles => 
+          prevFiles.map(f => f.id === fileId ? updatedFile : f)
+        );
+        
+        // Disparar evento de actualización
+        dispatchUpdateEvent(fileId, updatedFile.entityId, 'update');
+        
+        return updatedFile;
+      }
+      
+      return null;
+    } catch (error) {
+      console.error(`Error al actualizar metadatos del archivo ${fileId}:`, error);
+      return null;
     }
-    
-    return updatedFile;
   };
   
   // Obtener estadísticas de almacenamiento
-  const getStorageStats = (clinicId?: string) => {
-    console.log(`Calculando estadísticas para clínica: ${clinicId} (${typeof clinicId})`);
-    console.log(`Total archivos disponibles: ${files.length}`);
-    
-    // Filtrar por clínica si se especifica
-    const relevantFiles = clinicId 
-      ? files.filter(f => {
-          // Convertir ambos a string para comparar correctamente
-          const fileClinicId = String(f.clinicId || '');
-          const targetClinicId = String(clinicId);
-          return fileClinicId === targetClinicId && !f.isDeleted;
-        })
-      : files.filter(f => !f.isDeleted);
-    
-    console.log(`Archivos relevantes encontrados: ${relevantFiles.length}`);
-    
-    // Calcular uso total
-    const totalUsed = relevantFiles.reduce((sum, file) => sum + file.fileSize, 0);
-    
-    // Calcular uso por tipo de archivo
-    const byType: Record<string, number> = {};
-    
-    relevantFiles.forEach(file => {
-      // Extraer tipo principal (image, video, application, etc)
-      const mainType = file.mimeType.split('/')[0];
-      byType[mainType] = (byType[mainType] || 0) + file.fileSize;
-    });
-    
-    return {
-      used: totalUsed,
-      byType
-    };
-  };
-  
-  // Añadir archivo al contexto
-  const addFileToContext = (fileData: BaseFile) => {
-    // Verificar si el archivo ya existe
-    const fileExists = files.some(f => f.id === fileData.id);
-    if (fileExists) {
-      return; // Evitar duplicados
+  const getStorageStats = async (clinicId?: string): Promise<{ used: number, byType: Record<string, number> }> => {
+    try {
+      // Obtener estadísticas a través de la interfaz
+      const stats = await interfaz.getStorageStats(clinicId);
+      
+      if (stats) {
+        return stats;
+      }
+      
+      // Si no se obtuvieron estadísticas, calcular con datos locales
+      const relevantFiles = clinicId 
+        ? files.filter(f => f.clinicId === clinicId && !f.isDeleted)
+        : files.filter(f => !f.isDeleted);
+      
+      // Calcular espacio usado
+      const used = relevantFiles.reduce((total, file) => total + file.fileSize, 0);
+      
+      // Agrupar por tipo
+      const byType: Record<string, number> = {};
+      relevantFiles.forEach(file => {
+        const type = file.mimeType.split('/')[0] || 'unknown';
+        byType[type] = (byType[type] || 0) + file.fileSize;
+      });
+      
+      return { used, byType };
+    } catch (error) {
+      console.error("Error al obtener estadísticas de almacenamiento:", error);
+      return { used: 0, byType: {} };
     }
-    
-    // Guardar metadatos del archivo en localStorage para persistencia
-    const fileMetadata = {
-      id: fileData.id,
-      fileName: fileData.fileName,
-      fileSize: fileData.fileSize,
-      mimeType: fileData.mimeType,
-      path: fileData.path,
-      entityType: fileData.entityType,
-      entityId: fileData.entityId,
-      clinicId: fileData.clinicId,
-      createdAt: fileData.createdAt,
-      metadata: fileData.metadata,
-    };
-    
-    // Guardar metadatos en localStorage
-    localStorage.setItem(`file_metadata_${fileData.id}`, JSON.stringify(fileMetadata));
-    
-    // Añadir a la lista de archivos
-    setFiles(prev => [...prev, fileData]);
   };
-  
-  // Añadir esta función para cargar archivos desde localStorage al iniciar
-  useEffect(() => {
-    const loadFilesFromStorage = () => {
-      const files: BaseFile[] = [];
-      
-      // Buscar todos los items en localStorage que contienen metadatos de archivos
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key.startsWith('file_metadata_')) {
-          try {
-            const metadataString = localStorage.getItem(key);
-            if (metadataString) {
-              const metadata = JSON.parse(metadataString);
-              
-              // Intentar obtener datos del archivo
-              const fileKey = `file_${metadata.path}`;
-              const fileData = localStorage.getItem(fileKey);
-              
-              if (fileData) {
-                // Reconstruir objeto de archivo
-                const file: BaseFile = {
-                  ...metadata,
-                  url: fileData,
-                  thumbnailUrl: fileData,
-                  storageProvider: 'local',
-                  updatedAt: metadata.createdAt,
-                  createdBy: 'system',
-                  isDeleted: false,
-                  isPublic: false
-                };
-                
-                files.push(file);
-              }
-            }
-          } catch (error) {
-            console.error('Error al cargar archivo desde localStorage:', error);
-          }
-        }
-      }
-      
-      // Actualizar estado con los archivos cargados
-      if (files.length > 0) {
-        setFiles(files);
-      }
-    };
-    
-    loadFilesFromStorage();
-  }, []);
   
   return (
-    <FileContext.Provider value={{
-      files,
-      uploadFile,
-      deleteFile,
-      restoreFile,
-      getFileById,
-      getFilesByFilter,
-      updateFileMetadata,
-      getStorageStats,
-      addFileToContext
-    }}>
+    <FileContext.Provider
+      value={{
+        files,
+        uploadFile,
+        deleteFile,
+        restoreFile,
+        getFileById,
+        getFilesByFilter,
+        updateFileMetadata,
+        getStorageStats,
+        refreshFiles
+      }}
+    >
       {children}
     </FileContext.Provider>
   );
 };
 
-export const useFiles = () => {
+export function useFiles() {
   const context = useContext(FileContext);
   if (context === undefined) {
-    throw new Error('useFiles must be used within a FileProvider');
+    throw new Error('useFiles debe ser usado dentro de un FileProvider');
   }
   return context;
-}; 
+} 

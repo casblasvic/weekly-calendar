@@ -1,15 +1,17 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { useDataWithRevalidation } from "@/hooks/use-data-with-revalidation"
 import { useAuth } from "@/contexts/auth-context"
 import { trackEvent } from "@/utils/analytics"
-import type { Clinic } from "@/mockData"
-import { getClinics } from "@/mockData"
+import { useClinic, Clinica } from "@/contexts/clinic-context"
 
-export default function ClinicSelector() {
+export function ClinicSelector() {
   const { user } = useAuth()
-  const [selectedClinicId, setSelectedClinicId] = useState<number | null>(null)
+  const { activeClinic, setActiveClinic, getActiveClinicas, getClinicaById } = useClinic()
+  const [selectedClinicId, setSelectedClinicId] = useState<string | null>(activeClinic?.id?.toString() || null)
+  const isChangingRef = useRef(false)
+  const pendingChangeRef = useRef<string | null>(null)
 
   // Usar el hook de revalidación para obtener las clínicas
   const {
@@ -17,15 +19,12 @@ export default function ClinicSelector() {
     isLoading,
     error,
     revalidate,
-  } = useDataWithRevalidation<Clinic[]>({
+  } = useDataWithRevalidation<Clinica[]>({
     cookieKey: "user_clinics",
     cacheKey: "clinics_data",
     fetchFn: async () => {
-      // En un entorno real, esto sería una llamada API
-      // return api.cached.get<Clinic[]>('/api/clinics');
-
-      // Para este ejemplo, usamos los datos mock
-      return getClinics()
+      // Usar el contexto especializado para obtener las clínicas
+      return getActiveClinicas()
     },
     defaultValue: [],
     revalidateOnMount: true,
@@ -36,73 +35,126 @@ export default function ClinicSelector() {
     if (clinics.length > 0 && !selectedClinicId) {
       // Si el usuario tiene una clínica asignada, seleccionarla
       if (user?.clinicId) {
-        const userClinic = clinics.find((c) => c.id === user.clinicId)
+        const userClinic = clinics.find((c) => c.id.toString() === user.clinicId.toString())
         if (userClinic) {
-          setSelectedClinicId(userClinic.id)
+          setSelectedClinicId(userClinic.id.toString())
           return
         }
       }
-
-      // De lo contrario, seleccionar la primera clínica
-      setSelectedClinicId(clinics[0].id)
+      
+      // Si no, seleccionar la primera
+      setSelectedClinicId(clinics[0].id.toString())
     }
-  }, [clinics, user, selectedClinicId])
+  }, [clinics, selectedClinicId, user])
 
-  // Manejar el cambio de clínica
-  const handleClinicChange = (clinicId: number) => {
-    setSelectedClinicId(clinicId)
+  // Gestionar el cambio de clínica pendiente
+  useEffect(() => {
+    // Si hay un cambio pendiente y no estamos en proceso de cambio
+    if (pendingChangeRef.current && !isChangingRef.current) {
+      const changeClinic = async () => {
+        isChangingRef.current = true;
+        try {
+          const clinicId = pendingChangeRef.current!;
+          const clinic = await getClinicaById(clinicId);
+          
+          if (clinic) {
+            console.log("Cambiando clínica activa a:", clinic.name);
+            // Usar un timeout para asegurar que React complete los ciclos de renderizado
+            setTimeout(() => {
+              setActiveClinic(clinic);
+              // Esperar un poco más antes de limpiar la bandera de cambio
+              setTimeout(() => {
+                isChangingRef.current = false;
+                pendingChangeRef.current = null;
+              }, 50);
+            }, 50);
+          } else {
+            // Limpiar estado si no se encontró la clínica
+            isChangingRef.current = false;
+            pendingChangeRef.current = null;
+          }
+        } catch (error) {
+          console.error("Error al cambiar de clínica:", error);
+          isChangingRef.current = false;
+          pendingChangeRef.current = null;
+        }
+      };
+      
+      changeClinic();
+    }
+  }, [getClinicaById, setActiveClinic]);
 
-    // Registrar el evento en el sistema de análisis
-    trackEvent("user_action", "change_clinic", { clinicId })
-  }
+  // Sincronizar el ID seleccionado con activeClinic
+  useEffect(() => {
+    if (activeClinic?.id && selectedClinicId !== activeClinic.id.toString() && !isChangingRef.current) {
+      setSelectedClinicId(activeClinic.id.toString());
+    }
+  }, [activeClinic, selectedClinicId]);
 
-  // Manejar la actualización manual
+  const handleClinicChange = useCallback(async (clinicId: string) => {
+    if (clinicId === selectedClinicId || isChangingRef.current) return;
+    
+    // Actualizar UI inmediatamente
+    setSelectedClinicId(clinicId);
+    
+    // Programar el cambio real como pendiente
+    pendingChangeRef.current = clinicId;
+    
+    // Registrar el evento de analítica
+    trackEvent("user_action", "clinic_change", {
+      clinicId,
+      clinicName: clinics.find(c => c.id.toString() === clinicId)?.name || "Unknown",
+    });
+  }, [selectedClinicId, clinics]);
+
   const handleRefresh = () => {
     revalidate()
   }
 
   if (isLoading) {
-    return <div className="p-4">Cargando clínicas...</div>
+    return (
+      <div className="p-4 text-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+        <p className="mt-2 text-sm text-gray-500">Cargando clínicas...</p>
+      </div>
+    )
   }
 
   if (error) {
     return (
-      <div className="p-4 text-red-500">
-        Error al cargar las clínicas: {error.message}
-        <button onClick={handleRefresh} className="ml-2 px-2 py-1 bg-blue-500 text-white rounded">
-          Reintentar
+      <div className="p-4 text-center">
+        <div className="text-red-500 mb-2">Error al cargar las clínicas</div>
+        <button
+          onClick={handleRefresh}
+          className="text-sm text-blue-600 hover:underline focus:outline-none"
+        >
+          Intentar nuevamente
         </button>
       </div>
     )
   }
 
   if (clinics.length === 0) {
-    return <div className="p-4">No hay clínicas disponibles</div>
+    return (
+      <div className="p-4 text-center">
+        <p className="text-gray-500">No hay clínicas disponibles</p>
+      </div>
+    )
   }
 
   return (
-    <div className="p-4">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-bold">Seleccionar Clínica</h2>
-        <button
-          onClick={handleRefresh}
-          className="px-2 py-1 bg-gray-200 rounded"
-          aria-label="Actualizar lista de clínicas"
-        >
-          Actualizar
-        </button>
-      </div>
-
-      <div className="grid gap-4">
+    <div className="max-h-[300px] overflow-y-auto">
+      <div className="text-xs text-gray-500 px-3 py-2">Seleccionar clínica</div>
+      <div className="divide-y">
         {clinics.map((clinic) => (
           <div
             key={clinic.id}
-            className={`p-4 border rounded cursor-pointer ${
-              selectedClinicId === clinic.id ? "border-blue-500 bg-blue-50" : "border-gray-200"
+            className={`p-3 cursor-pointer transition-colors hover:bg-gray-100 ${
+              selectedClinicId === clinic.id.toString() ? "bg-purple-50" : ""
             }`}
-            onClick={() => handleClinicChange(clinic.id)}
+            onClick={() => handleClinicChange(clinic.id.toString())}
           >
-            <h3 className="font-bold">{clinic.commercialName}</h3>
+            <h3 className="font-bold">{clinic.name}</h3>
             <p className="text-sm text-gray-600">{clinic.city}</p>
           </div>
         ))}
@@ -110,4 +162,6 @@ export default function ClinicSelector() {
     </div>
   )
 }
+
+export default ClinicSelector
 

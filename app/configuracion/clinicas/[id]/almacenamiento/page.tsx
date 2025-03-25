@@ -10,7 +10,7 @@ import { useStorage } from '@/contexts/storage-context';
 import EnhancedFilesTable from '@/components/storage/enhanced-files-table';
 import StorageStatusCard from '@/components/storage/storage-status-card';
 import StorageTypeChart from '@/components/storage/storage-type-chart';
-import { getClinic, getClinics } from '@/mockData';
+import { useClinic } from '@/contexts/clinic-context';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 
@@ -29,54 +29,101 @@ export default function AlmacenamientoClinicaPage({ clinicId: propClinicId }: Al
   // Obtener información de almacenamiento y archivos
   const { files, getFilesByFilter, deleteFile, getStorageStats } = useFiles();
   const { getQuota } = useStorage();
+  const { getClinicaById, getAllClinicas } = useClinic();
   const [clinicFiles, setClinicFiles] = useState<BaseFile[]>([]);
   const [activeTab, setActiveTab] = useState('overview');
+  const [clinic, setClinic] = useState<any>(null);
+  
+  // Estados para almacenar valores de cuotas y estadísticas para evitar problemas con Promises
+  const [clinicQuota, setClinicQuota] = useState<any>({ id: '', quotaSize: 0, isUnlimited: false });
+  const [globalQuota, setGlobalQuota] = useState<any>({ id: 'global', quotaSize: 0, isUnlimited: false });
+  const [storageStatsData, setStorageStatsData] = useState<{ used: number; byType: Record<string, number> }>({ used: 0, byType: {} });
+  const [globalStorageUsage, setGlobalStorageUsage] = useState(0);
   
   // Obtener información de la clínica
-  const clinic = getClinic(parseInt(clinicId));
+  useEffect(() => {
+    const fetchClinic = async () => {
+      try {
+        const clinicData = await getClinicaById(clinicId);
+        setClinic(clinicData);
+      } catch (error) {
+        console.error("Error al obtener la clínica:", error);
+      }
+    };
+    
+    if (clinicId) {
+      fetchClinic();
+    }
+  }, [clinicId, getClinicaById]);
   
-  // Obtener la cuota asignada a esta clínica
-  const clinicQuota = getQuota('clinic', clinicId);
-  const globalQuota = getQuota('global');
+  // Obtener las cuotas asignadas
+  useEffect(() => {
+    const fetchQuotas = async () => {
+      try {
+        const clinicQuotaData = await getQuota('clinic', clinicId);
+        const globalQuotaData = await getQuota('global');
+        
+        setClinicQuota(clinicQuotaData || { id: '', quotaSize: 0, isUnlimited: false });
+        setGlobalQuota(globalQuotaData || { id: 'global', quotaSize: 0, isUnlimited: false });
+      } catch (error) {
+        console.error("Error al obtener cuotas:", error);
+      }
+    };
+    
+    fetchQuotas();
+  }, [clinicId, getQuota]);
+  
+  // Obtener estadísticas de almacenamiento
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const stats = await getStorageStats(clinicId);
+        setStorageStatsData(stats || { used: 0, byType: {} });
+      } catch (error) {
+        console.error("Error al obtener estadísticas de almacenamiento:", error);
+      }
+    };
+    
+    fetchStats();
+  }, [clinicId, getStorageStats]);
   
   // Determinar si la clínica tiene una cuota personalizada o usa la global
   const hasCustomQuota = clinicQuota.id && clinicQuota.id !== 'global';
   const activeQuota = hasCustomQuota ? clinicQuota : globalQuota;
   
-  // Obtener las estadísticas de almacenamiento
-  const storageStats = getStorageStats(clinicId);
-  
   // Para clínicas con cuota global, calcular el espacio disponible teniendo en cuenta
   // el uso de todas las clínicas
-  const [globalStorageUsage, setGlobalStorageUsage] = useState(0);
-  
   useEffect(() => {
     // Si usa cuota global, obtener uso de todas las clínicas
     if (!hasCustomQuota) {
       try {
         // Obtenemos todas las clínicas para calcular uso total
-        const allClinics = getClinics();
-        let totalUsed = 0;
+        const calculateGlobalUsage = async () => {
+          const allClinics = await getAllClinicas();
+          let totalUsed = 0;
+          
+          // Sumamos uso de todas las clínicas
+          for (const c of allClinics) {
+            const cStats = await getStorageStats(c.id.toString());
+            totalUsed += cStats.used || 0;
+          }
+          
+          setGlobalStorageUsage(totalUsed);
+        };
         
-        // Sumamos uso de todas las clínicas
-        allClinics.forEach(c => {
-          const cStats = getStorageStats(c.id.toString());
-          totalUsed += cStats.used;
-        });
-        
-        setGlobalStorageUsage(totalUsed);
+        calculateGlobalUsage();
       } catch (error) {
         console.error("Error calculando uso global:", error);
       }
     }
-  }, [hasCustomQuota, getStorageStats]);
+  }, [hasCustomQuota, getStorageStats, getAllClinicas]);
   
   // Calcular el porcentaje de uso
   const percentUsed = activeQuota.isUnlimited 
     ? 0 
     : hasCustomQuota
-      ? Math.min(100, (storageStats.used / activeQuota.quotaSize) * 100)
-      : Math.min(100, (storageStats.used / Math.max(1, activeQuota.quotaSize - globalStorageUsage + storageStats.used)) * 100);
+      ? Math.min(100, (storageStatsData.used / activeQuota.quotaSize) * 100)
+      : Math.min(100, (storageStatsData.used / Math.max(1, activeQuota.quotaSize - globalStorageUsage + storageStatsData.used)) * 100);
   
   // Calcular información sobre tipos de archivo
   const fileTypeStats = {
@@ -105,14 +152,19 @@ export default function AlmacenamientoClinicaPage({ clinicId: propClinicId }: Al
   
   // Cargar los archivos de la clínica
   useEffect(() => {
-    const loadClinicFiles = () => {
-      // Filtramos los archivos que corresponden a esta clínica
-      const filesForClinic = getFilesByFilter({ 
-        clinicId, 
-        isDeleted: false 
-      });
-      
-      setClinicFiles(filesForClinic);
+    const loadClinicFiles = async () => {
+      try {
+        // Filtramos los archivos que corresponden a esta clínica
+        const filesForClinic = await getFilesByFilter({ 
+          clinicId, 
+          isDeleted: false 
+        });
+        
+        setClinicFiles(filesForClinic);
+      } catch (error) {
+        console.error("Error al cargar archivos:", error);
+        setClinicFiles([]);
+      }
     };
     
     loadClinicFiles();
@@ -164,7 +216,7 @@ export default function AlmacenamientoClinicaPage({ clinicId: propClinicId }: Al
                 router.push(`/configuracion/clinicas/${clinicId}`);
               }}
             >
-              <ArrowLeft className="h-4 w-4 mr-2" />
+              <ArrowLeft className="w-4 h-4 mr-2" />
               Volver a configuración
             </Button>
           )}
@@ -176,7 +228,7 @@ export default function AlmacenamientoClinicaPage({ clinicId: propClinicId }: Al
         <div className="flex items-center gap-2">
           <Link href="/configuracion/almacenamiento">
             <Button variant="outline" size="sm" className="flex items-center">
-              <Server className="h-4 w-4 mr-1" />
+              <Server className="w-4 h-4 mr-1" />
               <span>Configuración global</span>
             </Button>
           </Link>
@@ -195,9 +247,9 @@ export default function AlmacenamientoClinicaPage({ clinicId: propClinicId }: Al
         </TabsList>
         
         <TabsContent value="overview">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <Card className="col-span-1 shadow-sm">
-              <CardHeader className="py-2 px-3">
+              <CardHeader className="px-3 py-2">
                 <CardTitle className="text-xs flex items-center gap-1.5">
                   <Server className="h-3.5 w-3.5" />
                   Almacenamiento asignado
@@ -208,7 +260,7 @@ export default function AlmacenamientoClinicaPage({ clinicId: propClinicId }: Al
                     : "Esta clínica utiliza la cuota global del sistema"}
                 </CardDescription>
               </CardHeader>
-              <CardContent className="pt-0 px-3 pb-3">
+              <CardContent className="px-3 pt-0 pb-3">
                 <div className="space-y-1.5">
                   <div className="grid grid-cols-2 gap-1.5 text-xs">
                     <div>
@@ -217,13 +269,13 @@ export default function AlmacenamientoClinicaPage({ clinicId: propClinicId }: Al
                         {activeQuota.isUnlimited || !hasCustomQuota
                           ? 'Sin límite' 
                           : formatBytes(activeQuota.quotaSize)}
-                        {!hasCustomQuota && <span className="text-gray-500 ml-1">(global)</span>}
+                        {!hasCustomQuota && <span className="ml-1 text-gray-500">(global)</span>}
                       </span>
                     </div>
                     <div>
                       <span className="text-gray-500">Utilizado:</span>
                       <span className="ml-1 font-medium">
-                        {formatBytes(storageStats.used)}
+                        {formatBytes(storageStatsData.used)}
                         {activeQuota.isUnlimited ? '' : ` (${percentUsed.toFixed(1)}%)`}
                       </span>
                     </div>
@@ -232,10 +284,10 @@ export default function AlmacenamientoClinicaPage({ clinicId: propClinicId }: Al
                       <span className="ml-1 font-medium">
                         {activeQuota.isUnlimited || !hasCustomQuota
                           ? formatBytes(Math.max(0, activeQuota.quotaSize - globalStorageUsage)) 
-                          : formatBytes(Math.max(0, activeQuota.quotaSize - storageStats.used))}
+                          : formatBytes(Math.max(0, activeQuota.quotaSize - storageStatsData.used))}
                       </span>
                       {!hasCustomQuota && !activeQuota.isUnlimited && (
-                        <span className="text-xs text-blue-500 ml-1">
+                        <span className="ml-1 text-xs text-blue-500">
                           (compartido entre clínicas)
                         </span>
                       )}
@@ -267,13 +319,13 @@ export default function AlmacenamientoClinicaPage({ clinicId: propClinicId }: Al
             </Card>
             
             <Card className="col-span-1 shadow-sm">
-              <CardHeader className="py-2 px-3">
+              <CardHeader className="px-3 py-2">
                 <CardTitle className="text-xs flex items-center gap-1.5">
                   <FileArchive className="h-3.5 w-3.5" />
                   Tipos de archivo
                 </CardTitle>
               </CardHeader>
-              <CardContent className="pt-0 px-3 pb-3">
+              <CardContent className="px-3 pt-0 pb-3">
                 <div className="flex flex-col">
                   {/* Contenedor del gráfico con altura fija */}
                   <div className="flex-1" style={{ height: "100px" }}>

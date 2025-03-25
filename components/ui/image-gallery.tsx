@@ -88,19 +88,59 @@ const ImageGallery: React.FC<ImageGalleryProps> = ({
   
   // Renderizar carrusel
   if (layout === 'carousel') {
+    // Si no hay imágenes, mostrar un placeholder
+    if (!images || images.length === 0) {
+      return (
+        <div className={cn("space-y-2", className)}>
+          <div className="relative aspect-video rounded-md overflow-hidden bg-gray-100 w-full h-[180px] flex items-center justify-center">
+            <div className="text-gray-400 text-center">
+              <div className="mb-2">No hay imágenes disponibles</div>
+              {editable && onAddImages && (
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.multiple = true;
+                    input.accept = 'image/*';
+                    input.onchange = async (e) => {
+                      const files = (e.target as HTMLInputElement).files;
+                      if (files && files.length > 0) {
+                        await onAddImages(Array.from(files));
+                      }
+                    };
+                    input.click();
+                  }}
+                >
+                  Añadir imágenes
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Asegurar que currentIndex es válido
+    const safeIndex = Math.min(currentIndex, images.length - 1);
+    if (safeIndex < 0) {
+      return null; // No debería ocurrir, pero por seguridad
+    }
+
     return (
       <div className={cn("space-y-2", className)}>
         {/* Imagen principal */}
         <div className="relative aspect-video rounded-md overflow-hidden bg-gray-50 w-full h-[180px]">
           <Image
-            src={images[currentIndex].url}
-            alt={images[currentIndex].fileName}
+            src={images[safeIndex].url}
+            alt={images[safeIndex].fileName || 'Imagen'}
             fill
             className="object-contain"
           />
           
           {/* Indicador de imagen principal */}
-          {images[currentIndex].isPrimary && (
+          {images[safeIndex].isPrimary && (
             <div className="absolute top-2 left-2 bg-yellow-400 text-xs px-2 py-1 rounded-full text-black">
               Principal
             </div>
@@ -137,7 +177,7 @@ const ImageGallery: React.FC<ImageGalleryProps> = ({
               className={cn(
                 "relative h-16 w-16 rounded-md overflow-hidden cursor-pointer flex-shrink-0",
                 "border-2 transition-colors duration-200",
-                idx === currentIndex ? "border-purple-600" : "border-transparent"
+                idx === safeIndex ? "border-purple-600" : "border-transparent"
               )}
               onClick={() => setCurrentIndex(idx)}
             >
@@ -219,6 +259,38 @@ const ImageGallery: React.FC<ImageGalleryProps> = ({
 
   // Layout de grid para múltiples imágenes
   if (layout === 'grid') {
+    // Si no hay imágenes, mostrar un placeholder
+    if (!images || images.length === 0) {
+      return (
+        <div className={cn("flex flex-col items-center justify-center h-40 bg-gray-50 rounded-md", className)}>
+          <div className="text-gray-400 text-center">
+            <div className="mb-2">No hay imágenes disponibles</div>
+            {editable && onAddImages && (
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => {
+                  const input = document.createElement('input');
+                  input.type = 'file';
+                  input.multiple = true;
+                  input.accept = 'image/*';
+                  input.onchange = async (e) => {
+                    const files = (e.target as HTMLInputElement).files;
+                    if (files && files.length > 0) {
+                      await onAddImages(Array.from(files));
+                    }
+                  };
+                  input.click();
+                }}
+              >
+                Añadir imágenes
+              </Button>
+            )}
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className={cn("grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3", className)}>
         {images.map((image) => (
@@ -228,7 +300,7 @@ const ImageGallery: React.FC<ImageGalleryProps> = ({
           >
             <Image
               src={image.thumbnailUrl || image.url}
-              alt={image.fileName}
+              alt={image.fileName || 'Imagen'}
               fill
               className="object-cover"
             />
@@ -296,6 +368,17 @@ const ImageGallery: React.FC<ImageGalleryProps> = ({
   }
 
   // Layout tipo lista (para administración)
+  // Si no hay imágenes, mostrar un placeholder
+  if (!images || images.length === 0) {
+    return (
+      <div className={cn("flex items-center justify-center h-20 bg-gray-50 rounded-md", className)}>
+        <div className="text-gray-400 text-center">
+          <div className="text-sm">No hay imágenes disponibles</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={cn("space-y-2", className)}>
       {images.map((image) => (
@@ -306,7 +389,7 @@ const ImageGallery: React.FC<ImageGalleryProps> = ({
           <div className="relative h-12 w-12 rounded-md overflow-hidden flex-shrink-0">
             <Image
               src={image.thumbnailUrl || image.url}
-              alt={image.fileName}
+              alt={image.fileName || 'Imagen'}
               fill
               className="object-cover"
             />

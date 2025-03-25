@@ -8,9 +8,9 @@ import { toast } from "sonner"
 import StorageQuotaSettings from "@/components/storage/storage-quota-settings"
 import { BackButton } from "@/components/ui/button"
 import { ActionButtons } from "@/app/components/ui/action-buttons"
-import { getClinics } from "@/mockData"
 import { Briefcase } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { useClinic } from "@/contexts/clinic-context"
 
 // Definir una constante para el almacenamiento total del sistema (en bytes)
 const SYSTEM_TOTAL_STORAGE = 1024 * 1024 * 1024 * 1024; // 1TB
@@ -18,6 +18,7 @@ const SYSTEM_TOTAL_STORAGE = 1024 * 1024 * 1024 * 1024; // 1TB
 export default function ConfiguracionAlmacenamientoPage() {
   const router = useRouter()
   const { getStorageStats, setQuota, getQuota, distributeStorageProportionally } = useStorage()
+  const { getActiveClinicas } = useClinic()
   const [saving, setSaving] = useState(false)
   const [configChanged, setConfigChanged] = useState(false)
   const [needsUpdate, setNeedsUpdate] = useState(0)
@@ -36,46 +37,60 @@ export default function ConfiguracionAlmacenamientoPage() {
   
   // Cargar datos iniciales
   useEffect(() => {
-    const loadInitialData = () => {
-      console.log("Recargando datos...", new Date().toISOString());
-      try {
-        // Obtener estadísticas globales
-        const stats = getStorageStats()
-        setGlobalStats(stats)
-        
-        const quota = getQuota('global')
-        setGlobalQuota(quota)
-        
-        // Cargar clínicas
-        const availableClinics = getClinics()
-        setClinics(availableClinics)
-        
-        // Cargar cuotas de cada clínica completamente desde cero
-        const quotasMap: Record<string, any> = {}
-        let assignedTotal = 0
-        
-        availableClinics.forEach(clinic => {
-          const clinicId = clinic.id.toString()
-          const clinicQuota = getQuota('clinic', clinicId)
-          quotasMap[clinicId] = clinicQuota
-          
-          // Sumar al total asignado si tiene cuota específica
-          if (clinicQuota && clinicQuota.id !== 'global' && !clinicQuota.isUnlimited) {
-            assignedTotal += clinicQuota.quotaSize
-          }
-        })
-        
-        // Actualizar datos en el estado
-        setClinicQuotas(quotasMap)
-        setTotalAssigned(assignedTotal)
-        setDataLoaded(true)
-      } catch (error) {
-        console.error("Error cargando datos globales:", error)
-      }
-    }
-    
     loadInitialData()
-  }, [getStorageStats, getQuota, needsUpdate])
+  }, [needsUpdate])
+  
+  // Función para cargar datos iniciales
+  const loadInitialData = async () => {
+    try {
+      // Obtener lista de clínicas desde la interfaz
+      const clinicsList = await getActiveClinicas();
+      
+      // Convertir a formato compatible con el resto del código
+      const formattedClinics = clinicsList.map(clinic => ({
+        id: clinic.id.toString(),
+        name: clinic.name,
+        city: clinic.city || ""
+      }));
+      
+      setClinics(formattedClinics);
+      
+      // Obtener y preparar datos de cuotas para cada clínica
+      const quotas: Record<string, any> = {};
+      let totalUsed = 0;
+      
+      for (const clinic of formattedClinics) {
+        const clinicId = clinic.id.toString();
+        const stats = await getStorageStats(clinicId);
+        const quota = await getQuota("clinic", clinicId);
+        
+        quotas[clinicId] = {
+          ...stats,
+          quota: quota,
+          isUnlimited: quota === null || quota.quotaSize === 0,
+          id: clinicId
+        };
+        
+        totalUsed += stats.used || 0;
+      }
+      
+      setClinicQuotas(quotas);
+      
+      // Calcular total asignado
+      const totalQuotaAssigned = Object.values(quotas).reduce(
+        (sum, item: any) => sum + (item.isUnlimited ? 0 : (item.quota?.quotaSize || 0)), 
+        0
+      );
+      
+      setTotalAssigned(totalQuotaAssigned);
+      setDataLoaded(true);
+      
+    } catch (error) {
+      console.error("Error al cargar datos iniciales:", error);
+      toast.error("Error al cargar los datos de almacenamiento");
+      setDataLoaded(true); // Marcar como cargado incluso con error para mostrar una UI
+    }
+  };
   
   // Actualizar cuota global o por clínica
   const handleUpdateQuota = (size: number, isUnlimited: boolean) => {
@@ -96,7 +111,7 @@ export default function ConfiguracionAlmacenamientoPage() {
       
       // Aplicar cambios a cada clínica seleccionada
       let success = true;
-      selectedClinics.forEach(clinicId => {
+      selectedClinics.forEach((clinicId: string) => {
         console.log(`Aplicando configuración a clínica ${clinicId}: ${size} bytes, Sin límite: ${isUnlimited}`);
         const result = setQuota('clinic', clinicId, size, isUnlimited);
         if (!result) {
@@ -106,38 +121,21 @@ export default function ConfiguracionAlmacenamientoPage() {
       });
       
       // Recargar los datos para reflejar los cambios
-      const availableClinics = getClinics();
-      const quotasMap: Record<string, any> = {};
-      let assignedTotal = 0;
-      
-      availableClinics.forEach(clinic => {
-        const clinicId = clinic.id.toString();
-        const clinicQuota = getQuota('clinic', clinicId);
-        quotasMap[clinicId] = clinicQuota;
-        
-        if (clinicQuota && clinicQuota.id !== 'global' && !clinicQuota.isUnlimited) {
-          assignedTotal += clinicQuota.quotaSize;
+      loadInitialData().then(() => {
+        // Actualizar notificación según resultado
+        if (success) {
+          toast.success(`Configuración aplicada a ${selectedClinics.length} clínica(s)`, {
+            id: toastId, 
+          });
+        } else {
+          toast.error('Hubo errores al aplicar la configuración', {
+            id: toastId,
+          });
         }
+        
+        // Marcar que hubo cambios
+        setConfigChanged(true);
       });
-      
-      // Actualizar el estado con los nuevos datos
-      setClinicQuotas(quotasMap);
-      setTotalAssigned(assignedTotal);
-      
-      // Actualizar notificación según resultado
-      if (success) {
-        toast.success(`Configuración aplicada a ${selectedClinics.length} clínica(s)`, {
-          id: toastId, 
-        });
-      } else {
-        toast.error('Hubo errores al aplicar la configuración', {
-          id: toastId,
-        });
-      }
-      
-      // Forzar una actualización completa de la interfaz
-      setNeedsUpdate(prev => prev + 1);
-      setConfigChanged(true);
     } catch (error) {
       console.error("Error al aplicar la configuración:", error);
       toast.error('Error al aplicar la configuración', {
@@ -191,6 +189,19 @@ export default function ConfiguracionAlmacenamientoPage() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
   }
   
+  // Función para distribuir el almacenamiento proporcionalmente
+  const handleDistributeProportionally = () => {
+    if (confirm('¿Estás seguro de que quieres distribuir el almacenamiento proporcionalmente? Esta acción modificará las cuotas existentes.')) {
+      distributeStorageProportionally(SYSTEM_TOTAL_STORAGE);
+      toast.success('Almacenamiento distribuido proporcionalmente');
+      
+      // Actualizar inmediatamente
+      loadInitialData().then(() => {
+        setConfigChanged(true);
+      });
+    }
+  }
+  
   return (
     <div className="container mx-auto p-6 space-y-6">
       <div className="flex items-start justify-between mb-6">
@@ -239,34 +250,7 @@ export default function ConfiguracionAlmacenamientoPage() {
                   <Button 
                     variant="default"
                     size="sm"
-                    onClick={() => {
-                      if (confirm('¿Estás seguro de que quieres distribuir el almacenamiento proporcionalmente? Esta acción modificará las cuotas existentes.')) {
-                        distributeStorageProportionally(SYSTEM_TOTAL_STORAGE);
-                        toast.success('Almacenamiento distribuido proporcionalmente');
-                        
-                        // Actualizar inmediatamente
-                        const availableClinics = getClinics();
-                        const quotasMap: Record<string, any> = {};
-                        let assignedTotal = 0;
-                        
-                        availableClinics.forEach(clinic => {
-                          const clinicId = clinic.id.toString();
-                          const clinicQuota = getQuota('clinic', clinicId);
-                          quotasMap[clinicId] = clinicQuota;
-                          
-                          if (clinicQuota && clinicQuota.id !== 'global' && !clinicQuota.isUnlimited) {
-                            assignedTotal += clinicQuota.quotaSize;
-                          }
-                        });
-                        
-                        setClinicQuotas(quotasMap);
-                        setTotalAssigned(assignedTotal);
-                        setConfigChanged(true);
-                        
-                        // Marcar como necesita actualización para refrescar la interfaz
-                        setNeedsUpdate(prev => prev + 1);
-                      }
-                    }}
+                    onClick={handleDistributeProportionally}
                   >
                     Distribuir proporcionalmente
                   </Button>

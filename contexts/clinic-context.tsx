@@ -1,217 +1,287 @@
 "use client"
 
 import { createContext, useContext, useState, type ReactNode, useEffect } from "react"
-import { DEFAULT_SCHEDULE } from "@/types/schedule"
+import { useInterfaz } from "@/contexts/interfaz-Context"
+import { Clinica as ClinicaModel, ClinicConfig as ClinicConfigModel } from "@/services/data/models/interfaces"
 
-// Definición de tipos
-interface ClinicConfig {
-  openTime?: string
-  closeTime?: string
-  weekendOpenTime?: string
-  weekendCloseTime?: string
-  saturdayOpen?: boolean
-  sundayOpen?: boolean
-  slotDuration?: number
-  cabins?: any[]
-  schedule?: any
-  // Propiedades adicionales utilizadas en la página de detalle
-  prefix?: string
-  commercialName?: string
-  businessName?: string
-  cif?: string
-  country?: string
-  province?: string
-  city?: string
-  postalCode?: string
-  address?: string
-  phone?: string
-  phone2?: string
-  email?: string
-  initialCash?: string | number
-  ticketSize?: string
-  rate?: string
-  ip?: string
-  blockSignArea?: string
-  blockPersonalData?: string
-  delayedPayments?: boolean
-  affectsStats?: boolean
-  appearsInApp?: boolean
-  scheduleControl?: boolean
-  professionalSkills?: boolean
-  notes?: string
+// Función auxiliar para comparar IDs que pueden ser string o number
+const isSameId = (id1: string | number | undefined | null, id2: string | number | undefined | null): boolean => {
+  if (id1 === null || id1 === undefined || id2 === null || id2 === undefined) return false;
+  return String(id1) === String(id2);
 }
 
-export interface Clinic {
-  id: number
-  prefix: string
-  name: string
-  city: string
-  isActive: boolean // Añadimos el campo isActive
-  config: ClinicConfig
-}
+// Definir alias para los tipos usando los tipos del modelo central
+export type Clinica = ClinicaModel;
+export type ClinicConfig = ClinicConfigModel;
 
 interface ClinicContextType {
-  activeClinic: Clinic
-  setActiveClinic: (clinic: Clinic) => void
-  clinics: Clinic[]
-  setClinics: (clinics: Clinic[]) => void
-  updateClinicConfig: (clinicId: number, newConfig: Partial<ClinicConfig>) => void
-  updateClinic: (updatedClinic: Clinic) => boolean
+  activeClinic: Clinica | null
+  setActiveClinic: (clinic: Clinica) => void
+  clinics: Clinica[]
+  getAllClinicas: () => Promise<Clinica[]>
+  getClinicaById: (id: string) => Promise<Clinica | null>
+  createClinica: (clinica: Omit<Clinica, 'id'>) => Promise<string>
+  updateClinica: (id: string, clinica: Partial<Clinica>) => Promise<boolean>
+  deleteClinica: (id: string) => Promise<boolean>
+  updateClinicConfig: (clinicId: string, newConfig: Partial<ClinicConfig>) => Promise<boolean>
+  getActiveClinicas: () => Promise<Clinica[]>
 }
 
-// Valores por defecto
-// Usamos DEFAULT_SCHEDULE importado en lugar de un objeto vacío
-// const DEFAULT_SCHEDULE = {}
-
-const defaultClinics: Clinic[] = [
-  {
-    id: 1,
-    prefix: "000001",
-    name: "Californie Multilaser - Organicare",
-    city: "Casablanca",
-    isActive: true, // Clínica activa
-    config: {
-      openTime: "10:00",
-      closeTime: "19:30",
-      weekendOpenTime: "10:00",
-      weekendCloseTime: "15:00",
-      saturdayOpen: true,
-      sundayOpen: false,
-      cabins: [
-        { id: 1, code: "Con", name: "Consultation", color: "#ff0000", isActive: true, order: 1 },
-        { id: 2, code: "Con", name: "Consultation2", color: "#00ff00", isActive: true, order: 2 },
-        { id: 3, code: "Lun", name: "Lunula", color: "#0000ff", isActive: true, order: 3 },
-        { id: 4, code: "For", name: "Forte/Bal", color: "#ff0000", isActive: true, order: 4 },
-        { id: 5, code: "Ski", name: "SkinShape", color: "#ff0000", isActive: false, order: 5 },
-        { id: 6, code: "WB", name: "Won/Bal", color: "#ff0000", isActive: true, order: 6 },
-        { id: 7, code: "Ver", name: "Verju/Bal", color: "#ff0000", isActive: true, order: 7 },
-        { id: 8, code: "WB", name: "Won/Bal", color: "#ff0000", isActive: false, order: 8 },
-        { id: 9, code: "Eme", name: "Emerald", color: "#ff0000", isActive: true, order: 9 },
-      ],
-      schedule: DEFAULT_SCHEDULE,
-      slotDuration: 15,
-    },
-  },
-  {
-    id: 2,
-    prefix: "Cafc",
-    name: "Cafc Multilaser",
-    city: "Casablanca",
-    isActive: true, // Clínica activa
-    config: {
-      openTime: "09:00",
-      closeTime: "18:00",
-      weekendOpenTime: "09:00",
-      weekendCloseTime: "14:00",
-      saturdayOpen: true,
-      sundayOpen: false,
-      cabins: [
-        { id: 1, code: "Con", name: "Consultation", color: "#0000ff", isActive: true, order: 1 },
-        { id: 2, code: "Tre", name: "Treatment", color: "#00ff00", isActive: true, order: 2 },
-      ],
-      schedule: DEFAULT_SCHEDULE,
-      slotDuration: 15,
-    },
-  },
-  {
-    id: 3,
-    prefix: "TEST",
-    name: "CENTRO TEST",
-    city: "Casablanca",
-    isActive: false, // Clínica inactiva
-    config: {
-      openTime: "08:00",
-      closeTime: "20:00",
-      weekendOpenTime: "10:00",
-      weekendCloseTime: "16:00",
-      saturdayOpen: true,
-      sundayOpen: false,
-      cabins: [{ id: 1, code: "Tes", name: "Test Cabin", color: "#00ff00", isActive: true, order: 1 }],
-      schedule: DEFAULT_SCHEDULE,
-      slotDuration: 15,
-    },
-  },
-]
-
-// Crear el contexto
 const ClinicContext = createContext<ClinicContextType | undefined>(undefined)
 
-// Proveedor del contexto
 export function ClinicProvider({ children }: { children: ReactNode }) {
-  console.log("Inicializando ClinicProvider con clínicas por defecto:", defaultClinics);
-  
-  // Inicializar con los valores por defecto
-  const [activeClinic, setActiveClinic] = useState<Clinic>(defaultClinics[0])
-  const [clinics, setClinics] = useState<Clinic[]>(defaultClinics)
+  const [activeClinic, setActiveClinic] = useState<Clinica | null>(null)
+  const [clinics, setClinics] = useState<Clinica[]>([])
+  const [initialized, setInitialized] = useState(false)
+  const [dataFetched, setDataFetched] = useState(false)
+  const interfaz = useInterfaz()
 
-  // Efecto para mostrar las clínicas cargadas
+  // Cargar datos iniciales
   useEffect(() => {
-    console.log("Clínicas cargadas en el contexto:", clinics);
-    console.log("Clínica activa:", activeClinic);
-  }, [clinics, activeClinic]);
-
-  const updateClinicConfig = (clinicId: number, newConfig: Partial<ClinicConfig>) => {
-    console.log(`Actualizando configuración de clínica ${clinicId}:`, newConfig);
-    
-    setClinics((prevClinics) =>
-      prevClinics.map((clinic) =>
-        clinic.id === clinicId
-          ? {
-              ...clinic,
-              config: { ...clinic.config, ...newConfig },
+    const loadClinics = async () => {
+      if (interfaz.initialized && !dataFetched) {
+        try {
+          // Cargar clínicas
+          const loadedClinics = await interfaz.getAllClinicas();
+          
+          // Establecer las clínicas
+          setClinics(loadedClinics);
+          
+          // Establecer la primera clínica activa como predeterminada
+          if (loadedClinics.length > 0) {
+            const activeClinics = loadedClinics.filter(c => c.isActive);
+            if (activeClinics.length > 0) {
+              setActiveClinic(activeClinics[0]);
+            } else {
+              setActiveClinic(loadedClinics[0]);
             }
-          : clinic,
-      ),
-    )
-
-    if (activeClinic.id === clinicId) {
-      setActiveClinic({
-        ...activeClinic,
-        config: { ...activeClinic.config, ...newConfig },
-      })
-    }
-  }
-
-  const updateClinic = (updatedClinic: Clinic): boolean => {
-    console.log("Actualizando clínica completa:", updatedClinic);
-    
-    try {
-      // Actualizar la clínica en la lista de clínicas
-      setClinics((prevClinics) =>
-        prevClinics.map((clinic) =>
-          clinic.id === updatedClinic.id ? updatedClinic : clinic
-        )
-      );
-
-      // Si es la clínica activa, actualizarla también
-      if (activeClinic.id === updatedClinic.id) {
-        setActiveClinic(updatedClinic);
+          }
+          
+          setDataFetched(true);
+          setInitialized(true);
+          console.log("ClinicContext: Datos cargados correctamente");
+        } catch (error) {
+          console.error("Error al cargar clínicas:", error);
+          setClinics([]);
+          setInitialized(true);
+        }
       }
+    };
+    
+    loadClinics();
+  }, [interfaz.initialized, dataFetched]);
 
-      return true;
+  // Obtener todas las clínicas
+  const getAllClinicas = async (): Promise<Clinica[]> => {
+    try {
+      const clinicas = await interfaz.getAllClinicas();
+      return clinicas;
     } catch (error) {
-      console.error("Error al actualizar la clínica:", error);
+      console.error("Error al obtener todas las clínicas:", error);
+      return clinics; // Devolver estado local como fallback
+    }
+  };
+
+  // Obtener clínica por ID
+  const getClinicaById = async (id: string): Promise<Clinica | null> => {
+    try {
+      return await interfaz.getClinicaById(id);
+    } catch (error) {
+      console.error("Error al obtener clínica por ID:", error);
+      // Intentar recuperar del estado local
+      const localClinic = clinics.find(c => isSameId(c.id, id));
+      return localClinic || null;
+    }
+  };
+
+  // Crear nueva clínica
+  const createClinica = async (clinica: Omit<Clinica, 'id'>): Promise<string> => {
+    try {
+      const nuevaClinica = await interfaz.createClinica(clinica);
+      
+      if (nuevaClinica && nuevaClinica.id) {
+        // Actualizar estado local
+        setClinics(prev => [...prev, nuevaClinica]);
+        return String(nuevaClinica.id);
+      } else {
+        throw new Error("No se pudo crear la clínica");
+      }
+    } catch (error) {
+      console.error("Error al crear clínica:", error);
+      throw error;
+    }
+  };
+
+  // Actualizar clínica
+  const updateClinica = async (id: string, clinica: Partial<Clinica>): Promise<boolean> => {
+    try {
+      // Asegurar que el ID siempre sea un string
+      const clinicId = String(id);
+      const updatedClinica = await interfaz.updateClinica(clinicId, clinica);
+      
+      if (updatedClinica) {
+        // Actualizar estado local
+        setClinics(prev => 
+          prev.map(c => isSameId(c.id, clinicId) ? { ...c, ...clinica } : c)
+        );
+        
+        // Actualizar clínica activa si es necesario
+        if (activeClinic && isSameId(activeClinic.id, clinicId)) {
+          // Usar un setTimeout para evitar actualizaciones anidadas
+          setTimeout(() => {
+            setActiveClinic({ ...activeClinic, ...clinica });
+          }, 0);
+        }
+        
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      console.error("Error al actualizar clínica:", error);
       return false;
     }
   };
 
-  const value = {
-    clinics,
-    activeClinic,
-    setActiveClinic,
-    setClinics,
-    updateClinicConfig,
-    updateClinic,
+  // Eliminar clínica
+  const deleteClinica = async (id: string): Promise<boolean> => {
+    try {
+      const stringId = String(id);
+      const success = await interfaz.deleteClinica(stringId);
+      
+      if (success) {
+        // Actualizar estado local
+        setClinics(prev => prev.filter(c => !isSameId(c.id, stringId)));
+        
+        // Si la clínica activa es la eliminada, resetear
+        if (activeClinic && isSameId(activeClinic.id, stringId)) {
+          const remainingClinics = clinics.filter(c => !isSameId(c.id, stringId));
+          if (remainingClinics.length > 0) {
+            setActiveClinic(remainingClinics[0]);
+          } else {
+            setActiveClinic(null);
+          }
+        }
+        
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      console.error("Error al eliminar clínica:", error);
+      return false;
+    }
+  };
+
+  // Actualizar la configuración de una clínica
+  const updateClinicConfig = async (clinicId: string, newConfig: Partial<ClinicConfig>): Promise<boolean> => {
+    try {
+      // Asegurar que el ID siempre sea un string
+      const stringClinicId = String(clinicId);
+      
+      // Buscar la clínica a actualizar
+      const clinic = await interfaz.getClinicaById(stringClinicId);
+      if (!clinic) return false;
+      
+      // Actualizar la configuración
+      const updatedClinic = {
+        ...clinic,
+        config: {
+          ...clinic.config,
+          ...newConfig
+        }
+      };
+      
+      // Guardar en el servicio de datos
+      const result = await interfaz.updateClinica(stringClinicId, {
+        config: updatedClinic.config
+      });
+      
+      // Actualizar el estado local
+      if (result) {
+        setClinics(prevClinics => 
+          prevClinics.map(c => 
+            isSameId(c.id, stringClinicId) ? { ...c, config: { ...c.config, ...newConfig } } : c
+          )
+        );
+        
+        // Actualizar la clínica activa si corresponde
+        if (activeClinic && isSameId(activeClinic.id, stringClinicId)) {
+          // Usar un setTimeout para evitar actualizaciones anidadas
+          setTimeout(() => {
+            setActiveClinic({ 
+              ...activeClinic, 
+              config: { ...activeClinic.config, ...newConfig } 
+            });
+          }, 0);
+        }
+        
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      console.error("Error al actualizar configuración de clínica:", error);
+      return false;
+    }
   }
 
-  return <ClinicContext.Provider value={value}>{children}</ClinicContext.Provider>
+  // Obtener clínicas activas
+  const getActiveClinicas = async (): Promise<Clinica[]> => {
+    try {
+      return await interfaz.getActiveClinicas();
+    } catch (error) {
+      console.error("Error al obtener clínicas activas:", error);
+      return clinics.filter(c => c.isActive);
+    }
+  }
+
+  // Proveer un valor por defecto mientras se inicializa
+  if (!initialized) {
+    return (
+      <ClinicContext.Provider
+        value={{
+          activeClinic: null,
+          setActiveClinic: () => {},
+          clinics: [],
+          getAllClinicas: async () => [],
+          getClinicaById: async () => null,
+          createClinica: async () => { throw new Error("No inicializado"); },
+          updateClinica: async () => false,
+          deleteClinica: async () => false,
+          updateClinicConfig: async () => false,
+          getActiveClinicas: async () => []
+        }}
+      >
+        {children}
+      </ClinicContext.Provider>
+    );
+  }
+
+  return (
+    <ClinicContext.Provider
+      value={{
+        activeClinic,
+        setActiveClinic,
+        clinics,
+        getAllClinicas,
+        getClinicaById,
+        createClinica,
+        updateClinica,
+        deleteClinica,
+        updateClinicConfig,
+        getActiveClinicas
+      }}
+    >
+      {children}
+    </ClinicContext.Provider>
+  );
 }
 
-// Hook para usar el contexto
 export function useClinic() {
   const context = useContext(ClinicContext)
-  if (!context) {
-    throw new Error("useClinic must be used within a ClinicProvider")
+  if (context === undefined) {
+    throw new Error("useClinic debe ser usado dentro de un ClinicProvider")
   }
   return context
 }

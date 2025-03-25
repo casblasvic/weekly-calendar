@@ -3,18 +3,30 @@ import { FileProvider } from './file-context';
 import { ImageProvider } from './image-context';
 import { DocumentProvider } from './document-context';
 import { StorageProvider } from './storage-context';
+import { InterfazProvider } from './interfaz-Context';
+import { ClientProvider } from './client-context';
+import { ScheduleTemplatesProvider } from './schedule-templates-context';
+import { ScheduleBlocksProvider } from './schedule-blocks-context';
 
 // Combine all providers
 export const AppProviders: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return (
-    <FileProvider>
-      <StorageProvider>
-        <ImageProvider>
-          <DocumentProvider>
-            {children}
-          </DocumentProvider>
-        </ImageProvider>
-      </StorageProvider>
-    </FileProvider>
+    <InterfazProvider>
+      <FileProvider>
+        <StorageProvider>
+          <ImageProvider>
+            <DocumentProvider>
+              <ClientProvider>
+                <ScheduleTemplatesProvider>
+                  <ScheduleBlocksProvider>
+                    {children}
+                  </ScheduleBlocksProvider>
+                </ScheduleTemplatesProvider>
+              </ClientProvider>
+            </DocumentProvider>
+          </ImageProvider>
+        </StorageProvider>
+      </FileProvider>
+    </InterfazProvider>
   );
 }; 

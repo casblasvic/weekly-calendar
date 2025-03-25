@@ -14,6 +14,11 @@ import DatePicker from "react-datepicker"
 import "react-datepicker/dist/react-datepicker.css"
 import { setDatePickerHeaderColor } from "@/lib/utils"
 import React from "react"
+import { useClient } from "@/contexts/client-context"
+import { useClinic } from "@/contexts/clinic-context"
+import { useRouter } from "next/navigation"
+import { useToast } from "@/components/ui/use-toast"
+import { format } from "date-fns"
 
 const formSchema = z.object({
   fechaNacimiento: z.date({
@@ -178,6 +183,10 @@ CustomDatePicker.displayName = "CustomDatePicker"
 
 export default function NuevoClientePage() {
   const [showLegalRepresentative, setShowLegalRepresentative] = useState(false)
+  const { createClient } = useClient()
+  const { activeClinic } = useClinic()
+  const router = useRouter()
+  const { toast } = useToast()
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -198,8 +207,55 @@ export default function NuevoClientePage() {
     },
   })
 
-  function onSubmit(values: FormValues) {
-    console.log(values)
+  async function onSubmit(values: FormValues) {
+    try {
+      // Verificar que haya una clínica activa
+      if (!activeClinic) {
+        toast({
+          title: "Error",
+          description: "No hay una clínica activa seleccionada. Por favor, seleccione una clínica.",
+          variant: "destructive",
+        })
+        return
+      }
+
+      // Formatear los datos para la API
+      const clientData = {
+        name: `${values.nombre} ${values.primerApellido} ${values.segundoApellido || ''}`.trim(),
+        clientNumber: values.numeroDocumento,
+        phone: values.telefono,
+        email: values.email,
+        address: values.direccion,
+        birthDate: values.fechaNacimiento ? format(values.fechaNacimiento, 'yyyy-MM-dd') : undefined,
+        notes: `Conoció la clínica a través de: ${values.comoNosHaConocido}`,
+        clinic: activeClinic.name,
+        clinicId: activeClinic.id,
+        // Si hay representante legal, añadirlo a las notas
+        ...(showLegalRepresentative && values.representante ? {
+          notes: `Conoció la clínica a través de: ${values.comoNosHaConocido}\nRepresentante legal: ${values.representante.nombre} ${values.representante.apellidos || ''} (${values.representante.parentesco})`
+        } : {})
+      }
+      
+      // Crear el cliente usando el contexto
+      const newClient = await createClient(clientData)
+      
+      // Mostrar mensaje de éxito
+      toast({
+        title: "Cliente creado",
+        description: `Se ha creado el cliente ${newClient.name} correctamente.`,
+        variant: "default",
+      })
+      
+      // Redireccionar a la página del cliente
+      router.push(`/clientes/${newClient.id}`)
+    } catch (error) {
+      console.error("Error al crear cliente:", error)
+      toast({
+        title: "Error",
+        description: "No se pudo crear el cliente. Intente nuevamente.",
+        variant: "destructive",
+      })
+    }
   }
 
   const handleDateChange = (date: Date | null) => {

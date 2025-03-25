@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Search, Pencil, ChevronDown, AlertCircle, Menu, Check, Trash2, ChevronUp, ArrowUpDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -36,9 +36,24 @@ export default function GestionFamilias() {
   })
   const [isNewFamily, setIsNewFamily] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
-
-  // Obtenemos las familias de la tarifa actual
-  const families = getFamiliasByTarifaId("tarifa-california")
+  const [families, setFamilies] = useState<any[]>([])
+  
+  // Cargar familias al iniciar
+  const TARIFA_ID = "tarifa-california"; // ID de la tarifa actual
+  
+  useEffect(() => {
+    const loadFamilies = async () => {
+      try {
+        const familiesData = await getFamiliasByTarifaId(TARIFA_ID);
+        setFamilies(Array.isArray(familiesData) ? familiesData : []);
+      } catch (error) {
+        console.error("Error al cargar familias:", error);
+        setFamilies([]);
+      }
+    };
+    
+    loadFamilies();
+  }, [getFamiliasByTarifaId]);
 
   // Solicitar ordenación de una columna
   const requestSort = (key: string) => {
@@ -59,17 +74,28 @@ export default function GestionFamilias() {
       : <ChevronDown size={14} />;
   };
 
+  // Filtrar familias según los criterios de búsqueda y visibilidad
+  const filteredFamilies = useMemo(() => {
+    // Asegurarse de que families sea un array
+    const familiesArray = Array.isArray(families) ? families : [];
+    
+    return familiesArray.filter(familia => {
+      // Filtrar por término de búsqueda (en nombre o código)
+      const matchesSearch = !searchTerm || 
+        familia.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        familia.code.toLowerCase().includes(searchTerm.toLowerCase());
+        
+      // Filtrar por estado (activo/inactivo)
+      const matchesStatus = showDisabled || familia.isActive;
+        
+      return matchesSearch && matchesStatus;
+    });
+  }, [families, searchTerm, showDisabled]);
+
   // Filtrar y ordenar familias
   const filteredAndSortedFamilies = useMemo(() => {
-    // Primero filtramos
-    const filtered = families.filter((family) => {
-      const matchesSearch = family.name.toLowerCase().includes(searchTerm.toLowerCase())
-      const matchesStatus = showDisabled ? true : family.isActive
-      return matchesSearch && matchesStatus
-    })
-
     // Luego ordenamos si hay configuración de ordenación
-    let sorted = [...filtered];
+    let sorted = [...filteredFamilies];
     if (sortConfig !== null) {
       sorted.sort((a, b) => {
         // Determinar los valores a comparar según la clave de ordenación
@@ -95,7 +121,7 @@ export default function GestionFamilias() {
     }
     
     return sorted;
-  }, [families, searchTerm, showDisabled, sortConfig]);
+  }, [filteredFamilies, sortConfig]);
 
   // Abrir diálogo para nueva familia
   const handleOpenNewFamilyDialog = () => {

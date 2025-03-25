@@ -1,5 +1,12 @@
-import React, { createContext, useContext } from 'react';
-import { useFiles, BaseFile, DocumentFile, FileFilter } from './file-context';
+"use client"
+
+import React, { createContext, useContext, useState } from 'react';
+import { useInterfaz } from './interfaz-Context';
+import { EntityDocument } from '@/services/data/models/interfaces';
+import { v4 as uuidv4 } from 'uuid';
+
+// Alias para tipos específicos usando tipos del modelo central
+export type DocumentFile = EntityDocument;
 
 interface DocumentContextType {
   uploadDocument: (
@@ -10,14 +17,15 @@ interface DocumentContextType {
     category?: string,
     onProgress?: (progress: number) => void
   ) => Promise<DocumentFile>;
-  getDocumentsByEntity: (entityType: string, entityId: string, category?: string) => DocumentFile[];
+  getDocumentsByEntity: (entityType: string, entityId: string, category?: string) => Promise<DocumentFile[]>;
   categorizeDocument: (documentId: string, category: string) => Promise<boolean>;
 }
 
 const DocumentContext = createContext<DocumentContextType | undefined>(undefined);
 
 export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { uploadFile, getFilesByFilter, updateFileMetadata } = useFiles();
+  const [dataFetched, setDataFetched] = useState(false);
+  const interfaz = useInterfaz();
   
   // Función para subir un documento
   const uploadDocument = async (
@@ -43,67 +51,106 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       throw new Error('El archivo no es un documento válido');
     }
     
-    // Categorías para este documento
-    const categories = ['documents'];
-    if (category) {
-      categories.push(category);
-    }
+    // Generar ID único para el documento
+    const documentId = uuidv4();
     
-    // Subir el archivo como documento
-    const uploadedFile = await uploadFile(
-      file, 
-      {
+    try {
+      // Preparar FormData
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('entityType', entityType);
+      formData.append('entityId', entityId);
+      formData.append('clinicId', clinicId);
+      formData.append('fileId', documentId);
+      if (category) {
+        formData.append('category', category);
+      }
+      
+      // Enviar al endpoint de carga
+      const response = await fetch('/api/storage/upload-document', {
+        method: 'POST',
+        body: formData
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Error al subir documento: ${errorText}`);
+      }
+      
+      const result = await response.json();
+      
+      if (!result.success) {
+        throw new Error(result.error || "Error desconocido al subir documento");
+      }
+      
+      // Crear objeto de documento con los metadatos devueltos
+      const newDocument: DocumentFile = {
+        id: documentId,
+        fileName: result.fileName,
+        fileSize: result.fileSize,
+        mimeType: result.mimeType,
+        url: result.publicUrl,
+        path: result.path,
         entityType,
         entityId,
-        clinicId,
-        categories,
-        tags: [entityType, file.type.split('/')[1]]
-      },
-      onProgress
-    ) as DocumentFile;
-    
-    return uploadedFile;
+        category: category || 'default',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      
+      // Guardar el documento a través de la interfaz
+      await interfaz.saveEntityDocuments(entityType, entityId, [newDocument], category);
+      
+      return newDocument;
+    } catch (error) {
+      console.error('Error al guardar documento:', error);
+      throw new Error('No se pudo guardar el documento');
+    }
   };
   
   // Obtener documentos por entidad
-  const getDocumentsByEntity = (entityType: string, entityId: string, category?: string): DocumentFile[] => {
-    const filter: FileFilter = {
-      entityType,
-      entityId,
-      isDeleted: false
-    };
-    
-    let docs = getFilesByFilter(filter)
-      .filter(file => {
-        const docTypes = ['application/pdf', 'application/msword', 'application/vnd.ms-excel', 'text/plain'];
-        return docTypes.some(type => file.mimeType.includes(type));
-      }) as DocumentFile[];
-    
-    // Filtrar por categoría si se especifica
-    if (category) {
-      docs = docs.filter(doc => doc.categories.includes(category));
+  const getDocumentsByEntity = async (entityType: string, entityId: string, category?: string): Promise<DocumentFile[]> => {
+    try {
+      const documents = await interfaz.getEntityDocuments(entityType, entityId, category);
+      return documents || [];
+    } catch (error) {
+      console.error('Error al obtener documentos:', error);
+      return [];
     }
-    
-    // Ordenar por fecha de creación (más reciente primero)
-    return docs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   };
   
   // Categorizar un documento
   const categorizeDocument = async (documentId: string, category: string): Promise<boolean> => {
-    // Obtener el documento
-    const doc = getFilesByFilter({ isDeleted: false }).find(f => f.id === documentId);
-    
-    if (!doc) {
-      throw new Error(`Documento con id ${documentId} no encontrado`);
+    try {
+      // Primero necesitamos encontrar el documento para saber a qué entidad pertenece
+      // Esto es un enfoque simplificado que depende de cómo se implemente en la interfaz
+      const allDocs = await interfaz.getEntityDocuments('*', '*');
+      const doc = allDocs.find(d => d.id === documentId);
+      
+      if (!doc) {
+        throw new Error(`Documento con id ${documentId} no encontrado`);
+      }
+      
+      // Recuperar todos los documentos de esta entidad/categoría
+      const docs = await interfaz.getEntityDocuments(doc.entityType, doc.entityId, doc.category);
+      
+      // Encontrar y actualizar el documento específico
+      const updatedDocs = docs.map(d => {
+        if (d.id === documentId) {
+          return {
+            ...d,
+            category
+          };
+        }
+        return d;
+      });
+      
+      // Guardar los cambios
+      return await interfaz.saveEntityDocuments(doc.entityType, doc.entityId, updatedDocs, doc.category);
+    } catch (error) {
+      console.error('Error al categorizar documento:', error);
+      return false;
     }
-    
-    // Agregar categoría si no existe
-    if (!doc.categories.includes(category)) {
-      const updatedCategories = [...doc.categories, category];
-      await updateFileMetadata(documentId, { categories: updatedCategories });
-    }
-    
-    return true;
   };
   
   return (
@@ -120,7 +167,7 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 export const useDocuments = () => {
   const context = useContext(DocumentContext);
   if (context === undefined) {
-    throw new Error('useDocuments must be used within a DocumentProvider');
+    throw new Error('useDocuments debe ser usado dentro de un DocumentProvider');
   }
   return context;
 }; 

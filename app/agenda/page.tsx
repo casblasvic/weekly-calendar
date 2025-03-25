@@ -1,82 +1,116 @@
 "use client"
 
-import { useEffect, useState, useCallback, useMemo } from "react"
-import WeeklyAgenda from "@/components/weekly-agenda"
-import { HydrationWrapper } from "@/components/hydration-wrapper"
+import { useEffect, useState, useCallback, useMemo, useRef } from "react"
+import dynamic from 'next/dynamic'
 import { useClinic } from "@/contexts/clinic-context"
-import { ThemeProvider } from "@/contexts/theme"
 
-// Colores por defecto (fallback)
-const defaultThemeColors = {
-  primaryColor: "#7c3aed",
-  secondaryColor: "#8b5cf6",
-  accentColor: "#a78bfa",
-  textColor: "#111827",
-  backgroundColor: "#ffffff",
-  headerBackgroundColor: "#7c3aed",
-  sidebarBackgroundColor: "#f9fafb",
-}
+// Componente de carga separado para reutilización
+const LoadingFallback = () => (
+  <div className="flex flex-col items-center justify-center min-h-screen">
+    <p className="text-lg mb-2">Cargando agenda...</p>
+    <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+    <p className="mt-4 text-sm text-gray-500">Si la carga tarda demasiado, intenta recargar la página</p>
+  </div>
+)
+
+// Importar el componente WeeklyAgenda de forma dinámica para evitar problemas de hidratación
+const WeeklyAgenda = dynamic(() => import('@/components/weekly-agenda'), {
+  ssr: false,
+  loading: () => <LoadingFallback />
+})
 
 export default function AgendaPage() {
   const [hasError, setHasError] = useState(false)
   const [errorMessage, setErrorMessage] = useState("")
   const { activeClinic } = useClinic()
   const [retryCount, setRetryCount] = useState(0)
-  const [isInitialized, setIsInitialized] = useState(false)
-  const [isHydrated, setIsHydrated] = useState(false)
+  const [mountKey, setMountKey] = useState(0)
+  const [isLoading, setIsLoading] = useState(false)
   
-  // Efecto para detectar hidratación
-  useEffect(() => {
-    setIsHydrated(true)
-  }, [])
+  const previousClinicIdRef = useRef<string | number | null>(null)
+  const remountTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   
-  // Inicialización de componentes
-  useEffect(() => {
-    if (typeof window === "undefined") return
-    
-    console.log("[AgendaPage] Inicializando: hydrated =", isHydrated)
-    console.log("[AgendaPage] Datos de clínica activa:", activeClinic)
-    
-    if (isHydrated && !isInitialized) {
-      console.log("[AgendaPage] Ejecutando inicialización completa")
-      setIsInitialized(true)
-    }
-  }, [isHydrated, activeClinic, isInitialized])
-
+  // Referencias para evitar bucles de actualización
+  const errorHandlerRef = useRef<((event: ErrorEvent) => void) | null>(null);
+  
   // Manejo de errores mejorado
   useEffect(() => {
-    if (typeof window === "undefined") return
+    if (typeof window === "undefined") return;
     
-    const handleError = (event: ErrorEvent) => {
-      console.error("[AgendaPage] Error detectado:", event.error)
-      
-      // No mostrar errores durante la hidratación
-      if (!isHydrated) return
-      
-      // No mostrar errores durante la inicialización
-      if (!isInitialized) return
-      
-      setHasError(true)
-      setErrorMessage(event.error?.message || "Error desconocido en la aplicación")
+    // Crear un nuevo manejador de errores
+    if (!errorHandlerRef.current) {
+      errorHandlerRef.current = (event: ErrorEvent) => {
+        console.error("[AgendaPage] Error detectado:", event.error);
+        setHasError(true);
+        setErrorMessage(event.error?.message || "Error desconocido en la aplicación");
+      };
     }
-
-    console.log("[AgendaPage] Configurando detector de errores")
-    window.addEventListener('error', handleError)
+    
+    window.addEventListener('error', errorHandlerRef.current);
     
     return () => {
-      console.log("[AgendaPage] Eliminando detector de errores")
-      window.removeEventListener('error', handleError)
-    }
-  }, [isHydrated, isInitialized])
+      if (errorHandlerRef.current) {
+        window.removeEventListener('error', errorHandlerRef.current);
+      }
+    };
+  }, []);
 
-  // Fallback mientras se carga
-  const loadingFallback = (
-    <div className="flex flex-col items-center justify-center min-h-screen">
-      <p className="text-lg mb-2">Cargando agenda...</p>
-      <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-      <p className="mt-4 text-sm text-gray-500">Si la carga tarda demasiado, intenta recargar la página</p>
-    </div>
-  )
+  // Memoizar los datos de la clínica para evitar re-renderizados innecesarios
+  const clinicData = useMemo(() => {
+    return activeClinic ? {
+      id: activeClinic.id,
+      config: activeClinic.config
+    } : null;
+  }, [activeClinic]);
+  
+  // Efecto para detectar cambios de clínica y forzar remontaje del componente WeeklyAgenda
+  useEffect(() => {
+    // Limpiar cualquier timeout previo para evitar cambios múltiples
+    if (remountTimeoutRef.current) {
+      clearTimeout(remountTimeoutRef.current);
+      remountTimeoutRef.current = null;
+    }
+    
+    if (clinicData?.id) {
+      const currentClinicId = clinicData.id;
+      
+      // Verificar si es el primer montaje (previousClinicIdRef.current es null)
+      if (previousClinicIdRef.current === null) {
+        previousClinicIdRef.current = currentClinicId;
+        return;
+      }
+      
+      // Solo forzar remontaje si la clínica ha cambiado realmente
+      if (previousClinicIdRef.current !== currentClinicId) {
+        console.log("[AgendaPage] Clínica activa cambiada, forzando reinicio de la agenda", 
+          { previous: previousClinicIdRef.current, current: currentClinicId });
+        
+        // Mostrar estado de carga y luego remontar para evitar bloqueo de interfaz
+        setIsLoading(true);
+        
+        // Usar un timeout para dar tiempo al navegador a mostrar la UI de carga
+        remountTimeoutRef.current = setTimeout(() => {
+          // Actualizar la referencia antes de incrementar la clave
+          previousClinicIdRef.current = currentClinicId;
+          
+          // Incrementar la clave para forzar remontaje
+          setMountKey(prev => prev + 1);
+          
+          // Dar tiempo adicional antes de ocultar el indicador de carga
+          setTimeout(() => {
+            setIsLoading(false);
+          }, 100);
+        }, 100);
+      }
+    }
+    
+    // Limpiar el timeout al desmontar
+    return () => {
+      if (remountTimeoutRef.current) {
+        clearTimeout(remountTimeoutRef.current);
+      }
+    };
+  }, [clinicData?.id]);
 
   // Fallback en caso de error
   if (hasError) {
@@ -99,18 +133,23 @@ export default function AgendaPage() {
     )
   }
   
-  // Renderizar siempre la vista de escritorio, sin condiciones para móvil
+  // Mostrar indicador de carga durante el cambio de clínica
+  if (isLoading) {
+    return <LoadingFallback />;
+  }
+  
+  // Renderizar la agenda sólo cuando hay datos de clínica
   return (
-    <HydrationWrapper 
-      fallback={loadingFallback}
-      timeout={5000}
-    >
-      {(isHydrated && isInitialized) ? (
-        <WeeklyAgenda key={`desktop-view-${retryCount}`} />
+    <div className="w-full h-full" key={`page-container-${retryCount}-${mountKey}`}>
+      {clinicData ? (
+        <WeeklyAgenda 
+          key={`desktop-view-${retryCount}-${mountKey}-${String(clinicData.id)}`} 
+          initialClinic={clinicData} 
+        />
       ) : (
-        loadingFallback
+        <LoadingFallback />
       )}
-    </HydrationWrapper>
+    </div>
   )
 }
 

@@ -2,251 +2,436 @@
 
 import { createContext, useContext, useState, useEffect, ReactNode } from "react"
 import { useRouter } from "next/navigation"
+import { useInterfaz } from "./interfaz-Context"
+import { Servicio as ServicioModel, EntityImage, EntityDocument } from "@/services/data/models/interfaces"
 
-// Interfaz para representar un Consumo
-interface Consumo {
-  id: string
-  cantidad: number
-  tipoConsumo: string
-}
-
-// Interfaz para representar un Servicio
-export interface Servicio {
-  id: string
-  nombre: string
-  codigo: string
-  tarifaId: string
-  tarifaBase: string
-  familiaId: string
-  precioConIVA: string
-  ivaId: string
-  colorAgenda: string
-  duracion: number
-  equipoId: string
-  tipoComision: string
-  comision: string
-  requiereParametros: boolean
-  visitaValoracion: boolean
-  apareceEnApp: boolean
-  descuentosAutomaticos: boolean
-  descuentosManuales: boolean
-  aceptaPromociones: boolean
-  aceptaEdicionPVP: boolean
-  afectaEstadisticas: boolean
-  deshabilitado: boolean
-  precioCoste: string
-  tarifaPlanaId: string
-  archivoAyuda: string | null
-  consumos: Consumo[]
-}
+// Alias para tipos específicos usando tipos de interfaz
+export type Servicio = ServicioModel;
+export type ServicioImage = EntityImage;
+export type ServicioDocument = EntityDocument;
 
 interface ServicioContextType {
   servicios: Servicio[]
   servicioActual: Servicio | null
-  crearServicio: (servicio: Omit<Servicio, "id">) => string
-  actualizarServicio: (id: string, servicio: Partial<Servicio>) => void
-  eliminarServicio: (id: string) => void
-  getServicioById: (id: string) => Servicio | undefined
-  getServiciosByTarifaId: (tarifaId: string) => Servicio[]
-  guardarServicio: () => string
+  crearServicio: (servicio: Omit<Servicio, "id">) => Promise<string>
+  actualizarServicio: (id: string, servicio: Partial<Servicio>) => Promise<boolean>
+  eliminarServicio: (id: string) => Promise<boolean>
+  getServicioById: (id: string) => Promise<Servicio | null>
+  getServiciosByTarifaId: (tarifaId: string) => Promise<Servicio[]>
+  guardarServicio: () => Promise<string>
   setServicioActual: (servicio: Servicio | null) => void
   validarCamposObligatorios: () => { valido: boolean; camposFaltantes: string[] }
+  // Funciones para manejar imágenes
+  getServiceImages: (servicioId: string) => Promise<ServicioImage[]>
+  saveServiceImages: (servicioId: string, images: ServicioImage[]) => Promise<boolean>
+  deleteServiceImages: (servicioId: string) => Promise<boolean>
+  // Funciones para manejar documentos
+  getServiceDocuments: (servicioId: string, category?: string) => Promise<ServicioDocument[]>
+  saveServiceDocuments: (servicioId: string, documents: ServicioDocument[], category?: string) => Promise<boolean>
+  deleteServiceDocuments: (servicioId: string, category?: string) => Promise<boolean>
 }
-
-// Función para generar un ID secuencial
-const generateSequentialId = (existingIds: string[]): string => {
-  const numericIds = existingIds
-    .map(id => parseInt(id.replace(/[^0-9]/g, '')))
-    .filter(id => !isNaN(id));
-  
-  const maxId = numericIds.length > 0 ? Math.max(...numericIds) : 0;
-  return `srv-${maxId + 1}`;
-};
 
 const ServicioContext = createContext<ServicioContextType | undefined>(undefined);
 
 export const ServicioProvider = ({ children }: { children: ReactNode }) => {
   const [servicios, setServicios] = useState<Servicio[]>([]);
   const [servicioActual, setServicioActual] = useState<Servicio | null>(null);
+  const [dataFetched, setDataFetched] = useState(false);
   const router = useRouter();
+  const interfaz = useInterfaz();
 
-  // Cargar desde localStorage si existe
+  // Cargar datos iniciales
   useEffect(() => {
-    const storedServicios = localStorage.getItem("servicios");
-    const currentServicio = localStorage.getItem("servicioActual");
+    const loadInitialData = async () => {
+      if (interfaz.initialized && !dataFetched) {
+        try {
+          // Cargar servicios
+          const loadedServicios = await interfaz.getAllServicios();
+          setServicios(loadedServicios);
+          setDataFetched(true);
+          console.log("ServicioContext: Datos cargados correctamente");
+        } catch (error) {
+          console.error("Error al cargar datos iniciales en ServicioContext:", error);
+        }
+      }
+    };
     
-    if (storedServicios) {
-      setServicios(JSON.parse(storedServicios));
-    }
-    
-    if (currentServicio) {
-      setServicioActual(JSON.parse(currentServicio));
-    }
-  }, []);
+    loadInitialData();
+  }, [interfaz.initialized, dataFetched]);
 
-  // Guardar en localStorage cuando cambien
-  useEffect(() => {
-    localStorage.setItem("servicios", JSON.stringify(servicios));
-  }, [servicios]);
-
-  useEffect(() => {
-    if (servicioActual) {
-      localStorage.setItem("servicioActual", JSON.stringify(servicioActual));
-    } else {
-      localStorage.removeItem("servicioActual");
-    }
-  }, [servicioActual]);
-
-  // Crear nuevo servicio
-  const crearServicio = (servicio: Omit<Servicio, "id">): string => {
-    const id = generateSequentialId(servicios.map(s => s.id));
-    const nuevoServicio = { ...servicio, id };
-    
-    console.log("Creando nuevo servicio con ID:", id);
-    console.log("Datos del servicio a crear:", nuevoServicio);
-    
-    // Crear copia actualizada de servicios para evitar problemas de concurrencia
-    const serviciosActualizados = [...servicios, nuevoServicio as Servicio];
-    
-    // Actualizar el estado
-    setServicios(serviciosActualizados);
-    setServicioActual(nuevoServicio as Servicio);
-    
-    // Guardar en localStorage inmediatamente
-    try {
-      localStorage.setItem("servicios", JSON.stringify(serviciosActualizados));
-      console.log("Servicios guardados en localStorage. Total:", serviciosActualizados.length);
-      console.log("Lista de servicios actualizada:", serviciosActualizados);
-    } catch (error) {
-      console.error("Error al guardar servicios en localStorage:", error);
-    }
-    
-    // Disparar evento para notificar cambio en datos
+  // Función para disparar el evento de actualización
+  const dispatchServicioUpdateEvent = (tarifaId: string, action: string) => {
     try {
       window.dispatchEvent(new CustomEvent("servicios-updated", {
-        detail: { tarifaId: servicio.tarifaId, action: 'create' }
+        detail: { tarifaId, action }
       }));
-    } catch (error) {
-      console.error("Error al disparar evento de actualización:", error);
+    } catch (eventError) {
+      console.error("Error al disparar evento de actualización:", eventError);
+      // No bloqueamos la operación principal por un error en el evento
     }
-    
-    return id;
+  };
+
+  // Crear nuevo servicio
+  const crearServicio = async (servicio: Omit<Servicio, "id">): Promise<string> => {
+    try {
+      const nuevoServicio = await interfaz.createServicio(servicio);
+      
+      if (!nuevoServicio || !nuevoServicio.id) {
+        throw new Error("No se pudo crear el servicio. Respuesta incompleta del servidor.");
+      }
+      
+      // Actualizar estado local
+      setServicios(prev => [...prev, nuevoServicio]);
+      setServicioActual(nuevoServicio);
+      
+      // Disparar evento para notificar cambio en datos
+      dispatchServicioUpdateEvent(servicio.tarifaId, 'create');
+      
+      return nuevoServicio.id;
+    } catch (error) {
+      console.error("Error al crear servicio:", error);
+      throw error;
+    }
   };
 
   // Actualizar servicio existente
-  const actualizarServicio = (id: string, servicioActualizado: Partial<Servicio>) => {
-    // Actualizar el estado
-    setServicios(prevServicios => 
-      prevServicios.map(servicio => 
-        servicio.id === id ? { ...servicio, ...servicioActualizado } : servicio
-      )
-    );
-    
-    if (servicioActual && servicioActual.id === id) {
-      setServicioActual({...servicioActual, ...servicioActualizado});
+  const actualizarServicio = async (id: string, servicioActualizado: Partial<Servicio>): Promise<boolean> => {
+    try {
+      const resultado = await interfaz.updateServicio(id, servicioActualizado);
+      
+      if (!resultado) {
+        throw new Error("No se pudo actualizar el servicio.");
+      }
+      
+      // Actualizar el estado local
+      setServicios(prevServicios => 
+        prevServicios.map(servicio => 
+          servicio.id === id ? { ...servicio, ...servicioActualizado } : servicio
+        )
+      );
+      
+      // Actualizar servicio actual si corresponde
+      if (servicioActual && servicioActual.id === id) {
+        setServicioActual({...servicioActual, ...servicioActualizado});
+      }
+      
+      // Disparar evento para notificar cambio en datos
+      const tarifaId = servicioActualizado.tarifaId || 
+        (servicioActual?.tarifaId || '') ||
+        servicios.find(s => s.id === id)?.tarifaId || '';
+      
+      dispatchServicioUpdateEvent(tarifaId, 'update');
+      
+      return true;
+    } catch (error) {
+      console.error("Error al actualizar servicio:", error);
+      return false;
     }
-    
-    // Guardar en localStorage inmediatamente
-    const updatedServicios = servicios.map(s => 
-      s.id === id ? { ...s, ...servicioActualizado } : s
-    );
-    localStorage.setItem("servicios", JSON.stringify(updatedServicios));
   };
 
   // Eliminar servicio
-  const eliminarServicio = (id: string) => {
-    setServicios(prevServicios => prevServicios.filter(servicio => servicio.id !== id));
-    
-    if (servicioActual && servicioActual.id === id) {
-      setServicioActual(null);
+  const eliminarServicio = async (id: string): Promise<boolean> => {
+    try {
+      // Obtener tarifaId antes de eliminar
+      const servicioAEliminar = servicios.find(s => s.id === id);
+      const tarifaId = servicioAEliminar?.tarifaId || '';
+      
+      const resultado = await interfaz.deleteServicio(id);
+      
+      if (resultado) {
+        // Actualizar estado local
+        setServicios(prevServicios => prevServicios.filter(servicio => servicio.id !== id));
+        
+        // Actualizar servicio actual si corresponde
+        if (servicioActual && servicioActual.id === id) {
+          setServicioActual(null);
+        }
+        
+        // Disparar evento para notificar eliminación
+        if (tarifaId) {
+          dispatchServicioUpdateEvent(tarifaId, 'delete');
+        }
+      }
+      
+      return resultado;
+    } catch (error) {
+      console.error("Error al eliminar servicio:", error);
+      return false;
     }
   };
 
   // Obtener servicio por ID
-  const getServicioById = (id: string) => {
-    return servicios.find(servicio => servicio.id === id);
+  const getServicioById = async (id: string): Promise<Servicio | null> => {
+    if (!id) {
+      console.warn("Se solicitó un servicio con ID vacío");
+      return null;
+    }
+    
+    try {
+      const servicio = await interfaz.getServicioById(id);
+      
+      // Si no se encuentra el servicio en la interfaz pero está en nuestro estado local
+      if (!servicio) {
+        const servicioLocal = servicios.find(s => s.id === id);
+        if (servicioLocal) {
+          console.log("Servicio obtenido del estado local:", id);
+          return servicioLocal;
+        }
+        return null;
+      }
+      
+      return servicio;
+    } catch (error) {
+      console.error("Error al obtener servicio por ID:", error);
+      
+      // Intentar recuperar del estado local en caso de error
+      const servicioLocal = servicios.find(s => s.id === id);
+      if (servicioLocal) {
+        console.log("Servicio recuperado del estado local tras error:", id);
+        return servicioLocal;
+      }
+      
+      return null;
+    }
   };
 
   // Obtener servicios por tarifa ID
-  const getServiciosByTarifaId = (tarifaId: string) => {
-    console.log(`Buscando servicios para tarifaId: ${tarifaId}`);
-    console.log(`Total servicios disponibles: ${servicios.length}`);
+  const getServiciosByTarifaId = async (tarifaId: string): Promise<Servicio[]> => {
+    if (!tarifaId) {
+      console.warn("Se solicitaron servicios con ID de tarifa vacío");
+      return [];
+    }
     
-    const serviciosFiltrados = servicios.filter(servicio => {
-      const coincide = servicio.tarifaId === tarifaId;
-      console.log(`Servicio ${servicio.id} (${servicio.nombre}) - tarifaId: ${servicio.tarifaId}, coincide: ${coincide}`);
-      return coincide;
-    });
-    
-    console.log(`Encontrados ${serviciosFiltrados.length} servicios para tarifa ${tarifaId}`);
-    return serviciosFiltrados;
+    try {
+      return await interfaz.getServiciosByTarifaId(tarifaId);
+    } catch (error) {
+      console.error("Error al obtener servicios por tarifa ID:", error);
+      // Intentar recuperar del estado local en caso de error
+      const serviciosLocales = servicios.filter(s => s.tarifaId === tarifaId);
+      if (serviciosLocales.length > 0) {
+        console.log("Servicios recuperados del estado local tras error:", tarifaId);
+        return serviciosLocales;
+      }
+      return [];
+    }
   };
 
   // Guardar el servicio actual (crear si es nuevo o actualizar si existe)
-  const guardarServicio = () => {
+  const guardarServicio = async (): Promise<string> => {
     if (!servicioActual) return "";
 
-    if (servicioActual.id) {
-      setServicios(servicios.map(s => 
-        s.id === servicioActual.id ? servicioActual : s
-      ));
-      return servicioActual.id;
-    } else {
-      const id = generateSequentialId(servicios.map(s => s.id));
-      const nuevoServicio = { ...servicioActual, id };
-      
-      setServicios(prev => [...prev, nuevoServicio]);
-      
-      setServicioActual(nuevoServicio);
-      
-      console.log("Servicio guardado:", nuevoServicio);
-      console.log("Total servicios:", [...servicios, nuevoServicio].length);
-      
-      return id;
+    try {
+      if (servicioActual.id) {
+        // Actualizar existente
+        const resultado = await interfaz.updateServicio(servicioActual.id, servicioActual);
+        if (resultado) {
+          dispatchServicioUpdateEvent(servicioActual.tarifaId, 'update');
+          return servicioActual.id;
+        }
+        throw new Error("No se pudo actualizar el servicio");
+      } else {
+        // Crear nuevo
+        const nuevoServicio = await interfaz.createServicio({
+          ...servicioActual as Omit<Servicio, "id">,
+        });
+        
+        if (!nuevoServicio || !nuevoServicio.id) {
+          throw new Error("No se pudo crear el servicio");
+        }
+        
+        // Actualizar estado local
+        setServicios(prev => [...prev, nuevoServicio]);
+        setServicioActual(nuevoServicio);
+        
+        dispatchServicioUpdateEvent(nuevoServicio.tarifaId, 'create');
+        
+        return nuevoServicio.id;
+      }
+    } catch (error) {
+      console.error("Error al guardar servicio:", error);
+      return "";
     }
   };
 
   // Validar campos obligatorios
   const validarCamposObligatorios = () => {
-    const camposFaltantes: string[] = [];
-    
     if (!servicioActual) {
-      return { valido: false, camposFaltantes: ["Todos los campos"] };
+      return { valido: false, camposFaltantes: ["Servicio no inicializado"] };
     }
-    
-    if (!servicioActual.nombre || servicioActual.nombre.trim() === "") {
-      camposFaltantes.push("Nombre");
-    }
-    
-    if (!servicioActual.codigo || servicioActual.codigo.trim() === "") {
-      camposFaltantes.push("Código");
-    }
-    
-    if (!servicioActual.familiaId || servicioActual.familiaId.trim() === "") {
-      camposFaltantes.push("Familia");
-    }
-    
+
+    const camposObligatorios = [
+      "nombre",
+      "codigo",
+      "tarifaId",
+      "familiaId",
+      "precioConIVA",
+      "ivaId"
+    ];
+
+    const camposFaltantes = camposObligatorios.filter(
+      (campo) => !servicioActual[campo as keyof Servicio]
+    );
+
     return {
       valido: camposFaltantes.length === 0,
-      camposFaltantes
+      camposFaltantes,
     };
   };
 
-  const value = {
-    servicios,
-    servicioActual,
-    crearServicio,
-    actualizarServicio,
-    eliminarServicio,
-    getServicioById,
-    getServiciosByTarifaId,
-    guardarServicio,
-    setServicioActual,
-    validarCamposObligatorios
+  // Funciones para manejar imágenes
+  const getServiceImages = async (servicioId: string): Promise<ServicioImage[]> => {
+    if (!servicioId) {
+      console.warn("Se solicitaron imágenes con ID de servicio vacío");
+      return [];
+    }
+    
+    try {
+      const imagenes = await interfaz.getEntityImages('servicio', servicioId);
+      return imagenes || [];
+    } catch (error) {
+      console.error("Error al obtener imágenes de servicio:", error);
+      return [];
+    }
+  };
+
+  const saveServiceImages = async (servicioId: string, images: ServicioImage[]): Promise<boolean> => {
+    if (!servicioId) {
+      console.warn("Se intentaron guardar imágenes con ID de servicio vacío");
+      return false;
+    }
+    
+    try {
+      const resultado = await interfaz.saveEntityImages('servicio', servicioId, images);
+      
+      // Disparar evento de actualización si fue exitoso
+      if (resultado) {
+        const servicio = servicios.find(s => s.id === servicioId);
+        if (servicio) {
+          dispatchServicioUpdateEvent(servicio.tarifaId, 'update-images');
+        }
+      }
+      
+      return resultado;
+    } catch (error) {
+      console.error("Error al guardar imágenes de servicio:", error);
+      return false;
+    }
+  };
+
+  const deleteServiceImages = async (servicioId: string): Promise<boolean> => {
+    if (!servicioId) {
+      console.warn("Se intentaron eliminar imágenes con ID de servicio vacío");
+      return false;
+    }
+    
+    try {
+      const resultado = await interfaz.deleteEntityImages('servicio', servicioId);
+      
+      if (resultado) {
+        const servicio = servicios.find(s => s.id === servicioId);
+        if (servicio) {
+          dispatchServicioUpdateEvent(servicio.tarifaId, 'delete-images');
+        }
+      }
+      
+      return resultado;
+    } catch (error) {
+      console.error("Error al eliminar imágenes de servicio:", error);
+      return false;
+    }
+  };
+
+  // Funciones para manejar documentos
+  const getServiceDocuments = async (servicioId: string, category: string = 'default'): Promise<ServicioDocument[]> => {
+    if (!servicioId) {
+      console.warn("Se solicitaron documentos con ID de servicio vacío");
+      return [];
+    }
+    
+    try {
+      const documentos = await interfaz.getEntityDocuments('servicio', servicioId, category);
+      return documentos || [];
+    } catch (error) {
+      console.error("Error al obtener documentos de servicio:", error);
+      return [];
+    }
+  };
+
+  const saveServiceDocuments = async (
+    servicioId: string, 
+    documents: ServicioDocument[], 
+    category: string = 'default'
+  ): Promise<boolean> => {
+    if (!servicioId) {
+      console.warn("Se intentaron guardar documentos con ID de servicio vacío");
+      return false;
+    }
+    
+    try {
+      const resultado = await interfaz.saveEntityDocuments('servicio', servicioId, documents, category);
+      
+      // Disparar evento de actualización si fue exitoso
+      if (resultado) {
+        const servicio = servicios.find(s => s.id === servicioId);
+        if (servicio) {
+          dispatchServicioUpdateEvent(servicio.tarifaId, 'update-documents');
+        }
+      }
+      
+      return resultado;
+    } catch (error) {
+      console.error("Error al guardar documentos de servicio:", error);
+      return false;
+    }
+  };
+
+  const deleteServiceDocuments = async (
+    servicioId: string,
+    category: string = 'default'
+  ): Promise<boolean> => {
+    if (!servicioId) {
+      console.warn("Se intentaron eliminar documentos con ID de servicio vacío");
+      return false;
+    }
+    
+    try {
+      const resultado = await interfaz.deleteEntityDocuments('servicio', servicioId, category);
+      
+      if (resultado) {
+        const servicio = servicios.find(s => s.id === servicioId);
+        if (servicio) {
+          dispatchServicioUpdateEvent(servicio.tarifaId, 'delete-documents');
+        }
+      }
+      
+      return resultado;
+    } catch (error) {
+      console.error("Error al eliminar documentos de servicio:", error);
+      return false;
+    }
   };
 
   return (
-    <ServicioContext.Provider value={value}>
+    <ServicioContext.Provider
+      value={{
+        servicios,
+        servicioActual,
+        crearServicio,
+        actualizarServicio,
+        eliminarServicio,
+        getServicioById,
+        getServiciosByTarifaId,
+        guardarServicio,
+        setServicioActual,
+        validarCamposObligatorios,
+        getServiceImages,
+        saveServiceImages,
+        deleteServiceImages,
+        getServiceDocuments,
+        saveServiceDocuments,
+        deleteServiceDocuments
+      }}
+    >
       {children}
     </ServicioContext.Provider>
   );
@@ -255,7 +440,7 @@ export const ServicioProvider = ({ children }: { children: ReactNode }) => {
 export const useServicio = () => {
   const context = useContext(ServicioContext);
   if (context === undefined) {
-    throw new Error("useServicio debe ser usado dentro de un ServicioProvider");
+    throw new Error('useServicio debe ser usado dentro de un ServicioProvider');
   }
   return context;
 }; 

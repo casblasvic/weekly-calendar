@@ -7,9 +7,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Checkbox } from "@/components/ui/checkbox"
-import { useTarif } from "@/contexts/tarif-context"
-import { useIVA } from "@/contexts/iva-context"
-import { useFamily } from "@/contexts/family-context"
 import { Card, CardContent } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -21,17 +18,20 @@ import {
 } from "@/components/ui/tooltip"
 import { HelpButton } from "@/components/ui/help-button"
 import React from "react"
-import { useServicio } from "@/contexts/servicios-context"
 import { cn } from "@/lib/utils"
 import { toast } from "@/components/ui/use-toast"
-import { useImages } from "@/contexts/image-context"
-import { useDocuments } from "@/contexts/document-context"
 import ImageGallery from "@/components/ui/image-gallery"
 import DocumentList from "@/components/ui/document-list"
 import FileUploader from "@/components/ui/file-uploader"
-import { ImageFile } from "@/contexts/file-context"
-import { DocumentFile } from "@/contexts/file-context"
-import { getServiceImages, saveServiceImages, getServiceDocuments, saveServiceDocuments, MockData } from "@/mockData"
+
+// Usar SOLO contextos especializados (no importar useInterfaz directamente)
+import { useIVA } from "@/contexts/iva-context"
+import { useFamily } from "@/contexts/family-context"
+import { useTarif } from "@/contexts/tarif-context"
+import { ImageFile, DocumentFile } from "@/contexts/file-context"
+import { useServicio } from "@/contexts/servicios-context"
+import { useImages } from "@/contexts/image-context"
+import { useDocuments } from "@/contexts/document-context"
 
 // Función para generar IDs únicos sin dependencias externas
 const generateId = () => {
@@ -91,13 +91,36 @@ export default function NuevoServicio() {
   const searchParams = useSearchParams();
   const servicioId = searchParams.get('servicioId');
   
-  const { getTarifaById } = useTarif()
-  const { getTiposIVAByTarifaId } = useIVA()
-  const { getRootFamilies } = useFamily()
+  // Usar contextos especializados en lugar de interfaz directamente
+  const { getTarifaById } = useTarif();
+  const { getTiposIVAByTarifaId } = useIVA();
+  const { getRootFamilies } = useFamily();
+  const { 
+    getServicioById, 
+    crearServicio, 
+    actualizarServicio, 
+    servicioActual, 
+    setServicioActual,
+    validarCamposObligatorios
+  } = useServicio();
   
-  const tarifa = getTarifaById(tarifaId)
-  const tiposIVA = getTiposIVAByTarifaId(tarifaId)
-  const familias = getRootFamilies()
+  // Obtener funcionalidades de imágenes y documentos
+  const { 
+    uploadImage, 
+    getImagesByEntity, 
+    setPrimaryImage 
+  } = useImages();
+  
+  const { 
+    uploadDocument, 
+    getDocumentsByEntity, 
+    categorizeDocument 
+  } = useDocuments();
+  
+  // Crear estados para almacenar los datos
+  const [tarifa, setTarifa] = useState<any>(null);
+  const [tiposIVA, setTiposIVA] = useState<any[]>([]);
+  const [familias, setFamilias] = useState<any[]>([]);
   
   const [isSaving, setIsSaving] = useState(false)
   const [chatAbierto, setChatAbierto] = useState(false)
@@ -204,142 +227,85 @@ export default function NuevoServicio() {
   const [camposFaltantes, setCamposFaltantes] = useState<string[]>([]);
   const [rutaDestino, setRutaDestino] = useState<string | null>(null);
   
-  // Obtener servicioActual del contexto (no crear uno local)
-  const { 
-    validarCamposObligatorios, 
-    servicioActual, 
-    crearServicio, 
-    actualizarServicio, 
-    setServicioActual,
-    getServicioById
-  } = useServicio();
-  
-  // AHORA es seguro usar servicioActual
-  const servicioGuardado = Boolean(servicioActual?.id);
-
-  // Obtener funcionalidades de imágenes y documentos
-  const { uploadImage, getImagesByEntity, setPrimaryImage } = useImages();
-  const { uploadDocument, getDocumentsByEntity } = useDocuments();
-  
   // Agregar estados para imágenes y documentos
   const [serviceImages, setServiceImages] = useState<ImageFile[]>([]);
   const [serviceDocuments, setServiceDocuments] = useState<DocumentFile[]>([]);
   const [isLoadingAssets, setIsLoadingAssets] = useState(false);
   
-  // Cargar el servicio existente si hay un ID
+  // AHORA es seguro usar servicioActual
+  const servicioGuardado = Boolean(servicioActual?.id);
+  
+  // Cargar los datos utilizando contextos especializados
   useEffect(() => {
-    if (servicioId) {
-      console.log("Intentando cargar servicio con ID:", servicioId);
-      setCurrentServicioId(servicioId);
-      const servicioExistente = getServicioById(servicioId);
-      console.log("Servicio encontrado:", servicioExistente);
-      
-      if (servicioExistente) {
-        // Guardar en el contexto global
-        setServicioActual(servicioExistente);
+    const fetchData = async () => {
+      try {
+        // Cargar tarifa
+        const tarifaData = await getTarifaById(tarifaId);
+        setTarifa(tarifaData);
         
-        // Convertir explícitamente valores numéricos
-        const servicioFormateado = {
-          ...servicioExistente,
-          tarifaBase: tarifa?.nombre || "Tarifa Base",
-          consumos: servicioExistente.consumos || [{
-            id: generateId(),
-            cantidad: 1,
-            tipoConsumo: "Unidades"
-          }],
-          // Asegurar que valores como precioConIVA sean string para el formulario
-          precioConIVA: servicioExistente.precioConIVA?.toString() || "",
-          precioCoste: servicioExistente.precioCoste?.toString() || "",
-          comision: servicioExistente.comision?.toString() || ""
-        };
+        // Cargar tipos de IVA
+        const ivaData = await getTiposIVAByTarifaId(tarifaId);
+        setTiposIVA(ivaData);
         
-        console.log("Servicio formateado para el formulario:", servicioFormateado);
-        setServicio(servicioFormateado);
-        
-        // Cargar explícitamente las imágenes del servicio
-        console.log("Cargando imágenes para servicio ID:", servicioId);
-        try {
-          // Intentar cargar imágenes desde localStorage primero
-          const storedImages = localStorage.getItem(`serviceImages_${servicioId}`);
-          if (storedImages) {
-            console.log("Imágenes encontradas en localStorage:", storedImages);
-            setServiceImages(JSON.parse(storedImages));
-          }
-          
-          // También cargar usando la función getServiceImages como respaldo
-          const serviceImgs = getServiceImages(servicioId);
-          if (serviceImgs && serviceImgs.length > 0) {
-            console.log("Imágenes recuperadas desde getServiceImages:", serviceImgs);
-            setServiceImages(serviceImgs as ImageFile[]);
-          } else {
-            console.log("No se encontraron imágenes para el servicio", servicioId);
-          }
-        } catch (error) {
-          console.error("Error al cargar imágenes del servicio:", error);
-        }
-        
-        // Cargar documentos del servicio
-        console.log("Cargando documentos para servicio ID:", servicioId);
-        try {
-          console.log("Llamando a getServiceDocuments para ID:", servicioId);
-          
-          // También cargar usando función getServiceDocuments como respaldo
-          const serviceDocs = getServiceDocuments(servicioId);
-          console.log("Resultado getServiceDocuments:", serviceDocs);
-          
-          // Intentar cargar documentos desde localStorage
-          const storedDocs = localStorage.getItem(`service_docs_${servicioId}_default`);
-          console.log("Documentos en localStorage:", storedDocs);
-          
-          if (storedDocs) {
-            console.log("Documentos encontrados en localStorage:", storedDocs);
-            const parsedDocs = JSON.parse(storedDocs);
-            setServiceDocuments(parsedDocs);
-            
-            // Verificar también que los documentos tienen el entityId correcto
-            if (parsedDocs.length > 0 && parsedDocs[0].entityId !== servicioId) {
-              console.warn("El entityId de los documentos no coincide con el servicioId. Corrigiendo...");
-              const correctedDocs = parsedDocs.map((doc: DocumentFile) => ({
-                ...doc,
-                entityId: servicioId
-              }));
-              setServiceDocuments(correctedDocs);
-              
-              // Guardar los documentos corregidos
-              saveServiceDocuments(servicioId, correctedDocs);
-              localStorage.setItem(`service_docs_${servicioId}_default`, JSON.stringify(correctedDocs));
-            }
-          } else if (serviceDocs && serviceDocs.length > 0) {
-            console.log("Documentos recuperados desde getServiceDocuments:", serviceDocs);
-            setServiceDocuments(serviceDocs as unknown as DocumentFile[]);
-          } else {
-            // Último intento: buscar en storage
-            console.log("Buscando documentos en almacenamiento alternativo para servicio:", servicioId);
-            
-            // Verificar en MockData directamente
-            if (typeof MockData !== 'undefined' && MockData.entityDocuments) {
-              console.log("Estructura de MockData.entityDocuments:", MockData.entityDocuments);
-              const serviceDocsFromMockData = 
-                MockData.entityDocuments['service'] && 
-                MockData.entityDocuments['service'][servicioId] && 
-                MockData.entityDocuments['service'][servicioId]['default'];
-              
-              if (serviceDocsFromMockData) {
-                console.log("Documentos encontrados en MockData:", serviceDocsFromMockData);
-                setServiceDocuments(serviceDocsFromMockData as unknown as DocumentFile[]);
-              } else {
-                console.log("No se encontraron documentos en MockData para el servicio", servicioId);
-              }
-            }
-          }
-        } catch (error) {
-          console.error("Error al cargar documentos del servicio:", error);
-        }
-      } else {
-        console.warn("No se encontró el servicio con ID:", servicioId);
+        // Cargar familias
+        const familiasData = await getRootFamilies();
+        setFamilias(familiasData);
+      } catch (error) {
+        console.error("Error al cargar datos iniciales:", error);
       }
+    };
+    
+    if (tarifaId) {
+      fetchData();
     }
-  }, [servicioId, getServicioById, setServicioActual, tarifa?.nombre]);
+  }, [tarifaId, getTarifaById, getTiposIVAByTarifaId, getRootFamilies]);
+  
+  // Cargar servicio si existe ID
+  useEffect(() => {
+    const fetchServicio = async () => {
+      if (servicioId) {
+        try {
+          const servicioData = await getServicioById(servicioId);
+          if (servicioData) {
+            setCurrentServicioId(servicioId);
+            setServicioActual(servicioData);
+            
+            // Formatear el servicio para el formulario
+            const servicioFormateado = {
+              ...servicioData,
+              tarifaBase: tarifa?.nombre || "Tarifa Base",
+              consumos: servicioData.consumos || [{
+                id: generateId(),
+                cantidad: 1,
+                tipoConsumo: "Unidades"
+              }],
+              precioConIVA: servicioData.precioConIVA?.toString() || "",
+              precioCoste: servicioData.precioCoste?.toString() || "",
+              comision: servicioData.comision?.toString() || ""
+            };
+            
+            setServicio(servicioFormateado);
+            
+            // Cargar imágenes
+            const imagenes = await getImagesByEntity('service', servicioId);
+            if (imagenes && imagenes.length > 0) {
+              setServiceImages(imagenes as ImageFile[]);
+            }
+            
+            // Cargar documentos
+            const documentos = await getDocumentsByEntity('service', servicioId, 'default');
+            if (documentos && documentos.length > 0) {
+              setServiceDocuments(documentos as DocumentFile[]);
+            }
+          }
+        } catch (error) {
+          console.error("Error al cargar servicio:", error);
+        }
+      }
+    };
+    
+    fetchServicio();
+  }, [servicioId, getServicioById, getImagesByEntity, getDocumentsByEntity, tarifa]);
 
   // Añadir depuración de familias
   useEffect(() => {
@@ -464,14 +430,14 @@ export default function NuevoServicio() {
         console.log("Imágenes a guardar:", updatedImages);
         
         // Guardar imágenes con el ID correcto
-        const saveResult = saveServiceImages(servicioId, updatedImages);
+        const saveResult = uploadImage(updatedImages, 'service', servicioId, { isPrimary: serviceImages.length === 0 });
         console.log("Resultado de guardar imágenes:", saveResult);
         
         // También en localStorage directo como respaldo
         localStorage.setItem(`serviceImages_${servicioId}`, JSON.stringify(updatedImages));
         
         // Verificar que se guardaron correctamente
-        const savedImages = getServiceImages(servicioId);
+        const savedImages = getImagesByEntity(servicioId);
         console.log("Imágenes guardadas verificadas:", savedImages);
         
         // Notificar al sistema de archivos global
@@ -497,7 +463,7 @@ export default function NuevoServicio() {
         }));
         
         // Guardar documentos usando la función de MockData
-        const saveResult = saveServiceDocuments(servicioId, updatedDocs);
+        const saveResult = uploadDocument(updatedDocs, 'service', servicioId, 'help_documents');
         console.log("Resultado de guardar documentos:", saveResult);
         
         setServiceDocuments(updatedDocs);
@@ -627,7 +593,7 @@ export default function NuevoServicio() {
         }));
         
         // Guardar imágenes usando la función de mockData
-        saveServiceImages(servicioId, updatedImages);
+        uploadImage(updatedImages, 'service', servicioId, { isPrimary: serviceImages.length === 0 });
         
         // También guardar en localStorage directo
         localStorage.setItem(`serviceImages_${servicioId}`, JSON.stringify(updatedImages));
@@ -635,7 +601,7 @@ export default function NuevoServicio() {
         setServiceImages(updatedImages);
         
         // Verificar guardado
-        const savedImages = getServiceImages(servicioId);
+        const savedImages = getImagesByEntity(servicioId);
         console.log("Imágenes guardadas verificadas:", savedImages);
         
         // Notificar al sistema de archivos global
@@ -659,11 +625,7 @@ export default function NuevoServicio() {
         setServiceDocuments(updatedDocs);
         
         // Guardar documentos usando la función de MockData
-        const saveResult = saveServiceDocuments(servicioId, updatedDocs);
-        console.log("Resultado de guardar documentos:", saveResult);
-        
-        // También guardar en localStorage directo como respaldo
-        localStorage.setItem(`service_docs_${servicioId}_default`, JSON.stringify(updatedDocs));
+        uploadDocument(updatedDocs, 'service', servicioId, 'help_documents');
         console.log("Documentos guardados en localStorage:", updatedDocs);
       }
       
@@ -813,7 +775,7 @@ export default function NuevoServicio() {
       // Guardar explícitamente en localStorage
       if (servicioActual?.id) {
         console.log("Guardando imágenes para servicio ID:", servicioActual.id);
-        const saveResult = saveServiceImages(servicioActual.id, updatedImages);
+        const saveResult = uploadImage(updatedImages, 'service', servicioActual.id, { isPrimary: serviceImages.length === 0 });
         console.log("Resultado de guardar imágenes:", saveResult);
         
         // También guardar en localStorage directo como copia de seguridad
@@ -821,7 +783,7 @@ export default function NuevoServicio() {
         console.log("Imágenes guardadas en localStorage:", updatedImages);
         
         // Verificar que se guardaron correctamente
-        const verificarImgs = getServiceImages(servicioActual.id);
+        const verificarImgs = getImagesByEntity(servicioActual.id);
         console.log("Imágenes verificadas después de guardar:", verificarImgs);
       } else {
         console.log("No se guardaron imágenes en localStorage porque no hay ID de servicio");
@@ -859,7 +821,7 @@ export default function NuevoServicio() {
       
       // Guardar en localStorage
       if (servicioActual?.id) {
-        saveServiceImages(servicioActual.id, updatedImages);
+        uploadImage(updatedImages, 'service', servicioActual.id, { isPrimary: serviceImages.length === 0 });
         localStorage.setItem(`serviceImages_${servicioActual.id}`, JSON.stringify(updatedImages));
       }
       
@@ -886,7 +848,7 @@ export default function NuevoServicio() {
       
       // Guardar en localStorage
       if (servicioActual?.id) {
-        saveServiceImages(servicioActual.id, updatedImages);
+        uploadImage(updatedImages, 'service', servicioActual.id, { isPrimary: serviceImages.length === 0 });
         localStorage.setItem(`serviceImages_${servicioActual.id}`, JSON.stringify(updatedImages));
         
         // Notificar a la aplicación que se ha eliminado un archivo
@@ -967,7 +929,7 @@ export default function NuevoServicio() {
       // Guardar en almacenamiento persistente
       if (servicioActual?.id) {
         console.log("Guardando documentos para servicio ID:", servicioActual.id);
-        const saveResult = saveServiceDocuments(servicioActual.id, updatedDocs);
+        const saveResult = uploadDocument(updatedDocs, 'service', servicioActual.id, 'help_documents');
         console.log("Resultado de guardar documentos:", saveResult);
         
         // También guardar en localStorage como respaldo
@@ -1017,7 +979,7 @@ export default function NuevoServicio() {
       // Guardar los cambios en MockData
       if (servicioActual?.id) {
         console.log(`Guardando documentos actualizados después de eliminar para servicio ID: ${servicioActual.id}`);
-        const saveResult = saveServiceDocuments(servicioActual.id, updatedDocs);
+        const saveResult = uploadDocument(updatedDocs, 'service', servicioActual.id, 'help_documents');
         console.log("Resultado de guardar documentos:", saveResult);
         
         // También guardar en localStorage directo como copia de seguridad
