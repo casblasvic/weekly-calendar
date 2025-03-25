@@ -9,22 +9,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Card } from "@/components/ui/card"
 import { ChevronUp, ChevronDown, Trash2, Search, Save } from "lucide-react"
 import { CabinEditDialog } from "./cabin-edit-dialog"
-import {
-  updateCabin as updateCabinInMock,
-  deleteCabin as deleteCabinInMock,
-  getClinic,
-  DATA_CHANGE_EVENT,
-} from "@/mockData"
+import { useCabins, Cabin } from "@/contexts/CabinContext"
 import { toast } from "sonner"
-
-interface Cabin {
-  id: number
-  code: string
-  name: string
-  color: string
-  isActive: boolean
-  order: number
-}
 
 interface CabinConfigurationProps {
   cabins: Cabin[]
@@ -34,38 +20,57 @@ interface CabinConfigurationProps {
 }
 
 export default function CabinConfiguration({ cabins, clinicId, updateCabin, deleteCabin }: CabinConfigurationProps) {
+  const { updateCabin: updateContextCabin, deleteCabin: deleteContextCabin, getCabinsByClinic, reorderCabins } = useCabins()
   const [isCabinDialogOpen, setIsCabinDialogOpen] = useState(false)
   const [editingCabin, setEditingCabin] = useState<Cabin | null>(null)
   const [filterText, setFilterText] = useState("")
   const [localCabins, setLocalCabins] = useState<Cabin[]>([])
   const [hasChanges, setHasChanges] = useState(false)
 
-  // Initialize with fresh data from mockData
+  // Initialize with fresh data
   useEffect(() => {
-    const clinic = getClinic(clinicId)
-    if (clinic) {
-      setLocalCabins(clinic.cabins)
-    } else {
-      setLocalCabins(cabins)
-    }
-  }, [clinicId, cabins])
+    const loadClinicCabins = async () => {
+      try {
+        const clinicCabins = await getCabinsByClinic(clinicId);
+        if (clinicCabins && clinicCabins.length > 0) {
+          setLocalCabins(clinicCabins);
+        } else {
+          setLocalCabins(cabins);
+        }
+      } catch (error) {
+        console.error("Error al cargar cabinas de la clínica:", error);
+        setLocalCabins(cabins);
+      }
+    };
+    
+    loadClinicCabins();
+  }, [clinicId, cabins, getCabinsByClinic])
 
-  // Listen for data changes
+  // Listen for data changes from other components
   useEffect(() => {
     const handleDataChange = (e: CustomEvent) => {
-      if (e.detail.dataType === "cabins" || e.detail.dataType === "clinics" || e.detail.dataType === "all") {
-        const clinic = getClinic(clinicId)
-        if (clinic) {
-          setLocalCabins(clinic.cabins)
-        }
+      const { entityType, entityId } = e.detail
+
+      if (entityType === "clinic" && entityId === clinicId) {
+        // Recargar las cabinas cuando se actualiza la clínica
+        getCabinsByClinic(clinicId)
+          .then(clinicCabins => {
+            if (clinicCabins && clinicCabins.length > 0) {
+              setLocalCabins(clinicCabins);
+              setHasChanges(false);
+            }
+          })
+          .catch(error => {
+            console.error("Error al recargar cabinas:", error);
+          });
       }
     }
 
-    window.addEventListener(DATA_CHANGE_EVENT, handleDataChange as EventListener)
+    window.addEventListener("data-change" as any, handleDataChange)
     return () => {
-      window.removeEventListener(DATA_CHANGE_EVENT, handleDataChange as EventListener)
+      window.removeEventListener("data-change" as any, handleDataChange)
     }
-  }, [clinicId])
+  }, [clinicId, getCabinsByClinic])
 
   const handleFilterChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFilterText(e.target.value)
@@ -74,110 +79,131 @@ export default function CabinConfiguration({ cabins, clinicId, updateCabin, dele
   const filteredCabins = localCabins.filter(
     (cabin) =>
       cabin.name.toLowerCase().includes(filterText.toLowerCase()) ||
-      cabin.code.toLowerCase().includes(filterText.toLowerCase()),
+      cabin.code.toLowerCase().includes(filterText.toLowerCase())
   )
 
   const moveCabin = (index: number, direction: "up" | "down") => {
-    const sortedCabins = [...localCabins].sort((a, b) => a.order - b.order)
-    if (direction === "up" && index > 0) {
-      const temp = sortedCabins[index].order
-      sortedCabins[index].order = sortedCabins[index - 1].order
-      sortedCabins[index - 1].order = temp
-    } else if (direction === "down" && index < sortedCabins.length - 1) {
-      const temp = sortedCabins[index].order
-      sortedCabins[index].order = sortedCabins[index + 1].order
-      sortedCabins[index + 1].order = temp
-    }
-    setLocalCabins([...sortedCabins])
+    const newCabins = [...localCabins]
+    const targetIndex = direction === "up" ? index - 1 : index + 1
+
+    if (targetIndex < 0 || targetIndex >= newCabins.length) return
+
+    // Swap order values
+    const temp = newCabins[index].order
+    newCabins[index].order = newCabins[targetIndex].order
+    newCabins[targetIndex].order = temp
+
+    // Sort by order
+    newCabins.sort((a, b) => a.order - b.order)
+    setLocalCabins(newCabins)
     setHasChanges(true)
   }
 
   const handleSaveCabin = (cabin: Cabin) => {
-    if (cabin.id === 0) {
-      const newId = Math.max(0, ...localCabins.map((c) => c.id)) + 1
-      const newCabin = { ...cabin, id: newId, order: localCabins.length + 1 }
+    let updatedCabin = { ...cabin }
 
-      // Update local state
-      setLocalCabins((prev) => [...prev, newCabin])
-
-      // Save to mock data
-      const success = updateCabinInMock(clinicId, newCabin)
-
-      if (success) {
-        toast.success("Cabina añadida correctamente")
-        if (updateCabin) updateCabin(newCabin)
-      } else {
-        toast.error("Error al añadir la cabina")
-      }
-    } else {
-      // Update local state
-      setLocalCabins((prev) => prev.map((c) => (c.id === cabin.id ? cabin : c)))
-
-      // Save to mock data
-      const success = updateCabinInMock(clinicId, cabin)
-
-      if (success) {
-        toast.success("Cabina actualizada correctamente")
-        if (updateCabin) updateCabin(cabin)
-      } else {
-        toast.error("Error al actualizar la cabina")
+    // If it's a new cabin, set a new ID and order
+    if (!cabin.id) {
+      updatedCabin = {
+        ...updatedCabin,
+        id: Date.now(), // Generate temporary ID
+        order: localCabins.length > 0 ? Math.max(...localCabins.map((c) => c.order)) + 1 : 1,
       }
     }
-    setIsCabinDialogOpen(false)
+
+    // Check if we're updating an existing cabin
+    const cabinIndex = localCabins.findIndex((c) => c.id === updatedCabin.id)
+
+    if (cabinIndex !== -1) {
+      // Update existing cabin
+      const newCabins = [...localCabins]
+      newCabins[cabinIndex] = updatedCabin
+      setLocalCabins(newCabins)
+    } else {
+      // Add new cabin
+      setLocalCabins([...localCabins, updatedCabin])
+    }
+
     setHasChanges(true)
+    setIsCabinDialogOpen(false)
+    setEditingCabin(null)
   }
 
-  const handleDeleteCabin = (cabinId: number) => {
-    if (window.confirm("¿Estás seguro de que quieres eliminar esta cabina?")) {
-      // Update local state
-      setLocalCabins((prev) => prev.filter((c) => c.id !== cabinId))
+  const handleDeleteCabin = async (cabinId: number) => {
+    // Update local state to remove the cabin
+    setLocalCabins(localCabins.filter((cabin) => cabin.id !== cabinId))
+    setHasChanges(true)
 
-      // Delete from mock data
-      const success = deleteCabinInMock(clinicId, cabinId)
+    // If a delete function was provided as prop, use it
+    if (deleteCabin) {
+      deleteCabin(cabinId)
+      return
+    }
 
-      if (success) {
-        toast.success("Cabina eliminada correctamente")
-        if (deleteCabin) deleteCabin(cabinId)
-      } else {
-        toast.error("Error al eliminar la cabina")
+    // Otherwise use the context function
+    const confirmDelete = window.confirm("¿Está seguro de eliminar esta cabina?")
+    if (confirmDelete) {
+      try {
+        const success = await deleteContextCabin(cabinId);
+        if (success) {
+          toast.success("Cabina eliminada correctamente")
+          // Dispatch event to notify other components
+          window.dispatchEvent(
+            new CustomEvent("data-change", {
+              detail: { entityType: "clinic", entityId: clinicId },
+            })
+          )
+        } else {
+          toast.error("Error al eliminar cabina")
+        }
+      } catch (error) {
+        console.error("Error al eliminar cabina:", error)
+        toast.error("Error al eliminar cabina")
       }
-
-      setHasChanges(true)
     }
   }
 
   const handleUpdateCabinStatus = (cabin: Cabin, checked: boolean) => {
     const updatedCabin = { ...cabin, isActive: checked }
+    const cabinIndex = localCabins.findIndex((c) => c.id === cabin.id)
 
-    // Update local state
-    setLocalCabins((prev) => prev.map((c) => (c.id === cabin.id ? updatedCabin : c)))
-
-    // Save to mock data
-    const success = updateCabinInMock(clinicId, updatedCabin)
-
-    if (success) {
-      if (updateCabin) updateCabin(updatedCabin)
-    } else {
-      toast.error("Error al actualizar el estado de la cabina")
+    if (cabinIndex !== -1) {
+      const newCabins = [...localCabins]
+      newCabins[cabinIndex] = updatedCabin
+      setLocalCabins(newCabins)
+      setHasChanges(true)
     }
-
-    setHasChanges(true)
   }
 
-  const saveAllChanges = () => {
-    // Save all cabins to mock data
-    let allSuccess = true
-
-    localCabins.forEach((cabin) => {
-      const success = updateCabinInMock(clinicId, cabin)
-      if (!success) allSuccess = false
-    })
-
-    if (allSuccess) {
-      toast.success("Todos los cambios guardados correctamente")
+  const saveAllChanges = async () => {
+    // If an update function was provided as prop, use it for each cabin
+    if (updateCabin) {
+      localCabins.forEach((cabin) => {
+        updateCabin(cabin)
+      })
       setHasChanges(false)
-    } else {
-      toast.error("Error al guardar algunos cambios")
+      toast.success("Cambios guardados correctamente")
+      return
+    }
+
+    // Otherwise use the context function to update the order
+    try {
+      const success = await reorderCabins(clinicId, localCabins);
+      if (success) {
+        setHasChanges(false)
+        toast.success("Cambios guardados correctamente")
+        // Dispatch event to notify other components
+        window.dispatchEvent(
+          new CustomEvent("data-change", {
+            detail: { entityType: "clinic", entityId: clinicId },
+          })
+        )
+      } else {
+        toast.error("Error al guardar cambios")
+      }
+    } catch (error) {
+      console.error("Error al guardar cambios:", error)
+      toast.error("Error al guardar cambios")
     }
   }
 

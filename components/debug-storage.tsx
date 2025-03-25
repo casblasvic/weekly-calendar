@@ -21,9 +21,19 @@ export function DebugStorage({ clinicId }: { clinicId?: string }) {
   const [storageValue, setStorageValue] = useState<string>("")
   const [activeTab, setActiveTab] = useState<string>("storage")
   const [isLoading, setIsLoading] = useState(false)
-
   const { getStorageStats, getQuota, setQuota } = useStorage()
   const { getFilesByFilter, deleteFile } = useFiles()
+  const [storageStats, setStorageStats] = useState<any>({
+    used: 0,
+    quota: 0,
+    isUnlimited: false,
+    byType: {}
+  })
+  const [quotaData, setQuotaData] = useState<any>({
+    quotaSize: 0,
+    isUnlimited: false
+  })
+  const [files, setFiles] = useState<any[]>([])
 
   const refreshStorageKeys = () => {
     setIsLoading(true)
@@ -41,8 +51,29 @@ export function DebugStorage({ clinicId }: { clinicId?: string }) {
   }
 
   useEffect(() => {
-    refreshStorageKeys()
-  }, [])
+    const loadData = async () => {
+      try {
+        // Obtener estadísticas de almacenamiento
+        const stats = await getStorageStats(clinicId);
+        setStorageStats(stats);
+        
+        // Obtener cuota
+        const quotaInfo = await getQuota(clinicId ? "clinic" : "global", clinicId);
+        setQuotaData(quotaInfo);
+        
+        // Obtener archivos
+        const filesData = await getFilesByFilter({ clinicId, isDeleted: false });
+        setFiles(filesData);
+
+        // Cargar claves de localStorage
+        refreshStorageKeys();
+      } catch (error) {
+        console.error("Error al cargar datos:", error);
+      }
+    };
+    
+    loadData();
+  }, [clinicId, getStorageStats, getQuota, getFilesByFilter]);
 
   useEffect(() => {
     if (selectedKey) {
@@ -160,25 +191,44 @@ export function DebugStorage({ clinicId }: { clinicId?: string }) {
     }
   }
 
-  // Nuevas funciones para la gestión de almacenamiento
-  const storageStats = getStorageStats(clinicId)
-  const quota = getQuota(clinicId ? "clinic" : "global", clinicId)
-  const clinicFiles = getFilesByFilter({ clinicId, isDeleted: false })
-  
   // Manejar eliminación de archivos
   const handleDeleteFile = async (fileId: string) => {
     try {
       await deleteFile(fileId)
-      toast.success("Archivo eliminado correctamente")
+      toast({
+        title: "Éxito",
+        description: "Archivo eliminado correctamente",
+        variant: "default"
+      })
     } catch (error) {
-      toast.error("Error al eliminar el archivo")
+      toast({
+        title: "Error",
+        description: "Error al eliminar el archivo",
+        variant: "destructive"
+      })
     }
   }
   
   // Actualizar cuota
-  const handleUpdateQuota = (size: number, isUnlimited: boolean) => {
-    setQuota("clinic", clinicId, size, isUnlimited)
-    toast.success("Cuota actualizada correctamente")
+  const handleUpdateQuota = async (size: number, isUnlimited: boolean) => {
+    try {
+      await setQuota("clinic", clinicId, size, isUnlimited)
+      toast({
+        title: "Éxito",
+        description: "Cuota actualizada correctamente",
+        variant: "default"
+      })
+      
+      // Actualizar datos locales
+      const updatedQuota = await getQuota(clinicId ? "clinic" : "global", clinicId);
+      setQuotaData(updatedQuota);
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Error al actualizar la cuota",
+        variant: "destructive"
+      })
+    }
   }
 
   return (
@@ -190,7 +240,7 @@ export function DebugStorage({ clinicId }: { clinicId?: string }) {
         </TabsList>
         
         <TabsContent value="storage" className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <StorageStatusCard 
               used={storageStats.used} 
               total={storageStats.quota} 
@@ -200,21 +250,20 @@ export function DebugStorage({ clinicId }: { clinicId?: string }) {
             <StorageTypeChart data={storageStats.byType} />
             
             <StorageQuotaSettings
-              quotaSize={quota.quotaSize}
-              isUnlimited={quota.isUnlimited}
+              systemTotal={10 * 1024 * 1024 * 1024} /* 10GB para ejemplo */
               onSave={handleUpdateQuota}
             />
           </div>
           
           <FilesExplorer 
-            files={clinicFiles}
+            files={files}
             onDelete={handleDeleteFile}
             onView={(file) => window.open(file.url, "_blank")}
           />
         </TabsContent>
         
         <TabsContent value="debug">
-          <div className="flex justify-between items-center">
+          <div className="flex items-center justify-between">
             <h2 className="text-xl font-semibold">Depuración de Almacenamiento Local</h2>
             <div className="flex space-x-2">
               <Button variant="outline" size="sm" onClick={refreshStorageKeys} disabled={isLoading}>
@@ -222,7 +271,7 @@ export function DebugStorage({ clinicId }: { clinicId?: string }) {
                 Refrescar
               </Button>
               <Button variant="outline" size="sm" onClick={handleExportStorage}>
-                <Download className="h-4 w-4 mr-2" />
+                <Download className="w-4 h-4 mr-2" />
                 Exportar
               </Button>
               <div className="relative">
@@ -234,18 +283,18 @@ export function DebugStorage({ clinicId }: { clinicId?: string }) {
                   onChange={handleImportStorage}
                 />
                 <Button variant="outline" size="sm">
-                  <Upload className="h-4 w-4 mr-2" />
+                  <Upload className="w-4 h-4 mr-2" />
                   Importar
                 </Button>
               </div>
               <Button variant="destructive" size="sm" onClick={handleClearStorage}>
-                <Trash2 className="h-4 w-4 mr-2" />
+                <Trash2 className="w-4 h-4 mr-2" />
                 Limpiar Todo
               </Button>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <Card className="md:col-span-1">
               <CardHeader>
                 <CardTitle>Claves ({storageKeys.length})</CardTitle>
@@ -257,7 +306,7 @@ export function DebugStorage({ clinicId }: { clinicId?: string }) {
                   ) : (
                     <ul className="divide-y">
                       {storageKeys.map((key) => (
-                        <li key={key} className="flex justify-between items-center p-2 hover:bg-gray-50">
+                        <li key={key} className="flex items-center justify-between p-2 hover:bg-gray-50">
                           <button
                             className={`flex-1 text-left truncate ${selectedKey === key ? "font-semibold text-purple-600" : ""}`}
                             onClick={() => handleKeySelect(key)}
@@ -267,10 +316,10 @@ export function DebugStorage({ clinicId }: { clinicId?: string }) {
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-8 w-8 text-red-500"
+                            className="w-8 h-8 text-red-500"
                             onClick={() => handleDeleteKey(key)}
                           >
-                            <Trash2 className="h-4 w-4" />
+                            <Trash2 className="w-4 h-4" />
                           </Button>
                         </li>
                       ))}
@@ -294,20 +343,20 @@ export function DebugStorage({ clinicId }: { clinicId?: string }) {
                   </TabsList>
                   <TabsContent value="view" className="h-[400px] overflow-auto">
                     {selectedKey ? (
-                      <pre className="p-4 bg-gray-50 rounded-md text-sm whitespace-pre-wrap">
+                      <pre className="p-4 text-sm whitespace-pre-wrap rounded-md bg-gray-50">
                         {formatJSON(storageValue)}
                       </pre>
                     ) : (
-                      <div className="h-full flex items-center justify-center text-gray-500">
+                      <div className="flex items-center justify-center h-full text-gray-500">
                         Selecciona una clave para ver su valor
                       </div>
                     )}
                   </TabsContent>
                   <TabsContent value="raw" className="h-[400px] overflow-auto">
                     {selectedKey ? (
-                      <pre className="p-4 bg-gray-50 rounded-md text-sm whitespace-pre-wrap">{storageValue}</pre>
+                      <pre className="p-4 text-sm whitespace-pre-wrap rounded-md bg-gray-50">{storageValue}</pre>
                     ) : (
-                      <div className="h-full flex items-center justify-center text-gray-500">
+                      <div className="flex items-center justify-center h-full text-gray-500">
                         Selecciona una clave para ver su valor
                       </div>
                     )}

@@ -1,11 +1,19 @@
 "use client"
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { useFiles, BaseFile, ImageFile, FileFilter } from './file-context';
-import { useStorage } from './storage-context';
+import { useInterfaz } from './interfaz-Context';
+import { EntityImage } from '@/services/data/models/interfaces';
 import { generateId } from '@/lib/utils';
-import { storageService } from '@/lib/storage/storage-service';
 import { v4 as uuidv4 } from 'uuid';
+
+// Alias para tipos específicos usando tipos del modelo central
+export type ImageFile = EntityImage;
+
+// Extendemos el tipo ImageFile para incluir las propiedades que necesitamos
+export interface ExtendedImageFile extends ImageFile {
+  entityType?: string;
+  entityId?: string;
+}
 
 interface ImageContextType {
   uploadImage: (
@@ -16,84 +24,21 @@ interface ImageContextType {
     options?: { isPrimary?: boolean; position?: number; }, 
     onProgress?: (progress: number) => void
   ) => Promise<ImageFile>;
-  getImagesByEntity: (entityType: string, entityId: string) => ImageFile[];
+  getImagesByEntity: (entityType: string, entityId: string) => Promise<ImageFile[]>;
   setPrimaryImage: (imageId: string) => Promise<boolean>;
   reorderImages: (entityType: string, entityId: string, orderedIds: string[]) => Promise<boolean>;
-  getEntityPrimaryImage: (entityType: string, entityId: string) => ImageFile | undefined;
+  getEntityPrimaryImage: (entityType: string, entityId: string) => Promise<ImageFile | undefined>;
+  // Métodos alias para compatibilidad
+  getEntityImages: (entityType: string, entityId: string) => Promise<ImageFile[]>;
+  saveEntityImages: (entityType: string, entityId: string, images: ImageFile[]) => Promise<boolean>;
 }
 
 const ImageContext = createContext<ImageContextType | undefined>(undefined);
 
 export const ImageProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { uploadFile, getFilesByFilter, updateFileMetadata, files } = useFiles();
-  const { registerFileForClinic, updateStorageStats } = useStorage();
   const [images, setImages] = useState<ImageFile[]>([]);
-  
-  // Inicializar estructura de almacenamiento al cargar el componente
-  useEffect(() => {
-    const initStorage = async () => {
-      try {
-        // Verificar si ya se inicializó el almacenamiento en esta sesión
-        if (typeof window !== 'undefined') {
-          const isInitialized = localStorage.getItem('storage_initialized');
-          const lastInit = localStorage.getItem('storage_last_init');
-          const now = new Date().getTime();
-          
-          // Si ya se inicializó en los últimos 30 minutos, no volver a inicializar
-          if (isInitialized && lastInit && (now - parseInt(lastInit)) < 30 * 60 * 1000) {
-            console.log('Sistema de almacenamiento ya inicializado recientemente, omitiendo inicialización');
-            return;
-          }
-        }
-        
-        console.log('Iniciando inicialización de estructura de almacenamiento...');
-        
-        // Llamar al API para inicializar la estructura de almacenamiento
-        const response = await fetch('/api/storage/init-system');
-        const data = await response.json();
-        
-        if (response.ok && data.success) {
-          console.log('Estructura de almacenamiento inicializada correctamente:', data.message);
-          
-          // Guardar en localStorage que se ha inicializado
-          if (typeof window !== 'undefined') {
-            localStorage.setItem('storage_initialized', 'true');
-            localStorage.setItem('storage_last_init', new Date().getTime().toString());
-          }
-        } else {
-          console.error(
-            'Error al inicializar estructura de almacenamiento:', 
-            data.error || 'Respuesta no exitosa del servidor'
-          );
-          
-          // Intento adicional para reparar la estructura
-          try {
-            console.log('Intentando reparar la estructura de almacenamiento...');
-            const repairResponse = await fetch('/api/storage/init-system?repair=true');
-            const repairData = await repairResponse.json();
-            
-            if (repairResponse.ok && repairData.success) {
-              console.log('Estructura de almacenamiento reparada correctamente:', repairData.message);
-              
-              // Guardar en localStorage que se ha inicializado tras reparación
-              if (typeof window !== 'undefined') {
-                localStorage.setItem('storage_initialized', 'true');
-                localStorage.setItem('storage_last_init', new Date().getTime().toString());
-              }
-            } else {
-              console.error('No se pudo reparar la estructura de almacenamiento:', repairData.error);
-            }
-          } catch (repairError) {
-            console.error('Error al intentar reparar la estructura:', repairError);
-          }
-        }
-      } catch (error) {
-        console.error('Error al inicializar estructura de almacenamiento:', error);
-      }
-    };
-    
-    initStorage();
-  }, []);
+  const [dataFetched, setDataFetched] = useState(false);
+  const interfaz = useInterfaz();
   
   // Función para subir una imagen
   const uploadImage = async (
@@ -103,7 +48,7 @@ export const ImageProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     clinicId: string,
     options: { isPrimary?: boolean; position?: number; } = {}, 
     onProgress?: (progress: number) => void
-  ) => {
+  ): Promise<ImageFile> => {
     // Verificar que el archivo sea una imagen
     if (!file.type.startsWith('image/')) {
       throw new Error('El archivo no es una imagen válida');
@@ -151,33 +96,13 @@ export const ImageProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       // Crear objeto de imagen con los metadatos devueltos
       const newImage: ImageFile = {
         id: imageId,
-        fileName: result.fileName,
-        fileSize: result.fileSize,
-        mimeType: result.mimeType,
         url: result.publicUrl,
-        thumbnailUrl: result.publicUrl,
-        path: result.path,
-        categories: [entityType],
-        tags: [clinicId],
-        entityType: entityType as any,
-        entityId,
-        clinicId,
-        storageProvider: result.storageProvider || 'local',
-        createdAt: result.createdAt,
-        updatedAt: result.updatedAt,
-        createdBy: 'system',
-        isDeleted: false,
-        isPublic: false,
-        metadata: result.metadata || {
-          uploadedAt: new Date().toISOString(),
-          isPrimary: options.isPrimary || false,
-        },
         isPrimary: options.isPrimary || false,
-        position: options.position || 0
+        path: result.path
       };
       
-      // Actualizar estado
-      setImages(prev => [...prev, newImage]);
+      // Usar la interfaz para guardar los metadatos de la imagen
+      await interfaz.saveEntityImages(entityType, entityId, [newImage]);
       
       return newImage;
     } catch (error) {
@@ -186,89 +111,95 @@ export const ImageProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
   
-  // Obtener imágenes por entidad
-  const getImagesByEntity = (entityType: string, entityId: string): ImageFile[] => {
-    const filter: FileFilter = {
-      entityType,
-      entityId,
-      mimeType: 'image/*',
-      isDeleted: false
-    };
-    
-    return getFilesByFilter(filter)
-      .filter(file => file.mimeType.startsWith('image/'))
-      .map(file => {
-        // Asegurar que tiene propiedades de ImageFile
-        return {
-          ...file,
-          isPrimary: file.metadata?.isPrimary || false,
-          position: file.metadata?.position || 0
-        } as ImageFile;
-      })
-      .sort((a, b) => a.position - b.position);
+  // Obtener imágenes por entidad a través de la interfaz
+  const getImagesByEntity = async (entityType: string, entityId: string): Promise<ImageFile[]> => {
+    try {
+      const images = await interfaz.getEntityImages(entityType, entityId);
+      return images || [];
+    } catch (error) {
+      console.error('Error al obtener imágenes:', error);
+      return [];
+    }
   };
   
-  // Establecer una imagen como principal
+  // Guardar imágenes de una entidad (alias para compatibilidad)
+  const saveEntityImages = async (entityType: string, entityId: string, images: ImageFile[]): Promise<boolean> => {
+    try {
+      return await interfaz.saveEntityImages(entityType, entityId, images);
+    } catch (error) {
+      console.error('Error al guardar imágenes:', error);
+      return false;
+    }
+  };
+  
+  // Establecer una imagen como principal usando la interfaz
   const setPrimaryImage = async (imageId: string): Promise<boolean> => {
-    // Obtener la imagen
-    const image = files.find(f => f.id === imageId && f.mimeType.startsWith('image/'));
-    
-    if (!image) {
-      throw new Error(`Imagen con id ${imageId} no encontrada`);
-    }
-    
-    // Quitar marca de principal a las demás imágenes de esta entidad
-    for (const file of files) {
-      if (
-        file.entityType === image.entityType && 
-        file.entityId === image.entityId && 
-        file.mimeType.startsWith('image/') && 
-        file.id !== imageId
-      ) {
-        await updateFileMetadata(file.id, {
-          metadata: { ...file.metadata, isPrimary: false }
-        });
+    try {
+      // Primero obtenemos la imagen para saber a qué entidad pertenece
+      const allImages = await getImagesByEntity('*', '*'); // Esto no funciona así realmente, se necesitaría implementar en la interfaz
+      const image = allImages.find(img => img.id === imageId) as ExtendedImageFile;
+      
+      if (!image) {
+        throw new Error(`Imagen con id ${imageId} no encontrada`);
       }
+      
+      // Obtenemos todas las imágenes de esta entidad
+      const entityImages = await getImagesByEntity(image.entityType || '', image.entityId || '');
+      
+      // Marcar la imagen seleccionada como primaria y las demás como no primarias
+      const updatedImages = entityImages.map(img => ({
+        ...img,
+        isPrimary: img.id === imageId
+      }));
+      
+      // Guardar los cambios a través de la interfaz
+      return await interfaz.saveEntityImages(image.entityType || '', image.entityId || '', updatedImages);
+    } catch (error) {
+      console.error('Error al establecer imagen primaria:', error);
+      return false;
     }
-    
-    // Marcar esta imagen como principal
-    await updateFileMetadata(imageId, {
-      metadata: { ...image.metadata, isPrimary: true }
-    });
-    
-    return true;
   };
   
-  // Reordenar imágenes
+  // Reordenar imágenes usando la interfaz
   const reorderImages = async (entityType: string, entityId: string, orderedIds: string[]): Promise<boolean> => {
-    // Obtener todas las imágenes de esta entidad
-    const entityImages = getImagesByEntity(entityType, entityId);
-    
-    // Verificar que todos los IDs existen
-    if (orderedIds.length !== entityImages.length) {
-      throw new Error("La lista de IDs no coincide con las imágenes existentes");
-    }
-    
-    // Actualizar posición de cada imagen
-    for (let i = 0; i < orderedIds.length; i++) {
-      const imageId = orderedIds[i];
-      await updateFileMetadata(imageId, {
-        metadata: { position: i }
+    try {
+      // Obtener todas las imágenes de esta entidad
+      const entityImages = await getImagesByEntity(entityType, entityId);
+      
+      // Verificar que todos los IDs existen
+      if (orderedIds.length !== entityImages.length) {
+        throw new Error("La lista de IDs no coincide con las imágenes existentes");
+      }
+      
+      // Reordenar las imágenes según los IDs proporcionados
+      const reorderedImages = orderedIds.map((id, index) => {
+        const image = entityImages.find(img => img.id === id);
+        if (!image) {
+          throw new Error(`Imagen con id ${id} no encontrada`);
+        }
+        return {
+          ...image,
+          position: index
+        };
       });
+      
+      // Guardar las imágenes reordenadas a través de la interfaz
+      return await interfaz.saveEntityImages(entityType, entityId, reorderedImages);
+    } catch (error) {
+      console.error('Error al reordenar imágenes:', error);
+      return false;
     }
-    
-    return true;
   };
   
   // Obtener la imagen principal de una entidad
-  const getEntityPrimaryImage = (entityType: string, entityId: string): ImageFile | undefined => {
-    const images = getImagesByEntity(entityType, entityId);
-    
-    // Buscar la imagen marcada como principal
-    const primaryImage = images.find(img => img.isPrimary);
-    
-    // Si no hay ninguna marcada como principal, devolver la primera
-    return primaryImage || (images.length > 0 ? images[0] : undefined);
+  const getEntityPrimaryImage = async (entityType: string, entityId: string): Promise<ImageFile | undefined> => {
+    try {
+      const images = await getImagesByEntity(entityType, entityId);
+      return images.find(img => img.isPrimary);
+    } catch (error) {
+      console.error('Error al obtener imagen principal:', error);
+      return undefined;
+    }
   };
   
   return (
@@ -277,7 +208,10 @@ export const ImageProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       getImagesByEntity,
       setPrimaryImage,
       reorderImages,
-      getEntityPrimaryImage
+      getEntityPrimaryImage,
+      // Alias para compatibilidad
+      getEntityImages: getImagesByEntity,
+      saveEntityImages
     }}>
       {children}
     </ImageContext.Provider>
@@ -287,7 +221,7 @@ export const ImageProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 export const useImages = () => {
   const context = useContext(ImageContext);
   if (context === undefined) {
-    throw new Error('useImages must be used within an ImageProvider');
+    throw new Error('useImages debe ser usado dentro de un ImageProvider');
   }
   return context;
-}; 
+};

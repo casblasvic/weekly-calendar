@@ -247,6 +247,12 @@ export const menuItems: MenuItem[] = [
         href: "/configuracion/almacenamiento",
       },
       {
+        id: "database",
+        label: "Bases de datos",
+        icon: Database,
+        href: "/configuracion/database",
+      },
+      {
         id: "sistema",
         label: "Sistema",
         icon: Terminal,

@@ -16,11 +16,11 @@ import { NewClientDialog } from "@/components/new-client-dialog"
 import { ResizableAppointment } from "./resizable-appointment"
 import { DragDropContext, Droppable } from "react-beautiful-dnd"
 import { Calendar } from "lucide-react"
-import { getScheduleBlocks, type ScheduleBlock } from "@/mockData"
 import { Lock } from "lucide-react"
 import { parseISO, isAfter, isBefore, getDay, getDate } from "date-fns"
 import { useToast } from "@/hooks/use-toast"
 import { BlockScheduleModal } from "./block-schedule-modal"
+import { ScheduleBlock, useScheduleBlocks } from "@/contexts/schedule-blocks-context"
 
 // Función para generar slots de tiempo
 function getTimeSlots(startTime: string, endTime: string, interval = 15): string[] {
@@ -193,15 +193,40 @@ export default function WeeklyView({
   }, [initialAppointments])
 
   const { activeClinic } = useClinic()
+  const { getBlocksByDateRange } = useScheduleBlocks()
   const clinicConfigContext = activeClinic?.config || {}
 
   // Añadir este efecto para cargar los bloqueos:
   useEffect(() => {
-    if (activeClinic?.id) {
-      const blocks = getScheduleBlocks(activeClinic.id)
-      setScheduleBlocks(blocks)
-    }
-  }, [activeClinic?.id, date, updateKey])
+    const loadBlocks = async () => {
+      if (activeClinic?.id) {
+        try {
+          // Calcular las fechas de inicio y fin de semana
+          const startDate = format(startOfWeek(currentDate, { weekStartsOn: 1 }), "yyyy-MM-dd");
+          const endDate = format(addDays(startOfWeek(currentDate, { weekStartsOn: 1 }), 6), "yyyy-MM-dd");
+          
+          // Cargar bloques usando el contexto especializado
+          const blocks = await getBlocksByDateRange(
+            Number(activeClinic.id),
+            startDate,
+            endDate
+          );
+          
+          if (Array.isArray(blocks)) {
+            setScheduleBlocks(blocks);
+          } else {
+            console.error("Los bloques devueltos no son un array:", blocks);
+            setScheduleBlocks([]);
+          }
+        } catch (error) {
+          console.error("Error al cargar bloques de agenda:", error);
+          setScheduleBlocks([]);
+        }
+      }
+    };
+    
+    loadBlocks();
+  }, [activeClinic?.id, currentDate, getBlocksByDateRange]);
 
   // Obtener configuración de horarios
   const openTime = clinicConfig.openTime || clinicConfigContext.openTime || "09:00"
@@ -832,8 +857,22 @@ export default function WeeklyView({
               setIsBlockModalOpen(open)
               // Si se cierra el modal, recargar los bloques para actualizar la UI
               if (!open && activeClinic?.id) {
-                setScheduleBlocks(getScheduleBlocks(activeClinic.id))
-                setUpdateKey((prev) => prev + 1)
+                // Usar interfaz para obtener bloques
+                const startDate = format(startOfWeek(currentDate, { weekStartsOn: 1 }), "yyyy-MM-dd");
+                const endDate = format(addDays(startOfWeek(currentDate, { weekStartsOn: 1 }), 6), "yyyy-MM-dd");
+                
+                getBlocksByDateRange(
+                  Number(activeClinic.id),
+                  startDate,
+                  endDate
+                ).then(blocks => {
+                  if (Array.isArray(blocks)) {
+                    setScheduleBlocks(blocks);
+                  }
+                  setUpdateKey((prev) => prev + 1);
+                }).catch(error => {
+                  console.error("Error al cargar bloques:", error);
+                });
               }
             }}
             clinicRooms={activeCabins}
@@ -842,8 +881,22 @@ export default function WeeklyView({
             onBlockSaved={() => {
               // Recargar los bloques
               if (activeClinic?.id) {
-                setScheduleBlocks(getScheduleBlocks(activeClinic.id))
-                setUpdateKey((prev) => prev + 1)
+                // Usar interfaz para obtener bloques
+                const startDate = format(startOfWeek(currentDate, { weekStartsOn: 1 }), "yyyy-MM-dd");
+                const endDate = format(addDays(startOfWeek(currentDate, { weekStartsOn: 1 }), 6), "yyyy-MM-dd");
+                
+                getBlocksByDateRange(
+                  Number(activeClinic.id),
+                  startDate,
+                  endDate
+                ).then(blocks => {
+                  if (Array.isArray(blocks)) {
+                    setScheduleBlocks(blocks);
+                  }
+                  setUpdateKey((prev) => prev + 1);
+                }).catch(error => {
+                  console.error("Error al cargar bloques:", error);
+                });
               }
             }}
             clinicConfig={{
@@ -880,8 +933,22 @@ export default function WeeklyView({
             appointments={appointments}
             onBlocksChanged={() => {
               if (activeClinic?.id) {
-                setScheduleBlocks(getScheduleBlocks(activeClinic.id))
-                setUpdateKey((prev) => prev + 1)
+                // Usar interfaz para obtener bloques
+                const startDate = format(startOfWeek(currentDate, { weekStartsOn: 1 }), "yyyy-MM-dd");
+                const endDate = format(addDays(startOfWeek(currentDate, { weekStartsOn: 1 }), 6), "yyyy-MM-dd");
+                
+                getBlocksByDateRange(
+                  Number(activeClinic.id),
+                  startDate,
+                  endDate
+                ).then(blocks => {
+                  if (Array.isArray(blocks)) {
+                    setScheduleBlocks(blocks);
+                  }
+                  setUpdateKey((prev) => prev + 1);
+                }).catch(error => {
+                  console.error("Error al cargar bloques:", error);
+                });
               }
             }}
           />
@@ -923,8 +990,22 @@ export default function WeeklyView({
             setIsBlockModalOpen(open)
             // Si se cierra el modal, recargar los bloques para actualizar la UI
             if (!open && activeClinic?.id) {
-              setScheduleBlocks(getScheduleBlocks(activeClinic.id))
-              setUpdateKey((prev) => prev + 1)
+              // Usar interfaz para obtener bloques
+              const startDate = format(startOfWeek(currentDate, { weekStartsOn: 1 }), "yyyy-MM-dd");
+              const endDate = format(addDays(startOfWeek(currentDate, { weekStartsOn: 1 }), 6), "yyyy-MM-dd");
+              
+              getBlocksByDateRange(
+                Number(activeClinic.id),
+                startDate,
+                endDate
+              ).then(blocks => {
+                if (Array.isArray(blocks)) {
+                  setScheduleBlocks(blocks);
+                }
+                setUpdateKey((prev) => prev + 1);
+              }).catch(error => {
+                console.error("Error al cargar bloques:", error);
+              });
             }
           }}
           clinicRooms={activeCabins}
@@ -933,8 +1014,22 @@ export default function WeeklyView({
           onBlockSaved={() => {
             // Recargar los bloques
             if (activeClinic?.id) {
-              setScheduleBlocks(getScheduleBlocks(activeClinic.id))
-              setUpdateKey((prev) => prev + 1)
+              // Usar interfaz para obtener bloques
+              const startDate = format(startOfWeek(currentDate, { weekStartsOn: 1 }), "yyyy-MM-dd");
+              const endDate = format(addDays(startOfWeek(currentDate, { weekStartsOn: 1 }), 6), "yyyy-MM-dd");
+              
+              getBlocksByDateRange(
+                Number(activeClinic.id),
+                startDate,
+                endDate
+              ).then(blocks => {
+                if (Array.isArray(blocks)) {
+                  setScheduleBlocks(blocks);
+                }
+                setUpdateKey((prev) => prev + 1);
+              }).catch(error => {
+                console.error("Error al cargar bloques:", error);
+              });
             }
           }}
           clinicConfig={{

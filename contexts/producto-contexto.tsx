@@ -1,188 +1,175 @@
 "use client"
 
 import React, { createContext, useState, useContext, useEffect, ReactNode } from "react"
+import { useInterfaz } from "./interfaz-Context"
+import { Producto as ProductoModel } from "@/services/data/models/interfaces"
 
-// Interfaces
-export interface Producto {
-  id: string
-  nombre: string
-  codigo: string
-  descripcion: string
-  familia: string
-  stock: number
-  stockMinimo: number
-  precioCompra: number
-  precioVenta: number
-  iva: string
-  tarifaId: string
-  activo: boolean
-  fechaCreacion: string
-}
+// Utilizamos el tipo del modelo central
+export type Producto = ProductoModel;
 
 interface ProductoContextType {
-  productos: Producto[]
-  addProducto: (producto: Omit<Producto, "id" | "fechaCreacion">) => string
-  updateProducto: (id: string, productoActualizado: Partial<Producto>) => void
-  deleteProducto: (id: string) => void
-  getProductoById: (id: string) => Producto | undefined
-  getProductosByTarifaId: (tarifaId: string) => Producto[]
-  getProductosByFamilia: (familia: string) => Producto[]
-  toggleProductoStatus: (id: string) => void
+  productos: Producto[];
+  loading: boolean;
+  addProducto: (producto: Omit<Producto, "id" | "fechaCreacion">) => Promise<string>;
+  updateProducto: (id: string, productoActualizado: Partial<Producto>) => Promise<void>;
+  deleteProducto: (id: string) => Promise<void>;
+  getProductoById: (id: string) => Promise<Producto | undefined>;
+  getProductosByTarifaId: (tarifaId: string) => Promise<Producto[]>;
+  getProductosByFamilia: (familia: string) => Promise<Producto[]>;
+  toggleProductoStatus: (id: string) => Promise<void>;
+  refreshProductos: () => Promise<void>;
 }
-
-// Datos iniciales de ejemplo
-const initialProductos: Producto[] = [
-  { 
-    id: "prod-1", 
-    nombre: "Gel frío", 
-    codigo: "GF001", 
-    descripcion: "Gel frío para tratamientos", 
-    familia: "1", 
-    stock: 100, 
-    stockMinimo: 20,
-    precioCompra: 15.50,
-    precioVenta: 25.00,
-    iva: "iva-2",
-    tarifaId: "tarifa-california",
-    activo: true,
-    fechaCreacion: new Date().toISOString()
-  },
-  { 
-    id: "prod-2", 
-    nombre: "Crema hidratante", 
-    codigo: "CH002", 
-    descripcion: "Crema hidratante de alta calidad", 
-    familia: "1", 
-    stock: 50, 
-    stockMinimo: 10,
-    precioCompra: 12.00,
-    precioVenta: 22.50,
-    iva: "iva-2",
-    tarifaId: "tarifa-california",
-    activo: true,
-    fechaCreacion: new Date().toISOString()
-  },
-  { 
-    id: "prod-3", 
-    nombre: "Gel conductor", 
-    codigo: "GC003", 
-    descripcion: "Gel conductor para tratamientos con aparatología", 
-    familia: "2", 
-    stock: 75, 
-    stockMinimo: 15,
-    precioCompra: 18.25,
-    precioVenta: 30.00,
-    iva: "iva-4",
-    tarifaId: "tarifa-california",
-    activo: true,
-    fechaCreacion: new Date().toISOString()
-  },
-  { 
-    id: "prod-4", 
-    nombre: "Aceite esencial", 
-    codigo: "AE004", 
-    descripcion: "Aceite esencial para masajes", 
-    familia: "3", 
-    stock: 30, 
-    stockMinimo: 5,
-    precioCompra: 22.75,
-    precioVenta: 45.00,
-    iva: "iva-3",
-    tarifaId: "tarifa-california",
-    activo: true,
-    fechaCreacion: new Date().toISOString()
-  },
-  { 
-    id: "prod-5", 
-    nombre: "Loción calmante", 
-    codigo: "LC005", 
-    descripcion: "Loción calmante post-tratamiento", 
-    familia: "1", 
-    stock: 45, 
-    stockMinimo: 10,
-    precioCompra: 16.50,
-    precioVenta: 28.00,
-    iva: "iva-2",
-    tarifaId: "tarifa-california",
-    activo: true,
-    fechaCreacion: new Date().toISOString()
-  }
-];
 
 // Crear el contexto
 const ProductoContext = createContext<ProductoContextType | undefined>(undefined);
 
 // Proveedor del contexto
 export const ProductoProvider = ({ children }: { children: ReactNode }) => {
-  const [productos, setProductos] = useState<Producto[]>(initialProductos);
+  const [productos, setProductos] = useState<Producto[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [dataFetched, setDataFetched] = useState(false);
+  const interfaz = useInterfaz();
 
-  // Cargar desde localStorage si existe
+  // Cargar datos iniciales utilizando la interfaz
   useEffect(() => {
-    const storedProductos = localStorage.getItem("productos");
-    if (storedProductos) {
-      setProductos(JSON.parse(storedProductos));
+    if (interfaz.initialized && !dataFetched) {
+      loadProductos();
     }
-  }, []);
+  }, [interfaz.initialized, dataFetched]);
 
-  // Guardar en localStorage cuando cambien
-  useEffect(() => {
-    localStorage.setItem("productos", JSON.stringify(productos));
-  }, [productos]);
+  // Función para cargar productos
+  const loadProductos = async () => {
+    try {
+      setLoading(true);
+      
+      // Cargar desde la interfaz centralizada
+      const data = await interfaz.getAllProductos();
+      setProductos(data);
+      
+      setDataFetched(true);
+    } catch (error) {
+      console.error("Error al cargar productos:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Funciones para gestionar productos
-  const addProducto = (producto: Omit<Producto, "id" | "fechaCreacion">) => {
-    const id = `prod-${Date.now()}`;
-    const nuevoProducto = { 
-      ...producto, 
-      id, 
-      fechaCreacion: new Date().toISOString() 
-    };
-    setProductos(prev => [...prev, nuevoProducto]);
-    return id;
+  const addProducto = async (producto: Omit<Producto, "id" | "fechaCreacion">) => {
+    try {
+      const nuevoProducto = await interfaz.createProducto(producto);
+      if (nuevoProducto && nuevoProducto.id) {
+        setProductos(prev => [...prev, nuevoProducto]);
+        return nuevoProducto.id;
+      } else {
+        throw new Error("No se pudo crear el producto");
+      }
+    } catch (error) {
+      console.error("Error al añadir producto:", error);
+      throw error;
+    }
   };
 
-  const updateProducto = (id: string, productoActualizado: Partial<Producto>) => {
-    setProductos(prev => 
-      prev.map(producto => 
-        producto.id === id ? { ...producto, ...productoActualizado } : producto
-      )
-    );
+  const updateProducto = async (id: string, productoActualizado: Partial<Producto>) => {
+    try {
+      const updated = await interfaz.updateProducto(id, productoActualizado);
+      if (updated) {
+        setProductos(prev => 
+          prev.map(producto => 
+            producto.id === id ? { ...producto, ...productoActualizado } : producto
+          )
+        );
+      }
+    } catch (error) {
+      console.error("Error al actualizar producto:", error);
+      throw error;
+    }
   };
 
-  const deleteProducto = (id: string) => {
-    setProductos(prev => prev.filter(producto => producto.id !== id));
+  const deleteProducto = async (id: string) => {
+    try {
+      const success = await interfaz.deleteProducto(id);
+      if (success) {
+        setProductos(prev => prev.filter(producto => producto.id !== id));
+      } else {
+        throw new Error("No se pudo eliminar el producto");
+      }
+    } catch (error) {
+      console.error("Error al eliminar producto:", error);
+      throw error;
+    }
   };
 
-  const getProductoById = (id: string) => {
-    return productos.find(producto => producto.id === id);
+  const getProductoById = async (id: string) => {
+    try {
+      const producto = await interfaz.getProductoById(id);
+      return producto || undefined;
+    } catch (error) {
+      console.error("Error al obtener producto por ID:", error);
+      return undefined;
+    }
   };
 
-  const getProductosByTarifaId = (tarifaId: string) => {
-    return productos.filter(producto => producto.tarifaId === tarifaId && producto.activo);
+  const getProductosByTarifaId = async (tarifaId: string) => {
+    try {
+      const productos = await interfaz.getProductosByTarifaId(tarifaId);
+      return productos || [];
+    } catch (error) {
+      console.error("Error al obtener productos por tarifa:", error);
+      return [];
+    }
   };
 
-  const getProductosByFamilia = (familia: string) => {
-    return productos.filter(producto => producto.familia === familia && producto.activo);
+  const getProductosByFamilia = async (familia: string) => {
+    try {
+      const productos = await interfaz.getProductosByFamilia(familia);
+      return productos || [];
+    } catch (error) {
+      console.error("Error al obtener productos por familia:", error);
+      return [];
+    }
   };
 
-  const toggleProductoStatus = (id: string) => {
-    setProductos(prev => 
-      prev.map(producto => 
-        producto.id === id ? { ...producto, activo: !producto.activo } : producto
-      )
-    );
+  const toggleProductoStatus = async (id: string) => {
+    try {
+      // Buscar producto primero
+      const producto = await interfaz.getProductoById(id);
+      if (!producto) return;
+      
+      // Cambiar estado
+      const activo = !producto.activo;
+      
+      // Actualizar producto a través de la interfaz
+      await interfaz.updateProducto(id, { activo });
+      
+      // Actualizar estado local si la actualización tuvo éxito
+      setProductos(prev => 
+        prev.map(p => 
+          p.id === id ? { ...p, activo } : p
+        )
+      );
+    } catch (error) {
+      console.error("Error al cambiar estado del producto:", error);
+      throw error;
+    }
+  };
+  
+  const refreshProductos = async () => {
+    setDataFetched(false); // Esto forzará la recarga en el useEffect
   };
 
   return (
     <ProductoContext.Provider value={{ 
       productos, 
+      loading,
       addProducto, 
       updateProducto, 
       deleteProducto, 
       getProductoById, 
       getProductosByTarifaId, 
       getProductosByFamilia,
-      toggleProductoStatus
+      toggleProductoStatus,
+      refreshProductos
     }}>
       {children}
     </ProductoContext.Provider>

@@ -9,6 +9,7 @@ import { useClientCard } from "@/contexts/client-card-context"
 import { use } from "react"
 import { Client } from "@/types"
 import { getMockClient } from "@/lib/mock-data"
+import { useClient } from "@/contexts/client-context"
 
 interface Client {
   id: string
@@ -42,6 +43,7 @@ export default function ClientLayout({ children, params }: { children: React.Rea
   const { setLastClient } = useLastClient()
   const { setHideMainCard } = useClientCard()
   const tabsRef = useRef<HTMLDivElement>(null)
+  const { getClientById } = useClient()
 
   // Determinar la pestaña activa basada en la ruta
   useEffect(() => {
@@ -61,10 +63,22 @@ export default function ClientLayout({ children, params }: { children: React.Rea
   }, [setHideMainCard])
 
   useEffect(() => {
-    const clientData = getMockClient(clientId)
-    setClient(clientData)
-    setLastClient(clientData)
-  }, [clientId, setLastClient])
+    const loadClient = async () => {
+      try {
+        const clientData = await getClientById(clientId)
+        if (clientData) {
+          setClient(clientData)
+          setLastClient(clientData)
+        } else {
+          console.error(`No se encontró el cliente con ID: ${clientId}`)
+        }
+      } catch (error) {
+        console.error(`Error al cargar cliente ${clientId}:`, error)
+      }
+    }
+    
+    loadClient()
+  }, [clientId, setLastClient, getClientById])
 
   // Función para cambiar de pestaña sin forzar recarga completa
   const handleTabChange = (tabPath: string) => {

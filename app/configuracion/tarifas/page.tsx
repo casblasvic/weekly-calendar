@@ -8,7 +8,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useRouter } from "next/navigation"
-import { MockData } from "@/mockData"
 import { useClinic } from "@/contexts/clinic-context"
 import { Tarifa, useTarif } from "@/contexts/tarif-context"
 
@@ -112,15 +111,8 @@ export default function GestionTarifas() {
 
     // Simulamos guardado
     setTimeout(() => {
-      const newId = `tarifa-${Date.now()}`
-      const nuevaTarifaCompleta = {
-        id: newId,
-        ...tarifaToSave,
-      }
-
-      // Actualizar MockData y el contexto
-      MockData.tarifas = [...(MockData.tarifas || []), nuevaTarifaCompleta]
-      tarifContext.updateTarifa(nuevaTarifaCompleta.id, nuevaTarifaCompleta)
+      // Añadir la tarifa usando la función del contexto
+      const newId = tarifContext.addTarifa(tarifaToSave);
 
       setIsSaving(false)
       setIsNewTarifaOpen(false)
@@ -135,9 +127,7 @@ export default function GestionTarifas() {
     // Filtrar la tarifa a eliminar
     const tarifasActualizadas = tarifas.filter((tarifa) => tarifa.id !== id)
 
-    // Actualizar MockData
-    MockData.tarifas = tarifasActualizadas
-    // Actualizar el contexto con todas las tarifas
+    // Actualizar todas las tarifas en el contexto
     tarifasActualizadas.forEach(tarifa => {
       tarifContext.updateTarifa(tarifa.id, tarifa)
     })

@@ -1,4 +1,14 @@
-import type { Clinic, Cabin } from "@/mockData"
+import { Clinica } from "@/services/data/models/interfaces"
+
+// Definir las interfaces necesarias localmente para no depender de mockData
+interface Cabin {
+  id: number
+  code: string
+  name: string
+  color: string
+  isActive: boolean
+  order: number
+}
 
 // Interfaces optimizadas para reducir el tamaño de las cookies
 export interface OptimizedClinic {
@@ -30,22 +40,24 @@ export interface OptimizedCabin {
 /**
  * Optimiza los datos de una clínica para almacenarlos en cookies
  */
-export function optimizeClinicForCookie(clinic: Clinic): OptimizedClinic {
+export function optimizeClinicForCookie(clinic: Clinica & { cabins?: Cabin[] }): OptimizedClinic {
   // Filtrar solo las cabinas activas
-  const activeCabins = clinic.cabins.filter((cabin) => cabin.isActive).map((cabin) => optimizeCabinForCookie(cabin))
+  const activeCabins = (clinic.cabins || [])
+    .filter((cabin) => cabin.isActive)
+    .map((cabin) => optimizeCabinForCookie(cabin));
 
   return {
-    id: clinic.id,
-    prefix: clinic.prefix,
-    name: clinic.commercialName,
-    city: clinic.city,
+    id: Number(clinic.id),
+    prefix: clinic.prefix || "",
+    name: clinic.name || "",
+    city: clinic.city || "",
     config: {
-      openTime: clinic.openTime,
-      closeTime: clinic.closeTime,
-      weekendOpenTime: clinic.weekendOpenTime,
-      weekendCloseTime: clinic.weekendCloseTime,
-      saturdayOpen: clinic.saturdayOpen,
-      sundayOpen: clinic.sundayOpen,
+      openTime: clinic.openTime || "09:00",
+      closeTime: clinic.closeTime || "20:00",
+      weekendOpenTime: clinic.weekendOpenTime || "09:00",
+      weekendCloseTime: clinic.weekendCloseTime || "14:00",
+      saturdayOpen: clinic.saturdayOpen || false,
+      sundayOpen: clinic.sundayOpen || false,
       slotDuration: 15, // Valor por defecto
       activeCabins,
     },

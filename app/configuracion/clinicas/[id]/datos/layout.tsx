@@ -5,8 +5,8 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { ArrowLeft, HelpCircle, Save } from "lucide-react"
 import { useRouter } from "next/navigation"
-import { mockClinics, updateClinic } from "@/mockData"
 import { toast } from "sonner"
+import { useClinic } from "@/contexts/clinic-context"
 
 export default function DatosClinicaLayout({
   children,
@@ -16,53 +16,83 @@ export default function DatosClinicaLayout({
   params: { id: string }
 }) {
   const router = useRouter()
+  const { updateClinica } = useClinic()
   const [hasChanges, setHasChanges] = useState(false)
-  const clinicId = Number.parseInt(params.id)
+  const clinicId = params.id
 
   // Listen for changes in the clinic data
   useEffect(() => {
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === "mockClinics") {
+    const handleDataChange = (e: CustomEvent) => {
+      const { entityType, entityId } = e.detail;
+      if (entityType === 'clinic' && entityId === clinicId) {
         setHasChanges(true)
       }
     }
 
-    window.addEventListener("storage", handleStorageChange)
+    window.addEventListener('data-change' as any, handleDataChange)
     return () => {
-      window.removeEventListener("storage", handleStorageChange)
+      window.removeEventListener('data-change' as any, handleDataChange)
     }
-  }, [])
+  }, [clinicId])
 
-  const saveClinic = () => {
-    const clinic = mockClinics.find((c) => c.id === clinicId)
-    if (clinic) {
-      updateClinic(clinic)
-      toast.success("Configuración guardada correctamente")
-      setHasChanges(false)
-    } else {
-      toast.error("No se pudo encontrar la clínica")
+  const saveClinic = async () => {
+    try {
+      // Obtener los datos actuales de la clínica desde el contexto global o localStorage
+      const currentData = localStorage.getItem(`clinic_edit_${clinicId}`);
+      
+      if (currentData) {
+        const clinicData = JSON.parse(currentData);
+        
+        // Actualizar la clínica usando la interfaz
+        await updateClinica(clinicId, clinicData);
+        
+        // Limpiar datos temporales
+        localStorage.removeItem(`clinic_edit_${clinicId}`);
+        
+        // Mostrar confirmación
+        toast.success("Clínica actualizada correctamente");
+        
+        // Reiniciar estado
+        setHasChanges(false);
+        
+        // Disparar evento para notificar a otros componentes
+        window.dispatchEvent(
+          new CustomEvent('data-change', {
+            detail: { entityType: 'clinic', entityId: clinicId }
+          })
+        );
+      } else {
+        console.log("No hay cambios para guardar");
+      }
+    } catch (error) {
+      console.error("Error al guardar la clínica:", error);
+      toast.error("Error al guardar los cambios");
     }
   }
 
   return (
-    <div className="relative min-h-screen">
-      {children}
-
-      <div className="fixed bottom-6 right-6 flex items-center gap-2">
-        <Button variant="outline" onClick={() => router.back()}>
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Volver
-        </Button>
-
-        <Button onClick={saveClinic} className="bg-purple-600 hover:bg-purple-700">
-          <Save className="h-4 w-4 mr-2" />
-          Guardar
-        </Button>
-
-        <Button variant="outline" className="bg-black text-white hover:bg-gray-800">
-          <HelpCircle className="h-4 w-4" />
-        </Button>
+    <div className="container mx-auto py-6">
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" onClick={() => router.back()}>
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Volver
+          </Button>
+          <h1 className="text-2xl font-semibold">Datos de la clínica</h1>
+        </div>
+        <div className="flex items-center gap-2">
+          {hasChanges && (
+            <Button onClick={saveClinic}>
+              <Save className="mr-2 h-4 w-4" />
+              Guardar cambios
+            </Button>
+          )}
+          <Button variant="ghost" size="icon">
+            <HelpCircle className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
+      {children}
     </div>
   )
 }

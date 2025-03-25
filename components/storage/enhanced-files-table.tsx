@@ -6,13 +6,16 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Download, Eye, FileText, FolderOpen, Image, Search, Trash2, Film, Archive, ExternalLink, Link as LinkIcon, ChevronDown, ChevronRight, Plus, Wrench, ShoppingCart, Users, Receipt } from 'lucide-react';
-import { BaseFile } from '@/contexts/file-context';
+import { BaseFile, useFiles } from '@/contexts/file-context';
 import { useRouter } from 'next/navigation';
-import { MockData } from '@/mockData';
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import FileDeleteDialog from './file-delete-dialog';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { useClinic } from '@/contexts/clinic-context';
+import { useEquipment } from '@/contexts/equipment-context';
+import { useServicio } from '@/contexts/servicios-context';
+import { useTarif } from '@/contexts/tarif-context';
 
 interface EnhancedFilesTableProps {
   files: BaseFile[];
@@ -68,47 +71,78 @@ const getEntityTypeIcon = (entityType: string) => {
 };
 
 // Función para obtener información de la entidad relacionada
-const getEntityInfo = (entityType: string, entityId: string) => {
+const getEntityInfo = (
+  entityType: string, 
+  entityId: string, 
+  getEquipo: (id: string) => Promise<any>, 
+  getClinica: (id: string) => Promise<any>,
+  getServicio: (id: string) => Promise<any>,
+  getTarifa: (id: string) => Promise<any>
+) => {
   let name = '';
   let link = '#';
   let code = entityId;
   let detailedInfo = '';
   
+  const getEquipmentInfo = async () => {
+    try {
+      const equipment = await getEquipo(entityId);
+      if (equipment) {
+        const clinicId = equipment.clinicId?.toString() || '';
+        const clinic = await getClinica(clinicId);
+        name = equipment.name;
+        code = equipment.code;
+        link = `/configuracion/clinicas/${clinicId}/equipamiento/${equipment.id}`;
+        detailedInfo = clinic ? `${clinic.name} > Equipamiento` : 'Equipamiento';
+      }
+    } catch (error) {
+      console.error("Error al obtener información del equipo:", error);
+    }
+  };
+  
+  const getServiceInfo = async () => {
+    try {
+      const service = await getServicio(entityId);
+      if (service) {
+        const tarifaId = service.tarifaId || '';
+        const tarifa = await getTarifa(tarifaId);
+        name = service.nombre;
+        code = service.id;
+        link = `/configuracion/tarifas/${tarifaId}/nuevo-servicio?servicioId=${service.id}`;
+        detailedInfo = tarifa ? `${tarifa.nombre} > Servicios` : 'Servicios';
+      }
+    } catch (error) {
+      console.error("Error al obtener información del servicio:", error);
+    }
+  };
+  
+  // Iniciar la carga de la información (asíncrona)
   if (entityType === 'equipment') {
-    const equipment = MockData.equipment?.find((e) => e.id.toString() === entityId);
-    if (equipment) {
-      // Usar toString para asegurar compatibilidad de tipos
-      const clinicId = equipment.clinicId?.toString() || '';
-      const clinic = MockData.clinicas?.find((c: any) => c.id.toString() === clinicId);
-      name = equipment.name;
-      code = equipment.code;
-      link = `/configuracion/clinicas/${clinicId}/equipamiento/${equipment.id}`;
-      detailedInfo = clinic ? `${clinic.name} > Equipamiento` : 'Equipamiento';
-    }
+    getEquipmentInfo();
   } else if (entityType === 'service') {
-    const service = MockData.servicios?.find((s) => s.id === entityId);
-    if (service) {
-      // Acceder a tarifaId de manera segura (puede que esté en una propiedad diferente)
-      const tarifaId = (service as any).tarifaId || '';
-      const tarifa = MockData.tarifas?.find((t: any) => t.id === tarifaId);
-      name = service.nombre;
-      code = service.id;
-      link = `/configuracion/tarifas/${tarifaId}/nuevo-servicio?servicioId=${service.id}`;
-      detailedInfo = tarifa ? `${tarifa.nombre} > Servicios` : 'Servicios';
-    }
+    getServiceInfo();
   } else if (entityType === 'client') {
-    // Si hubiera datos de clientes en MockData
-    const client = MockData.clientes?.find((c: any) => c.id === entityId);
-    name = client ? client.nombre : `Cliente ${entityId}`;
+    // Cliente (pendiente de implementar con interfaz)
+    name = `Cliente ${entityId}`;
     code = entityId;
     link = `/clientes/${entityId}`;
     detailedInfo = 'Clientes';
   } else if (entityType === 'tarifa') {
-    const tarifa = MockData.tarifas?.find((t: any) => t.id === entityId);
-    name = tarifa ? tarifa.nombre : `Tarifa ${entityId}`;
-    code = entityId;
-    link = `/configuracion/tarifas/${entityId}`;
-    detailedInfo = 'Tarifas';
+    // Tarifa (pendiente de implementar con interfaz)
+    const getTarifaInfo = async () => {
+      try {
+        const tarifa = await getTarifa(entityId);
+        if (tarifa) {
+          name = tarifa.nombre;
+          code = entityId;
+          link = `/configuracion/tarifas/${entityId}`;
+          detailedInfo = 'Tarifas';
+        }
+      } catch (error) {
+        console.error("Error al obtener información de la tarifa:", error);
+      }
+    };
+    getTarifaInfo();
   }
   
   // Si no se encontró información específica
@@ -126,9 +160,14 @@ const getEntityInfo = (entityType: string, entityId: string) => {
 };
 
 // Función para obtener el nombre de la clínica
-const getClinicName = (clinicId: string) => {
-  const clinic = MockData.clinicas?.find((c) => c.id.toString() === clinicId);
-  return clinic ? clinic.name : clinicId;
+const getClinicName = async (clinicId: string, interfaz: any) => {
+  try {
+    const clinic = await interfaz.getClinicaById(clinicId);
+    return clinic ? clinic.name : clinicId;
+  } catch (error) {
+    console.error("Error al obtener información de la clínica:", error);
+    return clinicId;
+  }
 };
 
 // Añadir una función para verificar si un archivo está duplicado
@@ -189,14 +228,23 @@ const EnhancedFilesTable: React.FC<EnhancedFilesTableProps> = ({
   showEntity = true
 }) => {
   const router = useRouter();
+  const { deleteFile } = useFiles();
+  const { getClinicaById } = useClinic();
+  const { getEquipoById } = useEquipment();
+  const { getServicioById } = useServicio();
+  const { getTarifaById } = useTarif();
+  
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
   const [entityFilter, setEntityFilter] = useState('all');
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [fileToDelete, setFileToDelete] = useState<BaseFile | null>(null);
   const [sortBy, setSortBy] = useState<string>('date');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
-  const [fileToDelete, setFileToDelete] = useState<BaseFile | null>(null);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+  const [clinicNames, setClinicNames] = useState<Record<string, string>>({});
+  const [entityInfos, setEntityInfos] = useState<Record<string, any>>({});
+  const [fileGroups, setFileGroups] = useState<{ mainFile: BaseFile, relatedFiles: BaseFile[], isExpanded: boolean }[]>([]);
+  const [groupExpansionState, setGroupExpansionState] = useState<Record<string, boolean>>({});
   
   // Obtener tipos de entidades únicas
   const entityTypes = [...new Set(files.map(file => file.entityType))];
@@ -208,6 +256,125 @@ const EnhancedFilesTable: React.FC<EnhancedFilesTableProps> = ({
       console.log(`Archivo en tabla: ${file.fileName}, entidad: ${file.entityType}/${file.entityId}, clínica: ${file.clinicId}`);
     });
   }, [files]);
+  
+  // Cargar nombres de clínicas
+  useEffect(() => {
+    const loadClinicNames = async () => {
+      const uniqueClinicIds = [...new Set(files.map(file => file.clinicId))];
+      const clinicData: Record<string, string> = {};
+      
+      for (const clinicId of uniqueClinicIds) {
+        if (clinicId) {
+          try {
+            const clinic = await getClinicaById(clinicId);
+            if (clinic) {
+              clinicData[clinicId] = clinic.name;
+            } else {
+              clinicData[clinicId] = clinicId;
+            }
+          } catch (error) {
+            console.error(`Error al cargar información de clínica ${clinicId}:`, error);
+            clinicData[clinicId] = clinicId;
+          }
+        }
+      }
+      
+      setClinicNames(clinicData);
+    };
+    
+    if (showClinic) {
+      loadClinicNames();
+    }
+  }, [files, showClinic, getClinicaById]);
+  
+  // Cargar información de entidades
+  useEffect(() => {
+    const loadEntityInfo = async () => {
+      const entityKeys = files
+        .filter(file => file.entityType && file.entityId)
+        .map(file => `${file.entityType}_${file.entityId}`);
+      
+      const uniqueEntityKeys = [...new Set(entityKeys)];
+      const entityData: Record<string, any> = {};
+      
+      for (const key of uniqueEntityKeys) {
+        const [entityType, entityId] = key.split('_');
+        
+        if (!entityType || !entityId) continue;
+        
+        // Obtener información según tipo de entidad
+        let entityInfo = {
+          name: `${entityType} ${entityId}`,
+          link: '#',
+          code: entityId,
+          detailedInfo: entityType
+        };
+        
+        try {
+          // Usar los contextos adecuados según el tipo de entidad
+          if (entityType === 'equipment') {
+            const equipo = await getEquipoById(entityId);
+            if (equipo) {
+              const clinic = await getClinicaById(equipo.clinicId.toString());
+              entityInfo = {
+                name: equipo.name,
+                link: `/configuracion/clinicas/${equipo.clinicId}/equipamiento/${equipo.id}`,
+                code: equipo.code,
+                detailedInfo: clinic ? `${clinic.name} > Equipamiento` : 'Equipamiento'
+              };
+            }
+          } else if (entityType === 'service') {
+            const servicio = await getServicioById(entityId);
+            if (servicio) {
+              const tarifa = await getTarifaById(servicio.tarifaId);
+              entityInfo = {
+                name: servicio.nombre,
+                link: `/configuracion/tarifas/${servicio.tarifaId}/nuevo-servicio?servicioId=${servicio.id}`,
+                code: servicio.codigo,
+                detailedInfo: tarifa ? `${tarifa.nombre} > Servicios` : 'Servicios'
+              };
+            }
+          } else if (entityType === 'tarifa') {
+            const tarifa = await getTarifaById(entityId);
+            if (tarifa) {
+              entityInfo = {
+                name: tarifa.nombre,
+                link: `/configuracion/tarifas/${tarifa.id}`,
+                code: entityId,
+                detailedInfo: 'Tarifas'
+              };
+            }
+          }
+        } catch (error) {
+          console.error(`Error al cargar información de entidad ${entityType}/${entityId}:`, error);
+        }
+        
+        entityData[key] = entityInfo;
+      }
+      
+      setEntityInfos(entityData);
+    };
+    
+    if (showEntity) {
+      loadEntityInfo();
+    }
+  }, [files, showEntity, getClinicaById, getEquipoById, getServicioById, getTarifaById]);
+
+  // Obtener información de entidad de manera síncrona desde los datos cargados
+  const getEntityInfoSync = (entityType: string, entityId: string) => {
+    const key = `${entityType}_${entityId}`;
+    return entityInfos[key] || {
+      name: `${entityType.charAt(0).toUpperCase() + entityType.slice(1)} ${entityId}`,
+      code: entityId,
+      link: '#',
+      detailedInfo: entityType.charAt(0).toUpperCase() + entityType.slice(1)
+    };
+  };
+
+  // Obtener nombre de clínica de manera síncrona desde los datos cargados
+  const getClinicNameSync = (clinicId: string) => {
+    return clinicNames[clinicId] || clinicId;
+  };
   
   // Aplicar filtros y ordenación
   const filteredFiles = files
@@ -257,8 +424,8 @@ const EnhancedFilesTable: React.FC<EnhancedFilesTableProps> = ({
           ? a.fileSize - b.fileSize
           : b.fileSize - a.fileSize;
       } else if (sortBy === 'entity') {
-        const entityA = getEntityInfo(a.entityType, a.entityId);
-        const entityB = getEntityInfo(b.entityType, b.entityId);
+        const entityA = getEntityInfoSync(a.entityType, a.entityId);
+        const entityB = getEntityInfoSync(b.entityType, b.entityId);
         return sortDirection === 'asc'
           ? entityA.name.localeCompare(entityB.name)
           : entityB.name.localeCompare(entityA.name);
@@ -329,7 +496,7 @@ const EnhancedFilesTable: React.FC<EnhancedFilesTableProps> = ({
         groups.push({
           mainFile: relatedFiles[0], // Primer archivo como principal
           relatedFiles: relatedFiles,
-          isExpanded: !!expandedGroups[key]
+          isExpanded: !!groupExpansionState[key]
         });
       } else {
         groups.push({
@@ -341,11 +508,11 @@ const EnhancedFilesTable: React.FC<EnhancedFilesTableProps> = ({
     }
     
     return groups;
-  }, [filteredFiles, expandedGroups]);
+  }, [filteredFiles, groupExpansionState]);
   
   // Función para alternar la expansión de un grupo
   const toggleGroupExpansion = (key: string) => {
-    setExpandedGroups(prev => ({
+    setGroupExpansionState(prev => ({
       ...prev,
       [key]: !prev[key]
     }));
@@ -354,7 +521,7 @@ const EnhancedFilesTable: React.FC<EnhancedFilesTableProps> = ({
   // Función para manejar la eliminación con confirmación
   const handleDeleteClick = (file: BaseFile) => {
     setFileToDelete(file);
-    setShowDeleteConfirm(true);
+    setDeleteDialogOpen(true);
   };
   
   // Función para confirmar la eliminación
@@ -369,7 +536,7 @@ const EnhancedFilesTable: React.FC<EnhancedFilesTableProps> = ({
       
       onDelete(fileToDelete.id);
     }
-    setShowDeleteConfirm(false);
+    setDeleteDialogOpen(false);
     setFileToDelete(null);
   };
   
@@ -485,7 +652,7 @@ const EnhancedFilesTable: React.FC<EnhancedFilesTableProps> = ({
                   const { mainFile, relatedFiles, isExpanded } = group;
                   const hasMultipleReferences = relatedFiles.length > 1;
                   const fileKey = `${mainFile.fileName}_${mainFile.fileSize}`;
-                  const entityInfo = getEntityInfo(mainFile.entityType, mainFile.entityId);
+                  const entityInfo = getEntityInfoSync(mainFile.entityType, mainFile.entityId);
                   
                   return (
                     <React.Fragment key={mainFile.id}>
@@ -498,9 +665,9 @@ const EnhancedFilesTable: React.FC<EnhancedFilesTableProps> = ({
                               size="icon"
                               className="h-7 w-7 p-0 mr-2 hover:bg-purple-100 hover:text-purple-700 border border-purple-200 rounded-full flex items-center justify-center"
                               onClick={() => toggleGroupExpansion(fileKey)}
-                              title={expandedGroups[fileKey] ? "Ocultar referencias" : `Mostrar ${relatedFiles.length - 1} referencias adicionales`}
+                              title={groupExpansionState[fileKey] ? "Ocultar referencias" : `Mostrar ${relatedFiles.length - 1} referencias adicionales`}
                             >
-                              {expandedGroups[fileKey] ? (
+                              {groupExpansionState[fileKey] ? (
                                 <ChevronDown className="h-4 w-4 text-purple-600" />
                               ) : (
                                 <div className="flex items-center justify-center">
@@ -527,7 +694,7 @@ const EnhancedFilesTable: React.FC<EnhancedFilesTableProps> = ({
                             {hasMultipleReferences && (
                               <div className="text-xs text-purple-700 mt-1 flex items-center gap-1.5 cursor-pointer" onClick={() => toggleGroupExpansion(fileKey)}>
                                 <span>Archivo con {relatedFiles.length} {relatedFiles.length === 1 ? 'asociación' : 'asociaciones'}</span>
-                                {expandedGroups[fileKey] ? 
+                                {groupExpansionState[fileKey] ? 
                                   <ChevronDown className="h-3 w-3" /> : 
                                   <ChevronRight className="h-3 w-3" />
                                 }
@@ -538,7 +705,7 @@ const EnhancedFilesTable: React.FC<EnhancedFilesTableProps> = ({
                         
                         {showClinic && (
                           <TableCell>
-                            {getClinicName(mainFile.clinicId)}
+                            {getClinicNameSync(mainFile.clinicId)}
                           </TableCell>
                         )}
                         
@@ -611,10 +778,10 @@ const EnhancedFilesTable: React.FC<EnhancedFilesTableProps> = ({
                       </TableRow>
                       
                       {/* Filas de referencias adicionales (expandibles) */}
-                      {hasMultipleReferences && expandedGroups[fileKey] && (
+                      {hasMultipleReferences && groupExpansionState[fileKey] && (
                         <div className="border-l-2 border-purple-200 ml-4 pl-2">
                           {relatedFiles.slice(1).map((relatedFile) => {
-                            const relatedEntityInfo = getEntityInfo(relatedFile.entityType, relatedFile.entityId);
+                            const relatedEntityInfo = getEntityInfoSync(relatedFile.entityType, relatedFile.entityId);
                             
                             return (
                               <TableRow 
@@ -637,7 +804,7 @@ const EnhancedFilesTable: React.FC<EnhancedFilesTableProps> = ({
                                 
                                 {showClinic && (
                                   <TableCell className="text-sm text-gray-600">
-                                    {getClinicName(relatedFile.clinicId)}
+                                    {getClinicNameSync(relatedFile.clinicId)}
                                   </TableCell>
                                 )}
                                 
@@ -733,12 +900,12 @@ const EnhancedFilesTable: React.FC<EnhancedFilesTableProps> = ({
         
         {/* Usar el componente de diálogo personalizado */}
         <FileDeleteDialog
-          open={showDeleteConfirm}
-          onOpenChange={setShowDeleteConfirm}
+          open={deleteDialogOpen}
+          onOpenChange={setDeleteDialogOpen}
           file={fileToDelete}
           isDuplicate={fileToDelete ? isDuplicate(fileToDelete) : false}
           onConfirm={confirmDelete}
-          getEntityName={(type, id) => getEntityInfo(type, id).name}
+          getEntityName={(type, id) => getEntityInfoSync(type, id).name}
           relatedEntities={fileToDelete ? 
             getDuplicateLocations(fileToDelete)
               .filter(f => f.id !== fileToDelete.id)

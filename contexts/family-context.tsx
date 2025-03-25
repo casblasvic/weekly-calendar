@@ -2,117 +2,184 @@
 
 import type React from "react"
 import { createContext, useContext, useState, useEffect } from "react"
+import { useInterfaz } from "./interfaz-Context"
+import { FamiliaTarifa as FamiliaTarifaModel } from "@/services/data/models/interfaces"
 
-export interface Family {
-  id: string
-  name: string
-  code: string
-  parentId: string | null
-  isActive: boolean
-}
+// Alias para tipos específicos usando tipos del modelo central
+export type FamiliaTarifa = FamiliaTarifaModel;
+export type Family = FamiliaTarifa;
 
 interface FamilyContextType {
   families: Family[]
-  addFamily: (family: Omit<Family, "id">) => void
-  updateFamily: (id: string, family: Partial<Family>) => void
-  toggleFamilyStatus: (id: string) => void
-  getFamilyById: (id: string) => Family | undefined
-  getSubfamilies: (parentId: string) => Family[]
-  getRootFamilies: () => Family[]
+  addFamily: (family: Omit<Family, "id">) => Promise<void>
+  updateFamily: (id: string, family: Partial<Family>) => Promise<void>
+  toggleFamilyStatus: (id: string) => Promise<void>
+  getFamilyById: (id: string) => Promise<Family | undefined>
+  getSubfamilies: (parentId: string) => Promise<Family[]>
+  getRootFamilies: (tarifaId?: string) => Promise<Family[]>
+  getFamiliesByTarifaId: (tarifaId: string) => Promise<Family[]>
 }
 
 const FamilyContext = createContext<FamilyContextType | undefined>(undefined)
 
-// Datos iniciales de ejemplo
-const initialFamilies: Family[] = [
-  { id: "1", name: "Administration", code: "adm", parentId: null, isActive: true },
-  { id: "2", name: "Ballance", code: "BALLANCE", parentId: null, isActive: true },
-  { id: "3", name: "Consommables", code: "CONSOM", parentId: null, isActive: true },
-  { id: "4", name: "Consultation", code: "Consulta", parentId: null, isActive: true },
-  { id: "5", name: "Control", code: "Control", parentId: null, isActive: true },
-  { id: "6", name: "Dispositifs", code: "DISPO", parentId: null, isActive: true },
-  { id: "7", name: "EVIRL", code: "EVIRL", parentId: null, isActive: true },
-  { id: "8", name: "Forte Gem", code: "FORTEGEM", parentId: null, isActive: true },
-  { id: "9", name: "JETPEEL", code: "JPL", parentId: null, isActive: true },
-  { id: "10", name: "Lunula", code: "LUNULA", parentId: null, isActive: true },
-  { id: "11", name: "NYCE", code: "NYC", parentId: null, isActive: true },
-  { id: "12", name: "RENPHO", code: "RPH", parentId: null, isActive: true },
-  { id: "13", name: "SkinShape", code: "SKINSHAP", parentId: null, isActive: true },
-  { id: "14", name: "SOLIDEA", code: "SLD", parentId: null, isActive: true },
-  { id: "15", name: "Tarifa plana", code: "TarifPla", parentId: null, isActive: true },
-  { id: "16", name: "Tricologie", code: "trc", parentId: null, isActive: true },
-  { id: "17", name: "Verju", code: "VERJU", parentId: null, isActive: true },
-  { id: "18", name: "Wonder", code: "WONDER", parentId: null, isActive: true },
-  { id: "19", name: "Acne", code: "JPAC", parentId: "9", isActive: true },
-  { id: "20", name: "Anti Aging", code: "JTAA", parentId: "9", isActive: true },
-]
-
 export const FamilyProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [families, setFamilies] = useState<Family[]>(initialFamilies)
+  const [families, setFamilies] = useState<Family[]>([])
+  const interfaz = useInterfaz()
 
-  // Cargar familias desde localStorage si existen
+  // Cargar datos iniciales utilizando la interfaz
   useEffect(() => {
-    const storedFamilies = localStorage.getItem("families")
-    if (storedFamilies) {
-      setFamilies(JSON.parse(storedFamilies))
+    const fetchFamilies = async () => {
+      if (interfaz.initialized) {
+        try {
+          const data = await interfaz.getAllFamiliasTarifa();
+          setFamilies(data);
+        } catch (error) {
+          console.error("Error al cargar familias:", error);
+        }
+      }
+    };
+    
+    fetchFamilies();
+  }, [interfaz.initialized]);
+
+  const addFamily = async (family: Omit<Family, "id">) => {
+    try {
+      const newFamily = await interfaz.createFamiliaTarifa(family);
+      setFamilies(prev => [...prev, newFamily]);
+    } catch (error) {
+      console.error("Error al añadir familia:", error);
+      throw error;
     }
-  }, [])
+  };
 
-  // Guardar familias en localStorage cuando cambien
-  useEffect(() => {
-    localStorage.setItem("families", JSON.stringify(families))
-  }, [families])
-
-  const addFamily = (family: Omit<Family, "id">) => {
-    const newFamily: Family = {
-      ...family,
-      id: Date.now().toString(),
+  const updateFamily = async (id: string, updatedFamily: Partial<Family>) => {
+    try {
+      const updated = await interfaz.updateFamiliaTarifa(id, updatedFamily);
+      if (updated) {
+        setFamilies(prev => prev.map(family => family.id === id ? { ...family, ...updatedFamily } : family));
+        
+        try {
+          const tarifaId = updatedFamily.tarifaId || families.find(f => f.id === id)?.tarifaId || '';
+          window.dispatchEvent(new CustomEvent("familia-actualizada", { 
+            detail: { id, tarifaId } 
+          }));
+        } catch (eventError) {
+          console.error("Error al disparar evento:", eventError);
+        }
+      }
+    } catch (error) {
+      console.error("Error al actualizar familia:", error);
+      throw error;
     }
-    setFamilies((prev) => [...prev, newFamily])
-  }
+  };
 
-  const updateFamily = (id: string, updatedFamily: Partial<Family>) => {
-    setFamilies((prev) => prev.map((family) => (family.id === id ? { ...family, ...updatedFamily } : family)))
-  }
+  const toggleFamilyStatus = async (id: string) => {
+    try {
+      const success = await interfaz.toggleFamiliaStatus(id);
+      if (success) {
+        setFamilies(prev => prev.map(family => 
+          family.id === id ? { ...family, isActive: !family.isActive } : family
+        ));
+      }
+    } catch (error) {
+      console.error("Error al cambiar estado de familia:", error);
+      throw error;
+    }
+  };
 
-  const toggleFamilyStatus = (id: string) => {
-    setFamilies((prev) => prev.map((family) => (family.id === id ? { ...family, isActive: !family.isActive } : family)))
-  }
+  const getFamilyById = async (id: string) => {
+    try {
+      return await interfaz.getFamiliaTarifaById(id);
+    } catch (error) {
+      console.error("Error al obtener familia por ID:", error);
+      return undefined;
+    }
+  };
 
-  const getFamilyById = (id: string) => {
-    return families.find((family) => family.id === id)
-  }
+  const getSubfamilies = async (parentId: string) => {
+    if (!parentId) {
+      console.warn("Se solicitaron subfamilias con parentId vacío");
+      return [];
+    }
+    
+    try {
+      const subfamilias = await interfaz.getSubfamilias(parentId);
+      return subfamilias || [];
+    } catch (error) {
+      console.error("Error al obtener subfamilias:", error);
+      
+      // Intentar recuperar del estado local en caso de error
+      const subfamiliasLocales = families.filter(f => f.parentId === parentId);
+      return subfamiliasLocales;
+    }
+  };
 
-  const getSubfamilies = (parentId: string) => {
-    return families.filter((family) => family.parentId === parentId)
-  }
-
-  const getRootFamilies = () => {
-    return families.filter((family) => family.parentId === null)
-  }
+  const getRootFamilies = async (tarifaId?: string) => {
+    try {
+      if (tarifaId) {
+        const familias = await interfaz.getRootFamilias(tarifaId);
+        return familias || [];
+      } else {
+        // Obtener todas las familias raíz (sin parentId)
+        const todasFamilias = await interfaz.getAllFamiliasTarifa();
+        return todasFamilias.filter(f => !f.parentId) || [];
+      }
+    } catch (error) {
+      console.error("Error al obtener familias raíz:", error);
+      
+      // Recuperar del estado local como fallback
+      const familiasRaiz = tarifaId 
+        ? families.filter(f => f.tarifaId === tarifaId && !f.parentId)
+        : families.filter(f => !f.parentId);
+      
+      return familiasRaiz;
+    }
+  };
+  
+  const getFamiliesByTarifaId = async (tarifaId: string) => {
+    if (!tarifaId) {
+      console.warn("Se solicitaron familias con tarifaId vacío");
+      return [];
+    }
+    
+    try {
+      const familias = await interfaz.getFamiliasByTarifaId(tarifaId);
+      return familias || [];
+    } catch (error) {
+      console.error("Error al obtener familias por tarifaId:", error);
+      
+      // Intentar recuperar del estado local en caso de error
+      const familiasLocales = families.filter(f => f.tarifaId === tarifaId);
+      if (familiasLocales.length > 0) {
+        console.log("Familias recuperadas del estado local tras error:", tarifaId);
+        return familiasLocales;
+      }
+      
+      return [];
+    }
+  };
 
   return (
-    <FamilyContext.Provider
-      value={{
-        families,
-        addFamily,
-        updateFamily,
-        toggleFamilyStatus,
-        getFamilyById,
-        getSubfamilies,
-        getRootFamilies,
-      }}
-    >
+    <FamilyContext.Provider value={{
+      families,
+      addFamily,
+      updateFamily,
+      toggleFamilyStatus,
+      getFamilyById,
+      getSubfamilies,
+      getRootFamilies,
+      getFamiliesByTarifaId
+    }}>
       {children}
     </FamilyContext.Provider>
-  )
-}
+  );
+};
 
 export const useFamily = () => {
-  const context = useContext(FamilyContext)
+  const context = useContext(FamilyContext);
   if (context === undefined) {
-    throw new Error("useFamily must be used within a FamilyProvider")
+    throw new Error("useFamily debe ser usado dentro de un FamilyProvider");
   }
-  return context
-}
+  return context;
+};
 

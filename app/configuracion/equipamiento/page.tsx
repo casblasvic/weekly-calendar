@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Plus, ArrowUpDown, Trash2, Search } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -16,24 +16,48 @@ import {
 } from "@/components/ui/table"
 import AddEquipmentModal from "@/components/modals/add-equipment-modal"
 import { SearchInput } from "@/components/SearchInput"
-import { useEquipment, Equipment } from "@/contexts/equipment-context"
+import { useEquipment, Equipo } from "@/contexts/equipment-context"
 
 export default function EquipmentPage() {
   const router = useRouter()
-  const { allEquipment, deleteEquipment, clinics, addEquipment } = useEquipment()
+  const { allEquipos, deleteEquipo, clinics, addEquipo, getGlobalEquipos } = useEquipment()
   const [searchTerm, setSearchTerm] = useState("")
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
-  const [selectedEquipment, setSelectedEquipment] = useState<Equipment | null>(null)
+  const [selectedEquipment, setSelectedEquipment] = useState<Equipo | null>(null)
+  const [equipos, setEquipos] = useState<Equipo[]>([])
   
   // Añadir estado para ordenación
   const [sortColumn, setSortColumn] = useState<string>("code")
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc")
 
+  // Cargar todos los equipos al iniciar
+  useEffect(() => {
+    const loadEquipment = async () => {
+      try {
+        // Usamos allEquipos para tener todos los equipos (tanto globales como específicos)
+        setEquipos(allEquipos || []);
+      } catch (error) {
+        console.error("Error al cargar equipamiento:", error);
+        toast.error("Error al cargar datos de equipamiento");
+      }
+    };
+    
+    loadEquipment();
+  }, [allEquipos]);
+
   // Función para obtener el nombre de la clínica según su ID
-  const getClinicName = (clinicId: number) => {
-    const clinic = clinics.find(c => Number(c.id) === clinicId)
-    return clinic ? clinic.nombre || clinic.name : `Clínica ${clinicId}`
+  const getClinicName = (clinicId: string) => {
+    // Buscar la clínica en el listado
+    const clinic = clinics.find(c => c.id === clinicId);
+    
+    // Si encontramos la clínica, devolver su nombre
+    if (clinic) {
+      return clinic.name;
+    }
+    
+    // Si no encontramos la clínica, devolver un identificador
+    return `Clínica ${clinicId}`;
   }
 
   const handleSort = (column: string) => {
@@ -45,12 +69,12 @@ export default function EquipmentPage() {
     }
   }
 
-  const filteredEquipment = allEquipment.filter((item) => {
+  const filteredEquipment = equipos ? equipos.filter((item) => {
     const searchLower = searchTerm.toLowerCase()
     return (
-      item.code.toLowerCase().includes(searchLower) ||
-      item.name.toLowerCase().includes(searchLower) ||
-      item.description.toLowerCase().includes(searchLower) ||
+      item.code?.toLowerCase().includes(searchLower) ||
+      item.name?.toLowerCase().includes(searchLower) ||
+      item.description?.toLowerCase().includes(searchLower) ||
       (item.serialNumber?.toLowerCase() || "").includes(searchLower) ||
       getClinicName(item.clinicId).toLowerCase().includes(searchLower)
     )
@@ -64,22 +88,26 @@ export default function EquipmentPage() {
     }
     
     if (sortDirection === "asc") {
-      return String(aValue).localeCompare(String(bValue))
+      return String(aValue || '').localeCompare(String(bValue || ''))
     } else {
-      return String(bValue).localeCompare(String(aValue))
+      return String(bValue || '').localeCompare(String(aValue || ''))
     }
-  })
+  }) : [];
 
-  const handleDelete = (id: number) => {
-    const success = deleteEquipment(id)
-    if (success) {
-      toast.success("Equipamiento eliminado correctamente")
-    } else {
-      toast.error("Error al eliminar el equipamiento")
-    }
+  const handleDelete = (id: string) => {
+    deleteEquipo(id).then(success => {
+      if (success) {
+        toast.success("Equipamiento eliminado correctamente")
+      } else {
+        toast.error("Error al eliminar el equipamiento")
+      }
+    }).catch(error => {
+      console.error("Error al eliminar equipamiento:", error);
+      toast.error("Error al eliminar el equipamiento");
+    });
   }
 
-  const openEditModal = (equipment: Equipment) => {
+  const openEditModal = (equipment: Equipo) => {
     setSelectedEquipment(equipment)
     setIsEditModalOpen(true)
   }
@@ -183,17 +211,14 @@ export default function EquipmentPage() {
         onClose={() => setIsAddModalOpen(false)}
         onSave={(data) => {
           try {
-            addEquipment(data)
+            addEquipo(data);
             toast.success("Equipamiento añadido correctamente")
             setIsAddModalOpen(false)
           } catch (error) {
             toast.error("Error al añadir el equipamiento")
           }
         }}
-        clinics={clinics.map(c => ({
-          id: Number(c.id),
-          name: c.nombre || c.name
-        }))}
+        clinics={clinics}
       />
 
       {/* Modal para editar equipamiento */}
@@ -202,10 +227,7 @@ export default function EquipmentPage() {
           isOpen={isEditModalOpen}
           onClose={() => setIsEditModalOpen(false)}
           onSave={() => setIsEditModalOpen(false)}
-          clinics={clinics.map(c => ({
-            id: Number(c.id),
-            name: c.nombre || c.name
-          }))}
+          clinics={clinics}
           initialEquipment={selectedEquipment}
           isEditMode={true}
         />

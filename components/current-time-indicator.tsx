@@ -31,6 +31,15 @@ export const CurrentTimeIndicator: React.FC<CurrentTimeIndicatorProps> = ({
   const [isVisible, setIsVisible] = useState(true)
   const indicatorRef = useRef<HTMLDivElement>(null)
   const updateTimerRef = useRef<NodeJS.Timeout | null>(null)
+  
+  // Mover los useRef aquí al inicio para evitar errores de orden de hooks
+  const prevPositionRef = useRef<number | null>(null);
+  const prevVisibilityRef = useRef<boolean>(false);
+  const skipRenderRef = useRef<boolean>(false);
+  // Añadir esta ref a nivel de componente, no dentro de updatePosition
+  const currentUpdateIdRef = useRef<Symbol | null>(null);
+  // Añadir una ref para el id del scroll inicial
+  const scrollIdRef = useRef<Symbol | null>(null);
 
   // Verificar si la hora actual está dentro del horario de la clínica
   const isWithinClinicHours = useCallback(() => {
@@ -47,12 +56,7 @@ export const CurrentTimeIndicator: React.FC<CurrentTimeIndicatorProps> = ({
     const openTimeMinutes = openHour * 60 + openMinute
     const closeTimeMinutes = closeHour * 60 + closeMinute
 
-    const isWithin = currentTimeMinutes >= openTimeMinutes && currentTimeMinutes <= closeTimeMinutes
-    console.log(
-      `Hora actual: ${currentHour}:${currentMinute}, Horario clínica: ${openHour}:${openMinute}-${closeHour}:${closeMinute}, Dentro: ${isWithin}`,
-    )
-
-    return isWithin
+    return currentTimeMinutes >= openTimeMinutes && currentTimeMinutes <= closeTimeMinutes
   }, [currentTime, clinicOpenTime, clinicCloseTime])
 
   // Asegurar que el indicador sea visible si hay slots de tiempo
@@ -60,171 +64,239 @@ export const CurrentTimeIndicator: React.FC<CurrentTimeIndicatorProps> = ({
     setIsVisible(timeSlots.length > 0)
   }, [timeSlots.length])
 
-  // Actualizar el tiempo actual cada minuto
+  // Actualizar el tiempo actual cada minuto con memoización para prevenir doble renderizado
+  const updateCurrentTime = useCallback(() => {
+    setCurrentTime(new Date())
+  }, []);
+
+  // Actualizar el tiempo actual cada minuto con memoización para prevenir doble renderizado
   useEffect(() => {
-    const updateCurrentTime = () => {
-      setCurrentTime(new Date())
-      console.log("Tiempo actual actualizado:", new Date().toLocaleTimeString())
+    // Limpiar cualquier timer anterior para evitar actualizaciones duplicadas
+    if (updateTimerRef.current) {
+      clearInterval(updateTimerRef.current);
+      updateTimerRef.current = null;
     }
 
     // Actualizar inmediatamente
-    updateCurrentTime()
+    updateCurrentTime();
 
     // Configurar intervalo para actualizar cada minuto
-    const timer = setInterval(updateCurrentTime, 60000)
-    updateTimerRef.current = timer
+    // Usamos 60500ms en lugar de 60000ms para evitar posibles solapamientos
+    const timer = setInterval(updateCurrentTime, 60500);
+    updateTimerRef.current = timer;
 
     return () => {
       if (updateTimerRef.current) {
-        clearInterval(updateTimerRef.current)
+        clearInterval(updateTimerRef.current);
+        updateTimerRef.current = null;
       }
-    }
-  }, [])
+    };
+  }, [updateCurrentTime]);
 
-  // Función para calcular la posición del indicador
+  // Función para calcular la posición del indicador - optimizada para prevenir renders múltiples
   const updatePosition = useCallback(() => {
-    if (!timeSlots.length) {
-      console.log("No hay slots de tiempo disponibles")
-      return
+    if (!timeSlots.length || !agendaRef.current) {
+      return;
     }
-    
-    if (!agendaRef.current) {
-      console.log("No hay referencia a la agenda disponible")
-      return
-    }
+
+    // Crear un ID único para esta actualización y guardarlo en la ref existente
+    const updateId = Symbol('update');
+    currentUpdateIdRef.current = updateId;
 
     const getCurrentTimePosition = () => {
-      const currentTimeString = format(currentTime, "HH:mm")
-      console.log("Calculando posición para:", currentTimeString)
+      const currentTimeString = format(currentTime, "HH:mm");
 
       // Obtener todos los elementos con data-time
-      const slots = agendaRef.current?.querySelectorAll("[data-time]") || []
+      const slots = agendaRef.current?.querySelectorAll("[data-time]") || [];
 
       if (slots.length === 0) {
-        console.log("No se encontraron slots con atributo data-time")
-        return { position: null, slotTime: null, isWithinRange: false }
+        return { position: null, slotTime: null, isWithinRange: false };
       }
 
       // Determinar el rango de tiempo
-      const firstSlotTime = timeSlots[0]
-      const lastSlotTime = timeSlots[timeSlots.length - 1]
+      const firstSlotTime = timeSlots[0];
+      const lastSlotTime = timeSlots[timeSlots.length - 1];
 
       // Añadir 15 minutos al último slot para incluir la última franja completa
-      const startTime = parse(firstSlotTime, "HH:mm", new Date())
-      const endTime = parse(lastSlotTime, "HH:mm", new Date())
-      const extendedEndTime = addMinutes(endTime, 15)
-
-      console.log("Rango de tiempo:", firstSlotTime, "a", lastSlotTime, "+15min")
+      const startTime = parse(firstSlotTime, "HH:mm", new Date());
+      const endTime = parse(lastSlotTime, "HH:mm", new Date());
+      const extendedEndTime = addMinutes(endTime, 15);
 
       // Verificar si el tiempo actual está dentro del rango extendido
       const isWithinRange = isWithinInterval(currentTime, {
         start: startTime,
         end: extendedEndTime,
-      })
-
-      console.log("¿Está dentro del rango?", isWithinRange)
+      });
 
       // Convertir el tiempo actual a minutos desde medianoche
-      const currentTimeMinutes = parseTime(currentTimeString)
+      const currentTimeMinutes = parseTime(currentTimeString);
 
       // Encontrar el slot más cercano
-      let nearestSlot: Element | null = null
-      let nearestSlotTime: string | null = null
-      let minTimeDifference = Number.POSITIVE_INFINITY
+      let nearestSlot: Element | null = null;
+      let nearestSlotTime: string | null = null;
+      let minTimeDifference = Number.POSITIVE_INFINITY;
 
       slots.forEach((slot) => {
-        const slotTime = slot.getAttribute("data-time")
+        const slotTime = slot.getAttribute("data-time");
         if (slotTime) {
-          const slotTimeMinutes = parseTime(slotTime)
-          const timeDifference = Math.abs(slotTimeMinutes - currentTimeMinutes)
+          const slotTimeMinutes = parseTime(slotTime);
+          const timeDifference = Math.abs(slotTimeMinutes - currentTimeMinutes);
 
           if (timeDifference < minTimeDifference) {
-            minTimeDifference = timeDifference
-            nearestSlot = slot
-            nearestSlotTime = slotTime
+            minTimeDifference = timeDifference;
+            nearestSlot = slot;
+            nearestSlotTime = slotTime;
           }
         }
-      })
+      });
 
       if (nearestSlot && nearestSlotTime) {
         // Intentar obtener la posición del atributo data-position
-        let position = Number.parseInt(nearestSlot.getAttribute("data-position") || "0", 10)
+        let position = Number.parseInt(nearestSlot.getAttribute("data-position") || "0", 10);
 
         // Si la posición es 0 o parece incorrecta, calcularla manualmente
         if (position === 0 || isNaN(position)) {
-          position = (nearestSlot as HTMLElement).offsetTop
-          console.log("Posición calculada manualmente:", position)
+          position = (nearestSlot as HTMLElement).offsetTop;
         }
 
         // Ajustar la posición basada en la diferencia de tiempo
         if (nearestSlotTime && currentTimeString !== nearestSlotTime) {
-          const nearestSlotMinutes = parseTime(nearestSlotTime)
-          const minutesDifference = currentTimeMinutes - nearestSlotMinutes
-          const slotDuration = 15 // Asumimos slots de 15 minutos
-          const percentageOfSlot = minutesDifference / slotDuration
-          const offsetPixels = percentageOfSlot * rowHeight
+          const nearestSlotMinutes = parseTime(nearestSlotTime);
+          const minutesDifference = currentTimeMinutes - nearestSlotMinutes;
+          const slotDuration = 15; // Asumimos slots de 15 minutos
+          const percentageOfSlot = minutesDifference / slotDuration;
+          const offsetPixels = percentageOfSlot * rowHeight;
 
-          position += offsetPixels
-          console.log("Ajuste de posición:", offsetPixels, "px (", percentageOfSlot * 100, "%)")
+          position += offsetPixels;
         }
 
         return {
           position,
           slotTime: nearestSlotTime,
           isWithinRange,
-        }
+        };
       }
 
-      return { position: null, slotTime: null, isWithinRange }
-    }
+      return { position: null, slotTime: null, isWithinRange: false };
+    };
 
-    // Usar requestAnimationFrame para asegurar que el DOM esté listo
-    requestAnimationFrame(() => {
-      const { position: newPosition, slotTime, isWithinRange } = getCurrentTimePosition()
+    // Usar una única invocación de requestAnimationFrame
+    const rafId = requestAnimationFrame(() => {
+      // Verificar si esta actualización sigue siendo relevante
+      if (currentUpdateIdRef.current !== updateId) {
+        return; // Ignorar actualizaciones obsoletas
+      }
 
-      setPosition(newPosition)
-      setNearestSlotTime(slotTime)
-      setIsWithinTimeRange(isWithinRange)
+      const { position: newPosition, slotTime, isWithinRange } = getCurrentTimePosition();
 
-      console.log("Resultado del cálculo de posición:", {
-        position: newPosition,
-        slotTime,
-        isWithinRange,
-      })
+      // Realizar actualizaciones de estado en un único batch para evitar rerenders múltiples
+      // usando funciones actualizadoras que no dependen del estado actual
+      const needsPositionUpdate = position !== newPosition;
+      const needsSlotUpdate = nearestSlotTime !== slotTime;
+      const needsRangeUpdate = isWithinTimeRange !== isWithinRange;
 
-      // Si tenemos una posición válida, hacer scroll para mostrar el indicador
+      // Solo actualizar si realmente hay cambios
+      if (needsPositionUpdate) {
+        setPosition(newPosition);
+      }
+      
+      if (needsSlotUpdate) {
+        setNearestSlotTime(slotTime);
+      }
+      
+      if (needsRangeUpdate) {
+        setIsWithinTimeRange(isWithinRange);
+      }
+
+      // Realizar scroll solo si es necesario y no está en progreso otro scroll
       if (newPosition !== null && isWithinRange && agendaRef.current && isWithinClinicHours()) {
-        const scrollPosition = Math.max(0, newPosition - 200)
-        console.log("Haciendo scroll a:", scrollPosition)
-
-        // Scroll suave a la posición actual
+        const agendaHeight = agendaRef.current.clientHeight;
+        const centerOffset = Math.max(0, newPosition - (agendaHeight / 2));
+              
+        // Usar scroll con behavior auto para evitar animaciones que puedan causar parpadeos
         agendaRef.current.scrollTo({
-          top: scrollPosition,
-          behavior: "smooth",
-        })
+          top: centerOffset,
+          behavior: "auto"
+        });
       }
-    })
-  }, [currentTime, timeSlots, agendaRef, rowHeight, isWithinClinicHours])
+    });
 
-  // Actualizar la posición cuando cambie el tiempo o los slots
+    // Limpieza apropiada
+    return () => {
+      cancelAnimationFrame(rafId);
+    };
+  }, [currentTime, timeSlots, agendaRef, rowHeight, isWithinClinicHours, position, nearestSlotTime, isWithinTimeRange]);
+
+  // Efecto para scroll inicial sin causar parpadeos
   useEffect(() => {
-    if (timeSlots.length > 0) {
-      // Actualizar posición inmediatamente
-      updatePosition()
+    // No ejecutar si no hay elementos esenciales
+    if (!position || !agendaRef.current || !isWithinTimeRange || !isWithinClinicHours()) return;
+    
+    // Crear un ID único para este scroll y guardarlo en la ref existente
+    const scrollId = Symbol('initialScroll');
+    scrollIdRef.current = scrollId;
+    
+    // Usar requestAnimationFrame en lugar de setTimeout para sincronizar con el ciclo de pintado
+    requestAnimationFrame(() => {
+      // Verificar que este scroll sigue siendo relevante
+      if (scrollIdRef.current !== scrollId || !agendaRef.current) return;
+      
+      // Calcular posición para centrar
+      const agendaHeight = agendaRef.current.clientHeight;
+      const centerOffset = Math.max(0, position - (agendaHeight / 2));
+      
+      // Hacer scroll sin animación
+      agendaRef.current.scrollTo({
+        top: centerOffset,
+        behavior: "auto"
+      });
+    });
+    
+    // No es necesario limpiar este efecto, ya que el requestAnimationFrame se ejecuta solo una vez
+  }, [position, isWithinTimeRange, agendaRef, isWithinClinicHours]);
 
-      // Configurar intervalo para actualizar la posición cada minuto
-      const intervalId = setInterval(updatePosition, 60000)
-
-      return () => clearInterval(intervalId)
-    }
-  }, [timeSlots, updatePosition])
+  // Actualizar la posición cuando cambie el tiempo o los slots, de manera optimizada
+  useEffect(() => {
+    if (timeSlots.length === 0) return;
+    
+    // Evitar múltiples actualizaciones superpuestas
+    let updateScheduled = false;
+    
+    // Actualizar posición inmediatamente, pero no más de una vez por cada 16ms (60fps)
+    const scheduleUpdate = () => {
+      if (updateScheduled) return;
+      updateScheduled = true;
+      
+      requestAnimationFrame(() => {
+        updatePosition();
+        updateScheduled = false;
+      });
+    };
+    
+    // Actualización inicial
+    scheduleUpdate();
+    
+    // Actualización periódica
+    const intervalId = setInterval(scheduleUpdate, 60000);
+    
+    // Limpieza
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [timeSlots, updatePosition]);
 
   // Verificar si debemos mostrar el indicador
   const shouldShowIndicator = position !== null && isWithinTimeRange && isWithinClinicHours()
 
+  // Actualizar las referencias solo después de un renderizado completo
+  useEffect(() => {
+    prevPositionRef.current = position;
+    prevVisibilityRef.current = shouldShowIndicator;
+    skipRenderRef.current = false;
+  }, [position, shouldShowIndicator]);
+
   // Si no debemos mostrar el indicador, retornar null
   if (!shouldShowIndicator) {
-    console.log("No se muestra el indicador: posición no válida o fuera del horario de la clínica")
     return null
   }
 

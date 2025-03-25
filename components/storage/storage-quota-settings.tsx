@@ -8,7 +8,6 @@ import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
 import { HardDrive, Save, AlertCircle, RefreshCw } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
-import { getClinics } from '@/mockData';
 import { useStorage } from '@/contexts/storage-context';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -33,75 +32,137 @@ const StorageQuotaSettings: React.FC<StorageQuotaSettingsProps> = ({
   systemTotal: propSystemTotal,
   showTotalInfo = false
 }) => {
-  // Extraemos las funciones del contexto solo una vez
-  const storageContext = useStorage();
+  const { getStorageStats, getQuota, setQuota, getClinicQuotas } = useStorage();
   
-  // Obtener datos iniciales de una sola vez con useMemo para evitar recálculos
-  const initialData = useMemo(() => {
+  // Estados para configuración de cuota
+  const [isUnlimited, setIsUnlimited] = useState(false);
+  const [sizeValue, setSizeValue] = useState('1');
+  const [sizeUnit, setSizeUnit] = useState('GB');
+  const [customMode, setCustomMode] = useState(false);
+  const [configuringClinic, setConfiguringClinic] = useState<string | null>(null);
+  const [loadingClinics, setLoadingClinics] = useState(false);
+  const [selectedClinics, setSelectedClinics] = useState<string[]>([]);
+  const [proportionalDistribution, setProportionalDistribution] = useState(false);
+  
+  // Estado para total del sistema
+  const systemTotal = propSystemTotal || DEFAULT_SYSTEM_TOTAL;
+  
+  // Estado para lista de clínicas
+  const [clinics, setClinics] = useState<any[]>([]);
+  
+  // Estadísticas de uso
+  const [usageStats, setUsageStats] = useState<Record<string, any>>({});
+  const [refreshing, setRefreshing] = useState(false);
+  
+  // Funciones auxiliares
+  const getClinicsList = async () => {
+    // Implementación adaptada para usar la interfaz disponible
     try {
-      const settings = storageContext.getQuotaSettings();
-      const globalQuota = storageContext.getQuota('global');
-      const clinicQuotas = storageContext.getClinicQuotas();
-      const availableClinics = getClinics();
+      // Usar la interfaz para obtener las clínicas
+      const { useClinic } = require('@/contexts/clinic-context');
+      const clinicContext = useClinic();
+      if (clinicContext && clinicContext.getAllClinics) {
+        return await clinicContext.getAllClinics();
+      }
       
-      console.log("StorageQuotaSettings - Clínicas disponibles:", availableClinics);
-      console.log("StorageQuotaSettings - Cuotas de clínicas:", clinicQuotas);
+      // Fallback a datos de ejemplo si no está disponible
+      return [
+        { id: '1', name: 'Clínica A', city: 'Ciudad A' },
+        { id: '2', name: 'Clínica B', city: 'Ciudad B' },
+        { id: '3', name: 'Clínica C', city: 'Ciudad C' }
+      ];
+    } catch (error) {
+      console.error('Error obteniendo lista de clínicas:', error);
+      return [];
+    }
+  };
+  
+  // Cargar clínicas y estadísticas
+  useEffect(() => {
+    const loadClinicData = async () => {
+      setLoadingClinics(true);
+      try {
+        // Obtener clínicas usando el contexto de almacenamiento
+        const clinicsList = await getClinicsList();
+        
+        // Formatear los datos para mantener compatibilidad
+        const formattedClinics = clinicsList.map(clinic => ({
+          id: clinic.id.toString(),
+          name: clinic.name,
+          city: clinic.city || '',
+          active: true
+        }));
+        
+        setClinics(formattedClinics);
+        
+        // Inicializar selección
+        setSelectedClinics([]);
+        
+        // Cargar estadísticas
+        refreshStorageStats();
+      } catch (error) {
+        console.error('Error al cargar clínicas:', error);
+        toast.error('Error al cargar información de clínicas');
+      } finally {
+        setLoadingClinics(false);
+      }
+    };
+    
+    loadClinicData();
+  }, [getClinicsList]);
+  
+  // Función para refrescar estadísticas
+  const refreshStorageStats = useCallback(() => {
+    setRefreshing(true);
+    try {
+      // Obtener estadísticas actualizadas
+      const stats: Record<string, any> = {};
       
-      // Calcular total asignado
-      let assignedTotal = 0;
-      clinicQuotas.forEach(quota => {
-        if (!quota.isUnlimited) {
-          assignedTotal += quota.quotaSize;
-        }
+      // Obtener estadísticas globales
+      const globalStats = getStorageStats('global');
+      stats['global'] = {
+        ...globalStats,
+        quota: getQuota('global'),
+      };
+      
+      // Obtener estadísticas por clínica
+      clinics.forEach(clinic => {
+        const clinicId = clinic.id.toString();
+        const clinicStats = getStorageStats(clinicId);
+        const clinicQuota = getQuota(clinicId);
+        
+        stats[clinicId] = {
+          ...clinicStats,
+          quota: clinicQuota,
+        };
       });
       
-      return {
-        settings,
-        globalQuota,
-        clinicQuotas,
-        clinics: availableClinics,
-        totalAssigned: assignedTotal
-      };
+      setUsageStats(stats);
     } catch (error) {
-      console.error("Error getting initial data:", error);
-      return {
-        settings: { mode: 'global', defaultQuotaSize: DEFAULT_SYSTEM_TOTAL, defaultIsUnlimited: false },
-        globalQuota: { id: 'global', entityType: 'global', quotaSize: DEFAULT_SYSTEM_TOTAL, isUnlimited: false },
-        clinicQuotas: [],
-        clinics: [],
-        totalAssigned: 0
-      };
+      console.error('Error al refrescar estadísticas:', error);
+    } finally {
+      setRefreshing(false);
     }
-  }, [storageContext]);
+  }, [clinics, getStorageStats, getQuota]);
   
   // Estado para almacenar los datos
-  const [clinics, setClinics] = useState(initialData.clinics);
-  const [clinicQuotas, setClinicQuotas] = useState(initialData.clinicQuotas);
-  const [totalAssigned, setTotalAssigned] = useState(initialData.totalAssigned);
+  const [clinicQuotas, setClinicQuotas] = useState(usageStats);
+  const [totalAssigned, setTotalAssigned] = useState(0);
   
   // Estados para el formulario
-  const [sizeValue, setSizeValue] = useState<string>('');
-  const [sizeUnit, setSizeUnit] = useState('GB');
-  const [unlimited, setUnlimited] = useState(initialData.globalQuota.isUnlimited);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
-  // Nueva implementación para manejar selección de clínicas
-  const [selectedClinics, setSelectedClinics] = useState<string[]>([]);
-
-  // Usar el systemTotal proporcionado como prop o el valor por defecto
-  const systemTotal = propSystemTotal || DEFAULT_SYSTEM_TOTAL;
   
   // Función para refrescar la lista de clínicas
   const refreshClinics = useCallback(() => {
     try {
-      const freshClinics = getClinics();
+      const freshClinics = clinics;
       console.log("Refrescando lista de clínicas:", freshClinics);
       setClinics(freshClinics);
     } catch (error) {
       console.error("Error al refrescar lista de clínicas:", error);
     }
-  }, []);
+  }, [clinics]);
   
   // Cargar clínicas al montar el componente
   useEffect(() => {
@@ -110,7 +171,7 @@ const StorageQuotaSettings: React.FC<StorageQuotaSettingsProps> = ({
   
   // Validar que la cuota no exceda el límite del sistema
   useEffect(() => {
-    if (!unlimited) {
+    if (!isUnlimited) {
       const numericValue = parseFloat(sizeValue) || 0;
       let sizeInBytes = numericValue;
       if (sizeUnit === 'GB') {
@@ -140,7 +201,7 @@ const StorageQuotaSettings: React.FC<StorageQuotaSettingsProps> = ({
     } else {
       setError(null);
     }
-  }, [sizeValue, sizeUnit, unlimited, totalAssigned, selectedClinics, clinicQuotas, systemTotal]);
+  }, [sizeValue, sizeUnit, isUnlimited, totalAssigned, selectedClinics, clinicQuotas, systemTotal]);
   
   // Cache de estadísticas para evitar recálculos repetidos
   const statsCache = useMemo(() => {
@@ -150,7 +211,7 @@ const StorageQuotaSettings: React.FC<StorageQuotaSettingsProps> = ({
     clinics.forEach(clinic => {
       try {
         const clinicId = clinic.id.toString();
-        const stats = storageContext.getStorageStats(clinicId);
+        const stats = getStorageStats(clinicId);
         cache[clinicId] = stats;
       } catch (error) {
         console.error(`Error calculating stats for clinic ${clinic.id}:`, error);
@@ -158,7 +219,7 @@ const StorageQuotaSettings: React.FC<StorageQuotaSettingsProps> = ({
     });
     
     return cache;
-  }, [clinics, storageContext]);
+  }, [clinics, getStorageStats]);
   
   // Obtener estadísticas de uso de forma segura y cacheada
   const getClinicStats = useCallback((clinicId: string) => {
@@ -202,11 +263,11 @@ const StorageQuotaSettings: React.FC<StorageQuotaSettingsProps> = ({
         if (clinicQuota && clinicQuota.id !== 'global' && !clinicQuota.isUnlimited) {
           // Actualizar el valor del tamaño en la unidad actual
           if (sizeUnit === 'GB') {
-            setSizeValue(clinicQuota.quotaSize / BYTES_IN_GB);
+            setSizeValue((clinicQuota.quotaSize / BYTES_IN_GB).toString());
           } else if (sizeUnit === 'MB') {
-            setSizeValue(clinicQuota.quotaSize / BYTES_IN_MB);
+            setSizeValue((clinicQuota.quotaSize / BYTES_IN_MB).toString());
           }
-          setUnlimited(clinicQuota.isUnlimited);
+          setIsUnlimited(clinicQuota.isUnlimited);
         }
       }
       
@@ -250,7 +311,7 @@ const StorageQuotaSettings: React.FC<StorageQuotaSettingsProps> = ({
     });
   };
   
-  const handleSave = () => {
+  const handleSave = async () => {
     console.log("Botón Aplicar pulsado - aplicando configuración inmediatamente");
     
     // Comprobar si hay clínicas seleccionadas
@@ -277,7 +338,7 @@ const StorageQuotaSettings: React.FC<StorageQuotaSettingsProps> = ({
       sizeInBytes = numericValue * BYTES_IN_MB;
     }
     
-    console.log(`Aplicando configuración: ${numericValue} ${sizeUnit} = ${formatBytes(sizeInBytes)}, Sin límite: ${unlimited}`);
+    console.log(`Aplicando configuración: ${numericValue} ${sizeUnit} = ${formatBytes(sizeInBytes)}, Sin límite: ${isUnlimited}`);
     console.log(`Clínicas seleccionadas (${selectedClinics.length}): ${selectedClinics.join(', ')}`);
     
     try {
@@ -285,38 +346,57 @@ const StorageQuotaSettings: React.FC<StorageQuotaSettingsProps> = ({
       // Esto es lo más importante para asegurar que el cambio se propague
       if (onSave) {
         console.log("Llamando a onSave del componente padre");
-        onSave(sizeInBytes, unlimited);
+        onSave(sizeInBytes, isUnlimited);
       }
       
       // Aplicar también los cambios a nivel local
       let success = true;
       
       // Aplicar los cambios para cada clínica seleccionada
-      selectedClinics.forEach(clinicId => {
-        const result = storageContext.setQuota('clinic', clinicId, sizeInBytes, unlimited);
-        if (!result) {
+      for (const clinicId of selectedClinics) {
+        try {
+          // Manejar tanto si setQuota devuelve una promesa como si devuelve un valor directo
+          const result = await Promise.resolve(setQuota('clinic', clinicId, sizeInBytes, isUnlimited));
+          if (!result) {
+            success = false;
+            console.error(`Error al aplicar cuota a clínica ${clinicId}`);
+          }
+        } catch (error) {
           success = false;
-          console.error(`Error al aplicar cuota a clínica ${clinicId}`);
+          console.error(`Error al aplicar cuota a clínica ${clinicId}:`, error);
         }
-      });
+      }
       
       // Actualizar la interfaz con los resultados
       if (success) {
         // Obtener los datos actualizados
         refreshClinics();
-        const updatedQuotas = storageContext.getClinicQuotas();
-        setClinicQuotas(updatedQuotas);
         
-        // Recalcular total asignado
-        let assignedTotal = 0;
-        updatedQuotas.forEach(quota => {
-          if (!quota.isUnlimited) {
-            assignedTotal += quota.quotaSize;
-          }
-        });
-        setTotalAssigned(assignedTotal);
-        
-        toast.success(`Configuración aplicada a ${selectedClinics.length} clínica(s)`);
+        try {
+          // Obtener cuotas actualizadas y esperar a que se resuelva la promesa
+          const updatedQuotas = await getClinicQuotas();
+          // Asegurar que es un array
+          const quotasArray = Array.isArray(updatedQuotas) ? updatedQuotas : await Promise.resolve(updatedQuotas);
+          
+          setClinicQuotas(quotasArray);
+          
+          // Recalcular total asignado
+          let assignedTotal = 0;
+          
+          // Ahora podemos iterar sobre el array
+          quotasArray.forEach(quota => {
+            if (!quota.isUnlimited) {
+              assignedTotal += quota.quotaSize;
+            }
+          });
+          
+          setTotalAssigned(assignedTotal);
+          
+          toast.success(`Configuración aplicada a ${selectedClinics.length} clínica(s)`);
+        } catch (error) {
+          console.error("Error al procesar cuotas:", error);
+          toast.error('Error al actualizar información de cuotas');
+        }
       } else {
         toast.error('Hubo errores al aplicar la configuración');
       }
@@ -378,23 +458,56 @@ const StorageQuotaSettings: React.FC<StorageQuotaSettingsProps> = ({
   
   // Efecto para actualizar los datos cuando cambian en el contexto
   useEffect(() => {
-    try {
-      const settings = storageContext.getQuotaSettings();
-      const clinicQuotas = storageContext.getClinicQuotas();
-      let assignedTotal = 0;
-      
-      clinicQuotas.forEach(quota => {
-        if (!quota.isUnlimited) {
-          assignedTotal += quota.quotaSize;
-        }
-      });
-      
-      setClinicQuotas(clinicQuotas);
-      setTotalAssigned(assignedTotal);
-    } catch (error) {
-      console.error("Error actualizando datos:", error);
+    const updateQuotaData = async () => {
+      try {
+        // Obtener cuotas y esperar a que se resuelva la promesa
+        const updatedQuotas = await getClinicQuotas();
+        // Asegurar que es un array
+        const quotasArray = Array.isArray(updatedQuotas) ? updatedQuotas : await Promise.resolve(updatedQuotas);
+        
+        let assignedTotal = 0;
+        
+        // Ahora podemos iterar sobre el array
+        quotasArray.forEach(quota => {
+          if (!quota.isUnlimited) {
+            assignedTotal += quota.quotaSize;
+          }
+        });
+        
+        setClinicQuotas(quotasArray);
+        setTotalAssigned(assignedTotal);
+      } catch (error) {
+        console.error("Error actualizando datos:", error);
+      }
+    };
+    
+    updateQuotaData();
+  }, [getClinicQuotas]);
+  
+  // Function to distribute storage equally
+  const distributeStorageEqually = async () => {
+    // Implementar lógica para distribuir almacenamiento equitativamente
+    if (selectedClinics.length === 0) {
+      toast.warning('No hay clínicas seleccionadas para distribuir cuotas');
+      return;
     }
-  }, [storageContext]);
+    
+    const numClinics = selectedClinics.length;
+    const equalShare = systemTotal / numClinics;
+    
+    // Aplicar la misma cuota a todas las clínicas seleccionadas
+    try {
+      for (const clinicId of selectedClinics) {
+        await setQuota('clinic', clinicId, equalShare, false);
+      }
+      
+      toast.success(`Cuota distribuida equitativamente entre ${numClinics} clínicas`);
+      refreshStorageStats();
+    } catch (error) {
+      console.error('Error al distribuir almacenamiento:', error);
+      toast.error('No se pudo distribuir el almacenamiento');
+    }
+  };
   
   return (
     <Card className="shadow-sm" data-component="storage-quota-settings">
@@ -423,14 +536,14 @@ const StorageQuotaSettings: React.FC<StorageQuotaSettingsProps> = ({
                   min="0"
                   value={sizeValue}
                   onChange={(e) => setSizeValue(e.target.value)}
-                  disabled={unlimited}
+                  disabled={isUnlimited}
                   className="h-8"
                   data-test="quota-size-input"
                 />
                 <Select 
                   value={sizeUnit} 
                   onValueChange={setSizeUnit}
-                  disabled={unlimited}
+                  disabled={isUnlimited}
                 >
                   <SelectTrigger className="w-20 h-8" data-test="quota-unit-select">
                     <SelectValue placeholder="Unidad" />
@@ -450,12 +563,12 @@ const StorageQuotaSettings: React.FC<StorageQuotaSettingsProps> = ({
               <div className="flex items-center h-8 pt-1">
                 <Switch 
                   id="unlimited-toggle" 
-                  checked={unlimited}
-                  onCheckedChange={setUnlimited}
+                  checked={isUnlimited}
+                  onCheckedChange={setIsUnlimited}
                   data-test="unlimited-toggle"
                 />
                 <span className="ml-2 text-xs text-gray-600">
-                  {unlimited ? 'Sí' : 'No'}
+                  {isUnlimited ? 'Sí' : 'No'}
                 </span>
               </div>
             </div>

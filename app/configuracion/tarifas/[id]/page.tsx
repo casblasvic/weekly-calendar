@@ -8,7 +8,6 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Checkbox } from "@/components/ui/checkbox"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { MockData } from "@/lib/mock-data"
 import { useFamily } from "@/contexts/family-context"
 import Link from "next/link"
 import { useTarif } from "@/contexts/tarif-context"
@@ -18,35 +17,8 @@ import { useServicio } from "@/contexts/servicios-context"
 import { useIVA } from "@/contexts/iva-context"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { toast } from "@/components/ui/use-toast"
-import { getServiceImages, saveServiceImages, getServiceDocuments, saveServiceDocuments, deleteServiceImages, deleteServiceDocuments } from "@/mockData"
 import { useClinic } from "@/contexts/clinic-context"
-
-// Interfaces
-interface Tarifa {
-  id: string
-  nombre: string
-  clinicaId: string
-  clinicasIds: string[]
-  deshabilitada: boolean
-  isActive: boolean
-}
-
-interface Servicio {
-  id: string
-  nombre: string
-  codigo: string
-  familia: string
-  precio: number
-  iva: string
-  tipo: string
-}
-
-export interface TipoIVA {
-  id: string;
-  descripcion: string;
-  porcentaje: number;
-  tarifaId: string;
-}
+import { Tarifa, FamiliaTarifa, Servicio } from "@/services/data/models/interfaces"
 
 export default function ConfiguracionTarifa() {
   const router = useRouter()
@@ -56,7 +28,7 @@ export default function ConfiguracionTarifa() {
   
   const { families } = useFamily()
   const { getTarifaById, getFamiliasByTarifaId, updateTarifa } = useTarif()
-  const { getServiciosByTarifaId, eliminarServicio, getServicioById, actualizarServicio } = useServicio()
+  const { getServiciosByTarifaId, eliminarServicio, getServicioById, actualizarServicio, getServiceImages, saveServiceImages, getServiceDocuments, saveServiceDocuments, deleteServiceImages, deleteServiceDocuments } = useServicio()
   const { getTiposIVAByTarifaId } = useIVA()
   const { clinics } = useClinic()
   
@@ -78,19 +50,34 @@ export default function ConfiguracionTarifa() {
   const [editingClinics, setEditingClinics] = useState(false)
   const [includeDisabledClinics, setIncludeDisabledClinics] = useState(false)
   
+  // Familias de la tarifa actual
+  const [tarifaFamilies, setTarifaFamilies] = useState<FamiliaTarifa[]>([])
+
+  // Estado para almacenar los servicios cargados
+  const [serviciosTarifa, setServiciosTarifa] = useState<Servicio[]>([])
+  
   // Paginación
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(50)
   const [totalPages, setTotalPages] = useState(1)
 
-  // Obtener las familias específicas de esta tarifa
-  const tarifaFamilies = getFamiliasByTarifaId ? getFamiliasByTarifaId(tarifaId) : []
-
   // Obtener los tipos de IVA
-  const tiposIVATarifa = useMemo(() => {
-    return getTiposIVAByTarifaId(tarifaId);
-  }, [tarifaId, getTiposIVAByTarifaId]);
+  const tiposIVATarifa = getTiposIVAByTarifaId ? getTiposIVAByTarifaId(tarifaId) : []
 
+  // Interfaz para servicios formateados para la tabla
+  interface ServicioFormateado {
+    id: string;
+    nombre: string;
+    codigo: string;
+    familia: string;
+    precio: number;
+    iva: string;
+    tipo: string;
+  }
+  
+  // Estado para los servicios formateados
+  const [serviciosFormateados, setServiciosFormateados] = useState<ServicioFormateado[]>([]);
+  
   // Estado para el modal de confirmación de eliminación
   const [servicioAEliminar, setServicioAEliminar] = useState<string | null>(null);
   const [confirmEliminarOpen, setConfirmEliminarOpen] = useState(false);
@@ -105,65 +92,70 @@ export default function ConfiguracionTarifa() {
     return familia ? (familia.name || familia.id) : "(Ninguna)";
   }
 
-  // Función simple para manejar eventos de servicio (evita el error)
-  const handleServiciosUpdated = () => {
-    console.log("Evento de actualización de servicios recibido");
-  };
-
-  // Cargar datos de servicios y productos combinados
+  // Cargar las familias asociadas a la tarifa
   useEffect(() => {
-    // Obtener la tarifa
-    try {
-      const tarifaData = getTarifaById(tarifaId);
-      
-      if (tarifaData) {
-        // Asegurar que la tarifa tenga el formato correcto
-        const tarifaCompleta = prepararTarifaConClinicas(tarifaData);
-        
-        setTarifa(tarifaCompleta);
-        setTarifaEditada(tarifaCompleta);
+    const loadFamilies = async () => {
+      try {
+        if (tarifaId) {
+          console.log("Cargando familias para tarifa:", tarifaId);
+          const familiesData = await getFamiliasByTarifaId(tarifaId);
+          if (Array.isArray(familiesData)) {
+            setTarifaFamilies(familiesData);
+            console.log("Familias cargadas:", familiesData.length);
+          } else {
+            console.error("getFamiliasByTarifaId no devolvió un array:", familiesData);
+            setTarifaFamilies([]);
+          }
+        }
+      } catch (error) {
+        console.error("Error al cargar familias de tarifa:", error);
+        setTarifaFamilies([]);
       }
-      
-      // Obtener servicios reales del contexto
-      const serviciosReales = getServiciosByTarifaId(tarifaId);
-      
-      // Log para depuración
-      console.log("IVAs disponibles:", tiposIVATarifa);
-      
-      // Mapear los servicios con la información correcta
-      if (serviciosReales && serviciosReales.length > 0) {
-        const serviciosData = serviciosReales.map(servicio => {
-          // En este punto, adaptamos los servicios al formato esperado por la tabla
-          return {
-            id: servicio.id,
-            nombre: servicio.nombre,
-            codigo: servicio.codigo || '',
-            familia: getFamiliaName(servicio.familiaId),
-            precio: parseFloat(servicio.precioConIVA) || 0,
-            iva: "N/A", // Simplificado para evitar errores
-            tipo: 'servicio'
-          };
-        });
-        
-        setServiciosLista(serviciosData);
-        setTotalPages(Math.ceil(serviciosData.length / itemsPerPage));
-      }
-      
-      // Registrar el evento para escuchar cambios en los servicios
-      // Comentado temporalmente para evitar errores
-      // window.addEventListener('servicios-updated', handleServiciosUpdated);
-      console.log("No se está registrando el listener de eventos para evitar errores");
-    } catch (error) {
-      console.error("Error al cargar datos iniciales:", error);
-    }
-    
-    // Limpiar al desmontar
-    return () => {
-      // window.removeEventListener('servicios-updated', handleServiciosUpdated);
-      console.log("No se está eliminando el listener de eventos (comentado)");
     };
-  }, [tarifaId, getTarifaById, getServiciosByTarifaId, tiposIVATarifa, itemsPerPage]);
+    
+    loadFamilies();
+  }, [tarifaId, getFamiliasByTarifaId]);
   
+  // Cargar los servicios asociados a la tarifa
+  useEffect(() => {
+    const loadServicios = async () => {
+      try {
+        if (tarifaId) {
+          console.log("Cargando servicios para tarifa:", tarifaId);
+          const serviciosData = await getServiciosByTarifaId(tarifaId);
+          if (Array.isArray(serviciosData)) {
+            setServiciosTarifa(serviciosData);
+            console.log("Servicios cargados:", serviciosData.length);
+            
+            // Formatear para la vista de tabla
+            const serviciosFormateados = serviciosData.map(servicio => ({
+              id: servicio.id,
+              nombre: servicio.nombre,
+              codigo: servicio.codigo || '',
+              familia: getFamiliaName(servicio.familiaId),
+              precio: parseFloat(servicio.precioConIVA) || 0,
+              iva: "N/A",
+              tipo: 'servicio'
+            }));
+            
+            setServiciosFormateados(serviciosFormateados);
+            setTotalPages(Math.ceil(serviciosFormateados.length / itemsPerPage));
+          } else {
+            console.error("getServiciosByTarifaId no devolvió un array:", serviciosData);
+            setServiciosTarifa([]);
+            setServiciosFormateados([]);
+          }
+        }
+      } catch (error) {
+        console.error("Error al cargar servicios:", error);
+        setServiciosTarifa([]);
+        setServiciosFormateados([]);
+      }
+    };
+    
+    loadServicios();
+  }, [tarifaId, getServiciosByTarifaId, itemsPerPage, getFamiliaName]);
+
   // Efecto para resetear includeDisabledClinics cuando se abre el modal
   useEffect(() => {
     if (editingClinics) {
@@ -252,7 +244,7 @@ export default function ConfiguracionTarifa() {
 
   // Aplicar filtros y ordenación
   const serviciosFiltrados = useMemo(() => {
-    let filteredItems = [...serviciosLista];
+    let filteredItems = [...serviciosFormateados];
     
     // Filtro por término de búsqueda (en nombre o código)
     if (searchTerm) {
@@ -293,7 +285,7 @@ export default function ConfiguracionTarifa() {
     }
     
     return filteredItems;
-  }, [serviciosLista, searchTerm, tipoFiltro, familiaFiltro, sortConfig]);
+  }, [serviciosFormateados, searchTerm, tipoFiltro, familiaFiltro, sortConfig]);
 
   // Paginación
   const indexOfLastItem = currentPage * itemsPerPage;
@@ -400,7 +392,7 @@ export default function ConfiguracionTarifa() {
   const confirmarEliminacion = () => {
     if (servicioAEliminar) {
       try {
-        // Obtener imágenes y documentos antes de eliminar el servicio
+        // Eliminar imágenes y documentos antes de eliminar el servicio
         const tieneImagenes = deleteServiceImages(servicioAEliminar);
         const tieneDocumentos = deleteServiceDocuments(servicioAEliminar);
         
@@ -408,8 +400,8 @@ export default function ConfiguracionTarifa() {
         eliminarServicio(servicioAEliminar);
         
         // Actualizar la lista de servicios después de eliminar
-        const nuevosServicios = serviciosLista.filter(s => s.id !== servicioAEliminar);
-        setServiciosLista(nuevosServicios);
+        const nuevosServicios = serviciosFormateados.filter(s => s.id !== servicioAEliminar);
+        setServiciosFormateados(nuevosServicios);
         
         // Calcular el total de páginas
         setTotalPages(Math.ceil(nuevosServicios.length / itemsPerPage));
@@ -450,8 +442,8 @@ export default function ConfiguracionTarifa() {
     // Crear una copia para no modificar el original
     const tarifaFormateada = { ...tarifaOriginal };
     
-    // Asegurar que exista clinicasIds
-    if (!tarifaFormateada.clinicasIds) {
+    // Asegurar que exista clinicasIds y sea un array
+    if (!tarifaFormateada.clinicasIds || !Array.isArray(tarifaFormateada.clinicasIds)) {
       // Si hay clinicaId, usarla como base para clinicasIds
       if (tarifaFormateada.clinicaId) {
         tarifaFormateada.clinicasIds = [tarifaFormateada.clinicaId];
@@ -459,6 +451,18 @@ export default function ConfiguracionTarifa() {
         // De lo contrario, inicializar como array vacío
         tarifaFormateada.clinicasIds = [];
       }
+    }
+    
+    // Asegurar que clinicaId sea válido y esté en clinicasIds
+    if (tarifaFormateada.clinicaId && tarifaFormateada.clinicasIds.length > 0) {
+      // Si la clinicaId no está en clinicasIds, añadirla
+      if (!tarifaFormateada.clinicasIds.includes(tarifaFormateada.clinicaId)) {
+        tarifaFormateada.clinicasIds.push(tarifaFormateada.clinicaId);
+      }
+    } 
+    // Si no hay clinicaId pero hay clinicasIds, establecer la primera como principal
+    else if (!tarifaFormateada.clinicaId && tarifaFormateada.clinicasIds.length > 0) {
+      tarifaFormateada.clinicaId = tarifaFormateada.clinicasIds[0];
     }
     
     // Asegurar que isActive exista (opuesto a deshabilitada si no existe)
@@ -469,6 +473,140 @@ export default function ConfiguracionTarifa() {
     console.log("Tarifa formateada:", tarifaFormateada);
     
     return tarifaFormateada as Tarifa;
+  };
+
+  // Función para obtener una tarifa directamente del contexto
+  const getTarifaFromAllSources = async (tarifaId: string): Promise<Tarifa | null> => {
+    console.log("Buscando tarifa con ID:", tarifaId);
+    
+    // Obtener desde el contexto de tarifas (única fuente de verdad)
+    const tarifaFromContext = getTarifaById(tarifaId);
+    if (tarifaFromContext) {
+      console.log("Tarifa encontrada en el contexto");
+      return prepararTarifaConClinicas(tarifaFromContext);
+    }
+    
+    console.log("Tarifa no encontrada en el contexto");
+    return null;
+  };
+
+  // Funciones específicas para la gestión de clínicas asociadas
+  // Estas funciones facilitarán la migración a base de datos
+
+  // Añadir una clínica a una tarifa
+  const addClinicToTarifa = async (tarifaId: string, clinicaId: string, isPrimary: boolean = false): Promise<boolean> => {
+    try {
+      // Obtener la tarifa actual
+      const tarifaActual = getTarifaById(tarifaId);
+      if (!tarifaActual) return false;
+      
+      // Clonar los arrays para evitar mutaciones
+      const clinicasIds = [...(tarifaActual.clinicasIds || [])];
+      
+      // Verificar si la clínica ya está asociada
+      if (clinicasIds.includes(clinicaId)) {
+        console.log("La clínica ya está asociada a esta tarifa");
+        
+        // Si debe ser primaria pero no lo es, actualizamos
+        if (isPrimary && tarifaActual.clinicaId !== clinicaId) {
+          updateTarifa(tarifaId, { clinicaId });
+          return true;
+        }
+        
+        return true; // No hay cambios necesarios
+      }
+      
+      // Añadir la clínica a la lista
+      clinicasIds.push(clinicaId);
+      
+      // Actualizar datos
+      const updateData: Partial<Tarifa> = { clinicasIds };
+      
+      // Si es primaria o no hay clínica primaria, establecerla como primaria
+      if (isPrimary || !tarifaActual.clinicaId) {
+        updateData.clinicaId = clinicaId;
+      }
+      
+      // Guardar directamente en el contexto de tarifas
+      updateTarifa(tarifaId, updateData);
+      return true;
+    } catch (error) {
+      console.error("Error al añadir clínica a tarifa:", error);
+      return false;
+    }
+  };
+
+  // Eliminar una clínica de una tarifa
+  const removeClinicFromTarifa = async (tarifaId: string, clinicaId: string): Promise<boolean> => {
+    try {
+      // Obtener la tarifa actual
+      const tarifaActual = getTarifaById(tarifaId);
+      if (!tarifaActual) return false;
+      
+      // Clonar los arrays para evitar mutaciones
+      const clinicasIds = [...(tarifaActual.clinicasIds || [])];
+      
+      // Verificar si la clínica está asociada
+      if (!clinicasIds.includes(clinicaId)) {
+        console.log("La clínica no está asociada a esta tarifa");
+        return true; // No hay cambios necesarios
+      }
+      
+      // Eliminar la clínica de la lista
+      const newClinicasIds = clinicasIds.filter(id => id !== clinicaId);
+      
+      // Preparar datos para actualizar
+      const updateData: Partial<Tarifa> = { clinicasIds: newClinicasIds };
+      
+      // Si era la clínica primaria, establecer otra como primaria
+      if (tarifaActual.clinicaId === clinicaId) {
+        if (newClinicasIds.length > 0) {
+          // Usar la primera clínica disponible como principal
+          updateData.clinicaId = newClinicasIds[0];
+        } else {
+          // Si no hay más clínicas, limpiar clinicaId
+          updateData.clinicaId = "";
+        }
+      }
+      
+      // Guardar directamente en el contexto de tarifas
+      updateTarifa(tarifaId, updateData);
+      return true;
+    } catch (error) {
+      console.error("Error al eliminar clínica de tarifa:", error);
+      return false;
+    }
+  };
+
+  // Establecer una clínica como primaria para una tarifa
+  const setPrimaryClinicForTarifa = async (tarifaId: string, clinicaId: string): Promise<boolean> => {
+    try {
+      // Obtener la tarifa actual
+      const tarifaActual = getTarifaById(tarifaId);
+      if (!tarifaActual) return false;
+      
+      // Verificar si la clínica está asociada
+      const clinicasIds = [...(tarifaActual.clinicasIds || [])];
+      if (!clinicasIds.includes(clinicaId)) {
+        // Si la clínica no está asociada, añadirla primero
+        clinicasIds.push(clinicaId);
+      }
+      
+      // Actualizar directamente en el contexto de tarifas
+      updateTarifa(tarifaId, { 
+        clinicaId,
+        clinicasIds
+      });
+      return true;
+    } catch (error) {
+      console.error("Error al establecer clínica primaria:", error);
+      return false;
+    }
+  };
+
+  // Funciones simple para manejar eventos de servicio (evita el error)
+  const handleServiciosUpdated = () => {
+    console.log("Evento de actualización de servicios recibido");
   };
 
   return (
@@ -962,17 +1100,19 @@ export default function ConfiguracionTarifa() {
             <div className="space-y-2">
               <label className="text-sm font-medium">Añadir clínica</label>
               <Select
-                onValueChange={(value) => {
-                  if (tarifaEditada && value && 
-                      !tarifaEditada.clinicasIds?.includes(value)) {
-                    // Actualizar la lista de clínicas
-                    const newClinicasIds = [...(tarifaEditada.clinicasIds || []), value];
-                    setTarifaEditada({
-                      ...tarifaEditada,
-                      clinicasIds: newClinicasIds,
-                      // Establecer como principal si es la primera
-                      clinicaId: tarifaEditada.clinicaId || value
-                    });
+                onValueChange={async (value) => {
+                  if (tarifaEditada && value) {
+                    // Determinar si es la primera clínica (será primaria)
+                    const isPrimary = !tarifaEditada.clinicasIds || tarifaEditada.clinicasIds.length === 0;
+                    
+                    // Añadir la clínica directamente
+                    await addClinicToTarifa(tarifaId, value, isPrimary);
+                    
+                    // Actualizar la UI con la tarifa actualizada
+                    const updatedTarifa = getTarifaById(tarifaId);
+                    if (updatedTarifa) {
+                      setTarifaEditada(updatedTarifa);
+                    }
                   }
                 }}
               >
@@ -1052,23 +1192,15 @@ export default function ConfiguracionTarifa() {
                         )}
                         <button
                           type="button"
-                          onClick={() => {
-                            // Si eliminamos la clínica principal, asignar otra como principal
-                            let newClinicaId = tarifaEditada.clinicaId;
-                            if (isPrimary && tarifaEditada.clinicasIds.length > 1) {
-                              // Encontrar otra clínica que no sea esta para asignarla como principal
-                              const otherClinicId = tarifaEditada.clinicasIds.find(id => id !== clinicaId);
-                              newClinicaId = otherClinicId || "";
-                            } else if (isPrimary) {
-                              // Si era la única, limpiar clinicaId
-                              newClinicaId = "";
-                            }
+                          onClick={async () => {
+                            // Eliminar la clínica directamente
+                            await removeClinicFromTarifa(tarifaId, clinicaId);
                             
-                            setTarifaEditada({
-                              ...tarifaEditada,
-                              clinicasIds: tarifaEditada.clinicasIds.filter(id => id !== clinicaId),
-                              clinicaId: newClinicaId
-                            });
+                            // Actualizar la UI con la tarifa actualizada 
+                            const updatedTarifa = getTarifaById(tarifaId);
+                            if (updatedTarifa) {
+                              setTarifaEditada(updatedTarifa);
+                            }
                           }}
                           className="text-gray-500 hover:text-red-500 ml-1"
                           title="Eliminar clínica"
@@ -1081,11 +1213,15 @@ export default function ConfiguracionTarifa() {
                         {!isPrimary && (
                           <button
                             type="button"
-                            onClick={() => {
-                              setTarifaEditada({
-                                ...tarifaEditada,
-                                clinicaId: clinicaId
-                              });
+                            onClick={async () => {
+                              // Establecer como clínica principal directamente
+                              await setPrimaryClinicForTarifa(tarifaId, clinicaId);
+                              
+                              // Actualizar la UI con la tarifa actualizada
+                              const updatedTarifa = getTarifaById(tarifaId);
+                              if (updatedTarifa) {
+                                setTarifaEditada(updatedTarifa);
+                              }
                             }}
                             className="text-indigo-500 hover:text-indigo-700 ml-1"
                             title="Establecer como clínica principal"
@@ -1113,35 +1249,43 @@ export default function ConfiguracionTarifa() {
               Cancelar
             </Button>
             <Button 
-              onClick={() => {
-                // Guardar los cambios en la tarifa
-                if (tarifaEditada && tarifa) {
-                  try {
-                    // Asegurar que la tarifa tenga el formato adecuado
-                    const tarifaParaGuardar = prepararTarifaConClinicas(tarifaEditada);
-                    
-                    // Actualizar en el contexto
-                    updateTarifa(tarifa.id, tarifaParaGuardar);
-                    
-                    // Actualizar el estado local
-                    setTarifa(tarifaParaGuardar);
-                    
-                    // Cerrar el modal
-                    setEditingClinics(false);
+              onClick={async () => {
+                try {
+                  // Cerrar el modal antes para evitar la sensación de bloqueo
+                  setEditingClinics(false);
+                  
+                  // Mostrar mensaje de procesamiento
+                  toast({
+                    title: "Guardando cambios",
+                    description: "Actualizando clínicas asociadas...",
+                  });
+                  
+                  // Los cambios ya se han guardado directamente en el contexto
+                  // a través de las funciones addClinicToTarifa, removeClinicFromTarifa 
+                  // y setPrimaryClinicForTarifa que usan directamente updateTarifa
+                  
+                  // Solo necesitamos actualizar la UI
+                  const updatedTarifa = getTarifaById(tarifaId);
+                  if (updatedTarifa) {
+                    setTarifa(updatedTarifa);
+                    setTarifaEditada(updatedTarifa);
                     
                     // Notificar éxito
                     toast({
                       title: "Clínicas actualizadas",
                       description: "Las clínicas asociadas se han actualizado correctamente.",
                     });
-                  } catch (error) {
-                    console.error("Error al guardar clínicas asociadas:", error);
-                    toast({
-                      title: "Error",
-                      description: "No se pudieron guardar los cambios. Inténtelo de nuevo.",
-                      variant: "destructive",
-                    });
+                  } else {
+                    console.error("No se pudo obtener la tarifa del contexto");
+                    throw new Error("Error al obtener datos");
                   }
+                } catch (error) {
+                  console.error("Error al finalizar actualización de clínicas:", error);
+                  toast({
+                    title: "Error",
+                    description: "Ocurrió un problema al finalizar los cambios.",
+                    variant: "destructive",
+                  });
                 }
               }}
             >
