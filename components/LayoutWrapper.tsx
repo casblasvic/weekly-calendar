@@ -4,7 +4,7 @@ import type React from "react"
 import { useState, useEffect, useCallback, useRef } from "react"
 import { MainSidebar } from "@/components/main-sidebar"
 import { Button } from "@/components/ui/button"
-import { Home, Calendar, Users, BarChart2, User, LogOut, Settings, FileText } from "lucide-react"
+import { Home, Calendar, Users, BarChart2, User, LogOut, Settings, FileText, Instagram, Facebook, Twitter } from "lucide-react"
 import { useRouter, usePathname } from "next/navigation"
 import Link from "next/link"
 import {
@@ -32,6 +32,7 @@ export function LayoutWrapper({ children }: LayoutWrapperProps) {
   const pathname = usePathname()
   const sidebarRef = useRef<HTMLDivElement>(null)
   const lastPathname = useRef<string>(pathname || "")
+  const router = useRouter()
   
   // Función para alternar la barra lateral
   const toggleSidebar = useCallback(() => {
@@ -241,6 +242,42 @@ export function LayoutWrapper({ children }: LayoutWrapperProps) {
             `calc(100% - ${isSidebarCollapsed ? "3.5rem" : "16rem"})`,
         }}
       >
+        {/* Menú rápido de redes sociales */}
+        <div className="p-4 bg-white border-b shadow-sm">
+          <div className="max-w-7xl mx-auto">
+            <div className="flex items-center space-x-4">
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex items-center gap-2"
+                onClick={() => router.push('/redes-sociales/instagram')}
+              >
+                <Instagram className="h-4 w-4" />
+                <span>Instagram</span>
+              </Button>
+
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex items-center gap-2"
+                onClick={() => router.push('/redes-sociales/facebook')}
+              >
+                <Facebook className="h-4 w-4" />
+                <span>Facebook</span>
+              </Button>
+
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex items-center gap-2"
+                onClick={() => router.push('/redes-sociales/twitter')}
+              >
+                <Twitter className="h-4 w-4" />
+                <span>Twitter</span>
+              </Button>
+            </div>
+          </div>
+        </div>
         {children}
       </main>
     </div>

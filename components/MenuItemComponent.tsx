@@ -5,8 +5,9 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { ChevronRight, ChevronDown } from "lucide-react"
 import { useState, useEffect, useRef } from "react"
-import { useRouter, usePathname } from "next/navigation"
+import { useRouter } from "next/navigation"
 import { type MenuItem } from "@/config/menu-structure"
+import Link from "next/link"
 
 interface MenuItemProps {
   item: MenuItem
@@ -14,7 +15,7 @@ interface MenuItemProps {
   isCollapsed?: boolean
   openMenus: Set<string>
   toggleMenu: (id: string) => void
-  isMobile?: boolean
+  pathname: string
 }
 
 export function MenuItemComponent({
@@ -23,16 +24,24 @@ export function MenuItemComponent({
   isCollapsed = false,
   openMenus,
   toggleMenu,
-  isMobile = false,
+  pathname
 }: MenuItemProps) {
+  console.log("DEBUG: Renderizando MenuItemComponent", {
+    itemId: item.id,
+    itemLabel: item.label,
+    depth,
+    isCollapsed,
+    hasSubmenu: item.submenu?.length > 0
+  });
+
   const router = useRouter()
-  const pathname = usePathname()
   const hasSubmenu = item.submenu && item.submenu.length > 0
   const isActive = pathname === item.href
   const isOpen = openMenus.has(item.id)
   const [isHovered, setIsHovered] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const submenuRef = useRef<HTMLDivElement>(null)
+  const [isMobile, setIsMobile] = useState(false)
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -145,63 +154,49 @@ export function MenuItemComponent({
     }
   }, [isOpen, isHovered, isCollapsed, hasSubmenu, item.id]);
 
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768)
+    }
+    
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
+
   return (
-    <div
-      ref={menuRef}
-      className="relative"
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-    >
-      <Button
-        variant="ghost"
+    <li>
+      <Link
+        href={item.href}
         className={cn(
-          "w-full justify-start app-sidebar-item",
-          isActive && "app-menu-active",
-          depth > 0 && "pl-4",
-          isCollapsed && "px-2",
+          "flex items-center px-4 py-2 text-gray-700 hover:bg-gray-100",
+          isActive && "bg-gray-100 text-purple-600",
+          isCollapsed ? "justify-center" : "",
         )}
-        onClick={handleClick}
       >
-        {item.icon && <item.icon className={cn("mr-2 h-4 w-4", isCollapsed && "mr-0")} />}
-        {(!isCollapsed || depth > 0) && <span className="flex-1 text-left">{item.label}</span>}
-        {(!isCollapsed || depth > 0) && item.badge && (
-          <span className="ml-2 rounded-full bg-red-500 px-2 py-1 text-xs text-white">{item.badge}</span>
-        )}
-        {(!isCollapsed || depth > 0) && hasSubmenu && (
-          isMobile ? 
-            <ChevronDown className={cn("h-4 w-4 transition-transform", isOpen && "rotate-180")} /> :
-            <ChevronRight className={cn("h-4 w-4 transition-transform", isOpen && "rotate-90")} />
-        )}
-      </Button>
-      {hasSubmenu && (isOpen || (isHovered && isCollapsed)) && (
-        <div
-          ref={submenuRef}
-          className={cn(
-            "submenu rounded-md border bg-white shadow-lg",
-            isMobile ? "w-full mt-1" : "w-64",
-          )}
-          style={{
-            position: isMobile ? "relative" : "fixed",
-            zIndex: 9999,
-            boxShadow: "0 4px 6px rgba(0,0,0,0.1)",
-            minWidth: isMobile ? "100%" : "16rem",
-            overflow: "visible",
-            overflowY: "auto"
-          }}
-        >
-          {item.submenu!.map((subItem) => (
+        <item.icon className={cn(
+          "text-purple-600",
+          isCollapsed ? "h-5 w-5" : "h-4 w-4 mr-2"
+        )} />
+        {!isCollapsed && <span>{item.label}</span>}
+      </Link>
+      
+      {!isCollapsed && hasSubmenu && (
+        <ul className="ml-4 mt-1">
+          {item.submenu.map((subItem) => (
             <MenuItemComponent
               key={subItem.id}
               item={subItem}
               depth={depth + 1}
-              isCollapsed={false}
+              isCollapsed={isCollapsed}
               openMenus={openMenus}
               toggleMenu={toggleMenu}
-              isMobile={isMobile}
+              pathname={pathname}
             />
           ))}
-        </div>
+        </ul>
       )}
-    </div>
+    </li>
   )
 } 

@@ -314,6 +314,8 @@ const getClinicInitials = (name: string): string => {
 }
 
 export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView = false, allowHoverEffects = true, showUserMenu: initialShowUserMenu = true }: SidebarProps) {
+  console.log("DEBUG: Renderizando MainSidebar", { isCollapsed });
+  
   const { openMenus, toggleMenu, closeAllMenus } = useMenuState()
   const [hoveredMenu, setHoveredMenu] = useState<string | null>(null)
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
@@ -994,26 +996,29 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
           zIndex: 40 // Menor que el selector de clínicas
         }}
       >
-        {menuItems.map((item) => (
-          <div 
-            key={item.id} 
-            className={cn(
-              isCollapsed && "flex justify-center"
-            )}
-            style={{ position: 'relative', zIndex: 40 }}
-          >
-            <MenuItemComponent
-              item={item}
-              isCollapsed={isCollapsed}
-              openMenus={openMenus}
-              toggleMenu={handleMenuClick}
-              closeAllMenus={closeAllMenus}
-              isMobile={forceMobileView}
-              onToggle={onToggle}
-              onMenuHover={handleMenuHover}
-            />
-          </div>
-        ))}
+        {menuItems.map((item) => {
+          console.log("DEBUG: Renderizando item:", item.label);
+          return (
+            <div 
+              key={item.id} 
+              className={cn(
+                isCollapsed && "flex justify-center"
+              )}
+              style={{ position: 'relative', zIndex: 40 }}
+            >
+              <MenuItemComponent
+                item={item}
+                isCollapsed={isCollapsed}
+                openMenus={openMenus}
+                toggleMenu={handleMenuClick}
+                closeAllMenus={closeAllMenus}
+                isMobile={forceMobileView}
+                onToggle={onToggle}
+                onMenuHover={handleMenuHover}
+              />
+            </div>
+          );
+        })}
         
         {/* ScrollIndicator solo para dispositivos móviles/táctiles */}
         {forceMobileView && (

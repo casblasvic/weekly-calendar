@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { ChevronRight, LogOut, User, Settings, FileText } from "lucide-react"
+import { menuItems } from "@/config/menu-structure"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,6 +14,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { MenuItemComponent } from "@/components/MenuItemComponent"
 
 interface SidebarProps {
   isCollapsed: boolean
@@ -22,14 +24,19 @@ interface SidebarProps {
 export function SidebarWithAvatar({ isCollapsed, onToggle }: SidebarProps) {
   const pathname = usePathname()
   const [showUserMenu, setShowUserMenu] = useState(false)
+  const [openMenus, setOpenMenus] = useState<Set<string>>(new Set())
 
-  // Ejemplo de estructura de menú
-  const menuItems = [
-    { name: "Inicio", href: "/", icon: "home" },
-    { name: "Clientes", href: "/clientes", icon: "users" },
-    { name: "Agenda", href: "/agenda", icon: "calendar" },
-    // Añade más elementos según sea necesario
-  ]
+  const toggleMenu = (id: string) => {
+    setOpenMenus(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }
 
   return (
     <div
@@ -51,19 +58,15 @@ export function SidebarWithAvatar({ isCollapsed, onToggle }: SidebarProps) {
         <nav className="mt-4">
           <ul className="space-y-1">
             {menuItems.map((item) => (
-              <li key={item.href}>
-                <Link
-                  href={item.href}
-                  className={cn(
-                    "flex items-center px-4 py-2 text-gray-700 hover:bg-gray-100",
-                    pathname === item.href && "bg-gray-100 text-purple-600",
-                    isCollapsed ? "justify-center" : "",
-                  )}
-                >
-                  <span className="material-icons">{item.icon}</span>
-                  {!isCollapsed && <span className="ml-3">{item.name}</span>}
-                </Link>
-              </li>
+              <MenuItemComponent
+                key={item.id}
+                item={item}
+                isCollapsed={isCollapsed}
+                depth={0}
+                openMenus={openMenus}
+                toggleMenu={toggleMenu}
+                pathname={pathname}
+              />
             ))}
           </ul>
         </nav>

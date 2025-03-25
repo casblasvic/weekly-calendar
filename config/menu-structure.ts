@@ -27,6 +27,11 @@ import {
   Briefcase,
   Database,
   CircleDollarSign,
+  MessageCircle,
+  Share2,
+  Instagram,
+  Facebook,
+  Twitter,
 } from "lucide-react"
 
 export interface MenuItem {
@@ -259,6 +264,52 @@ export const menuItems: MenuItem[] = [
         href: "/configuracion/plantillas-horarias",
       },
     ],
+  },
+  {
+    id: "menu-prueba",
+    label: "Menú Prueba",
+    icon: MessageCircle,
+    href: "/menu-prueba",
+    submenu: [
+      {
+        id: "submenu1",
+        label: "Submenú 1",
+        icon: MessageCircle,
+        href: "/menu-prueba/submenu1"
+      },
+      {
+        id: "submenu2",
+        label: "Submenú 2",
+        icon: MessageCircle,
+        href: "/menu-prueba/submenu2"
+      }
+    ]
+  },
+  {
+    id: "redes-sociales",
+    label: "Redes Sociales",
+    icon: Share2,
+    href: "/redes-sociales",
+    submenu: [
+      {
+        id: "instagram",
+        label: "Instagram",
+        icon: Instagram,
+        href: "/redes-sociales/instagram"
+      },
+      {
+        id: "facebook",
+        label: "Facebook",
+        icon: Facebook,
+        href: "/redes-sociales/facebook"
+      },
+      {
+        id: "twitter",
+        label: "Twitter",
+        icon: Twitter,
+        href: "/redes-sociales/twitter"
+      }
+    ]
   },
 ]
 
