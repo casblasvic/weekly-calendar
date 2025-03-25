@@ -1,135 +1,77 @@
-import { Email } from "@/types/email"
-import { emailService } from "./email.service"
-
-interface EmailConfig {
-  smtp: {
-    host: string
-    port: number
-    username: string
-    password: string
-    secure: boolean
-  }
-  imap: {
-    host: string
-    port: number
-    username: string
-    password: string
-    secure: boolean
-  }
+interface EmailSyncConfig {
+  provider: string
+  email: string
+  password: string
+  imapServer: string
+  imapPort: number
+  smtpServer: string
+  smtpPort: number
+  useSSL: boolean
+  syncInterval: number // en minutos
 }
 
 class EmailSyncService {
-  private config: EmailConfig | null = null
+  private config: EmailSyncConfig | null = null
   private syncInterval: NodeJS.Timeout | null = null
 
-  constructor() {
-    // Inicializar con la configuración por defecto
-    this.config = {
-      smtp: {
-        host: "smtp.gmail.com",
-        port: 587,
-        username: "",
-        password: "",
-        secure: true
-      },
-      imap: {
-        host: "imap.gmail.com",
-        port: 993,
-        username: "",
-        password: "",
-        secure: true
-      }
-    }
-  }
-
-  async configure(config: EmailConfig) {
+  async configure(config: EmailSyncConfig): Promise<void> {
     this.config = config
-    await this.initializeSync()
-  }
-
-  private async initializeSync() {
-    if (!this.config) return
-
-    // Iniciar sincronización
+    if (this.syncInterval) {
+      clearInterval(this.syncInterval)
+    }
     this.startSync()
   }
 
-  private startSync() {
-    // Sincronizar cada minuto
+  private startSync(): void {
+    if (!this.config) return
+
+    // Simular sincronización inicial
+    this.syncEmails()
+
+    // Configurar intervalo de sincronización
     this.syncInterval = setInterval(() => {
       this.syncEmails()
-    }, 60000)
-
-    // Sincronización inicial
-    this.syncEmails()
+    }, this.config.syncInterval * 60 * 1000) // Convertir minutos a milisegundos
   }
 
-  private async syncEmails() {
+  private async syncEmails(): Promise<void> {
     if (!this.config) return
 
     try {
-      if (typeof window !== 'undefined') {
-        throw new Error('Este servicio solo puede ejecutarse en el servidor');
-      }
-
-      const response = await fetch("/api/email/sync", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(this.config),
-      })
-
-      if (!response.ok) {
-        throw new Error("Error al sincronizar correos")
-      }
-
-      const data = await response.json()
-      
-      if (data.success && data.emails) {
-        // Agregar los correos al servicio
-        data.emails.forEach((email: Email) => {
-          emailService.addEmail(email)
-        })
-      }
+      // Simular sincronización de correos
+      console.log("Sincronizando correos...")
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      console.log("Sincronización completada")
     } catch (error) {
-      console.error("Error en la sincronización:", error)
+      console.error("Error al sincronizar correos:", error)
     }
   }
 
-  async sendEmail(email: Omit<Email, "id" | "date">) {
-    if (!this.config) {
-      throw new Error("Email no configurado")
-    }
-
-    try {
-      const response = await fetch("/api/email/send", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          config: this.config,
-          email,
-        }),
-      })
-
-      if (!response.ok) {
-        throw new Error("Error al enviar correo")
-      }
-
-      const data = await response.json()
-      return data.success
-    } catch (error) {
-      console.error("Error al enviar correo:", error)
-      throw error
-    }
-  }
-
-  stopSync() {
+  stopSync(): void {
     if (this.syncInterval) {
       clearInterval(this.syncInterval)
       this.syncInterval = null
+    }
+  }
+
+  getConfig(): EmailSyncConfig | null {
+    return this.config
+  }
+
+  async testConnection(): Promise<boolean> {
+    if (!this.config) {
+      return false
+    }
+
+    try {
+      // TODO: Implementar la prueba de conexión real
+      // 1. Probar conexión IMAP
+      // 2. Probar conexión SMTP
+      // 3. Verificar credenciales
+      return true
+    } catch (error) {
+      console.error("Error al probar la conexión:", error)
+      return false
     }
   }
 }

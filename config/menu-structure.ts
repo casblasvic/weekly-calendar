@@ -26,13 +26,12 @@ import {
   Briefcase,
   Database,
   CircleDollarSign,
+  Globe,
+  LayoutDashboard,
+  Image,
+  MessageSquare,
   MessageCircle,
-  Share2,
-  Instagram,
-  Facebook,
-  Twitter,
   Mail,
-  HardDrive,
 } from "lucide-react"
 
 export interface MenuItem {
@@ -273,53 +272,33 @@ export const menuItems: MenuItem[] = [
     ],
   },
   {
-    id: "menu-prueba",
-    label: "Menú Prueba",
-    icon: MessageCircle,
-    href: "/menu-prueba",
-    submenu: [
-      {
-        id: "submenu1",
-        label: "Submenú 1",
-        icon: MessageCircle,
-        href: "/menu-prueba/submenu1"
-      },
-      {
-        id: "submenu2",
-        label: "Submenú 2",
-        icon: MessageCircle,
-        href: "/menu-prueba/submenu2"
-      }
-    ]
-  },
-  {
     id: "redes-sociales",
     label: "Redes Sociales",
-    icon: Share2,
+    icon: Globe,
     href: "/redes-sociales",
     submenu: [
       {
         id: "dashboard",
         label: "Dashboard",
-        icon: BarChart2,
+        icon: LayoutDashboard,
         href: "/redes-sociales/dashboard"
       },
       {
         id: "instagram",
         label: "Instagram",
-        icon: Instagram,
+        icon: Image,
         href: "/redes-sociales/instagram"
       },
       {
         id: "facebook",
         label: "Facebook",
-        icon: Facebook,
+        icon: Users,
         href: "/redes-sociales/facebook"
       },
       {
         id: "twitter",
         label: "Twitter",
-        icon: Twitter,
+        icon: MessageSquare,
         href: "/redes-sociales/twitter"
       },
       {
@@ -339,12 +318,6 @@ export const menuItems: MenuItem[] = [
         label: "Configuración",
         icon: Settings,
         href: "/redes-sociales/configuracion"
-      },
-      {
-        id: "community-managers",
-        label: "Community Managers",
-        icon: Users,
-        href: "/redes-sociales/configuracion/community-managers"
       }
     ]
   },

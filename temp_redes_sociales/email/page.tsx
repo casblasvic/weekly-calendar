@@ -63,30 +63,24 @@ export default function EmailPage() {
   const [isComposeOpen, setIsComposeOpen] = useState(false)
   const [emails, setEmails] = useState<Email[]>([])
   const [selectedEmails, setSelectedEmails] = useState<Set<string>>(new Set())
-  const [filteredEmails, setFilteredEmails] = useState<Email[]>([])
 
   useEffect(() => {
     loadEmails()
   }, [selectedFolder])
 
-  useEffect(() => {
-    if (searchQuery) {
-      emailService.searchEmails(searchQuery).then(setFilteredEmails)
-    } else {
-      setFilteredEmails(emails)
-    }
-  }, [searchQuery, emails])
-
-  const loadEmails = async () => {
-    const folderEmails = await emailService.getEmails(selectedFolder)
+  const loadEmails = () => {
+    const folderEmails = emailService.getEmails(selectedFolder)
     setEmails(folderEmails)
     
     // Actualizar contadores
-    for (const folder of folders) {
-      const count = (await emailService.getEmails(folder.name)).length
-      folder.count = count
-    }
+    folders.forEach(folder => {
+      folder.count = emailService.getEmails(folder.name).length
+    })
   }
+
+  const filteredEmails = searchQuery
+    ? emailService.searchEmails(searchQuery)
+    : emails
 
   const handleToggleRead = (id: string) => {
     emailService.toggleRead(id, selectedFolder)
@@ -253,7 +247,7 @@ export default function EmailPage() {
               <div
                 key={email.id}
                 className={`flex items-center gap-4 p-4 hover:bg-gray-50 cursor-pointer ${
-                  !email.read ? "bg-blue-50" : ""
+                  !email.isRead ? "bg-blue-50" : ""
                 } ${selectedEmails.has(email.id) ? "bg-blue-100" : ""}`}
                 onClick={() => setSelectedEmail(email)}
               >

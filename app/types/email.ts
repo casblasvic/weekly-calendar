@@ -1,24 +1,21 @@
 export interface Email {
   id: string
-  from: {
-    name: string
-    email: string
-    avatar: string
-  }
-  to?: string[]
+  from: string
+  to: string
   subject: string
-  preview: string
   content: string
   date: string
-  isRead: boolean
+  read: boolean
   isStarred: boolean
   isImportant: boolean
-  hasAttachments: boolean
-  labels: string[]
+  preview: string
   attachments: {
     name: string
-    size: number
-    type: string
     url: string
+    type: string
   }[]
+  sender: {
+    name: string
+    avatar: string
+  }
 } 

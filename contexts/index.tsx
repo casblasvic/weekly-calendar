@@ -7,6 +7,7 @@ import { InterfazProvider } from './interfaz-Context';
 import { ClientProvider } from './client-context';
 import { ScheduleTemplatesProvider } from './schedule-templates-context';
 import { ScheduleBlocksProvider } from './schedule-blocks-context';
+import { LastClientProvider } from './last-client-context';
 
 // Combine all providers
 export const AppProviders: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -17,11 +18,13 @@ export const AppProviders: React.FC<{ children: React.ReactNode }> = ({ children
           <ImageProvider>
             <DocumentProvider>
               <ClientProvider>
-                <ScheduleTemplatesProvider>
-                  <ScheduleBlocksProvider>
-                    {children}
-                  </ScheduleBlocksProvider>
-                </ScheduleTemplatesProvider>
+                <LastClientProvider>
+                  <ScheduleTemplatesProvider>
+                    <ScheduleBlocksProvider>
+                      {children}
+                    </ScheduleBlocksProvider>
+                  </ScheduleTemplatesProvider>
+                </LastClientProvider>
               </ClientProvider>
             </DocumentProvider>
           </ImageProvider>
