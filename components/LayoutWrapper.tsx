@@ -4,7 +4,7 @@ import type React from "react"
 import { useState, useEffect, useCallback, useRef } from "react"
 import { MainSidebar } from "@/components/main-sidebar"
 import { Button } from "@/components/ui/button"
-import { Home, Calendar, Users, BarChart2, User, LogOut, Settings, FileText, Instagram, Facebook, Twitter } from "lucide-react"
+import { Home, Calendar, Users, BarChart2, User, LogOut, Settings, FileText, Instagram, Facebook, Twitter, MessageCircle, Mail } from "lucide-react"
 import { useRouter, usePathname } from "next/navigation"
 import Link from "next/link"
 import {
@@ -250,6 +250,16 @@ export function LayoutWrapper({ children }: LayoutWrapperProps) {
                 variant="outline"
                 size="sm"
                 className="flex items-center gap-2"
+                onClick={() => router.push('/redes-sociales/dashboard')}
+              >
+                <BarChart2 className="h-4 w-4" />
+                <span>Dashboard</span>
+              </Button>
+
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex items-center gap-2"
                 onClick={() => router.push('/redes-sociales/instagram')}
               >
                 <Instagram className="h-4 w-4" />
@@ -274,6 +284,26 @@ export function LayoutWrapper({ children }: LayoutWrapperProps) {
               >
                 <Twitter className="h-4 w-4" />
                 <span>Twitter</span>
+              </Button>
+
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex items-center gap-2"
+                onClick={() => router.push('/redes-sociales/whatsapp')}
+              >
+                <MessageCircle className="h-4 w-4" />
+                <span>WhatsApp</span>
+              </Button>
+
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex items-center gap-2"
+                onClick={() => router.push('/redes-sociales/email')}
+              >
+                <Mail className="h-4 w-4" />
+                <span>Email</span>
               </Button>
             </div>
           </div>

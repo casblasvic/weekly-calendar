@@ -66,6 +66,39 @@ export default function InstagramPage() {
   const [selectedDM, setSelectedDM] = useState(mockDMs[0])
   const [selectedPost, setSelectedPost] = useState(mockPosts[0])
   const [newMessage, setNewMessage] = useState("")
+  const [messages, setMessages] = useState(selectedDM?.messages || [])
+
+  const handleSendMessage = () => {
+    if (!newMessage.trim()) return
+
+    const newMsg = {
+      id: messages.length + 1,
+      sender: "system",
+      text: newMessage,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    }
+
+    setMessages([...messages, newMsg])
+    setNewMessage("")
+
+    // Simular respuesta del usuario después de 2 segundos
+    setTimeout(() => {
+      const userResponse = {
+        id: messages.length + 2,
+        sender: selectedDM.username,
+        text: "Gracias por tu mensaje. Te responderé pronto.",
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      }
+      setMessages(prev => [...prev, userResponse])
+    }, 2000)
+  }
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSendMessage()
+    }
+  }
 
   return (
     <div className="p-6">
@@ -128,7 +161,7 @@ export default function InstagramPage() {
                   </div>
 
                   <div className="flex-1 overflow-y-auto space-y-4 mb-4">
-                    {selectedDM.messages.map((message) => (
+                    {messages.map((message) => (
                       <div
                         key={message.id}
                         className={`flex ${message.sender === "system" ? "justify-end" : "justify-start"}`}
@@ -152,10 +185,11 @@ export default function InstagramPage() {
                       type="text"
                       value={newMessage}
                       onChange={(e) => setNewMessage(e.target.value)}
+                      onKeyPress={handleKeyPress}
                       placeholder="Escribe un mensaje..."
                       className="flex-1 rounded-lg border p-2"
                     />
-                    <Button>Enviar</Button>
+                    <Button onClick={handleSendMessage}>Enviar</Button>
                   </div>
                 </>
               ) : (

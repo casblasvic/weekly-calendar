@@ -23,7 +23,6 @@ import {
   Terminal,
   Search,
   UserPlus,
-  HardDrive,
   Briefcase,
   Database,
   CircleDollarSign,
@@ -32,6 +31,8 @@ import {
   Instagram,
   Facebook,
   Twitter,
+  Mail,
+  HardDrive,
 } from "lucide-react"
 
 export interface MenuItem {
@@ -292,6 +293,12 @@ export const menuItems: MenuItem[] = [
     href: "/redes-sociales",
     submenu: [
       {
+        id: "dashboard",
+        label: "Dashboard",
+        icon: BarChart2,
+        href: "/redes-sociales/dashboard"
+      },
+      {
         id: "instagram",
         label: "Instagram",
         icon: Instagram,
@@ -308,6 +315,30 @@ export const menuItems: MenuItem[] = [
         label: "Twitter",
         icon: Twitter,
         href: "/redes-sociales/twitter"
+      },
+      {
+        id: "whatsapp",
+        label: "WhatsApp",
+        icon: MessageCircle,
+        href: "/redes-sociales/whatsapp"
+      },
+      {
+        id: "email",
+        label: "Email",
+        icon: Mail,
+        href: "/redes-sociales/email"
+      },
+      {
+        id: "configuracion",
+        label: "Configuración",
+        icon: Settings,
+        href: "/redes-sociales/configuracion"
+      },
+      {
+        id: "community-managers",
+        label: "Community Managers",
+        icon: Users,
+        href: "/redes-sociales/configuracion/community-managers"
       }
     ]
   },

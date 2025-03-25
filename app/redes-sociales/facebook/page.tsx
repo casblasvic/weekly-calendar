@@ -40,7 +40,7 @@ const mockPosts = [
     title: "¡Nuevo servicio de masajes terapéuticos!",
     image: "https://picsum.photos/400/302",
     likes: 78,
-    comments: 12,
+    commentCount: 12,
     pendingComments: 4,
     timestamp: "3h",
     comments: [
@@ -53,7 +53,7 @@ const mockPosts = [
     title: "Consejos para el cuidado de la piel",
     image: "https://picsum.photos/400/303",
     likes: 45,
-    comments: 8,
+    commentCount: 8,
     pendingComments: 2,
     timestamp: "6h",
     comments: [
@@ -66,6 +66,39 @@ export default function FacebookPage() {
   const [selectedDM, setSelectedDM] = useState(mockDMs[0])
   const [selectedPost, setSelectedPost] = useState(mockPosts[0])
   const [newMessage, setNewMessage] = useState("")
+  const [messages, setMessages] = useState(selectedDM?.messages || [])
+
+  const handleSendMessage = () => {
+    if (!newMessage.trim()) return
+
+    const newMsg = {
+      id: messages.length + 1,
+      sender: "system",
+      text: newMessage,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    }
+
+    setMessages([...messages, newMsg])
+    setNewMessage("")
+
+    // Simular respuesta del usuario después de 2 segundos
+    setTimeout(() => {
+      const userResponse = {
+        id: messages.length + 2,
+        sender: selectedDM.username,
+        text: "Gracias por tu mensaje. Te responderé pronto.",
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      }
+      setMessages(prev => [...prev, userResponse])
+    }, 2000)
+  }
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSendMessage()
+    }
+  }
 
   return (
     <div className="p-6">
@@ -128,7 +161,7 @@ export default function FacebookPage() {
                   </div>
 
                   <div className="flex-1 overflow-y-auto space-y-4 mb-4">
-                    {selectedDM.messages.map((message) => (
+                    {messages.map((message) => (
                       <div
                         key={message.id}
                         className={`flex ${message.sender === "system" ? "justify-end" : "justify-start"}`}
@@ -152,10 +185,11 @@ export default function FacebookPage() {
                       type="text"
                       value={newMessage}
                       onChange={(e) => setNewMessage(e.target.value)}
+                      onKeyPress={handleKeyPress}
                       placeholder="Escribe un mensaje..."
                       className="flex-1 rounded-lg border p-2"
                     />
-                    <Button>Enviar</Button>
+                    <Button onClick={handleSendMessage}>Enviar</Button>
                   </div>
                 </>
               ) : (
@@ -187,7 +221,7 @@ export default function FacebookPage() {
                         <div className="flex items-center gap-2 text-sm text-gray-500">
                           <span>{post.likes} me gusta</span>
                           <span>•</span>
-                          <span>{post.comments} comentarios</span>
+                          <span>{post.commentCount} comentarios</span>
                           {post.pendingComments > 0 && (
                             <Badge variant="destructive" className="ml-auto">
                               {post.pendingComments} pendientes
@@ -209,9 +243,9 @@ export default function FacebookPage() {
                     <img src={selectedPost.image} alt={selectedPost.title} className="w-full rounded-lg mb-4" />
                     <h3 className="text-xl font-medium mb-2">{selectedPost.title}</h3>
                     <div className="flex items-center gap-2 text-sm text-gray-500">
-                      <span>{post.likes} me gusta</span>
+                      <span>{selectedPost.likes} me gusta</span>
                       <span>•</span>
-                      <span>{selectedPost.comments} comentarios</span>
+                      <span>{selectedPost.commentCount} comentarios</span>
                       <span>•</span>
                       <span>Hace {selectedPost.timestamp}</span>
                     </div>

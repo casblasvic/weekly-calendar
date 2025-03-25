@@ -15,6 +15,7 @@ import { Toaster } from "@/app/components/ui/toaster"
 import { ThemeProvider as AppThemeProvider } from "@/contexts/theme"
 import { AppProviders } from '@/contexts'
 import { LayoutWrapper } from "@/components/LayoutWrapper"
+import { Toaster as SonnerToaster } from "sonner"
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -34,6 +35,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                             <ConsumoServicioProvider>
                               <LayoutWrapper>{children}</LayoutWrapper>
                               <Toaster />
+                              <SonnerToaster />
                             </ConsumoServicioProvider>
                           </ServicioProvider>
                         </ClientCardProvider>
