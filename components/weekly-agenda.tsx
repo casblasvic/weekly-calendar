@@ -2,7 +2,7 @@
 
 import React, { useMemo, useEffect, useState, useCallback, useRef } from "react"
 
-import { format, parse, addDays, startOfWeek, isSameDay, differenceInDays } from "date-fns"
+import { format, parse, addDays, startOfWeek, isSameDay, differenceInDays, isToday } from "date-fns"
 import { es } from "date-fns/locale"
 import { useClinic } from "@/contexts/clinic-context"
 import { AgendaNavBar } from "./agenda-nav-bar"
@@ -14,7 +14,7 @@ import { CurrentTimeIndicator } from "@/components/current-time-indicator"
 import { ClientSearchDialog } from "@/components/client-search-dialog"
 import { AppointmentDialog } from "@/components/appointment-dialog"
 import { NewClientDialog } from "@/components/new-client-dialog"
-import { ResizableAppointment } from "./resizable-appointment"
+import { AppointmentItem } from "./appointment-item"
 import { DragDropContext, Droppable } from "react-beautiful-dnd"
 import { ScheduleBlock, useScheduleBlocks } from "@/contexts/schedule-blocks-context"
 import { Lock } from "lucide-react"
@@ -22,6 +22,8 @@ import { parseISO, isAfter, isBefore, getDay, getDate } from "date-fns"
 import { useToast } from "@/hooks/use-toast"
 import { BlockScheduleModal } from "./block-schedule-modal"
 import { WeekSchedule } from "@/types/schedule"
+import { Calendar } from "lucide-react"
+import { Appointment } from "@/types/appointments"
 
 // Función para generar slots de tiempo
 function getTimeSlots(startTime: string, endTime: string, interval = 15): string[] {
@@ -48,19 +50,6 @@ function getTimeSlots(startTime: string, endTime: string, interval = 15): string
 // Constantes para el estilo cebrado profesional por COLUMNAS
 const ZEBRA_LIGHT = "bg-purple-50/20"
 const ZEBRA_DARK = "bg-white"
-
-interface Appointment {
-  id: string
-  name: string
-  service: string
-  date: Date
-  roomId: string
-  startTime: string
-  duration: number
-  color: string
-  completed?: boolean
-  phone?: string
-}
 
 interface WeeklyAgendaProps {
   initialDate?: string
@@ -496,10 +485,8 @@ export default function WeeklyAgenda({
   )
 
   const handleAppointmentResize = (id: string, newDuration: number) => {
-    setAppointments((prevAppointments) =>
-      prevAppointments.map((a) => (a.id === id ? { ...a, duration: newDuration } : a)),
-    )
-    setIsAppointmentDialogOpen(false)
+    // Esta función ya no es necesaria con el nuevo componente sin redimensionamiento
+    console.log("La funcionalidad de redimensionamiento visual ha sido desactivada");
   }
 
   const onDragEnd = (result: any) => {
@@ -532,267 +519,252 @@ export default function WeeklyAgenda({
     }
   }
 
-  // Modificar el return para omitir la cabecera en modo contenedor
+  // Estructura corregida para el renderWeeklyGrid
   const renderWeeklyGrid = () => (
     <div className="flex-1 overflow-auto">
       <DragDropContext onDragEnd={onDragEnd}>
-        <div 
-          ref={agendaRef} 
-          className="relative z-0" 
-          style={{ 
-            scrollBehavior: "smooth",
-            willChange: "transform",
-            transform: "translateZ(0)",
-            // Añadir contain para optimizar renderizado
-            contain: "paint layout style"
-          }}
-        >
-          <div className="min-w-[800px] relative">
+        <div ref={agendaRef} className="relative z-0" style={{ scrollBehavior: "smooth" }}>
+          <div className="min-w-[1200px] relative">
             <div
               className="grid"
               style={{
-                gridTemplateColumns: `auto repeat(${weekDays.length}, 1fr)`,
-                minWidth: "800px",
+                gridTemplateColumns: `auto repeat(7, 1fr)`,
                 width: "100%",
-                willChange: "contents", // Optimizar para cambios de contenido
-                contain: "layout style paint" // Contener efectos visuales
               }}
             >
-              {/* Columna de tiempo */}
-              <div className="sticky top-0 z-20 bg-white border-b p-4 w-20">
+              {/* Columna de tiempo - Fija */}
+              <div className="sticky top-0 z-20 w-20 p-4 bg-white border-b border-r border-gray-300">
                 <div className="text-sm text-gray-500">Hora</div>
               </div>
 
-              {/* Cabeceras de días */}
-              {weekDays.map((day, dayIndex) => (
-                <div
-                  key={dayIndex}
-                  className={cn(
-                    "sticky top-0 z-20 bg-white",
-                    day.toDateString() === new Date().toDateString()
-                      ? "border-2 border-purple-300"
-                      : "border-b border-x border-gray-200",
-                    !isDayActive(day) && "bg-gray-100",
-                  )}
-                >
-                  <div
-                    className={cn(
-                      "p-4 relative transition-all duration-200",
-                      isDayActive(day)
-                        ? "cursor-pointer group border-b-2 border-transparent hover:border-purple-500 hover:bg-purple-50/30"
-                        : "cursor-default border-b-2 border-transparent",
-                      day.toDateString() === new Date().toDateString() && isDayActive(day) && "bg-purple-100/70",
-                    )}
-                    onClick={() => handleDayClick(day)}
-                  >
+              {/* Cabeceras de días - Fijas */}
+              {weekDays.map((day, index) => {
+                const today = isToday(day);
+                const active = isDayActive(day);
+                return (
+                  <div key={index} className={cn(
+                    "sticky top-0 z-20 bg-white border-b border-gray-300",
+                    today ? "border-l-2 border-r-2 border-purple-300" : "border-l border-r border-gray-300",
+                    !active && "bg-gray-100"
+                  )}>
                     <div
                       className={cn(
-                        "text-base font-medium capitalize",
-                        isDayActive(day) ? "text-purple-600" : "text-gray-400",
+                        "p-4 border-b border-gray-300",
+                        active ? "cursor-pointer hover:bg-gray-50" : "cursor-not-allowed opacity-70",
+                        today && "bg-purple-50/10",
                       )}
+                      onClick={() => active && handleDayClick(day)}
+                      title={active ? "Ir a vista diaria" : "Día no activo"}
                     >
-                      {format(day, "EEEE", { locale: es })}
-                    </div>
-                    <div
-                      className={cn(
-                        "text-sm",
-                        day.toDateString() === new Date().toDateString() && isDayActive(day)
-                          ? "text-purple-600 font-bold"
-                          : isDayActive(day)
-                            ? "text-gray-500"
-                            : "text-gray-400",
-                      )}
-                    >
-                      {format(day, "d/M/yyyy")}
-                    </div>
-
-                    {/* Línea indicadora de elemento clicable - solo para días activos */}
-                    {isDayActive(day) && (
-                      <div className="absolute bottom-0 left-0 w-full h-0.5 bg-purple-500 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300 origin-left"></div>
-                    )}
-                  </div>
-                  <div
-                    className="grid border-t border-gray-200"
-                    style={{
-                      gridTemplateColumns: `repeat(${activeCabins.length}, 1fr)`,
-                    }}
-                  >
-                    {activeCabins.map((cabin) => (
-                      <div
-                        key={cabin.id}
-                        className={cn(
-                          "text-white text-xs py-2 px-1 text-center font-medium",
-                          !isDayActive(day) && "opacity-50",
-                        )}
-                        style={{ backgroundColor: cabin.color }}
-                      >
-                        {cabin.code}
+                      <div className="flex items-center justify-start gap-2">
+                        <div>
+                          <div className="text-base font-medium capitalize">{format(day, "EEEE", { locale: es })}</div>
+                          <div className={cn("text-sm", today ? "text-purple-600 font-bold" : "text-gray-500")}>
+                            {format(day, "d/M/yyyy")}
+                          </div>
+                        </div>
                       </div>
-                    ))}
+                    </div>
+                    <div
+                      className="grid"
+                      style={{ gridTemplateColumns: `repeat(${activeCabins.length || 1}, 1fr)` }}
+                    >
+                      {activeCabins.map((cabin) => (
+                        <div
+                          key={cabin.id}
+                          className={cn(
+                            "text-white text-xs py-1 px-1 text-center font-medium border-r border-gray-300 last:border-r-0",
+                            !active && "opacity-70"
+                          )}
+                          style={{ backgroundColor: cabin.color }}
+                          title={cabin.name}
+                        >
+                          {cabin.code || cabin.name}
+                        </div>
+                      ))}
+                      {activeCabins.length === 0 && (
+                        <div className="px-1 py-1 text-xs italic text-center text-gray-400">
+                          Sin cabinas
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
 
-              {/* Slots de tiempo y citas */}
+              {/* Filas de Slots de Tiempo */}
               {timeSlots.map((time) => (
                 <React.Fragment key={time}>
+                  {/* Celda de Hora */}
                   <div
-                    className="border-r border-b p-2 text-sm text-purple-600 sticky left-0 bg-white font-medium w-20"
+                    className="sticky left-0 z-10 w-20 p-2 text-sm font-medium text-purple-600 bg-white border-b border-r border-gray-300"
                     data-time={time}
                   >
                     {time}
                   </div>
-                  {weekDays.map((day, dayIndex) => (
-                    <div
-                      key={dayIndex}
-                      className={cn("border-r border-b border-gray-200", !isDayActive(day) && "bg-gray-100")}
-                      data-time={time}
-                      style={{ minWidth: "150px" }}
-                    >
+                  {/* Celdas de Día/Cabina */}
+                  {weekDays.map((day, dayIndex) => {
+                    const today = isToday(day);
+                    const active = isDayActive(day);
+                    return (
                       <div
-                        className={`h-full ${
-                          day.toDateString() === new Date().toDateString() && isDayActive(day)
-                            ? "border-x-2 border-purple-300 bg-purple-50/50"
-                            : "border-x border-gray-200"
-                        }`}
+                        key={`${dayIndex}-${time}`}
+                        className={cn(
+                          "border-b border-gray-200 relative",
+                          today ? "border-l-2 border-r-2 border-purple-300" : "border-l border-r border-gray-300",
+                          today && "bg-purple-50/10",
+                          !active && !today && "bg-gray-100"
+                        )}
+                        data-time={time}
+                        style={{ minWidth: `${activeCabins.length * 80}px` }}
                       >
                         <div
-                          className="grid"
-                          style={{
-                            height: `${AGENDA_CONFIG.ROW_HEIGHT}px`,
-                            gridTemplateColumns: `repeat(${activeCabins.length}, 1fr)`,
-                            transform: needsFullRerenderRef.current ? 'none' : 'translateZ(0)', // Activa hardware acceleration
-                          }}
+                          className="grid h-full"
+                          style={{ gridTemplateColumns: `repeat(${activeCabins.length || 1}, 1fr)` }}
                         >
-                          {activeCabins.map((cabin, cabinIndex) => {
-                            const isAvailable = isTimeSlotAvailable(day, time)
+                          {activeCabins.length > 0 ? activeCabins.map((cabin, cabinIndex) => {
+                            const isAvailable = isTimeSlotAvailable(day, time);
+                            const dayString = format(day, "yyyy-MM-dd");
+                            const blockForCell = findBlockForCell(dayString, time, cabin.id.toString());
+                            const isCellInteractive = active && isAvailable && !blockForCell;
+                            const isCellClickable = isCellInteractive || (blockForCell && active);
+
+                            const timeIndex = timeSlots.indexOf(time);
+                            const prevTime = timeIndex > 0 ? timeSlots[timeIndex - 1] : null;
+                            const blockForPrevCell = prevTime ? findBlockForCell(dayString, prevTime, cabin.id.toString()) : null;
+                            const isStartOfBlock = blockForCell && (!blockForPrevCell || blockForPrevCell.id !== blockForCell.id);
+
+                            let blockDurationSlots = 0;
+                            if (isStartOfBlock && blockForCell) {
+                              blockDurationSlots = 1;
+                              for (let i = timeIndex + 1; i < timeSlots.length; i++) {
+                                const nextTime = timeSlots[i];
+                                const blockForNextCell = findBlockForCell(dayString, nextTime, cabin.id.toString());
+                                if (blockForNextCell && blockForNextCell.id === blockForCell.id) {
+                                  blockDurationSlots++;
+                                } else {
+                                  break;
+                                }
+                              }
+                            }
+
                             return (
                               <Droppable
                                 droppableId={`${dayIndex}-${cabin.id}-${time}`}
-                                key={`${dayIndex}-${cabin.id}-${time}`}
+                                key={`${cabin.id}-${time}`}
                                 type="appointment"
-                                isDropDisabled={!isAvailable}
+                                isDropDisabled={!isCellInteractive}
                                 isCombineEnabled={false}
                                 ignoreContainerClipping={false}
                               >
-                                {(provided, snapshot) => {
-                                  const cellBlock = findBlockForCell(
-                                    format(day, "yyyy-MM-dd"),
-                                    time,
-                                    cabin.id.toString(),
-                                  )
-                                  const isBlocked = !!cellBlock
+                                {(provided, snapshot) => (
+                                  <div
+                                    ref={provided.innerRef}
+                                    {...provided.droppableProps}
+                                    className={cn(
+                                      "relative h-full", // Base
 
-                                  return (
-                                    <div
-                                      ref={provided.innerRef}
-                                      {...provided.droppableProps}
-                                      className={cn(
-                                        "relative cursor-pointer border-r last:border-r-0",
-                                        isBlocked
-                                          ? "hover:bg-pink-200"
-                                          : isAvailable
-                                            ? "hover:bg-purple-50"
-                                            : "bg-black/20 cursor-not-allowed",
-                                      )}
-                                      style={{
-                                        height: `${AGENDA_CONFIG.ROW_HEIGHT}px`,
-                                        backgroundColor: isBlocked
-                                          ? "rgba(244, 114, 182, 0.2)" // Color rosa para bloques
-                                          : snapshot.isDraggingOver
-                                            ? "rgba(167, 139, 250, 0.1)"
-                                            : isAvailable
-                                              ? cabinIndex % 2 === 0
-                                                ? ZEBRA_LIGHT
-                                                : ZEBRA_DARK
-                                              : "rgba(0, 0, 0, 0.2)",
-                                      }}
-                                      onClick={() => handleCellClick(day, time, cabin.id.toString())}
-                                    >
-                                      {isBlocked && (
-                                        <div
-                                          className="absolute inset-0 flex items-center justify-center p-0.5 bg-pink-100/80 border border-pink-300 rounded-sm m-0.5 overflow-hidden cursor-pointer group"
-                                          onClick={(e) => {
-                                            e.stopPropagation()
-                                            if (cellBlock) {
-                                              setSelectedBlock(cellBlock)
-                                              setIsBlockModalOpen(true)
-                                            }
-                                          }}
-                                          title={cellBlock?.description || "Bloqueado"}
-                                        >
-                                          <div className="flex items-center w-full h-full">
-                                            <Lock className="h-3 w-3 min-w-[12px] text-pink-600 mr-0.5" />
-                                            <span className="text-xs font-medium text-pink-800 truncate w-full">
-                                              {cellBlock?.description || ""}
-                                            </span>
-                                          </div>
-                                        </div>
-                                      )}
+                                      // --- Prioridad 1: Día Inactivo ---
+                                      !active && "opacity-70 bg-gray-100 cursor-not-allowed border border-gray-200",
 
-                                      {appointments
-                                        .filter(
-                                          (apt) =>
-                                            apt.date.toDateString() === day.toDateString() &&
-                                            apt.startTime === time &&
-                                            apt.roomId === cabin.id.toString(),
-                                        )
-                                        .map((apt, index) => (
-                                          <ResizableAppointment
-                                            key={apt.id}
-                                            appointment={{
-                                              ...apt,
-                                              phone: apt.phone || ""
-                                            }}
-                                            index={index}
-                                            onResize={handleAppointmentResize}
-                                            onClick={(appointment) => {
-                                              setSelectedClient({
-                                                name: appointment.name,
-                                                phone: appointment.phone || "",
-                                              })
-                                              setSelectedSlot({
-                                                date: day,
-                                                time: appointment.startTime,
-                                                roomId: appointment.roomId,
-                                              })
-                                              setIsAppointmentDialogOpen(true)
-                                            }}
-                                          />
-                                        ))}
-                                      {provided.placeholder}
-                                    </div>
-                                  )
-                                }}
+                                      // --- Prioridad 2: Slot Inactivo (dentro de un día activo) ---
+                                      active && !isAvailable && [
+                                        "bg-gray-300 dark:bg-gray-700 cursor-not-allowed",
+                                        // Cambiado: Bordes blancos para mejor contraste sobre gris
+                                        "border border-white/50 dark:border-white/30",
+                                      ],
+
+                                      // --- Prioridad 3: Celda Activa y Disponible ---
+                                      active && isAvailable && [
+                                        // Aplicar borde derecho por defecto (excepto el último)
+                                        "border-r border-gray-200 last:border-r-0",
+                                        // Aplicar borde superior solo si NO es una celda de continuación de bloque
+                                        !(blockForCell && !isStartOfBlock) && "border-t border-gray-200",
+                                        // Estilos si está bloqueada (el fondo)
+                                        blockForCell && "bg-rose-100 cursor-pointer",
+                                        // Estilos si es interactiva (hover, zebra)
+                                        isCellInteractive && [
+                                          "hover:bg-purple-100/50 cursor-pointer",
+                                          !today && (cabinIndex % 2 === 0 ? ZEBRA_LIGHT : ZEBRA_DARK), // Zebra
+                                        ],
+                                      ]
+                                    )}
+                                    style={{
+                                      height: `${AGENDA_CONFIG.ROW_HEIGHT}px`,
+                                      backgroundColor: snapshot.isDraggingOver && isCellInteractive
+                                        ? "rgba(167, 139, 250, 0.2)"
+                                        : undefined,
+                                    }}
+                                    onClick={(e) => {
+                                      if (isCellInteractive) {
+                                        e.stopPropagation();
+                                        handleCellClick(day, time, cabin.id.toString());
+                                      } else if (blockForCell && active) {
+                                        e.stopPropagation();
+                                        openBlockModal(blockForCell);
+                                      }
+                                    }}
+                                  >
+                                    {isStartOfBlock && active && blockForCell && (
+                                      <div
+                                        className="absolute inset-x-0 top-0 z-10 flex items-center justify-center p-1 m-px overflow-hidden border rounded-sm pointer-events-none bg-rose-200/80 border-rose-300"
+                                        style={{
+                                          height: `calc(${blockDurationSlots * AGENDA_CONFIG.ROW_HEIGHT}px - 2px)`,
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center'
+                                        }}
+                                      >
+                                        <Lock className="flex-shrink-0 w-3 h-3 text-rose-600" />
+                                      </div>
+                                    )}
+                                    {!(blockForCell && !isStartOfBlock) && provided.placeholder}
+                                  </div>
+                                )}
                               </Droppable>
-                            )
-                          })}
+                            );
+                          }) : (
+                            <div className="flex items-center justify-center h-full p-1 text-xs italic text-gray-400 border-t border-r border-gray-200 last:border-r-0" style={{ height: `${AGENDA_CONFIG.ROW_HEIGHT}px` }}>
+                              Sin cabinas activas
+                            </div>
+                          )}
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </React.Fragment>
               ))}
             </div>
-          </div>
 
-          {/* Indicador de tiempo actual */}
-          <CurrentTimeIndicator
-            timeSlots={timeSlots}
-            rowHeight={AGENDA_CONFIG.ROW_HEIGHT}
-            isMobile={false}
-            className="current-time-indicator"
-            agendaRef={agendaRef}
-            clinicOpenTime={openTime}
-            clinicCloseTime={closeTime}
-          />
+            {/* Renderizar citas */}
+            {appointments.map((appointment, index) => (
+              <AppointmentItem
+                key={appointment.id}
+                appointment={appointment}
+                index={index}
+                onClick={undefined}
+              />
+            ))}
+
+            {/* Indicador de tiempo actual RENDERIZADO AQUÍ */}
+            <CurrentTimeIndicator
+              timeSlots={timeSlots}
+              rowHeight={AGENDA_CONFIG.ROW_HEIGHT}
+              isMobile={false}
+              className="current-time-indicator"
+              agendaRef={agendaRef}
+              clinicOpenTime={openTime}
+              clinicCloseTime={closeTime}
+            />
+
+          </div>
         </div>
       </DragDropContext>
     </div>
   )
 
   // Modificar la función handleAppointmentAdd para ser más eficiente
-  const handleAppointmentAdd = useCallback((appointment) => {
+  const handleAppointmentAdd = useCallback((appointment: Appointment) => {
     // Usar un callback para evitar que React tenga que recrear todo el array
     setAppointments(prevAppointments => {
       // Si la cita ya existe, reemplazarla
@@ -895,6 +867,12 @@ export default function WeeklyAgenda({
     };
   }, [isTransitioning]); // Solo depender de isTransitioning para evitar múltiples ejecuciones
 
+  // Asegúrate que la función openBlockModal esté definida en este componente si la usas en onClick
+  const openBlockModal = (block: ScheduleBlock) => {
+    setSelectedBlock(block);
+    setIsBlockModalOpen(true);
+  };
+
   if (containerMode) {
     return (
       <div className="h-full" style={transitionStyles}>
@@ -930,6 +908,7 @@ export default function WeeklyAgenda({
                 }}
                 onDelete={handleDeleteAppointment}
                 onSave={handleSaveAppointment}
+                isEditing={!!selectedSlot}
               />
             )}
 
@@ -1041,6 +1020,7 @@ export default function WeeklyAgenda({
           }}
           onDelete={handleDeleteAppointment}
           onSave={handleSaveAppointment}
+          isEditing={!!selectedSlot}
         />
 
         <NewClientDialog isOpen={isNewClientDialogOpen} onClose={() => setIsNewClientDialogOpen(false)} />

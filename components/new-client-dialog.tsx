@@ -50,13 +50,13 @@ export function NewClientDialog({ isOpen, onClose }: NewClientDialogProps) {
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[600px]">
         <DialogHeader>
-          <DialogTitle className="text-center text-xl font-normal text-gray-600">Nuevo cliente</DialogTitle>
+          <DialogTitle className="text-xl font-normal text-center text-gray-600">Nuevo cliente</DialogTitle>
         </DialogHeader>
         <div className="space-y-6">
           {/* Personal Data */}
           <div>
             <div className="flex items-center gap-2 mb-4">
-              <User className="h-5 w-5 text-purple-600" />
+              <User className="w-5 h-5 text-purple-600" />
               <h2 className="text-lg font-medium text-gray-700">Datos personales</h2>
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -128,7 +128,7 @@ export function NewClientDialog({ isOpen, onClose }: NewClientDialogProps) {
           {/* Contact Data */}
           <div>
             <div className="flex items-center gap-2 mb-4">
-              <MapPin className="h-5 w-5 text-purple-600" />
+              <MapPin className="w-5 h-5 text-purple-600" />
               <h2 className="text-lg font-medium text-gray-700">Datos de contacto</h2>
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -161,7 +161,7 @@ export function NewClientDialog({ isOpen, onClose }: NewClientDialogProps) {
           {/* Additional Contact Data */}
           <div>
             <div className="flex items-center gap-2 mb-4">
-              <MapPin className="h-5 w-5 text-purple-600" />
+              <MapPin className="w-5 h-5 text-purple-600" />
               <h2 className="text-lg font-medium text-gray-700">Datos de contacto</h2>
             </div>
           </div>

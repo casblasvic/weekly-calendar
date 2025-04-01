@@ -13,7 +13,7 @@ import { CurrentTimeIndicator } from "@/components/current-time-indicator"
 import { ClientSearchDialog } from "@/components/client-search-dialog"
 import { AppointmentDialog } from "@/components/appointment-dialog"
 import { NewClientDialog } from "@/components/new-client-dialog"
-import { ResizableAppointment } from "./resizable-appointment"
+import { AppointmentItem } from "./appointment-item"
 import { DragDropContext, Droppable } from "react-beautiful-dnd"
 import { Calendar } from "lucide-react"
 import { Lock } from "lucide-react"
@@ -59,6 +59,7 @@ interface Appointment {
   color: string
   completed?: boolean
   phone?: string
+  tags?: string[]
 }
 
 interface Employee {
@@ -81,6 +82,8 @@ interface ClinicConfig {
   slotDuration: number
   cabins: Cabin[]
   schedule: any
+  weekendOpenTime?: string
+  weekendCloseTime?: string
 }
 
 // Interfaz para bloques contiguos
@@ -112,7 +115,7 @@ export default function WeeklyView({
   appointments: initialAppointments = [],
   employees = [],
   cabins = [],
-  clinicConfig = {},
+  clinicConfig = {} as ClinicConfig,
   onAddAppointment,
   onAppointmentClick,
   onViewChange,
@@ -194,7 +197,7 @@ export default function WeeklyView({
 
   const { activeClinic } = useClinic()
   const { getBlocksByDateRange } = useScheduleBlocks()
-  const clinicConfigContext = activeClinic?.config || {}
+  const clinicConfigContext = activeClinic?.config || {} as ClinicConfig
 
   // Añadir este efecto para cargar los bloqueos:
   useEffect(() => {
@@ -207,7 +210,7 @@ export default function WeeklyView({
           
           // Cargar bloques usando el contexto especializado
           const blocks = await getBlocksByDateRange(
-            Number(activeClinic.id),
+            String(activeClinic.id),
             startDate,
             endDate
           );
@@ -489,6 +492,8 @@ export default function WeeklyView({
       services: { id: string; name: string; category: string }[]
       time: string
       comment?: string
+      blocks: number
+      tags?: string[]
     }) => {
       if (selectedSlot) {
         // Modificar esta parte para usar la primera cabina activa si no se encuentra la específica
@@ -508,9 +513,10 @@ export default function WeeklyView({
             date: selectedSlot.date,
             roomId: selectedSlot.roomId,
             startTime: appointmentData.time,
-            duration: 2, // Default duration
+            duration: appointmentData.blocks || 2, // Usar la duración especificada o valor por defecto
             color: cabin.color, // Use cabin color
             phone: appointmentData.client.phone,
+            tags: appointmentData.tags || [], // Incluir etiquetas
           }
 
           setAppointments((prev) => [...prev, newAppointment])
@@ -583,239 +589,128 @@ export default function WeeklyView({
 
   // Modificar el return para omitir la cabecera en modo contenedor
   const renderWeeklyGrid = () => (
-    <div className="flex-1 overflow-auto">
-      <DragDropContext onDragEnd={onDragEnd}>
-        <div ref={agendaRef} className="relative z-0" style={{ scrollBehavior: "smooth" }}>
-          <div className="min-w-[800px] relative">
-            <div
-              className="grid"
-              style={{
-                gridTemplateColumns: `auto repeat(${weekDays.length}, 1fr)`,
-                minWidth: "800px",
-                width: "100%",
-              }}
-            >
-              {/* Columna de tiempo */}
-              <div className="sticky top-0 z-20 bg-white border-b p-4 w-20">
-                <div className="text-sm text-gray-500">Hora</div>
-              </div>
-
-              {/* Cabecera de días */}
-              {weekDays.map((day, index) => (
-                <div key={index} className="sticky top-0 z-20 bg-white border-b border-x border-gray-200">
-                  <div className={cn("p-4", isToday(day) && "bg-blue-50/50")}>
-                    <div className="flex items-center gap-2">
-                      <div className="text-base font-medium capitalize">{format(day, "EEEE", { locale: es })}</div>
-                      <button
-                        onClick={() => {
-                          // Formatear la fecha para la vista diaria
-                          const formattedDate = format(day, "yyyy-MM-dd")
-
-                          if (onViewChange) {
-                            onViewChange("daily", formattedDate)
-                          } else {
-                            // Navegar a la vista diaria con la fecha seleccionada
-                            router.push(`/agenda/dia/${formattedDate}`)
-                          }
-                        }}
-                        className="p-1 rounded-full hover:bg-gray-100 transition-colors"
-                        title="Ir a vista diaria"
-                      >
-                        <Calendar className="h-4 w-4 text-purple-600" />
-                      </button>
-                    </div>
-                    <div className={cn("text-sm", isToday(day) ? "text-purple-600 font-bold" : "text-gray-500")}>
-                      {format(day, "d/M/yyyy")}
-                    </div>
-                  </div>
-                  <div
-                    className="grid border-t border-gray-200"
-                    style={{
-                      gridTemplateColumns: `repeat(${activeCabins.length}, 1fr)`,
-                    }}
-                  >
-                    {activeCabins.map((cabin) => (
-                      <div
-                        key={cabin.id}
-                        className="text-white text-xs py-2 px-1 text-center font-medium"
-                        style={{ backgroundColor: cabin.color }}
-                      >
-                        {cabin.code}
-                      </div>
-                    ))}
-                  </div>
+    <div className="agenda-container">
+      {/* Cabecera fija */}
+      <div className="sticky top-0 z-50 bg-white agenda-header">
+        <div className="grid" style={{ gridTemplateColumns: "80px repeat(7, 1fr)" }}>
+          <div className="p-2 grid-header-cell">Hora</div>
+          {weekDays.map((day, index) => (
+            <div key={index} className="p-2 grid-header-cell">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-base font-medium capitalize">{format(day, "EEEE", { locale: es })}</div>
+                  <div className="text-sm text-gray-500">{format(day, "d/M/yyyy")}</div>
                 </div>
-              ))}
-
-              {/* Slots de tiempo y citas */}
-              {timeSlots.map((time) => (
-                <React.Fragment key={time}>
-                  <div
-                    className="border-r border-b p-2 text-sm text-purple-600 sticky left-0 bg-white font-medium w-20"
-                    data-time={time}
-                  >
-                    {time}
-                  </div>
-                  {weekDays.map((day, dayIndex) => {
-                    const isAvailable = isTimeSlotAvailable(day, time)
-                    const dayString = format(day, "yyyy-MM-dd")
-
-                    return (
-                      <div
-                        key={`${dayString}-${time}`}
-                        className="border-r border-b border-gray-200"
-                        data-time={time}
-                        data-date={dayString}
-                        style={{ minWidth: "150px" }}
-                      >
-                        <div
-                          className={`h-full ${
-                            isToday(day) ? "border-x-2 border-blue-300 bg-blue-50/50" : "border-x border-gray-200"
-                          }`}
-                        >
-                          <div
-                            className="grid"
-                            style={{
-                              height: `${AGENDA_CONFIG.ROW_HEIGHT}px`,
-                              gridTemplateColumns: `repeat(${activeCabins.length}, 1fr)`,
-                            }}
-                          >
-                            {activeCabins.map((cabin, cabinIndex) => {
-                              // Encontrar todos los bloques contiguos para esta cabina y día
-                              const contiguousBlocks = findContiguousBlocks(dayString, cabin.id.toString())
-
-                              // Determinar si esta celda es parte de un bloque contiguo
-                              const timeIndex = timeSlots.indexOf(time)
-                              const contiguousBlock = contiguousBlocks.find(
-                                (block) => timeIndex >= block.startIndex && timeIndex <= block.endIndex,
-                              )
-
-                              // Determinar si esta celda es el inicio de un bloque contiguo
-                              const isStartOfBlock = contiguousBlock && timeIndex === contiguousBlock.startIndex
-
-                              return (
-                                <Droppable
-                                  droppableId={`${cabin.id}-${time}-${dayString}`}
-                                  key={`${cabin.id}-${time}-${dayString}`}
-                                  type="appointment"
-                                >
-                                  {(provided, snapshot) => {
-                                    const cellBlock = findBlockForCell(dayString, time, cabin.id.toString())
-                                    const isBlocked = !!cellBlock
-
-                                    return (
-                                      <div
-                                        ref={provided.innerRef}
-                                        {...provided.droppableProps}
-                                        className={cn(
-                                          "relative cursor-pointer border-r last:border-r-0",
-                                          isBlocked
-                                            ? "hover:bg-pink-200"
-                                            : isAvailable
-                                              ? "hover:bg-purple-50"
-                                              : "bg-black/20 cursor-not-allowed",
-                                        )}
-                                        style={{
-                                          height: `${AGENDA_CONFIG.ROW_HEIGHT}px`,
-                                          backgroundColor:
-                                            isBlocked && !contiguousBlock
-                                              ? "rgba(244, 114, 182, 0.2)" // Color rosa para bloques individuales
-                                              : snapshot.isDraggingOver
-                                                ? "rgba(167, 139, 250, 0.1)"
-                                                : isAvailable
-                                                  ? cabinIndex % 2 === 0
-                                                    ? ZEBRA_LIGHT
-                                                    : ZEBRA_DARK
-                                                  : "rgba(0, 0, 0, 0.2)",
-                                        }}
-                                        onClick={() => handleCellClick(day, time, cabin.id.toString())}
-                                      >
-                                        {/* Renderizar el bloque contiguo solo en la primera celda del bloque */}
-                                        {isStartOfBlock && contiguousBlock && (
-                                          <div className="relative" style={{ height: `${AGENDA_CONFIG.ROW_HEIGHT}px` }}>
-                                            <ContiguousBlockComponent contiguousBlock={contiguousBlock} />
-                                          </div>
-                                        )}
-
-                                        {/* No mostrar el bloque individual si es parte de un bloque contiguo */}
-                                        {isBlocked && !contiguousBlock && (
-                                          <div
-                                            className="absolute inset-0 flex items-center p-1 bg-pink-100/80 border border-pink-300 rounded-sm m-0.5 overflow-hidden cursor-pointer group"
-                                            onClick={(e) => {
-                                              e.stopPropagation()
-                                              if (cellBlock) {
-                                                openBlockModal(cellBlock)
-                                              }
-                                            }}
-                                            title={cellBlock?.description || "Bloqueado"}
-                                          >
-                                            <div className="flex items-center w-full h-full">
-                                              <Lock className="h-3 w-3 min-w-[12px] flex-shrink-0 text-pink-600 mr-1" />
-                                              <span className="text-xs font-medium text-pink-800 truncate text-ellipsis max-w-[calc(100%-20px)]">
-                                                {cellBlock?.description || ""}
-                                              </span>
-                                            </div>
-                                          </div>
-                                        )}
-
-                                        {appointments
-                                          .filter(
-                                            (apt) =>
-                                              apt.date.toDateString() === day.toDateString() &&
-                                              apt.startTime === time &&
-                                              apt.roomId === cabin.id.toString(),
-                                          )
-                                          .map((apt, index) => (
-                                            <ResizableAppointment
-                                              key={apt.id}
-                                              appointment={apt}
-                                              index={index}
-                                              onResize={handleAppointmentResize}
-                                              onClick={(appointment) => {
-                                                setSelectedClient({
-                                                  name: appointment.name,
-                                                  phone: appointment.phone || "",
-                                                })
-                                                setSelectedSlot({
-                                                  date: day,
-                                                  time: appointment.startTime,
-                                                  roomId: appointment.roomId,
-                                                })
-                                                setIsAppointmentDialogOpen(true)
-                                              }}
-                                            />
-                                          ))}
-                                        {provided.placeholder}
-                                      </div>
-                                    )
-                                  }}
-                                </Droppable>
-                              )
-                            })}
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </React.Fragment>
+                <button
+                  onClick={() => handleDayClick(day)}
+                  className="p-1 transition-colors rounded-full hover:bg-gray-100"
+                  title="Ir a vista diaria"
+                >
+                  <Calendar className="w-4 h-4 text-purple-600" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      
+      {/* Cuerpo del grid con desplazamiento */}
+      <div className="overflow-auto agenda-body">
+        <div className="grid-container" style={{ display: "grid", gridTemplateColumns: "auto repeat(7, 1fr)" }}>
+          {/* Columna de horas */}
+          <div className="hours-column">
+            {timeSlots.map((time) => (
+              <div key={time} className="h-40 p-2 font-medium text-center grid-cell bg-gray-50">
+                {time}
+              </div>
+            ))}
+          </div>
+          
+          {/* Columnas para cada día */}
+          {weekDays.map((day, dayIndex) => (
+            <div key={dayIndex} className="day-column">
+              {timeSlots.map((time, timeIndex) => (
+                <div 
+                  key={`${dayIndex}-${timeIndex}`} 
+                  className="relative grid-cell"
+                  onClick={() => handleCellClick(day, time, String(activeCabins[0]?.id || "1"))}
+                />
               ))}
             </div>
-          </div>
-
-          {/* Indicador de tiempo actual */}
-          <CurrentTimeIndicator
-            timeSlots={timeSlots}
-            rowHeight={AGENDA_CONFIG.ROW_HEIGHT}
-            isMobile={false}
-            className="z-10"
-            agendaRef={agendaRef}
-            clinicOpenTime={openTime}
-            clinicCloseTime={closeTime}
+          ))}
+          
+          {/* Citas y eventos superpuestos */}
+          {appointments.map((appointment, index) => (
+            <AppointmentItem
+              key={appointment.id}
+              appointment={appointment}
+              index={index}
+              onClick={handleAppointmentClick}
+            />
+          ))}
+          
+          {/* Indicador de hora actual */}
+          <div 
+            className="current-time-indicator"
+            style={{ top: calculateCurrentTimePosition() }}
           />
         </div>
-      </DragDropContext>
+      </div>
     </div>
   )
+
+  // Añadir un estado para la cita seleccionada
+  const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null)
+
+  // Agregar un manejador para el clic en una cita existente
+  const handleAppointmentClick = (appointment: Appointment) => {
+    console.log("Cita seleccionada para edición:", appointment)
+    setSelectedAppointment(appointment)
+    
+    // Configurar los datos necesarios para editar la cita
+    const client = {
+      name: appointment.name,
+      phone: appointment.phone || ""
+    }
+    
+    setSelectedClient(client)
+    setSelectedSlot({
+      date: appointment.date,
+      time: appointment.startTime,
+      roomId: appointment.roomId
+    })
+    
+    // Abrir el diálogo de edición
+    setIsAppointmentDialogOpen(true)
+  }
+
+  // Función para manejar el clic en un día
+  const handleDayClick = (day: Date) => {
+    if (onViewChange) {
+      onViewChange("daily", format(day, "yyyy-MM-dd"));
+    }
+  }
+
+  // Función para calcular la posición del indicador de hora actual
+  const calculateCurrentTimePosition = () => {
+    const now = new Date();
+    const currentHour = now.getHours();
+    const currentMinute = now.getMinutes();
+    const currentTimeInMinutes = currentHour * 60 + currentMinute;
+    
+    const openTimeParts = openTime.split(':').map(Number);
+    const openTimeInMinutes = openTimeParts[0] * 60 + openTimeParts[1];
+    
+    if (currentTimeInMinutes < openTimeInMinutes) {
+      return 0;
+    }
+    
+    const totalMinutesInDay = timeSlots.length * slotDuration;
+    const minutesSinceOpen = currentTimeInMinutes - openTimeInMinutes;
+    const percentOfDay = minutesSinceOpen / totalMinutesInDay;
+    
+    return percentOfDay * (timeSlots.length * AGENDA_CONFIG.ROW_HEIGHT);
+  };
 
   if (containerMode) {
     return (
@@ -833,9 +728,13 @@ export default function WeeklyView({
 
           <AppointmentDialog
             isOpen={isAppointmentDialogOpen}
-            onClose={() => setIsAppointmentDialogOpen(false)}
+            onClose={() => {
+              setIsAppointmentDialogOpen(false)
+              setSelectedAppointment(null) // Limpiar la cita seleccionada al cerrar
+            }}
             client={selectedClient}
             selectedTime={selectedSlot?.time}
+            appointment={selectedAppointment} // Pasar la cita seleccionada al diálogo
             onSearchClick={() => {
               setIsAppointmentDialogOpen(false)
               setIsSearchDialogOpen(true)
@@ -846,6 +745,7 @@ export default function WeeklyView({
             }}
             onDelete={handleDeleteAppointment}
             onSave={handleSaveAppointment}
+            isEditing={!!selectedAppointment} // Indicar si estamos en modo edición
           />
 
           <NewClientDialog isOpen={isNewClientDialogOpen} onClose={() => setIsNewClientDialogOpen(false)} />
@@ -862,7 +762,7 @@ export default function WeeklyView({
                 const endDate = format(addDays(startOfWeek(currentDate, { weekStartsOn: 1 }), 6), "yyyy-MM-dd");
                 
                 getBlocksByDateRange(
-                  Number(activeClinic.id),
+                  String(activeClinic.id),
                   startDate,
                   endDate
                 ).then(blocks => {
@@ -875,9 +775,12 @@ export default function WeeklyView({
                 });
               }
             }}
-            clinicRooms={activeCabins}
+            clinicRooms={activeCabins.map(cabin => ({
+              ...cabin,
+              id: cabin.id.toString()
+            }))}
             blockToEdit={selectedBlock}
-            clinicId={activeClinic?.id || 1}
+            clinicId={String(activeClinic?.id || "1")}
             onBlockSaved={() => {
               // Recargar los bloques
               if (activeClinic?.id) {
@@ -886,7 +789,7 @@ export default function WeeklyView({
                 const endDate = format(addDays(startOfWeek(currentDate, { weekStartsOn: 1 }), 6), "yyyy-MM-dd");
                 
                 getBlocksByDateRange(
-                  Number(activeClinic.id),
+                  String(activeClinic.id),
                   startDate,
                   endDate
                 ).then(blocks => {
@@ -915,9 +818,9 @@ export default function WeeklyView({
   return (
     <HydrationWrapper fallback={<div>Cargando vista semanal...</div>}>
       <div className="flex flex-col h-screen bg-white">
-        <header className="px-4 py-3 z-30 relative bg-white border-b">
+        <header className="relative z-30 px-4 py-3 bg-white border-b">
           <div className="px-4 py-3">
-            <h1 className="text-2xl font-medium mb-4">Agenda semanal</h1>
+            <h1 className="mb-4 text-2xl font-medium">Agenda semanal</h1>
             <div className="text-sm text-gray-500">
               {format(startOfCurrentWeek, "d 'de' MMMM", { locale: es })} -{" "}
               {format(addDays(startOfCurrentWeek, 6), "d 'de' MMMM 'de' yyyy", { locale: es })}
@@ -938,7 +841,7 @@ export default function WeeklyView({
                 const endDate = format(addDays(startOfWeek(currentDate, { weekStartsOn: 1 }), 6), "yyyy-MM-dd");
                 
                 getBlocksByDateRange(
-                  Number(activeClinic.id),
+                  String(activeClinic.id),
                   startDate,
                   endDate
                 ).then(blocks => {
@@ -966,9 +869,13 @@ export default function WeeklyView({
 
         <AppointmentDialog
           isOpen={isAppointmentDialogOpen}
-          onClose={() => setIsAppointmentDialogOpen(false)}
+          onClose={() => {
+            setIsAppointmentDialogOpen(false)
+            setSelectedAppointment(null) // Limpiar la cita seleccionada al cerrar
+          }}
           client={selectedClient}
           selectedTime={selectedSlot?.time}
+          appointment={selectedAppointment} // Pasar la cita seleccionada al diálogo
           onSearchClick={() => {
             setIsAppointmentDialogOpen(false)
             setIsSearchDialogOpen(true)
@@ -979,6 +886,7 @@ export default function WeeklyView({
           }}
           onDelete={handleDeleteAppointment}
           onSave={handleSaveAppointment}
+          isEditing={!!selectedAppointment} // Indicar si estamos en modo edición
         />
 
         <NewClientDialog isOpen={isNewClientDialogOpen} onClose={() => setIsNewClientDialogOpen(false)} />
@@ -995,7 +903,7 @@ export default function WeeklyView({
               const endDate = format(addDays(startOfWeek(currentDate, { weekStartsOn: 1 }), 6), "yyyy-MM-dd");
               
               getBlocksByDateRange(
-                Number(activeClinic.id),
+                String(activeClinic.id),
                 startDate,
                 endDate
               ).then(blocks => {
@@ -1008,9 +916,12 @@ export default function WeeklyView({
               });
             }
           }}
-          clinicRooms={activeCabins}
+          clinicRooms={activeCabins.map(cabin => ({
+            ...cabin,
+            id: cabin.id.toString()
+          }))}
           blockToEdit={selectedBlock}
-          clinicId={activeClinic?.id || 1}
+          clinicId={String(activeClinic?.id || "1")}
           onBlockSaved={() => {
             // Recargar los bloques
             if (activeClinic?.id) {
@@ -1019,7 +930,7 @@ export default function WeeklyView({
               const endDate = format(addDays(startOfWeek(currentDate, { weekStartsOn: 1 }), 6), "yyyy-MM-dd");
               
               getBlocksByDateRange(
-                Number(activeClinic.id),
+                String(activeClinic.id),
                 startDate,
                 endDate
               ).then(blocks => {

@@ -1,0 +1,74 @@
+/* Estilos base para el grid de agenda */
+.agenda-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
+.agenda-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background-color: white;
+  border-bottom: 1px solid #e5e7eb;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  width: 100%;
+}
+
+.agenda-body {
+  flex: 1;
+  overflow: auto;
+  position: relative;
+  min-height: 0;
+  z-index: 10;
+}
+
+.agenda-grid {
+  position: relative;
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.grid-cell {
+  position: relative;
+  border: 1px solid #e5e7eb;
+  height: 40px;
+  background-color: white;
+  z-index: 10;
+}
+
+.grid-header-cell {
+  background-color: white;
+  position: relative;
+  z-index: 40;
+}
+
+/* Elementos superpuestos como citas o bloques */
+.agenda-event {
+  position: absolute;
+  z-index: 20;
+  border-radius: 4px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+
+/* Indicador de hora actual */
+.current-time-indicator {
+  position: absolute;
+  position: sticky;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background-color: #ef4444;
+  z-index: 15;
+  pointer-events: none;
+}
+
+/* Asegurar que el contenedor padre relativo tenga contexto */
+/* Esto ya debería estar en tu componente con 'relative' en la línea 541 */
+/* .min-w-\[1200px\].relative { position: relative; } */
+
+/* Asegurar que el contenedor de scroll funcione para sticky */
+/* Esto ya debería estar en tu componente con 'overflow-auto' en la línea 538 */
+/* .flex-1.overflow-auto { overflow: auto; } */ 

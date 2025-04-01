@@ -124,7 +124,7 @@ export function MobileAgendaView({ showMainSidebar = false }: MobileAgendaViewPr
 }
 
 function MobileAgendaViewContent({ showMainSidebar = false }: MobileAgendaViewProps) {
-  const { activeClinic } = useClinic()
+  const { activeClinic, isLoading } = useClinic()
   const [currentDate, setCurrentDate] = useState<Date | null>(null)
   const [view, setView] = useState<"list" | "calendar">("calendar")
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false)
@@ -140,58 +140,23 @@ function MobileAgendaViewContent({ showMainSidebar = false }: MobileAgendaViewPr
   const [hasInternalError, setHasInternalError] = useState(false)
   const [errorDetails, setErrorDetails] = useState<string | null>(null)
 
-  // Verificar si tenemos datos de clínica válidos
+  // Efecto para cargar servicios o manejar errores
   useEffect(() => {
-    try {
-      console.log("Verificando datos de clínica:", activeClinic)
-      
-      if (!activeClinic) {
-        console.error("No hay clínica activa")
-        setHasInternalError(true)
-        setErrorDetails("No se han encontrado datos de la clínica activa.")
-        return
-      }
-      
-      if (!activeClinic.config) {
-        console.error("La clínica activa no tiene configuración")
-        setHasInternalError(true)
-        setErrorDetails("La configuración de la clínica no está disponible.")
-        return
-      }
-
-      if (!activeClinic.config.cabins || !Array.isArray(activeClinic.config.cabins)) {
-        console.error("No hay cabinas configuradas o el formato es incorrecto")
-        setHasInternalError(true)
-        setErrorDetails("La configuración de cabinas no es válida.")
-        return
-      }
-
-      // Si llegamos aquí, los datos son válidos
-      setHasInternalError(false)
-      setErrorDetails(null)
-    } catch (error) {
-      console.error("Error al verificar datos de clínica:", error)
-      setHasInternalError(true)
-      setErrorDetails("Error inesperado al cargar la configuración.")
+    if (isLoading) {
+      console.info("Cargando datos de clínica...");
+      return;
     }
-  }, [activeClinic])
+    
+    if (!activeClinic) {
+      console.info("No hay clínica activa seleccionada");
+      // Mostrar una interfaz reducida en lugar de un error completo
+      setHasInternalError(false);
+      setErrorDetails("No se ha seleccionado una clínica activa.");
+      return;
+    }
 
-  // Si hay un error interno, mostrar un mensaje amigable
-  if (hasInternalError) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen p-6 bg-red-50">
-        <h2 className="mb-3 text-xl font-bold text-red-800">Error en la configuración</h2>
-        <p className="mb-4 text-center text-red-700">{errorDetails || "Ha ocurrido un error inesperado."}</p>
-        <p className="mb-6 text-sm text-center text-red-600">Intenta recargar la página o contacta con soporte si el problema persiste.</p>
-        <button
-          className="px-4 py-2 text-white bg-red-600 rounded shadow hover:bg-red-700"
-          onClick={() => window.location.reload()}
-        >
-          Recargar la página
-        </button>
-      </div>
-    )
-  }
+    // Continuar con la lógica normal...
+  }, [isLoading, activeClinic, currentDate]);
 
   const toggleDrawer = () => setIsDrawerOpen(!isDrawerOpen)
 
@@ -632,27 +597,39 @@ function MobileAgendaViewContent({ showMainSidebar = false }: MobileAgendaViewPr
 
   // Manejo seguro de los slots de tiempo
   const timeSlots = useMemo(() => {
-    if (!activeClinic?.config?.openTime || !activeClinic?.config?.closeTime) {
-      console.error("Horarios de apertura/cierre no disponibles:", {
-        openTime: activeClinic?.config?.openTime,
-        closeTime: activeClinic?.config?.closeTime,
+    // Valores predeterminados
+    const defaultOpenTime = "09:00";
+    const defaultCloseTime = "18:00";
+
+    if (!activeClinic?.config) {
+      // Si no hay configuración de clínica, usar valores predeterminados sin mostrar error
+      console.info("Usando horarios predeterminados por falta de configuración de clínica");
+      return getTimeSlots(defaultOpenTime, defaultCloseTime);
+    }
+
+    // Si hay configuración pero faltan los horarios
+    if (!activeClinic.config.openTime || !activeClinic.config.closeTime) {
+      console.info("Configuración de horarios incompleta, usando valores predeterminados:", {
+        openTime: activeClinic.config.openTime || defaultOpenTime,
+        closeTime: activeClinic.config.closeTime || defaultCloseTime,
       });
-      // Valores predeterminados en caso de error
-      return getTimeSlots("09:00", "18:00");
+      return getTimeSlots(
+        activeClinic.config.openTime || defaultOpenTime,
+        activeClinic.config.closeTime || defaultCloseTime
+      );
     }
     
     try {
-      console.log("Generando slots de tiempo:", {
+      console.info("Generando slots de tiempo con configuración de clínica:", {
         openTime: activeClinic.config.openTime,
         closeTime: activeClinic.config.closeTime,
       });
       return getTimeSlots(activeClinic.config.openTime, activeClinic.config.closeTime);
     } catch (error) {
-      console.error("Error al generar slots de tiempo:", error);
-      // Fallback en caso de error
-      return getTimeSlots("09:00", "18:00");
+      console.info("Error al generar slots de tiempo, usando valores predeterminados:", error);
+      return getTimeSlots(defaultOpenTime, defaultCloseTime);
     }
-  }, [activeClinic?.config?.openTime, activeClinic?.config?.closeTime]);
+  }, [activeClinic?.config]);
 
   const timeSlotRefs = useRef<{ [key: string]: HTMLDivElement | null }>({})
 

@@ -7,6 +7,7 @@ import { InterfazProvider } from './interfaz-Context';
 import { ClientProvider } from './client-context';
 import { ScheduleTemplatesProvider } from './schedule-templates-context';
 import { ScheduleBlocksProvider } from './schedule-blocks-context';
+import { AppointmentTagsProvider } from './appointment-tags-context';
 
 // Combine all providers
 export const AppProviders: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -19,7 +20,9 @@ export const AppProviders: React.FC<{ children: React.ReactNode }> = ({ children
               <ClientProvider>
                 <ScheduleTemplatesProvider>
                   <ScheduleBlocksProvider>
-                    {children}
+                    <AppointmentTagsProvider>
+                      {children}
+                    </AppointmentTagsProvider>
                   </ScheduleBlocksProvider>
                 </ScheduleTemplatesProvider>
               </ClientProvider>

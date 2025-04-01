@@ -89,116 +89,47 @@ export function MobileWeeklyAgenda({ cabins, timeSlots, selectedDate, onBackToWe
 
   // Renderizado simplificado para evitar problemas de hidratación
   return (
-    <div className="flex flex-col h-full bg-white mobile-agenda-container" suppressHydrationWarning>
-      {/* Header con logo y fecha actual */}
-      <header className="px-4 py-2 border-b">
-        <div className="flex items-center justify-between">
-          <div className="font-bold">LOGO</div>
-          {onBackToWeekView && (
-            <Button variant="outline" size="sm" onClick={onBackToWeekView} className="mb-2">
-              <ChevronLeft className="w-4 h-4 mr-1" />
-              Vista semanal
-            </Button>
-          )}
-          <div className="text-sm text-gray-500" suppressHydrationWarning>
-            {isClient ? format(currentDate, "EEEE, d 'de' MMMM", { locale: es }) : "Cargando..."}
-          </div>
-        </div>
-        
-        {/* Barra de navegación mejorada y más responsive */}
-        <div className="flex items-center justify-between mt-2 mb-2">
-          <div className="flex items-center space-x-1">
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className="w-8 h-8" 
-              onClick={() => changeMonth("prev")}
-              aria-label="Mes anterior"
-            >
-              <SkipBack className="w-4 h-4" />
-            </Button>
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className="w-8 h-8" 
-              onClick={() => changeWeek("prev")}
-              aria-label="Semana anterior"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </Button>
-          </div>
-          
-          <span className="text-sm font-medium">{weekRange}</span>
-          
-          <div className="flex items-center space-x-1">
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className="w-8 h-8" 
-              onClick={() => changeWeek("next")}
-              aria-label="Semana siguiente"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </Button>
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className="w-8 h-8" 
-              onClick={() => changeMonth("next")}
-              aria-label="Mes siguiente"
-            >
-              <SkipForward className="w-4 h-4" />
-            </Button>
-          </div>
-        </div>
-      </header>
-
-      <div className="relative w-full overflow-x-auto">
-        {isClient ? (
-          <table className="w-full border-collapse">
-            <thead>
-              <tr>
-                <th className="w-20 p-2 text-sm font-medium text-left text-gray-500 border-r">Hora</th>
+    <div className="agenda-container">
+      {/* Cabecera fija */}
+      <div className="agenda-header">
+        <table className="w-full">
+          <thead>
+            <tr>
+              <th className="grid-header-cell w-20 p-2 text-sm font-medium text-left text-gray-500">Hora</th>
+              {activeCabins.map((cabin) => (
+                <th
+                  key={`cabin-header-${cabin.id}`}
+                  className="grid-header-cell p-2 text-xs font-medium text-center text-white"
+                  style={getColorStyle(cabin.color)}
+                >
+                  {cabin.code}
+                </th>
+              ))}
+            </tr>
+          </thead>
+        </table>
+      </div>
+      
+      {/* Cuerpo del grid con desplazamiento */}
+      <div className="agenda-body">
+        <table className="agenda-grid">
+          <tbody>
+            {timeSlots.map((time) => (
+              <tr key={time} className="border-b">
+                <td className="grid-cell p-2 text-sm font-medium text-purple-600">{time}</td>
                 {activeCabins.map((cabin) => (
-                  <th
-                    key={`cabin-header-${cabin.id}`}
-                    className="p-2 text-xs font-medium text-center text-white border-r last:border-r-0"
-                    style={getColorStyle(cabin.color)}
-                  >
-                    {cabin.code}
-                  </th>
+                  <td key={`${time}-${cabin.id}`} className="grid-cell p-0 relative"></td>
                 ))}
               </tr>
-            </thead>
-            <tbody>
-              {timeSlots.map((time) => (
-                <tr key={time} className="border-b">
-                  <td className="p-2 text-sm font-medium text-purple-600 border-r" data-time={time}>
-                    {time}
-                  </td>
-                  {activeCabins.map((cabin) => (
-                    <td key={`${time}-${cabin.id}`} className="p-2 border-r last:border-r-0"></td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <div className="p-4 text-center">Cargando agenda...</div>
-        )}
-
-        {/* Indicador de tiempo actual */}
-        {containerRef && (
-          <CurrentTimeIndicator
-            timeSlots={timeSlots}
-            rowHeight={40} // Altura estándar para móvil
-            isMobile={true}
-            className="z-10"
-            agendaRef={containerRef}
-            clinicOpenTime={clinicOpenTime}
-            clinicCloseTime={clinicCloseTime}
-          />
-        )}
+            ))}
+          </tbody>
+        </table>
+        
+        {/* Indicador de hora actual */}
+        <div 
+          className="current-time-indicator"
+          style={{ top: calculateCurrentTimePosition(timeSlots, clinicOpenTime, clinicCloseTime) }}
+        />
       </div>
     </div>
   )

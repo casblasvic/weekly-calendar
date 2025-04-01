@@ -84,7 +84,6 @@ export default function DailyAgenda({
   const [selectedBlock, setSelectedBlock] = useState<Block | null>(null)
   const [isBlockDetailsOpen, setIsBlockDetailsOpen] = useState(false)
   const [isNewBlockDialogOpen, setIsNewBlockDialogOpen] = useState(false)
-  const [isNewClientDialogOpen, setIsNewClientDialogOpen] = useState(false)
   const [newBlock, setNewBlock] = useState<Omit<Block, "id">>({
     date: "",
     startTime: "",
@@ -339,27 +338,17 @@ export default function DailyAgenda({
       }
 
       return (
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div className={cellStyle} onClick={() => handleCellClick(timeSlot, cabin)}>
-                {isFirstSlot && (
-                  <>
-                    <Lock className="h-3 w-3 absolute top-1 right-1" />
-                    <div className="text-xs px-1 truncate">{block.description}</div>
-                  </>
-                )}
-              </div>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>{block.description}</p>
-              <p>
-                Hora: {block.startTime} - {block.endTime}
-              </p>
-              {block.isRecurring && <p>Bloque recurrente</p>}
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        <div
+          className={cellStyle} 
+          onClick={() => handleCellClick(timeSlot, cabin)}
+        >
+          {isFirstSlot && (
+            <>
+              <Lock className="h-3 w-3 absolute top-1 right-1" />
+              <div className="text-xs px-1 truncate">{block.description}</div>
+            </>
+          )}
+        </div>
       )
     }
 
@@ -375,11 +364,11 @@ export default function DailyAgenda({
           <Button variant="outline" size="icon" onClick={() => handlePrevDay()}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <Button variant="outline" size="icon" onClick={() => handleNextDay()}>
-            <ChevronRight className="h-4 w-4" />
-          </Button>
           <Button variant="outline" onClick={() => handleToday()}>
             Hoy
+          </Button>
+          <Button variant="outline" size="icon" onClick={() => handleNextDay()}>
+            <ChevronRight className="h-4 w-4" />
           </Button>
           <h2 className="text-xl font-bold">{format(currentDate, "EEEE, d MMMM yyyy", { locale: es })}</h2>
         </div>
@@ -401,41 +390,70 @@ export default function DailyAgenda({
               <Calendar mode="single" selected={selectedDate} onSelect={handleDateSelect} initialFocus />
             </PopoverContent>
           </Popover>
-          <Button variant="outline" onClick={() => handleViewWeeklyAgenda()}>
-            Vista Semanal
-          </Button>
         </div>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="min-w-full border-collapse">
-          <thead>
-            <tr>
-              <th className="border border-gray-200 p-2 bg-gray-50">Hora</th>
-              {cabins.map((cabin, index) => (
-                <th
-                  key={index}
-                  className="border border-gray-200 p-2 bg-gray-50"
-                  style={{ backgroundColor: cabin.color === "Con" ? "red" : cabin.color === "Lun" ? "blue" : "green" }}
-                >
-                  {cabin.name}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {timeSlots.map((timeSlot, timeIndex) => (
-              <tr key={timeIndex}>
-                <td className="border border-gray-200 p-2 bg-gray-50">{timeSlot}</td>
-                {cabins.map((cabin, cabinIndex) => (
-                  <td key={cabinIndex} className="p-0 border-collapse">
-                    {renderCell(timeSlot, cabin)}
-                  </td>
+      <div className="agenda-container">
+        {/* Cabecera fija */}
+        <div className="agenda-header sticky top-0 z-50 bg-white">
+          <table className="w-full">
+            <thead>
+              <tr>
+                <th className="grid-header-cell w-20 p-2">Hora</th>
+                {cabins.map((cabin, index) => (
+                  <th
+                    key={index}
+                    className="grid-header-cell p-2 text-center"
+                    style={{ backgroundColor: cabin.color === "Con" ? "red" : cabin.color === "Lun" ? "blue" : "green" }}
+                  >
+                    {cabin.name}
+                  </th>
                 ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+          </table>
+        </div>
+        
+        {/* Cuerpo del grid con desplazamiento */}
+        <div className="agenda-body overflow-auto">
+          <table className="agenda-grid w-full">
+            <tbody>
+              {timeSlots.map((timeSlot, timeIndex) => (
+                <tr key={timeIndex}>
+                  <td className="grid-cell p-2 bg-gray-50 text-center font-medium w-20">{timeSlot}</td>
+                  {cabins.map((cabin, cabinIndex) => (
+                    <td key={cabinIndex} className="grid-cell p-0 relative">
+                      {renderCell(timeSlot, cabin)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          
+          {/* Aquí irían los elementos superpuestos como citas o eventos */}
+          {blocks.map((appointment) => (
+            <div 
+              key={appointment.id}
+              className="agenda-event"
+              style={{
+                top: calculateAppointmentTop(appointment),
+                left: calculateAppointmentLeft(appointment),
+                width: calculateAppointmentWidth(appointment),
+                height: calculateAppointmentHeight(appointment),
+                backgroundColor: appointment.color || '#3b82f6'
+              }}
+            >
+              {appointment.description}
+            </div>
+          ))}
+          
+          {/* Indicador de hora actual */}
+          <div 
+            className="current-time-indicator"
+            style={{ top: calculateCurrentTimePosition() }}
+          />
+        </div>
       </div>
 
       {/* Block Details Dialog */}

@@ -1,6 +1,6 @@
 "use client"
 
-import React from "react"
+import React, { useMemo } from "react"
 
 import { useState, useEffect, useCallback, useRef } from "react"
 import { format, parse, parseISO, isAfter, isBefore, getDay, getDate, isSameDay, addDays, subDays, set, addMinutes, isEqual } from "date-fns"
@@ -15,8 +15,7 @@ import { CurrentTimeIndicator } from "@/components/current-time-indicator"
 import { ClientSearchDialog } from "./client-search-dialog"
 import { AppointmentDialog } from "@/components/appointment-dialog"
 import { NewClientDialog } from "@/components/new-client-dialog"
-import { ResizableAppointment } from "./resizable-appointment"
-import { DragDropContext, Droppable } from "react-beautiful-dnd"
+import { AppointmentItem } from "./appointment-item"
 import { Calendar } from "lucide-react"
 import { ScheduleBlock, useScheduleBlocks } from "@/contexts/schedule-blocks-context"
 import { Lock } from "lucide-react"
@@ -30,8 +29,9 @@ import { Separator } from "@/components/ui/separator"
 import { useSchedule } from "@/hooks/use-schedule"
 import { Modal } from "@/components/ui/modal"
 import { AppointmentDialog as AppointmentDialogType } from "@/components/appointment-dialog"
-import { ResizableAppointment as ResizableAppointmentType } from "@/components/resizable-appointment"
+import { AppointmentItem as AppointmentItemType } from "@/components/appointment-item"
 import { CustomDatePicker } from "@/components/custom-date-picker"
+import { Appointment } from "@/types/appointments"
 
 // Función para generar slots de tiempo
 function getTimeSlots(startTime: string, endTime: string, interval = 15): string[] {
@@ -55,22 +55,9 @@ function getTimeSlots(startTime: string, endTime: string, interval = 15): string
   return slots
 }
 
-// Constantes para el estilo cebrado profesional por COLUMNAS
-const ZEBRA_LIGHT = "bg-purple-50/20"
-const ZEBRA_DARK = "bg-white"
-
-interface Appointment {
-  id: string
-  name: string
-  service: string
-  date: Date
-  roomId: string
-  startTime: string
-  duration: number
-  color: string
-  completed?: boolean
-  phone?: string
-}
+// Definir colores zebra si no están importados globalmente
+const ZEBRA_LIGHT = "bg-gray-50"; // O un color púrpura muy claro: "bg-purple-50/20";
+const ZEBRA_DARK = "bg-white";
 
 interface Employee {
   id: string
@@ -217,13 +204,13 @@ export default function DayView({
   }, [initialAppointments, appointments])
 
   // Usar la configuración de la clínica activa o los valores proporcionados como props
-  const effectiveClinicConfig: ClinicConfig = {
+  const effectiveClinicConfig: ClinicConfig = useMemo(() => ({
     openTime: activeClinic?.config?.openTime || clinicConfig?.openTime || "09:00",
     closeTime: activeClinic?.config?.closeTime || clinicConfig?.closeTime || "20:00",
     slotDuration: activeClinic?.config?.slotDuration || clinicConfig?.slotDuration || 15,
-    cabins: activeClinic?.config?.cabins || clinicConfig?.cabins || [],
+    cabins: Array.isArray(activeClinic?.config?.cabins) ? activeClinic.config.cabins : (Array.isArray(clinicConfig?.cabins) ? clinicConfig.cabins : []),
     schedule: activeClinic?.config?.schedule || clinicConfig?.schedule || {}
-  };
+  }), [activeClinic?.config, clinicConfig]);
   
   // Reemplazar todas las referencias a clinicConfigContext por effectiveClinicConfig
   const openTime = effectiveClinicConfig.openTime;
@@ -231,19 +218,39 @@ export default function DayView({
   const slotDuration = effectiveClinicConfig.slotDuration;
   
   // Obtener cabinas de la configuración efectiva
-  const effectiveCabins = cabins.length > 0 ? cabins : effectiveClinicConfig.cabins;
+  const effectiveCabins = useMemo(() => {
+    const active = (effectiveClinicConfig.cabins || [])
+                     .filter(c => c.isActive)
+                     .sort((a, b) => a.order - b.order);
+    console.log("DayView - 'effectiveCabins' recalculadas desde effectiveClinicConfig:", active);
+    return active;
+  }, [effectiveClinicConfig]);
 
-  // Generar slots de tiempo
-  const [timeSlots, setTimeSlots] = useState<string[]>([])
+  // Regenerar timeSlots si es necesario
+  const timeSlots = useMemo(() => {
+     const slots = [];
+     let [h, m] = openTime.split(':').map(Number);
+     const [endH, endM] = closeTime.split(':').map(Number);
+     const endTotalMinutes = endH * 60 + endM;
+     let currentTotalMinutes = h * 60 + m;
 
-  useEffect(() => {
-    if (openTime && closeTime) {
-      const newTimeSlots = getTimeSlots(openTime, closeTime, slotDuration)
-      setTimeSlots(newTimeSlots)
-    } else {
-      setTimeSlots([])
-    }
-  }, [openTime, closeTime, slotDuration])
+     // Asegurar un límite para evitar bucles infinitos si la configuración es inválida
+     let safeGuard = 0;
+     const maxSlots = (24 * 60) / slotDuration; // Máximo de slots en un día
+
+     while (currentTotalMinutes <= endTotalMinutes && safeGuard < maxSlots * 2) {
+       slots.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
+       currentTotalMinutes += slotDuration;
+       h = Math.floor(currentTotalMinutes / 60);
+       m = currentTotalMinutes % 60;
+       safeGuard++;
+     }
+     if (safeGuard >= maxSlots * 2) {
+        console.warn("Posible bucle infinito detectado en la generación de timeSlots. Verifique la configuración openTime/closeTime/slotDuration.", effectiveClinicConfig);
+        return []; // Devolver array vacío en caso de problema
+     }
+     return slots;
+  }, [effectiveClinicConfig]);
 
   // Función para verificar si un día está activo en la configuración
   const isDayActive = useCallback(
@@ -508,6 +515,8 @@ export default function DayView({
       services: { id: string; name: string; category: string }[]
       time: string
       comment?: string
+      blocks: number
+      tags?: string[]
     }) => {
       if (selectedSlot) {
         // Modificar esta parte para usar la primera cabina activa si no se encuentra la específica
@@ -527,9 +536,10 @@ export default function DayView({
             date: selectedSlot.date,
             roomId: selectedSlot.roomId,
             startTime: appointmentData.time,
-            duration: 2, // Default duration
+            duration: appointmentData.blocks || 2, // Usar la duración especificada o valor por defecto
             color: cabin.color, // Use cabin color
             phone: appointmentData.client.phone,
+            tags: appointmentData.tags || [], // Incluir etiquetas
           }
 
           setAppointments((prev) => [...prev, newAppointment])
@@ -540,10 +550,9 @@ export default function DayView({
   )
 
   const handleAppointmentResize = (id: string, newDuration: number) => {
-    setAppointments((prevAppointments) =>
-      prevAppointments.map((a) => (a.id === id ? { ...a, duration: newDuration } : a)),
-    )
-    setIsAppointmentDialogOpen(false)
+    // Esta función ya no es necesaria con el nuevo componente sin redimensionamiento
+    // Podemos mantenerla vacía o modificarla para cambiar la duración de otra manera
+    console.log("La funcionalidad de redimensionamiento visual ha sido desactivada");
   }
 
   const onDragEnd = (result: any) => {
@@ -597,232 +606,183 @@ export default function DayView({
     )
   }
 
-  // Modificar el return para omitir la cabecera en modo contenedor
+  // Añadir un estado para la cita seleccionada
+  const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null)
+
+  // Agregar un manejador para el clic en una cita existente
+  const handleAppointmentClick = (appointment: Appointment) => {
+    console.log("Cita seleccionada para edición:", appointment)
+    setSelectedAppointment(appointment)
+    
+    // Configurar los datos necesarios para editar la cita
+    const client = {
+      name: appointment.name,
+      phone: appointment.phone || ""
+    }
+    
+    setSelectedClient(client)
+    setSelectedSlot({
+      date: appointment.date,
+      time: appointment.startTime,
+      roomId: appointment.roomId
+    })
+    
+    // Abrir el diálogo de edición
+    setIsAppointmentDialogOpen(true)
+  }
+
+  // Estructura corregida para el renderDayGrid
   const renderDayGrid = () => (
-    <div className="flex-1 overflow-auto">
-      <DragDropContext onDragEnd={onDragEnd}>
-        <div ref={agendaRef} className="relative z-0" style={{ scrollBehavior: "smooth" }}>
-          <div className="min-w-[800px] relative">
-            <div
-              className="grid"
-              style={{
-                gridTemplateColumns: `auto repeat(1, 1fr)`,
-                minWidth: "800px",
-                width: "100%",
-              }}
-            >
-              {/* Columna de tiempo */}
-              <div className="sticky top-0 z-20 bg-white border-b p-4 w-20">
-                <div className="text-sm text-gray-500">Hora</div>
+    <div className="bg-gray-100 relative p-1">
+      <div ref={agendaRef} style={{ scrollBehavior: "smooth" }}>
+        <div className="min-w-[800px] relative min-h-[400px]">
+          <div
+            className="grid bg-white"
+            style={{
+              gridTemplateColumns: `auto repeat(${effectiveCabins.length || 1}, minmax(100px, 1fr))`,
+              width: "100%",
+            }}
+          >
+            {/* ---- INICIO CABECERA FIJA ---- */}
+            {/* Columna de tiempo */}
+            <div className="sticky top-0 z-20 bg-white border-b border-r border-gray-300 p-2 w-20 flex items-center justify-center">
+              <div className="text-xs font-medium text-gray-600">Hora</div>
+            </div>
+
+            {/* Cabeceras de Cabina */}
+            {effectiveCabins.map((cabin) => (
+              <div
+                key={cabin.id}
+                className="sticky top-0 z-20 border-b border-r border-gray-300 last:border-r-0 p-1 text-center"
+                style={{ backgroundColor: cabin.color }}
+              >
+                <div className="flex flex-col items-center justify-center h-full">
+                  <span className={cn(
+                    "text-[10px] font-bold px-1 rounded",
+                    isColorLight(cabin.color) ? "text-black" : "text-white"
+                  )}>
+                    {cabin.code || cabin.name.substring(0,3)}
+                  </span>
+                  <div className={cn(
+                    "text-[10px] mt-0.5 truncate w-full",
+                    isColorLight(cabin.color) ? "text-gray-700" : "text-gray-100"
+                  )} title={cabin.name}>
+                    {cabin.name}
+                  </div>
+                </div>
               </div>
+            ))}
+             {/* Placeholder si NO hay cabinas */}
+             {effectiveCabins.length === 0 && (
+                <div className="sticky top-0 z-20 bg-gray-50 border-b border-r border-gray-300 p-2 text-center text-gray-400 italic col-span-1">
+                  (Sin cabinas activas)
+                </div>
+             )}
+            {/* ---- FIN CABECERA FIJA ---- */}
 
-              {/* Cabecera del día */}
-              <div className="sticky top-0 z-20 bg-white border-b border-x border-gray-200">
-                <div className={cn("p-4", currentDate.toDateString() === new Date().toDateString() && "bg-blue-50/50")}>
-                  <div className="flex items-center gap-2">
-                    <div className="text-base font-medium capitalize">
-                      {format(currentDate, "EEEE", { locale: es })}
-                    </div>
-                    <button
-                      onClick={() => {
-                        // Obtener la fecha de hoy
-                        const today = new Date()
-                        const formattedToday = format(today, "yyyy-MM-dd")
+            {/* ---- INICIO CUERPO CON COLUMNA DE TIEMPO FIJA ---- */}
+            {timeSlots.map((time, timeIndex) => (
+              <React.Fragment key={time}>
+                {/* Columna de Tiempo */}
+                <div
+                  className="sticky left-0 z-10 border-r border-b border-gray-300 px-2 py-1 text-[10px] text-purple-700 bg-purple-50/50 font-medium w-20 flex items-center justify-center"
+                  style={{ height: `${AGENDA_CONFIG.ROW_HEIGHT}px` }}
+                  data-time={time}
+                >
+                  {time}
+                </div>
+                {/* Celdas de Cabina */}
+                {effectiveCabins.map((cabin, cabinIndex) => {
+                  const isAvailable = isTimeSlotAvailable(currentDate, time);
+                  const dayString = format(currentDate, "yyyy-MM-dd");
+                  const blockForCell = findBlockForCell ? findBlockForCell(dayString, time, cabin.id.toString()) : null;
+                  const isCellInteractive = isAvailable && !blockForCell;
+                  const isCellClickable = isCellInteractive || !!blockForCell;
 
-                        if (onViewChange) {
-                          onViewChange("weekly")
-                        } else {
-                          // Navegar a la vista semanal con la fecha de hoy
-                          router.push(`/agenda/semana/${formattedToday}`)
+                  // Lógica para agrupar bloques
+                  const prevTime = timeIndex > 0 ? timeSlots[timeIndex - 1] : null;
+                  const blockForPrevCell = prevTime ? findBlockForCell(dayString, prevTime, cabin.id.toString()) : null;
+                  const isStartOfBlock = blockForCell && (!blockForPrevCell || blockForPrevCell.id !== blockForCell.id);
+
+                  // Calcular duración si es el inicio de un bloque
+                  let blockDurationSlots = 0;
+                  if (isStartOfBlock && blockForCell) {
+                    blockDurationSlots = 1;
+                    for (let i = timeIndex + 1; i < timeSlots.length; i++) {
+                      const nextTime = timeSlots[i];
+                      const blockForNextCell = findBlockForCell(dayString, nextTime, cabin.id.toString());
+                      if (blockForNextCell && blockForNextCell.id === blockForCell.id) {
+                        blockDurationSlots++;
+                      } else {
+                        break;
+                      }
+                    }
+                  }
+
+                  return (
+                    <div
+                      key={`${cabin.id}-${time}`}
+                      className={cn(
+                        "relative border-b border-r border-gray-200 last:border-r-0",
+                        !isAvailable && "bg-gray-300 dark:bg-gray-700 cursor-not-allowed",
+                        isAvailable && [
+                          blockForCell && "bg-rose-100 cursor-pointer",
+                          isCellInteractive && "hover:bg-purple-100/50 cursor-pointer",
+                          blockForCell && !isStartOfBlock && "border-t-0",
+                        ]
+                      )}
+                      style={{
+                        height: `${AGENDA_CONFIG.ROW_HEIGHT}px`,
+                      }}
+                      onClick={(e) => {
+                        if (isCellInteractive) {
+                          e.stopPropagation();
+                          handleCellClick(currentDate, time, cabin.id.toString());
+                        } else if (blockForCell) {
+                          e.stopPropagation();
+                          openBlockModal(blockForCell);
                         }
                       }}
-                      className="p-1 rounded-full hover:bg-gray-100 transition-colors"
-                      title="Ir a vista semanal (hoy)"
                     >
-                      <Calendar className="h-4 w-4 text-purple-600" />
-                    </button>
-                  </div>
-                  <div
-                    className={cn(
-                      "text-sm",
-                      currentDate.toDateString() === new Date().toDateString()
-                        ? "text-purple-600 font-bold"
-                        : "text-gray-500",
-                    )}
-                  >
-                    {format(currentDate, "d/M/yyyy")}
-                  </div>
-                </div>
-                <div
-                  className="grid border-t border-gray-200"
-                  style={{
-                    gridTemplateColumns: `repeat(${effectiveCabins.length}, 1fr)`,
-                  }}
-                >
-                  {effectiveCabins.map((cabin) => (
-                    <div
-                      key={cabin.id}
-                      className="text-white text-xs py-2 px-1 text-center font-medium"
-                      style={{ backgroundColor: cabin.color }}
-                    >
-                      {cabin.code}
+                      {isStartOfBlock && blockForCell && (
+                        <div
+                          className="absolute inset-x-0 top-0 flex items-center justify-center p-1 bg-rose-200/80 border border-rose-300 rounded-sm m-px overflow-hidden z-10 pointer-events-none"
+                          style={{
+                            height: `calc(${blockDurationSlots * AGENDA_CONFIG.ROW_HEIGHT}px - 2px)`,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                          }}
+                        >
+                          <Lock className="h-3 w-3 text-rose-600 flex-shrink-0" />
+                        </div>
+                      )}
                     </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Slots de tiempo y citas */}
-              {timeSlots.map((time) => (
-                <React.Fragment key={time}>
-                  <div
-                    className="border-r border-b p-2 text-sm text-purple-600 sticky left-0 bg-white font-medium w-20"
-                    data-time={time}
-                  >
-                    {time}
-                  </div>
-                  <div className="border-r border-b border-gray-200" data-time={time} style={{ minWidth: "150px" }}>
-                    <div
-                      className={`h-full ${
-                        currentDate.toDateString() === new Date().toDateString()
-                          ? "border-x-2 border-blue-300 bg-blue-50/50"
-                          : "border-x border-gray-200"
-                      }`}
-                    >
-                      <div
-                        className="grid"
-                        style={{
-                          height: `${AGENDA_CONFIG.ROW_HEIGHT}px`,
-                          gridTemplateColumns: `repeat(${effectiveCabins.length}, 1fr)`,
-                        }}
-                      >
-                        {effectiveCabins.map((cabin, cabinIndex) => {
-                          const isAvailable = isTimeSlotAvailable(currentDate, time)
-                          const dayString = format(currentDate, "yyyy-MM-dd")
-
-                          // Encontrar todos los bloques contiguos para esta cabina
-                          const contiguousBlocks = findContiguousBlocks(dayString, cabin.id.toString())
-
-                          // Determinar si esta celda es parte de un bloque contiguo
-                          const timeIndex = timeSlots.indexOf(time)
-                          const contiguousBlock = contiguousBlocks.find(
-                            (block) => timeIndex >= block.startIndex && timeIndex <= block.endIndex,
-                          )
-
-                          // Determinar si esta celda es el inicio de un bloque contiguo
-                          const isStartOfBlock = contiguousBlock && timeIndex === contiguousBlock.startIndex
-
-                          return (
-                            <Droppable
-                              droppableId={`${cabin.id}-${time}`}
-                              key={`${cabin.id}-${time}`}
-                              type="appointment"
-                              isDropDisabled={!isAvailable}
-                              isCombineEnabled={false}
-                              ignoreContainerClipping={false}
-                            >
-                              {(provided, snapshot) => {
-                                const cellBlock = findBlockForCell(
-                                  format(currentDate, "yyyy-MM-dd"),
-                                  time,
-                                  cabin.id.toString(),
-                                )
-                                const isBlocked = !!cellBlock
-
-                                return (
-                                  <div
-                                    ref={provided.innerRef}
-                                    {...provided.droppableProps}
-                                    className={cn(
-                                      "relative cursor-pointer border-r last:border-r-0",
-                                      isBlocked
-                                        ? "hover:bg-pink-200"
-                                        : isAvailable
-                                          ? "hover:bg-purple-50"
-                                          : "bg-black/20 cursor-not-allowed",
-                                    )}
-                                    style={{
-                                      height: `${AGENDA_CONFIG.ROW_HEIGHT}px`,
-                                      backgroundColor: isBlocked
-                                        ? "rgba(244, 114, 182, 0.2)" // Color rosa para bloques
-                                        : snapshot.isDraggingOver
-                                          ? "rgba(167, 139, 250, 0.1)"
-                                          : isAvailable
-                                            ? cabinIndex % 2 === 0
-                                              ? ZEBRA_LIGHT
-                                              : ZEBRA_DARK
-                                            : "rgba(0, 0, 0, 0.2)",
-                                    }}
-                                    onClick={() => handleCellClick(currentDate, time, cabin.id.toString())}
-                                  >
-                                    {/* Renderizar el bloque contiguo solo en la primera celda del bloque */}
-                                    {isStartOfBlock && contiguousBlock && (
-                                      <ContiguousBlockComponent contiguousBlock={contiguousBlock} />
-                                    )}
-
-                                    {/* No mostrar el bloque individual si es parte de un bloque contiguo */}
-                                    {isBlocked && !contiguousBlock && (
-                                      <div
-                                        className="absolute inset-0 flex items-center p-1 bg-pink-100/80 border border-pink-300 rounded-sm m-0.5 overflow-hidden cursor-pointer group"
-                                        onClick={(e) => {
-                                          e.stopPropagation()
-                                          if (cellBlock) {
-                                            console.log("Celda bloqueada clickeada:", cellBlock)
-                                            // Usar la función directa para abrir el modal
-                                            openBlockModal(cellBlock)
-                                          }
-                                        }}
-                                        title={cellBlock?.description || "Bloqueado"}
-                                      >
-                                        <div className="flex items-center w-full h-full">
-                                          <Lock className="h-3 w-3 min-w-[12px] flex-shrink-0 text-pink-600 mr-1" />
-                                          <span className="text-xs font-medium text-pink-800 truncate text-ellipsis max-w-[calc(100%-20px)]">
-                                            {cellBlock?.description || ""}
-                                          </span>
-                                        </div>
-                                      </div>
-                                    )}
-
-                                    {appointments
-                                      .filter(
-                                        (apt) =>
-                                          apt.date.toDateString() === currentDate.toDateString() &&
-                                          apt.startTime === time &&
-                                          apt.roomId === cabin.id.toString(),
-                                      )
-                                      .map((apt, index) => (
-                                        <ResizableAppointment
-                                          key={apt.id}
-                                          appointment={apt}
-                                          index={index}
-                                          onResize={handleAppointmentResize}
-                                          onClick={(appointment) => {
-                                            setSelectedClient({
-                                              name: appointment.name,
-                                              phone: appointment.phone || "",
-                                            })
-                                            setSelectedSlot({
-                                              date: currentDate,
-                                              time: appointment.startTime,
-                                              roomId: appointment.roomId,
-                                            })
-                                            setIsAppointmentDialogOpen(true)
-                                          }}
-                                        />
-                                      ))}
-                                    {provided.placeholder}
-                                  </div>
-                                )
-                              }}
-                            </Droppable>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                </React.Fragment>
-              ))}
-            </div>
+                  );
+                })}
+                {/* Placeholder si NO hay cabinas */}
+                {effectiveCabins.length === 0 && (
+                   <div
+                     className="border-b border-r border-gray-200 p-2 text-center text-gray-400 italic flex items-center justify-center"
+                     style={{ height: `${AGENDA_CONFIG.ROW_HEIGHT}px` }}
+                   >
+                     -
+                   </div>
+                )}
+              </React.Fragment>
+            ))}
+            {/* ---- FIN CUERPO ---- */}
           </div>
+
+          {/* Renderizar citas */}
+          {appointments.map((appointment, index) => (
+            <AppointmentItem
+              key={appointment.id}
+              appointment={appointment}
+              index={index}
+              onClick={handleAppointmentClick}
+            />
+          ))}
 
           {/* Indicador de tiempo actual */}
           <CurrentTimeIndicator
@@ -835,7 +795,7 @@ export default function DayView({
             clinicCloseTime={closeTime}
           />
         </div>
-      </DragDropContext>
+      </div>
     </div>
   )
 
@@ -883,9 +843,13 @@ export default function DayView({
 
         <AppointmentDialog
           isOpen={isAppointmentDialogOpen}
-          onClose={() => setIsAppointmentDialogOpen(false)}
+          onClose={() => {
+            setIsAppointmentDialogOpen(false)
+            setSelectedAppointment(null)
+          }}
           client={selectedClient}
           selectedTime={selectedSlot?.time}
+          appointment={selectedAppointment}
           onSearchClick={() => {
             setIsAppointmentDialogOpen(false)
             setIsSearchDialogOpen(true)
@@ -896,6 +860,7 @@ export default function DayView({
           }}
           onDelete={handleDeleteAppointment}
           onSave={handleSaveAppointment}
+          isEditing={!!selectedAppointment}
         />
 
         <NewClientDialog 
@@ -985,13 +950,6 @@ export default function DayView({
                 {format(currentDate, "EEEE, d 'de' MMMM 'de' yyyy", { locale: es })}
               </p>
             </div>
-            <Button
-              variant="outline"
-              onClick={() => onViewChange ? onViewChange("weekly") : router.push(`/agenda/semana/${format(currentDate, "yyyy-MM-dd")}`)}
-            >
-              <Calendar className="mr-2 h-4 w-4" />
-              Vista Semanal
-            </Button>
           </div>
           
           {/* Barra de navegación */}
@@ -1004,6 +962,11 @@ export default function DayView({
             view="day"
             isDayActive={isDayActive}
             appointments={appointments}
+            onViewChange={(newView) => {
+              if (newView === "week") {
+                onViewChange ? onViewChange("weekly") : router.push(`/agenda/semana/${format(currentDate, "yyyy-MM-dd")}`)
+              }
+            }}
           />
         </header>
         
@@ -1017,5 +980,18 @@ export default function DayView({
       </div>
     </HydrationWrapper>
   )
+}
+
+// --- Funciones Auxiliares (Puedes ponerlas fuera del componente o en un archivo utils) ---
+
+// Función simple para determinar si un color es claro u oscuro (ajusta los umbrales según necesidad)
+function isColorLight(color: string): boolean {
+  if (!color) return true;
+  if (color.includes('white') || color.includes('yellow') || color.includes('lime') || color.includes('cyan') || color.includes('#f') || color.includes('#e') || color.includes('#d')) return true;
+   // Colores claros comunes de Tailwind o hexadecimales
+   if (['#ffffff', '#f9fafb', '#f3f4f6', '#e5e7eb', '#d1d5db', '#fef2f2', '#fefce8', '#f0fdf4', '#ecfdf5', '#f0f9ff', '#f5f3ff'].includes(color.toLowerCase())) return true;
+   if (color.startsWith('#') && parseInt(color.substring(1), 16) > 0xaaaaaa) return true; // Heurística simple para hexadecimales
+
+  return false; // Asumir oscuro por defecto
 }
 

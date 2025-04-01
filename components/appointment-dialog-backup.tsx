@@ -511,32 +511,23 @@ export function AppointmentDialog({
                   <Button
                     variant="outline"
                     className="justify-start font-light text-xs bg-[#E9ECEF] hover:bg-gray-200 border-0 shadow-none h-8 disabled:opacity-50 disabled:cursor-not-allowed"
-                    onClick={() => setShowCommentDialog(true)}
-                  >
-                    <MessageSquare className="h-3.5 w-3.5 mr-1.5 text-purple-500" />
-                    Comentarios
-                  </Button>
-                  
-                  <Button
-                    variant="outline"
-                    className="justify-start font-light text-xs bg-[#E9ECEF] hover:bg-gray-200 border-0 shadow-none h-8 disabled:opacity-50 disabled:cursor-not-allowed"
                     onClick={handleMove}
                     disabled={!isEditing}
                   >
                     <Move className="h-3.5 w-3.5 mr-1.5 text-blue-500" />
                     Mover
                   </Button>
+                  
+                  <Button
+                    variant="outline"
+                    className="justify-start font-light text-xs bg-[#E9ECEF] hover:bg-gray-200 border-0 shadow-none h-8 disabled:opacity-50 disabled:cursor-not-allowed"
+                    onClick={handleSave}
+                    disabled={!isEditing}
+                  >
+                    <CheckCircle2 className="h-3.5 w-3.5 mr-1.5 text-green-500" />
+                    Validar cita
+                  </Button>
                 </div>
-                
-                <Button
-                  variant="outline"
-                  className="w-full justify-start font-light text-xs bg-[#E9ECEF] hover:bg-gray-200 border-0 shadow-none h-8 disabled:opacity-50 disabled:cursor-not-allowed"
-                  onClick={handleSave}
-                  disabled={!isEditing}
-                >
-                  <CheckCircle2 className="h-3.5 w-3.5 mr-1.5 text-green-500" />
-                  Validar cita
-                </Button>
               </div>
             </div>
 

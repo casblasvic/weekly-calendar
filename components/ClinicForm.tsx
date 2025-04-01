@@ -7,7 +7,7 @@ import { Button, BackButton } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
-import { ArrowLeft, Save } from "lucide-react"
+import { ArrowLeft, Save, ChevronRight } from "lucide-react"
 import { useRouter } from "next/navigation"
 
 interface ClinicFormProps {
@@ -49,7 +49,7 @@ export default function ClinicForm({ initialData, isNewClinic, onSubmit }: Clini
   }
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
+    <div className="container p-6 mx-auto space-y-6">
       <Card className="p-6">
         <form onSubmit={handleSubmit}>
           <div className="grid gap-6 md:grid-cols-2">
@@ -130,13 +130,13 @@ export default function ClinicForm({ initialData, isNewClinic, onSubmit }: Clini
 
           {/* Aquí puedes agregar más campos según sea necesario */}
 
-          <div className="mt-6 flex justify-end gap-2">
+          <div className="flex justify-end gap-2 mt-6">
             <BackButton onClick={() => router.push("/configuracion/clinicas")}>
-              <ArrowLeft className="h-4 w-4 mr-2" />
+              <ArrowLeft className="w-4 h-4 mr-2" />
               Volver
             </BackButton>
             <Button type="submit" className="bg-purple-600 hover:bg-purple-700">
-              <Save className="h-4 w-4 mr-2" />
+              <Save className="w-4 h-4 mr-2" />
               {isNewClinic ? "Crear" : "Guardar"}
             </Button>
           </div>

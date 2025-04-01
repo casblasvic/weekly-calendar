@@ -50,14 +50,19 @@ export function DayViewHeader({
       </div>
 
       <div className="flex items-center gap-3 border-b pb-3">
-        <Button variant="outline" size="sm" onClick={onBackToWeekView}>
-          <ChevronLeft className="h-4 w-4 mr-1" />
-          Vista semanal
+        <Button 
+          variant="ghost" 
+          size="icon" 
+          onClick={onBackToWeekView}
+          className="text-purple-600"
+          title="Vista semanal"
+        >
+          <Calendar className="w-4 h-4" />
         </Button>
 
         {/* Botones de navegación por meses */}
         <Button variant="ghost" size="icon" onClick={onPrevMonth} className="text-purple-600">
-          <ChevronsLeft className="h-4 w-4" />
+          <ChevronsLeft className="w-4 w-4" />
         </Button>
 
         {/* Botones de navegación por días */}

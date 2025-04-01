@@ -1,7 +1,7 @@
 "use client"
 
 import { Button } from "@/components/ui/button"
-import { CalendarDays, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Lock, Printer, ChevronDown } from "lucide-react"
+import { CalendarDays, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Lock, Printer, ChevronDown, Calendar } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { format, subDays, addDays, getDay } from "date-fns"
 import { useRouter } from "next/navigation"
@@ -11,6 +11,7 @@ import { BlockScheduleModal } from "./block-schedule-modal"
 import { useClinic } from "@/contexts/clinic-context"
 import { useToast } from "@/hooks/use-toast"
 import { convertCabinToRoom } from "@/types/fix-types"
+import { es } from 'date-fns/locale'
 
 interface Room {
   id: string
@@ -233,32 +234,22 @@ export function AgendaNavBar({
     return activeDays.includes(dayOfWeek)
   }
 
-  const goToToday = useCallback(() => {
-    if (isUpdatingRef.current) return;
-    
+  const handleGoToToday = () => {
     const today = new Date();
+    const formattedDate = format(today, 'yyyy-MM-dd');
 
-    // Si tenemos onViewChange, lo usamos para transición suave
-    if (onViewChange) {
-      onViewChange(view, today);
-    } else {
-      // Fallback al comportamiento anterior
-      // Actualizar el estado con la fecha de hoy
-      setCurrentDate(today);
+    // Determinar la URL base según la vista actual
+    const basePath = view === 'week' ? '/agenda/semana/' : '/agenda/dia/';
+    const targetUrl = `${basePath}${formattedDate}`;
 
-      // Actualizar URL silenciosamente
-      const formattedDate = format(today, "yyyy-MM-dd");
-      const path = view === "day" 
-        ? `/agenda/dia/${formattedDate}` 
-        : `/agenda/semana/${formattedDate}`;
-      updatePathSilently(path);
+    // Navegar usando el router
+    router.push(targetUrl);
 
-      // Guardar las citas en sessionStorage si es necesario
-      if (typeof window !== "undefined" && appointments.length > 0) {
-        sessionStorage.setItem("weeklyAppointments", JSON.stringify(appointments));
-      }
-    }
-  }, [setCurrentDate, updatePathSilently, view, appointments, onViewChange]);
+    // Opcional: Llamar a setCurrentDate para una actualización visual inmediata
+    // del estado local, aunque la navegación eventualmente lo hará.
+    // Podrías quitarlo si la navegación es suficientemente rápida.
+    // setCurrentDate(today);
+  };
 
   const handleDateChange = useCallback(
     (date: Date | null) => {
@@ -321,9 +312,22 @@ export function AgendaNavBar({
         />
 
         {/* Botón de hoy */}
-        <Button variant="ghost" size="icon" onClick={goToToday} className="text-purple-600">
+        <Button variant="ghost" size="icon" onClick={handleGoToToday} className="text-purple-600">
           <CalendarDays className="w-4 h-4" />
         </Button>
+
+        {/* Botón Vista Semanal (solo visible en vista diaria) */}
+        {view === "day" && (
+          <Button 
+            variant="ghost"
+            size="icon"
+            onClick={() => onViewChange ? onViewChange("week") : null}
+            className="text-purple-600"
+            title="Vista semanal"
+          >
+            <Calendar className="w-4 h-4" />
+          </Button>
+        )}
 
         <Button
           variant="ghost"

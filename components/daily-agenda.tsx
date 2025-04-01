@@ -8,26 +8,14 @@ import { ClientSearchDialog } from "./client-search-dialog"
 import { AppointmentDialog } from "./appointment-dialog"
 import { NewClientDialog } from "./new-client-dialog"
 import { DragDropContext, Droppable } from "react-beautiful-dnd"
-import { ResizableAppointment } from "./resizable-appointment"
+import { AppointmentItem } from "./appointment-item"
+import { Appointment } from "@/types/appointments"
 
 interface ServiceRoom {
   id: string
   name: string
   color: string
   abbrev: string
-}
-
-interface Appointment {
-  id: string
-  name: string
-  phone: string
-  service: string
-  status?: string
-  completed?: boolean
-  color: string
-  roomId: string
-  startTime: string
-  duration: number
 }
 
 interface DailyAgendaProps {
@@ -37,7 +25,6 @@ interface DailyAgendaProps {
   isToday?: boolean
   appointments: Appointment[]
   setAppointments: React.Dispatch<React.SetStateAction<Appointment[]>>
-  onAppointmentResize: (id: string, newDuration: number) => void
 }
 
 export default function DailyAgenda({
@@ -47,7 +34,6 @@ export default function DailyAgenda({
   isToday = false,
   appointments,
   setAppointments,
-  onAppointmentResize,
 }: DailyAgendaProps) {
   const [isSearchDialogOpen, setIsSearchDialogOpen] = React.useState(false)
   const [isAppointmentDialogOpen, setIsAppointmentDialogOpen] = React.useState(false)
@@ -102,6 +88,8 @@ export default function DailyAgenda({
           roomId: selectedSlot.roomId,
           startTime: appointmentData.time,
           duration: 2,
+          date: new Date(selectedSlot.date),
+          completed: false,
         }
 
         setAppointments((prev) => [...prev, newAppointment])
@@ -159,11 +147,7 @@ export default function DailyAgenda({
   const formattedDate = date.toLocaleDateString("es-ES", { day: "2-digit", month: "2-digit", year: "numeric" })
 
   const handleAppointmentResize = (id: string, newDuration: number) => {
-    setAppointments((prevAppointments) =>
-      prevAppointments.map((a) => (a.id === id ? { ...a, duration: newDuration } : a)),
-    )
-    // Evitar que se abra el diálogo de edición
-    setIsAppointmentDialogOpen(false)
+    console.log("La funcionalidad de redimensionamiento visual ha sido desactivada");
   }
 
   const onDragEnd = (result: any) => {
@@ -332,11 +316,10 @@ export default function DailyAgenda({
                               {appointments
                                 .filter((apt) => apt.startTime === time && apt.roomId === room.id)
                                 .map((apt, index) => (
-                                  <ResizableAppointment
+                                  <AppointmentItem
                                     key={apt.id}
                                     appointment={apt}
                                     index={index}
-                                    onResize={handleAppointmentResize}
                                     onClick={(appointment) => {
                                       setSelectedClient({ name: appointment.name, phone: appointment.phone || "" })
                                       setSelectedSlot({ date, time: appointment.startTime, roomId: appointment.roomId })
