@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useMemo } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -33,7 +33,7 @@ const FileUploader: React.FC<FileUploaderProps> = ({
   const [error, setError] = useState<string | null>(null);
   
   // Procesamos los tipos MIME aceptados para incluir formatos de documento comunes
-  const processAcceptTypes = () => {
+  const processAcceptTypes = useMemo(() => {
     // Si se acepta todo, devolvemos un objeto vacío (acepta todo)
     if (accept === '*/*') return {};
     
@@ -43,9 +43,7 @@ const FileUploader: React.FC<FileUploaderProps> = ({
     // Convertir la cadena de tipos aceptados en un array
     const acceptTypes = accept.split(',').map(type => type.trim());
     
-    console.log("Tipos a procesar:", acceptTypes);
-    
-    // Procesar cada tipo
+    // Procesar cada tipo (solo una vez, al renderizar)
     acceptTypes.forEach(type => {
       if (type === 'application/pdf' || type === '.pdf') {
         acceptMap['application/pdf'] = [];
@@ -77,16 +75,13 @@ const FileUploader: React.FC<FileUploaderProps> = ({
       }
     });
     
-    console.log("Tipos MIME procesados:", acceptMap);
-    
     // Si está vacío (posible debido a un formato incorrecto), aceptar cualquier archivo
     if (Object.keys(acceptMap).length === 0) {
-      console.warn("No se pudieron procesar los tipos MIME, aceptando todos los tipos");
       return {};
     }
     
     return acceptMap;
-  };
+  }, [accept]); // Solo se recalcula si cambia la prop accept
   
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     if (acceptedFiles.length === 0) return;
@@ -125,7 +120,7 @@ const FileUploader: React.FC<FileUploaderProps> = ({
   
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: processAcceptTypes(),
+    accept: processAcceptTypes,
     maxSize,
     multiple,
     disabled: uploading || disabled
@@ -146,17 +141,17 @@ const FileUploader: React.FC<FileUploaderProps> = ({
         <input {...getInputProps()} />
         {uploading ? (
           <div className="flex items-center gap-2">
-            <Loader2 className="h-4 w-4 animate-spin" />
+            <Loader2 className="w-4 h-4 animate-spin" />
             <span>{Math.round(progress)}%</span>
           </div>
         ) : (
           <>
-            <Upload className="h-4 w-4 mr-2" />
+            <Upload className="w-4 h-4 mr-2" />
             <span>{multiple ? "Subir archivos" : "Subir archivo"}</span>
           </>
         )}
         {error && (
-          <div className="absolute -bottom-8 left-0 right-0 text-xs text-red-500">
+          <div className="absolute left-0 right-0 text-xs text-red-500 -bottom-8">
             {error}
           </div>
         )}
@@ -178,9 +173,9 @@ const FileUploader: React.FC<FileUploaderProps> = ({
       >
         <input {...getInputProps()} />
         {uploading ? (
-          <Loader2 className="h-5 w-5 animate-spin text-primary" />
+          <Loader2 className="w-5 h-5 animate-spin text-primary" />
         ) : (
-          <Plus className="h-5 w-5 text-gray-500" />
+          <Plus className="w-5 h-5 text-gray-500" />
         )}
       </div>
     );
@@ -205,14 +200,14 @@ const FileUploader: React.FC<FileUploaderProps> = ({
         {children || (
           <>
             {uploading ? (
-              <div className="space-y-3 w-full">
-                <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
-                <Progress value={progress} className="h-2 w-full" />
+              <div className="w-full space-y-3">
+                <Loader2 className="w-8 h-8 mx-auto animate-spin text-primary" />
+                <Progress value={progress} className="w-full h-2" />
                 <p className="text-sm text-gray-600">Subiendo... {Math.round(progress)}%</p>
               </div>
             ) : (
               <>
-                <div className="p-3 mb-3 bg-primary/10 rounded-full">
+                <div className="p-3 mb-3 rounded-full bg-primary/10">
                   <Upload className="w-6 h-6 text-primary" />
                 </div>
                 <p className="mb-2 text-sm text-gray-600">

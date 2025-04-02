@@ -14,7 +14,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { CabinEditDialog } from "@/components/cabin-edit-dialog"
 import { useClinic } from "@/contexts/clinic-context"
-import { Clinica } from "@/services/data/models/interfaces"
+import { Clinica, Tarifa } from "@/services/data/models/interfaces"
 import { SearchInput } from "@/components/SearchInput"
 import { ScheduleConfig } from "@/components/schedule-config"
 import { DEFAULT_SCHEDULE } from "@/types/schedule"
@@ -45,6 +45,7 @@ import {
   Clock,
   Database,
   FolderOpen,
+  Tag,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { WeekSchedule } from "@/types/schedule"
@@ -52,6 +53,7 @@ import { saveToStorage } from "@/utils/storage-utils"
 import { DebugStorage } from "@/components/debug-storage"
 import AlmacenamientoClinicaContent from "@/app/configuracion/clinicas/[id]/almacenamiento/page"
 import { useEquipment } from "@/contexts/equipment-context"
+import { useTarif } from "@/contexts/tarif-context"
 
 const menuItems = [
   { id: "datos", label: "Datos de la clínica", icon: Building2 },
@@ -66,6 +68,7 @@ const menuItems = [
   { id: "whatsapp", label: "Notificaciones WhatsApp", icon: Phone },
   { id: "otros", label: "Otros APIs", icon: Globe },
   { id: "almacenamiento", label: "Almacenamiento", icon: Database },
+  { id: "tarifa", label: "Tarifa", icon: Tag },
 ]
 
 interface Cabin {
@@ -102,6 +105,9 @@ export default function ClinicaDetailPage() {
   const [equipmentData, setEquipmentData] = useState<any[]>([])
   const [advancedSchedule, setAdvancedSchedule] = useState<WeekSchedule>(DEFAULT_SCHEDULE)
   const [isSaving, setIsSaving] = useState(false)
+  const { getTarifaById } = useTarif()
+  const [tarifaAplicada, setTarifaAplicada] = useState<Tarifa | null | undefined>(undefined)
+  const [isLoadingTarifa, setIsLoadingTarifa] = useState(false)
 
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -142,6 +148,30 @@ export default function ClinicaDetailPage() {
       setActiveTab(tabParam)
     }
   }, [searchParams])
+
+  useEffect(() => {
+    const loadTarifaData = async () => {
+      const tarifaIdAsignada = clinicData?.config?.rate as string | undefined; 
+      
+      if (tarifaIdAsignada) { 
+        setIsLoadingTarifa(true);
+        setTarifaAplicada(undefined); 
+        try {
+          const tarifa: Tarifa | null = await getTarifaById(tarifaIdAsignada);
+          setTarifaAplicada(tarifa || null); 
+        } catch (error) {
+          console.error("Error al cargar la tarifa plantilla:", error);
+          setTarifaAplicada(null); 
+        } finally {
+          setIsLoadingTarifa(false);
+        }
+      } else if (clinicData) {
+         setTarifaAplicada(null); 
+      }
+    };
+
+    loadTarifaData();
+  }, [clinicData, getTarifaById]);
 
   const handleAdvancedScheduleChange = (newSchedule: WeekSchedule) => {
     setAdvancedSchedule(newSchedule)
@@ -1006,6 +1036,33 @@ export default function ClinicaDetailPage() {
                 </Card>
               )}
 
+              {activeTab === "tarifa" && (
+                <Card className="p-6">
+                  <SectionTitle icon={Tag} title="Tarifa Aplicada" color="text-teal-600 border-teal-600" />
+                  {isLoadingTarifa ? (
+                    <p className="text-gray-500">Cargando información de la tarifa...</p>
+                  ) : tarifaAplicada === null ? (
+                    <p className="text-gray-500">
+                       {clinicData?.config?.rate 
+                          ? `No se encontró la tarifa con ID: "${clinicData.config.rate}". Verifique la configuración.`
+                          : "Esta clínica no tiene una tarifa asignada."}
+                    </p>
+                  ) : tarifaAplicada ? (
+                    <div className="space-y-4">
+                       <div>
+                          <Label className="block mb-1 text-sm font-medium text-gray-500">Nombre Tarifa</Label>
+                          <p className="text-lg font-semibold">{tarifaAplicada.nombre}</p>
+                       </div>
+                       <Button onClick={() => router.push(`/configuracion/clinicas/${clinicId}/servicios`)} className="mt-4">
+                          Configurar Servicios y Precios para esta Clínica
+                       </Button>
+                    </div>
+                  ) : (
+                     <p className="text-gray-500">Inicializando...</p>
+                  )}
+                </Card>
+              )}
+
               {activeTab === "debug" && (
                 <div className="space-y-4">
                   <DebugStorage clinicId={clinic.id.toString()} />
@@ -1026,7 +1083,6 @@ export default function ClinicaDetailPage() {
         onSave={handleSaveCabin as any}
       />
 
-      {/* Botones flotantes */}
       <div className="fixed z-50 flex flex-col items-end space-y-2 bottom-4 right-4 md:flex-row md:space-y-0 md:space-x-2">
         <BackButton
           href="/configuracion/clinicas"

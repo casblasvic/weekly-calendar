@@ -123,21 +123,19 @@ export default function GestionTarifas() {
   }
 
   // Manejar eliminación de tarifa
-  const handleEliminarTarifa = (id: string | number) => {
-    // Convertir id a string
-    const stringId = String(id);
-    const tarifasActualizadas = tarifas.filter((tarifa) => String(tarifa.id) !== stringId)
+  const handleEliminarTarifa = (id: string) => {
+    // Filtrar la tarifa a eliminar
+    const tarifasActualizadas = tarifas.filter((tarifa) => tarifa.id !== id)
 
     // Actualizar todas las tarifas en el contexto
     tarifasActualizadas.forEach(tarifa => {
-      tarifContext.updateTarifa(String(tarifa.id), tarifa)
+      tarifContext.updateTarifa(tarifa.id, tarifa)
     })
   }
 
   // Manejar edición de tarifa
-  const handleEditarTarifa = (id: string | number) => {
-    // Convertir id a string
-    router.push(`/configuracion/tarifas/${String(id)}`)
+  const handleEditarTarifa = (id: string) => {
+    router.push(`/configuracion/tarifas/${id}`)
   }
 
   console.log("Tarifas disponibles:", tarifas)
@@ -147,19 +145,19 @@ export default function GestionTarifas() {
       <h1 className="text-2xl font-bold">Gestión de tarifas</h1>
 
       {/* Alerta informativa */}
-      <div className="p-4 text-sm border rounded-md bg-amber-50 border-amber-200 text-amber-800">
+      <div className="bg-amber-50 border border-amber-200 p-4 rounded-md text-sm text-amber-800">
         Las operaciones con las tarifas realizan un uso intensivo de los datos. Esto puede ocasionar que el sistema
         responda significativamente más lento, por lo que recomendamos su uso fuera del horario de trabajo habitual, o
         en horas de mínima afluencia.
       </div>
 
-      <h2 className="mt-6 text-lg font-medium">Listado de tarifas</h2>
+      <h2 className="text-lg font-medium mt-6">Listado de tarifas</h2>
 
       {/* Buscador */}
       <div className="relative">
-        <Search className="absolute text-gray-400 transform -translate-y-1/2 left-3 top-1/2" size={18} />
+        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
         <Input
-          className="w-full py-2 pl-10 pr-4"
+          className="pl-10 pr-4 py-2 w-full"
           placeholder="Buscar..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
@@ -167,20 +165,20 @@ export default function GestionTarifas() {
       </div>
 
       {/* Tabla de tarifas */}
-      <div className="overflow-x-auto border rounded-md">
+      <div className="overflow-x-auto rounded-md border">
         <table className="min-w-full divide-y divide-gray-200">
           <thead>
             <tr className="table-header">
-              <th scope="col" className="px-6 py-3 text-xs font-medium tracking-wider text-left uppercase">
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">
                 Nombre
               </th>
-              <th scope="col" className="px-6 py-3 text-xs font-medium tracking-wider text-left uppercase">
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">
                 Clínica
               </th>
-              <th scope="col" className="px-6 py-3 text-xs font-medium tracking-wider text-left uppercase">
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">
                 Estado
               </th>
-              <th scope="col" className="px-6 py-3 text-xs font-medium tracking-wider text-right uppercase">
+              <th scope="col" className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider">
                 Acciones
               </th>
             </tr>
@@ -188,13 +186,13 @@ export default function GestionTarifas() {
           <tbody className="bg-white divide-y divide-gray-200">
             {tarifasFiltradas.map((tarifa) => (
               <tr key={tarifa.id} className="table-row-hover">
-                <td className="px-6 py-4 text-sm font-medium text-gray-900 whitespace-nowrap">
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                   {tarifa.nombre}
                   {tarifa.isActive === false && (
-                    <AlertCircle className="inline-block w-4 h-4 ml-2 text-amber-500" aria-label="Tarifa deshabilitada" />
+                    <AlertCircle className="inline-block ml-2 h-4 w-4 text-amber-500" aria-label="Tarifa deshabilitada" />
                   )}
                 </td>
-                <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                   {tarifa.clinicasIds && tarifa.clinicasIds.length > 0 ? (
                     <div className="flex flex-col space-y-1">
                       {/* Mostrar la clínica principal */}
@@ -241,7 +239,7 @@ export default function GestionTarifas() {
                            (tarifa.clinicaId ? `${tarifa.clinicaId}` : '-')}</span>
                   )}
                 </td>
-                <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                   <span
                     className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
                       tarifa.isActive === false
@@ -252,18 +250,15 @@ export default function GestionTarifas() {
                     {tarifa.isActive === false ? "Desactivada" : "Activa"}
                   </span>
                 </td>
-                <td className="px-6 py-4 text-sm font-medium text-right whitespace-nowrap">
+                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                   <div className="flex justify-end space-x-2">
                     <button
-                      onClick={() => handleEditarTarifa(String(tarifa.id))}
+                      onClick={() => handleEditarTarifa(tarifa.id)}
                       className="text-indigo-600 hover:text-indigo-900"
                     >
                       <Pencil size={18} />
                     </button>
-                    <button 
-                      onClick={() => handleEliminarTarifa(String(tarifa.id))} 
-                      className="text-red-600 hover:text-red-900"
-                    >
+                    <button onClick={() => handleEliminarTarifa(tarifa.id)} className="text-red-600 hover:text-red-900">
                       <Trash2 size={18} />
                     </button>
                   </div>
@@ -272,7 +267,7 @@ export default function GestionTarifas() {
             ))}
             {tarifasFiltradas.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-6 py-4 text-sm text-center text-gray-500">
+                <td colSpan={4} className="px-6 py-4 text-center text-sm text-gray-500">
                   No se encontraron tarifas
                 </td>
               </tr>
@@ -282,7 +277,7 @@ export default function GestionTarifas() {
       </div>
 
       {/* Botones de acción fijos */}
-      <div className="fixed flex space-x-2 bottom-6 right-6">
+      <div className="fixed bottom-6 right-6 flex space-x-2">
         <Button variant="outline" onClick={() => router.back()}>
           Volver
         </Button>
@@ -294,11 +289,11 @@ export default function GestionTarifas() {
 
       {/* Modal de nueva tarifa */}
       <Dialog open={isNewTarifaOpen} onOpenChange={setIsNewTarifaOpen}>
-        <DialogContent className="p-6 sm:max-w-md">
+        <DialogContent className="sm:max-w-md p-6">
           <DialogHeader className="mb-4">
             <DialogTitle>Nueva tarifa</DialogTitle>
           </DialogHeader>
-          <div className="mb-6 space-y-6">
+          <div className="space-y-6 mb-6">
             <div className="space-y-3">
               <label htmlFor="nombre" className="text-sm font-medium">
                 Nombre
@@ -330,10 +325,10 @@ export default function GestionTarifas() {
                   }
                 }}
               >
-                <SelectTrigger id="clinica" className="w-full bg-white border-gray-300">
+                <SelectTrigger id="clinica" className="w-full border-gray-300 bg-white">
                   <SelectValue placeholder="Añadir clínica" />
                 </SelectTrigger>
-                <SelectContent className="overflow-y-auto bg-white max-h-60">
+                <SelectContent className="bg-white max-h-60 overflow-y-auto">
                   {clinics
                     .filter(c => !nuevaTarifa.clinicasIds.includes(c.prefix) && 
                                  (nuevaTarifa.deshabilitada || c.isActive === true))
@@ -358,7 +353,7 @@ export default function GestionTarifas() {
               {/* Mostrar clínicas seleccionadas como chips */}
               {nuevaTarifa.clinicasIds.length > 0 && (
                 <div className="mt-3">
-                  <label className="block mb-2 text-sm font-medium">Clínicas seleccionadas</label>
+                  <label className="text-sm font-medium mb-2 block">Clínicas seleccionadas</label>
                   <div className="flex flex-wrap gap-2 mt-2">
                     {nuevaTarifa.clinicasIds.map((clinicaId) => {
                       const clinic = clinics.find(c => c.prefix === clinicaId);
@@ -399,7 +394,7 @@ export default function GestionTarifas() {
                                 clinicaId: newClinicaId
                               });
                             }}
-                            className="ml-1 text-gray-500 hover:text-red-500"
+                            className="text-gray-500 hover:text-red-500 ml-1"
                             title="Eliminar clínica"
                           >
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -416,7 +411,7 @@ export default function GestionTarifas() {
                                   clinicaId: clinicaId
                                 });
                               }}
-                              className="ml-1 text-indigo-500 hover:text-indigo-700"
+                              className="text-indigo-500 hover:text-indigo-700 ml-1"
                               title="Establecer como clínica principal"
                             >
                               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -432,7 +427,7 @@ export default function GestionTarifas() {
               )}
             </div>
 
-            <div className="flex items-center pt-2 space-x-2">
+            <div className="flex items-center space-x-2 pt-2">
               <Checkbox
                 id="deshabilitada"
                 checked={nuevaTarifa.deshabilitada}
@@ -458,7 +453,7 @@ export default function GestionTarifas() {
             >
               {isSaving ? (
                 <div className="flex items-center space-x-2">
-                  <span className="w-4 h-4 border-2 rounded-full animate-spin border-t-transparent" />
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-t-transparent" />
                   <span>Guardando...</span>
                 </div>
               ) : (

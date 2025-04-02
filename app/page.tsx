@@ -21,16 +21,16 @@ export default function HomePage() {
           href="/configuracion/tarifas"
         />
         <Card
-          title="Servicios de Tarifa Californie"
-          description="Ver servicios de la tarifa Californie"
+          title="Servicios Tarifa General 2024"
+          description="Ver servicios de la tarifa principal"
           icon="💼"
-          href="/configuracion/tarifas/servicios/tarifa-california"
+          href="/configuracion/tarifas/servicios/tarifa-1"
         />
         <Card
-          title="Familias de Productos"
-          description="Administrar familias de productos"
+          title="Gestión de Familias"
+          description="Administrar familias (acceder desde una tarifa)"
           icon="🗂️"
-          href="/configuracion/tarifas/familias"
+          href="/configuracion/tarifas"
         />
         {/* Puedes añadir más tarjetas según necesites */}
       </div>

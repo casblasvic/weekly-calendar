@@ -171,20 +171,20 @@ export const initialMockData = {
     }
   ],
   familiasTarifa: [
-    { id: 'fam-1', nombre: 'Tratamientos Faciales', descripcion: 'Servicios para el rostro', tarifaId: 'tarifa-1' },
-    { id: 'fam-2', nombre: 'Tratamientos Corporales', descripcion: 'Servicios para el cuerpo', tarifaId: 'tarifa-1' },
-    { id: 'fam-3', nombre: 'Depilación Láser', descripcion: 'Servicios de depilación', tarifaId: 'tarifa-1' },
-    { id: 'fam-4', nombre: 'Servicios CAFC', descripcion: 'Servicios exclusivos CAFC', tarifaId: 'tarifa-2' }
+    { id: 'fam-1', nombre: 'Tratamientos Faciales', descripcion: 'Servicios para el rostro', tarifaId: 'tarifa-1', isActive: true },
+    { id: 'fam-2', nombre: 'Tratamientos Corporales', descripcion: 'Servicios para el cuerpo', tarifaId: 'tarifa-1', isActive: true },
+    { id: 'fam-3', nombre: 'Depilación Láser', descripcion: 'Servicios de depilación', tarifaId: 'tarifa-1', isActive: true },
+    { id: 'fam-4', nombre: 'Servicios CAFC', descripcion: 'Servicios exclusivos CAFC', tarifaId: 'tarifa-2', isActive: true }
   ],
   servicios: [
     // Servicios Tarifa 1
-    { id: 'serv-1', nombre: 'Limpieza Facial Profunda', descripcion: 'Limpieza e hidratación', duracion: 60, familiaId: 'fam-1', tarifaId: 'tarifa-1', precio: 500, tipoIvaId: 'iva-1', activo: true, config: {} },
-    { id: 'serv-2', nombre: 'Peeling Químico', descripcion: 'Renovación celular', duracion: 45, familiaId: 'fam-1', tarifaId: 'tarifa-1', precio: 700, tipoIvaId: 'iva-1', activo: true, config: {} },
-    { id: 'serv-3', nombre: 'Masaje Relajante', descripcion: 'Masaje de cuerpo completo', duracion: 60, familiaId: 'fam-2', tarifaId: 'tarifa-1', precio: 600, tipoIvaId: 'iva-1', activo: true, config: {} },
-    { id: 'serv-4', nombre: 'Depilación Piernas Completas', descripcion: 'Láser diodo', duracion: 40, familiaId: 'fam-3', tarifaId: 'tarifa-1', precio: 1200, tipoIvaId: 'iva-1', activo: true, config: {} },
-    { id: 'serv-5', nombre: 'Depilación Axilas', descripcion: 'Láser diodo', duracion: 15, familiaId: 'fam-3', tarifaId: 'tarifa-1', precio: 300, tipoIvaId: 'iva-1', activo: true, config: {} },
+    { id: 'serv-1', codigo: 'S001', nombre: 'Limpieza Facial Profunda', descripcion: 'Limpieza e hidratación', duracion: 60, familiaId: 'fam-1', tarifaId: 'tarifa-1', precio: 500, tipoIvaId: 'iva-1', activo: true, config: {} },
+    { id: 'serv-2', codigo: 'S002', nombre: 'Peeling Químico', descripcion: 'Renovación celular', duracion: 45, familiaId: 'fam-1', tarifaId: 'tarifa-1', precio: 700, tipoIvaId: 'iva-1', activo: true, config: {} },
+    { id: 'serv-3', codigo: 'S003', nombre: 'Masaje Relajante', descripcion: 'Masaje de cuerpo completo', duracion: 60, familiaId: 'fam-2', tarifaId: 'tarifa-1', precio: 600, tipoIvaId: 'iva-1', activo: true, config: {} },
+    { id: 'serv-4', codigo: 'S004', nombre: 'Depilación Piernas Completas', descripcion: 'Láser diodo', duracion: 40, familiaId: 'fam-3', tarifaId: 'tarifa-1', precio: 1200, tipoIvaId: 'iva-1', activo: true, config: {} },
+    { id: 'serv-5', codigo: 'S005', nombre: 'Depilación Axilas', descripcion: 'Láser diodo', duracion: 15, familiaId: 'fam-3', tarifaId: 'tarifa-1', precio: 300, tipoIvaId: 'iva-1', activo: true, config: {} },
     // Servicios Tarifa 2
-    { id: 'serv-6', nombre: 'Tratamiento Reafirmante CAFC', descripcion: 'Tecnología exclusiva', duracion: 75, familiaId: 'fam-4', tarifaId: 'tarifa-2', precio: 1500, tipoIvaId: 'iva-2', activo: true, config: {} }
+    { id: 'serv-6', codigo: 'S006', nombre: 'Tratamiento Reafirmante CAFC', descripcion: 'Tecnología exclusiva', duracion: 75, familiaId: 'fam-4', tarifaId: 'tarifa-2', precio: 1500, tipoIvaId: 'iva-2', activo: true, config: {} }
   ],
   tiposIVA: [
     { id: 'iva-1', descripcion: 'IVA General', porcentaje: 20.00, tarifaId: 'tarifa-1' },

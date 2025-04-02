@@ -108,7 +108,7 @@ const getEntityInfo = (
         const tarifa = await getTarifa(tarifaId);
         name = service.nombre;
         code = service.id;
-        link = `/configuracion/tarifas/${tarifaId}/nuevo-servicio?servicioId=${service.id}`;
+        link = `/configuracion/tarifas/${tarifaId}/servicio/${service.id}`;
         detailedInfo = tarifa ? `${tarifa.nombre} > Servicios` : 'Servicios';
       }
     } catch (error) {
@@ -329,7 +329,7 @@ const EnhancedFilesTable: React.FC<EnhancedFilesTableProps> = ({
               const tarifa = await getTarifaById(servicio.tarifaId);
               entityInfo = {
                 name: servicio.nombre,
-                link: `/configuracion/tarifas/${servicio.tarifaId}/nuevo-servicio?servicioId=${servicio.id}`,
+                link: `/configuracion/tarifas/${servicio.tarifaId}/servicio/${servicio.id}`,
                 code: servicio.codigo,
                 detailedInfo: tarifa ? `${tarifa.nombre} > Servicios` : 'Servicios'
               };

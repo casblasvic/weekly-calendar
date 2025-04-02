@@ -125,14 +125,14 @@ export default function ConsumosPage() {
   
   // Manejar click en "Volver"
   const handleVolver = () => {
-    // Si tenemos un ID de servicio, volvemos a la edición de ese servicio
-    if (servicioActual?.id) {
-      router.push(`/configuracion/tarifas/${tarifaId}/nuevo-servicio?servicioId=${servicioActual.id}`);
+    // Regresar a la página principal del servicio
+    if (servicioActual && servicioActual.id) {
+      router.push(`/configuracion/tarifas/${tarifaId}/servicio/${servicioActual.id}`);
     } else if (servicioId) {
-      router.push(`/configuracion/tarifas/${tarifaId}/nuevo-servicio?servicioId=${servicioId}`);
+      router.push(`/configuracion/tarifas/${tarifaId}/servicio/${servicioId}`);
     } else {
-      // En caso de que no haya ID (caso poco probable), volvemos a la página de nuevo servicio
-      router.push(`/configuracion/tarifas/${tarifaId}/nuevo-servicio`);
+      // Si no hay ID, volver a la lista de tarifas
+      router.push(`/configuracion/tarifas/${tarifaId}`);
     }
   }
   
