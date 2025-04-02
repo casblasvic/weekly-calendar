@@ -599,7 +599,24 @@ export default function ConfiguracionTarifa() {
   };
 
   return (
-    <>
+    <div className="flex flex-col p-4 py-8">
+      {/* Contenedor del título y acciones */}
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center space-x-4">
+          <h1 className="text-2xl font-semibold">{tarifa ? tarifa.nombre : 'Cargando Tarifa...'}</h1>
+          {tarifa && (
+            <Button variant="ghost" size="icon" onClick={() => setEditingTarifa(true)} className="text-gray-500 hover:text-purple-600">
+              <Edit3 className="w-5 h-5" />
+            </Button>
+          )}
+        </div>
+        <div className="flex items-center space-x-2">
+          <Button variant="outline" onClick={() => router.back()} className="bg-white">
+            Volver
+          </Button>
+        </div>
+      </div>
+
       {/* Card con buscador y botones de acciones */}
       <Card className="mb-6">
         <CardContent className="p-6">
@@ -654,15 +671,15 @@ export default function ConfiguracionTarifa() {
                 </Select>
               </div>
 
-              {/* Botones de Exportar y Buscar */}
-              <div className="flex mt-4 space-x-2">
-                <Button variant="outline" size="sm" className="flex-1">
+              {/* Eliminamos el div anterior y colocamos uno nuevo sin mt-4 */}
+              <div className="flex space-x-2"> {/* Sin margen superior explícito */}
+                <Button variant="outline" size="sm">
                   Exportar
                 </Button>
                 <Button 
                   variant="default" 
                   size="sm" 
-                  className="flex-1 bg-purple-700 hover:bg-purple-800"
+                  className="bg-purple-700 hover:bg-purple-800"
                   onClick={() => {
                     // Reiniciar la página al buscar
                     setCurrentPage(1);
@@ -1070,7 +1087,7 @@ export default function ConfiguracionTarifa() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </>
+    </div>
   )
 }
 
