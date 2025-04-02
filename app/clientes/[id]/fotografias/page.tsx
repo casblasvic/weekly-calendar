@@ -136,7 +136,7 @@ export default function FotografiasPage() {
                 <div key={file.name} className="relative aspect-square">
                   <img
                     src={file.preview || "/placeholder.svg"}
-                    alt={file.name}
+                    alt={`Fotografía de cliente`}
                     className="h-full w-full rounded-lg object-cover"
                     onLoad={() => {
                       URL.revokeObjectURL(file.preview || "")

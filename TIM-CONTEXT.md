@@ -2,167 +2,191 @@
 
 ## Descripción General de la Aplicación
 
-Esta aplicación es un sistema de gestión para clínicas que permite administrar agendas, clientes, servicios, equipamiento y más. Está desarrollada con Next.js utilizando React y TypeScript, siguiendo una arquitectura basada en contextos para la gestión de estado y acceso a datos.
+Esta aplicación es un sistema de gestión para clínicas que permite administrar agendas, clientes, servicios, equipamiento y más. Está desarrollada con Next.js utilizando React y TypeScript.
 
 ## Arquitectura de Datos
 
-La aplicación utiliza una arquitectura en capas para el manejo de datos:
+La aplicación utiliza una arquitectura desacoplada para el manejo de datos, permitiendo cambiar entre diferentes fuentes de datos (local en memoria, base de datos remota, etc.) sin modificar los componentes de la interfaz de usuario ni la lógica de los contextos.
 
-1. **Capa de Presentación**: Componentes React que renderizan la interfaz de usuario.
-2. **Capa de Contexto**: Proveedores de contexto React que encapsulan la lógica de acceso a datos.
-3. **Capa de Servicios**: Servicios que abstraen el acceso a las fuentes de datos.
-4. **Capa de Datos**: Implementaciones concretas para acceder a los datos (local o remoto).
+1.  **Capa de Presentación (Componentes)**: Componentes React (Server or Client Components) that render the UI.
+2.  **Capa de Contexto (Contexts React)**: Providers of context (e.g., `ClinicProvider`, `TarifProvider`) that manage the state related to a specific entity and expose functions to interact with data.
+3.  **Interfaz Contexto (`useInterfaz`)**: A central context that acts as a unified access point to the functions of the active data service.
+4.  **Servicio Capa (`DataService` Interface)**: A TypeScript interface (`DataService`) that defines the contract (CRUD functions and others) that any data service must implement.
+5.  **Data Implementation Capa**: Concrete classes that implement the `DataService` interface.
+    *   **`LocalDataService`**: Implementation that operates **in memory**. Loads initial data (defined within the file itself, as `initialMockData`) when initialized and all operations (create, update, delete) modify these data **only in memory** (not persistent between application restarts). Ideal for quick development and testing.
+    *   **`SupabaseDataService` (or others)**: Implementation(s) that interact with a remote database (e.g., Supabase). It will be selected in production or for tests with persistent data.
+6.  **Data Service Selector (`getDataService`)**: A function (in `services/data/index.ts`) that decides which concrete implementation (`LocalDataService`, `SupabaseDataService`) to instantiate and return, based on configuration or environment variables.
 
-### Flujo de Datos
+### Typical Data Flow
 
+```mermaid
+graph LR
+    A[React Component] -- Calls hook --> B(useContextoEspecifico);
+    B -- Uses --> C{useInterfaz};
+    C -- Gets --> D[DataService Instance];
+    D -- Calls method --> E(Concrete Implementation: LocalDataService / SupabaseDataService);
+    E -- Interacts --> F((Data Source: Memory / Remote DB));
+    F -- Returns data --> E;
+    E -- Returns data --> D;
+    D -- Returns data --> C;
+    C -- Returns data --> B;
+    B -- Updates state / Returns data --> A;
 ```
-Componente → useContexto() → DataService → LocalDataService/SupabaseDataService
-```
 
-En desarrollo, los datos se almacenan localmente usando `LocalDataService`.
-En producción, se utilizará `SupabaseDataService` para acceder a bases de datos remotas.
+**Important:** Components **NEVER** should interact directly with `LocalDataService` or `SupabaseDataService`. Always use the **contexts** (`useClinic`, `useTarif`, `useInterfaz`) to interact with the data. The contexts are the only ones that interact with the `DataService` instance provided by `getDataService`. `LocalDataService` currently uses data defined internally (`initialMockData`) to operate in memory.
 
 ## Uso de Contextos
 
-Los contextos son la pieza fundamental para que los componentes accedan a los datos. Cada entidad principal del sistema tiene su propio contexto que proporciona funciones CRUD y otras operaciones específicas.
+Contexts are the **obligatory** way to access and modify data from components.
 
-### Contexto Principal: InterfazContext
+### Specific Contexts (Recommended)
 
-El `InterfazContext` es el contexto central que proporciona acceso a todas las entidades y funciones del sistema. Es recomendable usar este contexto para operaciones generales o cuando necesites acceder a múltiples tipos de entidades.
-
-```tsx
-import { useInterfaz } from "@/contexts/interfaz-Context";
-
-function MiComponente() {
-  const {
-    getAllClinicas,
-    getClientById,
-    createServicio,
-    // etc...
-  } = useInterfaz();
-  
-  // Usar estas funciones para acceder o modificar datos
-}
-```
-
-### Contextos Específicos
-
-Para entidades específicas, es recomendable utilizar sus contextos dedicados:
+Use the specific context for the entity you work with primarily.
 
 ```tsx
 import { useClinic } from "@/contexts/clinic-context";
 import { useTarif } from "@/contexts/tarif-context";
-import { useCabins } from "@/contexts/CabinContext";
+// ... other specific contexts
 
-function MiComponente() {
-  const { getAllClinics, getClinicById } = useClinic();
-  const { getAllTarifas } = useTarif();
-  const { getCabinsByClinic } = useCabins();
-  
-  // Usar estas funciones para acceder o modificar datos
+function MiComponenteClinica() {
+  // Gets data and functions specific to clinics
+  const { clinics, activeClinic, getClinicaById, updateClinica } = useClinic();
+
+  // ... component logic using clinics, updateClinica, etc.
 }
 ```
 
-## Estructura de un Nuevo Componente
+### General Context (`useInterfaz`)
 
-Cuando desarrolles un nuevo componente, debes seguir esta estructura:
+Use it if you need to access functions of multiple different entities occasionally, although generally it's preferable to use the specific contexts.
 
 ```tsx
-"use client"
+import { useInterfaz } from "@/contexts/interfaz-Context";
 
-import { useState, useEffect } from "react"
-// Importar hooks de contexto necesarios
-import { useInterfaz } from "@/contexts/interfaz-Context"
-// Importar componentes UI
+function ComponenteComplejo() {
+  const interfaz = useInterfaz();
+
+  const handleAction = async () => {
+    const clinica = await interfaz.getClinicaById('clinic-1');
+    const servicio = await interfaz.createServicio({ /* ... */ });
+  }
+  // ...
+}
+```
+
+## Structure of a New Component
+
+```tsx
+"use client" // Or Server Component if no interactivity/state is needed
+
+import { useState, useEffect, useCallback } from "react"
+// Import necessary context hooks (preferably specific)
+import { useClinic } from "@/contexts/clinic-context"
+// Import necessary types (ideally from the service or interfaces)
+import type { Clinica } from "@/services/data"
+// Import UI components
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { toast } from "@/components/ui/use-toast"
 
 interface MiComponenteProps {
-  // Definir props del componente
-  entidadId: string;
-  // Otras props según sea necesario
+  clinicId: string;
+  // ... other props
 }
 
-export default function MiComponente({ entidadId }: MiComponenteProps) {
-  // Obtener funciones del contexto
-  const { getEntidadById, updateEntidad } = useInterfaz();
-  
-  // Estados locales
-  const [datos, setDatos] = useState<TipoEntidad | null>(null);
-  const [cargando, setCargando] = useState(true);
+export default function MiComponente({ clinicId }: MiComponenteProps) {
+  // Get state and functions from the specific context
+  const { getClinicaById, updateClinica } = useClinic();
+
+  // Local state for UI and data of the form
+  const [clinicaData, setClinicaData] = useState<Partial<Clinica>>({});
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
-  // Cargar datos iniciales
-  useEffect(() => {
-    const cargarDatos = async () => {
-      try {
-        setCargando(true);
-        const datosEntidad = await getEntidadById(entidadId);
-        setDatos(datosEntidad);
-        setError(null);
-      } catch (error) {
-        console.error("Error al cargar datos:", error);
-        setError("Error al cargar los datos");
-      } finally {
-        setCargando(false);
-      }
-    };
-    
-    cargarDatos();
-  }, [entidadId, getEntidadById]);
-  
-  // Funciones de manejo de eventos
-  const handleSubmit = async () => {
+
+  // Load initial data
+  const loadData = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
     try {
-      await updateEntidad(entidadId, datos);
-      // Notificar cambios a otros componentes
-      window.dispatchEvent(
-        new CustomEvent("data-change", {
-          detail: { entityType: "entidad", entityId: entidadId },
-        })
-      );
-    } catch (error) {
-      console.error("Error al actualizar:", error);
-      setError("Error al guardar los cambios");
+      const data = await getClinicaById(clinicId);
+      if (data) {
+        setClinicaData(data);
+      } else {
+        setError("Clinic not found");
+      }
+    } catch (err) {
+      console.error("Error loading data:", err);
+      setError("Error loading clinic.");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [clinicId, getClinicaById]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // Handle changes in the form
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    setClinicaData(prev => ({ ...prev, [name]: value }));
+  };
+
+  // Handle saving
+  const handleSave = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const success = await updateClinica(clinicId, clinicaData);
+      if (success) {
+        toast({ title: "Success", description: "Clinic updated." });
+        // Optional: Reload data if needed (although the context should update)
+        // loadData();
+      } else {
+        throw new Error("Update failed from service");
+      }
+    } catch (err) {
+      console.error("Error saving data:", err);
+      setError("Error saving changes.");
+      toast({ title: "Error", description: "Could not save.", variant: "destructive" });
+    } finally {
+      setIsLoading(false);
     }
   };
-  
-  // Renderizar componente
+
+  // Render component
+  if (isLoading) return <div>Loading...</div>;
+  if (error) return <div>Error: {error}</div>;
+  if (!clinicaData) return <div>Clinic not available.</div>;
+
   return (
     <div>
-      {/* Contenido del componente */}
+      <h2>Edit Clinic: {clinicaData.name}</h2>
+      <Input name="name" value={clinicaData.name || ''} onChange={handleChange} />
+      {/* ... other fields ... */}
+      <Button onClick={handleSave} disabled={isLoading}>
+        {isLoading ? "Saving..." : "Save Changes"}
+      </Button>
     </div>
   );
 }
 ```
 
-## Notificación de Cambios entre Componentes
+## Data Models (Types)
 
-Para mantener la coherencia de datos entre componentes, utilizamos eventos personalizados:
+The primary types (like `Clinica`, `Tarifa`, `Servicio`, etc.) are defined in `services/data/models/interfaces.ts` and are re-exported by `services/data`. Import the types directly from `@/services/data`.
 
-```tsx
-// Al modificar datos
-window.dispatchEvent(
-  new CustomEvent("data-change", {
-    detail: { entityType: "entidadModificada", entityId: idEntidad },
-  })
-);
-
-// Para escuchar cambios en otro componente
-useEffect(() => {
-  const handleDataChange = (e: CustomEvent) => {
-    const { entityType, entityId } = e.detail;
-    if (entityType === "entidadQueObservo" && entityId === idQueObservo) {
-      // Recargar datos
-    }
-  };
-
-  window.addEventListener("data-change" as any, handleDataChange);
-  return () => {
-    window.removeEventListener("data-change" as any, handleDataChange);
-  };
-}, [idQueObservo]);
+```typescript
+import type { Clinica, Servicio } from "@/services/data";
 ```
+
+## Key Summary
+
+*   Always use **context hooks** (`useClinic`, `useTarif`, `useInterfaz`) to interact with data.
+*   **NEVER** import or use `LocalDataService` or `SupabaseDataService` directly in components.
+*   `LocalDataService` operates **in memory** using data defined internally (currently in `initialMockData` within the service file). Changes **are not persistent**.
+*   The **`DataService` interface** is the contract that ensures that both implementations (local and remote) have the same functions.
+*   The `getDataService` function in `services/data/index.ts` selects which implementation to use.
 
 ## Modelos de Datos Disponibles
 

@@ -85,7 +85,26 @@ export function ClinicProvider({ children }: { children: ReactNode }) {
   // Obtener clínica por ID
   const getClinicaById = async (id: string): Promise<Clinica | null> => {
     try {
-      return await interfaz.getClinicaById(id);
+      const clinica = await interfaz.getClinicaById(id);
+      
+      // Si la clínica no está en el estado local, o tiene datos diferentes, 
+      // actualizar el estado local para asegurar sincronización
+      if (clinica) {
+        const localClinicIndex = clinics.findIndex(c => isSameId(c.id, id));
+        if (localClinicIndex === -1 || JSON.stringify(clinics[localClinicIndex]) !== JSON.stringify(clinica)) {
+          setClinics(prev => {
+            const newClinics = [...prev];
+            if (localClinicIndex === -1) {
+              newClinics.push(clinica);
+            } else {
+              newClinics[localClinicIndex] = clinica;
+            }
+            return newClinics;
+          });
+        }
+      }
+      
+      return clinica;
     } catch (error) {
       console.error("Error al obtener clínica por ID:", error);
       // Intentar recuperar del estado local

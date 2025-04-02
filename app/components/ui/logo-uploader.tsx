@@ -3,8 +3,9 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { Button } from '@/app/components/ui/button'
 import { toast } from '@/app/components/ui/use-toast'
-import { Upload, X, Image } from 'lucide-react'
+import { Upload, X, Image, UploadCloud } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useDropzone } from 'react-dropzone'
 
 interface LogoUploaderProps {
   currentLogo?: string
@@ -110,6 +111,25 @@ export const LogoUploader: React.FC<LogoUploaderProps> = ({
     })
   }
 
+  const { getInputProps, getRootProps, isDragActive } = useDropzone({
+    onDrop: (acceptedFiles) => {
+      const file = acceptedFiles[0]
+      if (file) {
+        // Usar el tipo correcto para la conversión
+        const customEvent = {
+          target: { files: [file] }
+        } as unknown as React.ChangeEvent<HTMLInputElement>;
+        handleFileChange(customEvent);
+      }
+    },
+    accept: {
+      'image/png': ['.png'],
+      'image/jpeg': ['.jpg', '.jpeg'],
+      'image/gif': ['.gif'],
+      'image/svg+xml': ['.svg']
+    },
+  })
+
   return (
     <div className={cn('flex flex-col items-center space-y-4', className)}>
       <div 
@@ -121,7 +141,7 @@ export const LogoUploader: React.FC<LogoUploaderProps> = ({
           {hasMounted && logoPreview ? (
             <img 
               src={logoPreview} 
-              alt="Logo" 
+              alt="Logotipo de la empresa" 
               className={cn(
                 'max-w-full max-h-full object-contain transition-opacity',
                 isHovering && 'opacity-70'
@@ -171,6 +191,7 @@ export const LogoUploader: React.FC<LogoUploaderProps> = ({
         className="hidden"
         accept="image/png,image/jpeg,image/gif,image/svg+xml"
         onChange={handleFileChange}
+        aria-label="Subir logotipo"
       />
       
       <p className="text-sm text-gray-500 text-center">

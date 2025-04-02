@@ -1191,7 +1191,7 @@ export default function NuevoServicio() {
                     <SelectContent>
                       {tiposIVA && tiposIVA.map((iva) => (
                         <SelectItem key={iva.id} value={iva.id}>
-                          {iva.descripcion}
+                          {iva.descripcion} ({iva.porcentaje}%)
                         </SelectItem>
                       ))}
                     </SelectContent>

@@ -79,7 +79,7 @@ interface Cabin {
 
 const SectionTitle = ({ icon: Icon, title, color }: { icon: any; title: string; color: string }) => (
   <div className={`flex items-center space-x-2 mb-4 pb-2 border-b ${color}`}>
-    <Icon className="h-5 w-5" />
+    <Icon className="w-5 h-5" />
     <h3 className={`text-lg font-medium ${color}`}>{title}</h3>
   </div>
 )
@@ -125,7 +125,7 @@ export default function ClinicaDetailPage() {
       const clinicId = clinicData.id
       const loadEquipment = async () => {
         try {
-          const equipmentList = await getEquiposByClinicaId(clinicId)
+          const equipmentList = await getEquiposByClinicaId(String(clinicId))
           setEquipmentData(Array.isArray(equipmentList) ? equipmentList : [])
         } catch (error) {
           console.error("Error al cargar equipamiento:", error)
@@ -173,7 +173,7 @@ export default function ClinicaDetailPage() {
       if (cabin.id === 0) {
         updatedCabins.push({
           ...cabin,
-          id: Math.max(...updatedCabins.map((c) => c.id), 0) + 1,
+          id: Math.max(...updatedCabins.map((c) => Number(c.id)), 0) + 1,
           order: (clinicData?.config?.cabins?.length || 0) + 1,
         })
       }
@@ -185,7 +185,7 @@ export default function ClinicaDetailPage() {
 
   const handleDeleteCabin = useCallback(
     (cabinId: number) => {
-      const updatedCabins = clinicData?.config?.cabins?.filter((c) => c.id !== cabinId) || []
+      const updatedCabins = clinicData?.config?.cabins?.filter((c) => Number(c.id) !== cabinId) || []
       handleClinicUpdate({ cabins: updatedCabins })
     },
     [clinicData?.config?.cabins, handleClinicUpdate],
@@ -194,7 +194,7 @@ export default function ClinicaDetailPage() {
   const handleMoveCabin = useCallback(
     (cabinId: number, direction: "up" | "down") => {
       const updatedCabins = [...(clinicData?.config?.cabins || [])].sort((a, b) => a.order - b.order)
-      const cabinIndex = updatedCabins.findIndex((c) => c.id === cabinId)
+      const cabinIndex = updatedCabins.findIndex((c) => Number(c.id) === cabinId)
 
       if ((direction === "up" && cabinIndex > 0) || (direction === "down" && cabinIndex < updatedCabins.length - 1)) {
         const swapIndex = direction === "up" ? cabinIndex - 1 : cabinIndex + 1
@@ -259,6 +259,7 @@ export default function ClinicaDetailPage() {
   }
 
   const { config } = clinicData
+  const typedConfig = config as any
 
   const defaultOpenTime = "00:00"
   const defaultCloseTime = "23:59"
@@ -281,14 +282,14 @@ export default function ClinicaDetailPage() {
   ]
 
   return (
-    <div className="container px-0 pb-8 pt-4">
+    <div className="container px-0 pt-4 pb-8">
       <div className="mb-6">
         <h1 className="text-2xl font-bold">Configuración de Clínica: {clinicData?.name}</h1>
       </div>
 
       <div className="flex items-start gap-6">
         <div className="w-64 shrink-0">
-          <div className="sticky top-4 rounded-lg border bg-card p-4 shadow">
+          <div className="sticky p-4 border rounded-lg shadow top-4 bg-card">
             <div className="flex flex-col space-y-1">
               {menuItems.map((item) => {
                 const Icon = item.icon
@@ -303,7 +304,7 @@ export default function ClinicaDetailPage() {
                         : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                     )}
                   >
-                    <Icon className="h-5 w-5" />
+                    <Icon className="w-5 h-5" />
                     <span>{item.label}</span>
                   </button>
                 )
@@ -315,11 +316,11 @@ export default function ClinicaDetailPage() {
         <div className="flex-1">
           {clinicData && (
             <div className="space-y-6">
-              <h2 className="text-2xl font-semibold mb-6">{menuItems.find((item) => item.id === activeTab)?.label}</h2>
+              <h2 className="mb-6 text-2xl font-semibold">{menuItems.find((item) => item.id === activeTab)?.label}</h2>
 
               {activeTab === "datos" && (
                 <Card className="p-6">
-                  <SectionTitle icon={Building2} title="Información Básica" color="text-blue-600 border-blue-600" />
+                  <SectionTitle icon={Building2} title="Información general" color="text-blue-600 border-blue-600" />
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="space-y-2">
                       <Label htmlFor="prefix" className="text-sm">
@@ -327,19 +328,68 @@ export default function ClinicaDetailPage() {
                       </Label>
                       <Input
                         id="prefix"
-                        defaultValue={config.prefix}
-                        className="h-9 text-sm"
+                        defaultValue={typedConfig.prefix}
+                        className="text-sm h-9"
                         onChange={(e) => handleClinicUpdate({ prefix: e.target.value })}
                       />
                     </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="name" className="text-sm">
+                        Nombre
+                      </Label>
+                      <Input
+                        id="name"
+                        defaultValue={typedConfig.name}
+                        className="text-sm h-9"
+                        onChange={(e) => handleClinicUpdate({ name: e.target.value })}
+                      />
+                    </div>
+                    
+                    {/* Estado de activación de la clínica */}
+                    <div className="space-y-2 md:col-span-2">
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id="isActive"
+                          checked={clinicData?.isActive}
+                          onCheckedChange={(checked) => {
+                            if (clinicData) {
+                              setClinicData({
+                                ...clinicData,
+                                isActive: checked === true
+                              });
+                              
+                              // Mostrar feedback al usuario
+                              toast({
+                                title: checked ? "Clínica activada" : "Clínica desactivada",
+                                description: checked 
+                                  ? "La clínica aparecerá en los selectores de clínicas activas" 
+                                  : "La clínica solo será visible cuando se muestre 'clínicas deshabilitadas'",
+                                duration: 3000
+                              });
+                            }
+                          }}
+                        />
+                        <Label htmlFor="isActive" className="text-sm font-medium cursor-pointer">
+                          Clínica activa
+                        </Label>
+                        <div className={`ml-2 px-2 py-0.5 text-xs rounded-full ${clinicData?.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                          {clinicData?.isActive ? 'Activa' : 'Inactiva'}
+                        </div>
+                      </div>
+                      <p className="ml-6 text-xs text-gray-500">
+                        Las clínicas inactivas no aparecerán en los selectores por defecto,
+                        pero sus datos se conservan y pueden reactivarse en cualquier momento.
+                      </p>
+                    </div>
+
                     <div className="space-y-2">
                       <Label htmlFor="commercialName" className="text-sm">
                         Nombre Comercial
                       </Label>
                       <Input
                         id="commercialName"
-                        defaultValue={config.commercialName}
-                        className="h-9 text-sm"
+                        defaultValue={typedConfig.commercialName}
+                        className="text-sm h-9"
                         onChange={(e) => handleClinicUpdate({ commercialName: e.target.value })}
                       />
                     </div>
@@ -349,8 +399,8 @@ export default function ClinicaDetailPage() {
                       </Label>
                       <Input
                         id="businessName"
-                        defaultValue={config.businessName}
-                        className="h-9 text-sm"
+                        defaultValue={typedConfig.businessName}
+                        className="text-sm h-9"
                         onChange={(e) => handleClinicUpdate({ businessName: e.target.value })}
                       />
                     </div>
@@ -360,8 +410,8 @@ export default function ClinicaDetailPage() {
                       </Label>
                       <Input
                         id="cif"
-                        defaultValue={config.cif}
-                        className="h-9 text-sm"
+                        defaultValue={typedConfig.cif}
+                        className="text-sm h-9"
                         onChange={(e) => handleClinicUpdate({ cif: e.target.value })}
                       />
                     </div>
@@ -374,10 +424,10 @@ export default function ClinicaDetailPage() {
                         País
                       </Label>
                       <Select
-                        defaultValue={config.country}
+                        defaultValue={typedConfig.country}
                         onValueChange={(value) => handleClinicUpdate({ country: value })}
                       >
-                        <SelectTrigger className="h-9 text-sm">
+                        <SelectTrigger className="text-sm h-9">
                           <SelectValue placeholder="Seleccionar país" />
                         </SelectTrigger>
                         <SelectContent>
@@ -392,8 +442,8 @@ export default function ClinicaDetailPage() {
                       </Label>
                       <Input
                         id="province"
-                        defaultValue={config.province}
-                        className="h-9 text-sm"
+                        defaultValue={typedConfig.province}
+                        className="text-sm h-9"
                         onChange={(e) => handleClinicUpdate({ province: e.target.value })}
                       />
                     </div>
@@ -403,8 +453,8 @@ export default function ClinicaDetailPage() {
                       </Label>
                       <Input
                         id="city"
-                        defaultValue={config.city}
-                        className="h-9 text-sm"
+                        defaultValue={typedConfig.city}
+                        className="text-sm h-9"
                         onChange={(e) => handleClinicUpdate({ city: e.target.value })}
                       />
                     </div>
@@ -414,8 +464,8 @@ export default function ClinicaDetailPage() {
                       </Label>
                       <Input
                         id="postalCode"
-                        defaultValue={config.postalCode}
-                        className="h-9 text-sm"
+                        defaultValue={typedConfig.postalCode}
+                        className="text-sm h-9"
                         onChange={(e) => handleClinicUpdate({ postalCode: e.target.value })}
                       />
                     </div>
@@ -425,8 +475,8 @@ export default function ClinicaDetailPage() {
                       </Label>
                       <Input
                         id="address"
-                        defaultValue={config.address}
-                        className="h-9 text-sm"
+                        defaultValue={typedConfig.address}
+                        className="text-sm h-9"
                         onChange={(e) => handleClinicUpdate({ address: e.target.value })}
                       />
                     </div>
@@ -440,8 +490,8 @@ export default function ClinicaDetailPage() {
                       </Label>
                       <Input
                         id="phone"
-                        defaultValue={config.phone}
-                        className="h-9 text-sm"
+                        defaultValue={typedConfig.phone}
+                        className="text-sm h-9"
                         onChange={(e) => handleClinicUpdate({ phone: e.target.value })}
                       />
                     </div>
@@ -451,8 +501,8 @@ export default function ClinicaDetailPage() {
                       </Label>
                       <Input
                         id="phone2"
-                        defaultValue={config.phone2}
-                        className="h-9 text-sm"
+                        defaultValue={typedConfig.phone2}
+                        className="text-sm h-9"
                         onChange={(e) => handleClinicUpdate({ phone2: e.target.value })}
                       />
                     </div>
@@ -463,8 +513,8 @@ export default function ClinicaDetailPage() {
                       <Input
                         id="email"
                         type="email"
-                        defaultValue={config.email}
-                        className="h-9 text-sm"
+                        defaultValue={typedConfig.email}
+                        className="text-sm h-9"
                         onChange={(e) => handleClinicUpdate({ email: e.target.value })}
                       />
                     </div>
@@ -477,8 +527,8 @@ export default function ClinicaDetailPage() {
                       <Input
                         type="number"
                         step="0.01"
-                        defaultValue={config.initialCash}
-                        className="h-9 text-sm"
+                        defaultValue={typedConfig.initialCash}
+                        className="text-sm h-9"
                         onChange={(e) => handleClinicUpdate({ initialCash: e.target.value })}
                       />
                     </div>
@@ -486,10 +536,10 @@ export default function ClinicaDetailPage() {
                     <div className="space-y-2">
                       <Label className="text-sm">Tamaño impresión ticket</Label>
                       <Select
-                        defaultValue={config.ticketSize}
+                        defaultValue={typedConfig.ticketSize}
                         onValueChange={(value) => handleClinicUpdate({ ticketSize: value })}
                       >
-                        <SelectTrigger className="h-9 text-sm">
+                        <SelectTrigger className="text-sm h-9">
                           <SelectValue placeholder="Seleccionar tamaño" />
                         </SelectTrigger>
                         <SelectContent>
@@ -501,8 +551,8 @@ export default function ClinicaDetailPage() {
 
                     <div className="space-y-2">
                       <Label className="text-sm">Tarifa</Label>
-                      <Select defaultValue={config.rate} onValueChange={(value) => handleClinicUpdate({ rate: value })}>
-                        <SelectTrigger className="h-9 text-sm">
+                      <Select defaultValue={typedConfig.rate} onValueChange={(value) => handleClinicUpdate({ rate: value })}>
+                        <SelectTrigger className="text-sm h-9">
                           <SelectValue placeholder="Seleccionar tarifa" />
                         </SelectTrigger>
                         <SelectContent>
@@ -514,8 +564,8 @@ export default function ClinicaDetailPage() {
                     <div className="space-y-2">
                       <Label className="text-sm">IP</Label>
                       <Input
-                        defaultValue={config.ip}
-                        className="h-9 text-sm"
+                        defaultValue={typedConfig.ip}
+                        className="text-sm h-9"
                         onChange={(e) => handleClinicUpdate({ ip: e.target.value })}
                       />
                     </div>
@@ -524,7 +574,7 @@ export default function ClinicaDetailPage() {
                       <div className="space-y-2">
                         <Label className="text-sm">¿Desea bloquear el área de firma electrónica en flowww.me?</Label>
                         <RadioGroup
-                          defaultValue={config.blockSignArea}
+                          defaultValue={typedConfig.blockSignArea}
                           onValueChange={(value) => handleClinicUpdate({ blockSignArea: value })}
                         >
                           <div className="flex items-center space-x-2">
@@ -545,7 +595,7 @@ export default function ClinicaDetailPage() {
                       <div className="space-y-2">
                         <Label className="text-sm">¿Desea bloquear las áreas de datos personales en flowww.me?</Label>
                         <RadioGroup
-                          defaultValue={config.blockPersonalData}
+                          defaultValue={typedConfig.blockPersonalData}
                           onValueChange={(value) => handleClinicUpdate({ blockPersonalData: value })}
                         >
                           <div className="flex items-center space-x-2">
@@ -570,7 +620,7 @@ export default function ClinicaDetailPage() {
                         <div className="flex items-center space-x-2">
                           <Checkbox
                             id="delayed-payments"
-                            defaultChecked={config.delayedPayments}
+                            defaultChecked={typedConfig.delayedPayments}
                             onCheckedChange={(checked) => handleClinicUpdate({ delayedPayments: checked })}
                           />
                           <Label htmlFor="delayed-payments" className="text-sm">
@@ -580,7 +630,7 @@ export default function ClinicaDetailPage() {
                         <div className="flex items-center space-x-2">
                           <Checkbox
                             id="affects-stats"
-                            defaultChecked={config.affectsStats}
+                            defaultChecked={typedConfig.affectsStats}
                             onCheckedChange={(checked) => handleClinicUpdate({ affectsStats: checked })}
                           />
                           <Label htmlFor="affects-stats" className="text-sm">
@@ -590,7 +640,7 @@ export default function ClinicaDetailPage() {
                         <div className="flex items-center space-x-2">
                           <Checkbox
                             id="appears-in-app"
-                            defaultChecked={config.appearsInApp}
+                            defaultChecked={typedConfig.appearsInApp}
                             onCheckedChange={(checked) => handleClinicUpdate({ appearsInApp: checked })}
                           />
                           <Label htmlFor="appears-in-app" className="text-sm">
@@ -600,7 +650,7 @@ export default function ClinicaDetailPage() {
                         <div className="flex items-center space-x-2">
                           <Checkbox
                             id="schedule-control"
-                            defaultChecked={config.scheduleControl}
+                            defaultChecked={typedConfig.scheduleControl}
                             onCheckedChange={(checked) => handleClinicUpdate({ scheduleControl: checked })}
                           />
                           <Label htmlFor="schedule-control" className="text-sm">
@@ -610,7 +660,7 @@ export default function ClinicaDetailPage() {
                         <div className="flex items-center space-x-2">
                           <Checkbox
                             id="professional-skills"
-                            defaultChecked={config.professionalSkills}
+                            defaultChecked={typedConfig.professionalSkills}
                             onCheckedChange={(checked) => handleClinicUpdate({ professionalSkills: checked })}
                           />
                           <Label htmlFor="professional-skills" className="text-sm">
@@ -626,7 +676,7 @@ export default function ClinicaDetailPage() {
                       </Label>
                       <Textarea
                         id="notes"
-                        defaultValue={config.notes}
+                        defaultValue={typedConfig.notes}
                         className="h-20 text-sm"
                         onChange={(e) => handleClinicUpdate({ notes: e.target.value })}
                       />
@@ -641,7 +691,7 @@ export default function ClinicaDetailPage() {
                         <Label>Horario Apertura</Label>
                         <Input
                           type="time"
-                          value={config.openTime || defaultOpenTime}
+                          value={typedConfig.openTime || defaultOpenTime}
                           onChange={(e) => handleClinicUpdate({ openTime: e.target.value })}
                         />
                       </div>
@@ -649,7 +699,7 @@ export default function ClinicaDetailPage() {
                         <Label>Horario Cierre</Label>
                         <Input
                           type="time"
-                          value={config.closeTime || defaultCloseTime}
+                          value={typedConfig.closeTime || defaultCloseTime}
                           onChange={(e) => handleClinicUpdate({ closeTime: e.target.value })}
                         />
                       </div>
@@ -660,7 +710,7 @@ export default function ClinicaDetailPage() {
                           min="1"
                           max="60"
                           step="1"
-                          value={config.slotDuration || 15}
+                          value={typedConfig.slotDuration || 15}
                           onChange={(e) => {
                             const value = Number.parseInt(e.target.value)
                             if (value >= 1 && value <= 60) {
@@ -678,7 +728,7 @@ export default function ClinicaDetailPage() {
                         </SelectTrigger>
                         <SelectContent>
                           {templates.map((template) => (
-                            <SelectItem key={template.id} value={template.id}>
+                            <SelectItem key={String(template.id)} value={String(template.id)}>
                               {template.description}
                             </SelectItem>
                           ))}
@@ -688,7 +738,7 @@ export default function ClinicaDetailPage() {
                     <Card>
                       <CardContent className="pt-6">
                         <ScheduleConfig
-                          value={clinicData?.config?.schedule || DEFAULT_SCHEDULE}
+                          value={typedConfig.schedule || DEFAULT_SCHEDULE}
                           onChange={handleAdvancedScheduleChange}
                         />
                       </CardContent>
@@ -717,13 +767,13 @@ export default function ClinicaDetailPage() {
                     <div className="space-y-2">
                       <Label className="text-sm">Nº de cuenta domiciliaciones clientes</Label>
                       <div className="grid grid-cols-4 gap-2">
-                        <Input placeholder="PCC" className="h-9 text-sm" />
-                        <Input placeholder="Entidad" className="h-9 text-sm" />
-                        <Input placeholder="Oficina" className="h-9 text-sm" />
-                        <Input placeholder="D.C." className="h-9 text-sm" />
+                        <Input placeholder="PCC" className="text-sm h-9" />
+                        <Input placeholder="Entidad" className="text-sm h-9" />
+                        <Input placeholder="Oficina" className="text-sm h-9" />
+                        <Input placeholder="D.C." className="text-sm h-9" />
                       </div>
-                      <Input placeholder="Cuenta" className="h-9 text-sm" />
-                      <Input placeholder="BIC/SWIFT" className="h-9 text-sm" />
+                      <Input placeholder="Cuenta" className="text-sm h-9" />
+                      <Input placeholder="BIC/SWIFT" className="text-sm h-9" />
                     </div>
                   </div>
                 </Card>
@@ -736,7 +786,7 @@ export default function ClinicaDetailPage() {
 
                     <SearchInput placeholder="Buscar cabinas" value={cabinFilterText} onChange={setCabinFilterText} />
 
-                    <div className="rounded-md border">
+                    <div className="border rounded-md">
                       <Table>
                         <TableHeader>
                           <TableRow>
@@ -782,45 +832,53 @@ export default function ClinicaDetailPage() {
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    className="h-10 w-10 text-purple-600 hover:bg-purple-100"
-                                    onClick={() => handleMoveCabin(cabin.id, "up")}
+                                    className="w-10 h-10 text-purple-600 hover:bg-purple-100"
+                                    onClick={() => handleMoveCabin(Number(cabin.id), "up")}
                                     disabled={index === 0}
                                   >
-                                    <ChevronUp className="h-6 w-6 font-bold" />
+                                    <ChevronUp className="w-6 h-6 font-bold" />
                                   </Button>
                                 </TableCell>
                                 <TableCell className="text-center">
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    className="h-10 w-10 text-purple-600 hover:bg-purple-100"
-                                    onClick={() => handleMoveCabin(cabin.id, "down")}
+                                    className="w-10 h-10 text-purple-600 hover:bg-purple-100"
+                                    onClick={() => handleMoveCabin(Number(cabin.id), "down")}
                                     disabled={index === clinicData?.config?.cabins.length - 1}
                                   >
-                                    <ChevronDown className="h-6 w-6 font-bold" />
+                                    <ChevronDown className="w-6 h-6 font-bold" />
                                   </Button>
                                 </TableCell>
                                 <TableCell className="text-center">
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    className="h-10 w-10 text-purple-600 hover:bg-purple-100"
-                                    onClick={() => handleDeleteCabin(cabin.id)}
+                                    className="w-10 h-10 text-purple-600 hover:bg-purple-100"
+                                    onClick={() => handleDeleteCabin(Number(cabin.id))}
                                   >
-                                    <Trash2 className="h-6 w-6 font-bold" />
+                                    <Trash2 className="w-6 h-6 font-bold" />
                                   </Button>
                                 </TableCell>
                                 <TableCell className="text-center">
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    className="h-10 w-10 text-purple-600 hover:bg-purple-100"
+                                    className="w-10 h-10 text-purple-600 hover:bg-purple-100"
                                     onClick={() => {
-                                      setEditingCabin(cabin)
+                                      const cabinToEdit: Cabin = {
+                                        id: Number(cabin.id),
+                                        code: cabin.code,
+                                        name: cabin.name,
+                                        color: cabin.color,
+                                        isActive: cabin.isActive,
+                                        order: cabin.order
+                                      };
+                                      setEditingCabin(cabinToEdit)
                                       setIsCabinDialogOpen(true)
                                     }}
                                   >
-                                    <Search className="h-6 w-6 font-bold" />
+                                    <Search className="w-6 h-6 font-bold" />
                                   </Button>
                                 </TableCell>
                               </TableRow>
@@ -845,7 +903,7 @@ export default function ClinicaDetailPage() {
                       onChange={setEquipmentFilterText}
                     />
 
-                    <div className="rounded-md border">
+                    <div className="border rounded-md">
                       <Table>
                         <TableHeader>
                           <TableRow>
@@ -863,25 +921,25 @@ export default function ClinicaDetailPage() {
                               <TableCell>{equipment.name}</TableCell>
                               <TableCell>{equipment.description}</TableCell>
                               <TableCell>{equipment.serialNumber || "-"}</TableCell>
-                              <TableCell className="text-right space-x-1">
+                              <TableCell className="space-x-1 text-right">
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="h-8 w-8"
+                                  className="w-8 h-8"
                                   onClick={() => deleteEquipment(index)}
                                 >
-                                  <Trash2 className="h-4 w-4 text-primary" />
+                                  <Trash2 className="w-4 h-4 text-primary" />
                                   <span className="sr-only">Eliminar</span>
                                 </Button>
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="h-8 w-8"
+                                  className="w-8 h-8"
                                   onClick={() =>
                                     router.push(`/configuracion/clinicas/${params.id}/equipamiento/${equipment.id}`)
                                   }
                                 >
-                                  <Search className="h-4 w-4 text-primary" />
+                                  <Search className="w-4 h-4 text-primary" />
                                   <span className="sr-only">Ver/Editar</span>
                                 </Button>
                               </TableCell>
@@ -965,21 +1023,21 @@ export default function ClinicaDetailPage() {
           setIsCabinDialogOpen(false)
           setEditingCabin(null)
         }}
-        onSave={handleSaveCabin}
+        onSave={handleSaveCabin as any}
       />
 
       {/* Botones flotantes */}
-      <div className="fixed bottom-4 right-4 flex flex-col md:flex-row items-end space-y-2 md:space-y-0 md:space-x-2 z-50">
+      <div className="fixed z-50 flex flex-col items-end space-y-2 bottom-4 right-4 md:flex-row md:space-y-0 md:space-x-2">
         <BackButton
           href="/configuracion/clinicas"
-          className="bg-white text-gray-600 hover:bg-gray-100 text-sm py-2 px-4 rounded-md shadow-md"
+          className="px-4 py-2 text-sm text-gray-600 bg-white rounded-md shadow-md hover:bg-gray-100"
         >
-          <ArrowLeft className="h-4 w-4 mr-2" />
+          <ArrowLeft className="w-4 h-4 mr-2" />
           Volver
         </BackButton>
         {activeTab === "cabinas" && (
           <Button
-            className="bg-purple-600 hover:bg-purple-700 text-white text-sm py-2 px-4 rounded-md shadow-md"
+            className="px-4 py-2 text-sm text-white bg-purple-600 rounded-md shadow-md hover:bg-purple-700"
             onClick={() => {
               setEditingCabin({
                 id: 0,
@@ -992,30 +1050,30 @@ export default function ClinicaDetailPage() {
               setIsCabinDialogOpen(true)
             }}
           >
-            <Plus className="h-4 w-4 mr-2" />
+            <Plus className="w-4 h-4 mr-2" />
             Nueva cabina
           </Button>
         )}
         {activeTab === "equipamiento" && (
           <Button
-            className="bg-purple-600 hover:bg-purple-700 text-white text-sm py-2 px-4 rounded-md shadow-md"
+            className="px-4 py-2 text-sm text-white bg-purple-600 rounded-md shadow-md hover:bg-purple-700"
             onClick={() => {
               router.push(`/configuracion/clinicas/${clinicId}/equipamiento/nuevo`)
             }}
           >
-            <Plus className="h-4 w-4 mr-2" />
+            <Plus className="w-4 h-4 mr-2" />
             Nuevo equipamiento
           </Button>
         )}
         <Button
-          className="bg-purple-600 hover:bg-purple-700 text-white text-sm py-2 px-4 rounded-md shadow-md"
+          className="px-4 py-2 text-sm text-white bg-purple-600 rounded-md shadow-md hover:bg-purple-700"
           onClick={handleSaveClinic}
           disabled={isSaving}
         >
           {isSaving ? (
             <>
               <svg
-                className="animate-spin -ml-1 mr-3 h-5 w-5 text-white"
+                className="w-5 h-5 mr-3 -ml-1 text-white animate-spin"
                 xmlns="http://www.w3.org/2000/svg"
                 fill="none"
                 viewBox="0 0 24 24"
@@ -1031,13 +1089,13 @@ export default function ClinicaDetailPage() {
             </>
           ) : (
             <>
-              <Save className="h-4 w-4 mr-2" />
+              <Save className="w-4 h-4 mr-2" />
               Guardar Centro
             </>
           )}
         </Button>
-        <Button className="bg-black text-white hover:bg-gray-800 text-sm py-2 px-4 rounded-md shadow-md">
-          <HelpCircle className="h-4 w-4" />
+        <Button className="px-4 py-2 text-sm text-white bg-black rounded-md shadow-md hover:bg-gray-800">
+          <HelpCircle className="w-4 h-4" />
         </Button>
       </div>
     </div>

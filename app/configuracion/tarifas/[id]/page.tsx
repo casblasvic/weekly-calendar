@@ -70,9 +70,10 @@ export default function ConfiguracionTarifa() {
     nombre: string;
     codigo: string;
     familia: string;
-    precio: number;
-    iva: string;
+    precio: string | number;
+    iva?: string;
     tipo: string;
+    deshabilitado?: boolean;
   }
   
   // Estado para los servicios formateados
@@ -129,14 +130,15 @@ export default function ConfiguracionTarifa() {
             
             // Formatear para la vista de tabla
             const serviciosFormateados = serviciosData.map(servicio => ({
-              id: servicio.id,
+              id: String(servicio.id),
               nombre: servicio.nombre,
               codigo: servicio.codigo || '',
-              familia: getFamiliaName(servicio.familiaId),
-              precio: parseFloat(servicio.precioConIVA) || 0,
-              iva: "N/A",
-              tipo: 'servicio'
-            }));
+              familia: getFamiliaName(servicio.familiaId) || 'Sin familia',
+              precio: servicio.precioConIVA || '0',
+              iva: "N/A", // Valor por defecto para mantener compatibilidad
+              tipo: 'Servicio',
+              deshabilitado: servicio.deshabilitado || false
+            })) as ServicioFormateado[];
             
             setServiciosFormateados(serviciosFormateados);
             setTotalPages(Math.ceil(serviciosFormateados.length / itemsPerPage));
@@ -154,7 +156,9 @@ export default function ConfiguracionTarifa() {
     };
     
     loadServicios();
-  }, [tarifaId, getServiciosByTarifaId, itemsPerPage, getFamiliaName]);
+    // Quitar getFamiliaName de las dependencias para evitar el bucle infinito
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tarifaId, getServiciosByTarifaId, itemsPerPage]);
 
   // Efecto para resetear includeDisabledClinics cuando se abre el modal
   useEffect(() => {
@@ -199,6 +203,36 @@ export default function ConfiguracionTarifa() {
       console.log("Cargadas clínicas hardcoded:", clinicasHardcoded.length);
     }
   }, [clinics]);
+
+  // Cargar la tarifa completa al montar el componente
+  useEffect(() => {
+    const loadTarifa = async () => {
+      try {
+        if (tarifaId) {
+          console.log("Cargando tarifa con ID:", tarifaId);
+          const tarifaData = await getTarifaById(tarifaId);
+          
+          if (tarifaData) {
+            // Preparar la tarifa para asegurar que tenga una estructura válida
+            const tarifaPreparada = prepararTarifaConClinicas(tarifaData);
+            console.log("Tarifa cargada:", tarifaPreparada);
+            
+            // Actualizar los estados
+            setTarifa(tarifaPreparada);
+            setTarifaEditada(tarifaPreparada);
+          } else {
+            console.error("No se encontró la tarifa con ID:", tarifaId);
+            // Redirigir a la lista de tarifas si no existe
+            router.push('/configuracion/tarifas');
+          }
+        }
+      } catch (error) {
+        console.error("Error al cargar la tarifa:", error);
+      }
+    };
+    
+    loadTarifa();
+  }, [tarifaId, getTarifaById, router]);
 
   // Funciones para manejar la creación de diferentes tipos
   const handleNuevoServicio = () => {
@@ -330,54 +364,12 @@ export default function ConfiguracionTarifa() {
     }
   }, [menuRef])
 
-  // En la sección de acciones de la tabla donde está el botón de editar
+  // Función para editar un servicio
   const handleEditarServicio = (servicioId: string) => {
-    // Añadir logs de depuración
-    console.log(`Editando servicio con ID: ${servicioId} de la tarifa ${tarifaId}`);
-    
     try {
-      // Verificar que el servicio existe antes de navegar
-      const servicioExistente = getServiciosByTarifaId(tarifaId).find(s => s.id === servicioId);
-      
-      if (servicioExistente) {
-        console.log("Servicio encontrado:", servicioExistente);
-        
-        // Verificar que el tarifaId es correcto
-        if (servicioExistente.tarifaId !== tarifaId) {
-          console.warn(`El servicio tiene tarifaId ${servicioExistente.tarifaId} pero pertenece a la tarifa ${tarifaId}. Corrigiendo...`);
-          
-          // Corregir el tarifaId del servicio
-          actualizarServicio(servicioId, { 
-            ...servicioExistente, 
-            tarifaId: tarifaId 
-          });
-          
-          console.log("TarifaId del servicio corregido.");
-        }
-        
-        // Verificar si tiene documento adjunto pero no está guardado correctamente
-        const docs = getServiceDocuments(servicioId);
-        console.log(`El servicio tiene ${docs.length} documentos adjuntos.`);
-        
-        // Navegar a la página de edición del servicio con el ID correcto
-        const rutaEdicion = `/configuracion/tarifas/${tarifaId}/nuevo-servicio?servicioId=${servicioId}`;
-        console.log("Navegando a:", rutaEdicion);
-        router.push(rutaEdicion);
-      } else {
-        console.error(`Error: No se encontró el servicio con ID ${servicioId}`);
-        toast({
-          title: "Error",
-          description: "No se pudo encontrar el servicio para editar",
-          variant: "destructive",
-        });
-      }
+      router.push(`/configuracion/tarifas/${tarifaId}/editar-servicio/${servicioId}`);
     } catch (error) {
-      console.error("Error al editar servicio:", error);
-      toast({
-        title: "Error",
-        description: "Se produjo un error al intentar editar el servicio",
-        variant: "destructive",
-      });
+      console.error("Error al navegar a edición de servicio:", error);
     }
   };
 
@@ -388,52 +380,72 @@ export default function ConfiguracionTarifa() {
     setConfirmEliminarOpen(true);
   };
   
-  // Función para confirmar la eliminación
-  const confirmarEliminacion = () => {
-    if (servicioAEliminar) {
-      try {
-        // Eliminar imágenes y documentos antes de eliminar el servicio
-        const tieneImagenes = deleteServiceImages(servicioAEliminar);
-        const tieneDocumentos = deleteServiceDocuments(servicioAEliminar);
+  // Confirmar eliminación de servicio
+  const confirmarEliminacion = async () => {
+    if (!servicioAEliminar) return;
+    
+    try {
+      console.log("Eliminando servicio:", servicioAEliminar);
+      
+      // Eliminar imágenes del servicio
+      const imagenes = await getServiceImages(servicioAEliminar);
+      if (imagenes && imagenes.length > 0) {
+        await deleteServiceImages(servicioAEliminar);
+      }
+      
+      // Eliminar documentos del servicio
+      const documentos = await getServiceDocuments(servicioAEliminar);
+      if (documentos && documentos.length > 0) {
+        await deleteServiceDocuments('servicio', servicioAEliminar);
+      }
+      
+      // Eliminar el servicio
+      const resultado = await eliminarServicio(servicioAEliminar);
+      
+      if (resultado) {
+        // Actualizar la lista de servicios
+        const nuevoServiciosTarifa = await getServiciosByTarifaId(tarifaId);
+        setServiciosTarifa(nuevoServiciosTarifa);
         
-        // Eliminar el servicio
-        eliminarServicio(servicioAEliminar);
+        // Actualizar la vista de tabla
+        const serviciosActualizados = nuevoServiciosTarifa.map(servicio => ({
+          id: String(servicio.id),
+          nombre: servicio.nombre,
+          codigo: servicio.codigo || '',
+          familia: String(getFamiliaName(servicio.familiaId)),
+          precio: parseFloat(servicio.precioConIVA) || 0,
+          iva: "N/A",
+          tipo: 'servicio'
+        })) as ServicioFormateado[];
         
-        // Actualizar la lista de servicios después de eliminar
-        const nuevosServicios = serviciosFormateados.filter(s => s.id !== servicioAEliminar);
-        setServiciosFormateados(nuevosServicios);
+        setServiciosFormateados(serviciosActualizados);
+        setTotalPages(Math.ceil(serviciosActualizados.length / itemsPerPage));
         
-        // Calcular el total de páginas
-        setTotalPages(Math.ceil(nuevosServicios.length / itemsPerPage));
-        
-        // Si la página actual ya no tiene elementos y no es la primera página,
-        // volver a la página anterior
-        if (currentItems.length <= 1 && currentPage > 1) {
-          setCurrentPage(prev => prev - 1);
-        }
-        
-        // Preparar mensaje incluyendo info sobre archivos
-        let mensaje = `El servicio "${nombreServicioEliminar}" ha sido eliminado correctamente.`;
-        if (tieneImagenes || tieneDocumentos) {
-          mensaje += ` También se han eliminado ${tieneImagenes ? 'imágenes' : ''}${tieneImagenes && tieneDocumentos ? ' y ' : ''}${tieneDocumentos ? 'documentos' : ''} asociados.`;
-        }
-        
+        // Mostrar notificación
         toast({
           title: "Servicio eliminado",
-          description: mensaje,
+          description: `El servicio "${nombreServicioEliminar}" ha sido eliminado correctamente.`,
         });
-      } catch (error) {
-        console.error("Error al eliminar servicio:", error);
+      } else {
+        console.error("No se pudo eliminar el servicio:", servicioAEliminar);
         toast({
           title: "Error",
-          description: "No se pudo eliminar el servicio. Inténtelo de nuevo.",
+          description: "No se pudo eliminar el servicio.",
           variant: "destructive",
         });
-      } finally {
-        setConfirmEliminarOpen(false);
-        setServicioAEliminar(null);
-        setNombreServicioEliminar("");
       }
+    } catch (error) {
+      console.error("Error al eliminar servicio:", error);
+      toast({
+        title: "Error",
+        description: "Ocurrió un error al eliminar el servicio.",
+        variant: "destructive",
+      });
+    } finally {
+      // Limpiar estado y cerrar modal
+      setServicioAEliminar(null);
+      setNombreServicioEliminar("");
+      setConfirmEliminarOpen(false);
     }
   };
 
@@ -497,7 +509,7 @@ export default function ConfiguracionTarifa() {
   const addClinicToTarifa = async (tarifaId: string, clinicaId: string, isPrimary: boolean = false): Promise<boolean> => {
     try {
       // Obtener la tarifa actual
-      const tarifaActual = getTarifaById(tarifaId);
+      const tarifaActual = await getTarifaById(tarifaId);
       if (!tarifaActual) return false;
       
       // Clonar los arrays para evitar mutaciones
@@ -540,7 +552,7 @@ export default function ConfiguracionTarifa() {
   const removeClinicFromTarifa = async (tarifaId: string, clinicaId: string): Promise<boolean> => {
     try {
       // Obtener la tarifa actual
-      const tarifaActual = getTarifaById(tarifaId);
+      const tarifaActual = await getTarifaById(tarifaId);
       if (!tarifaActual) return false;
       
       // Clonar los arrays para evitar mutaciones
@@ -582,7 +594,7 @@ export default function ConfiguracionTarifa() {
   const setPrimaryClinicForTarifa = async (tarifaId: string, clinicaId: string): Promise<boolean> => {
     try {
       // Obtener la tarifa actual
-      const tarifaActual = getTarifaById(tarifaId);
+      const tarifaActual = await getTarifaById(tarifaId);
       if (!tarifaActual) return false;
       
       // Verificar si la clínica está asociada
@@ -610,15 +622,15 @@ export default function ConfiguracionTarifa() {
   };
 
   return (
-    <div className="container mx-auto p-6 mt-16">
+    <div className="container p-6 mx-auto mt-16">
       {/* Card con buscador y botones de acciones */}
       <Card className="mb-6">
         <CardContent className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
             {/* Columna izquierda - Filtros de búsqueda */}
             <div className="space-y-4">
               <div>
-                <label htmlFor="nombre" className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="nombre" className="block mb-1 text-sm font-medium text-gray-700">
                   Nombre
                 </label>
                 <Input
@@ -631,7 +643,7 @@ export default function ConfiguracionTarifa() {
               </div>
 
               <div>
-                <label htmlFor="tipo" className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="tipo" className="block mb-1 text-sm font-medium text-gray-700">
                   Tipo
                 </label>
                 <Select value={tipoFiltro || "all"} onValueChange={setTipoFiltro}>
@@ -647,7 +659,7 @@ export default function ConfiguracionTarifa() {
               </div>
 
               <div>
-                <label htmlFor="familia" className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="familia" className="block mb-1 text-sm font-medium text-gray-700">
                   Familia
                 </label>
                 <Select value={familiaFiltro || "all"} onValueChange={setFamiliaFiltro}>
@@ -666,14 +678,14 @@ export default function ConfiguracionTarifa() {
               </div>
 
               {/* Botones de Exportar y Buscar */}
-              <div className="flex space-x-2 mt-4">
+              <div className="flex mt-4 space-x-2">
                 <Button variant="outline" size="sm" className="flex-1">
                   Exportar
                 </Button>
                 <Button 
                   variant="default" 
                   size="sm" 
-                  className="bg-purple-700 hover:bg-purple-800 flex-1"
+                  className="flex-1 bg-purple-700 hover:bg-purple-800"
                   onClick={() => {
                     // Reiniciar la página al buscar
                     setCurrentPage(1);
@@ -695,7 +707,7 @@ export default function ConfiguracionTarifa() {
               </div>
             </div>
 
-            {/* Columna derecha - Botones para añadir elementos */}
+            {/* Columna derecha - Botones de acción */}
             <div className="space-y-4">
               {/* Botón Nuevo con menú desplegable */}
               <div className="relative" ref={menuRef}>
@@ -704,39 +716,39 @@ export default function ConfiguracionTarifa() {
                   className="w-full bg-purple-700 hover:bg-purple-800"
                   onClick={() => setMenuOpen(!menuOpen)}
                 >
-                  <Plus className="mr-2 h-4 w-4" />
+                  <Plus className="w-4 h-4 mr-2" />
                   Nuevo
                 </Button>
                 {menuOpen && (
-                  <div className="absolute right-0 mt-2 w-full bg-white rounded-md shadow-lg z-10">
+                  <div className="absolute right-0 z-10 w-full mt-2 bg-white rounded-md shadow-lg">
                     <div className="py-1" role="menu" aria-orientation="vertical" aria-labelledby="options-menu">
                       <button
-                        className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                        className="block w-full px-4 py-2 text-sm text-left text-gray-700 hover:bg-gray-100"
                         role="menuitem"
                         onClick={handleNuevoServicio}
                       >
                         <div className="flex items-center">
-                          <SmilePlus className="mr-3 h-5 w-5 text-purple-600" />
+                          <SmilePlus className="w-5 h-5 mr-3 text-purple-600" />
                           Servicio
                         </div>
                       </button>
                       <button
-                        className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                        className="block w-full px-4 py-2 text-sm text-left text-gray-700 hover:bg-gray-100"
                         role="menuitem"
                         onClick={handleNuevoProducto}
                       >
                         <div className="flex items-center">
-                          <ShoppingCart className="mr-3 h-5 w-5 text-blue-600" />
+                          <ShoppingCart className="w-5 h-5 mr-3 text-blue-600" />
                           Producto
                         </div>
                       </button>
                       <button
-                        className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                        className="block w-full px-4 py-2 text-sm text-left text-gray-700 hover:bg-gray-100"
                         role="menuitem"
                         onClick={handleNuevoPaquete}
                       >
                         <div className="flex items-center">
-                          <Package className="mr-3 h-5 w-5 text-green-600" />
+                          <Package className="w-5 h-5 mr-3 text-green-600" />
                           Paquete
                         </div>
                       </button>
@@ -745,38 +757,51 @@ export default function ConfiguracionTarifa() {
                 )}
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-4">
+              {/* Botones adicionales en horizontal */}
+              <div className="grid grid-cols-2 gap-3 mt-4">
                 <Button
                   variant="outline"
-                  className="border-indigo-600 text-indigo-600 hover:bg-indigo-50 w-full justify-start"
-                  onClick={navegarAFamilias}
+                  className="justify-start w-full text-indigo-600 border-indigo-600 hover:bg-indigo-50"
+                  onClick={() => router.push(`/configuracion/tarifas/familias`)}
                 >
-                  <User className="mr-2 h-5 w-5" />
+                  <ShoppingBag className="w-5 h-5 mr-2" />
                   <span>Familias</span>
                 </Button>
                 <Button
                   variant="outline"
-                  className="border-pink-600 text-pink-600 hover:bg-pink-50 w-full justify-start"
-                  onClick={navegarATiposIVA}
+                  className="justify-start w-full text-pink-600 border-pink-600 hover:bg-pink-50"
+                  onClick={() => router.push(`/configuracion/tarifas/${tarifaId}/iva`)}
                 >
-                  <ShoppingBag className="mr-2 h-5 w-5" />
+                  <Wrench className="w-5 h-5 mr-2" />
                   <span>Tipos de IVA</span>
                 </Button>
                 <Button
                   variant="outline"
-                  className="border-lime-600 text-lime-600 hover:bg-lime-50 w-full justify-start"
-                  onClick={navegarAHerencias}
+                  className="justify-start w-full text-purple-600 border-purple-600 hover:bg-purple-50"
+                  onClick={() => {
+                    if (tarifa) {
+                      setTarifaEditada(tarifa);
+                      setEditingClinics(true);
+                    } else {
+                      console.error("No hay tarifa cargada para editar clínicas");
+                      toast({
+                        title: "Error",
+                        description: "No se pudo cargar la tarifa para editar clínicas",
+                        variant: "destructive"
+                      });
+                    }
+                  }}
                 >
-                  <Wrench className="mr-2 h-5 w-5" />
-                  <span>Herencia</span>
+                  <Building2 className="w-5 h-5 mr-2" />
+                  <span>Clínicas asociadas</span>
                 </Button>
                 <Button
                   variant="outline"
-                  className="border-purple-600 text-purple-600 hover:bg-purple-50 w-full justify-start"
-                  onClick={() => setEditingClinics(true)}
+                  className="justify-start w-full text-lime-600 border-lime-600 hover:bg-lime-50"
+                  onClick={() => router.push(`/configuracion/tarifas/${tarifaId}/tarifas-planas`)}
                 >
-                  <Building2 className="mr-2 h-5 w-5" />
-                  <span>Clínicas asociadas</span>
+                  <User className="w-5 h-5 mr-2" />
+                  <span>Tarifas planas</span>
                 </Button>
               </div>
               
@@ -784,7 +809,7 @@ export default function ConfiguracionTarifa() {
               {tarifa?.clinicasIds && tarifa.clinicasIds.length > 0 && (
                 <div className="mt-5 space-y-2">
                   <div className="flex items-center">
-                    <Building2 className="mr-2 h-5 w-5 text-gray-500" />
+                    <Building2 className="w-5 h-5 mr-2 text-gray-500" />
                     <h3 className="text-sm font-medium">Clínicas asociadas ({tarifa.clinicasIds.length})</h3>
                   </div>
                   <div className="flex flex-wrap gap-2 mt-1">
@@ -803,20 +828,20 @@ export default function ConfiguracionTarifa() {
                         >
                           <span>{clinic?.name || clinic?.prefix || clinicaId}</span>
                           {isPrimary && (
-                            <span className="ml-1 text-xs bg-indigo-200 px-1.5 py-0.5 rounded-full text-indigo-800">
+                            <span className="px-1.5 py-0.5 ml-1 text-xs rounded-full bg-indigo-200 text-indigo-800">
                               Principal
                             </span>
                           )}
                           {clinic?.isActive === false && (
                             <AlertCircle 
-                              className="ml-1 h-3 w-3 text-amber-500" 
+                              className="w-3 h-3 ml-1 text-amber-500" 
                               aria-label="Clínica deshabilitada"
                             />
                           )}
                           <button
                             type="button"
                             onClick={() => setEditingClinics(true)}
-                            className="text-indigo-500 hover:text-indigo-700 ml-1"
+                            className="ml-1 text-indigo-500 hover:text-indigo-700"
                             title="Editar clínicas asociadas"
                           >
                             <Edit3 size={14} />
@@ -843,7 +868,7 @@ export default function ConfiguracionTarifa() {
       </div>
 
       {/* Selector de elementos por página */}
-      <div className="flex justify-end mb-4 items-center space-x-2">
+      <div className="flex items-center justify-end mb-4 space-x-2">
         <span className="text-sm text-gray-600">Mostrar</span>
         <Select value={itemsPerPage.toString()} onValueChange={(value) => setItemsPerPage(Number(value))}>
           <SelectTrigger className="w-20">
@@ -866,7 +891,7 @@ export default function ConfiguracionTarifa() {
             <tr>
               <th
                 scope="col"
-                className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer"
+                className="px-6 py-3 text-xs font-medium tracking-wider text-left uppercase cursor-pointer"
               >
                 <div className="flex items-center space-x-1">
                   <span>Tipo</span>
@@ -874,7 +899,7 @@ export default function ConfiguracionTarifa() {
               </th>
               <th
                 scope="col"
-                className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer"
+                className="px-6 py-3 text-xs font-medium tracking-wider text-left uppercase cursor-pointer"
                 onClick={() => requestSort('familia')}
               >
                 <div className="flex items-center">
@@ -884,7 +909,7 @@ export default function ConfiguracionTarifa() {
               </th>
               <th
                 scope="col"
-                className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer"
+                className="px-6 py-3 text-xs font-medium tracking-wider text-left uppercase cursor-pointer"
                 onClick={() => requestSort('nombre')}
               >
                 <div className="flex items-center">
@@ -894,7 +919,7 @@ export default function ConfiguracionTarifa() {
               </th>
               <th
                 scope="col"
-                className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer"
+                className="px-6 py-3 text-xs font-medium tracking-wider text-left uppercase cursor-pointer"
                 onClick={() => requestSort('codigo')}
               >
                 <div className="flex items-center">
@@ -904,7 +929,7 @@ export default function ConfiguracionTarifa() {
               </th>
               <th
                 scope="col"
-                className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider cursor-pointer"
+                className="px-6 py-3 text-xs font-medium tracking-wider text-right uppercase cursor-pointer"
                 onClick={() => requestSort('precio')}
               >
                 <div className="flex items-center justify-end">
@@ -914,7 +939,7 @@ export default function ConfiguracionTarifa() {
               </th>
               <th
                 scope="col"
-                className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider cursor-pointer"
+                className="px-6 py-3 text-xs font-medium tracking-wider text-right uppercase cursor-pointer"
                 onClick={() => requestSort('iva')}
               >
                 <div className="flex items-center justify-end">
@@ -924,7 +949,7 @@ export default function ConfiguracionTarifa() {
               </th>
               <th
                 scope="col"
-                className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider"
+                className="px-6 py-3 text-xs font-medium tracking-wider text-right uppercase"
               >
                 Acciones
               </th>
@@ -950,14 +975,14 @@ export default function ConfiguracionTarifa() {
                     </span>
                   </div>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{servicio.familia || "(Ninguna)"}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{servicio.nombre}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{servicio.codigo}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                <td className="px-6 py-4 text-sm text-gray-900 whitespace-nowrap">{servicio.familia || "(Ninguna)"}</td>
+                <td className="px-6 py-4 text-sm text-gray-900 whitespace-nowrap">{servicio.nombre}</td>
+                <td className="px-6 py-4 text-sm text-gray-900 whitespace-nowrap">{servicio.codigo}</td>
+                <td className="px-6 py-4 text-sm text-right text-gray-900 whitespace-nowrap">
                   {typeof servicio.precio === 'number' ? servicio.precio.toFixed(2) : servicio.precio}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{servicio.iva}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                <td className="px-6 py-4 text-sm text-right text-gray-900 whitespace-nowrap">{servicio.iva}</td>
+                <td className="px-6 py-4 text-sm text-gray-900 whitespace-nowrap">
                   <div className="flex justify-end space-x-2">
                     <button
                       onClick={() => handleEditarServicio(servicio.id)}
@@ -987,7 +1012,7 @@ export default function ConfiguracionTarifa() {
       </div>
 
       {/* Controles de paginación */}
-      <div className="flex justify-between items-center mt-4">
+      <div className="flex items-center justify-between mt-4">
         <div className="text-sm text-gray-600">
           Mostrando {indexOfFirstItem + 1} a {Math.min(indexOfLastItem, serviciosFiltrados.length)} de {serviciosFiltrados.length} elementos
         </div>
@@ -1031,7 +1056,7 @@ export default function ConfiguracionTarifa() {
       </div>
 
       {/* Botones de acción fijos */}
-      <div className="fixed bottom-6 right-6 flex space-x-2">
+      <div className="fixed flex space-x-2 bottom-6 right-6">
         <Button variant="outline" onClick={() => router.push("/configuracion/tarifas")}>
           Volver
         </Button>
@@ -1048,7 +1073,7 @@ export default function ConfiguracionTarifa() {
               <p className="mt-2">
                 Esta acción también eliminará todas las imágenes y documentos asociados al servicio.
               </p>
-              <p className="mt-2 text-red-500 font-medium">
+              <p className="mt-2 font-medium text-red-500">
                 Esta acción no se puede deshacer.
               </p>
             </DialogDescription>
@@ -1072,7 +1097,7 @@ export default function ConfiguracionTarifa() {
 
       {/* Modal de edición de clínicas asociadas */}
       <Dialog open={editingClinics} onOpenChange={setEditingClinics}>
-        <DialogContent className="sm:max-w-md p-6">
+        <DialogContent className="p-6 sm:max-w-md">
           <DialogHeader className="mb-4">
             <DialogTitle>Clínicas asociadas</DialogTitle>
             <DialogDescription>
@@ -1080,7 +1105,7 @@ export default function ConfiguracionTarifa() {
             </DialogDescription>
           </DialogHeader>
           
-          <div className="space-y-4 my-4">
+          <div className="my-4 space-y-4">
             {/* Checkbox para incluir clínicas deshabilitadas */}
             <div className="flex items-center space-x-2">
               <Checkbox
@@ -1090,7 +1115,7 @@ export default function ConfiguracionTarifa() {
               />
               <label 
                 htmlFor="includeDisabledClinics" 
-                className="text-sm font-medium leading-none cursor-pointer"
+                className="leading-none text-sm font-medium cursor-pointer"
               >
                 Mostrar clínicas deshabilitadas
               </label>
@@ -1102,29 +1127,65 @@ export default function ConfiguracionTarifa() {
               <Select
                 onValueChange={async (value) => {
                   if (tarifaEditada && value) {
-                    // Determinar si es la primera clínica (será primaria)
-                    const isPrimary = !tarifaEditada.clinicasIds || tarifaEditada.clinicasIds.length === 0;
-                    
-                    // Añadir la clínica directamente
-                    await addClinicToTarifa(tarifaId, value, isPrimary);
-                    
-                    // Actualizar la UI con la tarifa actualizada
-                    const updatedTarifa = getTarifaById(tarifaId);
-                    if (updatedTarifa) {
-                      setTarifaEditada(updatedTarifa);
+                    try {
+                      // Determinar si es la primera clínica (será primaria)
+                      const isPrimary = !tarifaEditada.clinicasIds || tarifaEditada.clinicasIds.length === 0;
+                      
+                      // Mostrar mensaje de procesamiento
+                      toast({
+                        title: "Añadiendo clínica",
+                        description: "Procesando solicitud...",
+                      });
+                      
+                      // Añadir la clínica directamente
+                      const success = await addClinicToTarifa(tarifaId, value, isPrimary);
+                      
+                      if (success) {
+                        // Actualizar la UI con la tarifa actualizada
+                        try {
+                          const updatedTarifaData = await getTarifaById(tarifaId);
+                          if (updatedTarifaData) {
+                            // Preparar la tarifa para asegurar que tenga una estructura válida
+                            const updatedTarifa = prepararTarifaConClinicas(updatedTarifaData);
+                            setTarifaEditada(updatedTarifa);
+                            setTarifa(updatedTarifa);
+                            
+                            toast({
+                              title: "Clínica añadida",
+                              description: "La clínica se ha asociado correctamente a la tarifa.",
+                            });
+                          }
+                        } catch (error) {
+                          console.error("Error al obtener tarifa actualizada:", error);
+                          toast({
+                            title: "Error",
+                            description: "Hubo un problema al actualizar la información.",
+                            variant: "destructive"
+                          });
+                        }
+                      } else {
+                        toast({
+                          title: "Error",
+                          description: "No se pudo asociar la clínica a la tarifa.",
+                          variant: "destructive"
+                        });
+                      }
+                    } catch (error) {
+                      console.error("Error al añadir clínica:", error);
+                      toast({
+                        title: "Error",
+                        description: "Ocurrió un problema al asociar la clínica.",
+                        variant: "destructive"
+                      });
                     }
                   }
                 }}
               >
-                <SelectTrigger className="w-full border-gray-300 bg-white">
+                <SelectTrigger className="w-full bg-white border-gray-300">
                   <SelectValue placeholder="Seleccionar clínica" />
                 </SelectTrigger>
                 <SelectContent className="bg-white">
-                  {/* Debugging - información simple */}
-                  <div className="p-2 text-xs text-gray-500">
-                    Clínicas disponibles: {clinics.length} | Filtrar deshabilitadas: {includeDisabledClinics ? "Sí" : "No"}
-                  </div>
-                  
+                  {/* Filtrar clínicas disponibles */}
                   {clinics
                     .filter(c => {
                       // No mostrar clínicas ya seleccionadas
@@ -1142,14 +1203,16 @@ export default function ConfiguracionTarifa() {
                       <SelectItem 
                         key={clinic.id} 
                         value={clinic.prefix}
+                        className={!clinic.isActive ? "text-amber-600" : ""}
                       >
                         {clinic.prefix} - {clinic.name}
-                        {clinic.isActive === false && " (Deshabilitada)"}
+                        {!clinic.isActive && " (Deshabilitada)"}
                       </SelectItem>
                     ))}
                   
                   {clinics.filter(c => {
-                    if (tarifaEditada?.clinicasIds?.includes(c.prefix)) return false;
+                    if (!tarifaEditada?.clinicasIds) return true;
+                    if (tarifaEditada.clinicasIds.includes(c.prefix)) return false;
                     return includeDisabledClinics || c.isActive === true;
                   }).length === 0 && (
                     <div className="p-2 text-sm text-gray-500">
@@ -1163,24 +1226,27 @@ export default function ConfiguracionTarifa() {
             {/* Clínicas seleccionadas */}
             {tarifaEditada?.clinicasIds && tarifaEditada.clinicasIds.length > 0 ? (
               <div className="space-y-2">
-                <label className="text-sm font-medium mb-2 block">Clínicas seleccionadas ({tarifaEditada.clinicasIds.length})</label>
+                <label className="block mb-2 text-sm font-medium">
+                  Clínicas seleccionadas ({tarifaEditada.clinicasIds.length})
+                </label>
                 <div className="flex flex-wrap gap-2 mt-2">
                   {tarifaEditada.clinicasIds.map((clinicaId) => {
+                    // Buscar la clínica por su ID (prefix) para mostrar su nombre
                     const clinic = clinics.find(c => c.prefix === clinicaId);
                     const isPrimary = clinicaId === tarifaEditada.clinicaId;
                     
-                    return clinic || clinicaId ? (
+                    return (
                       <div 
-                        key={clinic?.prefix || clinicaId} 
+                        key={clinicaId} 
                         className={`px-3 py-1.5 rounded-full flex items-center gap-1 text-sm ${
                           isPrimary 
                             ? 'bg-indigo-100 text-indigo-800 border border-indigo-300' 
                             : 'bg-gray-100 text-gray-800 border border-gray-200'
                         }`}
                       >
-                        <span>{clinic?.name || clinic?.prefix || clinicaId}</span>
+                        <span>{clinic?.name || clinicaId}</span>
                         {isPrimary && (
-                          <span className="ml-1 text-xs bg-indigo-200 px-1.5 py-0.5 rounded-full text-indigo-800">
+                          <span className="ml-1 text-xs px-1.5 py-0.5 rounded-full bg-indigo-200 text-indigo-800">
                             Principal
                           </span>
                         )}
@@ -1193,16 +1259,47 @@ export default function ConfiguracionTarifa() {
                         <button
                           type="button"
                           onClick={async () => {
-                            // Eliminar la clínica directamente
-                            await removeClinicFromTarifa(tarifaId, clinicaId);
-                            
-                            // Actualizar la UI con la tarifa actualizada 
-                            const updatedTarifa = getTarifaById(tarifaId);
-                            if (updatedTarifa) {
-                              setTarifaEditada(updatedTarifa);
+                            try {
+                              // Mostrar mensaje de procesamiento
+                              toast({
+                                title: "Eliminando clínica",
+                                description: "Procesando solicitud...",
+                              });
+                              
+                              // Eliminar la clínica directamente
+                              const success = await removeClinicFromTarifa(tarifaId, clinicaId);
+                              
+                              if (success) {
+                                // Actualizar la UI con la tarifa actualizada
+                                const updatedTarifaData = await getTarifaById(tarifaId);
+                                if (updatedTarifaData) {
+                                  // Preparar la tarifa para asegurar que tenga una estructura válida
+                                  const updatedTarifa = prepararTarifaConClinicas(updatedTarifaData);
+                                  setTarifaEditada(updatedTarifa);
+                                  setTarifa(updatedTarifa);
+                                  
+                                  toast({
+                                    title: "Clínica eliminada",
+                                    description: "La clínica se ha desasociado correctamente de la tarifa.",
+                                  });
+                                }
+                              } else {
+                                toast({
+                                  title: "Error",
+                                  description: "No se pudo eliminar la asociación de la clínica.",
+                                  variant: "destructive"
+                                });
+                              }
+                            } catch (error) {
+                              console.error("Error al eliminar clínica:", error);
+                              toast({
+                                title: "Error",
+                                description: "Ocurrió un problema al eliminar la clínica.",
+                                variant: "destructive"
+                              });
                             }
                           }}
-                          className="text-gray-500 hover:text-red-500 ml-1"
+                          className="ml-1 text-gray-500 hover:text-red-500"
                           title="Eliminar clínica"
                         >
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1214,16 +1311,47 @@ export default function ConfiguracionTarifa() {
                           <button
                             type="button"
                             onClick={async () => {
-                              // Establecer como clínica principal directamente
-                              await setPrimaryClinicForTarifa(tarifaId, clinicaId);
-                              
-                              // Actualizar la UI con la tarifa actualizada
-                              const updatedTarifa = getTarifaById(tarifaId);
-                              if (updatedTarifa) {
-                                setTarifaEditada(updatedTarifa);
+                              try {
+                                // Mostrar mensaje de procesamiento
+                                toast({
+                                  title: "Actualizando clínica principal",
+                                  description: "Procesando solicitud...",
+                                });
+                                
+                                // Establecer como clínica principal directamente
+                                const success = await setPrimaryClinicForTarifa(tarifaId, clinicaId);
+                                
+                                if (success) {
+                                  // Actualizar la UI con la tarifa actualizada
+                                  const updatedTarifaData = await getTarifaById(tarifaId);
+                                  if (updatedTarifaData) {
+                                    // Preparar la tarifa para asegurar que tenga una estructura válida
+                                    const updatedTarifa = prepararTarifaConClinicas(updatedTarifaData);
+                                    setTarifaEditada(updatedTarifa);
+                                    setTarifa(updatedTarifa);
+                                    
+                                    toast({
+                                      title: "Clínica principal actualizada",
+                                      description: "La clínica se ha establecido como principal correctamente.",
+                                    });
+                                  }
+                                } else {
+                                  toast({
+                                    title: "Error",
+                                    description: "No se pudo establecer la clínica como principal.",
+                                    variant: "destructive"
+                                  });
+                                }
+                              } catch (error) {
+                                console.error("Error al establecer clínica principal:", error);
+                                toast({
+                                  title: "Error",
+                                  description: "Ocurrió un problema al actualizar la clínica principal.",
+                                  variant: "destructive"
+                                });
                               }
                             }}
-                            className="text-indigo-500 hover:text-indigo-700 ml-1"
+                            className="ml-1 text-indigo-500 hover:text-indigo-700"
                             title="Establecer como clínica principal"
                           >
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1232,12 +1360,12 @@ export default function ConfiguracionTarifa() {
                           </button>
                         )}
                       </div>
-                    ) : null;
+                    );
                   })}
                 </div>
               </div>
             ) : (
-              <div className="p-4 border rounded-md bg-amber-50 text-amber-700 text-sm">
+              <div className="p-4 text-sm border rounded-md bg-amber-50 text-amber-700">
                 <p>No hay clínicas seleccionadas.</p>
                 <p className="mt-2 font-medium">Esta tarifa no estará disponible en ninguna clínica hasta que asigne al menos una.</p>
               </div>
@@ -1246,50 +1374,7 @@ export default function ConfiguracionTarifa() {
           
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditingClinics(false)}>
-              Cancelar
-            </Button>
-            <Button 
-              onClick={async () => {
-                try {
-                  // Cerrar el modal antes para evitar la sensación de bloqueo
-                  setEditingClinics(false);
-                  
-                  // Mostrar mensaje de procesamiento
-                  toast({
-                    title: "Guardando cambios",
-                    description: "Actualizando clínicas asociadas...",
-                  });
-                  
-                  // Los cambios ya se han guardado directamente en el contexto
-                  // a través de las funciones addClinicToTarifa, removeClinicFromTarifa 
-                  // y setPrimaryClinicForTarifa que usan directamente updateTarifa
-                  
-                  // Solo necesitamos actualizar la UI
-                  const updatedTarifa = getTarifaById(tarifaId);
-                  if (updatedTarifa) {
-                    setTarifa(updatedTarifa);
-                    setTarifaEditada(updatedTarifa);
-                    
-                    // Notificar éxito
-                    toast({
-                      title: "Clínicas actualizadas",
-                      description: "Las clínicas asociadas se han actualizado correctamente.",
-                    });
-                  } else {
-                    console.error("No se pudo obtener la tarifa del contexto");
-                    throw new Error("Error al obtener datos");
-                  }
-                } catch (error) {
-                  console.error("Error al finalizar actualización de clínicas:", error);
-                  toast({
-                    title: "Error",
-                    description: "Ocurrió un problema al finalizar los cambios.",
-                    variant: "destructive",
-                  });
-                }
-              }}
-            >
-              Guardar
+              Cerrar
             </Button>
           </DialogFooter>
         </DialogContent>

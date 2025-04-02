@@ -417,8 +417,8 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
 
   // Filtrar clínicas por disponibilidad
   const activeClinics = useMemo(() => {
-    // Obtenemos todas las clínicas y asumimos que todas deben mostrarse a menos que decidamos lo contrario
-    return clinics
+    // Filtrar para mostrar solo clínicas activas
+    return clinics.filter(clinic => clinic.isActive === true);
   }, [clinics])
 
   // Para asegurarnos de que el manejo es tipo-seguro
@@ -436,15 +436,7 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
   }
 
   const filteredClinics = useMemo(() => {
-    return clinics.filter(
-      (clinic) =>
-        clinic.name.toLowerCase().includes(clinicSearchTerm.toLowerCase()) ||
-        clinic.prefix.toLowerCase().includes(clinicSearchTerm.toLowerCase()),
-    )
-  }, [clinics, clinicSearchTerm])
-
-  // Aplicar búsqueda solo a las clínicas activas
-  const filteredActiveClinics = useMemo(() => {
+    // Usar activeClinics en lugar de clinics para mostrar solo las activas
     return activeClinics.filter(
       (clinic) =>
         clinic.name.toLowerCase().includes(clinicSearchTerm.toLowerCase()) ||
@@ -841,7 +833,7 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
                 {hasMounted && theme?.logoUrl && !logoError ? (
                   <img 
                     src={theme.logoUrl} 
-                    alt="Logo" 
+                    alt="Logo de la clínica" 
                     className={cn(
                       "object-contain transition-all duration-300", 
                       isCollapsed ? "h-5 max-w-[20px]" : "h-8 max-w-[120px]"

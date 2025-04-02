@@ -14,7 +14,9 @@ import {
   ScheduleBlock,
   Servicio,
   Tarifa,
-  TipoIVA
+  TipoIVA,
+  Producto,
+  Consumo
 } from './models/interfaces';
 
 /**
@@ -159,4 +161,21 @@ export interface DataService {
   restoreFile(id: string): Promise<boolean>;
   getFilesByFilter(filter: {entityType?: string, entityId?: string, category?: string}): Promise<EntityDocument[]>;
   getStorageStats(clinicId?: string): Promise<{used: number, byType: Record<string, number>}>;
+  
+  // Operaciones de Productos
+  getAllProductos(): Promise<Producto[]>;
+  getProductoById(id: string): Promise<Producto | null>;
+  createProducto(producto: Omit<Producto, 'id'>): Promise<Producto>;
+  updateProducto(id: string, producto: Partial<Producto>): Promise<Producto | null>;
+  deleteProducto(id: string): Promise<boolean>;
+  getProductosByTarifaId(tarifaId: string): Promise<Producto[]>;
+  getProductosByFamilia(familia: string): Promise<Producto[]>;
+  
+  // Operaciones de Consumos
+  getAllConsumos(): Promise<Consumo[]>;
+  getConsumoById(id: string): Promise<Consumo | null>;
+  createConsumo(consumo: Omit<Consumo, 'id'>): Promise<Consumo>;
+  updateConsumo(id: string, consumo: Partial<Consumo>): Promise<Consumo | null>;
+  deleteConsumo(id: string): Promise<boolean>;
+  getConsumosByServicioId(servicioId: string): Promise<Consumo[]>;
 } 

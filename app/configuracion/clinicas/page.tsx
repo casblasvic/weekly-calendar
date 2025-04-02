@@ -11,12 +11,14 @@ import { cn } from "@/lib/utils"
 import { useRouter } from "next/navigation"
 import { useClinic } from "@/contexts/clinic-context"
 import { Label } from "@/components/ui/label"
+import { toast } from "@/components/ui/use-toast"
 
 interface Clinic {
-  id: number
+  id: string | number
   prefix: string
   name: string
   city: string
+  isActive: boolean
 }
 
 type SortField = "id" | "prefix" | "name" | "city"
@@ -30,7 +32,7 @@ export default function ClinicasPage() {
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc")
   const [showHelp, setShowHelp] = useState(false)
 
-  const { clinics, setClinics } = useClinic()
+  const { clinics, updateClinica } = useClinic()
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -53,11 +55,59 @@ export default function ClinicasPage() {
     return 0
   })
 
+  // Función para cambiar el estado de activación de una clínica
+  const toggleClinicStatus = async (clinicId: string, currentStatus: boolean) => {
+    console.log("Intentando cambiar estado para clinic ID:", clinicId, "(Tipo:", typeof clinicId, ")");
+    console.log("IDs disponibles en contexto:", clinics.map(c => ({ id: c.id, tipo: typeof c.id })));
+    
+    // Comparar IDs directamente (como strings o numbers)
+    const updatedClinicData = clinics.find(c => String(c.id) === clinicId);
+    
+    if (!updatedClinicData) {
+      console.error(`No se encontró la clínica para actualizar con ID: ${clinicId}`);
+      return;
+    }
+    
+    const newStatus = !currentStatus;
+    
+    try {
+      // updateClinica ya espera un string ID
+      const success = await updateClinica(clinicId, { ...updatedClinicData, isActive: newStatus });
+      
+      if (success) {
+        toast({
+          title: newStatus ? "Clínica activada" : "Clínica desactivada",
+          description: `La clínica ${updatedClinicData.name} ha sido ${newStatus ? 'activada' : 'desactivada'}.`,
+        });
+        // No necesitas recargar las clínicas manualmente si el contexto las actualiza
+      } else {
+        throw new Error("La actualización no fue exitosa");
+      }
+    } catch (error) {
+      console.error("Error al actualizar el estado de la clínica:", error);
+      toast({
+        title: "Error",
+        description: "No se pudo actualizar el estado de la clínica.",
+        variant: "destructive",
+      });
+    }
+  };
+
   const filteredClinics = sortedClinics.filter(
-    (clinic) =>
-      clinic.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      clinic.prefix.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      clinic.city.toLowerCase().includes(searchTerm.toLowerCase()),
+    (clinic) => {
+      // Primero filtramos por término de búsqueda
+      const matchesSearch = 
+        clinic.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        clinic.prefix.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        clinic.city.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      // Luego filtramos por estado (activo/inactivo)
+      // Mostrar todas las clínicas si showDisabled es true,
+      // o solo mostrar las activas si showDisabled es false
+      const matchesStatus = showDisabled ? true : clinic.isActive;
+      
+      return matchesSearch && matchesStatus;
+    }
   )
 
   return (
@@ -71,7 +121,11 @@ export default function ClinicasPage() {
         {/* Add filter above search bar */}
         <div className="mb-4 flex justify-end">
           <div className="flex items-center space-x-2">
-            <Checkbox id="showDisabled" checked={showDisabled} onCheckedChange={setShowDisabled} />
+            <Checkbox 
+              id="showDisabled" 
+              checked={showDisabled} 
+              onCheckedChange={(checked) => setShowDisabled(checked === true)}
+            />
             <Label htmlFor="showDisabled">Mostrar clínicas deshabilitadas</Label>
           </div>
         </div>
@@ -114,37 +168,58 @@ export default function ClinicasPage() {
                     {getSortIcon("city")}
                   </div>
                 </TableHead>
+                <TableHead className="w-[100px] cursor-pointer text-center">
+                  Estado
+                </TableHead>
                 <TableHead className="w-[100px] text-right">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredClinics.map((clinic, index) => (
-                <TableRow key={clinic.id} className={cn(index % 2 === 0 ? "bg-purple-50/50" : "")}>
-                  <TableCell>{clinic.id}</TableCell>
-                  <TableCell>{clinic.prefix}</TableCell>
-                  <TableCell>{clinic.name}</TableCell>
-                  <TableCell>{clinic.city}</TableCell>
-                  <TableCell>
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-purple-600 hover:text-purple-700 hover:bg-purple-100"
-                      >
-                        <QrCode className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-purple-600 hover:text-purple-700 hover:bg-purple-100"
-                        onClick={() => router.push(`/configuracion/clinicas/${clinic.id}`)}
-                      >
-                        <Search className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {filteredClinics.map((clinic, index) => {
+                // Log para depurar el ID de la clínica antes de la conversión
+                console.log(`Rendering row for clinic: ID=${clinic.id} (Tipo: ${typeof clinic.id}), Name=${clinic.name}`);
+                
+                return (
+                  <TableRow key={clinic.id} className={cn(index % 2 === 0 ? "bg-purple-50/50" : "")}>
+                    <TableCell>{clinic.id}</TableCell>
+                    <TableCell>{clinic.prefix}</TableCell>
+                    <TableCell>{clinic.name}</TableCell>
+                    <TableCell>{clinic.city}</TableCell>
+                    <TableCell 
+                      className="text-center cursor-pointer"
+                      onClick={() => {
+                        // Pasar el ID directamente (es string o number)
+                        // Asegurarse de que sea string para la función
+                        const currentClinicId = String(clinic.id);
+                        toggleClinicStatus(currentClinicId, clinic.isActive);
+                      }}
+                    >
+                      <span className={`px-2 py-1 text-xs rounded-full ${clinic.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                        {clinic.isActive ? 'Activa' : 'Inactiva'}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-purple-600 hover:text-purple-700 hover:bg-purple-100"
+                        >
+                          <QrCode className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-purple-600 hover:text-purple-700 hover:bg-purple-100"
+                          onClick={() => router.push(`/configuracion/clinicas/${clinic.id}`)}
+                        >
+                          <Search className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
             </TableBody>
           </Table>
         </div>

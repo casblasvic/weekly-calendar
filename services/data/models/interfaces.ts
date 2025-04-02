@@ -156,12 +156,21 @@ export interface Servicio extends BaseEntity {
 }
 
 /** Interfaz para Equipo */
-export interface Equipo extends BaseEntity {
+export interface Equipo extends BaseEntity, Activable {
+  id: string;
+  clinicId: string;
+  clinicIds?: string[];
   code: string;
   name: string;
-  description: string;
-  serialNumber: string;
-  clinicId: string;
+  description?: string;
+  serialNumber?: string;
+  purchaseDate?: string;
+  warrantyDate?: string;
+  supplier?: string;
+  status: 'active' | 'maintenance' | 'inactive' | 'retired';
+  config?: Record<string, any>;
+  // params?: EquipoParam[];
+  // files?: FileData[];
 }
 
 /** Interfaz para Bloque de Agenda */

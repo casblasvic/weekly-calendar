@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { Plus, ArrowUpDown, Trash2, Search } from "lucide-react"
+import { Plus, ArrowUpDown, Trash2, Search, MoreHorizontal } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { toast } from "sonner"
@@ -17,47 +17,56 @@ import {
 import AddEquipmentModal from "@/components/modals/add-equipment-modal"
 import { SearchInput } from "@/components/SearchInput"
 import { useEquipment, Equipo } from "@/contexts/equipment-context"
+import { Badge } from "@/components/ui/badge"
+import { 
+  DropdownMenu, 
+  DropdownMenuContent, 
+  DropdownMenuItem, 
+  DropdownMenuTrigger 
+} from "@/components/ui/dropdown-menu"
 
 export default function EquipmentPage() {
   const router = useRouter()
-  const { allEquipos, deleteEquipo, clinics, addEquipo, getGlobalEquipos } = useEquipment()
+  const { allEquipos, deleteEquipo, clinics, addEquipo, updateEquipo, getGlobalEquipos } = useEquipment()
   const [searchTerm, setSearchTerm] = useState("")
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false)
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false)
+  const [isModalOpen, setIsModalOpen] = useState(false)
   const [selectedEquipment, setSelectedEquipment] = useState<Equipo | null>(null)
+  const [isEditMode, setIsEditMode] = useState(false)
   const [equipos, setEquipos] = useState<Equipo[]>([])
   
-  // Añadir estado para ordenación
   const [sortColumn, setSortColumn] = useState<string>("code")
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc")
 
-  // Cargar todos los equipos al iniciar
   useEffect(() => {
     const loadEquipment = async () => {
       try {
-        // Usamos allEquipos para tener todos los equipos (tanto globales como específicos)
-        setEquipos(allEquipos || []);
+        const equiposCargados = await getGlobalEquipos();
+        setEquipos(equiposCargados || allEquipos || []);
       } catch (error) {
         console.error("Error al cargar equipamiento:", error);
         toast.error("Error al cargar datos de equipamiento");
       }
     };
-    
     loadEquipment();
-  }, [allEquipos]);
+  }, [allEquipos, getGlobalEquipos]);
 
-  // Función para obtener el nombre de la clínica según su ID
-  const getClinicName = (clinicId: string) => {
-    // Buscar la clínica en el listado
-    const clinic = clinics.find(c => c.id === clinicId);
-    
-    // Si encontramos la clínica, devolver su nombre
-    if (clinic) {
-      return clinic.name;
+  const getClinicNames = (clinicIds: string[] | undefined, clinicId?: string): string => {
+    if (clinicIds && clinicIds.length > 0) {
+       return clinicIds.map(id => {
+         const clinic = clinics.find(c => String(c.id) === String(id));
+         return clinic ? clinic.name : `ID ${id}`;
+       }).join(", ");
+    } else if (clinicId) {
+        const clinic = clinics.find(c => String(c.id) === String(clinicId));
+        return clinic ? clinic.name : `ID ${clinicId}`;
     }
-    
-    // Si no encontramos la clínica, devolver un identificador
-    return `Clínica ${clinicId}`;
+    return "Sin asignar";
+  }
+  
+  const getClinicsByIds = (ids: string[] | undefined): { id: string; name: string }[] => {
+      if (!ids) return [];
+      return clinics.filter(c => ids.includes(String(c.id)))
+                     .map(c => ({ id: String(c.id), name: c.name }));
   }
 
   const handleSort = (column: string) => {
@@ -71,46 +80,55 @@ export default function EquipmentPage() {
 
   const filteredEquipment = equipos ? equipos.filter((item) => {
     const searchLower = searchTerm.toLowerCase()
+    const clinicNames = getClinicNames(item.clinicIds, item.clinicId).toLowerCase()
     return (
       item.code?.toLowerCase().includes(searchLower) ||
       item.name?.toLowerCase().includes(searchLower) ||
       item.description?.toLowerCase().includes(searchLower) ||
       (item.serialNumber?.toLowerCase() || "").includes(searchLower) ||
-      getClinicName(item.clinicId).toLowerCase().includes(searchLower)
+      clinicNames.includes(searchLower)
     )
   }).sort((a, b) => {
-    let aValue = a[sortColumn as keyof typeof a]
-    let bValue = b[sortColumn as keyof typeof b]
+    let aValue: any = a[sortColumn as keyof Equipo]
+    let bValue: any = b[sortColumn as keyof Equipo]
     
-    if (sortColumn === "clinicId") {
-      aValue = getClinicName(a.clinicId)
-      bValue = getClinicName(b.clinicId)
+    if (sortColumn === "clinicIds") {
+      aValue = getClinicNames(a.clinicIds, a.clinicId)
+      bValue = getClinicNames(b.clinicIds, b.clinicId)
     }
     
+    const valA = String(aValue ?? '').toLowerCase();
+    const valB = String(bValue ?? '').toLowerCase();
+    
     if (sortDirection === "asc") {
-      return String(aValue || '').localeCompare(String(bValue || ''))
+      return valA.localeCompare(valB)
     } else {
-      return String(bValue || '').localeCompare(String(aValue || ''))
+      return valB.localeCompare(valA)
     }
   }) : [];
 
-  const handleDelete = (id: string) => {
-    deleteEquipo(id).then(success => {
-      if (success) {
-        toast.success("Equipamiento eliminado correctamente")
-      } else {
-        toast.error("Error al eliminar el equipamiento")
+  const handleDelete = async (id: string) => {
+      if (confirm("¿Estás seguro de que quieres eliminar este equipo?")) {
+          const success = await deleteEquipo(id);
+          if (success) {
+              toast.success("Equipo eliminado correctamente");
+              setEquipos(prev => prev.filter(eq => eq.id !== id));
+          } else {
+              toast.error("Error al eliminar el equipo");
+          }
       }
-    }).catch(error => {
-      console.error("Error al eliminar equipamiento:", error);
-      toast.error("Error al eliminar el equipamiento");
-    });
-  }
+  };
 
-  const openEditModal = (equipment: Equipo) => {
-    setSelectedEquipment(equipment)
-    setIsEditModalOpen(true)
-  }
+  const openModal = (equipment: Equipo | null = null) => {
+    setSelectedEquipment(equipment);
+    setIsEditMode(!!equipment);
+    setIsModalOpen(true);
+  };
+
+  const handleModalSave = async (data: Partial<Equipo>) => {
+      setIsModalOpen(false);
+      setSelectedEquipment(null);
+  };
 
   return (
     <div className="container p-6 pt-16 mx-auto space-y-6 max-w-7xl">
@@ -132,23 +150,17 @@ export default function EquipmentPage() {
           <TableHeader>
             <TableRow>
               <TableHead className="w-[100px] cursor-pointer" onClick={() => handleSort("code")}>
-                Código {sortColumn === "code" && (
-                  <ArrowUpDown className={`ml-2 h-4 w-4 inline ${sortDirection === "asc" ? "transform rotate-180" : ""}`} />
-                )}
+                Código {sortColumn === "code" && <ArrowUpDown className={`ml-2 h-4 w-4 inline ${sortDirection === "asc" ? "transform rotate-180" : ""}`} />}
               </TableHead>
               <TableHead className="cursor-pointer" onClick={() => handleSort("name")}>
-                Nombre {sortColumn === "name" && (
-                  <ArrowUpDown className={`ml-2 h-4 w-4 inline ${sortDirection === "asc" ? "transform rotate-180" : ""}`} />
-                )}
+                Nombre {sortColumn === "name" && <ArrowUpDown className={`ml-2 h-4 w-4 inline ${sortDirection === "asc" ? "transform rotate-180" : ""}`} />}
               </TableHead>
               <TableHead>Descripción</TableHead>
               <TableHead className="cursor-pointer" onClick={() => handleSort("serialNumber")}>
-                Número de serie {sortColumn === "serialNumber" && (
-                  <ArrowUpDown className={`ml-2 h-4 w-4 inline ${sortDirection === "asc" ? "transform rotate-180" : ""}`} />
-                )}
+                Núm. Serie {sortColumn === "serialNumber" && <ArrowUpDown className={`ml-2 h-4 w-4 inline ${sortDirection === "asc" ? "transform rotate-180" : ""}`} />}
               </TableHead>
-              <TableHead className="cursor-pointer" onClick={() => handleSort("clinicId")}>
-                Clínica {sortColumn === "clinicId" && (
+              <TableHead className="cursor-pointer" onClick={() => handleSort("clinicIds")}>
+                Clínicas Asociadas {sortColumn === "clinicIds" && (
                   <ArrowUpDown className={`ml-2 h-4 w-4 inline ${sortDirection === "asc" ? "transform rotate-180" : ""}`} />
                 )}
               </TableHead>
@@ -159,7 +171,7 @@ export default function EquipmentPage() {
             {filteredEquipment.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="py-6 text-center">
-                  No hay equipamiento disponible
+                  No hay equipamiento disponible que coincida con la búsqueda.
                 </TableCell>
               </TableRow>
             ) : (
@@ -167,23 +179,36 @@ export default function EquipmentPage() {
                 <TableRow key={item.id}>
                   <TableCell className="font-medium">{item.code}</TableCell>
                   <TableCell>{item.name}</TableCell>
-                  <TableCell>{item.description}</TableCell>
+                  <TableCell className="max-w-xs truncate">{item.description}</TableCell>
                   <TableCell>{item.serialNumber}</TableCell>
-                  <TableCell>{getClinicName(item.clinicId)}</TableCell>
-                  <TableCell className="space-x-2 text-right">
+                  <TableCell>
+                     <div className="flex flex-wrap gap-1">
+                        {(item.clinicIds && item.clinicIds.length > 0 ? getClinicsByIds(item.clinicIds) : (item.clinicId ? getClinicsByIds([item.clinicId]) : [])).map(clinic => (
+                           <Badge key={clinic.id} variant="secondary" className="text-xs">
+                              {clinic.name}
+                           </Badge>
+                        ))}
+                        {(!item.clinicIds || item.clinicIds.length === 0) && !item.clinicId && (
+                            <span className="text-xs text-gray-500">Sin asignar</span>
+                        )}
+                     </div>
+                  </TableCell>
+                  <TableCell className="space-x-1 text-right">
                     <Button 
                       variant="ghost" 
                       size="icon"
-                      onClick={() => openEditModal(item)}
+                      onClick={() => openModal(item)}
                       className="h-8 w-8"
+                      title="Editar"
                     >
-                      <Search className="h-4 w-4 text-primary" />
+                      <Search className="h-4 w-4 text-blue-600" />
                     </Button>
                     <Button 
                       variant="ghost" 
                       size="icon"
-                      className="h-8 w-8 text-red-500 hover:text-red-600"
                       onClick={() => handleDelete(item.id)}
+                      className="h-8 w-8 text-red-600 hover:text-red-700"
+                      title="Eliminar"
                     >
                       <Trash2 className="w-4 h-4" />
                     </Button>
@@ -197,40 +222,22 @@ export default function EquipmentPage() {
 
       <div className="fixed bottom-8 right-8">
         <Button 
-          onClick={() => setIsAddModalOpen(true)}
-          className="text-white bg-purple-600 hover:bg-purple-700"
+          onClick={() => openModal(null)}
+          className="text-white bg-purple-600 hover:bg-purple-700 shadow-lg"
         >
           <Plus className="w-4 h-4 mr-2" />
           Nuevo equipamiento
         </Button>
       </div>
 
-      {/* Modal para añadir nuevo equipamiento */}
-      <AddEquipmentModal
-        isOpen={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
-        onSave={(data) => {
-          try {
-            addEquipo(data);
-            toast.success("Equipamiento añadido correctamente")
-            setIsAddModalOpen(false)
-          } catch (error) {
-            toast.error("Error al añadir el equipamiento")
-          }
-        }}
-        clinics={clinics}
-      />
-
-      {/* Modal para editar equipamiento */}
-      {selectedEquipment && (
-        <AddEquipmentModal
-          isOpen={isEditModalOpen}
-          onClose={() => setIsEditModalOpen(false)}
-          onSave={() => setIsEditModalOpen(false)}
-          clinics={clinics}
-          initialEquipment={selectedEquipment}
-          isEditMode={true}
-        />
+      {isModalOpen && (
+         <AddEquipmentModal
+           isOpen={isModalOpen}
+           onClose={() => { setIsModalOpen(false); setSelectedEquipment(null); }}
+           clinics={clinics.map(c => ({ id: String(c.id), name: c.name }))}
+           initialEquipment={selectedEquipment}
+           isEditMode={isEditMode}
+         />
       )}
     </div>
   )

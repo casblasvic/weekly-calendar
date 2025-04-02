@@ -19,6 +19,15 @@ import {
 } from "@/services/data/models/interfaces"
 import { Client } from "@/services/data/data-service"
 
+// Claves de localStorage para distintas entidades
+const CLINICAS_KEY = "clinicas";
+const TARIFAS_KEY = "tarifas";
+const FAMILIAS_KEY = "familias";
+const TIPOS_IVA_KEY = "tipos_iva";
+const SERVICIOS_KEY = "servicios";
+const PRODUCTOS_KEY = "productos";
+const EQUIPOS_KEY = "equipos";
+
 // Contexto para la interfaz de datos
 interface InterfazContextType {
   // Indicador de inicialización
@@ -185,8 +194,65 @@ export function InterfazProvider({ children }: { children: ReactNode }) {
     
     // Funciones de clínicas
     getAllClinicas: async () => {
-      const dataService = getDataService();
-      return await dataService.getAllClinicas();
+      try {
+        console.log("Interfaz: Obteniendo todas las clínicas");
+        
+        // Recuperar del localStorage para asegurar que tenemos los datos más recientes
+        const clinicasLocalStorage = localStorage.getItem(CLINICAS_KEY);
+        let clinicas: Clinica[] = clinicasLocalStorage ? JSON.parse(clinicasLocalStorage) : [];
+        
+        if (!Array.isArray(clinicas)) {
+          console.warn("Formato incorrecto en almacenamiento, reiniciando clínicas");
+          clinicas = [];
+        }
+        
+        // Si no hay clínicas, inicializamos con datos por defecto
+        if (clinicas.length === 0) {
+          clinicas = [
+            {
+              id: "1",
+              prefix: "BCN",
+              name: "Barcelona Centro",
+              city: "Barcelona",
+              isActive: true,
+              // Otros datos por defecto...
+            },
+            {
+              id: "2",
+              prefix: "MAD",
+              name: "Madrid Salamanca",
+              city: "Madrid",
+              isActive: true,
+              // Otros datos por defecto...
+            },
+            {
+              id: "3",
+              prefix: "VAL",
+              name: "Valencia Centro",
+              city: "Valencia",
+              isActive: true,
+              // Otros datos por defecto...
+            },
+            {
+              id: "4",
+              prefix: "SEV",
+              name: "Sevilla Este",
+              city: "Sevilla",
+              isActive: false,
+              // Agregar una clínica no activa...
+            }
+          ];
+          
+          // Guardar en localStorage
+          localStorage.setItem(CLINICAS_KEY, JSON.stringify(clinicas));
+        }
+        
+        // Devolver TODAS las clínicas, incluidas las inactivas
+        return clinicas;
+      } catch (error) {
+        console.error("Error al obtener todas las clínicas:", error);
+        return [];
+      }
     },
     getClinicaById: async (id) => {
       const dataService = getDataService();
@@ -205,8 +271,14 @@ export function InterfazProvider({ children }: { children: ReactNode }) {
       return await dataService.deleteClinica(id);
     },
     getActiveClinicas: async () => {
-      const dataService = getDataService();
-      return await dataService.getActiveClinicas();
+      try {
+        const todas = await interfaz.getAllClinicas();
+        // Filtrar solo las activas
+        return todas.filter(clinica => clinica.isActive === true);
+      } catch (error) {
+        console.error("Error al obtener clínicas activas:", error);
+        return [];
+      }
     },
     
     // Funciones de clientes

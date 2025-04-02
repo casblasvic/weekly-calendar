@@ -84,7 +84,7 @@ export const ThemeTemplate: React.FC<ThemeTemplateProps> = ({
                 {!logoError && safeTheme.logoUrl ? (
                   <img 
                     src={safeTheme.logoUrl} 
-                    alt="Logo" 
+                    alt="Logo de la empresa"
                     className="h-8 max-w-[140px] object-contain"
                     onError={() => {
                       // Mostrar texto en lugar de imagen si hay error

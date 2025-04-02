@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { useRouter, useParams, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -8,20 +8,26 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Card } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ArrowLeft, HelpCircle, Save, Upload, X, ChevronLeft, ChevronRight } from "lucide-react"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from "@/components/ui/command"
+import { Badge } from "@/components/ui/badge"
+import { ArrowLeft, HelpCircle, Save, Upload, X, ChevronLeft, ChevronRight, PlusCircle } from "lucide-react"
 import { toast } from "sonner"
 import Image from "next/image"
 import { useEquipment } from "@/contexts/equipment-context"
 import { useImages } from "@/contexts/image-context"
-import { Equipo } from "@/services/data/models/interfaces"
+import { useClinic } from "@/contexts/clinic-context"
+import { Equipo, Clinica } from "@/services/data"
 
 interface DeviceData {
   name: string
   code: string
-  weight: string
+  weight?: string
   description: string
-  flowwIntegration: string
+  flowwIntegration?: string
   serialNumber?: string
+  status: 'active' | 'maintenance' | 'inactive' | 'retired'
+  clinicIds: string[]
 }
 
 interface DeviceImage {
@@ -41,32 +47,55 @@ export default function DevicePage() {
   const isNew = deviceId === "new"
   
   const { getEquipoById, addEquipo, updateEquipo } = useEquipment()
-  const { getImagesByEntity, uploadImage } = useImages()
+  const { getImagesByEntity, uploadImage, saveImagesForEntity } = useImages()
+  const { getActiveClinicas } = useClinic()
   
-  // Añadir estado para controlar la animación de guardado
   const [isSaving, setIsSaving] = useState(false)
-  
-  // Estado para saber de dónde viene el usuario
   const [fromGlobalList, setFromGlobalList] = useState(false)
   
-  // Estado inicial vacío
   const [deviceData, setDeviceData] = useState<DeviceData>({
     name: "",
     code: "",
-    weight: "",
     description: "",
-    flowwIntegration: "Ninguna",
-    serialNumber: ""
+    serialNumber: "",
+    status: 'active',
+    clinicIds: [],
+    weight: "",
+    flowwIntegration: "Ninguna"
   })
   
-  // Estado para imágenes
   const [images, setImages] = useState<DeviceImage[]>([])
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
-  
-  // Añadir estado de carga
   const [isLoading, setIsLoading] = useState(true)
+  const [activeClinics, setActiveClinics] = useState<Clinica[]>([])
 
-  // Función para manejar la carga de archivos
+  const [openClinicSelector, setOpenClinicSelector] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+
+  const handleClinicSelect = (clinicIdToAdd: string) => {
+    setDeviceData(prev => ({
+      ...prev,
+      clinicIds: [...(prev.clinicIds || []), clinicIdToAdd]
+    }));
+    setOpenClinicSelector(false);
+    setSearchTerm("");
+  };
+
+  const handleClinicRemove = (clinicIdToRemove: string) => {
+    setDeviceData(prev => ({
+      ...prev,
+      clinicIds: (prev.clinicIds || []).filter(id => id !== clinicIdToRemove)
+    }));
+  };
+
+  const availableClinics = activeClinics.filter(
+    clinic => !deviceData.clinicIds?.includes(String(clinic.id))
+  );
+
+  const selectedClinics = activeClinics.filter(
+      clinic => deviceData.clinicIds?.includes(String(clinic.id))
+  );
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       console.log(`Subiendo ${e.target.files.length} archivos para clínica ID: ${clinicId}`);
@@ -75,7 +104,6 @@ export default function DevicePage() {
         const imageId = Math.random().toString(36).substring(2, 9);
         console.log(`Imagen ${imageId}: ${file.name} (${file.size} bytes, ${file.type})`);
         
-        // Importante: Crear un objeto File nuevo para asegurarnos que el archivo se sube correctamente
         const fileObject = new File([file], file.name, { 
           type: file.type,
           lastModified: file.lastModified 
@@ -84,12 +112,11 @@ export default function DevicePage() {
         return {
           id: imageId,
           url: URL.createObjectURL(file),
-          isPrimary: images.length === 0, // La primera imagen es la principal por defecto
-          file: fileObject  // Guardar referencia explícita al archivo original
+          isPrimary: images.length === 0,
+          file: fileObject
         };
       });
       
-      // Imprimir información sobre las nuevas imágenes
       console.log("Añadiendo nuevas imágenes:", newImages.map(img => ({
         id: img.id,
         hasFile: !!img.file,
@@ -97,12 +124,10 @@ export default function DevicePage() {
         isPrimary: img.isPrimary
       })));
       
-      // Añadir las nuevas imágenes al estado
       setImages(prevImages => [...prevImages, ...newImages]);
     }
   }
 
-  // Función para cambiar la imagen principal
   const setAsPrimary = (id: string) => {
     setImages(images.map(img => ({
       ...img,
@@ -110,7 +135,6 @@ export default function DevicePage() {
     })));
   }
 
-  // Eliminar una imagen
   const removeImage = (id: string) => {
     setImages(images.filter(img => img.id !== id));
     if (currentImageIndex >= images.length - 1) {
@@ -118,7 +142,6 @@ export default function DevicePage() {
     }
   }
 
-  // Navegar por el carrusel
   const nextImage = () => {
     if (currentImageIndex < images.length - 1) {
       setCurrentImageIndex(currentImageIndex + 1);
@@ -132,165 +155,147 @@ export default function DevicePage() {
   }
 
   useEffect(() => {
-    // Verificar si el usuario viene de la página global de equipamiento
-    const fromParam = searchParams.get("from");
-    const isFromGlobal = fromParam === "global";
-    console.log("From global:", isFromGlobal);
-    setFromGlobalList(isFromGlobal);
-    
-    if (deviceId !== "new") {
-      setIsLoading(true)
-      const numDeviceId = Number(deviceId)
-      
-      // Cargar las imágenes usando la interfaz de contexto
-      const loadImages = async () => {
-        try {
-          // Obtener imágenes asociadas al equipo
-          const deviceImages = await getImagesByEntity('equipment', deviceId);
-          
-          if (deviceImages && deviceImages.length > 0) {
-            console.log(`Cargadas ${deviceImages.length} imágenes para dispositivo ${numDeviceId} usando interfaz de contexto`);
-            
-            // Asegurar que las rutas de las imágenes sean correctas
-            const validImages = deviceImages.filter(img => img && img.url && img.id).map(img => ({
-              id: img.id,
-              url: img.url.startsWith('blob:') ? 
-                // Si es una URL de blob temporal, intentar usar la URL persistente
-                (img.path ? `/api/storage/file?path=${img.path}` : img.url) : 
-                img.url,
-              isPrimary: !!img.isPrimary,
-              path: img.path
-            }));
-            
-            console.log(`${validImages.length} imágenes válidas cargadas usando interfaz de contexto`);
-            setImages(validImages);
-          } else {
-            console.log(`No se encontraron imágenes para el dispositivo ${numDeviceId}`);
-            setImages([]);
-          }
-        } catch (error) {
-          console.error(`Error al cargar imágenes:`, error);
-          setImages([]);
-        }
-      };
-      
-      // Cargar datos del equipo
-      const loadDeviceData = async () => {
-        try {
-          const equipment = await getEquipoById(deviceId);
-          
-          if (equipment) {
-            console.log("Datos del equipo cargados:", equipment);
-            setDeviceData({
-              name: equipment.name || "",
-              code: equipment.code || "",
-              description: equipment.description || "",
-              serialNumber: equipment.serialNumber || "",
-              weight: "",  // Estos campos podrían estar en la configuración o propiedades adicionales
-              flowwIntegration: "Ninguna"
-            });
-          } else {
-            console.error("No se pudo encontrar el equipo con ID:", deviceId);
-            toast.error("Equipo no encontrado");
-            router.push(`/configuracion/clinicas/${clinicId}/equipamiento`);
-          }
-        } catch (error) {
-          console.error("Error al cargar datos del equipo:", error);
-          toast.error("Error al cargar datos del equipo");
-        } finally {
-          setIsLoading(false);
-        }
-      };
-      
-      // Ejecutar ambas cargas en paralelo
-      Promise.all([loadDeviceData(), loadImages()])
-        .catch(error => {
-          console.error("Error durante la carga de datos:", error);
-          setIsLoading(false);
+    const loadActiveClinics = async () => {
+      try {
+        const active = await getActiveClinicas();
+        setActiveClinics(active || []);
+      } catch (error) {
+        console.error("Error al cargar clínicas activas:", error);
+        toast.error("Error al cargar la lista de clínicas.");
+      }
+    };
+    loadActiveClinics();
+  }, [getActiveClinicas]);
+
+  const loadDeviceAndImages = useCallback(async () => {
+    if (isNew) {
+      setIsLoading(false);
+      if (!fromGlobalList && params.id) {
+        setDeviceData(prev => ({ ...prev, clinicIds: [String(params.id)] }));
+      }
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const equipment = await getEquipoById(deviceId);
+      if (equipment) {
+        setDeviceData({
+          name: equipment.name || "",
+          code: equipment.code || "",
+          description: equipment.description || "",
+          serialNumber: equipment.serialNumber || "",
+          status: equipment.status || 'active',
+          clinicIds: equipment.clinicIds || (equipment.clinicId ? [equipment.clinicId] : []),
+          weight: (equipment.config?.weight as string) || "",
+          flowwIntegration: (equipment.config?.flowwIntegration as string) || "Ninguna"
         });
-    } else {
+      } else {
+        toast.error("Equipo no encontrado");
+        router.push(`/configuracion/clinicas/${params.id}/equipamiento`); 
+        return;
+      }
+
+      const deviceImages = await getImagesByEntity('equipment', deviceId);
+      if (deviceImages && deviceImages.length > 0) {
+        const validImages = deviceImages
+          .filter(img => img && img.url && img.id)
+          .map(img => ({
+            id: String(img.id),
+            url: img.url.startsWith('blob:') 
+                 ? (img.path ? `/api/storage/file?path=${img.path}` : img.url) 
+                 : img.url,
+            isPrimary: !!img.isPrimary,
+            path: img.path
+          }));
+        setImages(validImages);
+      } else {
+        setImages([]);
+      }
+
+    } catch (error) {
+      console.error("Error cargando datos del equipo o imágenes:", error);
+      toast.error("Error al cargar los datos del equipo.");
+    } finally {
       setIsLoading(false);
     }
-  }, [deviceId, clinicId, getImagesByEntity, getEquipoById, router, searchParams]);
+  }, [deviceId, isNew, fromGlobalList, params.id, getEquipoById, getImagesByEntity, router]); 
+
+  useEffect(() => {
+    const referer = document.referrer;
+    if (referer && referer.includes("/configuracion/equipamiento")) {
+      setFromGlobalList(true);
+    }
+    loadDeviceAndImages();
+  }, [loadDeviceAndImages]);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setDeviceData(prev => ({ ...prev, [name]: value }));
+  };
 
   const handleSave = async () => {
     setIsSaving(true)
     
+    if (!deviceData.clinicIds || deviceData.clinicIds.length === 0) {
+        toast.error("Debe seleccionar al menos una clínica.");
+        setIsSaving(false);
+        return;
+    }
+
     try {
-      // Preparar objeto con los datos del equipo usando la interfaz Equipo
       const equipmentData: Partial<Equipo> = {
         name: deviceData.name,
         code: deviceData.code,
         description: deviceData.description,
         serialNumber: deviceData.serialNumber,
-        clinicId: clinicId, 
+        status: deviceData.status,
+        clinicIds: deviceData.clinicIds,
+        clinicId: deviceData.clinicIds[0], 
       };
       
-      let savedEquipment;
+      let savedEquipmentId = deviceId;
       
       if (isNew) {
-        // Crear nuevo equipo usando el contexto especializado
-        savedEquipment = await addEquipo(equipmentData as Omit<Equipo, 'id'>);
-        console.log("Equipo creado:", savedEquipment);
+        const newEquipmentResult = await addEquipo(equipmentData as Omit<Equipo, 'id'>);
+        savedEquipmentId = String(newEquipmentResult.id || newEquipmentResult);
+        console.log("Equipo creado con ID:", savedEquipmentId);
       } else {
-        // Actualizar equipo existente usando el contexto especializado
         const success = await updateEquipo(deviceId, equipmentData);
-        if (success) {
-          savedEquipment = await getEquipoById(deviceId);
-          console.log("Equipo actualizado:", savedEquipment);
-        } else {
+        if (!success) {
           throw new Error("No se pudo actualizar el equipo");
         }
+        console.log("Equipo actualizado:", deviceId);
       }
       
-      if (savedEquipment) {
-        // Guardar las imágenes asociadas al equipo
-        if (images.length > 0) {
-          try {
-            // Aquí necesitaríamos implementar el guardado de imágenes basado en los métodos disponibles
-            // Por ahora dejamos pendiente pues uploadImage requiere un archivo File
-            console.log(`${images.length} imágenes para procesar`);
-            
-            // Aquí necesitaríamos procesar cada imagen y usar uploadImage para las nuevas
-            let success = true;
-            
-            if (success) {
-              console.log(`${images.length} imágenes guardadas correctamente para el equipo ${savedEquipment.id}`);
-            } else {
-              console.error("Error al guardar imágenes");
-              toast.error("Error al guardar las imágenes");
-            }
-          } catch (error) {
-            console.error("Error al guardar imágenes:", error);
-            toast.error("Error al guardar imágenes");
-          }
-        }
-        
-        toast.success(isNew ? "Equipo creado correctamente" : "Equipo actualizado correctamente");
-        
-        // Redirigir al listado o a donde venga el usuario
-        setTimeout(() => {
-          if (fromGlobalList) {
-            router.push("/configuracion/equipamiento");
-          } else {
-            router.push(`/configuracion/clinicas/${clinicId}/equipamiento`);
-          }
-        }, 500);
+      const imagesToUpload = images.filter(img => img.file);
+      if (imagesToUpload.length > 0) {
+          console.log(`Intentando subir ${imagesToUpload.length} imágenes para equipo ${savedEquipmentId}`);
+          await saveImagesForEntity('equipment', savedEquipmentId, images);
+          console.log("Imágenes guardadas.");
+      } else {
+          await saveImagesForEntity('equipment', savedEquipmentId, images);
+           console.log("Metadatos de imágenes actualizados (sin subidas).");
       }
+      
+      toast.success(`Equipo ${isNew ? 'creado' : 'actualizado'} correctamente.`);
+      const redirectPath = fromGlobalList 
+        ? `/configuracion/equipamiento` 
+        : `/configuracion/clinicas/${equipmentData.clinicId}/equipamiento`;
+      router.push(redirectPath);
     } catch (error) {
-      console.error("Error al guardar:", error);
-      toast.error("Error al guardar el equipo");
+      console.error("Error al guardar equipo:", error);
+      toast.error(`Error al guardar el equipo: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setIsSaving(false);
     }
   };
   
   const handleBack = () => {
-    if (fromGlobalList) {
-      router.push("/configuracion/equipamiento?tab=list");
-    } else {
-      router.push(`/configuracion/clinicas/${clinicId}/equipamiento`);
-    }
+    const redirectPath = fromGlobalList 
+      ? `/configuracion/equipamiento` 
+      : `/configuracion/clinicas/${params.id}/equipamiento`;
+    router.push(redirectPath);
   }
 
   return (
@@ -305,7 +310,6 @@ export default function DevicePage() {
         </div>
       ) : (
         <div className="space-y-6">
-          {/* Datos básicos */}
           <Card className="p-6">
             <h2 className="text-lg font-medium mb-4">Datos básicos</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -314,7 +318,7 @@ export default function DevicePage() {
                 <Input
                   id="name"
                   value={deviceData.name}
-                  onChange={(e) => setDeviceData({ ...deviceData, name: e.target.value })}
+                  onChange={handleChange}
                   placeholder="Introduzca el nombre"
                   className="mt-1"
                 />
@@ -325,7 +329,7 @@ export default function DevicePage() {
                 <Input
                   id="code"
                   value={deviceData.code}
-                  onChange={(e) => setDeviceData({ ...deviceData, code: e.target.value })}
+                  onChange={handleChange}
                   placeholder="Introduzca el código"
                   className="mt-1"
                 />
@@ -336,26 +340,26 @@ export default function DevicePage() {
                 <Input
                   id="serialNumber"
                   value={deviceData.serialNumber || ""}
-                  onChange={(e) => setDeviceData({ ...deviceData, serialNumber: e.target.value })}
+                  onChange={handleChange}
                   placeholder="Introduzca el número de serie"
                   className="mt-1"
                 />
               </div>
               
               <div>
-                <Label htmlFor="flowwIntegration">Integración floww.me</Label>
+                <Label htmlFor="status">Estado</Label>
                 <Select
-                  value={deviceData.flowwIntegration}
-                  onValueChange={(value) => setDeviceData({ ...deviceData, flowwIntegration: value })}
+                  value={deviceData.status}
+                  onValueChange={(value) => setDeviceData({ ...deviceData, status: value as DeviceData['status'] })}
                 >
                   <SelectTrigger className="mt-1">
-                    <SelectValue placeholder="Seleccione una opción" />
+                    <SelectValue placeholder="Seleccionar estado" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Ninguna">Ninguna</SelectItem>
-                    <SelectItem value="Nivel 1">Nivel 1</SelectItem>
-                    <SelectItem value="Nivel 2">Nivel 2</SelectItem>
-                    <SelectItem value="Completa">Completa</SelectItem>
+                    <SelectItem value="active">Activo</SelectItem>
+                    <SelectItem value="maintenance">Mantenimiento</SelectItem>
+                    <SelectItem value="inactive">Inactivo</SelectItem>
+                    <SelectItem value="retired">Retirado</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -365,7 +369,7 @@ export default function DevicePage() {
                 <Textarea
                   id="description"
                   value={deviceData.description}
-                  onChange={(e) => setDeviceData({ ...deviceData, description: e.target.value })}
+                  onChange={handleChange}
                   placeholder="Introduzca una descripción"
                   className="mt-1 h-32"
                 />
@@ -373,7 +377,6 @@ export default function DevicePage() {
             </div>
           </Card>
           
-          {/* Imágenes */}
           <Card className="p-6">
             <h2 className="text-lg font-medium mb-4">Imágenes</h2>
             <div className="space-y-4">
@@ -486,10 +489,73 @@ export default function DevicePage() {
               )}
             </div>
           </Card>
+
+          <Card className="p-6">
+            <h3 className="mb-4 text-lg font-medium">Clínicas Asociadas</h3>
+            <div className="space-y-3">
+              <div className="flex flex-wrap gap-2 min-h-[40px] items-center">
+                {selectedClinics.length > 0 ? (
+                  selectedClinics.map((clinic) => (
+                    <Badge key={clinic.id} variant="secondary" className="flex items-center gap-1 pr-1">
+                      {clinic.name}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-4 w-4 rounded-full hover:bg-red-100 hover:text-red-600"
+                        onClick={() => handleClinicRemove(String(clinic.id))}
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </Badge>
+                  ))
+                ) : (
+                  <p className="text-sm text-gray-500">Ninguna clínica asociada.</p>
+                )}
+              </div>
+
+              <Popover open={openClinicSelector} onOpenChange={setOpenClinicSelector}>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm" className="text-sm">
+                    <PlusCircle className="mr-2 h-4 w-4" />
+                    Añadir Clínica
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[300px] p-0">
+                  <Command>
+                    <CommandInput
+                      placeholder="Buscar clínica..."
+                      value={searchTerm}
+                      onValueChange={setSearchTerm}
+                    />
+                    <CommandEmpty>No se encontraron clínicas.</CommandEmpty>
+                    <CommandGroup heading="Clínicas Disponibles">
+                      {availableClinics.length > 0 ? availableClinics.map((clinic) => (
+                        <CommandItem
+                          key={clinic.id}
+                          value={clinic.name}
+                          onSelect={() => handleClinicSelect(String(clinic.id))}
+                          className="cursor-pointer"
+                        >
+                          {clinic.name} ({clinic.city})
+                        </CommandItem>
+                      )) : (
+                         <div className="p-2 text-sm text-center text-gray-500">Todas las clínicas ya están asociadas.</div>
+                      )}
+                    </CommandGroup>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+
+              {deviceData.clinicIds?.length === 0 && !isLoading && (
+                <p className="mt-2 text-sm text-red-600">
+                  Debe seleccionar al menos una clínica.
+                </p>
+              )}
+            </div>
+          </Card>
         </div>
       )}
 
-      {/* Botones de parámetros */}
       <div className="flex gap-2">
         <Button variant="outline" disabled>
           Parámetro I
@@ -502,7 +568,6 @@ export default function DevicePage() {
         </Button>
       </div>
 
-      {/* Botones fijos inferiores */}
       <div className="fixed bottom-0 left-0 right-0 px-6 py-4 border-t bg-background">
         <div className="container flex justify-between max-w-4xl mx-auto">
           <Button 

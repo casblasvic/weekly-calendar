@@ -15,11 +15,15 @@ import {
   ScheduleBlock,
   Servicio,
   Tarifa,
-  TipoIVA
+  TipoIVA,
+  Producto,
+  Consumo
 } from './models/interfaces';
 import {
   Client
 } from './data-service';
+// Importar los datos iniciales desde mockData.ts
+import { initialMockData } from '@/mockData';
 
 /**
  * Generador de IDs secuenciales para entidades
@@ -29,7 +33,7 @@ const generateId = (prefix: string): string => {
 };
 
 /**
- * Implementación del servicio de datos que utiliza localStorage
+ * Implementación del servicio de datos que utiliza almacenamiento en memoria
  */
 export class LocalDataService implements DataService {
   private data: {
@@ -43,13 +47,14 @@ export class LocalDataService implements DataService {
     entityImages: Record<string, Record<string, EntityImage[]>>;
     entityDocuments: Record<string, Record<string, Record<string, EntityDocument[]>>>;
     clients: Client[];
-    scheduleTemplates: any[]; // Plantillas horarias
+    scheduleTemplates: any[];
+    productos: Producto[];
   };
 
   private initialized: boolean = false;
 
   constructor() {
-    // Inicializar con datos vacíos
+    // Inicializar con datos vacíos, se llenarán en initialize()
     this.data = {
       clinicas: [],
       tarifas: [],
@@ -61,1266 +66,51 @@ export class LocalDataService implements DataService {
       entityImages: {},
       entityDocuments: {},
       clients: [],
-      scheduleTemplates: []
+      scheduleTemplates: [],
+      productos: []
     };
   }
 
   /**
-   * Inicializa el servicio de datos cargando desde localStorage
+   * Inicializa el servicio de datos cargando los datos iniciales en memoria
+   * desde mockData.ts
    */
   async initialize(): Promise<void> {
     if (this.initialized) return;
 
-    // Cargar datos desde localStorage
     try {
-      const loadData = <T>(key: string, defaultValue: T): T => {
-        const storedData = localStorage.getItem(key);
-        return storedData ? JSON.parse(storedData) : defaultValue;
-      };
-
-      // Forzar recreación de datos básicos para desarrollo
-      try {
-        // Limpiar el localStorage para forzar la recreación
-        localStorage.removeItem('clinicas');
-        localStorage.removeItem('equipos');
-      } catch (e) {
-        console.error("Error al limpiar localStorage:", e);
-      }
-
-      this.data.clinicas = loadData<Clinica[]>('clinicas', []);
-      this.data.tarifas = loadData<Tarifa[]>('tarifas', []);
-      this.data.familiasTarifa = loadData<FamiliaTarifa[]>('familiasTarifa', []);
-      this.data.servicios = loadData<Servicio[]>('servicios', []);
-      this.data.tiposIVA = loadData<TipoIVA[]>('tiposIVA', []);
-      this.data.equipos = loadData<Equipo[]>('equipos', []);
-      this.data.scheduleBlocks = loadData<ScheduleBlock[]>('scheduleBlocks', []);
-      this.data.entityImages = loadData<Record<string, Record<string, EntityImage[]>>>('entityImages', {});
-      this.data.entityDocuments = loadData<Record<string, Record<string, Record<string, EntityDocument[]>>>>('entityDocuments', {});
-      this.data.clients = loadData<Client[]>('clients', []);
-      this.data.scheduleTemplates = loadData<any[]>('scheduleTemplates', []);
-      
-      // Si no hay datos, crear datos de ejemplo
-      if (this.data.clinicas.length === 0) {
-        console.log('LocalDataService: Creando datos de ejemplo para clínicas');
-        this.data.clinicas = [
-          {
-            id: 'clinic-1', // ID fijo para garantizar consistencia
-            prefix: '000001',
-            name: 'Californie Multilaser - Organicare',
-            city: 'Casablanca',
-            direccion: 'Av. Mohammed VI, 234',
-            telefono: '+212 522 123 456',
-            email: 'info@californie-multilaser.ma',
-            isActive: true,
-            config: {
-              openTime: '09:00',
-              closeTime: '19:00',
-              weekendOpenTime: '10:00',
-              weekendCloseTime: '14:00',
-              saturdayOpen: true,
-              sundayOpen: false,
-              slotDuration: 15,
-              cabins: [
-                {
-                  id: 1,
-                  clinicId: 'clinic-1',
-                  code: 'CAB1',
-                  name: 'Cabina Láser 1',
-                  color: '#4f46e5', // Indigo
-                  isActive: true,
-                  order: 1
-                },
-                {
-                  id: 2,
-                  clinicId: 'clinic-1',
-                  code: 'CAB2',
-                  name: 'Cabina Estética',
-                  color: '#ef4444', // Rojo
-                  isActive: true,
-                  order: 2
-                },
-                {
-                  id: 3,
-                  clinicId: 'clinic-1',
-                  code: 'CAB3',
-                  name: 'Cabina Tratamientos',
-                  color: '#22c55e', // Verde
-                  isActive: true,
-                  order: 3
-                }
-              ],
-              // Nuevo formato de horario compatible con el componente de agenda
-              schedule: {
-                monday: {
-                  isOpen: true,
-                  ranges: [{ start: '09:00', end: '19:00' }]
-                },
-                tuesday: {
-                  isOpen: true,
-                  ranges: [{ start: '09:00', end: '19:00' }]
-                },
-                wednesday: {
-                  isOpen: true,
-                  ranges: [{ start: '09:00', end: '19:00' }]
-                },
-                thursday: {
-                  isOpen: true,
-                  ranges: [{ start: '09:00', end: '19:00' }]
-                },
-                friday: {
-                  isOpen: true,
-                  ranges: [{ start: '09:00', end: '19:00' }]
-                },
-                saturday: {
-                  isOpen: true,
-                  ranges: [{ start: '10:00', end: '14:00' }]
-                },
-                sunday: {
-                  isOpen: false,
-                  ranges: []
-                }
-              },
-              initialCash: 1000,
-              appearsInApp: true,
-              ticketSize: '80mm',
-              rate: 'tarifa-1',
-              affectsStats: true,
-              scheduleControl: true
-            }
-          },
-          {
-            id: 'clinic-2', // ID fijo para garantizar consistencia
-            prefix: 'Cafc',
-            name: 'Cafc Multilaser',
-            city: 'Casablanca',
-            direccion: 'Rue Moulay Youssef, 45',
-            telefono: '+212 522 789 123',
-            email: 'info@cafc-multilaser.ma',
-            isActive: true,
-            config: {
-              openTime: '08:30',
-              closeTime: '20:00',
-              weekendOpenTime: '09:00',
-              weekendCloseTime: '15:00',
-              saturdayOpen: true,
-              sundayOpen: false,
-              slotDuration: 30,
-              cabins: [
-                {
-                  id: 4,
-                  clinicId: 'clinic-2',
-                  code: 'C1',
-                  name: 'Cabina Principal',
-                  color: '#f97316', // Naranja
-                  isActive: true,
-                  order: 1
-                },
-                {
-                  id: 5,
-                  clinicId: 'clinic-2',
-                  code: 'C2',
-                  name: 'Sala de Espera',
-                  color: '#8b5cf6', // Violeta
-                  isActive: true,
-                  order: 2
-                }
-              ],
-              // Nuevo formato de horario compatible con el componente de agenda
-              schedule: {
-                monday: {
-                  isOpen: true,
-                  ranges: [{ start: '08:30', end: '20:00' }]
-                },
-                tuesday: {
-                  isOpen: true,
-                  ranges: [{ start: '08:30', end: '20:00' }]
-                },
-                wednesday: {
-                  isOpen: true,
-                  ranges: [{ start: '08:30', end: '20:00' }]
-                },
-                thursday: {
-                  isOpen: true,
-                  ranges: [{ start: '08:30', end: '20:00' }]
-                },
-                friday: {
-                  isOpen: true,
-                  ranges: [{ start: '08:30', end: '20:00' }]
-                },
-                saturday: {
-                  isOpen: true,
-                  ranges: [{ start: '09:00', end: '15:00' }]
-                },
-                sunday: {
-                  isOpen: false,
-                  ranges: []
-                }
-              },
-              initialCash: 1500,
-              appearsInApp: true,
-              ticketSize: '58mm',
-              affectsStats: true,
-              scheduleControl: true
-            }
-          },
-          {
-            id: 'clinic-3', // ID fijo para garantizar consistencia
-            prefix: 'TEST',
-            name: 'CENTRO TEST',
-            city: 'Casablanca',
-            direccion: 'Bd. Anfa, 123',
-            telefono: '+212 522 456 789',
-            email: 'test@centro-test.ma',
-            isActive: false,
-            config: {
-              openTime: '09:00',
-              closeTime: '18:00',
-              weekendOpenTime: '10:00',
-              weekendCloseTime: '14:00',
-              saturdayOpen: false,
-              sundayOpen: false,
-              slotDuration: 45,
-              cabins: [
-                {
-                  id: 6,
-                  clinicId: 'clinic-3',
-                  code: 'TEST1',
-                  name: 'Cabina de Pruebas',
-                  color: '#0ea5e9', // Azul
-                  isActive: true,
-                  order: 1
-                }
-              ],
-              // Nuevo formato de horario compatible con el componente de agenda
-              schedule: {
-                monday: {
-                  isOpen: true,
-                  ranges: [{ start: '09:00', end: '18:00' }]
-                },
-                tuesday: {
-                  isOpen: true,
-                  ranges: [{ start: '09:00', end: '18:00' }]
-                },
-                wednesday: {
-                  isOpen: true,
-                  ranges: [{ start: '09:00', end: '18:00' }]
-                },
-                thursday: {
-                  isOpen: true,
-                  ranges: [{ start: '09:00', end: '18:00' }]
-                },
-                friday: {
-                  isOpen: true,
-                  ranges: [{ start: '09:00', end: '18:00' }]
-                },
-                saturday: {
-                  isOpen: false,
-                  ranges: []
-                },
-                sunday: {
-                  isOpen: false,
-                  ranges: []
-                }
-              },
-              initialCash: 0,
-              appearsInApp: false,
-              ticketSize: '80mm',
-              affectsStats: false,
-              scheduleControl: false
-            }
-          }
-        ];
-        localStorage.setItem('clinicas', JSON.stringify(this.data.clinicas));
-      }
-      
-      // Si no hay equipos, crear datos de ejemplo
-      if (this.data.equipos.length === 0) {
-        console.log('LocalDataService: Creando datos de ejemplo para equipamiento');
-        this.data.equipos = [
-          // Equipamiento específico de clínicas - Clínica Californie
-          {
-            id: 'equipo-1',
-            name: 'Láser Alexandrita',
-            code: 'LAS-001',
-            description: 'Equipo láser para depilación permanente. Modelo Premium 2023 con sistema de refrigeración avanzado.',
-            serialNumber: 'SN123456789',
-            clinicId: 'clinic-1'
-          },
-          {
-            id: 'equipo-2',
-            name: 'Láser Diodo',
-            code: 'LAS-002',
-            description: 'Láser de diodo para tratamientos faciales y corporales. Ideal para pieles sensibles.',
-            serialNumber: 'SN987654321',
-            clinicId: 'clinic-1'
-          },
-          {
-            id: 'equipo-6',
-            name: 'Plataforma Vibratoria',
-            code: 'VIB-001',
-            description: 'Plataforma para ejercicios de tonificación muscular con diferentes intensidades.',
-            serialNumber: 'SN654987321',
-            clinicId: 'clinic-1'
-          },
-          {
-            id: 'equipo-8',
-            name: 'LPG',
-            code: 'LPG-001',
-            description: 'Sistema avanzado de LPG para tratamientos corporales no invasivos.',
-            serialNumber: 'SN753159852',
-            clinicId: 'clinic-1'
-          },
-          // Equipamiento específico de clínicas - Cafc Multilaser
-          {
-            id: 'equipo-3',
-            name: 'Presoterapia',
-            code: 'PRES-001',
-            description: 'Equipo de presoterapia para tratamientos corporales y drenaje linfático.',
-            serialNumber: 'SN456789123',
-            clinicId: 'clinic-2'
-          },
-          {
-            id: 'equipo-4',
-            name: 'Ultrasonido',
-            code: 'ULTRA-001',
-            description: 'Equipo de ultrasonido para tratamientos reductores y modelación corporal.',
-            serialNumber: 'SN789123456',
-            clinicId: 'clinic-2'
-          },
-          {
-            id: 'equipo-7',
-            name: 'Máquina de Vacumterapia',
-            code: 'VAC-001',
-            description: 'Equipo de vacumterapia para tratamientos de modelación y reducción.',
-            serialNumber: 'SN159753486',
-            clinicId: 'clinic-2'
-          },
-          // Equipamiento específico de clínicas - Centro Test
-          {
-            id: 'equipo-5',
-            name: 'Radiofrecuencia',
-            code: 'RADIO-001',
-            description: 'Equipo de radiofrecuencia para rejuvenecimiento facial y corporal.',
-            serialNumber: 'SN321456789',
-            clinicId: 'clinic-3'
-          }
-        ];
-        localStorage.setItem('equipos', JSON.stringify(this.data.equipos));
-      }
-
-      // Si no hay tarifas, crear datos de ejemplo
-      if (this.data.tarifas.length === 0) {
-        console.log('LocalDataService: Creando datos de ejemplo para tarifas');
-        this.data.tarifas = [
-          {
-            id: 'tarifa-1',
-            nombre: 'Tarifa Estándar Californie',
-            clinicaId: 'clinic-1',
-            clinicasIds: ['clinic-1'],
-            isActive: true,
-            deshabilitada: false
-          },
-          {
-            id: 'tarifa-2',
-            nombre: 'Tarifa Promocional Californie',
-            clinicaId: 'clinic-1',
-            clinicasIds: ['clinic-1'],
-            isActive: true,
-            deshabilitada: false
-          },
-          {
-            id: 'tarifa-3',
-            nombre: 'Tarifa Cafc Multilaser',
-            clinicaId: 'clinic-2',
-            clinicasIds: ['clinic-2'],
-            isActive: true,
-            deshabilitada: false
-          },
-          {
-            id: 'tarifa-4',
-            nombre: 'Tarifa Experimental',
-            clinicaId: 'clinic-3',
-            clinicasIds: ['clinic-3'],
-            isActive: false,
-            deshabilitada: true
-          }
-        ];
-        localStorage.setItem('tarifas', JSON.stringify(this.data.tarifas));
-      }
-      
-      // Si no hay familias de tarifas, crear datos de ejemplo
-      if (this.data.familiasTarifa.length === 0) {
-        console.log('LocalDataService: Creando datos de ejemplo para familias de tarifas');
-        this.data.familiasTarifa = [
-          {
-            id: 'familia-1',
-            name: 'Depilación Láser',
-            code: 'DEP',
-            parentId: null,
-            tarifaId: 'tarifa-1',
-            isActive: true
-          },
-          {
-            id: 'familia-2',
-            name: 'Tratamientos Faciales',
-            code: 'FACE',
-            parentId: null,
-            tarifaId: 'tarifa-1',
-            isActive: true
-          },
-          {
-            id: 'familia-3',
-            name: 'Tratamientos Corporales',
-            code: 'BODY',
-            parentId: null,
-            tarifaId: 'tarifa-1',
-            isActive: true
-          },
-          {
-            id: 'familia-4',
-            name: 'Depilación Zona Pequeña',
-            code: 'DEP-S',
-            parentId: 'familia-1',
-            tarifaId: 'tarifa-1',
-            isActive: true
-          },
-          {
-            id: 'familia-5',
-            name: 'Depilación Zona Media',
-            code: 'DEP-M',
-            parentId: 'familia-1',
-            tarifaId: 'tarifa-1',
-            isActive: true
-          },
-          {
-            id: 'familia-6',
-            name: 'Depilación Zona Grande',
-            code: 'DEP-L',
-            parentId: 'familia-1',
-            tarifaId: 'tarifa-1',
-            isActive: true
-          },
-          {
-            id: 'familia-7',
-            name: 'Limpieza Facial',
-            code: 'FACE-C',
-            parentId: 'familia-2',
-            tarifaId: 'tarifa-1',
-            isActive: true
-          },
-          {
-            id: 'familia-8',
-            name: 'Tratamientos Hidratantes',
-            code: 'FACE-H',
-            parentId: 'familia-2',
-            tarifaId: 'tarifa-1',
-            isActive: true
-          },
-          {
-            id: 'familia-9',
-            name: 'Masajes',
-            code: 'MAS',
-            parentId: null,
-            tarifaId: 'tarifa-2',
-            isActive: true
-          },
-          {
-            id: 'familia-10',
-            name: 'Depilación',
-            code: 'DEP',
-            parentId: null,
-            tarifaId: 'tarifa-3',
-            isActive: true
-          },
-          {
-            id: 'familia-11',
-            name: 'Estética',
-            code: 'EST',
-            parentId: null,
-            tarifaId: 'tarifa-3',
-            isActive: true
-          },
-          {
-            id: 'familia-12',
-            name: 'Pruebas',
-            code: 'TEST',
-            parentId: null,
-            tarifaId: 'tarifa-4',
-            isActive: false
-          }
-        ];
-        localStorage.setItem('familiasTarifa', JSON.stringify(this.data.familiasTarifa));
-      }
-      
-      // Si no hay tipos de IVA, crear datos de ejemplo
-      if (this.data.tiposIVA.length === 0) {
-        console.log('LocalDataService: Creando datos de ejemplo para tipos de IVA');
-        this.data.tiposIVA = [
-          {
-            id: 'iva-1',
-            descripcion: 'IVA General 20%',
-            porcentaje: 20,
-            tarifaId: 'tarifa-1'
-          },
-          {
-            id: 'iva-2',
-            descripcion: 'IVA Reducido 10%',
-            porcentaje: 10,
-            tarifaId: 'tarifa-1'
-          },
-          {
-            id: 'iva-3',
-            descripcion: 'Exento 0%',
-            porcentaje: 0,
-            tarifaId: 'tarifa-1'
-          },
-          {
-            id: 'iva-4',
-            descripcion: 'IVA General 20%',
-            porcentaje: 20,
-            tarifaId: 'tarifa-2'
-          },
-          {
-            id: 'iva-5',
-            descripcion: 'IVA General 20%',
-            porcentaje: 20,
-            tarifaId: 'tarifa-3'
-          },
-          {
-            id: 'iva-6',
-            descripcion: 'IVA Test 15%',
-            porcentaje: 15,
-            tarifaId: 'tarifa-4'
-          }
-        ];
-        localStorage.setItem('tiposIVA', JSON.stringify(this.data.tiposIVA));
-      }
-
-      // Si no hay servicios, crear datos de ejemplo
-      if (this.data.servicios.length === 0) {
-        console.log('LocalDataService: Creando datos de ejemplo para servicios');
-        this.data.servicios = [
-          {
-            id: 'srv-1',
-            nombre: 'Depilación Láser Axilas',
-            codigo: 'DEP-AX',
-            tarifaId: 'tarifa-1',
-            tarifaBase: 'tarifa-1',
-            familiaId: 'familia-4',
-            precioConIVA: '40',
-            ivaId: 'iva-1',
-            colorAgenda: '#4f46e5',
-            duracion: 15,
-            equipoId: 'equipo-1',
-            tipoComision: 'porcentaje',
-            comision: '10',
-            requiereParametros: true,
-            visitaValoracion: true,
-            apareceEnApp: true,
-            descuentosAutomaticos: true,
-            descuentosManuales: true,
-            aceptaPromociones: true,
-            aceptaEdicionPVP: false,
-            afectaEstadisticas: true,
-            deshabilitado: false,
-            precioCoste: '20',
-            tarifaPlanaId: '',
-            archivoAyuda: null,
-            consumos: []
-          },
-          {
-            id: 'srv-2',
-            nombre: 'Depilación Láser Piernas Completas',
-            codigo: 'DEP-PL',
-            tarifaId: 'tarifa-1',
-            tarifaBase: 'tarifa-1',
-            familiaId: 'familia-6',
-            precioConIVA: '120',
-            ivaId: 'iva-1',
-            colorAgenda: '#4f46e5',
-            duracion: 45,
-            equipoId: 'equipo-1',
-            tipoComision: 'porcentaje',
-            comision: '15',
-            requiereParametros: true,
-            visitaValoracion: true,
-            apareceEnApp: true,
-            descuentosAutomaticos: true,
-            descuentosManuales: true,
-            aceptaPromociones: true,
-            aceptaEdicionPVP: false,
-            afectaEstadisticas: true,
-            deshabilitado: false,
-            precioCoste: '50',
-            tarifaPlanaId: '',
-            archivoAyuda: null,
-            consumos: []
-          },
-          {
-            id: 'srv-3',
-            nombre: 'Limpieza Facial Profunda',
-            codigo: 'LIM-FAC',
-            tarifaId: 'tarifa-1',
-            tarifaBase: 'tarifa-1',
-            familiaId: 'familia-7',
-            precioConIVA: '60',
-            ivaId: 'iva-1',
-            colorAgenda: '#22c55e',
-            duracion: 60,
-            equipoId: 'equipo-2',
-            tipoComision: 'fijo',
-            comision: '5',
-            requiereParametros: false,
-            visitaValoracion: false,
-            apareceEnApp: true,
-            descuentosAutomaticos: true,
-            descuentosManuales: true,
-            aceptaPromociones: true,
-            aceptaEdicionPVP: false,
-            afectaEstadisticas: true,
-            deshabilitado: false,
-            precioCoste: '25',
-            tarifaPlanaId: '',
-            archivoAyuda: null,
-            consumos: []
-          },
-          {
-            id: 'srv-4',
-            nombre: 'Tratamiento Hidratante Premium',
-            codigo: 'HID-PRM',
-            tarifaId: 'tarifa-1',
-            tarifaBase: 'tarifa-1',
-            familiaId: 'familia-8',
-            precioConIVA: '80',
-            ivaId: 'iva-1',
-            colorAgenda: '#22c55e',
-            duracion: 45,
-            equipoId: 'equipo-2',
-            tipoComision: 'porcentaje',
-            comision: '12',
-            requiereParametros: false,
-            visitaValoracion: false,
-            apareceEnApp: true,
-            descuentosAutomaticos: true,
-            descuentosManuales: true,
-            aceptaPromociones: true,
-            aceptaEdicionPVP: true,
-            afectaEstadisticas: true,
-            deshabilitado: false,
-            precioCoste: '30',
-            tarifaPlanaId: '',
-            archivoAyuda: null,
-            consumos: []
-          },
-          {
-            id: 'srv-5',
-            nombre: 'Masaje Relajante 30min',
-            codigo: 'MAS-REL-30',
-            tarifaId: 'tarifa-2',
-            tarifaBase: 'tarifa-2',
-            familiaId: 'familia-9',
-            precioConIVA: '35',
-            ivaId: 'iva-4',
-            colorAgenda: '#f97316',
-            duracion: 30,
-            equipoId: '',
-            tipoComision: 'porcentaje',
-            comision: '10',
-            requiereParametros: false,
-            visitaValoracion: false,
-            apareceEnApp: true,
-            descuentosAutomaticos: true,
-            descuentosManuales: true,
-            aceptaPromociones: true,
-            aceptaEdicionPVP: false,
-            afectaEstadisticas: true,
-            deshabilitado: false,
-            precioCoste: '15',
-            tarifaPlanaId: '',
-            archivoAyuda: null,
-            consumos: []
-          },
-          {
-            id: 'srv-6',
-            nombre: 'Masaje Terapéutico 60min',
-            codigo: 'MAS-TER-60',
-            tarifaId: 'tarifa-2',
-            tarifaBase: 'tarifa-2',
-            familiaId: 'familia-9',
-            precioConIVA: '60',
-            ivaId: 'iva-4',
-            colorAgenda: '#f97316',
-            duracion: 60,
-            equipoId: '',
-            tipoComision: 'porcentaje',
-            comision: '15',
-            requiereParametros: false,
-            visitaValoracion: false,
-            apareceEnApp: true,
-            descuentosAutomaticos: true,
-            descuentosManuales: true,
-            aceptaPromociones: true,
-            aceptaEdicionPVP: false,
-            afectaEstadisticas: true,
-            deshabilitado: false,
-            precioCoste: '25',
-            tarifaPlanaId: '',
-            archivoAyuda: null,
-            consumos: []
-          },
-          {
-            id: 'srv-7',
-            nombre: 'Depilación Axilas',
-            codigo: 'DEP-AX',
-            tarifaId: 'tarifa-3',
-            tarifaBase: 'tarifa-3',
-            familiaId: 'familia-10',
-            precioConIVA: '35',
-            ivaId: 'iva-5',
-            colorAgenda: '#0ea5e9',
-            duracion: 15,
-            equipoId: 'equipo-3',
-            tipoComision: 'porcentaje',
-            comision: '8',
-            requiereParametros: true,
-            visitaValoracion: false,
-            apareceEnApp: true,
-            descuentosAutomaticos: true,
-            descuentosManuales: true,
-            aceptaPromociones: true,
-            aceptaEdicionPVP: false,
-            afectaEstadisticas: true,
-            deshabilitado: false,
-            precioCoste: '15',
-            tarifaPlanaId: '',
-            archivoAyuda: null,
-            consumos: []
-          },
-          {
-            id: 'srv-8',
-            nombre: 'Tratamiento Antiarrugas',
-            codigo: 'EST-ANTI',
-            tarifaId: 'tarifa-3',
-            tarifaBase: 'tarifa-3',
-            familiaId: 'familia-11',
-            precioConIVA: '90',
-            ivaId: 'iva-5',
-            colorAgenda: '#8b5cf6',
-            duracion: 45,
-            equipoId: 'equipo-4',
-            tipoComision: 'porcentaje',
-            comision: '12',
-            requiereParametros: false,
-            visitaValoracion: true,
-            apareceEnApp: true,
-            descuentosAutomaticos: true,
-            descuentosManuales: true,
-            aceptaPromociones: true,
-            aceptaEdicionPVP: false,
-            afectaEstadisticas: true,
-            deshabilitado: false,
-            precioCoste: '40',
-            tarifaPlanaId: '',
-            archivoAyuda: null,
-            consumos: []
-          },
-          {
-            id: 'srv-9',
-            nombre: 'Servicio Test',
-            codigo: 'TEST-SRV',
-            tarifaId: 'tarifa-4',
-            tarifaBase: 'tarifa-4',
-            familiaId: 'familia-12',
-            precioConIVA: '100',
-            ivaId: 'iva-6',
-            colorAgenda: '#a21caf',
-            duracion: 30,
-            equipoId: 'equipo-5',
-            tipoComision: 'porcentaje',
-            comision: '10',
-            requiereParametros: true,
-            visitaValoracion: true,
-            apareceEnApp: false,
-            descuentosAutomaticos: false,
-            descuentosManuales: false,
-            aceptaPromociones: false,
-            aceptaEdicionPVP: true,
-            afectaEstadisticas: false,
-            deshabilitado: true,
-            precioCoste: '50',
-            tarifaPlanaId: '',
-            archivoAyuda: null,
-            consumos: []
-          }
-        ];
-        localStorage.setItem('servicios', JSON.stringify(this.data.servicios));
-      }
-
-      // Si no hay bloques de agenda, crear datos de ejemplo
-      if (this.data.scheduleBlocks.length === 0) {
-        console.log('LocalDataService: Creando datos de ejemplo para bloques de agenda');
-        
-        // Obtener fecha actual y calcular fechas para la semana actual
-        const today = new Date();
-        const currentYear = today.getFullYear();
-        const currentMonth = today.getMonth();
-        const currentDate = today.getDate();
-        
-        // Crear fechas para los próximos 7 días (formato ISO sin hora: YYYY-MM-DD)
-        const dates = Array.from({ length: 7 }, (_, i) => {
-          const date = new Date(currentYear, currentMonth, currentDate + i);
-          return date.toISOString().split('T')[0];
-        });
-        
-        this.data.scheduleBlocks = [
-          // Bloque de descanso para almuerzo - Clínica 1
-          {
-            id: 'block-1',
-            clinicId: 'clinic-1',
-            date: dates[0], // Hoy
-            startTime: '13:00',
-            endTime: '14:00',
-            roomIds: ['1', '2', '3'], // Todas las cabinas
-            description: 'Pausa para almuerzo',
-            recurring: true,
-            recurrencePattern: {
-              frequency: 'daily',
-              endDate: new Date(currentYear, currentMonth + 1, currentDate).toISOString().split('T')[0], // Un mes después
-              daysOfWeek: [1, 2, 3, 4, 5] // Lunes a viernes
-            },
-            createdAt: new Date().toISOString()
-          },
-          // Bloque para mantenimiento - Clínica 1, Cabina 1
-          {
-            id: 'block-2',
-            clinicId: 'clinic-1',
-            date: dates[1], // Mañana
-            startTime: '17:00',
-            endTime: '19:00',
-            roomIds: ['1'], // Solo cabina 1
-            description: 'Mantenimiento del equipo láser',
-            recurring: false,
-            createdAt: new Date().toISOString()
-          },
-          // Bloque de formación - Clínica 2
-          {
-            id: 'block-3',
-            clinicId: 'clinic-2',
-            date: dates[2], // Pasado mañana
-            startTime: '09:00',
-            endTime: '11:00',
-            roomIds: ['4', '5'], // Todas las cabinas de clínica 2
-            description: 'Formación para personal',
-            recurring: false,
-            createdAt: new Date().toISOString()
-          },
-          // Bloque para evento especial - Clínica 1
-          {
-            id: 'block-4',
-            clinicId: 'clinic-1',
-            date: dates[4], // Dentro de 4 días
-            startTime: '16:00',
-            endTime: '19:00',
-            roomIds: ['1', '2', '3'], // Todas las cabinas
-            description: 'Evento especial: Jornada de puertas abiertas',
-            recurring: false,
-            createdAt: new Date().toISOString()
-          },
-          // Bloque para limpieza semanal - Clínica 2
-          {
-            id: 'block-5',
-            clinicId: 'clinic-2',
-            date: dates[5], // Dentro de 5 días
-            startTime: '18:00',
-            endTime: '20:00',
-            roomIds: ['4', '5'], // Todas las cabinas
-            description: 'Limpieza profunda semanal',
-            recurring: true,
-            recurrencePattern: {
-              frequency: 'weekly',
-              endDate: new Date(currentYear, currentMonth + 3, currentDate).toISOString().split('T')[0], // Tres meses
-              daysOfWeek: [5] // Viernes
-            },
-            createdAt: new Date().toISOString()
-          }
-        ];
-        localStorage.setItem('scheduleBlocks', JSON.stringify(this.data.scheduleBlocks));
-      }
-
-      // Si no hay clientes, crear datos de ejemplo
-      if (this.data.clients.length === 0) {
-        console.log('LocalDataService: Creando datos de ejemplo para clientes');
-        
-        // Obtener fecha actual para los datos de ejemplo
-        const today = new Date();
-        const currentYear = today.getFullYear();
-        const currentMonth = today.getMonth();
-        const currentDate = today.getDate();
-        
-        this.data.clients = [
-          {
-            id: 'client-1',
-            name: 'Amina Benali',
-            clientNumber: 'CL-0001',
-            phone: '+212 661 234 567',
-            email: 'amina.benali@example.com',
-            clinic: 'Californie Multilaser - Organicare',
-            clinicId: 'clinic-1',
-            address: 'Avenue Mohammed VI, 123, Casablanca',
-            birthDate: '1988-05-12',
-            notes: 'Cliente habitual, viene cada mes para tratamientos faciales.',
-            avatar: '',
-            visits: [
-              {
-                date: new Date(currentYear, currentMonth, currentDate - 30).toISOString(),
-                service: 'Limpieza Facial Profunda',
-                serviceId: 'srv-3',
-                price: 60
-              },
-              {
-                date: new Date(currentYear, currentMonth, currentDate - 15).toISOString(),
-                service: 'Tratamiento Hidratante Premium',
-                serviceId: 'srv-4',
-                price: 80
-              }
-            ]
-          },
-          {
-            id: 'client-2',
-            name: 'Karim Alaoui',
-            clientNumber: 'CL-0002',
-            phone: '+212 662 345 678',
-            email: 'karim.alaoui@example.com',
-            clinic: 'Californie Multilaser - Organicare',
-            clinicId: 'clinic-1',
-            address: 'Rue Moulay Youssef, 45, Casablanca',
-            birthDate: '1990-03-22',
-            notes: 'Alérgico a algunos productos. Ver historial médico para detalles.',
-            avatar: '',
-            visits: [
-              {
-                date: new Date(currentYear, currentMonth, currentDate - 20).toISOString(),
-                service: 'Depilación Láser Axilas',
-                serviceId: 'srv-1',
-                price: 40
-              }
-            ]
-          },
-          {
-            id: 'client-3',
-            name: 'Fatima Zahra',
-            clientNumber: 'CL-0003',
-            phone: '+212 663 456 789',
-            email: 'fatima.zahra@example.com',
-            clinic: 'Cafc Multilaser',
-            clinicId: 'clinic-2',
-            address: 'Boulevard Anfa, 78, Casablanca',
-            birthDate: '1995-11-07',
-            notes: 'Primera visita realizada el 15 de enero de 2023.',
-            avatar: '',
-            visits: [
-              {
-                date: new Date(currentYear, currentMonth, currentDate - 25).toISOString(),
-                service: 'Depilación Axilas',
-                serviceId: 'srv-7',
-                price: 35
-              },
-              {
-                date: new Date(currentYear, currentMonth, currentDate - 10).toISOString(),
-                service: 'Tratamiento Antiarrugas',
-                serviceId: 'srv-8',
-                price: 90
-              }
-            ]
-          },
-          {
-            id: 'client-4',
-            name: 'Hassan Mansouri',
-            clientNumber: 'CL-0004',
-            phone: '+212 664 567 890',
-            email: 'hassan.mansouri@example.com',
-            clinic: 'Californie Multilaser - Organicare',
-            clinicId: 'clinic-1',
-            address: 'Rue Ibn Sina, 34, Casablanca',
-            birthDate: '1982-07-18',
-            notes: 'Prefiere citas por la tarde después de las 17:00.',
-            avatar: '',
-            visits: [
-              {
-                date: new Date(currentYear, currentMonth, currentDate - 40).toISOString(),
-                service: 'Depilación Láser Piernas Completas',
-                serviceId: 'srv-2',
-                price: 120
-              }
-            ]
-          },
-          {
-            id: 'client-5',
-            name: 'Nadia El Fassi',
-            clientNumber: 'CL-0005',
-            phone: '+212 665 678 901',
-            email: 'nadia.elfassi@example.com',
-            clinic: 'Cafc Multilaser',
-            clinicId: 'clinic-2',
-            address: 'Avenue Hassan II, 56, Casablanca',
-            birthDate: '1992-09-03',
-            notes: 'Sensibilidad en la piel, usar productos suaves.',
-            avatar: '',
-            visits: []
-          },
-          {
-            id: 'client-6',
-            name: 'Younes Benjelloun',
-            clientNumber: 'CL-0006',
-            phone: '+212 666 789 012',
-            email: 'younes.benjelloun@example.com',
-            clinic: 'CENTRO TEST',
-            clinicId: 'clinic-3',
-            address: 'Rue Al Moutanabbi, 12, Casablanca',
-            birthDate: '1985-12-15',
-            notes: 'Cliente para pruebas. No enviar comunicaciones reales.',
-            avatar: '',
-            visits: [
-              {
-                date: new Date(currentYear, currentMonth, currentDate - 5).toISOString(),
-                service: 'Servicio Test',
-                serviceId: 'srv-9',
-                price: 100
-              }
-            ]
-          }
-        ];
-        localStorage.setItem('clients', JSON.stringify(this.data.clients));
-      }
-
-      // Si no hay plantillas de horario, crear datos de ejemplo
-      if (this.data.scheduleTemplates.length === 0) {
-        console.log('LocalDataService: Creando datos de ejemplo para plantillas de horario');
-        
-        const now = new Date().toISOString();
-        
-        this.data.scheduleTemplates = [
-          {
-            id: 'template-1',
-            description: 'Horario Estándar',
-            schedule: {
-              0: { // Domingo
-                isOpen: false,
-                slots: []
-              },
-              1: { // Lunes
-                isOpen: true,
-                slots: [
-                  { start: '09:00', end: '14:00' },
-                  { start: '16:00', end: '20:00' }
-                ]
-              },
-              2: { // Martes
-                isOpen: true,
-                slots: [
-                  { start: '09:00', end: '14:00' },
-                  { start: '16:00', end: '20:00' }
-                ]
-              },
-              3: { // Miércoles
-                isOpen: true,
-                slots: [
-                  { start: '09:00', end: '14:00' },
-                  { start: '16:00', end: '20:00' }
-                ]
-              },
-              4: { // Jueves
-                isOpen: true,
-                slots: [
-                  { start: '09:00', end: '14:00' },
-                  { start: '16:00', end: '20:00' }
-                ]
-              },
-              5: { // Viernes
-                isOpen: true,
-                slots: [
-                  { start: '09:00', end: '14:00' },
-                  { start: '16:00', end: '20:00' }
-                ]
-              },
-              6: { // Sábado
-                isOpen: true,
-                slots: [
-                  { start: '10:00', end: '14:00' }
-                ]
-              }
-            },
-            clinicId: null, // Aplicable a todas las clínicas
-            isDefault: true,
-            createdAt: now,
-            updatedAt: null
-          },
-          {
-            id: 'template-2',
-            description: 'Horario Intensivo Californie',
-            schedule: {
-              0: { // Domingo
-                isOpen: false,
-                slots: []
-              },
-              1: { // Lunes
-                isOpen: true,
-                slots: [
-                  { start: '08:00', end: '20:00' }
-                ]
-              },
-              2: { // Martes
-                isOpen: true,
-                slots: [
-                  { start: '08:00', end: '20:00' }
-                ]
-              },
-              3: { // Miércoles
-                isOpen: true,
-                slots: [
-                  { start: '08:00', end: '20:00' }
-                ]
-              },
-              4: { // Jueves
-                isOpen: true,
-                slots: [
-                  { start: '08:00', end: '20:00' }
-                ]
-              },
-              5: { // Viernes
-                isOpen: true,
-                slots: [
-                  { start: '08:00', end: '20:00' }
-                ]
-              },
-              6: { // Sábado
-                isOpen: true,
-                slots: [
-                  { start: '10:00', end: '18:00' }
-                ]
-              }
-            },
-            clinicId: 'clinic-1',
-            isDefault: false,
-            createdAt: now,
-            updatedAt: null
-          },
-          {
-            id: 'template-3',
-            description: 'Horario Media Jornada Cafc',
-            schedule: {
-              0: { // Domingo
-                isOpen: false,
-                slots: []
-              },
-              1: { // Lunes
-                isOpen: true,
-                slots: [
-                  { start: '09:00', end: '15:00' }
-                ]
-              },
-              2: { // Martes
-                isOpen: true,
-                slots: [
-                  { start: '09:00', end: '15:00' }
-                ]
-              },
-              3: { // Miércoles
-                isOpen: true,
-                slots: [
-                  { start: '09:00', end: '15:00' }
-                ]
-              },
-              4: { // Jueves
-                isOpen: true,
-                slots: [
-                  { start: '09:00', end: '15:00' }
-                ]
-              },
-              5: { // Viernes
-                isOpen: true,
-                slots: [
-                  { start: '09:00', end: '15:00' }
-                ]
-              },
-              6: { // Sábado
-                isOpen: false,
-                slots: []
-              }
-            },
-            clinicId: 'clinic-2',
-            isDefault: false,
-            createdAt: now,
-            updatedAt: null
-          }
-        ];
-        
-        localStorage.setItem('schedule-templates', JSON.stringify(this.data.scheduleTemplates));
-      }
-
+      // Cargar datos iniciales desde mockData haciendo una copia profunda
+      this.data = JSON.parse(JSON.stringify(initialMockData));
       this.initialized = true;
-      console.log('LocalDataService: Datos cargados desde localStorage');
+      console.log('LocalDataService: Inicializado con copia de initialMockData importado.');
     } catch (error) {
       console.error('Error al inicializar LocalDataService:', error);
+      // Mantener datos vacíos en caso de error
+      this.data = { clinicas: [], tarifas: [], familiasTarifa: [], servicios: [], tiposIVA: [], equipos: [], scheduleBlocks: [], entityImages: {}, entityDocuments: {}, clients: [], scheduleTemplates: [], productos: [] };
       throw error;
     }
   }
 
   /**
-   * Guarda todos los datos en localStorage
+   * Guarda los datos (simulado, solo opera en memoria)
    */
-  private saveToLocalStorage(): void {
-    try {
-      localStorage.setItem('clinicas', JSON.stringify(this.data.clinicas));
-      localStorage.setItem('tarifas', JSON.stringify(this.data.tarifas));
-      localStorage.setItem('familiasTarifa', JSON.stringify(this.data.familiasTarifa));
-      localStorage.setItem('servicios', JSON.stringify(this.data.servicios));
-      localStorage.setItem('tiposIVA', JSON.stringify(this.data.tiposIVA));
-      localStorage.setItem('equipos', JSON.stringify(this.data.equipos));
-      localStorage.setItem('scheduleBlocks', JSON.stringify(this.data.scheduleBlocks));
-      localStorage.setItem('entityImages', JSON.stringify(this.data.entityImages));
-      localStorage.setItem('entityDocuments', JSON.stringify(this.data.entityDocuments));
-      localStorage.setItem('clients', JSON.stringify(this.data.clients));
-      localStorage.setItem('scheduleTemplates', JSON.stringify(this.data.scheduleTemplates));
-    } catch (error) {
-      console.error('Error al guardar en localStorage:', error);
-      throw error;
-    }
+  private saveData(): void {
+    // En esta implementación local, no hay persistencia real más allá de la memoria.
+    // Si se quisiera guardar en localStorage o un archivo, se haría aquí.
+    console.log('[LocalDataService] Datos actualizados en memoria (no persistente).');
   }
 
   /**
-   * Limpia todos los datos y fuerza la regeneración de datos de ejemplo
+   * Limpia todos los datos y fuerza la recarga de los datos iniciales
    */
   async clearStorageAndReloadData(): Promise<void> {
-    // Limpiar localStorage
     try {
-      localStorage.clear();
-      console.log("LocalStorage limpiado completamente");
-      
-      // Reinicializar el servicio
-      this.initialized = false;
-      
-      // Vaciar datos en memoria
-      this.data = {
-        clinicas: [],
-        tarifas: [],
-        familiasTarifa: [],
-        servicios: [],
-        tiposIVA: [],
-        equipos: [],
-        scheduleBlocks: [],
-        entityImages: {},
-        entityDocuments: {},
-        clients: [],
-        scheduleTemplates: []
-      };
-      
-      // Inicializar de nuevo para regenerar datos de ejemplo
-      await this.initialize();
-      
-      console.log("Datos regenerados con éxito");
+      // Reiniciar los datos cargando de nuevo la copia inicial
+      this.data = JSON.parse(JSON.stringify(initialMockData));
+      console.log('[LocalDataService] Datos reiniciados a partir de initialMockData.');
     } catch (error) {
-      console.error("Error al limpiar localStorage:", error);
+      console.error('Error al reiniciar los datos locales:', error);
+      throw error;
     }
   }
 
@@ -1339,7 +129,7 @@ export class LocalDataService implements DataService {
         this.data.entityImages[entityType] = {};
       }
       this.data.entityImages[entityType][entityId] = images;
-      this.saveToLocalStorage();
+      this.saveData();
       return true;
     } catch (error) {
       console.error('Error al guardar imágenes:', error);
@@ -1351,7 +141,7 @@ export class LocalDataService implements DataService {
     try {
       if (this.data.entityImages[entityType] && this.data.entityImages[entityType][entityId]) {
         delete this.data.entityImages[entityType][entityId];
-        this.saveToLocalStorage();
+        this.saveData();
       }
       return true;
     } catch (error) {
@@ -1382,7 +172,7 @@ export class LocalDataService implements DataService {
         this.data.entityDocuments[entityType][entityId] = {};
       }
       this.data.entityDocuments[entityType][entityId][category] = documents;
-      this.saveToLocalStorage();
+      this.saveData();
       return true;
     } catch (error) {
       console.error('Error al guardar documentos:', error);
@@ -1404,7 +194,7 @@ export class LocalDataService implements DataService {
         delete this.data.entityDocuments[entityType][entityId];
       }
       
-      this.saveToLocalStorage();
+      this.saveData();
       return true;
     } catch (error) {
       console.error('Error al eliminar documentos:', error);
@@ -1417,28 +207,41 @@ export class LocalDataService implements DataService {
   // #region Operaciones de Clínicas
   
   async getAllClinicas(): Promise<Clinica[]> {
-    return this.data.clinicas;
+    return JSON.parse(JSON.stringify(this.data.clinicas)); // Devolver copia
   }
 
   async getClinicaById(id: string): Promise<Clinica | null> {
-    const clinica = this.data.clinicas.find(c => c.id === id);
-    return clinica || null;
+    const clinica = this.data.clinicas.find(c => String(c.id) === String(id));
+    return clinica ? JSON.parse(JSON.stringify(clinica)) : null; // Devolver copia
   }
 
   async createClinica(clinica: Omit<Clinica, 'id'>): Promise<Clinica> {
     const newClinica = { ...clinica, id: generateId('clinic') } as Clinica;
     this.data.clinicas.push(newClinica);
-    this.saveToLocalStorage();
-    return newClinica;
+    this.saveData();
+    return JSON.parse(JSON.stringify(newClinica)); // Devolver copia
   }
 
   async updateClinica(id: string, clinica: Partial<Clinica>): Promise<Clinica | null> {
-    const index = this.data.clinicas.findIndex(c => c.id === id);
-    if (index === -1) return null;
+    console.log(`[LocalDataService] Intentando actualizar clínica con ID: ${id} (Tipo: ${typeof id})`);
     
+    const index = this.data.clinicas.findIndex(c => {
+      console.log(`[LocalDataService] Comparando: ${c.id} (Tipo: ${typeof c.id}) === ${id} (Tipo: ${typeof id})`);
+      // Comparación robusta como string
+      return String(c.id) === String(id);
+    });
+
+    if (index === -1) {
+      console.error(`[LocalDataService] Clínica con ID ${id} NO ENCONTRADA en this.data.clinicas.`);
+      console.log("[LocalDataService] IDs disponibles:", this.data.clinicas.map(c => c.id));
+      return null;
+    }
+    
+    console.log(`[LocalDataService] Clínica encontrada en índice ${index}. Actualizando...`);
     this.data.clinicas[index] = { ...this.data.clinicas[index], ...clinica };
-    this.saveToLocalStorage();
-    return this.data.clinicas[index];
+    this.saveData();
+    console.log("[LocalDataService] Clínica actualizada, devolviendo copia:", this.data.clinicas[index]);
+    return JSON.parse(JSON.stringify(this.data.clinicas[index])); // Devolver copia
   }
 
   async deleteClinica(id: string): Promise<boolean> {
@@ -1447,14 +250,15 @@ export class LocalDataService implements DataService {
     const deleted = initialLength > this.data.clinicas.length;
     
     if (deleted) {
-      this.saveToLocalStorage();
+      this.saveData();
     }
     
     return deleted;
   }
 
   async getActiveClinicas(): Promise<Clinica[]> {
-    return this.data.clinicas.filter(c => c.isActive);
+    const active = this.data.clinicas.filter(c => c.isActive);
+    return JSON.parse(JSON.stringify(active)); // Devolver copia
   }
   
   // #endregion
@@ -1462,12 +266,12 @@ export class LocalDataService implements DataService {
   // #region Operaciones de Tarifas
   
   async getAllTarifas(): Promise<Tarifa[]> {
-    return this.data.tarifas;
+    return JSON.parse(JSON.stringify(this.data.tarifas)); // Devolver copia
   }
 
   async getTarifaById(id: string): Promise<Tarifa | null> {
     const tarifa = this.data.tarifas.find(t => t.id === id);
-    return tarifa || null;
+    return tarifa ? JSON.parse(JSON.stringify(tarifa)) : null; // Devolver copia
   }
 
   async createTarifa(tarifa: Omit<Tarifa, 'id'>): Promise<Tarifa> {
@@ -1484,8 +288,8 @@ export class LocalDataService implements DataService {
     }
     
     this.data.tarifas.push(newTarifa);
-    this.saveToLocalStorage();
-    return newTarifa;
+    this.saveData();
+    return JSON.parse(JSON.stringify(newTarifa)); // Devolver copia
   }
 
   async updateTarifa(id: string, tarifa: Partial<Tarifa>): Promise<Tarifa | null> {
@@ -1502,8 +306,8 @@ export class LocalDataService implements DataService {
     }
     
     this.data.tarifas[index] = updatedTarifa;
-    this.saveToLocalStorage();
-    return updatedTarifa;
+    this.saveData();
+    return JSON.parse(JSON.stringify(updatedTarifa)); // Devolver copia
   }
 
   async deleteTarifa(id: string): Promise<boolean> {
@@ -1512,7 +316,7 @@ export class LocalDataService implements DataService {
     const deleted = initialLength > this.data.tarifas.length;
     
     if (deleted) {
-      this.saveToLocalStorage();
+      this.saveData();
     }
     
     return deleted;
@@ -1609,19 +413,19 @@ export class LocalDataService implements DataService {
   // #region Operaciones de Familias de Tarifas
   
   async getAllFamiliasTarifa(): Promise<FamiliaTarifa[]> {
-    return this.data.familiasTarifa;
+    return JSON.parse(JSON.stringify(this.data.familiasTarifa)); // Devolver copia
   }
 
   async getFamiliaTarifaById(id: string): Promise<FamiliaTarifa | null> {
     const familia = this.data.familiasTarifa.find(f => f.id === id);
-    return familia || null;
+    return familia ? JSON.parse(JSON.stringify(familia)) : null; // Devolver copia
   }
 
   async createFamiliaTarifa(familia: Omit<FamiliaTarifa, 'id'>): Promise<FamiliaTarifa> {
     const newFamilia = { ...familia, id: generateId('familia') } as FamiliaTarifa;
     this.data.familiasTarifa.push(newFamilia);
-    this.saveToLocalStorage();
-    return newFamilia;
+    this.saveData();
+    return JSON.parse(JSON.stringify(newFamilia)); // Devolver copia
   }
 
   async updateFamiliaTarifa(id: string, familia: Partial<FamiliaTarifa>): Promise<FamiliaTarifa | null> {
@@ -1629,8 +433,8 @@ export class LocalDataService implements DataService {
     if (index === -1) return null;
     
     this.data.familiasTarifa[index] = { ...this.data.familiasTarifa[index], ...familia };
-    this.saveToLocalStorage();
-    return this.data.familiasTarifa[index];
+    this.saveData();
+    return JSON.parse(JSON.stringify(this.data.familiasTarifa[index])); // Devolver copia
   }
 
   async deleteFamiliaTarifa(id: string): Promise<boolean> {
@@ -1639,7 +443,7 @@ export class LocalDataService implements DataService {
     const deleted = initialLength > this.data.familiasTarifa.length;
     
     if (deleted) {
-      this.saveToLocalStorage();
+      this.saveData();
     }
     
     return deleted;
@@ -1672,12 +476,12 @@ export class LocalDataService implements DataService {
   // #region Operaciones de Servicios
   
   async getAllServicios(): Promise<Servicio[]> {
-    return this.data.servicios;
+    return JSON.parse(JSON.stringify(this.data.servicios)); // Devolver copia
   }
 
   async getServicioById(id: string): Promise<Servicio | null> {
     const servicio = this.data.servicios.find(s => s.id === id);
-    return servicio || null;
+    return servicio ? JSON.parse(JSON.stringify(servicio)) : null; // Devolver copia
   }
 
   async createServicio(servicio: Omit<Servicio, 'id'>): Promise<Servicio> {
@@ -1689,8 +493,8 @@ export class LocalDataService implements DataService {
     }
     
     this.data.servicios.push(newServicio);
-    this.saveToLocalStorage();
-    return newServicio;
+    this.saveData();
+    return JSON.parse(JSON.stringify(newServicio)); // Devolver copia
   }
 
   async updateServicio(id: string, servicio: Partial<Servicio>): Promise<Servicio | null> {
@@ -1698,8 +502,8 @@ export class LocalDataService implements DataService {
     if (index === -1) return null;
     
     this.data.servicios[index] = { ...this.data.servicios[index], ...servicio };
-    this.saveToLocalStorage();
-    return this.data.servicios[index];
+    this.saveData();
+    return JSON.parse(JSON.stringify(this.data.servicios[index])); // Devolver copia
   }
 
   async deleteServicio(id: string): Promise<boolean> {
@@ -1708,7 +512,7 @@ export class LocalDataService implements DataService {
     const deleted = initialLength > this.data.servicios.length;
     
     if (deleted) {
-      this.saveToLocalStorage();
+      this.saveData();
       
       // Eliminar imágenes y documentos asociados
       await this.deleteEntityImages('servicio', id);
@@ -1727,19 +531,19 @@ export class LocalDataService implements DataService {
   // #region Operaciones de Tipos de IVA
   
   async getAllTiposIVA(): Promise<TipoIVA[]> {
-    return this.data.tiposIVA;
+    return JSON.parse(JSON.stringify(this.data.tiposIVA)); // Devolver copia
   }
 
   async getTipoIVAById(id: string): Promise<TipoIVA | null> {
     const tipoIVA = this.data.tiposIVA.find(t => t.id === id);
-    return tipoIVA || null;
+    return tipoIVA ? JSON.parse(JSON.stringify(tipoIVA)) : null; // Devolver copia
   }
 
   async createTipoIVA(tipoIVA: Omit<TipoIVA, 'id'>): Promise<TipoIVA> {
     const newTipoIVA = { ...tipoIVA, id: generateId('iva') } as TipoIVA;
     this.data.tiposIVA.push(newTipoIVA);
-    this.saveToLocalStorage();
-    return newTipoIVA;
+    this.saveData();
+    return JSON.parse(JSON.stringify(newTipoIVA)); // Devolver copia
   }
 
   async updateTipoIVA(id: string, tipoIVA: Partial<TipoIVA>): Promise<TipoIVA | null> {
@@ -1747,8 +551,8 @@ export class LocalDataService implements DataService {
     if (index === -1) return null;
     
     this.data.tiposIVA[index] = { ...this.data.tiposIVA[index], ...tipoIVA };
-    this.saveToLocalStorage();
-    return this.data.tiposIVA[index];
+    this.saveData();
+    return JSON.parse(JSON.stringify(this.data.tiposIVA[index])); // Devolver copia
   }
 
   async deleteTipoIVA(id: string): Promise<boolean> {
@@ -1757,7 +561,7 @@ export class LocalDataService implements DataService {
     const deleted = initialLength > this.data.tiposIVA.length;
     
     if (deleted) {
-      this.saveToLocalStorage();
+      this.saveData();
     }
     
     return deleted;
@@ -1772,19 +576,19 @@ export class LocalDataService implements DataService {
   // #region Operaciones de Equipos
   
   async getAllEquipos(): Promise<Equipo[]> {
-    return this.data.equipos;
+    return JSON.parse(JSON.stringify(this.data.equipos)); // Devolver copia
   }
 
   async getEquipoById(id: string): Promise<Equipo | null> {
     const equipo = this.data.equipos.find(e => e.id === id);
-    return equipo || null;
+    return equipo ? JSON.parse(JSON.stringify(equipo)) : null; // Devolver copia
   }
 
   async createEquipo(equipo: Omit<Equipo, 'id'>): Promise<Equipo> {
     const newEquipo = { ...equipo, id: generateId('equipo') } as Equipo;
     this.data.equipos.push(newEquipo);
-    this.saveToLocalStorage();
-    return newEquipo;
+    this.saveData();
+    return JSON.parse(JSON.stringify(newEquipo)); // Devolver copia
   }
 
   async updateEquipo(id: string, equipo: Partial<Equipo>): Promise<Equipo | null> {
@@ -1792,8 +596,8 @@ export class LocalDataService implements DataService {
     if (index === -1) return null;
     
     this.data.equipos[index] = { ...this.data.equipos[index], ...equipo };
-    this.saveToLocalStorage();
-    return this.data.equipos[index];
+    this.saveData();
+    return JSON.parse(JSON.stringify(this.data.equipos[index])); // Devolver copia
   }
 
   async deleteEquipo(id: string): Promise<boolean> {
@@ -1802,7 +606,7 @@ export class LocalDataService implements DataService {
     const deleted = initialLength > this.data.equipos.length;
     
     if (deleted) {
-      this.saveToLocalStorage();
+      this.saveData();
       
       // Eliminar imágenes asociadas
       await this.deleteEntityImages('equipo', id);
@@ -1827,12 +631,12 @@ export class LocalDataService implements DataService {
   // #region Operaciones de Bloques de Agenda
   
   async getAllScheduleBlocks(): Promise<ScheduleBlock[]> {
-    return this.data.scheduleBlocks;
+    return JSON.parse(JSON.stringify(this.data.scheduleBlocks)); // Devolver copia
   }
 
   async getScheduleBlockById(id: string): Promise<ScheduleBlock | null> {
     const block = this.data.scheduleBlocks.find(b => b.id === id);
-    return block || null;
+    return block ? JSON.parse(JSON.stringify(block)) : null; // Devolver copia
   }
 
   async createScheduleBlock(block: Omit<ScheduleBlock, 'id'>): Promise<ScheduleBlock> {
@@ -1843,8 +647,8 @@ export class LocalDataService implements DataService {
     } as ScheduleBlock;
     
     this.data.scheduleBlocks.push(newBlock);
-    this.saveToLocalStorage();
-    return newBlock;
+    this.saveData();
+    return JSON.parse(JSON.stringify(newBlock)); // Devolver copia
   }
 
   async updateScheduleBlock(id: string, block: Partial<ScheduleBlock>): Promise<ScheduleBlock | null> {
@@ -1852,8 +656,8 @@ export class LocalDataService implements DataService {
     if (index === -1) return null;
     
     this.data.scheduleBlocks[index] = { ...this.data.scheduleBlocks[index], ...block };
-    this.saveToLocalStorage();
-    return this.data.scheduleBlocks[index];
+    this.saveData();
+    return JSON.parse(JSON.stringify(this.data.scheduleBlocks[index])); // Devolver copia
   }
 
   async deleteScheduleBlock(id: string): Promise<boolean> {
@@ -1862,7 +666,7 @@ export class LocalDataService implements DataService {
     const deleted = initialLength > this.data.scheduleBlocks.length;
     
     if (deleted) {
-      this.saveToLocalStorage();
+      this.saveData();
     }
     
     return deleted;
@@ -1940,7 +744,7 @@ export class LocalDataService implements DataService {
         const updatedClients = [...clients, newClient];
         localStorage.setItem('clients', JSON.stringify(updatedClients));
         this.data.clients = updatedClients;
-        this.saveToLocalStorage(); // Para asegurar consistencia con el resto de datos
+        this.saveData(); // Para asegurar consistencia con el resto de datos
       } catch (error) {
         console.error("Error al guardar cliente:", error);
         throw error;
@@ -1973,7 +777,7 @@ export class LocalDataService implements DataService {
       try {
         localStorage.setItem('clients', JSON.stringify(clients));
         this.data.clients = clients;
-        this.saveToLocalStorage(); // Para asegurar consistencia con el resto de datos
+        this.saveData(); // Para asegurar consistencia con el resto de datos
       } catch (error) {
         console.error(`Error al actualizar cliente ${id}:`, error);
         throw error;
@@ -1999,7 +803,7 @@ export class LocalDataService implements DataService {
       try {
         localStorage.setItem('clients', JSON.stringify(filteredClients));
         this.data.clients = filteredClients;
-        this.saveToLocalStorage(); // Para asegurar consistencia con el resto de datos
+        this.saveData(); // Para asegurar consistencia con el resto de datos
       } catch (error) {
         console.error(`Error al eliminar cliente ${id}:`, error);
         throw error;
@@ -2182,7 +986,7 @@ export class LocalDataService implements DataService {
     this.data.entityDocuments[newFile.entityType][newFile.entityId][category].push(newFile);
     
     // Guardar en localStorage
-    this.saveToLocalStorage();
+    this.saveData();
     
     return newFile;
   }
@@ -2203,7 +1007,7 @@ export class LocalDataService implements DataService {
         
         if (index !== -1) {
           files.splice(index, 1);
-          this.saveToLocalStorage();
+          this.saveData();
           return true;
         }
       }
@@ -2233,7 +1037,7 @@ export class LocalDataService implements DataService {
           // Actualizar el archivo
           const updatedFile = { ...files[index], ...metadata };
           files[index] = updatedFile;
-          this.saveToLocalStorage();
+          this.saveData();
           return updatedFile;
         }
       }
@@ -2305,4 +1109,208 @@ export class LocalDataService implements DataService {
   }
   
   // #endregion
+
+  // #region Operaciones de Productos
+  
+  async getAllProductos(): Promise<Producto[]> {
+    if (!this.initialized) await this.initialize();
+    
+    // Si no hay productos definidos, inicializamos con un array vacío
+    if (!this.data.productos) {
+      this.data.productos = [];
+    }
+    
+    return this.data.productos;
+  }
+
+  async getProductoById(id: string): Promise<Producto | null> {
+    if (!this.initialized) await this.initialize();
+    
+    // Si no hay productos definidos, inicializamos con un array vacío
+    if (!this.data.productos) {
+      this.data.productos = [];
+    }
+    
+    const producto = this.data.productos.find(p => p.id === id);
+    return producto || null;
+  }
+
+  async createProducto(producto: Omit<Producto, 'id'>): Promise<Producto> {
+    if (!this.initialized) await this.initialize();
+    
+    // Si no hay productos definidos, inicializamos con un array vacío
+    if (!this.data.productos) {
+      this.data.productos = [];
+    }
+    
+    const newProducto = { 
+      ...producto, 
+      id: generateId('prod'),
+      fechaCreacion: new Date().toISOString()
+    } as Producto;
+    
+    this.data.productos.push(newProducto);
+    this.saveData();
+    return newProducto;
+  }
+
+  async updateProducto(id: string, producto: Partial<Producto>): Promise<Producto | null> {
+    if (!this.initialized) await this.initialize();
+    
+    // Si no hay productos definidos, inicializamos con un array vacío
+    if (!this.data.productos) {
+      this.data.productos = [];
+    }
+    
+    const index = this.data.productos.findIndex(p => p.id === id);
+    if (index === -1) return null;
+    
+    this.data.productos[index] = { ...this.data.productos[index], ...producto };
+    this.saveData();
+    return this.data.productos[index];
+  }
+
+  async deleteProducto(id: string): Promise<boolean> {
+    if (!this.initialized) await this.initialize();
+    
+    // Si no hay productos definidos, inicializamos con un array vacío
+    if (!this.data.productos) {
+      this.data.productos = [];
+    }
+    
+    const initialLength = this.data.productos.length;
+    this.data.productos = this.data.productos.filter(p => p.id !== id);
+    const deleted = initialLength > this.data.productos.length;
+    
+    if (deleted) {
+      this.saveData();
+    }
+    
+    return deleted;
+  }
+
+  async getProductosByTarifaId(tarifaId: string): Promise<Producto[]> {
+    if (!this.initialized) await this.initialize();
+    
+    // Si no hay productos definidos, inicializamos con un array vacío
+    if (!this.data.productos) {
+      this.data.productos = [];
+    }
+    
+    return this.data.productos.filter(p => p.tarifaId === tarifaId);
+  }
+
+  async getProductosByFamilia(familia: string): Promise<Producto[]> {
+    if (!this.initialized) await this.initialize();
+    
+    // Si no hay productos definidos, inicializamos con un array vacío
+    if (!this.data.productos) {
+      this.data.productos = [];
+    }
+    
+    return this.data.productos.filter(p => p.familia === familia);
+  }
+  
+  // #endregion
+
+  // #region Operaciones de Consumos
+  
+  async getAllConsumos(): Promise<Consumo[]> {
+    if (!this.initialized) await this.initialize();
+    
+    // Recolectar todos los consumos de todos los servicios
+    const consumos: Consumo[] = [];
+    this.data.servicios.forEach(servicio => {
+      if (servicio.consumos && servicio.consumos.length > 0) {
+        servicio.consumos.forEach(consumo => {
+          consumos.push({
+            ...consumo,
+            servicioId: String(servicio.id)
+          });
+        });
+      }
+    });
+    
+    return consumos;
+  }
+
+  async getConsumoById(id: string): Promise<Consumo | null> {
+    const consumos = await this.getAllConsumos();
+    return consumos.find(c => c.id === id) || null;
+  }
+
+  async createConsumo(consumo: Omit<Consumo, 'id'>): Promise<Consumo> {
+    // Buscar el servicio al que se asociará el consumo
+    const servicio = await this.getServicioById(String(consumo.servicioId));
+    if (!servicio) {
+      throw new Error(`No se encontró el servicio con ID ${consumo.servicioId}`);
+    }
+    
+    // Crear nuevo consumo con ID
+    const newConsumo: Consumo = {
+      ...consumo,
+      id: generateId('cons'),
+      servicioId: String(consumo.servicioId)
+    };
+    
+    // Agregar consumo al servicio
+    if (!servicio.consumos) {
+      servicio.consumos = [];
+    }
+    
+    servicio.consumos.push(newConsumo);
+    
+    // Actualizar servicio
+    await this.updateServicio(String(servicio.id), { consumos: servicio.consumos });
+    
+    return newConsumo;
+  }
+
+  async updateConsumo(id: string, consumo: Partial<Consumo>): Promise<Consumo | null> {
+    // Buscar el consumo en todos los servicios
+    const allServicios = await this.getAllServicios();
+    
+    for (const servicio of allServicios) {
+      if (!servicio.consumos) continue;
+      
+      const index = servicio.consumos.findIndex(c => c.id === id);
+      if (index !== -1) {
+        // Actualizar el consumo
+        const updatedConsumo = { ...servicio.consumos[index], ...consumo };
+        servicio.consumos[index] = updatedConsumo;
+        
+        // Actualizar el servicio
+        await this.updateServicio(String(servicio.id), { consumos: servicio.consumos });
+        
+        return updatedConsumo;
+      }
+    }
+    
+    return null; // No se encontró el consumo
+  }
+
+  async deleteConsumo(id: string): Promise<boolean> {
+    // Buscar el consumo en todos los servicios
+    const allServicios = await this.getAllServicios();
+    
+    for (const servicio of allServicios) {
+      if (!servicio.consumos) continue;
+      
+      const initialLength = servicio.consumos.length;
+      servicio.consumos = servicio.consumos.filter(c => c.id !== id);
+      
+      if (servicio.consumos.length < initialLength) {
+        // Actualizar el servicio
+        await this.updateServicio(String(servicio.id), { consumos: servicio.consumos });
+        return true;
+      }
+    }
+    
+    return false; // No se encontró el consumo
+  }
+
+  async getConsumosByServicioId(servicioId: string): Promise<Consumo[]> {
+    const servicio = await this.getServicioById(String(servicioId));
+    return servicio?.consumos || [];
+  }
 } 
