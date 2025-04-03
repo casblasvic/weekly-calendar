@@ -1,20 +1,25 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect } from "react"
+import { useState, useEffect, use } from "react";
 import { Button } from "@/components/ui/button"
 import { ArrowLeft, HelpCircle, Save } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { useClinic } from "@/contexts/clinic-context"
 
-export default function DatosClinicaLayout({
-  children,
-  params,
-}: {
-  children: React.ReactNode
-  params: { id: string }
-}) {
+export default function DatosClinicaLayout(
+  props: {
+    children: React.ReactNode
+    params: Promise<{ id: string }>
+  }
+) {
+  const params = use(props.params);
+
+  const {
+    children
+  } = props;
+
   const router = useRouter()
   const { updateClinica } = useClinic()
   const [hasChanges, setHasChanges] = useState(false)

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, use } from "react";
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -15,11 +15,12 @@ interface ParameterValue {
   description: string
 }
 
-export default function ParameterPage({
-  params,
-}: {
-  params: { id: string; deviceId: string; paramId: string }
-}) {
+export default function ParameterPage(
+  props: {
+    params: Promise<{ id: string; deviceId: string; paramId: string }>
+  }
+) {
+  const params = use(props.params);
   const router = useRouter()
   const [searchQuery, setSearchQuery] = useState("")
   const [isNewValueOpen, setIsNewValueOpen] = useState(false)

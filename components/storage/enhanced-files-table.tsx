@@ -39,34 +39,34 @@ const formatBytes = (bytes: number) => {
 // Mapa de iconos por tipo de archivo
 const getFileIcon = (mimeType: string) => {
   if (mimeType.startsWith('image/')) {
-    return <Image className="h-4 w-4 text-blue-500" />;
+    return <Image className="w-4 h-4 text-blue-500" />;
   } else if (mimeType.startsWith('video/')) {
-    return <Film className="h-4 w-4 text-red-500" />;
+    return <Film className="w-4 h-4 text-red-500" />;
   } else if (mimeType.includes('pdf')) {
-    return <FileText className="h-4 w-4 text-orange-500" />;
+    return <FileText className="w-4 h-4 text-orange-500" />;
   } else if (mimeType.includes('word') || mimeType.includes('document')) {
-    return <FileText className="h-4 w-4 text-blue-700" />;
+    return <FileText className="w-4 h-4 text-blue-700" />;
   } else if (mimeType.includes('sheet') || mimeType.includes('excel')) {
-    return <FileText className="h-4 w-4 text-green-600" />;
+    return <FileText className="w-4 h-4 text-green-600" />;
   } else if (mimeType.includes('zip') || mimeType.includes('compressed')) {
-    return <Archive className="h-4 w-4 text-gray-600" />;
+    return <Archive className="w-4 h-4 text-gray-600" />;
   }
-  return <FileText className="h-4 w-4 text-gray-500" />;
+  return <FileText className="w-4 h-4 text-gray-500" />;
 };
 
 // Obtener icono según tipo de entidad
 const getEntityTypeIcon = (entityType: string) => {
   switch (entityType) {
     case 'equipment':
-      return <Wrench className="h-4 w-4 text-blue-500" />;
+      return <Wrench className="w-4 h-4 text-blue-500" />;
     case 'service':
-      return <ShoppingCart className="h-4 w-4 text-purple-500" />;
+      return <ShoppingCart className="w-4 h-4 text-purple-500" />;
     case 'client':
-      return <Users className="h-4 w-4 text-green-500" />;
+      return <Users className="w-4 h-4 text-green-500" />;
     case 'tarifa':
-      return <Receipt className="h-4 w-4 text-amber-500" />;
+      return <Receipt className="w-4 h-4 text-amber-500" />;
     default:
-      return <FolderOpen className="h-4 w-4 text-gray-500" />;
+      return <FolderOpen className="w-4 h-4 text-gray-500" />;
   }
 };
 
@@ -544,7 +544,7 @@ const EnhancedFilesTable: React.FC<EnhancedFilesTableProps> = ({
     <Card className="col-span-3">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <FolderOpen className="h-5 w-5" />
+          <FolderOpen className="w-5 h-5" />
           Explorador de archivos
         </CardTitle>
       </CardHeader>
@@ -642,7 +642,7 @@ const EnhancedFilesTable: React.FC<EnhancedFilesTableProps> = ({
               <TableBody>
                 {groupedFiles.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={showClinic ? (showEntity ? 7 : 6) : (showEntity ? 6 : 5)} className="text-center py-8 text-gray-500">
+                    <TableCell colSpan={showClinic ? (showEntity ? 7 : 6) : (showEntity ? 6 : 5)} className="py-8 text-center text-gray-500">
                       No se encontraron archivos
                     </TableCell>
                   </TableRow>
@@ -663,15 +663,15 @@ const EnhancedFilesTable: React.FC<EnhancedFilesTableProps> = ({
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-7 w-7 p-0 mr-2 hover:bg-purple-100 hover:text-purple-700 border border-purple-200 rounded-full flex items-center justify-center"
+                              className="flex items-center justify-center p-0 mr-2 border border-purple-200 rounded-full h-7 w-7 hover:bg-purple-100 hover:text-purple-700"
                               onClick={() => toggleGroupExpansion(fileKey)}
                               title={groupExpansionState[fileKey] ? "Ocultar referencias" : `Mostrar ${relatedFiles.length - 1} referencias adicionales`}
                             >
                               {groupExpansionState[fileKey] ? (
-                                <ChevronDown className="h-4 w-4 text-purple-600" />
+                                <ChevronDown className="w-4 h-4 text-purple-600" />
                               ) : (
                                 <div className="flex items-center justify-center">
-                                  <Plus className="h-4 w-4 text-purple-600" />
+                                  <Plus className="w-4 h-4 text-purple-600" />
                                 </div>
                               )}
                             </Button>
@@ -683,10 +683,10 @@ const EnhancedFilesTable: React.FC<EnhancedFilesTableProps> = ({
                               {hasMultipleReferences && (
                                 <Badge 
                                   variant="outline" 
-                                  className="ml-2 gap-1 text-xs bg-purple-100 border-purple-200 text-purple-700 rounded-full px-2 hover:bg-purple-200 cursor-pointer"
+                                  className="gap-1 px-2 ml-2 text-xs text-purple-700 bg-purple-100 border-purple-200 rounded-full cursor-pointer hover:bg-purple-200"
                                   onClick={() => toggleGroupExpansion(fileKey)}
                                 >
-                                  <Plus className="h-3 w-3 text-purple-600" />
+                                  <Plus className="w-3 h-3 text-purple-600" />
                                   <span>{relatedFiles.length - 1}</span>
                                 </Badge>
                               )}
@@ -695,8 +695,8 @@ const EnhancedFilesTable: React.FC<EnhancedFilesTableProps> = ({
                               <div className="text-xs text-purple-700 mt-1 flex items-center gap-1.5 cursor-pointer" onClick={() => toggleGroupExpansion(fileKey)}>
                                 <span>Archivo con {relatedFiles.length} {relatedFiles.length === 1 ? 'asociación' : 'asociaciones'}</span>
                                 {groupExpansionState[fileKey] ? 
-                                  <ChevronDown className="h-3 w-3" /> : 
-                                  <ChevronRight className="h-3 w-3" />
+                                  <ChevronDown className="w-3 h-3" /> : 
+                                  <ChevronRight className="w-3 h-3" />
                                 }
                               </div>
                             )}
@@ -715,20 +715,20 @@ const EnhancedFilesTable: React.FC<EnhancedFilesTableProps> = ({
                               <div className="flex items-center gap-1">
                                 <span className="flex items-center gap-1.5">
                                   {getEntityTypeIcon(mainFile.entityType)}
-                                  <span className="font-medium text-sm">{entityInfo.name}</span>
+                                  <span className="text-sm font-medium">{entityInfo.name}</span>
                                 </span>
                                 {entityInfo.link !== '#' && (
                                   <Button
                                     variant="ghost"
                                     size="icon"
-                                    className="h-6 w-6"
+                                    className="w-6 h-6"
                                     onClick={() => {
                                       console.log(`Navegando a: ${entityInfo.link}`);
                                       router.push(entityInfo.link);
                                     }}
                                     title="Ir a editar"
                                   >
-                                    <ExternalLink className="h-3 w-3" />
+                                    <ExternalLink className="w-3 h-3" />
                                   </Button>
                                 )}
                               </div>
@@ -751,7 +751,7 @@ const EnhancedFilesTable: React.FC<EnhancedFilesTableProps> = ({
                                 size="icon"
                                 onClick={() => onView(mainFile)}
                               >
-                                <Eye className="h-4 w-4" />
+                                <Eye className="w-4 h-4" />
                               </Button>
                             )}
                             
@@ -760,7 +760,7 @@ const EnhancedFilesTable: React.FC<EnhancedFilesTableProps> = ({
                               size="icon"
                               onClick={() => window.open(mainFile.url, '_blank')}
                             >
-                              <Download className="h-4 w-4" />
+                              <Download className="w-4 h-4" />
                             </Button>
                             
                             {onDelete && (
@@ -770,7 +770,7 @@ const EnhancedFilesTable: React.FC<EnhancedFilesTableProps> = ({
                                 className="text-red-500 hover:text-red-700 hover:bg-red-50"
                                 onClick={() => handleDeleteClick(mainFile)}
                               >
-                                <Trash2 className="h-4 w-4" />
+                                <Trash2 className="w-4 h-4" />
                               </Button>
                             )}
                           </div>
@@ -779,22 +779,22 @@ const EnhancedFilesTable: React.FC<EnhancedFilesTableProps> = ({
                       
                       {/* Filas de referencias adicionales (expandibles) */}
                       {hasMultipleReferences && groupExpansionState[fileKey] && (
-                        <div className="border-l-2 border-purple-200 ml-4 pl-2">
+                        <div className="pl-2 ml-4 border-l-2 border-purple-200">
                           {relatedFiles.slice(1).map((relatedFile) => {
                             const relatedEntityInfo = getEntityInfoSync(relatedFile.entityType, relatedFile.entityId);
                             
                             return (
                               <TableRow 
                                 key={relatedFile.id} 
-                                className="bg-purple-50/30 border-dashed"
+                                className="border-dashed bg-purple-50/30"
                               >
-                                <TableCell className="pl-10 flex items-center gap-2">
-                                  <div className="flex items-center p-1 rounded-full bg-purple-100 text-purple-700">
-                                    <LinkIcon className="h-3 w-3" />
+                                <TableCell className="flex items-center gap-2 pl-10">
+                                  <div className="flex items-center p-1 text-purple-700 bg-purple-100 rounded-full">
+                                    <LinkIcon className="w-3 h-3" />
                                   </div>
                                   <span className="flex flex-col">
                                     <div className="flex items-center gap-1">
-                                      <span className="text-sm text-purple-800 font-medium">{relatedFile.fileName}</span>
+                                      <span className="text-sm font-medium text-purple-800">{relatedFile.fileName}</span>
                                     </div>
                                     <div className="text-xs text-gray-500">
                                       Referencia #{relatedFiles.indexOf(relatedFile) + 1}
@@ -816,12 +816,12 @@ const EnhancedFilesTable: React.FC<EnhancedFilesTableProps> = ({
                                           {getEntityTypeIcon(relatedFile.entityType)}
                                           <span>{relatedFile.entityType}</span>
                                         </Badge>
-                                        <span className="text-sm text-purple-700 font-medium ml-1">{relatedEntityInfo.name}</span>
+                                        <span className="ml-1 text-sm font-medium text-purple-700">{relatedEntityInfo.name}</span>
                                         {relatedEntityInfo.link !== '#' && (
                                           <Button
                                             variant="outline"
                                             size="sm"
-                                            className="h-6 px-2 py-0 text-xs flex items-center gap-1 border-purple-200 text-purple-700 hover:bg-purple-100"
+                                            className="flex items-center h-6 gap-1 px-2 py-0 text-xs text-purple-700 border-purple-200 hover:bg-purple-100"
                                             onClick={(e) => {
                                               e.stopPropagation();
                                               console.log(`Navegando a: ${relatedEntityInfo.link}`);
@@ -829,7 +829,7 @@ const EnhancedFilesTable: React.FC<EnhancedFilesTableProps> = ({
                                             }}
                                             title="Editar esta entidad"
                                           >
-                                            <ExternalLink className="h-3 w-3 mr-1" />
+                                            <ExternalLink className="w-3 h-3 mr-1" />
                                             <span>Editar</span>
                                           </Button>
                                         )}
@@ -860,7 +860,7 @@ const EnhancedFilesTable: React.FC<EnhancedFilesTableProps> = ({
                                         className="h-7 w-7"
                                         onClick={() => onView(relatedFile)}
                                       >
-                                        <Eye className="h-3 w-3" />
+                                        <Eye className="w-3 h-3" />
                                       </Button>
                                     )}
                                     
@@ -870,17 +870,17 @@ const EnhancedFilesTable: React.FC<EnhancedFilesTableProps> = ({
                                       className="h-7 w-7"
                                       onClick={() => window.open(relatedFile.url, '_blank')}
                                     >
-                                      <Download className="h-3 w-3" />
+                                      <Download className="w-3 h-3" />
                                     </Button>
                                     
                                     {onDelete && (
                                       <Button
                                         variant="ghost"
                                         size="icon"
-                                        className="h-7 w-7 text-red-400 hover:text-red-600 hover:bg-red-50"
+                                        className="text-red-400 h-7 w-7 hover:text-red-600 hover:bg-red-50"
                                         onClick={() => handleDeleteClick(relatedFile)}
                                       >
-                                        <Trash2 className="h-3 w-3" />
+                                        <Trash2 className="w-3 h-3" />
                                       </Button>
                                     )}
                                   </div>

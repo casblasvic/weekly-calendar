@@ -200,7 +200,9 @@ export const initialMockData = {
   entityDocuments: {},
   clients: [], // Inicialmente vacío
   scheduleTemplates: [],
-  productos: []
+  productos: [],
+  consumos: [],
+  bonos: [] // Array vacío para almacenar los bonos
 };
 // --- FIN: Definición de Datos Iniciales (Mock) ---
 

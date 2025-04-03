@@ -16,7 +16,8 @@ import {
   Tarifa,
   TipoIVA,
   Producto,
-  Consumo
+  Consumo,
+  Bono
 } from './models/interfaces';
 
 /**
@@ -178,4 +179,14 @@ export interface DataService {
   updateConsumo(id: string, consumo: Partial<Consumo>): Promise<Consumo | null>;
   deleteConsumo(id: string): Promise<boolean>;
   getConsumosByServicioId(servicioId: string): Promise<Consumo[]>;
+  
+  // Operaciones de Bonos
+  getAllBonos(): Promise<Bono[]>;
+  getBonoById(id: string): Promise<Bono | null>;
+  createBono(bono: Omit<Bono, 'id'>): Promise<Bono>;
+  updateBono(id: string, bono: Partial<Bono>): Promise<Bono | null>;
+  deleteBono(id: string): Promise<boolean>;
+  getBonosByServicioId(servicioId: string): Promise<Bono[]>;
+  getBonosHabilitados(): Promise<Bono[]>;
+  toggleBonoStatus(id: string): Promise<boolean>;
 } 

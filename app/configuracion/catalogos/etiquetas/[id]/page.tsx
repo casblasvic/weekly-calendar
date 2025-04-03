@@ -9,15 +9,16 @@ import { ColorPicker } from "@/app/components/ui/color-picker"
 import { ArrowLeft, Save } from "lucide-react"
 import { useAppointmentTags } from "@/contexts/appointment-tags-context"
 import Link from "next/link"
+import React from "react"
 
 interface EditAppointmentTagPageProps {
-  params: {
+  params: Promise<{
     id: string
-  }
+  }>
 }
 
 export default function EditAppointmentTagPage({ params }: EditAppointmentTagPageProps) {
-  const { id } = params
+  const { id } = React.use(params)
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
   const [color, setColor] = useState("")

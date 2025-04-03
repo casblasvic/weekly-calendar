@@ -17,7 +17,8 @@ import {
   Tarifa,
   TipoIVA,
   Producto,
-  Consumo
+  Consumo,
+  Bono
 } from './models/interfaces';
 import {
   Client
@@ -49,6 +50,8 @@ export class LocalDataService implements DataService {
     clients: Client[];
     scheduleTemplates: any[];
     productos: Producto[];
+    consumos: Consumo[];
+    bonos: Bono[];
   };
 
   private initialized: boolean = false;
@@ -67,7 +70,9 @@ export class LocalDataService implements DataService {
       entityDocuments: {},
       clients: [],
       scheduleTemplates: [],
-      productos: []
+      productos: [],
+      consumos: [],
+      bonos: []
     };
   }
 
@@ -86,7 +91,7 @@ export class LocalDataService implements DataService {
     } catch (error) {
       console.error('Error al inicializar LocalDataService:', error);
       // Mantener datos vacíos en caso de error
-      this.data = { clinicas: [], tarifas: [], familiasTarifa: [], servicios: [], tiposIVA: [], equipos: [], scheduleBlocks: [], entityImages: {}, entityDocuments: {}, clients: [], scheduleTemplates: [], productos: [] };
+      this.data = { clinicas: [], tarifas: [], familiasTarifa: [], servicios: [], tiposIVA: [], equipos: [], scheduleBlocks: [], entityImages: {}, entityDocuments: {}, clients: [], scheduleTemplates: [], productos: [], consumos: [], bonos: [] };
       throw error;
     }
   }
@@ -1312,5 +1317,188 @@ export class LocalDataService implements DataService {
   async getConsumosByServicioId(servicioId: string): Promise<Consumo[]> {
     const servicio = await this.getServicioById(String(servicioId));
     return servicio?.consumos || [];
+  }
+
+  // Implementación de operaciones de Bonos
+  async getAllBonos(): Promise<Bono[]> {
+    try {
+      // Asegurar que this.data y this.data.bonos existan
+      if (!this.data || !this.data.bonos) {
+        console.log('[LocalDataService] Inicializando array de bonos vacío en getAllBonos');
+        if (!this.data) this.data = {} as any;
+        this.data.bonos = [];
+      }
+      
+      return JSON.parse(JSON.stringify(this.data.bonos || [])); // Devolver copia segura
+    } catch (error) {
+      console.error(`[LocalDataService] Error en getAllBonos`, error);
+      return []; // Retornar array vacío en caso de error
+    }
+  }
+
+  async getBonoById(id: string): Promise<Bono | null> {
+    try {
+      // Asegurar que this.data y this.data.bonos existan
+      if (!this.data || !this.data.bonos) {
+        console.log('[LocalDataService] Inicializando array de bonos vacío en getBonoById');
+        if (!this.data) this.data = {} as any;
+        this.data.bonos = [];
+        return null;
+      }
+      
+      // Buscar el bono de forma segura
+      const bono = this.data.bonos.find(b => b && String(b.id) === String(id));
+      return bono ? JSON.parse(JSON.stringify(bono)) : null; // Devolver copia
+    } catch (error) {
+      console.error(`[LocalDataService] Error en getBonoById(${id})`, error);
+      return null; // Retornar null en caso de error
+    }
+  }
+
+  async createBono(bono: Omit<Bono, 'id'>): Promise<Bono> {
+    try {
+      // Asegurar que this.data y this.data.bonos existan
+      if (!this.data || !this.data.bonos) {
+        console.log('[LocalDataService] Inicializando array de bonos vacío en createBono');
+        if (!this.data) this.data = {} as any;
+        this.data.bonos = [];
+      }
+      
+      // Crear el nuevo bono con ID
+      const newBono: Bono = { 
+        ...bono, 
+        id: generateId('bono'),
+        isActive: true 
+      };
+      
+      // Añadir a la colección
+      this.data.bonos.push(newBono);
+      this.saveData();
+      
+      return JSON.parse(JSON.stringify(newBono)); // Devolver copia
+    } catch (error) {
+      console.error('[LocalDataService] Error en createBono:', error);
+      throw new Error('No se pudo crear el bono');
+    }
+  }
+
+  async updateBono(id: string, bono: Partial<Bono>): Promise<Bono | null> {
+    try {
+      // Asegurar que this.data y this.data.bonos existan
+      if (!this.data || !this.data.bonos) {
+        console.log('[LocalDataService] Inicializando array de bonos vacío en updateBono');
+        if (!this.data) this.data = {} as any;
+        this.data.bonos = [];
+        return null;
+      }
+      
+      // Buscar el índice del bono a actualizar
+      const index = this.data.bonos.findIndex(b => b && String(b.id) === String(id));
+      if (index === -1) return null;
+      
+      // Actualizar el bono
+      this.data.bonos[index] = { 
+        ...this.data.bonos[index], 
+        ...bono 
+      };
+      
+      this.saveData();
+      return JSON.parse(JSON.stringify(this.data.bonos[index])); // Devolver copia
+    } catch (error) {
+      console.error(`[LocalDataService] Error en updateBono(${id}):`, error);
+      return null;
+    }
+  }
+
+  async deleteBono(id: string): Promise<boolean> {
+    try {
+      // Asegurar que this.data y this.data.bonos existan
+      if (!this.data || !this.data.bonos) {
+        console.log('[LocalDataService] Inicializando array de bonos vacío en deleteBono');
+        if (!this.data) this.data = {} as any;
+        this.data.bonos = [];
+        return false;
+      }
+      
+      // Eliminar el bono
+      const initialLength = this.data.bonos.length;
+      this.data.bonos = this.data.bonos.filter(bono => bono && String(bono.id) !== String(id));
+      const deleted = initialLength > this.data.bonos.length;
+      
+      if (deleted) {
+        this.saveData();
+      }
+      
+      return deleted;
+    } catch (error) {
+      console.error(`[LocalDataService] Error en deleteBono(${id}):`, error);
+      return false;
+    }
+  }
+
+  async getBonosByServicioId(servicioId: string): Promise<Bono[]> {
+    // Esta función está causando errores, necesita una verificación más robusta
+    try {
+      // Asegurar que this.data y this.data.bonos existan
+      if (!this.data || !this.data.bonos) {
+        console.log('[LocalDataService] Inicializando array de bonos vacío');
+        if (!this.data) this.data = {} as any;
+        this.data.bonos = [];
+      }
+      
+      // Filtrar los bonos de forma segura
+      const bonos = this.data.bonos.filter(bono => 
+        bono && bono.servicioId && String(bono.servicioId) === String(servicioId)
+      );
+      
+      return JSON.parse(JSON.stringify(bonos || [])); // Devolver copia segura
+    } catch (error) {
+      console.error(`[LocalDataService] Error en getBonosByServicioId(${servicioId})`, error);
+      return []; // Retornar array vacío en caso de error
+    }
+  }
+
+  async getBonosHabilitados(): Promise<Bono[]> {
+    try {
+      // Asegurar que this.data y this.data.bonos existan
+      if (!this.data || !this.data.bonos) {
+        console.log('[LocalDataService] Inicializando array de bonos vacío en getBonosHabilitados');
+        if (!this.data) this.data = {} as any;
+        this.data.bonos = [];
+      }
+      
+      // Filtrar los bonos habilitados de forma segura
+      const bonos = this.data.bonos.filter(bono => bono && !bono.deshabilitado);
+      
+      return JSON.parse(JSON.stringify(bonos)); // Devolver copia
+    } catch (error) {
+      console.error('[LocalDataService] Error en getBonosHabilitados:', error);
+      return []; // Retornar array vacío en caso de error
+    }
+  }
+
+  async toggleBonoStatus(id: string): Promise<boolean> {
+    try {
+      // Asegurar que this.data y this.data.bonos existan
+      if (!this.data || !this.data.bonos) {
+        console.log('[LocalDataService] Inicializando array de bonos vacío en toggleBonoStatus');
+        if (!this.data) this.data = {} as any;
+        this.data.bonos = [];
+        return false;
+      }
+      
+      // Buscar el bono
+      const index = this.data.bonos.findIndex(b => b && String(b.id) === String(id));
+      if (index === -1) return false;
+      
+      // Cambiar el estado
+      this.data.bonos[index].deshabilitado = !this.data.bonos[index].deshabilitado;
+      this.saveData();
+      
+      return true;
+    } catch (error) {
+      console.error(`[LocalDataService] Error en toggleBonoStatus(${id}):`, error);
+      return false;
+    }
   }
 } 

@@ -8,28 +8,31 @@ import { ClientProvider } from './client-context';
 import { ScheduleTemplatesProvider } from './schedule-templates-context';
 import { ScheduleBlocksProvider } from './schedule-blocks-context';
 import { AppointmentTagsProvider } from './appointment-tags-context';
+import { DataServiceProvider } from './data-context';
 
 // Combine all providers
 export const AppProviders: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return (
-    <InterfazProvider>
-      <FileProvider>
-        <StorageProvider>
-          <ImageProvider>
-            <DocumentProvider>
-              <ClientProvider>
-                <ScheduleTemplatesProvider>
-                  <ScheduleBlocksProvider>
-                    <AppointmentTagsProvider>
-                      {children}
-                    </AppointmentTagsProvider>
-                  </ScheduleBlocksProvider>
-                </ScheduleTemplatesProvider>
-              </ClientProvider>
-            </DocumentProvider>
-          </ImageProvider>
-        </StorageProvider>
-      </FileProvider>
-    </InterfazProvider>
+    <DataServiceProvider>
+      <InterfazProvider>
+        <FileProvider>
+          <StorageProvider>
+            <ImageProvider>
+              <DocumentProvider>
+                <ClientProvider>
+                  <ScheduleTemplatesProvider>
+                    <ScheduleBlocksProvider>
+                      <AppointmentTagsProvider>
+                        {children}
+                      </AppointmentTagsProvider>
+                    </ScheduleBlocksProvider>
+                  </ScheduleTemplatesProvider>
+                </ClientProvider>
+              </DocumentProvider>
+            </ImageProvider>
+          </StorageProvider>
+        </FileProvider>
+      </InterfazProvider>
+    </DataServiceProvider>
   );
 }; 

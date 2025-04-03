@@ -4,13 +4,13 @@ import { Button } from "@/components/ui/button"
 import { useRouter, useSearchParams } from "next/navigation"
 import React from "react"
 
-export default function DatosAppPage({ params }: { params: { id: string, servicioId: string } }) {
+export default function DatosAppPage({ params }: { params: Promise<{ id: string, servicioId: string }> }) {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const tarifaId = Array.isArray(params.id) ? params.id[0] : params.id as string
+  const { id, servicioId } = React.use(params)
+  const tarifaId = Array.isArray(id) ? id[0] : id as string
   
   const handleVolver = () => {
-    const servicioId = params.servicioId;
     router.push(`/configuracion/tarifas/${tarifaId}/servicio/${servicioId}`)
   }
   

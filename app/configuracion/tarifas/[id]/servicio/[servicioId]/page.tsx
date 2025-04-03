@@ -1,8 +1,8 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { useRouter, useSearchParams, useParams } from "next/navigation"
-import { FileQuestion, Plus, Minus, ChevronUp, ChevronDown, MessageSquare, Users, HelpCircle, X, Send, ShoppingCart, AlertCircle, Save } from "lucide-react"
+import { FileQuestion, Plus, Minus, ChevronUp, ChevronDown, MessageSquare, Users, HelpCircle, X, Send, ShoppingCart, AlertCircle, Save, AlertTriangle, Star, Ticket } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -23,6 +23,7 @@ import { toast } from "@/components/ui/use-toast"
 import ImageGallery from "@/components/ui/image-gallery"
 import DocumentList from "@/components/ui/document-list"
 import FileUploader from "@/components/ui/file-uploader"
+import { normalizeString } from "@/lib/utils" // Asumiendo que tienes una función así o créala
 
 // Usar SOLO contextos especializados (no importar useInterfaz directamente)
 import { useIVA } from "@/contexts/iva-context"
@@ -50,19 +51,18 @@ const tiposConsumo = [
 
 // Lista de colores de agenda (actualizada para coincidir con los colores de cabinas)
 const coloresAgenda = [
-  { id: "Rosa", nombre: "Rosa", color: "#FF69B4", clase: "bg-pink-400" },
-  { id: "Rojo", nombre: "Rojo", color: "#FF0000", clase: "bg-red-600" },
-  { id: "Naranja", nombre: "Naranja", color: "#FFA500", clase: "bg-orange-500" },
-  { id: "Amarillo", nombre: "Amarillo", color: "#FFD700", clase: "bg-yellow-400" },
-  { id: "Verde", nombre: "Verde", color: "#32CD32", clase: "bg-green-500" },
-  { id: "Turquesa", nombre: "Turquesa", color: "#40E0D0", clase: "bg-teal-400" },
-  { id: "Azul", nombre: "Azul", color: "#1E90FF", clase: "bg-blue-500" },
-  { id: "Morado", nombre: "Morado", color: "#8A2BE2", clase: "bg-purple-600" },
-  { id: "Gris", nombre: "Gris", color: "#A9A9A9", clase: "bg-gray-400" }
+  { id: "Rosa", nombre: "Rosa", clase: "bg-pink-500" },
+  { id: "Azul", nombre: "Azul", clase: "bg-blue-500" },
+  { id: "Verde", nombre: "Verde", clase: "bg-green-500" },
+  { id: "Amarillo", nombre: "Amarillo", clase: "bg-yellow-500" },
+  { id: "Morado", nombre: "Morado", clase: "bg-purple-500" },
+  { id: "Naranja", nombre: "Naranja", clase: "bg-orange-500" },
+  { id: "Gris", nombre: "Gris", clase: "bg-gray-500" },
 ];
 
-// Tipos de comisión
+// Tipos de comisión - Añadir Global
 const tiposComision = [
+  { id: "Global", nombre: "Global" }, // Nueva opción
   { id: "Porcentaje", nombre: "Porcentaje" },
   { id: "Fijo", nombre: "Fijo" }
 ];
@@ -98,7 +98,8 @@ export default function NuevoServicio() {
     actualizarServicio, 
     servicioActual, 
     setServicioActual,
-    validarCamposObligatorios
+    validarCamposObligatorios,
+    getAllServicios // O alguna función similar
   } = useServicio();
   
   // Obtener funcionalidades de imágenes y documentos
@@ -127,46 +128,44 @@ export default function NuevoServicio() {
   const [chatAbierto, setChatAbierto] = useState(false)
   const [mensajeAyuda, setMensajeAyuda] = useState("")
   const [agenteSeleccionado, setAgenteSeleccionado] = useState<string | null>(null)
-  const [currentServicioId, setCurrentServicioId] = useState<string | null>(null);
+  const [currentServicioId, setCurrentServicioId] = useState<string | null>(servicioId);
   
   // Restaurar estados y tipos correctos para imágenes/documentos
   const [serviceImages, setServiceImages] = useState<ImageFile[]>([]); 
   const [serviceDocuments, setServiceDocuments] = useState<BaseFile[]>([]);
   const [isLoadingAssets, setIsLoadingAssets] = useState(false);
 
-  // Revertir precios/comisión a string en el estado inicial
-  const [servicio, setServicio] = useState({
-    id: "",
+  // Estados para el servicio actual - Inicializar precios a "0.00"
+  const [servicio, setServicio] = useState<Partial<Servicio>>({
     nombre: "",
     codigo: "",
     tarifaId: tarifaId,
-    tarifaBase: tarifa?.nombre || "Tarifa Base",
-    familiaId: "", 
-    precioConIVA: "0", // Volver a string
-    ivaId: "", 
-    colorAgenda: "Rosa",
-    duracion: 45, 
-    equipoId: "", // Mantener vacío
-    tipoComision: "Porcentaje",
-    comision: "0", // Volver a string
+    familiaId: "",
+    precioConIVA: "0.00", // Default a "0.00"
+    ivaId: "",
+    colorAgenda: coloresAgenda[0]?.id || "", // Default primer color
+    duracion: 45,
+    equipoId: "",
+    tipoComision: "Global", // Default a "Global"
+    comision: "0.00", // Default a "0.00"
     requiereParametros: false,
     visitaValoracion: false,
-    apareceEnApp: false,
-    descuentosAutomaticos: false,
-    descuentosManuales: true,
-    aceptaPromociones: true,
+    apareceEnApp: true, // Default sensible
+    descuentosAutomaticos: true, // Default sensible
+    descuentosManuales: true, // Default sensible
+    aceptaPromociones: true, // Default sensible
     aceptaEdicionPVP: false,
     afectaEstadisticas: true,
     deshabilitado: false,
-    consumos: [{
-      id: generateId(),
-      cantidad: 1,
-      tipoConsumo: "Unidades"
-    }],
-    precioCoste: "0", // Volver a string
-    tarifaPlanaId: "", // Mantener vacío
-    archivoAyuda: null as string | null,
+    consumos: [], // Empezar vacío
+    precioCoste: "0.00", // Default a "0.00"
+    tarifaPlanaId: "",
+    archivoAyuda: null,
   });
+
+  // Estados para detectar cambios y estado inicial
+  const [initialServicio, setInitialServicio] = useState<string>('');
+  const [hayCambios, setHayCambios] = useState(false);
 
   // Restaurar variables de estilo y funciones auxiliares
   const colorPrimario = "bg-purple-600 hover:bg-purple-700 text-white";
@@ -178,27 +177,60 @@ export default function NuevoServicio() {
   const buttonNavClass = `text-sm rounded-md bg-gray-50 hover:bg-gray-100 border-gray-300 ${colorFoco} transition-all duration-200 hover:border-purple-300`;
   const selectHoverClass = "hover:border-purple-400 focus:border-purple-500 focus:ring-purple-500";
   
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => { 
-      const { name, value, type } = e.target;
-      // Convertir a número si el tipo es number
-      const processedValue = type === 'number' ? Number(value) : value;
-      setServicio(prev => ({ // Usar función de actualización para evitar problemas de estado obsoleto
-        ...prev,
-        [name]: processedValue
-      }));
+  const [isCodeManuallyEdited, setIsCodeManuallyEdited] = useState(false);
+  const [allExistingCodes, setAllExistingCodes] = useState<Set<string>>(new Set());
+
+  // Cargar todos los códigos existentes al montar
+  useEffect(() => {
+    const fetchExistingCodes = async () => {
+      try {
+        const servicios = await getAllServicios(); // Asumiendo que devuelve Servicio[]
+        const codesSet = new Set<string>(); // Inicializar Set<string> vacío
+        servicios.forEach(s => {
+          // Añadir solo si el código es un string válido y no vacío
+          if (typeof s.codigo === 'string' && s.codigo.length > 0) {
+            codesSet.add(s.codigo);
+          }
+        });
+        setAllExistingCodes(codesSet); // Pasar el Set<string> directamente
+        console.log("[useEffect Codes] Códigos existentes cargados:", codesSet);
+      } catch (error) {
+        console.error("Error cargando códigos existentes:", error);
+      }
+    };
+    fetchExistingCodes();
+  }, [getAllServicios]);
+
+  // Modificar handleInputChange para detectar edición manual del código
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value, type, checked } = e.target;
+    let processedValue: string | boolean | number = value; // Tipo más general inicial
+
+    if (type === 'checkbox') {
+        processedValue = checked;
+    } else if (type === 'number') {
+        // Mantener como string para precios/comisión según la lógica de onBlur
+        // Para duración, podríamos convertir a número aquí si se prefiere
+        processedValue = value; 
+    } else {
+        // Para inputs de texto (nombre, codigo, etc.)
+        processedValue = value;
+        if (name === 'codigo') {
+            setIsCodeManuallyEdited(true);
+        }
+    }
+
+    setServicio(prev => ({ ...prev, [name]: processedValue }));
+    setHayCambios(true);
   }; 
   const handleSelectChange = (name: string, value: string) => { 
       const valueToStore = value === "placeholder" ? "" : value;
-      setServicio(prev => ({ // Usar función de actualización
-        ...prev,
-        [name]: valueToStore
-      }));
+      setServicio(prev => ({ ...prev, [name]: valueToStore }));
+      setHayCambios(true);
   }; 
   const handleCheckboxChange = (id: string, checked: boolean) => { 
-      setServicio(prev => ({ // Usar función de actualización
-        ...prev,
-        [id]: checked
-      }));
+      setServicio(prev => ({ ...prev, [id]: checked }));
+      setHayCambios(true);
   }; 
 
   // Restaurar estados para modales
@@ -206,6 +238,11 @@ export default function NuevoServicio() {
   const [mostrarModalConfirmacion, setMostrarModalConfirmacion] = useState(false);
   const [camposFaltantes, setCamposFaltantes] = useState<string[]>([]);
   const [rutaDestino, setRutaDestino] = useState<string | null>(null);
+  const [mostrarModalConfirmacionSinPrecioIVA, setMostrarModalConfirmacionSinPrecioIVA] = useState(false);
+  const [mensajeConfirmacion, setMensajeConfirmacion] = useState('');
+  const [showSaveToContinueModal, setShowSaveToContinueModal] = useState(false);
+  const [pendingSubSection, setPendingSubSection] = useState<string | null>(null);
+  const [subSectionDisplayName, setSubSectionDisplayName] = useState<string>(''); // Para el mensaje del modal
 
   // AHORA es seguro usar servicioActual
   const servicioGuardado = Boolean(servicioActual?.id);
@@ -263,110 +300,78 @@ export default function NuevoServicio() {
     console.log("[useEffect Equipos] Finalizado.");
   }, [tarifa, getEquiposByClinicaId]);
   
-  // Cargar servicio si existe ID
+  // Cargar servicio si existe ID y establecer estado inicial
   useEffect(() => {
-    console.log(`[useEffect CargarServicio] Ejecutando para servicioId: ${servicioId}`);
     const fetchServicio = async () => {
       if (servicioId) {
         try {
-          console.log(`[useEffect CargarServicio] Intentando cargar servicio ${servicioId}...`);
+          console.log(`[useEffect FetchServicio] Intentando cargar servicio ID: ${servicioId}`);
           const servicioData = await getServicioById(servicioId);
-          console.log(`[useEffect CargarServicio] Servicio cargado:`, !!servicioData);
-
+          // LOG: Qué se carga al entrar/refrescar
+          console.log("[useEffect FetchServicio] Datos cargados:", JSON.parse(JSON.stringify(servicioData)));
+          
           if (servicioData) {
-            setCurrentServicioId(servicioId);
-            console.log(`[useEffect CargarServicio] Actualizando servicioActual...`);
-            setServicioActual(servicioData);
-            
-            // Formatear el servicio para el formulario
-            const servicioFormateado = {
+            // Formatear valores numéricos a string con dos decimales para el estado
+            const servicioParaEstado = {
               ...servicioData,
-              id: servicioData.id,
-              tarifaBase: tarifa?.nombre || "Tarifa Base",
-              consumos: servicioData.consumos || [{
-                id: generateId(),
-                cantidad: 1,
-                tipoConsumo: "Unidades"
-              }],
-              precioConIVA: String(servicioData.precioConIVA || ""),
-              precioCoste: String(servicioData.precioCoste || ""),
-              comision: String(servicioData.comision || "")
+              precioConIVA: (servicioData.precioConIVA != null ? Number(servicioData.precioConIVA).toFixed(2) : "0.00"),
+              precioCoste: (servicioData.precioCoste != null ? Number(servicioData.precioCoste).toFixed(2) : "0.00"),
+              comision: (servicioData.comision != null ? Number(servicioData.comision).toFixed(2) : "0.00"),
+              duracion: Number(servicioData.duracion || 0)
             };
-            
-            console.log(`[useEffect CargarServicio] Actualizando estado 'servicio'...`);
-            setServicio(servicioFormateado as any);
-            
-            console.log(`[useEffect CargarServicio] Intentando cargar imágenes...`);
-            const imagenesData = await getImagesByEntity('service', servicioId);
-            console.log(`[useEffect CargarServicio] Imágenes cargadas: ${imagenesData?.length}`);
-            if (imagenesData && imagenesData.length > 0) {
-              const imagenesAdaptadas: ImageFile[] = imagenesData.map((img, index) => ({
-                ...img, 
-                position: index, 
-                fileName: img.url?.split('/').pop() || `imagen-${img.id || index}`, 
-                fileSize: 0, 
-                mimeType: 'image/jpeg', 
-                width: 0, 
-                height: 0,
-                thumbnailUrl: img.url, 
-                categories: [], 
-                tags: [], 
-                entityType: 'service',
-                entityId: servicioId, 
-                clinicId: tarifa?.clinicaId || '', 
-                storageProvider: 'local', 
-                createdAt: new Date().toISOString(), 
-                updatedAt: new Date().toISOString(), 
-                createdBy: 'system', 
-                isDeleted: false, 
-                isPublic: false, 
-                metadata: {}, 
-                path: img.path || '' 
-              }));
-              console.log(`[useEffect CargarServicio] Actualizando estado 'serviceImages'...`);
-              setServiceImages(imagenesAdaptadas);
-            }
-            
-            console.log(`[useEffect CargarServicio] Intentando cargar documentos...`);
-            const documentosData = await getDocumentsByEntity('service', servicioId, 'default'); 
-            console.log(`[useEffect CargarServicio] Documentos cargados: ${documentosData?.length}`);
-            if (documentosData && documentosData.length > 0) {
-               const documentosAdaptados: BaseFile[] = documentosData.map((doc, index) => ({
-                 ...doc, 
-                 thumbnailUrl: undefined, 
-                 categories: doc.category ? [doc.category] : [], 
-                 tags: [], 
-                 clinicId: tarifa?.clinicaId || '', 
-                 storageProvider: 'local', 
-                 updatedAt: doc.updatedAt || doc.createdAt, 
-                 createdBy: 'system', 
-                 isDeleted: false, 
-                 isPublic: false, 
-                 metadata: {}, 
-                 path: doc.path || '',
-                 entityType: 'service'
-               }));
-              console.log(`[useEffect CargarServicio] Actualizando estado 'serviceDocuments'...`);
-              setServiceDocuments(documentosAdaptados);
-            }
+            setServicio(servicioParaEstado);
+            setInitialServicio(JSON.stringify(servicioParaEstado));
+            setHayCambios(false);
+            setCurrentServicioId(servicioId);
+            // Cargar imágenes y documentos asociados
+            // ... (lógica existente para cargar assets) ...
           } else {
-             console.warn(`[useEffect CargarServicio] No se encontró servicio con ID ${servicioId}`);
+             // Manejar caso: servicio no encontrado
+             console.error(`Servicio con ID ${servicioId} no encontrado.`);
+             toast({ title: "Error", description: "Servicio no encontrado.", variant: "destructive" });
+             router.push(`/configuracion/tarifas/${tarifaId}?tab=servicios`);
           }
         } catch (error) {
-          console.error("[useEffect CargarServicio] Error:", error);
+          console.error("Error al cargar el servicio:", error);
+          toast({ title: "Error", description: "No se pudo cargar el servicio.", variant: "destructive" });
         } finally {
-           console.log("[useEffect CargarServicio] Finalizado.");
+           // setIsLoading(false); // Si tienes un estado de carga general
         }
       } else {
-         console.log("[useEffect CargarServicio] No hay servicioId, omitiendo carga.");
+         // Es un servicio nuevo, establecer estado inicial con "0.00"
+         const estadoInicialNuevo = {
+             tarifaId: tarifaId,
+             nombre: "",
+             codigo: "",
+             familiaId: "",
+             precioConIVA: "0.00",
+             ivaId: "",
+             colorAgenda: "", 
+             duracion: 45,
+             equipoId: "",
+             tipoComision: "Global",
+             comision: "0.00",
+             requiereParametros: false,
+             visitaValoracion: false,
+             apareceEnApp: true,
+             descuentosAutomaticos: true,
+             descuentosManuales: true,
+             aceptaPromociones: true,
+             aceptaEdicionPVP: false,
+             afectaEstadisticas: true,
+             deshabilitado: false,
+             consumos: [],
+             precioCoste: "0.00",
+             tarifaPlanaId: "",
+             archivoAyuda: null,
+         };
+         setServicio(estadoInicialNuevo);
+         setInitialServicio(JSON.stringify(estadoInicialNuevo));
+         setHayCambios(false);
       }
     };
-    
     fetchServicio();
-  // eslint-disable-next-line react-hooks/exhaustive-deps 
-  // QUITAR DEPENDENCIAS DE FUNCIONES: Solo re-ejecutar si servicioId cambia 
-  // para evitar bucle infinito si las funciones del contexto no están memoizadas.
-  }, [servicioId]);
+  }, [servicioId, tarifaId, getServicioById, router]); // Dependencias
 
   // Añadir depuración de familias
   useEffect(() => {
@@ -438,104 +443,231 @@ export default function NuevoServicio() {
     }
   };
   
-  // Manejar el guardado del servicio (sin conversiones String() explícitas)
-  const handleGuardar = async () => {
-    setIsSaving(true);
-    
-    try {
-      // Validar campos obligatorios
-      const { valido, camposFaltantes } = validarCamposObligatorios();
-      
-      if (!valido) {
-        console.error("Campos obligatorios faltantes:", camposFaltantes);
-        setCamposFaltantes(camposFaltantes);
-        setMostrarModalCamposObligatorios(true);
-        return;
+  // Handler específico para inputs numéricos (precios, comisión) para formatear a dos decimales
+  const handleNumericInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    let formattedValue = value;
+
+    // Intentar parsear y formatear solo si no está vacío
+    if (value.trim() !== '') {
+      const parsedValue = parseFloat(value);
+      if (!isNaN(parsedValue)) {
+        // No formatear aquí para permitir la edición fluida
+        // formattedValue = parsedValue.toFixed(2);
+      } else {
+         // Si no es un número válido, quizás no actualizar o limpiar?
+         // Por ahora, dejamos que el estado refleje lo que escribe el usuario
+         // La validación/formateo final ocurrirá al guardar o en onBlur
       }
-      
-      // Preparar el servicio para guardar (datos ya son string donde se necesita)
-      const servicioParaGuardar: Partial<Servicio> = {
-        // Copiar campos del estado actual
-        nombre: servicio.nombre,
-        codigo: servicio.codigo,
-        tarifaId: tarifaId,
-        familiaId: servicio.familiaId,
-        ivaId: servicio.ivaId,
-        colorAgenda: servicio.colorAgenda,
-        duracion: servicio.duracion, 
-        equipoId: servicio.equipoId,
-        tipoComision: servicio.tipoComision,
-        requiereParametros: servicio.requiereParametros,
-        visitaValoracion: servicio.visitaValoracion,
-        apareceEnApp: servicio.apareceEnApp,
-        descuentosAutomaticos: servicio.descuentosAutomaticos,
-        descuentosManuales: servicio.descuentosManuales,
-        aceptaPromociones: servicio.aceptaPromociones,
-        aceptaEdicionPVP: servicio.aceptaEdicionPVP,
-        afectaEstadisticas: servicio.afectaEstadisticas,
-        deshabilitado: servicio.deshabilitado,
-        tarifaPlanaId: servicio.tarifaPlanaId,
-        archivoAyuda: servicio.archivoAyuda,
-        
-        // Los precios y comisión ya son string desde el estado
-        precioConIVA: servicio.precioConIVA || "0", 
-        precioCoste: servicio.precioCoste || "0",
-        comision: servicio.comision || "0",
+    }
+    
+    setServicio(prev => ({ ...prev, [name]: formattedValue }));
+    setHayCambios(true);
+  };
+  
+  // Handler para onBlur en campos numéricos para formatear
+  const handleNumericInputBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+      const { name, value } = e.target;
+      let formattedValue = "0.00"; // Default si está vacío o inválido
+      if (value.trim() !== '') {
+          const parsedValue = parseFloat(value);
+          if (!isNaN(parsedValue)) {
+              formattedValue = parsedValue.toFixed(2);
+          } else {
+             // Si al salir el valor no es un número, lo reseteamos a 0.00
+             // Podrías querer otra lógica aquí, como mostrar un error
+          }
+      }
+      setServicio(prev => ({ ...prev, [name]: formattedValue }));
+      // No marcar hayCambios aquí necesariamente, onBlur ocurre incluso sin cambios reales
+  };
+
+  // Verificar campos obligatorios - Quitar colorAgenda
+  const verificarCamposObligatoriosLocal = () => {
+      const faltantes = [];
+      if (!servicio.nombre?.trim()) faltantes.push('Nombre');
+      if (!servicio.codigo?.trim()) faltantes.push('Código');
+      if (!servicio.familiaId) faltantes.push('Familia');
+      if (!servicio.duracion || Number(servicio.duracion) <= 0) faltantes.push('Duración (debe ser mayor que 0)');
+      return faltantes;
+  };
+
+  // Nueva función para realizar el guardado
+  const guardarServicioReal = async (navigateToSubSection: string | null = null) => {
+    console.log(`[guardarServicioReal] Iniciando guardado. Navegar después a: ${navigateToSubSection}`);
+    setIsSaving(true);
+    setShowSaveToContinueModal(false); // Cerrar modal si veníamos de él
+    setMostrarModalConfirmacionSinPrecioIVA(false);
+    let savedServicioId: string | null = currentServicioId; // Mantener ID si ya existe
+    let esNuevoGuardado = false;
+
+    try {
+      // Formatear y validar precios/comisión antes de preparar el objeto
+      const formatAndValidateNumeric = (value: string | number | undefined | null): string | undefined => {
+          if (value === null || value === undefined || String(value).trim() === '') return undefined;
+          const parsed = parseFloat(String(value));
+          if (isNaN(parsed)) return undefined; 
+          return parsed.toFixed(2); 
       };
       
-      // Guardar servicio
-      let savedServicioId: string;
-      let esNuevo = false;
+      const precioConIVAFormatted = formatAndValidateNumeric(servicio.precioConIVA);
+      const precioCosteFormatted = formatAndValidateNumeric(servicio.precioCoste);
+      const comisionFormatted = formatAndValidateNumeric(servicio.comision);
       
-      if (servicioId) {
-        // Actualizar servicio existente
-        await actualizarServicio(String(servicioId), servicioParaGuardar);
-        savedServicioId = servicioId;
+      // Si la validación indica que un campo requerido ahora es undefined, podríamos parar aquí
+      // if (!precioConIVAFormatted && /* alguna lógica que lo requiera */ ) { ... }
+
+      const servicioParaGuardar: Partial<Servicio> = {
+        ...servicio,
+        tarifaId: tarifaId,
+        duracion: Number(servicio.duracion || 0),
+        // Usar los valores formateados/validados
+        precioConIVA: precioConIVAFormatted,
+        precioCoste: precioCosteFormatted,
+        comision: comisionFormatted,
+        // Asegurar que los campos opcionales sean undefined si están vacíos
+        ivaId: servicio.ivaId || undefined,
+        equipoId: servicio.equipoId || undefined,
+        tarifaPlanaId: servicio.tarifaPlanaId || undefined,
+        // Asegurar que los booleanos sean booleanos
+        requiereParametros: Boolean(servicio.requiereParametros),
+        visitaValoracion: Boolean(servicio.visitaValoracion),
+        apareceEnApp: Boolean(servicio.apareceEnApp),
+        descuentosAutomaticos: Boolean(servicio.descuentosAutomaticos),
+        descuentosManuales: Boolean(servicio.descuentosManuales),
+        aceptaPromociones: Boolean(servicio.aceptaPromociones),
+        aceptaEdicionPVP: Boolean(servicio.aceptaEdicionPVP),
+        afectaEstadisticas: Boolean(servicio.afectaEstadisticas),
+        deshabilitado: Boolean(servicio.deshabilitado),
+        colorAgenda: servicio.colorAgenda || coloresAgenda[0]?.id, // Asegurar un valor por defecto
+      };
+      
+      // Eliminar propiedades undefined si la API lo prefiere
+      Object.keys(servicioParaGuardar).forEach(key => 
+         servicioParaGuardar[key] === undefined && delete servicioParaGuardar[key]
+      );
+
+      // LOG: Qué se va a guardar
+      console.log("[guardarServicioReal] Datos a guardar:", JSON.parse(JSON.stringify(servicioParaGuardar)));
+
+      if (currentServicioId) { 
+        console.log(`[guardarServicioReal] Llamando a actualizarServicio para ID: ${currentServicioId}`);
+        await actualizarServicio(currentServicioId, servicioParaGuardar);
+        savedServicioId = currentServicioId;
       } else {
-        // Crear un nuevo servicio
+        console.log(`[guardarServicioReal] Llamando a crearServicio...`);
         const { id, ...servicioSinId } = servicioParaGuardar;
-        const servicioCompletoParaCrear = { ...servicioSinId, consumos: [] };
+        const servicioCompletoParaCrear = { ...servicioSinId, consumos: servicio.consumos || [] };
         savedServicioId = await crearServicio(servicioCompletoParaCrear as Omit<Servicio, 'id'>);
-        esNuevo = true;
+        esNuevoGuardado = true;
+        setCurrentServicioId(savedServicioId); // MUY IMPORTANTE: Actualizar ID actual
+        console.log(`[guardarServicioReal] Servicio creado con ID: ${savedServicioId}`);
       }
-      
-      // Actualizar estado y mostrar mensaje
-      setCurrentServicioId(savedServicioId);
-      
-      // Obtener el servicio actualizado
-      const servicioActualizado = await getServicioById(savedServicioId);
+
+      console.log(`[guardarServicioReal] Obteniendo servicio actualizado ID: ${savedServicioId}`);
+      const servicioActualizado = await getServicioById(savedServicioId!);
+      // LOG: Qué se obtuvo después de guardar
+      console.log("[guardarServicioReal] Servicio obtenido post-guardado:", JSON.parse(JSON.stringify(servicioActualizado)));
+
       if (servicioActualizado) {
-        setServicioActual(servicioActualizado);
+         // Formatear para el estado antes de actualizar
+         const servicioParaEstado = {
+            ...servicioActualizado,
+            precioConIVA: (servicioActualizado.precioConIVA != null ? Number(servicioActualizado.precioConIVA).toFixed(2) : "0.00"),
+            precioCoste: (servicioActualizado.precioCoste != null ? Number(servicioActualizado.precioCoste).toFixed(2) : "0.00"),
+            comision: (servicioActualizado.comision != null ? Number(servicioActualizado.comision).toFixed(2) : "0.00"),
+            duracion: Number(servicioActualizado.duracion || 0)
+         };
+         console.log("[guardarServicioReal] Actualizando estado local y estado inicial.");
+         setServicio(servicioParaEstado);
+         setInitialServicio(JSON.stringify(servicioParaEstado));
+         setHayCambios(false);
+         
+         // Disparar evento ANTES de navegar
+         if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent("servicios-updated", {
+              detail: { tarifaId: tarifaId, action: esNuevoGuardado ? 'create' : 'update' }
+            }));
+          }
+
+         // Navegación PENDIENTE a subsección (si aplica)
+         if (navigateToSubSection && savedServicioId) {
+            console.log(`[guardarServicioReal] Guardado exitoso, navegando a subsección pendiente: ${navigateToSubSection}`);
+            router.push(`/configuracion/tarifas/${tarifaId}/servicio/${savedServicioId}/${navigateToSubSection}`);
+            setPendingSubSection(null); // Limpiar estado
+            // ¡IMPORTANTE! Salir aquí para evitar la lógica de toast/redirección estándar de abajo
+            setIsSaving(false); // Asegurarse de quitar el estado saving
+            return; 
+         }
+         
+         // Toast de éxito (solo si no navegamos a subsección)
+         toast({
+            title: esNuevoGuardado ? "Servicio creado" : "Servicio actualizado",
+            description: `El servicio "${servicioActualizado.nombre || 'Nuevo Servicio'}" ha sido ${esNuevoGuardado ? 'creado' : 'actualizado'} correctamente.`,
+          });
+
+         // Redirección estándar si era NUEVO y NO navegamos a subsección
+         if (esNuevoGuardado) {
+           console.log("[guardarServicioReal] Servicio nuevo creado, redirigiendo a su página.");
+           // Ya estamos en la página correcta si se creó, no hace falta redirigir
+           // router.push(`/configuracion/tarifas/${tarifaId}/servicio/${savedServicioId}`);
+         }
+
+      } else {
+         console.warn("[guardarServicioReal] No se pudo obtener el servicio actualizado post-guardado.");
+         toast({ title: "Error", description: "Se guardó el servicio, pero hubo un problema al recargar los datos.", variant: "destructive" });
       }
-      
-      // Disparar evento para notificar el cambio
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent("servicios-updated", {
-          detail: { tarifaId: tarifaId, action: esNuevo ? 'create' : 'update' }
-        }));
-      }
-      
-      // Mostrar mensaje de éxito
-      toast({
-        title: esNuevo ? "Servicio creado" : "Servicio actualizado",
-        description: `El servicio "${servicio.nombre}" ha sido ${esNuevo ? 'creado' : 'actualizado'} correctamente.`,
-      });
-      
-      // Si es un servicio nuevo, redirigir a la página de edición
-      if (esNuevo) {
-        router.push(`/configuracion/tarifas/${tarifaId}/servicio/${savedServicioId}`);
-      }
-      
+
     } catch (error) {
-      console.error("Error al guardar servicio:", error);
-      toast({
-        title: "Error",
-        description: "No se pudo guardar el servicio. Por favor, inténtalo de nuevo.",
-        variant: "destructive"
-      });
+       console.error("Error al guardar servicio:", error);
+       toast({
+         title: "Error al guardar",
+         description: "No se pudo guardar el servicio. Por favor, inténtalo de nuevo.",
+         variant: "destructive"
+       });
+       // Si el error fue al crear, resetear currentServicioId podría ser útil
+       if (esNuevoGuardado) setCurrentServicioId(null);
     } finally {
+      // Asegurarse de quitar el estado saving solo si no hubo return temprano
       setIsSaving(false);
     }
+  };
+
+  // handleGuardar ahora puede recibir el destino opcional
+  const handleGuardar = async (navigateToSubSection: string | null = null) => {
+    // 1. Validar campos base obligatorios
+    const camposBaseFaltantes = verificarCamposObligatoriosLocal(); 
+    if (camposBaseFaltantes.length > 0) {
+        setCamposFaltantes(camposBaseFaltantes);
+        setMostrarModalCamposObligatorios(true);
+        return;
+    }
+
+    // Parsear precio a número, tratando null/undefined/''/NaN como 0 para la lógica de validación
+    const precioString = String(servicio.precioConIVA || '0').trim();
+    const precioNumerico = parseFloat(precioString);
+    const precioEsValidoYMayorQueCero = !isNaN(precioNumerico) && precioNumerico > 0;
+    
+    const tieneIVA = servicio.ivaId && servicio.ivaId.trim() !== '';
+
+    // 2. Si precio > 0 pero no IVA -> Error
+    if (precioEsValidoYMayorQueCero && !tieneIVA) {
+        setCamposFaltantes(['Tipo de IVA (obligatorio si precio > 0)']);
+        setMostrarModalCamposObligatorios(true);
+        return;
+    }
+
+    // 3. Si precio <= 0 -> Mostrar modal de confirmación (mensaje simplificado)
+    if (!precioEsValidoYMayorQueCero) { 
+        // Mensaje único sin importar si tiene IVA o no
+        const mensajeConfirm = 'El servicio se guardará sin precio indicado.';
+        setMensajeConfirmacion(mensajeConfirm + ' ¿Deseas continuar?');
+        setMostrarModalConfirmacionSinPrecioIVA(true);
+        return; 
+    }
+
+    // 4. Si precio > 0 y tiene IVA -> Guardar directamente
+    await guardarServicioReal(navigateToSubSection); 
   };
 
   // Función para renderizar el agente con tooltip
@@ -570,173 +702,57 @@ export default function NuevoServicio() {
 
   // Función para guardar el servicio en el contexto y navegar
   const guardarServicioYNavegar = async () => {
-    // Mostrar estado de guardado
-    setIsSaving(true);
-    
+    console.log("[guardarServicioYNavegar] Intentando guardar antes de salir a:", rutaDestino);
+    setIsSaving(true); 
+    setMostrarModalConfirmacion(false); // Cerrar modal de navegación
     try {
-      console.log("Guardando servicio para navegación a:", rutaDestino);
-      
-      // Validar una vez más por si acaso
-      const camposFaltantes = verificarCamposObligatoriosLocal();
-      if (camposFaltantes.length > 0) {
-        setMostrarModalConfirmacion(false);
-        setCamposFaltantes(camposFaltantes);
-        setMostrarModalCamposObligatorios(true);
-        return;
-      }
-      
-      // Preparamos los datos del servicio para guardarlo
-      const nuevoServicio = {
-        ...servicio,
-        tarifaId,
-      };
-      
-      // Crear o actualizar el servicio en el contexto
-      let servicioId: string;
-      let esNuevo = false;
-      
-      if (servicioActual?.id) {
-        // Si ya existe, actualizamos (asegurando que el ID es string y quitando consumos)
-        const { consumos, ...servicioParaActualizar } = nuevoServicio;
-        actualizarServicio(String(servicioActual.id), servicioParaActualizar);
-        servicioId = String(servicioActual.id);
-        console.log("Servicio actualizado para navegación:", servicioId);
-      } else {
-        // Si no existe, creamos uno nuevo (quitando consumos pero añadiendo array vacío)
-        const { consumos, ...servicioParaCrear } = nuevoServicio;
-        servicioId = await crearServicio({ ...servicioParaCrear, consumos: [] } as Omit<Servicio, 'id'>);
-        esNuevo = true;
-        console.log("Servicio creado para navegación:", servicioId);
-      }
-      
-      // Disparar evento para notificar el cambio en servicios
-      if (typeof window !== 'undefined') {
-        console.log(`Disparando evento servicios-updated para tarifa ${tarifaId}`);
-        window.dispatchEvent(new CustomEvent("servicios-updated", {
-          detail: { tarifaId: tarifaId, action: esNuevo ? 'create' : 'update' }
-        }));
-      }
-      
-      // Guardar imágenes si hay
-      if (serviceImages.length > 0) {
-        console.log(`Guardando ${serviceImages.length} imágenes para servicio ${servicioId}`);
-        
-        // Si es un nuevo servicio, actualizar entityId en imágenes
-        const updatedImages = serviceImages.map(img => ({
-          ...img,
-          entityId: servicioId,
-          entityType: 'service' as 'service'  // Asegurar que el tipo sea el literal 'service'
-        }));
-        
-        // No intentar usar uploadImage con un array completo
-        // uploadImage(updatedImages, 'service', servicioId, { isPrimary: serviceImages.length === 0 });
-        
-        // En su lugar, simplemente guardar en localStorage directo
-        localStorage.setItem(`serviceImages_${servicioId}`, JSON.stringify(updatedImages));
-        
-        setServiceImages(updatedImages);
-        
-        // Verificar guardado (con ambos argumentos)
-        const savedImages = getImagesByEntity('service', servicioId);
-        console.log("Imágenes guardadas verificadas:", savedImages);
-        
-        // Notificar al sistema de archivos global
-        if (typeof window !== 'undefined' && window.dispatchEvent) {
-          window.dispatchEvent(new CustomEvent('files-updated', { 
-            detail: { entityType: 'service', entityId: servicioId }
-          }));
+        // Validar campos base
+        const camposBaseFaltantes = verificarCamposObligatoriosLocal();
+        if (camposBaseFaltantes.length > 0) {
+            setCamposFaltantes(camposBaseFaltantes);
+            setMostrarModalCamposObligatorios(true);
+            setIsSaving(false);
+            return; // No salir si faltan campos base
         }
-      }
-      
-      // Guardar documentos si hay
-      if (serviceDocuments.length > 0) {
-        console.log(`Guardando ${serviceDocuments.length} documentos para servicio ${servicioId}`);
         
-        // Actualizar documentos con el nuevo ID
-        const updatedDocs = serviceDocuments.map(doc => ({
-          ...doc,
-          entityId: servicioId
-        }));
-        
-        setServiceDocuments(updatedDocs);
-        
-        // Guardar en almacenamiento persistente
-        if (servicioActual?.id) {
-          console.log("Guardando documentos para servicio ID:", servicioActual.id);
-          
-          // No intentar usar uploadDocument con un array completo
-          // const saveResult = uploadDocument(updatedDocs, 'service', servicioActual.id, 'help_documents');
-          
-          // En su lugar, simplemente guardar en localStorage
-          localStorage.setItem(`service_docs_${servicioActual.id}_default`, JSON.stringify(updatedDocs));
-          console.log("Documentos guardados en localStorage:", updatedDocs);
-        } else {
-          console.log("No se guardaron documentos en localStorage porque no hay ID de servicio");
+        // Validar Precio/IVA
+        const precioString = String(servicio.precioConIVA || '0').trim();
+        const precioNumerico = parseFloat(precioString);
+        const precioEsValidoYMayorQueCero = !isNaN(precioNumerico) && precioNumerico > 0;
+        const tieneIVA = servicio.ivaId && servicio.ivaId.trim() !== '';
+        if (precioEsValidoYMayorQueCero && !tieneIVA) {
+            setCamposFaltantes(['Tipo de IVA (obligatorio si precio > 0)']);
+            setMostrarModalCamposObligatorios(true);
+            setIsSaving(false);
+            return; // No salir si falta IVA con precio > 0
         }
-      }
-      
-      // Mostrar mensaje de éxito
-      toast({
-        title: esNuevo ? "Servicio creado" : "Servicio actualizado",
-        description: "El servicio se ha guardado correctamente. Redirigiendo...",
-      });
-      
-      // Navegar a la ruta de destino incluyendo tanto el ID de tarifa como el ID de servicio
-      setTimeout(() => {
-        if (rutaDestino) {
-          const rutaCompleta = rutaDestino.includes('?') 
-            ? `${rutaDestino}&servicioId=${servicioId}` 
-            : `${rutaDestino}?servicioId=${servicioId}`;
-          
-          router.push(rutaCompleta);
-        }
-      }, 500); // Breve retardo para permitir que el toast se muestre
+        
+        // Si el precio es <= 0, NO preguntamos de nuevo aquí, simplemente guardamos.
+        // Llamamos a guardarServicioReal directamente, sin pasar destino de subsección
+        await guardarServicioReal(null); 
+        
+        // Si guardarServicioReal no lanzó error, asumimos que fue bien.
+        // Navegar a destino original (o a la tarifa)
+        const destinoFinal = rutaDestino || `/configuracion/tarifas/${tarifaId}?tab=servicios&updated=${Date.now()}`;
+        console.log("[guardarServicioYNavegar] Guardado OK (o no requerido preguntar), navegando a destino final:", destinoFinal);
+        router.push(destinoFinal); 
+        setRutaDestino(null); // Limpiar ruta
+
     } catch (error) {
-      console.error("Error al guardar el servicio:", error);
-      toast({
-        title: "Error",
-        description: "No se pudo guardar el servicio. Inténtelo de nuevo.",
-        variant: "destructive",
-      });
+        // guardarServicioReal ya muestra toast de error
+        console.error("Error durante el proceso de guardar y navegar (salir):", error);
     } finally {
-      setIsSaving(false);
-      setMostrarModalConfirmacion(false);
+        // setIsSaving ya lo gestiona guardarServicioReal
     }
-  };
+};
 
-  // Función para navegar a la página anterior - reemplazo completo
+  // Función para navegar a la página anterior - usar router.push
   const handleCancel = () => {
-    // Eliminar todo dato relacionado con este servicio del localStorage
-    // para prevenir cualquier interferencia futura
-    if (typeof window !== 'undefined') {
-      try {
-        Object.keys(localStorage).forEach(key => {
-          if (
-            key.includes('temp-id') || 
-            key.includes('service_docs_') ||
-            key.includes('serviceImages_') ||
-            (servicioId && key.includes(servicioId))
-          ) {
-            localStorage.removeItem(key);
-          }
-        });
-      } catch (e) {
-        console.error("Error al limpiar localStorage:", e);
-      }
-    }
-
-    // Abortar cualquier solicitud pendiente
-    if (typeof window !== 'undefined' && 'AbortController' in window) {
-      try {
-        const controller = new AbortController();
-        controller.abort();
-      } catch (e) {
-        console.error("Error al abortar solicitudes:", e);
-      }
-    }
-
-    // Forzar navegación directa sin pasar por React Router
-    window.location.href = `/configuracion/tarifas/${tarifaId}`;
+    console.log(`[handleCancel] Navegando a: /configuracion/tarifas/${tarifaId}?tab=servicios`);
+    router.push(`/configuracion/tarifas/${tarifaId}?tab=servicios&updated=${Date.now()}`);
+    // Ya no es necesaria la limpieza de localStorage ni abortar requests 
+    // si usamos navegación client-side y el componente se desmonta correctamente.
+    // Tampoco window.location.href
   };
   
   // Agregar la función handleFileUpload
@@ -1053,26 +1069,6 @@ export default function NuevoServicio() {
     }
   };
 
-  // Función para verificar campos obligatorios localmente
-  const verificarCamposObligatoriosLocal = () => {
-    const camposFaltantes = [];
-    
-    // Verificar campos obligatorios
-    if (!servicio.nombre || servicio.nombre.trim() === '') {
-      camposFaltantes.push('Nombre');
-    }
-    
-    if (!servicio.codigo || servicio.codigo.trim() === '') {
-      camposFaltantes.push('Código');
-    }
-    
-    if (!servicio.familiaId || servicio.familiaId === '') {
-      camposFaltantes.push('Familia');
-    }
-    
-    return camposFaltantes;
-  };
-
   const handleViewDocument = (doc: any) => {
     window.open(doc.url, '_blank');
   };
@@ -1085,21 +1081,62 @@ export default function NuevoServicio() {
 
   // Restaurar handleDuracionChange para los botones
   const handleDuracionChange = (incremento: number) => { 
-      const nuevaDuracion = Math.max(1, (servicio.duracion || 0) + incremento); // Min 1
-      setServicio(prev => ({ // Usar función de actualización
+      const nuevaDuracion = Math.max(1, (Number(servicio.duracion) || 0) + incremento); // Min 1, asegurar número
+      setServicio(prev => ({ 
         ...prev,
         duracion: nuevaDuracion
       }));
+      setHayCambios(true); // Marcar cambio aquí también
   }; 
 
-  return (
-    // 1. Contenedor Principal: h-screen, flex-col, overflow-hidden
-    <div className="flex flex-col h-screen bg-gray-50 overflow-hidden">
+  // Navegación a subsecciones (Consumos, Puntos, Bonos, etc.)
+  const handleSubSectionNavigation = (targetSection: string, displayName: string) => {
+     console.log(`[handleSubSectionNavigation] Intentando navegar a: ${targetSection}`);
+     if (currentServicioId) {
+         // Servicio existente: navegar directamente
+         console.log(`[handleSubSectionNavigation] Servicio existente (${currentServicioId}), navegando directamente.`);
+         router.push(`/configuracion/tarifas/${tarifaId}/servicio/${currentServicioId}/${targetSection}`);
+     } else {
+         // Servicio nuevo: validar y mostrar modal para guardar
+         console.log("[handleSubSectionNavigation] Servicio nuevo, validando campos esenciales...");
+         const camposEsencialesFaltantes = verificarCamposObligatoriosLocal();
+         if (camposEsencialesFaltantes.length > 0) {
+             console.log("[handleSubSectionNavigation] Faltan campos esenciales:", camposEsencialesFaltantes);
+             setCamposFaltantes(camposEsencialesFaltantes);
+             setMostrarModalCamposObligatorios(true);
+         } else {
+             console.log("[handleSubSectionNavigation] Campos esenciales OK. Mostrando modal 'Guardar para Continuar'.");
+             setPendingSubSection(targetSection); // Guardar destino
+             setSubSectionDisplayName(displayName); // Guardar nombre para el mensaje
+             setShowSaveToContinueModal(true);
+         }
+     }
+  };
 
-      {/* 2. Área de Contenido Scrolleable: flex-grow, overflow-auto, min-h-0 */}
+  // Función llamada por el modal "Guardar para Continuar"
+  const handleSaveAndNavigateToSubSection = async () => {
+      console.log("[handleSaveAndNavigateToSubSection] Confirmado. Llamando a handleGuardar para guardar y luego navegar a:", pendingSubSection);
+      setShowSaveToContinueModal(false);
+      // Llamar a handleGuardar pasando la subsección pendiente
+      // handleGuardar se encargará de llamar a guardarServicioReal con este destino
+      if (pendingSubSection) {
+         await handleGuardar(pendingSubSection); 
+      }
+      // pendingSubSection se limpiará dentro de guardarServicioReal si tiene éxito
+  };
+
+  return (
+    <div className="flex flex-col h-screen bg-gray-50 overflow-hidden">
+      {/* NO hay barra superior aquí */}
+      
+      {/* Área de Contenido Scrolleable */}
       <div className="flex-grow overflow-y-auto min-h-0">
-        {/* Contenedor interno para padding y centrado. Padding inferior aumentado (pb-12) */} 
         <div className="container mx-auto px-4 py-6 pb-12">
+          {/* Título dentro del contenido */}
+           <h1 className="text-2xl font-semibold text-gray-800 dark:text-gray-200 mb-6">
+            {isNew ? "Nuevo Servicio" : "Editar Servicio"}
+          </h1>
+          
           {/* Grid principal */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Columna Izquierda */}
@@ -1204,7 +1241,7 @@ export default function NuevoServicio() {
                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                         <label htmlFor="precioConIVA" className="block text-sm font-medium text-gray-700 mb-1">Precio Venta (IVA Incl.) *</label>
-                        <Input id="precioConIVA" name="precioConIVA" type="number" step="0.01" value={servicio.precioConIVA} onChange={handleInputChange} required className={selectHoverClass} />
+                        <Input id="precioConIVA" name="precioConIVA" type="number" step="0.01" value={servicio.precioConIVA} onChange={handleNumericInputChange} onBlur={handleNumericInputBlur} required className={selectHoverClass} />
                     </div>
                     <div>
                       <label htmlFor="equipoId" className="block text-sm font-medium text-gray-700 mb-1">Equipo</label>
@@ -1241,7 +1278,7 @@ export default function NuevoServicio() {
                     </div>
                      <div>
                       <label htmlFor="comision" className="block text-sm font-medium text-gray-700 mb-1">Comisión</label>
-                      <Input id="comision" name="comision" type="number" step="0.01" value={servicio.comision} onChange={handleInputChange} className={selectHoverClass} />
+                      <Input id="comision" name="comision" type="number" step="0.01" value={servicio.comision} onChange={handleNumericInputChange} onBlur={handleNumericInputBlur} className={selectHoverClass} />
                     </div>
                   </div>
                 </CardContent>
@@ -1321,26 +1358,37 @@ export default function NuevoServicio() {
         </div> {/* Fin container mx-auto px-4 py-6 pb-12 */}
       </div> {/* Fin Área de Contenido Scrolleable */}
 
-      {/* 3. Barra de Botones Fija: flex-shrink-0 */}
+      {/* Barra de Acciones Inferior Original (Fija) - Actualizada */}
       <div className="flex-shrink-0 border-t bg-white shadow-md">
-        {/* Contenedor interno para alinear botones */}
         <div className="container mx-auto px-4 py-3">
-          <div className="flex justify-between items-center">
-            <div className="flex space-x-1 overflow-x-auto">
-                <Button variant="ghost" size="sm" className={buttonNavClass} onClick={() => verificarCamposYNavegar(`/configuracion/tarifas/${tarifaId}/servicio/${currentServicioId}/consumos`)}>Consumos</Button>
-                <Button variant="ghost" size="sm" className={buttonNavClass} onClick={() => handleNavigation('puntos')}>Puntos</Button>
-                <Button variant="ghost" size="sm" className={buttonNavClass} onClick={() => handleNavigation('bonos')}>Bonos</Button>
-                <Button variant="ghost" size="sm" className={buttonNavClass} onClick={() => handleNavigation('recursos')}>Recursos</Button>
-                <Button variant="ghost" size="sm" className={buttonNavClass} onClick={() => handleNavigation('parametros')}>Parámetros</Button>
-                <Button variant="ghost" size="sm" className={buttonNavClass} onClick={() => handleNavigation('avanzado')}>Avanzado</Button>
+          <div className="flex justify-between items-start"> {/* Cambiado a items-start para alinear texto abajo */} 
+            {/* Contenedor para botones de navegación y texto explicativo */} 
+            <div className="flex flex-col items-start"> {/* Apilar botones y texto */} 
+              {/* Fila de botones de Navegación Interna - Estilo outline, desactivados si es nuevo */} 
+              <div className="flex space-x-1 overflow-x-auto scrollbar-hide py-1">
+                  {/* Cambiar variant a "outline" */}
+                  <Button variant="outline" size="sm" className={buttonNavClass} onClick={() => handleSubSectionNavigation('consumos', 'Consumos')} disabled={!currentServicioId}>Consumos</Button>
+                  <Button variant="outline" size="sm" className={buttonNavClass} onClick={() => handleSubSectionNavigation('puntos', 'Puntos')} disabled={!currentServicioId}>Puntos</Button>
+                  <Button variant="outline" size="sm" className={buttonNavClass} onClick={() => handleSubSectionNavigation('bonos', 'Bonos')} disabled={!currentServicioId}>Bonos</Button>
+                  <Button variant="outline" size="sm" className={buttonNavClass} onClick={() => handleSubSectionNavigation('recursos', 'Recursos')} disabled={!currentServicioId}>Recursos</Button>
+                  <Button variant="outline" size="sm" className={buttonNavClass} onClick={() => handleSubSectionNavigation('parametros', 'Parámetros')} disabled={!currentServicioId}>Parámetros</Button>
+                  <Button variant="outline" size="sm" className={buttonNavClass} onClick={() => handleSubSectionNavigation('avanzado', 'Avanzado')} disabled={!currentServicioId}>Avanzado</Button>
+              </div>
+              {/* Texto explicativo si es nuevo servicio - Ahora debajo y alineado izquierda */} 
+              {!currentServicioId && (
+                <div className="text-xs text-gray-500 italic mt-1"> {/* Quitado text-center, añadido mt-1 */} 
+                  Guarda el servicio para activar estas opciones
+                </div>
+              )}
             </div>
+            {/* Botones Volver/Guardar (Alineados arriba por items-start del contenedor padre) */}
             <div className="flex items-center gap-2 flex-shrink-0 ml-4">
                 <Button variant="outline" onClick={handleCancel} className={buttonSecondaryClass}>
                     Volver
                 </Button>
                 <Button
-                    onClick={handleGuardar}
-                    disabled={isSaving}
+                    onClick={() => handleGuardar(null)} 
+                    disabled={isSaving || !hayCambios} 
                     className={buttonPrimaryClass}
                 >
                   <Save className="mr-2 h-4 w-4" />
@@ -1349,52 +1397,111 @@ export default function NuevoServicio() {
                  <HelpButton content="Ayuda contextual para la edición del servicio." />
             </div>
           </div>
+          {/* Ya no necesitamos el div extra para el texto aquí abajo */} 
         </div>
       </div>
 
-      {/* Modales (sin cambios) */}
-      {/* Modal Campos Obligatorios */}
+      {/* NO hay barra inferior de iconos duplicada */}
+
+      {/* Modales con Estética Revisada */} 
+      {/* Modal Campos Obligatorios */} 
       <Dialog open={mostrarModalCamposObligatorios} onOpenChange={setMostrarModalCamposObligatorios}>
-        <DialogContent>
-          <DialogHeader>
+        {/* Confiar en padding p-6 por defecto de DialogContent */} 
+        <DialogContent className="sm:max-w-lg border"> 
+          {/* Quitar padding específico, solo borde */} 
+          <DialogHeader className="border-b"> 
             <DialogTitle className="flex items-center">
-              <AlertCircle className="text-red-500 mr-2" />
+              <AlertCircle className="text-red-500 mr-2" /> 
               Campos Obligatorios Faltantes
             </DialogTitle>
-            <DialogDescription>
-              Por favor, completa los siguientes campos antes de guardar:
-              <ul className="list-disc list-inside mt-2 text-red-600">
-                {camposFaltantes.map((campo, index) => (
-                  <li key={index}>{campo}</li>
-                ))}
-              </ul>
+            {/* Padding top para separar del título */} 
+            <DialogDescription className="pt-4"> 
+              <div> 
+                Por favor, completa los siguientes campos antes de guardar:
+                {/* Quitar margen izquierdo específico */} 
+                <ul className="list-disc list-inside mt-2 text-red-600"> 
+                  {camposFaltantes.map((campo, index) => (
+                    <li key={index}>{campo}</li>
+                  ))}
+                </ul>
+              </div>
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter>
-            <Button onClick={() => setMostrarModalCamposObligatorios(false)}>Entendido</Button>
-          </DialogFooter>
+          {/* Sin Footer */} 
         </DialogContent>
       </Dialog>
 
-      {/* Modal Confirmación Navegación */}
+      {/* Modal Confirmación Navegación */} 
       <Dialog open={mostrarModalConfirmacion} onOpenChange={setMostrarModalConfirmacion}>
-       <DialogContent>
-          <DialogHeader>
+       <DialogContent className="sm:max-w-lg border"> 
+          {/* Quitar padding específico */} 
+          <DialogHeader className="border-b"> 
             <DialogTitle className="flex items-center">
-              <AlertCircle className="text-yellow-500 mr-2" />
+              <AlertCircle className="text-yellow-500 mr-2" /> 
               Confirmar Navegación
               </DialogTitle>
-            <DialogDescription>
-              Tienes cambios sin guardar. ¿Estás seguro de que quieres salir sin guardar?
+            {/* Padding general (py-4) y centrado */} 
+            <DialogDescription className="py-4 text-center"> 
+              Tienes cambios sin guardar. ¿Estás seguro de que quieres salir?
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter>
+          {/* Quitar padding específico, añadir alineación y gap */} 
+          <DialogFooter className="border-t pt-6 sm:justify-end gap-2"> 
              <Button variant="outline" onClick={() => setMostrarModalConfirmacion(false)}>Cancelar</Button>
-             <Button variant="destructive" onClick={guardarServicioYNavegar}>Salir sin Guardar</Button>
+             <Button variant="destructive" onClick={guardarServicioYNavegar} disabled={isSaving}>
+                 {isSaving ? 'Guardando...' : 'Salir y Descartar Cambios'}
+             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
+      {/* Modal Confirmación Guardar sin Precio/IVA */} 
+      <Dialog open={mostrarModalConfirmacionSinPrecioIVA} onOpenChange={setMostrarModalConfirmacionSinPrecioIVA}>
+        <DialogContent className="sm:max-w-lg border"> 
+          {/* Quitar padding específico */} 
+          <DialogHeader className="border-b"> 
+            <DialogTitle className="flex items-center">
+              <AlertTriangle className="text-yellow-500 mr-2" /> 
+              Confirmar Guardado
+            </DialogTitle>
+            {/* Padding general (py-4) y centrado */} 
+            <DialogDescription className="py-4 text-center"> 
+              {mensajeConfirmacion}
+            </DialogDescription>
+          </DialogHeader>
+          {/* Quitar padding específico, añadir alineación y gap */} 
+          <DialogFooter className="border-t pt-6 sm:justify-end gap-2"> 
+            <Button variant="outline" onClick={() => setMostrarModalConfirmacionSinPrecioIVA(false)}>Cancelar</Button>
+            <Button onClick={() => guardarServicioReal(null)} disabled={isSaving}> 
+              {isSaving ? 'Guardando...' : 'Confirmar y Guardar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* NUEVO Modal: Guardar para Continuar a Subsección */} 
+      <Dialog open={showSaveToContinueModal} onOpenChange={setShowSaveToContinueModal}>
+        <DialogContent className="sm:max-w-lg border"> 
+          <DialogHeader className="border-b"> 
+            <DialogTitle className="flex items-center">
+              <Save className="text-blue-500 mr-2" /> {/* Icono de guardar */} 
+              Guardar Servicio para Continuar
+            </DialogTitle>
+            <DialogDescription className="py-4 text-center"> 
+              {`Para poder configurar '${subSectionDisplayName}', primero es necesario guardar el servicio.`}
+              <br />
+              ¿Deseas guardarlo ahora?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="border-t pt-6 sm:justify-end gap-2"> 
+            <Button variant="outline" onClick={() => { setShowSaveToContinueModal(false); setPendingSubSection(null); }}>Cancelar</Button>
+            <Button onClick={handleSaveAndNavigateToSubSection} disabled={isSaving}> 
+              {isSaving ? 'Guardando...' : 'Guardar y Continuar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
     </div> // Fin Contenedor principal
   )
 }

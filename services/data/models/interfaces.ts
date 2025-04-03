@@ -105,10 +105,13 @@ export interface Tarifa extends BaseEntity, Activable, Deshabilitada {
 
 /** Interfaz para Familia de Tarifa */
 export interface FamiliaTarifa extends BaseEntity, Activable {
-  name: string;
-  code: string;
+  name?: string;
+  nombre?: string;
+  code?: string;
+  codigo?: string;
   parentId: string | null;
   tarifaId: string;
+  descripcion?: string;
 }
 
 /** Interfaz para Consumo de Servicio */
@@ -214,4 +217,36 @@ export interface ScheduleTemplate extends BaseEntity {
   isDefault: boolean;
   createdAt: string;
   updatedAt?: string;
+}
+
+/** Interfaz para Bonos */
+export interface Bono extends BaseEntity, Activable {
+  nombre: string;
+  familiaId: string;
+  servicioId: string;
+  tipoComision: string;
+  comision: string | number;
+  credito: number;
+  precioConIVA: string | number;
+  ivaId: string;
+  caducidad: {
+    tipo: 'intervalo' | 'fechaFija';
+    intervalo?: {
+      tipo: 'dias' | 'semanas' | 'meses';
+      valor: number;
+    };
+    fechaFija?: string;
+  };
+  archivoAyuda?: string | null;
+  apareceEnApp: boolean;
+  soloParaPagoDeCitas: boolean;
+  descuentosAutomaticos: boolean;
+  descuentosManuales: boolean;
+  aceptaPromociones: boolean;
+  aceptaEdicionPVP: boolean;
+  formaConPaquetesAutomaticamente: boolean;
+  afectaEstadisticas: boolean;
+  deshabilitado: boolean;
+  validoParaTodosPlanaTarifa: boolean;
+  precioCoste?: string | number;
 } 
