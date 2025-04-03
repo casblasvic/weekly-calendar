@@ -249,4 +249,32 @@ export interface Bono extends BaseEntity, Activable {
   deshabilitado: boolean;
   validoParaTodosPlanaTarifa: boolean;
   precioCoste?: string | number;
+}
+
+/** Interfaz para Usuario */
+export interface Usuario extends BaseEntity, Activable {
+  nombre: string;
+  email: string;
+  telefono?: string;
+  prefijoTelefonico?: string;
+  perfil: string;
+  clinicasIds: string[];
+  deshabilitado?: boolean;
+  fechaCreacion?: string;
+  fechaModificacion?: string;
+}
+
+/** Interfaz para Perfil de usuario */
+export interface PerfilUsuario extends BaseEntity {
+  nombre: string;
+  descripcion?: string;
+  permisos: Permiso[];
+  isActive: boolean;
+}
+
+/** Interfaz para Permiso */
+export interface Permiso {
+  modulo: string;
+  accion: string;
+  permitido: boolean;
 } 

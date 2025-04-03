@@ -9,6 +9,7 @@ import { ScheduleTemplatesProvider } from './schedule-templates-context';
 import { ScheduleBlocksProvider } from './schedule-blocks-context';
 import { AppointmentTagsProvider } from './appointment-tags-context';
 import { DataServiceProvider } from './data-context';
+import { UserProvider } from './user-context';
 
 // Combine all providers
 export const AppProviders: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -20,13 +21,15 @@ export const AppProviders: React.FC<{ children: React.ReactNode }> = ({ children
             <ImageProvider>
               <DocumentProvider>
                 <ClientProvider>
-                  <ScheduleTemplatesProvider>
-                    <ScheduleBlocksProvider>
-                      <AppointmentTagsProvider>
-                        {children}
-                      </AppointmentTagsProvider>
-                    </ScheduleBlocksProvider>
-                  </ScheduleTemplatesProvider>
+                  <UserProvider>
+                    <ScheduleTemplatesProvider>
+                      <ScheduleBlocksProvider>
+                        <AppointmentTagsProvider>
+                          {children}
+                        </AppointmentTagsProvider>
+                      </ScheduleBlocksProvider>
+                    </ScheduleTemplatesProvider>
+                  </UserProvider>
                 </ClientProvider>
               </DocumentProvider>
             </ImageProvider>

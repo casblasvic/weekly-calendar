@@ -202,7 +202,65 @@ export const initialMockData = {
   scheduleTemplates: [],
   productos: [],
   consumos: [],
-  bonos: [] // Array vacío para almacenar los bonos
+  bonos: [], // Array vacío para almacenar los bonos
+  usuarios: [
+    {
+      id: "1",
+      nombre: "Houda",
+      email: "houda@multilaser.ma",
+      perfil: "Personal",
+      clinicasIds: ["clinic-1"],
+      isActive: true
+    },
+    {
+      id: "2",
+      nombre: "Islam Alaoui",
+      email: "islam.alaoui@multilaser.ma",
+      perfil: "Central",
+      clinicasIds: ["clinic-1", "clinic-2", "clinic-3"],
+      isActive: true
+    },
+    {
+      id: "3",
+      nombre: "Latifa",
+      email: "latifa@multilaser.ma",
+      perfil: "Personal",
+      clinicasIds: ["clinic-2"],
+      isActive: true
+    },
+    {
+      id: "4",
+      nombre: "Lina",
+      email: "is.organizare@gmail.com",
+      perfil: "Administrador",
+      clinicasIds: ["clinic-1", "clinic-2", "clinic-3"],
+      isActive: true
+    },
+    {
+      id: "5",
+      nombre: "Multilaser",
+      email: "casblaxic@gmail.com",
+      perfil: "Administrador",
+      clinicasIds: ["clinic-1", "clinic-2", "clinic-3"],
+      isActive: true
+    },
+    {
+      id: "6",
+      nombre: "Salma Bouregba",
+      email: "bouregbasalma7@gmail.com",
+      perfil: "Personal",
+      clinicasIds: ["clinic-3"],
+      isActive: true
+    },
+    {
+      id: "7",
+      nombre: "Yasmine Tachfine",
+      email: "yasmine@multilaser.ma",
+      perfil: "Personal",
+      clinicasIds: ["clinic-1"],
+      isActive: true
+    }
+  ]
 };
 // --- FIN: Definición de Datos Iniciales (Mock) ---
 

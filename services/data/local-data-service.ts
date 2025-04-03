@@ -18,7 +18,8 @@ import {
   TipoIVA,
   Producto,
   Consumo,
-  Bono
+  Bono,
+  Usuario
 } from './models/interfaces';
 import {
   Client
@@ -52,6 +53,7 @@ export class LocalDataService implements DataService {
     productos: Producto[];
     consumos: Consumo[];
     bonos: Bono[];
+    usuarios: Usuario[];
   };
 
   private initialized: boolean = false;
@@ -72,7 +74,8 @@ export class LocalDataService implements DataService {
       scheduleTemplates: [],
       productos: [],
       consumos: [],
-      bonos: []
+      bonos: [],
+      usuarios: []
     };
   }
 
@@ -86,12 +89,94 @@ export class LocalDataService implements DataService {
     try {
       // Cargar datos iniciales desde mockData haciendo una copia profunda
       this.data = JSON.parse(JSON.stringify(initialMockData));
+      
+      // Inicializar usuarios si no existen en los datos iniciales
+      if (!this.data.usuarios) {
+        this.data.usuarios = [];
+        
+        // Crear algunos usuarios de ejemplo
+        this.data.usuarios = [
+          {
+            id: "1",
+            nombre: "Houda",
+            email: "houda@multilaser.ma",
+            perfil: "Personal",
+            clinicasIds: ["1"],
+            isActive: true
+          },
+          {
+            id: "2",
+            nombre: "Islam Alaoui",
+            email: "islam.alaoui@multilaser.ma",
+            perfil: "Central",
+            clinicasIds: ["1", "2", "3"],
+            isActive: true
+          },
+          {
+            id: "3",
+            nombre: "Latifa",
+            email: "latifa@multilaser.ma",
+            perfil: "Personal",
+            clinicasIds: ["2"],
+            isActive: true
+          },
+          {
+            id: "4",
+            nombre: "Lina",
+            email: "is.organizare@gmail.com",
+            perfil: "Administrador",
+            clinicasIds: ["1", "2", "3"],
+            isActive: true
+          },
+          {
+            id: "5",
+            nombre: "Multilaser",
+            email: "casblaxic@gmail.com",
+            perfil: "Administrador",
+            clinicasIds: ["1", "2", "3"],
+            isActive: true
+          },
+          {
+            id: "6",
+            nombre: "Salma Bouregba",
+            email: "bouregbasalma7@gmail.com",
+            perfil: "Personal",
+            clinicasIds: ["3"],
+            isActive: true
+          },
+          {
+            id: "7",
+            nombre: "Yasmine Tachfine",
+            email: "yasmine@multilaser.ma",
+            perfil: "Personal",
+            clinicasIds: ["1"],
+            isActive: true
+          }
+        ];
+      }
+      
       this.initialized = true;
       console.log('LocalDataService: Inicializado con copia de initialMockData importado.');
     } catch (error) {
       console.error('Error al inicializar LocalDataService:', error);
       // Mantener datos vacíos en caso de error
-      this.data = { clinicas: [], tarifas: [], familiasTarifa: [], servicios: [], tiposIVA: [], equipos: [], scheduleBlocks: [], entityImages: {}, entityDocuments: {}, clients: [], scheduleTemplates: [], productos: [], consumos: [], bonos: [] };
+      this.data = { 
+        clinicas: [], 
+        tarifas: [], 
+        familiasTarifa: [], 
+        servicios: [], 
+        tiposIVA: [], 
+        equipos: [], 
+        scheduleBlocks: [], 
+        entityImages: {}, 
+        entityDocuments: {}, 
+        clients: [], 
+        scheduleTemplates: [], 
+        productos: [], 
+        consumos: [], 
+        bonos: [],
+        usuarios: [] 
+      };
       throw error;
     }
   }
@@ -1501,4 +1586,68 @@ export class LocalDataService implements DataService {
       return false;
     }
   }
+
+  // #region Operaciones de Usuarios
+  
+  async getAllUsuarios(): Promise<Usuario[]> {
+    return JSON.parse(JSON.stringify(this.data.usuarios)); // Devolver copia
+  }
+
+  async getUsuarioById(id: string): Promise<Usuario | null> {
+    const usuario = this.data.usuarios.find(u => String(u.id) === String(id));
+    return usuario ? JSON.parse(JSON.stringify(usuario)) : null; // Devolver copia
+  }
+
+  async createUsuario(usuario: Omit<Usuario, 'id'>): Promise<Usuario> {
+    const newUsuario = { 
+      ...usuario, 
+      id: generateId('user'),
+      fechaCreacion: new Date().toISOString(),
+      fechaModificacion: new Date().toISOString()
+    } as Usuario;
+    
+    this.data.usuarios.push(newUsuario);
+    this.saveData();
+    return JSON.parse(JSON.stringify(newUsuario)); // Devolver copia
+  }
+
+  async updateUsuario(id: string, usuario: Partial<Usuario>): Promise<Usuario | null> {
+    const index = this.data.usuarios.findIndex(u => String(u.id) === String(id));
+    
+    if (index === -1) {
+      return null;
+    }
+    
+    // Actualizar fecha de modificación
+    this.data.usuarios[index] = { 
+      ...this.data.usuarios[index], 
+      ...usuario,
+      fechaModificacion: new Date().toISOString()
+    };
+    
+    this.saveData();
+    return JSON.parse(JSON.stringify(this.data.usuarios[index])); // Devolver copia
+  }
+
+  async deleteUsuario(id: string): Promise<boolean> {
+    const initialLength = this.data.usuarios.length;
+    this.data.usuarios = this.data.usuarios.filter(u => String(u.id) !== String(id));
+    
+    const deleted = initialLength > this.data.usuarios.length;
+    if (deleted) {
+      this.saveData();
+    }
+    
+    return deleted;
+  }
+
+  async getUsuariosByClinica(clinicaId: string): Promise<Usuario[]> {
+    const usuariosClinica = this.data.usuarios.filter(u => 
+      u.clinicasIds && u.clinicasIds.some(cId => String(cId) === String(clinicaId))
+    );
+    
+    return JSON.parse(JSON.stringify(usuariosClinica)); // Devolver copia
+  }
+  
+  // #endregion
 } 

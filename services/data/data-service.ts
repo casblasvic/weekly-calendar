@@ -17,7 +17,8 @@ import {
   TipoIVA,
   Producto,
   Consumo,
-  Bono
+  Bono,
+  Usuario
 } from './models/interfaces';
 
 /**
@@ -189,4 +190,12 @@ export interface DataService {
   getBonosByServicioId(servicioId: string): Promise<Bono[]>;
   getBonosHabilitados(): Promise<Bono[]>;
   toggleBonoStatus(id: string): Promise<boolean>;
+
+  // Operaciones de Usuarios
+  getAllUsuarios(): Promise<Usuario[]>;
+  getUsuarioById(id: string): Promise<Usuario | null>;
+  createUsuario(usuario: Omit<Usuario, 'id'>): Promise<Usuario>;
+  updateUsuario(id: string, usuario: Partial<Usuario>): Promise<Usuario | null>;
+  deleteUsuario(id: string): Promise<boolean>;
+  getUsuariosByClinica(clinicaId: string): Promise<Usuario[]>;
 } 

@@ -15,7 +15,8 @@ import {
   EntityDocument,
   ScheduleTemplate,
   Producto,
-  Consumo
+  Consumo,
+  Usuario
 } from "@/services/data/models/interfaces"
 import { Client } from "@/services/data/data-service"
 
@@ -149,6 +150,14 @@ interface InterfazContextType {
   updateConsumo: (id: string, consumo: Partial<Consumo>) => Promise<Consumo | null>;
   deleteConsumo: (id: string) => Promise<boolean>;
   getConsumosByServicioId: (servicioId: string) => Promise<Consumo[]>;
+
+  // Funciones de usuarios
+  getAllUsuarios: () => Promise<Usuario[]>;
+  getUsuarioById: (id: string) => Promise<Usuario | null>;
+  getUsuariosByClinica: (clinicaId: string) => Promise<Usuario[]>;
+  createUsuario: (usuario: Omit<Usuario, 'id'>) => Promise<Usuario>;
+  updateUsuario: (id: string, usuario: Partial<Usuario>) => Promise<Usuario | null>;
+  deleteUsuario: (id: string) => Promise<boolean>;
 }
 
 // Crear el contexto
@@ -625,6 +634,32 @@ export function InterfazProvider({ children }: { children: ReactNode }) {
     getConsumosByServicioId: async (servicioId) => {
       const dataService = getDataService();
       return await dataService.getConsumosByServicioId(servicioId);
+    },
+
+    // Funciones de usuarios
+    getAllUsuarios: async () => {
+      const dataService = getDataService();
+      return await dataService.getAllUsuarios();
+    },
+    getUsuarioById: async (id) => {
+      const dataService = getDataService();
+      return await dataService.getUsuarioById(id);
+    },
+    getUsuariosByClinica: async (clinicaId) => {
+      const dataService = getDataService();
+      return await dataService.getUsuariosByClinica(clinicaId);
+    },
+    createUsuario: async (usuario) => {
+      const dataService = getDataService();
+      return await dataService.createUsuario(usuario);
+    },
+    updateUsuario: async (id, usuario) => {
+      const dataService = getDataService();
+      return await dataService.updateUsuario(id, usuario);
+    },
+    deleteUsuario: async (id) => {
+      const dataService = getDataService();
+      return await dataService.deleteUsuario(id);
     }
   };
   
