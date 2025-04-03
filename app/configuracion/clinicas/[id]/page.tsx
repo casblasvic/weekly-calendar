@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
@@ -724,65 +724,80 @@ export default function ClinicaDetailPage() {
 
               {activeTab === "horarios" && (
                 <Card className="p-6">
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-3 gap-4 mb-6">
-                      <div className="space-y-2">
-                        <Label>Horario Apertura</Label>
-                        <Input
-                          type="time"
-                          value={typedConfig.openTime || defaultOpenTime}
-                          onChange={(e) => handleClinicUpdate({ openTime: e.target.value })}
-                        />
+                  <Tabs defaultValue="general" className="w-full">
+                    <TabsList className="mb-4">
+                      <TabsTrigger value="general">Horario General</TabsTrigger>
+                      <TabsTrigger value="excepciones">Excepciones</TabsTrigger>
+                    </TabsList>
+                    
+                    <TabsContent value="general">
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-3 gap-4 mb-6">
+                          <div className="space-y-2">
+                            <Label>Horario Apertura</Label>
+                            <Input
+                              type="time"
+                              value={typedConfig.openTime || defaultOpenTime}
+                              onChange={(e) => handleClinicUpdate({ openTime: e.target.value })}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Horario Cierre</Label>
+                            <Input
+                              type="time"
+                              value={typedConfig.closeTime || defaultCloseTime}
+                              onChange={(e) => handleClinicUpdate({ closeTime: e.target.value })}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Duración Slot (min)</Label>
+                            <Input
+                              type="number"
+                              min="1"
+                              max="60"
+                              step="1"
+                              value={typedConfig.slotDuration || 15}
+                              onChange={(e) => {
+                                const value = Number.parseInt(e.target.value)
+                                if (value >= 1 && value <= 60) {
+                                  handleClinicUpdate({ slotDuration: value })
+                                }
+                              }}
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Seleccionar plantilla horaria</Label>
+                          <Select value={selectedTemplateId || ""} onValueChange={handleTemplateChange}>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Seleccionar una plantilla" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {templates.map((template) => (
+                                <SelectItem key={String(template.id)} value={String(template.id)}>
+                                  {template.description}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <Card>
+                          <CardContent className="pt-6">
+                            <ScheduleConfig
+                              value={typedConfig.schedule || DEFAULT_SCHEDULE}
+                              onChange={handleAdvancedScheduleChange}
+                            />
+                          </CardContent>
+                        </Card>
                       </div>
-                      <div className="space-y-2">
-                        <Label>Horario Cierre</Label>
-                        <Input
-                          type="time"
-                          value={typedConfig.closeTime || defaultCloseTime}
-                          onChange={(e) => handleClinicUpdate({ closeTime: e.target.value })}
-                        />
+                    </TabsContent>
+
+                    <TabsContent value="excepciones">
+                      <div className="p-4 text-center text-gray-500">
+                        <p>Sección de excepciones en desarrollo</p>
                       </div>
-                      <div className="space-y-2">
-                        <Label>Duración Slot (min)</Label>
-                        <Input
-                          type="number"
-                          min="1"
-                          max="60"
-                          step="1"
-                          value={typedConfig.slotDuration || 15}
-                          onChange={(e) => {
-                            const value = Number.parseInt(e.target.value)
-                            if (value >= 1 && value <= 60) {
-                              handleClinicUpdate({ slotDuration: value })
-                            }
-                          }}
-                        />
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Seleccionar plantilla horaria</Label>
-                      <Select value={selectedTemplateId || ""} onValueChange={handleTemplateChange}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Seleccionar una plantilla" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {templates.map((template) => (
-                            <SelectItem key={String(template.id)} value={String(template.id)}>
-                              {template.description}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <Card>
-                      <CardContent className="pt-6">
-                        <ScheduleConfig
-                          value={typedConfig.schedule || DEFAULT_SCHEDULE}
-                          onChange={handleAdvancedScheduleChange}
-                        />
-                      </CardContent>
-                    </Card>
-                  </div>
+                    </TabsContent>
+                  </Tabs>
                 </Card>
               )}
 
