@@ -46,6 +46,10 @@ import {
   Database,
   FolderOpen,
   Tag,
+  Settings2,
+  LayoutGrid,
+  Wrench,
+  HardDrive,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { WeekSchedule } from "@/types/schedule"
@@ -58,18 +62,12 @@ import { UsuariosClinica } from "@/components/usuarios-clinica"
 
 const menuItems = [
   { id: "datos", label: "Datos de la clínica", icon: Building2 },
-  { id: "cabinas", label: "Cabinas", icon: Bed },
-  { id: "equipamiento", label: "Equipamiento", icon: Cog },
-  { id: "usuarios", label: "Usuarios", icon: Users },
-  { id: "entidades", label: "Entidades bancarias", icon: CreditCard },
-  { id: "integraciones", label: "Integraciones", icon: Link },
-  { id: "descuentos", label: "Descuentos", icon: Percent },
-  { id: "sms", label: "SMS/Push", icon: MessageSquare },
-  { id: "email", label: "Notificaciones e-mail", icon: Mail },
-  { id: "whatsapp", label: "Notificaciones WhatsApp", icon: Phone },
-  { id: "otros", label: "Otros APIs", icon: Globe },
-  { id: "almacenamiento", label: "Almacenamiento", icon: Database },
-  { id: "tarifa", label: "Tarifa", icon: Tag },
+  { id: "horarios", label: "Horarios", icon: Clock },
+  { id: "sedes", label: "Sedes", icon: MapPin },
+  { id: "cabinas", label: "Cabinas", icon: LayoutGrid },
+  { id: "equipamiento", label: "Equipamiento", icon: Wrench },
+  { id: "almacenamiento", label: "Almacenamiento", icon: HardDrive },
+  { id: "depuracion", label: "Depuración", icon: Trash2 },
 ]
 
 interface Cabin {
@@ -314,6 +312,7 @@ export default function ClinicaDetailPage() {
     { id: "info", label: "Información" },
     { id: "sedes", label: "Sedes" },
     { id: "cabinas", label: "Cabinas" },
+    { id: "horarios", label: "Horarios" },
     { id: "equipamiento", label: "Equipamiento" },
     { id: "almacenamiento", label: "Almacenamiento" },
     { id: "depuracion", label: "Depuración" },
@@ -558,7 +557,7 @@ export default function ClinicaDetailPage() {
                     </div>
                   </div>
 
-                  <SectionTitle icon={Cog} title="Configuración" color="text-purple-600 border-purple-600" />
+                  <SectionTitle icon={Settings2} title="Configuración" color="text-purple-600 border-purple-600" />
                   <div className="space-y-4">
                     <div className="space-y-2">
                       <Label className="text-sm">Caja inicial</Label>
@@ -720,9 +719,11 @@ export default function ClinicaDetailPage() {
                       />
                     </div>
                   </div>
+                </Card>
+              )}
 
-                  <SectionTitle icon={Clock} title="Horarios" color="text-purple-600 border-purple-600" />
-
+              {activeTab === "horarios" && (
+                <Card className="p-6">
                   <div className="space-y-4">
                     <div className="grid grid-cols-3 gap-4 mb-6">
                       <div className="space-y-2">
@@ -781,38 +782,6 @@ export default function ClinicaDetailPage() {
                         />
                       </CardContent>
                     </Card>
-                  </div>
-
-                  <SectionTitle icon={BarChart2} title="Estadísticas de uso" color="text-red-600 border-red-600" />
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label className="text-sm">Espacio de almacenamiento</Label>
-                      <div className="flex items-center justify-between">
-                        <div className="text-sm text-gray-600">100 Mb (0 Mb libres)</div>
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => {
-                            setActiveTab("almacenamiento");
-                          }}
-                        >
-                          <FolderOpen className="w-4 h-4 mr-2" />
-                          Gestionar almacenamiento
-                        </Button>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label className="text-sm">Nº de cuenta domiciliaciones clientes</Label>
-                      <div className="grid grid-cols-4 gap-2">
-                        <Input placeholder="PCC" className="text-sm h-9" />
-                        <Input placeholder="Entidad" className="text-sm h-9" />
-                        <Input placeholder="Oficina" className="text-sm h-9" />
-                        <Input placeholder="D.C." className="text-sm h-9" />
-                      </div>
-                      <Input placeholder="Cuenta" className="text-sm h-9" />
-                      <Input placeholder="BIC/SWIFT" className="text-sm h-9" />
-                    </div>
                   </div>
                 </Card>
               )}
@@ -999,7 +968,7 @@ export default function ClinicaDetailPage() {
               {activeTab === "usuarios" && (
                 <Card className="p-6">
                   <div className="flex flex-col gap-4">
-                    <div className="flex justify-between items-center">
+                    <div className="flex items-center justify-between">
                       <h3 className="text-lg font-medium">Usuarios de la clínica: {clinicData.name}</h3>
                     </div>
                     
