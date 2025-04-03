@@ -1,0 +1,2516 @@
+"use client"
+
+import React, { useState, useEffect, useMemo, useCallback } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
+import { Button } from "@/components/ui/button"
+import { Card } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Table, TableBody, TableCell, TableHeader, TableRow, TableHead } from "@/components/ui/table"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { Badge } from "@/components/ui/badge"
+import { Switch } from "@/components/ui/switch"
+import { Search, MoreHorizontal, Save, ArrowLeft, HelpCircle } from "lucide-react"
+import { useToast } from "@/components/ui/use-toast"
+import { toast } from "@/components/ui/use-toast"
+import { CalendarIcon, Clock, Pencil, Plus, Settings, Trash, Eye, AlertCircle, Calendar, PlusCircle, CheckCircle, Fingerprint, Briefcase } from "lucide-react"
+import { Checkbox } from "@/components/ui/checkbox"
+
+// Importación de contextos
+import { useUser } from "@/contexts/user-context"
+import { useClinic } from "@/contexts/clinic-context"
+import { useClinicSchedule } from "@/contexts/clinic-schedule-context"
+import { useRole } from "@/contexts/role-context"
+import { useService } from "@/contexts/service-context"
+
+// Importación de tipos
+import { 
+  UsuarioEmpleado,
+  HorarioDia, 
+  FranjaHoraria, 
+  ExcepcionHoraria, 
+  HorarioClinica,
+  HorarioSemanal
+} from "@/services/data/models/interfaces"
+
+// Tipos para el sistema de horarios
+interface HorarioDia {
+  dia: 'lunes' | 'martes' | 'miercoles' | 'jueves' | 'viernes' | 'sabado' | 'domingo';
+  franjas: FranjaHoraria[];
+  activo: boolean;
+}
+
+interface HorarioSemanal {
+  clinicaId: string;
+  dias: HorarioDia[];
+}
+
+interface ExcepcionHoraria {
+  id: string;
+  clinicaId: string;
+  nombre: string;
+  fechaInicio: string;  // YYYY-MM-DD
+  fechaFin: string;     // YYYY-MM-DD
+  dias: HorarioDia[];
+}
+
+// Creamos componentes memoizados para evitar renderizados innecesarios
+const SelectClinica = React.memo(({ 
+  value, 
+  onChange, 
+  disabled, 
+  options, 
+  placeholder 
+}: { 
+  value: string, 
+  onChange: (value: string) => void, 
+  disabled?: boolean, 
+  options: { id: string, label: string }[], 
+  placeholder: string 
+}) => {
+  return (
+    <Select value={value} onValueChange={onChange} disabled={disabled}>
+      <SelectTrigger className="h-9">
+        <SelectValue placeholder={placeholder} />
+      </SelectTrigger>
+      <SelectContent>
+        {options.length === 0 ? (
+          <SelectItem value="no_selection" disabled>No hay opciones disponibles</SelectItem>
+        ) : (
+          options.map(option => (
+            <SelectItem key={option.id} value={option.id}>
+              {option.label}
+            </SelectItem>
+          ))
+        )}
+      </SelectContent>
+    </Select>
+  );
+});
+
+SelectClinica.displayName = "SelectClinica";
+
+// Componente memoizado para select de tipo
+const SelectTipo = React.memo(({ 
+  value, 
+  onChange
+}: { 
+  value: string, 
+  onChange: (value: any) => void
+}) => {
+  return (
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger className="h-9">
+        <SelectValue placeholder="Seleccione tipo" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="familia">Familia completa</SelectItem>
+        <SelectItem value="servicio">Servicio específico</SelectItem>
+      </SelectContent>
+    </Select>
+  );
+});
+
+SelectTipo.displayName = "SelectTipo";
+
+// Componente memoizado para selects genéricos
+const MemoizedSelect = React.memo(({ 
+  value, 
+  onChange, 
+  disabled,
+  placeholder,
+  children 
+}: { 
+  value?: string, 
+  onChange?: (value: string) => void, 
+  disabled?: boolean, 
+  placeholder: string,
+  children: React.ReactNode
+}) => {
+  return (
+    <Select value={value} onValueChange={onChange} disabled={disabled}>
+      <SelectTrigger className="h-9">
+        <SelectValue placeholder={placeholder} />
+      </SelectTrigger>
+      <SelectContent>
+        {children}
+      </SelectContent>
+    </Select>
+  );
+});
+
+MemoizedSelect.displayName = "MemoizedSelect";
+
+export default function EditarUsuarioPage({ params }: { params: { id: string } }) {
+  // Utilizamos React.use para desenvolver params (recomendación de Next.js)
+  // y forzamos el tipo correcto con una doble aserción
+  const paramsUnwrapped = React.use(params as any) as { id: string };
+  const userId = paramsUnwrapped.id;
+  
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  
+  // Obtener los parámetros de la URL
+  const returnToBase = searchParams.get('returnTo') || "/configuracion/usuarios"
+  const tabParam = searchParams.get('tab')
+  
+  // Construir la URL de retorno completa
+  // Si returnToBase ya contiene un signo de interrogación, usamos & para añadir el parámetro tab
+  // Si no, usamos ? para iniciar los parámetros de consulta
+  const returnTo = tabParam 
+    ? returnToBase.includes('?') 
+      ? `${returnToBase}&tab=${tabParam}` 
+      : `${returnToBase}?tab=${tabParam}`
+    : returnToBase
+  
+  const { getUsuarioById, updateUsuario } = useUser()
+  const { clinics } = useClinic()
+  const clinicSchedule = useClinicSchedule()
+  const { roles } = useRole()
+  const serviceContext = useService()
+  
+  const [nombre, setNombre] = useState("")
+  const [email, setEmail] = useState("")
+  const [confirmEmail, setConfirmEmail] = useState("")
+  const [prefijo, setPrefijo] = useState("")
+  const [telefono, setTelefono] = useState("")
+  const [perfil, setPerfil] = useState("")
+  const [isActive, setIsActive] = useState(true)
+  
+  // Estructura para almacenar permisos más detallados: Map<clinicaId, string[]>
+  const [permisosClinicas, setPermisosClinicas] = useState<Map<string, string[]>>(new Map())
+  
+  // Convertir Map a array usando useMemo para estabilizar la referencia
+  const selectedClinicas = React.useMemo(() => 
+    Array.from(permisosClinicas.keys()), 
+    [permisosClinicas] // Dependencia
+  );
+  
+  const [loading, setLoading] = useState(true)
+  const [showDisabledClinics, setShowDisabledClinics] = useState(false)
+  
+  // Nuevos estados para campos adicionales
+  const [dni, setDni] = useState("")
+  const [fechaNacimiento, setFechaNacimiento] = useState("")
+  const [sexo, setSexo] = useState("")
+  const [telefono2, setTelefono2] = useState("")
+  const [contrasena, setContrasena] = useState("")
+  const [idioma, setIdioma] = useState("")
+  
+  // Estados para los datos de colegiado
+  const [colegio, setColegio] = useState("")
+  const [numeroColegiado, setNumeroColegiado] = useState("")
+  const [especialidad, setEspecialidad] = useState("")
+  const [universidad, setUniversidad] = useState("")
+  
+  // Estados para dirección
+  const [direccion, setDireccion] = useState("")
+  const [provincia, setProvincia] = useState("")
+  const [pais, setPais] = useState("")
+  const [localidad, setLocalidad] = useState("")
+  const [cp, setCp] = useState("")
+  
+  // Estados para configuración
+  const [exportCsv, setExportCsv] = useState("")
+  const [indiceControl, setIndiceControl] = useState("")
+  const [numeroPIN, setNumeroPIN] = useState("")
+  const [notas, setNotas] = useState("")
+  const [mostrarDesplazados, setMostrarDesplazados] = useState(false)
+  const [mostrarCitasPropias, setMostrarCitasPropias] = useState(false)
+  const [restringirIP, setRestringirIP] = useState(false)
+  const [deshabilitado, setDeshabilitado] = useState(false)
+  
+  // Estado para la pestaña actual
+  const [activeTab, setActiveTab] = useState("datos-personales")
+  
+  // Estado para la búsqueda en permisos
+  const [searchPermisos, setSearchPermisos] = useState("")
+  
+  // Estado para añadir nueva clínica y perfil
+  const [nuevaClinicaId, setNuevaClinicaId] = useState("")
+  const [nuevoPerfilClinica, setNuevoPerfilClinica] = useState("")
+  
+  // Filtrar las clínicas activas
+  const activeClinicas = clinics.filter(clinic => clinic.isActive)
+  
+  // Clínicas a mostrar en el selector (según el filtro)
+  const clinicasToShow = showDisabledClinics ? clinics : activeClinicas
+  
+  // Lista de todos los perfiles disponibles en el sistema
+  const PERFILES_DISPONIBLES = [
+    "Administrador", 
+    "Central", 
+    "Contabilidad", 
+    "Doctor Administrador", 
+    "Encargado", 
+    "Gerente de zona", 
+    "Marketing", 
+    "Operador Call Center", 
+    "Personal sin acceso", 
+    "Personal", 
+    "Profesional", 
+    "Recepción", 
+    "Supervisor Call Center"
+  ];
+  
+  // Estado para la asignación de habilidades profesionales
+  const [habilidadesProfesionales, setHabilidadesProfesionales] = useState<Map<string, string[]>>(new Map())
+  const [nuevaClinicaHabilidad, setNuevaClinicaHabilidad] = useState("")
+  const [nuevaFamilia, setNuevaFamilia] = useState("")
+  const [nuevoServicio, setNuevoServicio] = useState("")
+  const [tipoSeleccion, setTipoSeleccion] = useState<"familia" | "servicio">("familia")
+  const [searchHabilidades, setSearchHabilidades] = useState("")
+  
+  // Datos mock para las familias y servicios (estos vendrían de una API real)
+  const FAMILIAS_MOCK = [
+    { id: "fam1", nombre: "Tratamientos faciales" },
+    { id: "fam2", nombre: "Tratamientos corporales" },
+    { id: "fam3", nombre: "Depilación" },
+    { id: "fam4", nombre: "Masajes" },
+    { id: "fam5", nombre: "Manicura y pedicura" },
+    { id: "fam6", nombre: "Tratamientos capilares" },
+  ];
+  
+  const SERVICIOS_MOCK = {
+    "fam1": [
+      { id: "serv1", nombre: "Limpieza facial", duracion: "60 min" },
+      { id: "serv2", nombre: "Tratamiento anti-edad", duracion: "90 min" },
+      { id: "serv3", nombre: "Hidratación profunda", duracion: "45 min" },
+    ],
+    "fam2": [
+      { id: "serv4", nombre: "Exfoliación corporal", duracion: "60 min" },
+      { id: "serv5", nombre: "Tratamiento reafirmante", duracion: "90 min" },
+      { id: "serv6", nombre: "Masaje anticelulítico", duracion: "60 min" },
+    ],
+    "fam3": [
+      { id: "serv7", nombre: "Depilación láser", duracion: "30 min" },
+      { id: "serv8", nombre: "Depilación con cera", duracion: "45 min" },
+    ],
+    "fam4": [
+      { id: "serv9", nombre: "Masaje relajante", duracion: "60 min" },
+      { id: "serv10", nombre: "Masaje descontracturante", duracion: "60 min" },
+      { id: "serv11", nombre: "Masaje deportivo", duracion: "90 min" },
+    ],
+    "fam5": [
+      { id: "serv12", nombre: "Manicura simple", duracion: "30 min" },
+      { id: "serv13", nombre: "Pedicura completa", duracion: "45 min" },
+      { id: "serv14", nombre: "Esmaltado permanente", duracion: "60 min" },
+    ],
+    "fam6": [
+      { id: "serv15", nombre: "Corte de pelo", duracion: "30 min" },
+      { id: "serv16", nombre: "Tinte", duracion: "90 min" },
+      { id: "serv17", nombre: "Tratamiento hidratante", duracion: "45 min" },
+    ],
+  };
+
+  // Obtener todas las habilidades asignadas (para filtrado y visualización)
+  const todasLasHabilidadesAsignadas = React.useMemo(() => {
+    const habilidades: {
+      clinicaId: string,
+      tipoHabilidad: "familia" | "servicio",
+      id: string,
+      nombre: string,
+      familiaNombre?: string,
+      duracion?: string
+    }[] = [];
+    
+    habilidadesProfesionales.forEach((items, clinicaId) => {
+      items.forEach(item => {
+        if (item.startsWith("fam_")) {
+          // Es una familia
+          const familiaId = item.replace("fam_", "");
+          const familia = FAMILIAS_MOCK.find(f => f.id === familiaId);
+          if (familia) {
+            habilidades.push({
+              clinicaId,
+              tipoHabilidad: "familia",
+              id: familia.id,
+              nombre: familia.nombre
+            });
+          }
+        } else if (item.startsWith("serv_")) {
+          // Es un servicio
+          const servicioId = item.replace("serv_", "");
+          // Buscar en todas las familias
+          for (const [familiaId, servicios] of Object.entries(SERVICIOS_MOCK)) {
+            const servicio = servicios.find(s => s.id === servicioId);
+            if (servicio) {
+              const familia = FAMILIAS_MOCK.find(f => f.id === familiaId);
+              habilidades.push({
+                clinicaId,
+                tipoHabilidad: "servicio",
+                id: servicio.id,
+                nombre: servicio.nombre,
+                familiaNombre: familia?.nombre,
+                duracion: servicio.duracion
+              });
+              break;
+            }
+          }
+        }
+      });
+    });
+    
+    return habilidades;
+  }, [habilidadesProfesionales]);
+  
+  const handleAddHabilidad = () => {
+    if (!nuevaClinicaHabilidad) return;
+    
+    let itemToAdd = "";
+    
+    if (tipoSeleccion === "familia" && nuevaFamilia) {
+      itemToAdd = `fam_${nuevaFamilia}`;
+    } else if (tipoSeleccion === "servicio" && nuevoServicio) {
+      itemToAdd = `serv_${nuevoServicio}`;
+    } else {
+      return; // No hay selección
+    }
+    
+    setHabilidadesProfesionales(prev => {
+      const newHabilidades = new Map(prev);
+      
+      // Si la clínica ya existe, añadir la habilidad si no está ya
+      if (newHabilidades.has(nuevaClinicaHabilidad)) {
+        const habilidadesActuales = newHabilidades.get(nuevaClinicaHabilidad) || [];
+        if (!habilidadesActuales.includes(itemToAdd)) {
+          newHabilidades.set(nuevaClinicaHabilidad, [...habilidadesActuales, itemToAdd]);
+        }
+      } else {
+        // Si es una nueva clínica
+        newHabilidades.set(nuevaClinicaHabilidad, [itemToAdd]);
+      }
+      
+      return newHabilidades;
+    });
+    
+    // Resetear selecciones
+    setNuevaFamilia("");
+    setNuevoServicio("");
+  };
+  
+  const handleRemoveHabilidad = (clinicaId: string, itemToRemove: string) => {
+    setHabilidadesProfesionales(prev => {
+      const newHabilidades = new Map(prev);
+      
+      const habilidadesActuales = newHabilidades.get(clinicaId) || [];
+      const habilidadesActualizadas = habilidadesActuales.filter(item => item !== itemToRemove);
+      
+      // Si quedan habilidades, actualizar. Si no, eliminar la clínica
+      if (habilidadesActualizadas.length > 0) {
+        newHabilidades.set(clinicaId, habilidadesActualizadas);
+      } else {
+        newHabilidades.delete(clinicaId);
+      }
+      
+      return newHabilidades;
+    });
+  };
+  
+  useEffect(() => {
+    // Aquí cargaríamos las habilidades profesionales del usuario
+    // desde el backend cuando implementemos la API
+    // Por ahora usamos datos de ejemplo
+    const cargarHabilidadesMock = () => {
+      const habilidadesMock = new Map<string, string[]>();
+      
+      // Ejemplo: asignamos algunas habilidades a una clínica
+      if (clinics.length > 0) {
+        habilidadesMock.set(String(clinics[0].id), ["fam_fam1", "serv_serv9"]);
+        if (clinics.length > 1) {
+          habilidadesMock.set(String(clinics[1].id), ["serv_serv12", "serv_serv13"]);
+        }
+      }
+      
+      setHabilidadesProfesionales(habilidadesMock);
+    };
+    
+    if (!loading) {
+      cargarHabilidadesMock();
+    }
+  }, [loading, clinics]);
+  
+  useEffect(() => {
+    const loadUsuario = async () => {
+      try {
+        // Envolver todo en un try/catch para evitar que errores en la carga
+        // causen ciclos
+        try {
+          const usuario = await getUsuarioById(userId)
+          
+          if (!usuario) {
+            toast({
+              title: "Error",
+              description: "No se pudo encontrar el usuario",
+              variant: "destructive",
+            })
+            router.push(returnTo)
+            return
+          }
+          
+          // Datos básicos
+          setNombre(usuario.nombre || "")
+          setEmail(usuario.email || "")
+          setConfirmEmail(usuario.email || "")
+          setPrefijo(usuario.prefijoTelefonico || "")
+          setTelefono(usuario.telefono || "")
+          setPerfil(usuario.perfil || "")
+          setIsActive(usuario.isActive)
+          
+          // Cargar permisos de clínicas
+          if (usuario.clinicasIds && Array.isArray(usuario.clinicasIds)) {
+            const permisosMap = new Map<string, string[]>();
+            
+            // Convertir array simple a Map con perfiles por defecto
+            usuario.clinicasIds.forEach(clinicaId => {
+              // Acceso seguro usando casting tipado para añadir la propiedad opcional
+              const perfilesUsuario = (usuario as any).perfilesClinica?.[clinicaId] || ["Personal"];
+              permisosMap.set(clinicaId, perfilesUsuario);
+            });
+            
+            setPermisosClinicas(permisosMap);
+          }
+          
+          // Datos adicionales omitidos para simplificar
+          // ...
+          
+        } catch (innerError) {
+          console.error("Error interno al cargar datos:", innerError)
+        }
+        
+        setLoading(false)
+      } catch (error) {
+        console.error("Error al cargar usuario:", error)
+        toast({
+          title: "Error",
+          description: "No se pudo cargar la información del usuario",
+          variant: "destructive",
+        })
+        router.push(returnTo)
+      }
+    }
+    
+    loadUsuario()
+  }, [userId, getUsuarioById, router, returnTo])
+  
+  const handleAddClinica = (clinicaId: string, perfilClinica: string) => {
+    setPermisosClinicas(prev => {
+      const newPermisos = new Map(prev);
+      
+      // Si la clínica ya existe, añadir el perfil si no está ya
+      if (newPermisos.has(clinicaId)) {
+        const perfilesActuales = newPermisos.get(clinicaId) || [];
+        if (!perfilesActuales.includes(perfilClinica)) {
+          newPermisos.set(clinicaId, [...perfilesActuales, perfilClinica]);
+        }
+      } else {
+        // Si es una nueva clínica
+        newPermisos.set(clinicaId, [perfilClinica]);
+      }
+      
+      return newPermisos;
+    });
+  }
+  
+  const handleRemoveClinica = (clinicaId: string, perfilToRemove?: string) => {
+    setPermisosClinicas(prev => {
+      const newPermisos = new Map(prev);
+      
+      // Si se especifica un perfil, solo eliminar ese perfil
+      if (perfilToRemove) {
+        const perfilesActuales = newPermisos.get(clinicaId) || [];
+        const perfilesActualizados = perfilesActuales.filter(p => p !== perfilToRemove);
+        
+        // Si quedan perfiles, actualizar. Si no, eliminar la clínica
+        if (perfilesActualizados.length > 0) {
+          newPermisos.set(clinicaId, perfilesActualizados);
+        } else {
+          newPermisos.delete(clinicaId);
+        }
+      } else {
+        // Si no se especifica perfil, eliminar toda la clínica
+        newPermisos.delete(clinicaId);
+      }
+      
+      return newPermisos;
+    });
+  }
+  
+  const handleSave = async () => {
+    // Validaciones
+    if (!nombre.trim()) {
+      toast({
+        title: "Error",
+        description: "El nombre es obligatorio",
+        variant: "destructive",
+      })
+      return
+    }
+    
+    if (!email.trim()) {
+      toast({
+        title: "Error",
+        description: "El email es obligatorio",
+        variant: "destructive",
+      })
+      return
+    }
+    
+    if (!perfil) {
+      toast({
+        title: "Error",
+        description: "Debe seleccionar un perfil",
+        variant: "destructive",
+      })
+      return
+    }
+    
+    if (selectedClinicas.length === 0) {
+      toast({
+        title: "Error",
+        description: "Debe seleccionar al menos una clínica",
+        variant: "destructive",
+      })
+      return
+    }
+    
+    try {
+      // Convertir el Map a un formato serializable para el API
+      const perfilesClinica: Record<string, string[]> = {};
+      permisosClinicas.forEach((perfiles, clinicaId) => {
+        perfilesClinica[clinicaId] = perfiles;
+      });
+      
+      // Convertir el Map de habilidades a formato serializable
+      const habilidadesPorClinica: Record<string, string[]> = {};
+      habilidadesProfesionales.forEach((habilidades, clinicaId) => {
+        habilidadesPorClinica[clinicaId] = habilidades;
+      });
+      
+      const updatedUser = {
+        nombre,
+        email,
+        prefijoTelefonico: prefijo,
+        telefono,
+        perfil,
+        clinicasIds: selectedClinicas,
+        perfilesClinica, // Nuevo formato con perfiles por clínica
+        habilidadesProfesionales: habilidadesPorClinica, // Habilidades profesionales
+        isActive,
+        fechaModificacion: new Date().toISOString(),
+        
+        // Nuevos campos
+        dni,
+        fechaNacimiento,
+        sexo,
+        telefono2,
+        contrasena: contrasena ? contrasena : undefined, // Solo enviar si se modificó
+        idioma,
+        
+        // Datos de colegiado
+        colegio,
+        numeroColegiado,
+        especialidad,
+        universidad,
+        
+        // Dirección
+        direccion,
+        provincia,
+        pais,
+        localidad,
+        cp,
+        
+        // Configuración
+        exportCsv,
+        indiceControl,
+        numeroPIN,
+        notas,
+        configuracion: {
+          mostrarDesplazados,
+          mostrarCitasPropias,
+          restringirIP,
+          deshabilitado
+        }
+      }
+      
+      const success = await updateUsuario(userId, updatedUser)
+      
+      if (success) {
+        toast({
+          title: "Usuario actualizado",
+          description: "El usuario ha sido actualizado correctamente",
+        })
+        // Eliminar la redirección para permanecer en la misma página
+        // router.push(returnTo)
+      } else {
+        throw new Error("No se pudo actualizar el usuario")
+      }
+    } catch (error) {
+      console.error("Error al actualizar usuario:", error)
+      toast({
+        title: "Error",
+        description: "No se pudo actualizar el usuario",
+        variant: "destructive",
+      })
+    }
+  }
+  
+  // Estado para horarios
+  const [selectedClinicaHorario, setSelectedClinicaHorario] = useState<string>("");
+  const [horarioSemanal, setHorarioSemanal] = useState<Map<string, HorarioDia[]>>(new Map());
+  const [excepciones, setExcepciones] = useState<ExcepcionHoraria[]>([]);
+  const [horarioSubTab, setHorarioSubTab] = useState<"semanal" | "excepciones" | "vista">("semanal");
+  
+  // Estado para modal de edición de franjas horarias
+  const [showHorarioModal, setShowHorarioModal] = useState(false);
+  const [editingFranja, setEditingFranja] = useState<{
+    diaId: string;
+    franjaId?: string;  // Si está definido, estamos editando una franja existente
+    inicio: string;
+    fin: string;
+  } | null>(null);
+  
+  // Memoizar las opciones de clínicas para el selector de horarios
+  const opcionesClinicasHorario = React.useMemo(() => 
+    selectedClinicas.map(clinicaId => {
+      const clinica = clinics.find(c => String(c.id) === clinicaId);
+      return {
+        id: clinicaId,
+        label: clinica ? `${clinica.prefix} - ${clinica.name}` : "Clínica desconocida"
+      };
+    }
+  ), [selectedClinicas, clinics]);
+  
+  // Horarios mock de clínicas (esto vendría de un contexto real)
+  const HORARIOS_CLINICA_MOCK: Record<string, { 
+    horarioGeneral: { apertura: string, cierre: string },
+    excepciones: { dia: string, apertura: string, cierre: string }[]
+  }> = {
+    "1": {
+      horarioGeneral: { apertura: "09:00", cierre: "20:00" },
+      excepciones: [
+        { dia: "lunes", apertura: "10:00", cierre: "19:00" },
+        { dia: "sabado", apertura: "10:00", cierre: "14:00" },
+        { dia: "domingo", apertura: "", cierre: "" } // Cerrado
+      ]
+    },
+    "2": {
+      horarioGeneral: { apertura: "08:30", cierre: "21:00" },
+      excepciones: [
+        { dia: "sabado", apertura: "09:00", cierre: "15:00" },
+        { dia: "domingo", apertura: "", cierre: "" } // Cerrado
+      ]
+    }
+  };
+  
+  // Inicialización de horarios cuando se carga el usuario o cambia la clínica seleccionada
+  useEffect(() => {
+    if (!loading && clinics.length > 0) {
+      // Inicializar horario semanal por defecto para cada clínica
+      const horariosMock = new Map<string, HorarioDia[]>();
+      
+      selectedClinicas.forEach(clinicaId => {
+        // Crear un horario por defecto para cada día de la semana
+        const diasSemana: HorarioDia[] = [
+          { dia: 'lunes', franjas: [], activo: true },
+          { dia: 'martes', franjas: [], activo: true },
+          { dia: 'miercoles', franjas: [], activo: true },
+          { dia: 'jueves', franjas: [], activo: true },
+          { dia: 'viernes', franjas: [], activo: true },
+          { dia: 'sabado', franjas: [], activo: false },
+          { dia: 'domingo', franjas: [], activo: false }
+        ];
+        
+        // Añadir franjas por defecto para los días laborables
+        for (let i = 0; i < 5; i++) { // Lunes a viernes
+          diasSemana[i].franjas.push({
+            id: `franja_${i}_1`,
+            inicio: "09:00",
+            fin: "14:00"
+          });
+          diasSemana[i].franjas.push({
+            id: `franja_${i}_2`,
+            inicio: "16:00",
+            fin: "20:00"
+          });
+        }
+        
+        // Sábado medio día
+        diasSemana[5].franjas.push({
+          id: `franja_5_1`,
+          inicio: "09:00",
+          fin: "14:00"
+        });
+        
+        horariosMock.set(clinicaId, diasSemana);
+      });
+      
+      setHorarioSemanal(horariosMock);
+      
+      // Inicializar con excepciones de ejemplo
+      if (clinics.length > 0) {
+        const excepcionesMock: ExcepcionHoraria[] = [
+          {
+            id: "exc_1",
+            clinicaId: String(clinics[0].id),
+            nombre: "Horario de verano",
+            fechaInicio: "2023-07-01",
+            fechaFin: "2023-08-31",
+            dias: [
+              { dia: 'lunes', franjas: [{ id: "fs_1", inicio: "08:00", fin: "15:00" }], activo: true },
+              { dia: 'martes', franjas: [{ id: "fs_2", inicio: "08:00", fin: "15:00" }], activo: true },
+              { dia: 'miercoles', franjas: [{ id: "fs_3", inicio: "08:00", fin: "15:00" }], activo: true },
+              { dia: 'jueves', franjas: [{ id: "fs_4", inicio: "08:00", fin: "15:00" }], activo: true },
+              { dia: 'viernes', franjas: [{ id: "fs_5", inicio: "08:00", fin: "15:00" }], activo: true },
+              { dia: 'sabado', franjas: [], activo: false },
+              { dia: 'domingo', franjas: [], activo: false }
+            ]
+          }
+        ];
+        
+        setExcepciones(excepcionesMock);
+      }
+      
+      // Seleccionar la primera clínica por defecto
+      if (selectedClinicas.length > 0) {
+        setSelectedClinicaHorario(selectedClinicas[0]);
+      }
+    }
+  }, [loading, clinics, selectedClinicas]);
+  
+  // Función para verificar si una franja horaria está dentro del horario de la clínica
+  const esFranjaValida = (clinicaId: string, inicio: string, fin: string, dia: string): boolean => {
+    // Validaciones básicas
+    if (!inicio || !fin || inicio >= fin) return false;
+    
+    // Esta es una implementación mejorada que valida contra las reglas de la clínica
+    // Usar el método isWithinClinicHours del contexto ClinicSchedule
+    return clinicSchedule.isWithinClinicHours(clinicaId, dia, inicio, fin);
+  };
+  
+  // Función para añadir franja horaria
+  const handleAddFranja = (clinicaId: string, dia: string, inicio: string, fin: string) => {
+    if (!esFranjaValida(clinicaId, inicio, fin, dia)) {
+      toast({
+        title: "Error",
+        description: "La franja horaria está fuera del horario de la clínica",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    setHorarioSemanal(prevHorario => {
+      const newHorario = new Map(prevHorario);
+      const diasClinica = newHorario.get(clinicaId) || [];
+      
+      const diaIndex = diasClinica.findIndex(d => d.dia === dia);
+      if (diaIndex >= 0) {
+        const updatedDias = [...diasClinica];
+        updatedDias[diaIndex] = {
+          ...updatedDias[diaIndex],
+          franjas: [
+            ...updatedDias[diaIndex].franjas,
+            {
+              id: `franja_${Date.now()}`,
+              inicio,
+              fin
+            }
+          ]
+        };
+        
+        newHorario.set(clinicaId, updatedDias);
+      }
+      
+      return newHorario;
+    });
+  };
+  
+  // Función para eliminar franja horaria
+  const handleRemoveFranja = (clinicaId: string, dia: string, franjaId: string) => {
+    setHorarioSemanal(prevHorario => {
+      const newHorario = new Map(prevHorario);
+      const diasClinica = newHorario.get(clinicaId) || [];
+      
+      const diaIndex = diasClinica.findIndex(d => d.dia === dia);
+      if (diaIndex >= 0) {
+        const updatedDias = [...diasClinica];
+        updatedDias[diaIndex] = {
+          ...updatedDias[diaIndex],
+          franjas: updatedDias[diaIndex].franjas.filter(f => f.id !== franjaId)
+        };
+        
+        newHorario.set(clinicaId, updatedDias);
+      }
+      
+      return newHorario;
+    });
+  };
+  
+  // Traducción de días de la semana
+  const traducirDia = (dia: string): string => {
+    const traducciones: Record<string, string> = {
+      'lunes': 'Lunes',
+      'martes': 'Martes',
+      'miercoles': 'Miércoles',
+      'jueves': 'Jueves',
+      'viernes': 'Viernes', 
+      'sabado': 'Sábado',
+      'domingo': 'Domingo'
+    };
+    
+    return traducciones[dia] || dia;
+  };
+  
+  if (loading) {
+    return (
+      <div className="container p-6 mx-auto space-y-6">
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-semibold">Cargando información del usuario...</h1>
+        </div>
+      </div>
+    )
+  }
+  
+  return (
+    <div className="container max-w-5xl p-6 mx-auto space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold">Editar usuario</h1>
+      </div>
+      
+      <Tabs 
+        defaultValue="datos-personales" 
+        className="w-full" 
+        value={activeTab}
+        onValueChange={setActiveTab}
+      >
+        <TabsList className="mb-4">
+          <TabsTrigger value="datos-personales">Datos personales</TabsTrigger>
+          <TabsTrigger value="permisos">Permisos</TabsTrigger>
+          <TabsTrigger value="horario">Horario</TabsTrigger>
+          <TabsTrigger value="habilidades">Habilidades profesionales</TabsTrigger>
+          <TabsTrigger value="condiciones">Condiciones laborales</TabsTrigger>
+          <TabsTrigger value="fichajes">Control de Presencia</TabsTrigger>
+        </TabsList>
+        
+        {/* Pestaña de Datos Personales */}
+        <TabsContent value="datos-personales" className="space-y-4">
+          <Card className="p-4 space-y-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="space-y-3">
+                <div>
+                  <Label htmlFor="nombre" className="text-sm font-medium">Nombre</Label>
+                  <Input 
+                    id="nombre" 
+                    value={nombre}
+                    onChange={(e) => setNombre(e.target.value)}
+                    className="h-9"
+                  />
+                </div>
+                
+                <div>
+                  <Label htmlFor="email" className="text-sm font-medium">E-mail</Label>
+                  <Input 
+                    id="email" 
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="h-9"
+                  />
+                </div>
+                
+                <div>
+                  <Label htmlFor="confirmEmail" className="text-sm font-medium">Confirma e-mail</Label>
+                  <Input 
+                    id="confirmEmail" 
+                    type="email"
+                    value={confirmEmail}
+                    onChange={(e) => setConfirmEmail(e.target.value)}
+                    className="h-9"
+                  />
+                </div>
+                
+                <div className="flex gap-4">
+                  <div className="w-1/3">
+                    <Label htmlFor="prefijo" className="text-sm font-medium">Prefijo</Label>
+                    <MemoizedSelect 
+                      value={prefijo} 
+                      onChange={setPrefijo} 
+                      placeholder="Seleccione una opción"
+                    >
+                      <SelectItem value="ES">ES (+34)</SelectItem>
+                      <SelectItem value="MA">MA (+212)</SelectItem>
+                    </MemoizedSelect>
+                  </div>
+                  
+                  <div className="w-2/3">
+                    <Label htmlFor="telefono" className="text-sm font-medium">Teléfono</Label>
+                    <Input 
+                      id="telefono" 
+                      value={telefono}
+                      onChange={(e) => setTelefono(e.target.value)}
+                      className="h-9"
+                    />
+                  </div>
+                </div>
+                
+                {/* Campos adicionales para datos personales */}
+                <div>
+                  <Label htmlFor="dni" className="text-sm font-medium">DNI</Label>
+                  <Input 
+                    id="dni" 
+                    value={dni}
+                    onChange={(e) => setDni(e.target.value)}
+                    className="h-9"
+                  />
+                </div>
+                
+                <div>
+                  <Label htmlFor="fechaNacimiento" className="text-sm font-medium">Fecha nacimiento</Label>
+                  <Input 
+                    id="fechaNacimiento" 
+                    type="date" 
+                    placeholder="dd/mm/yyyy"
+                    value={fechaNacimiento}
+                    onChange={(e) => setFechaNacimiento(e.target.value)}
+                    className="h-9"
+                  />
+                </div>
+              </div>
+              
+              <div className="space-y-3">
+                <div>
+                  <Label htmlFor="sexo" className="text-sm font-medium">Sexo</Label>
+                  <MemoizedSelect 
+                    value={sexo} 
+                    onChange={setSexo} 
+                    placeholder="Seleccione una opción"
+                  >
+                    <SelectItem value="mujer">Mujer</SelectItem>
+                    <SelectItem value="hombre">Hombre</SelectItem>
+                  </MemoizedSelect>
+                </div>
+                
+                <div>
+                  <Label htmlFor="perfil" className="text-sm font-medium">Perfil</Label>
+                  <MemoizedSelect 
+                    value={perfil} 
+                    onChange={setPerfil} 
+                    placeholder="Seleccione una opción"
+                  >
+                    <SelectItem value="Administrador">Administrador</SelectItem>
+                    <SelectItem value="Central">Central</SelectItem>
+                    <SelectItem value="Contabilidad">Contabilidad</SelectItem>
+                    <SelectItem value="Doctor Administrador">Doctor Administrador</SelectItem>
+                    <SelectItem value="Encargado">Encargado</SelectItem>
+                    <SelectItem value="Gerente de zona">Gerente de zona</SelectItem>
+                    <SelectItem value="Marketing">Marketing</SelectItem>
+                    <SelectItem value="Operador Call Center">Operador Call Center</SelectItem>
+                    <SelectItem value="Personal sin acceso">Personal sin acceso</SelectItem>
+                    <SelectItem value="Personal">Personal</SelectItem>
+                    <SelectItem value="Profesional">Profesional</SelectItem>
+                    <SelectItem value="Recepción">Recepción</SelectItem>
+                    <SelectItem value="Supervisor Call Center">Supervisor Call Center</SelectItem>
+                  </MemoizedSelect>
+                </div>
+                
+                <div>
+                  <Label htmlFor="telefono2" className="text-sm font-medium">Teléfono 2</Label>
+                  <Input 
+                    id="telefono2"
+                    value={telefono2}
+                    onChange={(e) => setTelefono2(e.target.value)}
+                    className="h-9"
+                  />
+                </div>
+                
+                <div>
+                  <Label htmlFor="login" className="text-sm font-medium">Login</Label>
+                  <Input id="login" value={email} disabled className="h-9" />
+                </div>
+                
+                <div>
+                  <Label htmlFor="contrasena" className="text-sm font-medium">Contraseña</Label>
+                  <Input 
+                    id="contrasena" 
+                    type="password"
+                    value={contrasena}
+                    onChange={(e) => setContrasena(e.target.value)}
+                    className="h-9"
+                  />
+                </div>
+                
+                <div>
+                  <Label htmlFor="idioma" className="text-sm font-medium">Idioma</Label>
+                  <Select value={idioma} onValueChange={setIdioma}>
+                    <SelectTrigger id="idioma" className="h-9">
+                      <SelectValue placeholder="Seleccione una opción" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="es">Español</SelectItem>
+                      <SelectItem value="fr">Francés</SelectItem>
+                      <SelectItem value="en">Inglés</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="flex items-center pt-4 space-x-2">
+                  <Switch 
+                    checked={isActive} 
+                    onCheckedChange={setIsActive} 
+                    id="active-status" 
+                  />
+                  <Label htmlFor="active-status" className="font-medium cursor-pointer">
+                    Usuario {isActive ? 'activo' : 'inactivo'}
+                  </Label>
+                </div>
+              </div>
+            </div>
+            
+            {/* Sección de Datos del colegiado */}
+            <div className="mt-6">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="p-1 bg-purple-100 rounded">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-purple-700">
+                    <path d="M15 7v1a3 3 0 0 1-3 3h0a3 3 0 0 1-3-3V7m3-3h0a9 9 0 0 1 9 9v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 9-9h0Z" />
+                  </svg>
+                </div>
+                <h2 className="text-base font-semibold text-gray-700">Datos del colegiado</h2>
+              </div>
+              
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <Label htmlFor="colegio" className="text-sm font-medium">Colegio</Label>
+                  <Input 
+                    id="colegio"
+                    value={colegio}
+                    onChange={(e) => setColegio(e.target.value)}
+                    className="h-9"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="numeroColegiado" className="text-sm font-medium">Número de colegiado</Label>
+                  <Input 
+                    id="numeroColegiado"
+                    value={numeroColegiado}
+                    onChange={(e) => setNumeroColegiado(e.target.value)}
+                    className="h-9"
+                  />
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-1 gap-4 mt-3 md:grid-cols-2">
+                <div>
+                  <Input 
+                    placeholder="Especialidad"
+                    value={especialidad}
+                    onChange={(e) => setEspecialidad(e.target.value)}
+                    className="h-9"
+                  />
+                </div>
+                <div>
+                  <Input 
+                    placeholder="Universidad"
+                    value={universidad}
+                    onChange={(e) => setUniversidad(e.target.value)}
+                    className="h-9"
+                  />
+                </div>
+              </div>
+            </div>
+            
+            {/* Sección de Dirección */}
+            <div className="mt-6">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="p-1 bg-purple-100 rounded">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-purple-700">
+                    <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
+                    <circle cx="12" cy="10" r="3" />
+                  </svg>
+                </div>
+                <h2 className="text-base font-semibold text-gray-700">Dirección</h2>
+              </div>
+              
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <Label htmlFor="direccion" className="text-sm font-medium">Dirección</Label>
+                  <Input 
+                    id="direccion"
+                    value={direccion}
+                    onChange={(e) => setDireccion(e.target.value)}
+                    className="h-9"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="provincia" className="text-sm font-medium">Provincia</Label>
+                  <Input 
+                    id="provincia"
+                    value={provincia}
+                    onChange={(e) => setProvincia(e.target.value)}
+                    className="h-9"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="pais" className="text-sm font-medium">País</Label>
+                  <Input 
+                    id="pais" 
+                    placeholder="(Usa uno)"
+                    value={pais}
+                    onChange={(e) => setPais(e.target.value)}
+                    className="h-9"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="localidad" className="text-sm font-medium">Localidad</Label>
+                  <Input 
+                    id="localidad"
+                    value={localidad}
+                    onChange={(e) => setLocalidad(e.target.value)}
+                    className="h-9"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="cp" className="text-sm font-medium">CP</Label>
+                  <Input 
+                    id="cp"
+                    value={cp}
+                    onChange={(e) => setCp(e.target.value)}
+                    className="h-9"
+                  />
+                </div>
+              </div>
+            </div>
+            
+            {/* Sección de Configuración */}
+            <div className="mt-6">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="p-1 bg-purple-100 rounded">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-purple-700">
+                    <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                </div>
+                <h2 className="text-base font-semibold text-gray-700">Configuración</h2>
+              </div>
+              
+              <div className="space-y-3">
+                <div>
+                  <Label htmlFor="exportCsv" className="text-sm font-medium">Export CSV</Label>
+                  <Select value={exportCsv} onValueChange={setExportCsv}>
+                    <SelectTrigger id="exportCsv" className="h-9">
+                      <SelectValue placeholder="Seleccione una opción" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value=":">:</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="indiceControl" className="text-sm font-medium">Índice control de presencia</Label>
+                  <Select value={indiceControl} onValueChange={setIndiceControl}>
+                    <SelectTrigger id="indiceControl" className="h-9">
+                      <SelectValue placeholder="Seleccione una opción" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="000001-Markeiser-Catherine">000001-Markeiser-Catherine</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="numeroPIN" className="text-sm font-medium">Número de identificación personal (PIN)</Label>
+                  <Input 
+                    id="numeroPIN"
+                    value={numeroPIN}
+                    onChange={(e) => setNumeroPIN(e.target.value)}
+                    className="h-9"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="notas" className="text-sm font-medium">Notas</Label>
+                  <textarea 
+                    id="notas"
+                    className="flex min-h-[70px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    value={notas}
+                    onChange={(e) => setNotas(e.target.value)}
+                  />
+                </div>
+                
+                <div className="grid grid-cols-2 gap-3 mt-3">
+                  <div className="flex items-center space-x-2">
+                    <Checkbox 
+                      id="mostrarDesplazados" 
+                      checked={mostrarDesplazados}
+                      onCheckedChange={(checked) => setMostrarDesplazados(checked === true)}
+                    />
+                    <Label htmlFor="mostrarDesplazados" className="text-sm">No mostrar en desplazados</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Checkbox 
+                      id="mostrarCitasPropias"
+                      checked={mostrarCitasPropias}
+                      onCheckedChange={(checked) => setMostrarCitasPropias(checked === true)}
+                    />
+                    <Label htmlFor="mostrarCitasPropias" className="text-sm">Mostrar únicamente las citas propias</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Checkbox 
+                      id="restringirIP"
+                      checked={restringirIP}
+                      onCheckedChange={(checked) => setRestringirIP(checked === true)}
+                    />
+                    <Label htmlFor="restringirIP" className="text-sm">Restringir IP</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Checkbox 
+                      id="deshabilitado" 
+                      checked={deshabilitado}
+                      onCheckedChange={(checked) => setDeshabilitado(checked === true)}
+                    />
+                    <Label htmlFor="deshabilitado" className="text-sm">Deshabilitado</Label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Card>
+        </TabsContent>
+        
+        {/* Pestaña de Permisos */}
+        <TabsContent value="permisos" className="space-y-4">
+          <Card className="p-4">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                  <h3 className="text-base font-medium">Acceso a clínicas</h3>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <Label htmlFor="clinica" className="text-sm font-medium">Clínica</Label>
+                  <MemoizedSelect
+                    value={nuevaClinicaId}
+                    onChange={setNuevaClinicaId}
+                    placeholder="Seleccione una clínica"
+                  >
+                    {clinicasToShow.map((clinic) => (
+                      <SelectItem key={clinic.id} value={String(clinic.id)}>
+                        {clinic.prefix} - {clinic.name}
+                        {!clinic.isActive && <span className="ml-2 text-xs text-red-500">(inactiva)</span>}
+                      </SelectItem>
+                    ))}
+                  </MemoizedSelect>
+                </div>
+                <div>
+                  <Label htmlFor="perfilUsuario" className="text-sm font-medium">Perfil de usuario en esta clínica</Label>
+                  <MemoizedSelect 
+                    value={nuevoPerfilClinica} 
+                    onChange={setNuevoPerfilClinica}
+                    disabled={!nuevaClinicaId}
+                    placeholder={!nuevaClinicaId ? "Seleccione primero una clínica" : "Seleccione un perfil"}
+                  >
+                    {!nuevaClinicaId ? (
+                      <SelectItem value="no_selection" disabled>Seleccione primero una clínica</SelectItem>
+                    ) : (
+                      // Lista de perfiles disponibles, filtrando los ya asignados a esta clínica
+                      PERFILES_DISPONIBLES
+                        .filter(perfil => {
+                          // Si la clínica ya tiene perfiles asignados, filtrar los existentes
+                          const perfilesExistentes = permisosClinicas.get(nuevaClinicaId) || [];
+                          return !perfilesExistentes.includes(perfil);
+                        })
+                        .map(perfil => (
+                          <SelectItem key={perfil} value={perfil}>{perfil}</SelectItem>
+                        ))
+                    )}
+                  </MemoizedSelect>
+                </div>
+              </div>
+              
+              <div className="flex items-center mt-3 space-x-4">
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="showDisabledClinicsPermisos" 
+                    checked={showDisabledClinics} 
+                    onCheckedChange={(checked) => setShowDisabledClinics(checked === true)}
+                  />
+                  <Label htmlFor="showDisabledClinicsPermisos" className="text-sm">Ver clínicas desactivadas</Label>
+                </div>
+                
+                <Button 
+                  className="px-5 ml-auto bg-purple-600 hover:bg-purple-700"
+                  onClick={() => {
+                    if (nuevaClinicaId && nuevoPerfilClinica) {
+                      handleAddClinica(nuevaClinicaId, nuevoPerfilClinica);
+                      // No reseteamos la clínica seleccionada para facilitar añadir múltiples perfiles
+                      setNuevoPerfilClinica("");
+                    }
+                  }}
+                  disabled={!nuevaClinicaId || !nuevoPerfilClinica}
+                >
+                  Añadir
+                </Button>
+              </div>
+              
+              <div className="mt-6">
+                <h4 className="mb-3 text-sm font-medium">Listado de permisos de acceso sobre clínicas: {nombre}</h4>
+                
+                <div className="relative mb-4">
+                  <Search className="absolute w-4 h-4 text-gray-500 -translate-y-1/2 left-3 top-1/2" />
+                  <Input
+                    placeholder="Buscador"
+                    className="pl-10 h-9"
+                    value={searchPermisos}
+                    onChange={(e) => setSearchPermisos(e.target.value)}
+                  />
+                </div>
+                
+                <div className="border rounded-md">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="hover:bg-transparent">
+                        <TableHead className="py-2 h-9">Prefijo</TableHead>
+                        <TableHead className="py-2 h-9">Nombre</TableHead>
+                        <TableHead className="py-2 h-9">Ciudad</TableHead>
+                        <TableHead className="py-2 h-9">Perfiles</TableHead>
+                        <TableHead className="w-[100px] text-center h-9 py-2">Estado</TableHead>
+                        <TableHead className="w-[100px] text-right h-9 py-2">Acciones</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {selectedClinicas.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={6} className="py-4 text-center text-gray-500">
+                            No hay permisos de acceso asignados
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        selectedClinicas
+                          .filter(clinicaId => {
+                            if (!searchPermisos) return true;
+                            const clinica = clinics.find(c => String(c.id) === clinicaId);
+                            if (!clinica) return false;
+                            return (
+                              clinica.prefix.toLowerCase().includes(searchPermisos.toLowerCase()) ||
+                              clinica.name.toLowerCase().includes(searchPermisos.toLowerCase()) ||
+                              (clinica.city && clinica.city.toLowerCase().includes(searchPermisos.toLowerCase()))
+                            );
+                          })
+                          .map((clinicaId) => {
+                            const clinica = clinics.find(c => String(c.id) === clinicaId);
+                            if (!clinica) return null;
+                            
+                            const perfiles = permisosClinicas.get(clinicaId) || [];
+                            
+                            return (
+                              <TableRow key={clinicaId}>
+                                <TableCell>{clinica.prefix}</TableCell>
+                                <TableCell>{clinica.name}</TableCell>
+                                <TableCell>{clinica.city || '-'}</TableCell>
+                                <TableCell>
+                                  <div className="flex flex-wrap gap-1">
+                                    {perfiles.map(perfil => (
+                                      <Badge 
+                                        key={`${clinicaId}-${perfil}`} 
+                                        variant="outline"
+                                        className="flex items-center gap-1 bg-purple-50"
+                                      >
+                                        {perfil}
+                                        {perfiles.length > 1 && (
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="w-4 h-4 p-0 ml-1 text-gray-500 rounded-full hover:text-red-500 hover:bg-transparent"
+                                            onClick={() => handleRemoveClinica(clinicaId, perfil)}
+                                          >
+                                            ×
+                                          </Button>
+                                        )}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-center">
+                                  <span className={`px-2 py-1 text-xs rounded-full ${clinica.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                                    {clinica.isActive ? 'Activo' : 'Inactivo'}
+                                  </span>
+                                </TableCell>
+                                <TableCell>
+                                  <div className="flex justify-end gap-2">
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="w-8 h-8 text-purple-600 hover:text-purple-700 hover:bg-purple-100"
+                                      onClick={() => handleRemoveClinica(clinicaId)}
+                                    >
+                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                                      </svg>
+                                    </Button>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            </div>
+          </Card>
+        </TabsContent>
+        
+        {/* Pestaña de Horario */}
+        <TabsContent value="horario" className="space-y-4">
+          <Card className="p-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-medium">Horario</h3>
+            </div>
+            
+            <div className="space-y-5">
+              <div className="p-3 mb-4 rounded-md bg-purple-50">
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="p-1 bg-purple-100 rounded">
+                    <Clock className="w-4 h-4 text-purple-700" />
+                  </div>
+                  <p className="text-sm font-medium text-purple-700">
+                    Configure el horario de trabajo de este profesional para cada clínica
+                  </p>
+                </div>
+                <p className="text-sm text-gray-600 ml-7">
+                  El horario debe respetar los horarios de apertura y cierre de cada clínica
+                </p>
+              </div>
+              
+              <div>
+                <Label htmlFor="clinicaHorario" className="text-sm font-medium">Clínica</Label>
+                <SelectClinica 
+                  value={selectedClinicaHorario} 
+                  onChange={setSelectedClinicaHorario}
+                  disabled={selectedClinicas.length === 0}
+                  options={opcionesClinicasHorario}
+                  placeholder="Seleccione una clínica"
+                />
+                
+                {selectedClinicas.length === 0 && (
+                  <div className="flex items-center gap-2 mt-2 text-sm text-amber-600">
+                    <AlertCircle className="w-4 h-4" />
+                    <span>Debe asignar primero al menos una clínica en la pestaña de "Permisos"</span>
+                  </div>
+                )}
+              </div>
+              
+              {selectedClinicaHorario && (
+                <div className="mt-4">
+                  <Tabs 
+                    value={horarioSubTab} 
+                    onValueChange={(value: any) => setHorarioSubTab(value)}
+                    className="w-full"
+                  >
+                    <TabsList className="grid grid-cols-3 mb-4">
+                      <TabsTrigger value="semanal" className="text-sm">
+                        <Calendar className="w-4 h-4 mr-2" />
+                        Horario semanal
+                      </TabsTrigger>
+                      <TabsTrigger value="excepciones" className="text-sm">
+                        <AlertCircle className="w-4 h-4 mr-2" />
+                        Excepciones
+                      </TabsTrigger>
+                      <TabsTrigger value="vista" className="text-sm">
+                        <Eye className="w-4 h-4 mr-2" />
+                        Vista general
+                      </TabsTrigger>
+                    </TabsList>
+                    
+                    <TabsContent value="semanal" className="space-y-4">
+                      <div className="p-3 mb-4 text-sm border border-blue-100 rounded-md bg-blue-50">
+                        <div className="flex items-center gap-2">
+                          <div className="p-1 bg-blue-100 rounded">
+                            <Clock className="w-4 h-4 text-blue-700" />
+                          </div>
+                          <p className="font-medium text-blue-700">
+                            Horario de la clínica seleccionada
+                          </p>
+                        </div>
+                        <div className="mt-1 ml-7">
+                          {(() => {
+                            // Obtener el horario de la clínica seleccionada o usar uno por defecto
+                            const horarioClinica = HORARIOS_CLINICA_MOCK[selectedClinicaHorario] || 
+                                                  HORARIOS_CLINICA_MOCK["1"] || 
+                                                  { 
+                                                    horarioGeneral: { apertura: "09:00", cierre: "20:00" },
+                                                    excepciones: []
+                                                  };
+                            
+                            return (
+                              <>
+                                <p className="text-gray-600">
+                                  <span className="font-medium">Apertura general:</span> {horarioClinica.horarioGeneral.apertura} - {horarioClinica.horarioGeneral.cierre}
+                                </p>
+                                
+                                {horarioClinica.excepciones.map((exc, index) => (
+                                  <p key={`exc-${index}`} className="text-gray-600">
+                                    <span className="font-medium">{traducirDia(exc.dia)}:</span> {exc.apertura ? `${exc.apertura} - ${exc.cierre}` : "Cerrado"}
+                                  </p>
+                                ))}
+                              </>
+                            );
+                          })()}
+                          <p className="mt-1 text-xs italic text-gray-500">
+                            Las franjas horarias del usuario deben estar dentro del horario de apertura de la clínica.
+                          </p>
+                        </div>
+                      </div>
+                      
+                      <div className="overflow-hidden border rounded-md">
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="hover:bg-transparent">
+                              <TableHead className="w-[100px] h-9 py-2">Día</TableHead>
+                              <TableHead className="py-2 h-9">Franjas horarias</TableHead>
+                              <TableHead className="py-2 h-9">Estado</TableHead>
+                              <TableHead className="w-[100px] text-right h-9 py-2">Acciones</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {horarioSemanal.get(selectedClinicaHorario)?.map((dia) => (
+                              <TableRow key={dia.dia}>
+                                <TableCell className="font-medium">{traducirDia(dia.dia)}</TableCell>
+                                <TableCell>
+                                  <div className="flex flex-wrap gap-2">
+                                    {dia.franjas.length === 0 ? (
+                                      <span className="text-sm italic text-gray-500">Sin horario definido</span>
+                                    ) : (
+                                      dia.franjas.map((franja) => (
+                                        <Badge 
+                                          key={franja.id} 
+                                          variant="outline"
+                                          className={`flex items-center gap-1 cursor-pointer hover:bg-blue-100 
+                                            ${esFranjaValida(selectedClinicaHorario, franja.inicio, franja.fin, dia.dia) 
+                                              ? "bg-blue-50 text-blue-700 border-blue-200" 
+                                              : "bg-red-50 text-red-700 border-red-200"
+                                            }`}
+                                          onClick={() => {
+                                            // Configurar los datos para editar esta franja
+                                            setEditingFranja({
+                                              diaId: dia.dia,
+                                              franjaId: franja.id,
+                                              inicio: franja.inicio,
+                                              fin: franja.fin
+                                            });
+                                            setShowHorarioModal(true);
+                                          }}
+                                        >
+                                          {esFranjaValida(selectedClinicaHorario, franja.inicio, franja.fin, dia.dia)
+                                            ? <Clock className="w-3 h-3 mr-1" />
+                                            : <AlertCircle className="w-3 h-3 mr-1" />
+                                          }
+                                          {franja.inicio} - {franja.fin}
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="w-4 h-4 p-0 ml-1 text-gray-500 rounded-full hover:text-red-500 hover:bg-transparent"
+                                            onClick={(e) => {
+                                              e.stopPropagation(); // Evitar que se abra el diálogo de edición
+                                              handleRemoveFranja(selectedClinicaHorario, dia.dia, franja.id);
+                                            }}
+                                          >
+                                            ×
+                                          </Button>
+                                        </Badge>
+                                      ))
+                                    )}
+                                    <Button 
+                                      variant="ghost" 
+                                      size="sm"
+                                      className="h-6 text-gray-700 bg-gray-100 rounded-full hover:bg-gray-200"
+                                      onClick={() => {
+                                        // Configurar datos para añadir una nueva franja
+                                        setEditingFranja({
+                                          diaId: dia.dia,
+                                          inicio: "09:00",
+                                          fin: "14:00"
+                                        });
+                                        setShowHorarioModal(true);
+                                      }}
+                                    >
+                                      <Plus className="w-3 h-3 mr-1" />
+                                      Añadir
+                                    </Button>
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-center">
+                                  <div className="flex justify-center">
+                                    <Switch 
+                                      checked={dia.activo} 
+                                      onCheckedChange={(checked) => {
+                                        setHorarioSemanal(prev => {
+                                          const newHorario = new Map(prev);
+                                          const diasClinica = [...(newHorario.get(selectedClinicaHorario) || [])];
+                                          const diaIndex = diasClinica.findIndex(d => d.dia === dia.dia);
+                                          
+                                          if (diaIndex >= 0) {
+                                            diasClinica[diaIndex] = {
+                                              ...diasClinica[diaIndex],
+                                              activo: checked
+                                            };
+                                            newHorario.set(selectedClinicaHorario, diasClinica);
+                                          }
+                                          
+                                          return newHorario;
+                                        });
+                                      }}
+                                    />
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <Button 
+                                        variant="ghost"
+                                        size="icon"
+                                        className="w-8 h-8 text-purple-600 hover:text-purple-700 hover:bg-purple-100"
+                                      >
+                                        <MoreHorizontal className="w-4 h-4" />
+                                      </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end">
+                                      <DropdownMenuItem
+                                        onClick={() => {
+                                          // Copiar horario para todos los días laborables
+                                          setHorarioSemanal(prev => {
+                                            const newHorario = new Map(prev);
+                                            const diasClinica = [...(newHorario.get(selectedClinicaHorario) || [])];
+                                            const diaActual = diasClinica.find(d => d.dia === dia.dia);
+                                            
+                                            if (diaActual) {
+                                              const diasLaborables = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes'];
+                                              diasLaborables.forEach(diaLaboral => {
+                                                if (diaLaboral !== dia.dia) {
+                                                  const indexDia = diasClinica.findIndex(d => d.dia === diaLaboral);
+                                                  if (indexDia >= 0) {
+                                                    diasClinica[indexDia] = {
+                                                      ...diasClinica[indexDia],
+                                                      franjas: [...diaActual.franjas.map(f => ({ ...f, id: `franja_${Date.now()}_${Math.random()}` }))],
+                                                      activo: diaActual.activo
+                                                    };
+                                                  }
+                                                }
+                                              });
+                                              newHorario.set(selectedClinicaHorario, diasClinica);
+                                            }
+                                            
+                                            return newHorario;
+                                          });
+                                        }}
+                                      >
+                                        Aplicar a días laborables
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem
+                                        onClick={() => {
+                                          // Limpiar horario de este día
+                                          setHorarioSemanal(prev => {
+                                            const newHorario = new Map(prev);
+                                            const diasClinica = [...(newHorario.get(selectedClinicaHorario) || [])];
+                                            const diaIndex = diasClinica.findIndex(d => d.dia === dia.dia);
+                                            
+                                            if (diaIndex >= 0) {
+                                              diasClinica[diaIndex] = {
+                                                ...diasClinica[diaIndex],
+                                                franjas: []
+                                              };
+                                              newHorario.set(selectedClinicaHorario, diasClinica);
+                                            }
+                                            
+                                            return newHorario;
+                                          });
+                                        }}
+                                      >
+                                        Limpiar horario
+                                      </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                      
+                      <div className="flex justify-end mt-4">
+                        <Button 
+                          className="px-4 bg-purple-600 hover:bg-purple-700"
+                          onClick={() => {
+                            // Por ahora, sólo mostrar un mensaje de éxito
+                            toast({
+                              title: "Horario guardado",
+                              description: "El horario semanal ha sido guardado correctamente",
+                            });
+                          }}
+                        >
+                          <Save className="w-4 h-4 mr-2" />
+                          Guardar horario
+                        </Button>
+                      </div>
+                    </TabsContent>
+                    
+                    <TabsContent value="excepciones" className="space-y-4">
+                      <div className="mb-4">
+                        <Button 
+                          variant="outline"
+                          className="text-gray-600 border-gray-300 border-dashed"
+                          onClick={() => {
+                            // Aquí iría la lógica para añadir una nueva excepción
+                            toast({
+                              title: "Funcionalidad en desarrollo",
+                              description: "La creación de excepciones de horario estará disponible próximamente",
+                            });
+                          }}
+                        >
+                          <PlusCircle className="w-4 h-4 mr-2" />
+                          Nueva excepción de horario
+                        </Button>
+                      </div>
+                      
+                      <div className="border rounded-md">
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="hover:bg-transparent">
+                              <TableHead className="py-2 h-9">Nombre</TableHead>
+                              <TableHead className="py-2 h-9">Período</TableHead>
+                              <TableHead className="py-2 h-9">Días afectados</TableHead>
+                              <TableHead className="w-[100px] text-right h-9 py-2">Acciones</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {excepciones.filter(e => e.clinicaId === selectedClinicaHorario).length === 0 ? (
+                              <TableRow>
+                                <TableCell colSpan={4} className="py-4 text-center text-gray-500">
+                                  No hay excepciones de horario configuradas
+                                </TableCell>
+                              </TableRow>
+                            ) : (
+                              excepciones
+                                .filter(e => e.clinicaId === selectedClinicaHorario)
+                                .map((excepcion) => (
+                                  <TableRow key={excepcion.id}>
+                                    <TableCell className="font-medium">{excepcion.nombre}</TableCell>
+                                    <TableCell>
+                                      <div className="flex items-center gap-2">
+                                        <Calendar className="w-4 h-4 text-gray-500" />
+                                        <span>
+                                          {new Date(excepcion.fechaInicio).toLocaleDateString()} - {new Date(excepcion.fechaFin).toLocaleDateString()}
+                                        </span>
+                                      </div>
+                                    </TableCell>
+                                    <TableCell>
+                                      <div className="flex flex-wrap gap-1">
+                                        {excepcion.dias
+                                          .filter(d => d.activo)
+                                          .map((dia) => (
+                                            <Badge 
+                                              key={dia.dia} 
+                                              variant="outline"
+                                              className="bg-amber-50 text-amber-700 border-amber-200"
+                                            >
+                                              {traducirDia(dia.dia)}
+                                            </Badge>
+                                          ))}
+                                      </div>
+                                    </TableCell>
+                                    <TableCell className="text-right">
+                                      <div className="flex justify-end gap-2">
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="w-8 h-8 text-purple-600 hover:text-purple-700 hover:bg-purple-100"
+                                          onClick={() => {
+                                            // Aquí iría la lógica para editar
+                                            toast({
+                                              title: "Funcionalidad en desarrollo",
+                                              description: "La edición de excepciones estará disponible próximamente",
+                                            });
+                                          }}
+                                        >
+                                          <Pencil className="w-4 h-4" />
+                                        </Button>
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="w-8 h-8 text-purple-600 hover:text-red-700 hover:bg-red-100"
+                                          onClick={() => {
+                                            // Aquí iría la lógica para eliminar
+                                            setExcepciones(prev => 
+                                              prev.filter(e => e.id !== excepcion.id)
+                                            );
+                                          }}
+                                        >
+                                          <Trash className="w-4 h-4" />
+                                        </Button>
+                                      </div>
+                                    </TableCell>
+                                  </TableRow>
+                                ))
+                            )}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </TabsContent>
+                    
+                    <TabsContent value="vista" className="space-y-4">
+                      <div className="p-4 text-center rounded-md bg-gray-50">
+                        <p className="text-gray-500">La visualización de calendario será implementada próximamente</p>
+                        <p className="mt-1 text-sm text-gray-400">Mostrará todos los horarios y excepciones en una vista de calendario interactiva</p>
+                      </div>
+                    </TabsContent>
+                  </Tabs>
+                </div>
+              )}
+            </div>
+          </Card>
+        </TabsContent>
+        
+        {/* Pestaña de Habilidades Profesionales */}
+        <TabsContent value="habilidades" className="space-y-4">
+          <Card className="p-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-medium">Habilidades profesionales</h3>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="p-3 mb-4 rounded-md bg-purple-50">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="p-1 bg-purple-100 rounded">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-purple-700">
+                      <circle cx="12" cy="12" r="10" />
+                      <path d="m9 12 2 2 4-4" />
+                    </svg>
+                  </div>
+                  <p className="text-sm font-medium text-purple-700">
+                    Asigne familias o servicios específicos que este profesional puede realizar en cada clínica
+                  </p>
+                </div>
+                <p className="text-sm text-gray-600 ml-7">
+                  Las habilidades asignadas permitirán que este profesional pueda ser seleccionado al agendar estos servicios
+                </p>
+              </div>
+              
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <Label htmlFor="clinicaHabilidad" className="text-sm font-medium">Clínica</Label>
+                  <MemoizedSelect
+                    value={nuevaClinicaHabilidad}
+                    onChange={setNuevaClinicaHabilidad}
+                    placeholder="Seleccione una clínica"
+                  >
+                    {clinicasToShow.map((clinic) => (
+                      <SelectItem key={clinic.id} value={String(clinic.id)}>
+                        {clinic.prefix} - {clinic.name}
+                      </SelectItem>
+                    ))}
+                  </MemoizedSelect>
+                </div>
+                
+                <div>
+                  <Label htmlFor="tipoHabilidad" className="text-sm font-medium">Asignar por</Label>
+                  <SelectTipo 
+                    value={tipoSeleccion} 
+                    onChange={(value: any) => {
+                      setTipoSeleccion(value);
+                      setNuevaFamilia("");
+                      setNuevoServicio("");
+                    }}
+                  />
+                </div>
+              </div>
+              
+              {tipoSeleccion === "familia" ? (
+                <div>
+                  <Label htmlFor="familia" className="text-sm font-medium">Familia de servicios</Label>
+                  <Select 
+                    value={nuevaFamilia} 
+                    onValueChange={setNuevaFamilia}
+                    disabled={!nuevaClinicaHabilidad}
+                  >
+                    <SelectTrigger id="familia" className="h-9">
+                      <SelectValue placeholder={!nuevaClinicaHabilidad ? "Seleccione primero una clínica" : "Seleccione una familia"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {!nuevaClinicaHabilidad ? (
+                        <SelectItem value="no_selection" disabled>Seleccione primero una clínica</SelectItem>
+                      ) : (
+                        FAMILIAS_MOCK.map(familia => (
+                          <SelectItem key={familia.id} value={familia.id}>
+                            {familia.nombre}
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div>
+                    <Label htmlFor="familiaServicio" className="text-sm font-medium">Familia</Label>
+                    <Select 
+                      value={nuevaFamilia} 
+                      onValueChange={setNuevaFamilia}
+                      disabled={!nuevaClinicaHabilidad}
+                    >
+                      <SelectTrigger id="familiaServicio" className="h-9">
+                        <SelectValue placeholder={!nuevaClinicaHabilidad ? "Seleccione primero una clínica" : "Seleccione una familia"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {!nuevaClinicaHabilidad ? (
+                          <SelectItem value="no_selection" disabled>Seleccione primero una clínica</SelectItem>
+                        ) : (
+                          FAMILIAS_MOCK.map(familia => (
+                            <SelectItem key={familia.id} value={familia.id}>
+                              {familia.nombre}
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  <div>
+                    <Label htmlFor="servicio" className="text-sm font-medium">Servicio</Label>
+                    <Select 
+                      value={nuevoServicio} 
+                      onValueChange={setNuevoServicio}
+                      disabled={!nuevaFamilia}
+                    >
+                      <SelectTrigger id="servicio" className="h-9">
+                        <SelectValue placeholder={!nuevaFamilia ? "Seleccione primero una familia" : "Seleccione un servicio"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {!nuevaFamilia ? (
+                          <SelectItem value="no_selection" disabled>Seleccione primero una familia</SelectItem>
+                        ) : (
+                          SERVICIOS_MOCK[nuevaFamilia]?.map(servicio => (
+                            <SelectItem key={servicio.id} value={servicio.id}>
+                              {servicio.nombre} ({servicio.duracion})
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              )}
+              
+              <div className="flex justify-end mt-3">
+                <Button 
+                  className="px-5 bg-purple-600 hover:bg-purple-700"
+                  onClick={handleAddHabilidad}
+                  disabled={!nuevaClinicaHabilidad || (tipoSeleccion === "familia" && !nuevaFamilia) || (tipoSeleccion === "servicio" && !nuevoServicio)}
+                >
+                  <PlusCircle className="w-4 h-4 mr-2" />
+                  Añadir habilidad
+                </Button>
+              </div>
+              
+              <div className="mt-6">
+                <h4 className="mb-3 text-sm font-medium">Habilidades asignadas: {nombre}</h4>
+                
+                <div className="relative mb-4">
+                  <Search className="absolute w-4 h-4 text-gray-500 -translate-y-1/2 left-3 top-1/2" />
+                  <Input
+                    placeholder="Buscar habilidades"
+                    className="pl-10 h-9"
+                    value={searchHabilidades}
+                    onChange={(e) => setSearchHabilidades(e.target.value)}
+                  />
+                </div>
+                
+                <div className="border rounded-md">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="hover:bg-transparent">
+                        <TableHead className="py-2 h-9">Clínica</TableHead>
+                        <TableHead className="py-2 h-9">Tipo</TableHead>
+                        <TableHead className="py-2 h-9">Habilidad</TableHead>
+                        <TableHead className="py-2 h-9">Detalles</TableHead>
+                        <TableHead className="w-[100px] text-right h-9 py-2">Acciones</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {todasLasHabilidadesAsignadas.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={5} className="py-4 text-center text-gray-500">
+                            No hay habilidades profesionales asignadas
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        todasLasHabilidadesAsignadas
+                          .filter(habilidad => {
+                            if (!searchHabilidades) return true;
+                            const clinica = clinics.find(c => String(c.id) === habilidad.clinicaId);
+                            const searchLower = searchHabilidades.toLowerCase();
+                            
+                            return (
+                              habilidad.nombre.toLowerCase().includes(searchLower) ||
+                              (habilidad.familiaNombre && habilidad.familiaNombre.toLowerCase().includes(searchLower)) ||
+                              (clinica && (
+                                clinica.name.toLowerCase().includes(searchLower) ||
+                                clinica.prefix.toLowerCase().includes(searchLower)
+                              ))
+                            );
+                          })
+                          .map((habilidad, index) => {
+                            const clinica = clinics.find(c => String(c.id) === habilidad.clinicaId);
+                            if (!clinica) return null;
+                            
+                            const itemId = habilidad.tipoHabilidad === "familia" 
+                              ? `fam_${habilidad.id}` 
+                              : `serv_${habilidad.id}`;
+                            
+                            return (
+                              <TableRow key={`${habilidad.clinicaId}-${itemId}-${index}`}>
+                                <TableCell>{clinica.prefix} - {clinica.name}</TableCell>
+                                <TableCell>
+                                  <Badge 
+                                    variant="outline" 
+                                    className={`
+                                      ${habilidad.tipoHabilidad === "familia" 
+                                        ? "bg-blue-50 text-blue-700 border-blue-200" 
+                                        : "bg-green-50 text-green-700 border-green-200"}
+                                    `}
+                                  >
+                                    {habilidad.tipoHabilidad === "familia" ? "Familia" : "Servicio"}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell>{habilidad.nombre}</TableCell>
+                                <TableCell>
+                                  {habilidad.tipoHabilidad === "servicio" && (
+                                    <>
+                                      <span className="text-xs text-gray-500">Familia:</span> {habilidad.familiaNombre}
+                                      {habilidad.duracion && (
+                                        <span className="ml-2 text-xs text-gray-500">({habilidad.duracion})</span>
+                                      )}
+                                    </>
+                                  )}
+                                  {habilidad.tipoHabilidad === "familia" && (
+                                    <span className="text-xs text-gray-500">Todos los servicios</span>
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  <div className="flex justify-end">
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="w-8 h-8 text-purple-600 hover:text-purple-700 hover:bg-purple-100"
+                                      onClick={() => handleRemoveHabilidad(habilidad.clinicaId, itemId)}
+                                    >
+                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                                      </svg>
+                                    </Button>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            </div>
+          </Card>
+        </TabsContent>
+        
+        {/* Pestaña de Condiciones Laborales */}
+        <TabsContent value="condiciones" className="space-y-4">
+          <Card className="p-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-medium">Condiciones laborales</h3>
+            </div>
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <Label htmlFor="tipoContrato" className="text-sm font-medium">Tipo de contrato</Label>
+                  <Select>
+                    <SelectTrigger id="tipoContrato" className="h-9">
+                      <SelectValue placeholder="Seleccione una opción" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="indefinido">Indefinido</SelectItem>
+                      <SelectItem value="temporal">Temporal</SelectItem>
+                      <SelectItem value="practicas">Prácticas</SelectItem>
+                      <SelectItem value="formacion">Formación</SelectItem>
+                      <SelectItem value="obrayservicio">Obra y servicio</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div>
+                  <Label htmlFor="jornada" className="text-sm font-medium">Jornada laboral</Label>
+                  <Select>
+                    <SelectTrigger id="jornada" className="h-9">
+                      <SelectValue placeholder="Seleccione una opción" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="completa">Completa</SelectItem>
+                      <SelectItem value="parcial">Parcial</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div>
+                  <Label htmlFor="fechaInicio" className="text-sm font-medium">Fecha de inicio</Label>
+                  <Input id="fechaInicio" type="date" className="h-9" />
+                </div>
+                
+                <div>
+                  <Label htmlFor="fechaFin" className="text-sm font-medium">Fecha de fin (si aplica)</Label>
+                  <Input id="fechaFin" type="date" className="h-9" />
+                </div>
+                
+                <div>
+                  <Label htmlFor="salarioBruto" className="text-sm font-medium">Salario bruto anual</Label>
+                  <Input id="salarioBruto" type="number" placeholder="0.00" className="h-9" />
+                </div>
+                
+                <div className="space-y-4">
+                  <div className="flex items-center space-x-2">
+                    <Checkbox id="convenioColectivo" />
+                    <Label htmlFor="convenioColectivo" className="text-sm">Sujeto a convenio colectivo</Label>
+                  </div>
+                </div>
+              </div>
+              
+              <div>
+                <Label htmlFor="observaciones" className="text-sm font-medium">Observaciones</Label>
+                <textarea 
+                  id="observaciones"
+                  className="flex min-h-[70px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  placeholder="Añadir observaciones sobre condiciones laborales..."
+                />
+              </div>
+            </div>
+          </Card>
+        </TabsContent>
+        
+        {/* Pestaña de Control de Presencia */}
+        <TabsContent value="fichajes" className="space-y-4">
+          <Card className="p-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-medium">Control de Presencia</h3>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label htmlFor="filtroMes" className="text-sm font-medium">Filtrar por mes</Label>
+                  <Select>
+                    <SelectTrigger id="filtroMes" className="w-40 h-9">
+                      <SelectValue placeholder="Este mes" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="actual">Este mes</SelectItem>
+                      <SelectItem value="1">Enero</SelectItem>
+                      <SelectItem value="2">Febrero</SelectItem>
+                      <SelectItem value="3">Marzo</SelectItem>
+                      <SelectItem value="4">Abril</SelectItem>
+                      <SelectItem value="5">Mayo</SelectItem>
+                      <SelectItem value="6">Junio</SelectItem>
+                      <SelectItem value="7">Julio</SelectItem>
+                      <SelectItem value="8">Agosto</SelectItem>
+                      <SelectItem value="9">Septiembre</SelectItem>
+                      <SelectItem value="10">Octubre</SelectItem>
+                      <SelectItem value="11">Noviembre</SelectItem>
+                      <SelectItem value="12">Diciembre</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <Button className="bg-purple-600 hover:bg-purple-700 h-9">
+                  Exportar registro
+                </Button>
+              </div>
+              
+              <div className="border rounded-md">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead className="py-2 h-9">Fecha</TableHead>
+                      <TableHead className="py-2 h-9">Entrada</TableHead>
+                      <TableHead className="py-2 h-9">Salida</TableHead>
+                      <TableHead className="py-2 h-9">Descanso</TableHead>
+                      <TableHead className="py-2 h-9">Total horas</TableHead>
+                      <TableHead className="py-2 h-9">Observaciones</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    <TableRow>
+                      <TableCell className="py-2 font-medium">05/09/2023</TableCell>
+                      <TableCell className="py-2">08:30</TableCell>
+                      <TableCell className="py-2">17:30</TableCell>
+                      <TableCell className="py-2">1h</TableCell>
+                      <TableCell className="py-2">8h</TableCell>
+                      <TableCell className="py-2">-</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell className="py-2 font-medium">04/09/2023</TableCell>
+                      <TableCell className="py-2">08:25</TableCell>
+                      <TableCell className="py-2">17:45</TableCell>
+                      <TableCell className="py-2">1h</TableCell>
+                      <TableCell className="py-2">8h 20m</TableCell>
+                      <TableCell className="py-2">-</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell className="py-2 font-medium">01/09/2023</TableCell>
+                      <TableCell className="py-2">08:15</TableCell>
+                      <TableCell className="py-2">17:15</TableCell>
+                      <TableCell className="py-2">1h</TableCell>
+                      <TableCell className="py-2">8h</TableCell>
+                      <TableCell className="py-2">-</TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </div>
+              
+              <div className="p-3 rounded-md bg-gray-50">
+                <h4 className="mb-2 text-sm font-medium">Resumen del mes</h4>
+                <div className="grid grid-cols-3 gap-4 text-sm">
+                  <div>
+                    <p className="text-gray-500">Días trabajados</p>
+                    <p className="font-medium">15</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500">Total horas</p>
+                    <p className="font-medium">120h 20m</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500">Media diaria</p>
+                    <p className="font-medium">8h 01m</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Card>
+        </TabsContent>
+      </Tabs>
+      
+      {/* Modal para editar franjas horarias */}
+      {showHorarioModal && editingFranja && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="w-full max-w-md p-6 bg-white rounded-lg shadow-lg">
+            <h3 className="mb-4 text-lg font-semibold">
+              {editingFranja.franjaId ? "Editar franja horaria" : "Añadir franja horaria"}
+            </h3>
+            
+            <div className="space-y-4">
+              {/* Información del horario de la clínica para este día */}
+              {(() => {
+                // Obtener el horario de la clínica para este día
+                const horarioClinica = HORARIOS_CLINICA_MOCK[selectedClinicaHorario] || 
+                                     HORARIOS_CLINICA_MOCK["1"] || 
+                                     { 
+                                       horarioGeneral: { apertura: "09:00", cierre: "20:00" },
+                                       excepciones: []
+                                     };
+                
+                // Buscar si hay excepción para este día
+                const excepcion = horarioClinica.excepciones.find(exc => 
+                  exc.dia.toLowerCase() === editingFranja.diaId.toLowerCase()
+                );
+                
+                const horaApertura = excepcion ? excepcion.apertura : horarioClinica.horarioGeneral.apertura;
+                const horaCierre = excepcion ? excepcion.cierre : horarioClinica.horarioGeneral.cierre;
+                
+                // Si está cerrado ese día
+                if (excepcion && (!excepcion.apertura || !excepcion.cierre)) {
+                  return (
+                    <div className="p-3 mb-4 text-red-700 rounded-md bg-red-50">
+                      <AlertCircle className="inline-block w-5 h-5 mr-2" />
+                      La clínica está cerrada este día. No se puede asignar horario.
+                    </div>
+                  );
+                }
+                
+                return (
+                  <div className="p-3 mb-4 text-sm text-blue-700 rounded-md bg-blue-50">
+                    <p className="font-medium">Horario permitido para {traducirDia(editingFranja.diaId)}:</p>
+                    <p>{horaApertura} - {horaCierre}</p>
+                  </div>
+                );
+              })()}
+              
+              <div>
+                <Label htmlFor="inicio" className="text-sm font-medium">Hora de inicio</Label>
+                <Input 
+                  id="inicio" 
+                  type="time"
+                  value={editingFranja.inicio}
+                  onChange={(e) => setEditingFranja({...editingFranja, inicio: e.target.value})}
+                  className={`h-9 ${!esFranjaValida(selectedClinicaHorario, editingFranja.inicio, editingFranja.fin, editingFranja.diaId) ? "border-red-300" : ""}`}
+                  min={(() => {
+                    const horarioClinica = HORARIOS_CLINICA_MOCK[selectedClinicaHorario] || 
+                                          HORARIOS_CLINICA_MOCK["1"];
+                    if (!horarioClinica) return "00:00";
+                    
+                    const excepcion = horarioClinica.excepciones.find(exc => 
+                      exc.dia.toLowerCase() === editingFranja.diaId.toLowerCase()
+                    );
+                    
+                    return excepcion ? excepcion.apertura : horarioClinica.horarioGeneral.apertura;
+                  })()}
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="fin" className="text-sm font-medium">Hora de fin</Label>
+                <Input 
+                  id="fin" 
+                  type="time"
+                  value={editingFranja.fin}
+                  onChange={(e) => setEditingFranja({...editingFranja, fin: e.target.value})}
+                  className={`h-9 ${!esFranjaValida(selectedClinicaHorario, editingFranja.inicio, editingFranja.fin, editingFranja.diaId) ? "border-red-300" : ""}`}
+                  max={(() => {
+                    const horarioClinica = HORARIOS_CLINICA_MOCK[selectedClinicaHorario] || 
+                                         HORARIOS_CLINICA_MOCK["1"];
+                    if (!horarioClinica) return "23:59";
+                    
+                    const excepcion = horarioClinica.excepciones.find(exc => 
+                      exc.dia.toLowerCase() === editingFranja.diaId.toLowerCase()
+                    );
+                    
+                    return excepcion ? excepcion.cierre : horarioClinica.horarioGeneral.cierre;
+                  })()}
+                />
+              </div>
+              
+              {/* Mensajes de validación */}
+              {editingFranja.inicio && editingFranja.fin && (
+                <>
+                  {editingFranja.inicio >= editingFranja.fin && (
+                    <div className="flex items-center gap-1 text-sm text-red-500">
+                      <AlertCircle className="w-4 h-4" />
+                      La hora de fin debe ser posterior a la de inicio
+                    </div>
+                  )}
+                  
+                  {!esFranjaValida(selectedClinicaHorario, editingFranja.inicio, editingFranja.fin, editingFranja.diaId) && (
+                    <div className="flex items-center gap-1 text-sm text-red-500">
+                      <AlertCircle className="w-4 h-4" />
+                      La franja seleccionada está fuera del horario de la clínica para este día
+                    </div>
+                  )}
+                </>
+              )}
+              
+              <div className="flex justify-end gap-2 mt-6">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowHorarioModal(false);
+                    setEditingFranja(null);
+                  }}
+                  className="h-9"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  className="bg-purple-600 h-9 hover:bg-purple-700"
+                  onClick={() => {
+                    // Validar que la hora de fin sea posterior a la de inicio
+                    if (editingFranja.inicio >= editingFranja.fin) {
+                      toast({
+                        title: "Error en el rango horario",
+                        description: "La hora de fin debe ser posterior a la de inicio",
+                        variant: "destructive",
+                      });
+                      return;
+                    }
+                    
+                    // Validar que la franja esté dentro del horario de la clínica
+                    if (!esFranjaValida(selectedClinicaHorario, editingFranja.inicio, editingFranja.fin, editingFranja.diaId)) {
+                      toast({
+                        title: "Fuera del horario de la clínica",
+                        description: "La franja debe estar dentro del horario de apertura y cierre de la clínica",
+                        variant: "destructive",
+                      });
+                      return;
+                    }
+                    
+                    // Si estamos editando una franja existente
+                    if (editingFranja.franjaId) {
+                      setHorarioSemanal(prevHorario => {
+                        const newHorario = new Map(prevHorario);
+                        const diasClinica = [...(newHorario.get(selectedClinicaHorario) || [])];
+                        const diaIndex = diasClinica.findIndex(d => d.dia === editingFranja.diaId);
+                        
+                        if (diaIndex >= 0) {
+                          const franjaIndex = diasClinica[diaIndex].franjas.findIndex(f => f.id === editingFranja.franjaId);
+                          if (franjaIndex >= 0) {
+                            diasClinica[diaIndex].franjas[franjaIndex] = {
+                              ...diasClinica[diaIndex].franjas[franjaIndex],
+                              inicio: editingFranja.inicio,
+                              fin: editingFranja.fin
+                            };
+                            newHorario.set(selectedClinicaHorario, diasClinica);
+                          }
+                        }
+                        
+                        return newHorario;
+                      });
+                    } else {
+                      // Si estamos añadiendo una nueva franja
+                      handleAddFranja(selectedClinicaHorario, editingFranja.diaId, editingFranja.inicio, editingFranja.fin);
+                    }
+                    
+                    // Cerrar el modal
+                    setShowHorarioModal(false);
+                    setEditingFranja(null);
+                  }}
+                  disabled={
+                    !editingFranja.inicio || 
+                    !editingFranja.fin || 
+                    editingFranja.inicio >= editingFranja.fin || 
+                    !esFranjaValida(selectedClinicaHorario, editingFranja.inicio, editingFranja.fin, editingFranja.diaId)
+                  }
+                >
+                  Guardar
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Botones flotantes */}
+      <div className="fixed z-10 flex items-center gap-2 bottom-16 md:bottom-8 right-6">
+        <Button 
+          variant="outline" 
+          onClick={() => {
+            if (confirm("¿Estás seguro de que quieres salir sin guardar los cambios?")) {
+              router.push(returnTo)
+            }
+          }} 
+          className="transition-all bg-white shadow-md hover:shadow-lg"
+        >
+          <ArrowLeft className="w-4 h-4 mr-2" />
+          Volver
+        </Button>
+        <Button 
+          onClick={handleSave} 
+          className="transition-all bg-purple-600 shadow-md hover:bg-purple-700 hover:shadow-lg"
+        >
+          <Save className="w-4 h-4 mr-2" />
+          Guardar
+        </Button>
+        <Button 
+          variant="outline" 
+          className="w-10 h-10 p-0 transition-all bg-white rounded-full shadow-md hover:shadow-lg"
+        >
+          <HelpCircle className="w-4 h-4" />
+          <span className="sr-only">Ayuda</span>
+        </Button>
+      </div>
+    </div>
+  )
+} 

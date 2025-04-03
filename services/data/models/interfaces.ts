@@ -133,29 +133,31 @@ export interface TipoIVA extends BaseEntity {
 export interface Servicio extends BaseEntity {
   nombre: string;
   codigo: string;
-  tarifaId: string;
-  tarifaBase: string;
   familiaId: string;
-  precioConIVA: string;
-  ivaId: string;
-  colorAgenda: string;
   duracion: number;
-  equipoId: string;
-  tipoComision: string;
-  comision: string;
-  requiereParametros: boolean;
-  visitaValoracion: boolean;
-  apareceEnApp: boolean;
-  descuentosAutomaticos: boolean;
-  descuentosManuales: boolean;
-  aceptaPromociones: boolean;
-  aceptaEdicionPVP: boolean;
-  afectaEstadisticas: boolean;
-  deshabilitado: boolean;
-  precioCoste: string;
-  tarifaPlanaId: string;
-  archivoAyuda: string | null;
-  consumos: Consumo[];
+  colorAgenda: string;
+  precioConIVA: string;
+  
+  // Propiedades opcionales para compatibilidad
+  tarifaId?: string;
+  tarifaBase?: string;
+  ivaId?: string;
+  equipoId?: string;
+  tipoComision?: string;
+  comision?: string;
+  requiereParametros?: boolean;
+  visitaValoracion?: boolean;
+  apareceEnApp?: boolean;
+  descuentosAutomaticos?: boolean;
+  descuentosManuales?: boolean;
+  aceptaPromociones?: boolean;
+  aceptaEdicionPVP?: boolean;
+  afectaEstadisticas?: boolean;
+  deshabilitado?: boolean;
+  precioCoste?: string;
+  tarifaPlanaId?: string;
+  archivoAyuda?: string | null;
+  consumos?: Consumo[];
 }
 
 /** Interfaz para Equipo */
@@ -277,4 +279,118 @@ export interface Permiso {
   modulo: string;
   accion: string;
   permitido: boolean;
+}
+
+/**
+ * Interfaces básicas para horarios de clínica y usuario
+ */
+
+/** Interfaz para una franja horaria */
+export interface FranjaHoraria {
+  id: string;
+  inicio: string;
+  fin: string;
+}
+
+/** Interfaz para un día en el horario semanal */
+export interface HorarioDia {
+  dia: 'lunes' | 'martes' | 'miercoles' | 'jueves' | 'viernes' | 'sabado' | 'domingo';
+  franjas: FranjaHoraria[];
+  activo: boolean;
+}
+
+/** Interfaz para horario semanal de una clínica */
+export interface HorarioSemanal {
+  clinicaId: string;
+  dias: HorarioDia[];
+}
+
+/** Interfaz para excepciones de horario */
+export interface ExcepcionHoraria {
+  id: string;
+  clinicaId: string;
+  nombre: string;
+  fechaInicio: string;  // YYYY-MM-DD
+  fechaFin: string;     // YYYY-MM-DD
+  dias: HorarioDia[];
+}
+
+/** Interfaz para configuración completa de horario de clínica */
+export interface HorarioClinica {
+  clinicaId: string;
+  horarioGeneral: {
+    apertura: string;
+    cierre: string;
+  };
+  excepciones: {
+    dia: string;
+    apertura: string;
+    cierre: string;
+  }[];
+}
+
+/**
+ * Interfaces para servicios y familias
+ */
+
+/** Interfaz para Familia de servicios */
+export interface FamiliaServicio extends BaseEntity, Activable {
+  id: string;
+  nombre: string;
+  descripcion?: string;
+  servicios?: Servicio[];
+}
+
+/** 
+ * Interfaz para usuario empleado extendida 
+ * Completa la interfaz Usuario con los campos adicionales necesarios
+ */
+export interface UsuarioEmpleado extends Usuario {
+  // Datos personales extendidos
+  dni?: string;
+  fechaNacimiento?: string;
+  sexo?: string;
+  telefono2?: string;
+  contrasena?: string; // Solo para gestión, nunca debe exponerse
+  idioma?: string;
+  
+  // Datos de colegiado
+  colegio?: string;
+  numeroColegiado?: string;
+  especialidad?: string;
+  universidad?: string;
+  
+  // Dirección
+  direccion?: string;
+  provincia?: string;
+  pais?: string;
+  localidad?: string;
+  cp?: string;
+  
+  // Configuración
+  exportCsv?: string;
+  indiceControl?: string;
+  numeroPIN?: string;
+  notas?: string;
+  mostrarDesplazados?: boolean;
+  mostrarCitasPropias?: boolean;
+  restringirIP?: boolean;
+  
+  // Permisos y habilidades
+  perfilesClinica?: Map<string, string[]>; // clinicaId -> [perfiles]
+  habilidadesProfesionales?: Map<string, string[]>; // clinicaId -> [habilidadIds]
+  
+  // Horarios
+  horarios?: Map<string, HorarioDia[]>; // clinicaId -> horario semanal
+  excepciones?: ExcepcionHoraria[];
+}
+
+/**
+ * Interfaz para perfiles de empleados
+ */
+export interface PerfilEmpleado extends BaseEntity {
+  nombre: string;
+  descripcion?: string;
+  permisos?: string[];
+  isDefault?: boolean;
 } 

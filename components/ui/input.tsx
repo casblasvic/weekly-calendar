@@ -8,9 +8,9 @@ export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> 
 }
 
 const Input = React.forwardRef<HTMLInputElement, InputProps>(
-  ({ className, type, onChange, onSearch, value, ...props }, ref) => {
-    // Asegurar que el valor siempre sea una cadena definida
-    const safeValue = value === undefined ? "" : value
+  ({ className, type, onChange, onSearch, value, defaultValue, ...props }, ref) => {
+    // Determinar si es un input controlado o no controlado
+    const isControlled = value !== undefined;
     
     const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
       if (onChange) {
@@ -21,6 +21,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
       }
     }
 
+    // Usar solo value o defaultValue según corresponda
     return (
       <input
         type={type}
@@ -30,7 +31,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
         )}
         onChange={handleChange}
         ref={ref}
-        value={safeValue}
+        {...(isControlled ? { value } : { defaultValue })}
         {...props}
       />
     )

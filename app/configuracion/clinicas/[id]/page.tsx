@@ -54,6 +54,7 @@ import { DebugStorage } from "@/components/debug-storage"
 import AlmacenamientoClinicaContent from "@/app/configuracion/clinicas/[id]/almacenamiento/page"
 import { useEquipment } from "@/contexts/equipment-context"
 import { useTarif } from "@/contexts/tarif-context"
+import { UsuariosClinica } from "@/components/usuarios-clinica"
 
 const menuItems = [
   { id: "datos", label: "Datos de la clínica", icon: Building2 },
@@ -108,6 +109,7 @@ export default function ClinicaDetailPage() {
   const { getTarifaById } = useTarif()
   const [tarifaAplicada, setTarifaAplicada] = useState<Tarifa | null | undefined>(undefined)
   const [isLoadingTarifa, setIsLoadingTarifa] = useState(false)
+  const [showNewUserDialog, setShowNewUserDialog] = useState(false)
 
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -144,8 +146,14 @@ export default function ClinicaDetailPage() {
 
   useEffect(() => {
     const tabParam = searchParams.get("tab")
-    if (tabParam && ["informacion", "cabinas", "equipamiento", "usuarios", "debug"].includes(tabParam)) {
-      setActiveTab(tabParam)
+    
+    // Si el parámetro tab es 'usuarios', establecer la pestaña activa a 'usuarios'
+    if (tabParam === "usuarios") {
+      setActiveTab("usuarios");
+    } 
+    // Si no, verificar si el parámetro tab coincide con algún ID de los menuItems
+    else if (tabParam && menuItems.some(item => item.id === tabParam)) {
+      setActiveTab(tabParam);
     }
   }, [searchParams])
 
@@ -990,7 +998,17 @@ export default function ClinicaDetailPage() {
 
               {activeTab === "usuarios" && (
                 <Card className="p-6">
-                  <h3>Contenido de Usuarios</h3>
+                  <div className="flex flex-col gap-4">
+                    <div className="flex justify-between items-center">
+                      <h3 className="text-lg font-medium">Usuarios de la clínica: {clinicData.name}</h3>
+                    </div>
+                    
+                    <UsuariosClinica 
+                      clinicId={clinicId}
+                      showNewUserDialog={showNewUserDialog}
+                      onCloseNewUserDialog={() => setShowNewUserDialog(false)}
+                    />
+                  </div>
                 </Card>
               )}
 
@@ -1119,6 +1137,15 @@ export default function ClinicaDetailPage() {
           >
             <Plus className="w-4 h-4 mr-2" />
             Nuevo equipamiento
+          </Button>
+        )}
+        {activeTab === "usuarios" && (
+          <Button
+            className="px-4 py-2 text-sm text-white bg-purple-600 rounded-md shadow-md hover:bg-purple-700"
+            onClick={() => setShowNewUserDialog(true)}
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Nuevo usuario
           </Button>
         )}
         <Button
