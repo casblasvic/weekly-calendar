@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useCallback, useRef } from "react"
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { format, addDays, startOfWeek, parse, isToday } from "date-fns"
 import { es } from "date-fns/locale"
 import { useClinic } from "@/contexts/clinic-context"
@@ -17,10 +17,25 @@ import { AppointmentItem } from "./appointment-item"
 import { DragDropContext, Droppable } from "react-beautiful-dnd"
 import { Calendar } from "lucide-react"
 import { Lock } from "lucide-react"
-import { parseISO, isAfter, isBefore, getDay, getDate } from "date-fns"
+import { parseISO, isAfter, isBefore, getDay, getDate, isSameDay } from "date-fns"
 import { useToast } from "@/hooks/use-toast"
 import { BlockScheduleModal } from "./block-schedule-modal"
 import { ScheduleBlock, useScheduleBlocks } from "@/contexts/schedule-blocks-context"
+import { Button } from "@/components/ui/button"
+import { Card } from "@/components/ui/card"
+import { ChevronLeft, ChevronRight, Plus } from "lucide-react"
+import { AppointmentScheduler } from "@/components/appointment-scheduler"
+import { Appointment } from "@/types/appointment"
+import { ScheduleBlock as ScheduleBlockType } from "@/services/data/models/interfaces"
+import { useScheduleBlockCreator } from "@/hooks/use-schedule-block"
+import { 
+  isBusinessDay, 
+  isTimeSlotAvailable as checkTimeSlotAvailable,
+  applyScheduleExceptions
+} from "@/services/clinic-schedule-service"
+import { ClinicConfigDialog } from "@/components/clinic-config-dialog"
+import { ClinicConfig as ClinicConfigContext } from "@/contexts/clinic-context"
+import { useClinicConfig } from "@/hooks/use-clinic-config"
 
 // Función para generar slots de tiempo
 function getTimeSlots(startTime: string, endTime: string, interval = 15): string[] {
@@ -260,45 +275,29 @@ export default function WeeklyView({
   // Función para verificar si un día está activo en la configuración
   const isDayActive = useCallback(
     (date: Date) => {
-      const day = format(date, "EEEE", { locale: es }).toLowerCase()
-      // Mapear los nombres de días en español a las claves en inglés usadas en el objeto schedule
-      const dayMap = {
-        lunes: "monday",
-        martes: "tuesday",
-        miércoles: "wednesday",
-        jueves: "thursday",
-        viernes: "friday",
-        sábado: "saturday",
-        domingo: "sunday",
-      }
-      const dayKey = dayMap[day] || day
-      return (clinicConfig.schedule || clinicConfigContext.schedule)?.[dayKey]?.isOpen ?? false
+      // Verificar primero si hay una excepción activa para esta fecha
+      return isBusinessDay(date, { 
+        config: { 
+          ...clinicConfig,
+          schedule: clinicConfig.schedule || clinicConfigContext.schedule
+        }
+      } as any);
     },
-    [clinicConfig.schedule, clinicConfigContext.schedule],
+    [clinicConfig, clinicConfigContext.schedule],
   )
 
   // Función para verificar si un horario está disponible
   const isTimeSlotAvailable = useCallback(
     (date: Date, time: string) => {
-      const day = format(date, "EEEE", { locale: es }).toLowerCase()
-      const dayMap = {
-        lunes: "monday",
-        martes: "tuesday",
-        miércoles: "wednesday",
-        jueves: "thursday",
-        viernes: "friday",
-        sábado: "saturday",
-        domingo: "sunday",
-      }
-      const dayKey = dayMap[day] || day
-      const daySchedule = (clinicConfig.schedule || clinicConfigContext.schedule)?.[dayKey]
-
-      if (!daySchedule?.isOpen) return false
-
-      // Verificar si el horario está dentro de algún rango definido para ese día
-      return daySchedule.ranges.some((range) => time >= range.start && time <= range.end)
+      // Verificar usando el servicio de horarios que tiene en cuenta excepciones
+      return checkTimeSlotAvailable(date, time, { 
+        config: { 
+          ...clinicConfig,
+          schedule: clinicConfig.schedule || clinicConfigContext.schedule
+        }
+      } as any);
     },
-    [clinicConfig.schedule, clinicConfigContext.schedule],
+    [clinicConfig, clinicConfigContext.schedule],
   )
 
   // Referencia para el contenedor de la agenda

@@ -4,6 +4,14 @@ import { createContext, useContext, useState, type ReactNode, useEffect } from "
 import { useInterfaz } from "@/contexts/interfaz-Context"
 import { useClinic } from "@/contexts/clinic-context"
 import { HorarioClinica, ExcepcionHoraria } from "@/services/data/models/interfaces"
+import {
+  findActiveExceptions,
+  isBusinessDay,
+  isTimeSlotAvailable,
+  getBusinessHours,
+  getDayOfWeek
+} from "@/services/clinic-schedule-service"
+import { format } from "date-fns"
 
 // Mock data - esto se reemplazará por llamadas a la API en producción
 const HORARIOS_CLINICA_MOCK: Record<string, HorarioClinica> = {
@@ -31,68 +39,27 @@ interface ClinicScheduleContextType {
   getAllClinicSchedules: () => Promise<HorarioClinica[]>;
   updateClinicSchedule: (clinicId: string, horario: Partial<HorarioClinica>) => Promise<boolean>;
   isWithinClinicHours: (clinicId: string, dia: string, inicio: string, fin: string) => boolean;
+  getActiveException: (clinicId: string, date: Date) => ExcepcionHoraria | null;
+  isExceptionDayActive: (clinicId: string, date: Date) => boolean;
+  getAvailableHours: (clinicId: string, date: Date) => { open: string, close: string } | null;
 }
 
-const ClinicScheduleContext = createContext<ClinicScheduleContextType | undefined>(undefined);
+const ClinicScheduleContext = createContext<ClinicScheduleContextType | undefined>(undefined)
 
 export function ClinicScheduleProvider({ children }: { children: ReactNode }) {
-  const [horarios, setHorarios] = useState<Map<string, HorarioClinica>>(new Map());
-  const [initialized, setInitialized] = useState(false);
-  const interfaz = useInterfaz();
-  const { clinics } = useClinic();
-
-  // Inicializar horarios
-  useEffect(() => {
-    const loadSchedules = async () => {
-      if (interfaz.initialized && !initialized && clinics.length > 0) {
-        try {
-          // En producción, esto vendría de la API
-          const horariosMock = new Map<string, HorarioClinica>();
-          
-          // Cargar horarios para cada clínica
-          clinics.forEach(clinic => {
-            const horarioClinica = HORARIOS_CLINICA_MOCK[String(clinic.id)] || {
-              clinicaId: String(clinic.id),
-              horarioGeneral: { apertura: "09:00", cierre: "20:00" },
-              excepciones: []
-            };
-            
-            horariosMock.set(String(clinic.id), horarioClinica);
-          });
-          
-          setHorarios(horariosMock);
-          setInitialized(true);
-        } catch (error) {
-          console.error("Error al cargar horarios de clínicas:", error);
-        }
-      }
-    };
-    
-    loadSchedules();
-  }, [interfaz.initialized, clinics, initialized]);
+  const interfaz = useInterfaz()
+  const { clinics } = useClinic()
 
   // Obtener el horario de una clínica
   const getClinicSchedule = async (clinicId: string): Promise<HorarioClinica | null> => {
     try {
       // En producción, esto sería una llamada a la API
-      const horarioClinica = horarios.get(clinicId) || HORARIOS_CLINICA_MOCK[clinicId];
+      // return await interfaz.getClinicSchedule(clinicId);
       
-      if (horarioClinica) {
-        // Asegurar que el horario esté en el estado
-        if (!horarios.has(clinicId)) {
-          setHorarios(prev => {
-            const newHorarios = new Map(prev);
-            newHorarios.set(clinicId, horarioClinica);
-            return newHorarios;
-          });
-        }
-        
-        return horarioClinica;
-      }
-      
-      return null;
+      // Por ahora usamos datos mock
+      return HORARIOS_CLINICA_MOCK[clinicId] || null;
     } catch (error) {
-      console.error(`Error al obtener horario para clínica ${clinicId}:`, error);
+      console.error("Error al obtener el horario de la clínica:", error);
       return null;
     }
   };
@@ -101,7 +68,10 @@ export function ClinicScheduleProvider({ children }: { children: ReactNode }) {
   const getAllClinicSchedules = async (): Promise<HorarioClinica[]> => {
     try {
       // En producción, esto sería una llamada a la API
-      return Array.from(horarios.values());
+      // return await interfaz.getAllClinicSchedules();
+      
+      // Por ahora retornamos los datos mock
+      return Object.values(HORARIOS_CLINICA_MOCK);
     } catch (error) {
       console.error("Error al obtener todos los horarios de clínicas:", error);
       return [];
@@ -112,75 +82,121 @@ export function ClinicScheduleProvider({ children }: { children: ReactNode }) {
   const updateClinicSchedule = async (clinicId: string, horario: Partial<HorarioClinica>): Promise<boolean> => {
     try {
       // En producción, esto sería una llamada a la API
-      const horarioActual = await getClinicSchedule(clinicId);
+      // return await interfaz.updateClinicSchedule(clinicId, horario);
       
-      if (!horarioActual) return false;
-      
-      const horarioActualizado: HorarioClinica = {
-        ...horarioActual,
-        ...horario,
-        clinicaId: clinicId // Asegurar que el ID de clínica no cambie
-      };
-      
-      setHorarios(prev => {
-        const newHorarios = new Map(prev);
-        newHorarios.set(clinicId, horarioActualizado);
-        return newHorarios;
-      });
-      
+      // Simulamos una actualización exitosa
       return true;
     } catch (error) {
-      console.error(`Error al actualizar horario para clínica ${clinicId}:`, error);
+      console.error("Error al actualizar el horario de la clínica:", error);
       return false;
     }
   };
 
-  // Verificar si un horario está dentro del horario de la clínica
+  // Verificar si un horario está dentro de las horas de la clínica
   const isWithinClinicHours = (clinicId: string, dia: string, inicio: string, fin: string): boolean => {
     try {
-      // Validaciones básicas
-      if (!inicio || !fin || inicio >= fin) return false;
-      
-      // Obtener el horario de la clínica
-      const horarioClinica = horarios.get(clinicId) || HORARIOS_CLINICA_MOCK[clinicId];
-      if (!horarioClinica) return true; // Si no hay datos, permitimos cualquier horario (desarrollo)
+      const horarioClinica = HORARIOS_CLINICA_MOCK[clinicId];
+      if (!horarioClinica) return false;
       
       // Buscar si hay excepción para este día
       const excepcion = horarioClinica.excepciones.find(exc => 
         exc.dia.toLowerCase() === dia.toLowerCase()
       );
       
-      // Si el día está cerrado, ninguna franja es válida
+      // Si el día está cerrado según la excepción, retornar false
       if (excepcion && (!excepcion.apertura || !excepcion.cierre)) {
         return false;
       }
       
-      // Validar contra el horario específico del día o el general
-      const horaApertura = excepcion ? excepcion.apertura : horarioClinica.horarioGeneral.apertura;
-      const horaCierre = excepcion ? excepcion.cierre : horarioClinica.horarioGeneral.cierre;
+      // Determinar apertura y cierre para este día
+      const horaApertura = excepcion && excepcion.apertura 
+        ? excepcion.apertura 
+        : horarioClinica.horarioGeneral.apertura;
       
-      // Validar que la franja esté dentro del horario de apertura y cierre
+      const horaCierre = excepcion && excepcion.cierre 
+        ? excepcion.cierre 
+        : horarioClinica.horarioGeneral.cierre;
+      
+      // Verificar que la franja esté dentro del horario de apertura y cierre
       return inicio >= horaApertura && fin <= horaCierre;
     } catch (error) {
       console.error("Error al validar horario:", error);
       return false;
     }
   };
-
-  const value = {
-    getClinicSchedule,
-    getAllClinicSchedules,
-    updateClinicSchedule,
-    isWithinClinicHours
+  
+  // Obtener excepción activa para una clínica y fecha
+  const getActiveException = (clinicId: string, date: Date): ExcepcionHoraria | null => {
+    const clinic = clinics.find(c => String(c.id) === clinicId);
+    if (!clinic) return null;
+    
+    return findActiveExceptions(date, clinic);
+  };
+  
+  // Verificar si un día está activo según las excepciones
+  const isExceptionDayActive = (clinicId: string, date: Date): boolean => {
+    const clinic = clinics.find(c => String(c.id) === clinicId);
+    if (!clinic) return false;
+    
+    // Verificar primero si hay una excepción activa para esta fecha
+    const activeException = findActiveExceptions(date, clinic);
+    if (activeException) {
+      // Obtener el día de la semana en español
+      const dayOfWeek = getDayOfWeek(date);
+      
+      // Buscar la configuración para este día en la excepción
+      const diaExcepcion = activeException.dias.find(d => d.dia === dayOfWeek);
+      
+      // Si el día está configurado en la excepción, usar esa configuración
+      if (diaExcepcion) {
+        return diaExcepcion.activo;
+      }
+    }
+    
+    // Si no hay excepción activa o el día no está configurado en la excepción,
+    // verificar con el horario general del schedule
+    return isBusinessDay(date, clinic);
+  };
+  
+  // Obtener horarios disponibles para una fecha
+  const getAvailableHours = (clinicId: string, date: Date): { open: string, close: string } | null => {
+    const clinic = clinics.find(c => String(c.id) === clinicId);
+    if (!clinic) return null;
+    
+    // Usar la función de utilidad que ya maneja excepciones
+    const businessHours = getBusinessHours(date, clinic);
+    
+    // Si se encontraron horas disponibles, retornarlas
+    if (businessHours) {
+      console.log(`Horario para ${format(date, 'yyyy-MM-dd')} (clínica ${clinicId}):`, businessHours);
+      return businessHours;
+    }
+    
+    // Si no hay horas disponibles, retornar null
+    return null;
   };
 
-  return <ClinicScheduleContext.Provider value={value}>{children}</ClinicScheduleContext.Provider>;
+  return (
+    <ClinicScheduleContext.Provider value={{
+      getClinicSchedule,
+      getAllClinicSchedules,
+      updateClinicSchedule,
+      isWithinClinicHours,
+      getActiveException,
+      isExceptionDayActive,
+      getAvailableHours
+    }}>
+      {children}
+    </ClinicScheduleContext.Provider>
+  )
 }
 
 export function useClinicSchedule() {
-  const context = useContext(ClinicScheduleContext);
-  if (context === undefined) {
-    throw new Error("useClinicSchedule debe ser usado dentro de un ClinicScheduleProvider");
+  const context = useContext(ClinicScheduleContext)
+  
+  if (!context) {
+    throw new Error("useClinicSchedule debe usarse dentro de un ClinicScheduleProvider")
   }
-  return context;
+  
+  return context
 } 

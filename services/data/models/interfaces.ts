@@ -67,6 +67,7 @@ export interface ClinicConfig {
   slotDuration: number;
   cabins: Cabin[];
   schedule?: any;
+  excepciones?: ExcepcionHoraria[];
   initialCash?: number;
   ticketSize?: string;
   rate?: string;

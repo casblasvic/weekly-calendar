@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import React, { useMemo, useRef, useCallback } from "react"
 
 import { useState, useEffect, ErrorInfo } from "react"
-import { format, addDays, addMonths, isSameDay, subDays } from "date-fns"
+import { format, addDays, addMonths, isSameDay, subDays, parseISO, startOfWeek } from "date-fns"
 import { es } from "date-fns/locale"
 import {
   ChevronLeft,
@@ -24,6 +24,7 @@ import {
   Flag,
   SkipBack,
   Clock,
+  AlertTriangle,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -42,6 +43,21 @@ import { CurrentTimeIndicator } from "@/components/current-time-indicator"
 import { useClinic } from "@/contexts/clinic-context"
 import type { WeekSchedule } from "@/types/schedule"
 import { ScrollIndicator } from "@/components/ui/scroll-indicator"
+import { useAppointments } from "@/contexts/appointment-context"
+import { useEmployees } from "@/contexts/employee-context"
+import { Appointment } from "@/types/appointment"
+import { Input } from "@/components/ui/input"
+import { AppointmentDetails } from "@/components/mobile/agenda/appointment-details"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Skeleton } from "@/components/ui/skeleton"
+import { useGlobalSettings } from "@/contexts/settings-context"
+import { useAuth } from "@/contexts/auth-context"
+import { ClientDetails } from "@/components/agenda/client-details"
+import { HorarioClinica } from "@/services/data/models/interfaces"
+import {
+  findActiveExceptions,
+  getBusinessHours
+} from "@/services/clinic-schedule-service"
 
 interface Appointment {
   id: string
@@ -607,6 +623,21 @@ function MobileAgendaViewContent({ showMainSidebar = false }: MobileAgendaViewPr
       return getTimeSlots(defaultOpenTime, defaultCloseTime);
     }
 
+    // Verificar si hay excepciones horarias activas para la fecha seleccionada
+    const selectedDate = new Date(currentDate);
+    if (activeClinic) {
+      const businessHours = getBusinessHours(selectedDate, activeClinic);
+      
+      if (businessHours) {
+        console.info("Usando horarios de excepción para la fecha:", {
+          date: format(selectedDate, "yyyy-MM-dd"),
+          openTime: businessHours.open,
+          closeTime: businessHours.close,
+        });
+        return getTimeSlots(businessHours.open, businessHours.close);
+      }
+    }
+
     // Si hay configuración pero faltan los horarios
     if (!activeClinic.config.openTime || !activeClinic.config.closeTime) {
       console.info("Configuración de horarios incompleta, usando valores predeterminados:", {
@@ -629,7 +660,7 @@ function MobileAgendaViewContent({ showMainSidebar = false }: MobileAgendaViewPr
       console.info("Error al generar slots de tiempo, usando valores predeterminados:", error);
       return getTimeSlots(defaultOpenTime, defaultCloseTime);
     }
-  }, [activeClinic?.config]);
+  }, [activeClinic?.config, currentDate]);
 
   const timeSlotRefs = useRef<{ [key: string]: HTMLDivElement | null }>({})
 

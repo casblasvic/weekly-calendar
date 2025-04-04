@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, use } from "react"
+import { useState, useEffect, useCallback, use, useMemo } from "react"
 import { useRouter, useSearchParams, useParams } from "next/navigation"
 import { Button, BackButton } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -14,12 +14,13 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { CabinEditDialog } from "@/components/cabin-edit-dialog"
 import { useClinic } from "@/contexts/clinic-context"
-import { Clinica, Tarifa } from "@/services/data/models/interfaces"
+import { Clinica, Tarifa, ExcepcionHoraria, HorarioDia, FranjaHoraria } from "@/services/data/models/interfaces"
 import { SearchInput } from "@/components/SearchInput"
 import { ScheduleConfig } from "@/components/schedule-config"
 import { DEFAULT_SCHEDULE } from "@/types/schedule"
 import { useTemplates } from "@/hooks/use-templates"
 import { toast } from "@/components/ui/use-toast"
+import { Badge } from "@/components/ui/badge"
 import {
   Building2,
   Bed,
@@ -50,6 +51,10 @@ import {
   LayoutGrid,
   Wrench,
   HardDrive,
+  X,
+  Calendar,
+  AlertCircle,
+  AlertTriangle,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { WeekSchedule } from "@/types/schedule"
@@ -59,10 +64,24 @@ import AlmacenamientoClinicaContent from "@/app/configuracion/clinicas/[id]/alma
 import { useEquipment } from "@/contexts/equipment-context"
 import { useTarif } from "@/contexts/tarif-context"
 import { UsuariosClinica } from "@/components/usuarios-clinica"
+import {
+  findActiveExceptions,
+  createExampleException,
+  applyExampleException
+} from "@/services/clinic-schedule-service"
 
 const menuItems = [
   { id: "datos", label: "Datos de la clínica", icon: Building2 },
   { id: "horarios", label: "Horarios", icon: Clock },
+  { id: "usuarios", label: "Usuarios", icon: Users },
+  { id: "tarifa", label: "Tarifa", icon: Tag },
+  { id: "entidades", label: "Entidades bancarias", icon: CreditCard },
+  { id: "integraciones", label: "Integraciones", icon: Link },
+  { id: "descuentos", label: "Descuentos", icon: Percent },
+  { id: "sms", label: "SMS/Push", icon: MessageSquare },
+  { id: "email", label: "Notificaciones e-mail", icon: Mail },
+  { id: "whatsapp", label: "Notificaciones WhatsApp", icon: Phone },
+  { id: "otros", label: "Otros APIs", icon: Globe },
   { id: "sedes", label: "Sedes", icon: MapPin },
   { id: "cabinas", label: "Cabinas", icon: LayoutGrid },
   { id: "equipamiento", label: "Equipamiento", icon: Wrench },
@@ -108,6 +127,26 @@ export default function ClinicaDetailPage() {
   const [tarifaAplicada, setTarifaAplicada] = useState<Tarifa | null | undefined>(undefined)
   const [isLoadingTarifa, setIsLoadingTarifa] = useState(false)
   const [showNewUserDialog, setShowNewUserDialog] = useState(false)
+  const [showExcepcionModal, setShowExcepcionModal] = useState(false)
+  const [showHorarioModal, setShowHorarioModal] = useState(false)
+  const [nuevaExcepcion, setNuevaExcepcion] = useState<Partial<ExcepcionHoraria>>({
+    nombre: "",
+    fechaInicio: "",
+    fechaFin: "",
+    dias: []
+  })
+  const [editingExcepcion, setEditingExcepcion] = useState<ExcepcionHoraria | null>(null)
+  const [editingFranja, setEditingFranja] = useState<{
+    diaId: string;
+    franjaId?: string;
+    inicio: string;
+    fin: string;
+    excepcionDiaIndex?: number;
+  } | null>(null)
+  
+  const diasSemana = [
+    'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'
+  ]
 
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -290,15 +329,159 @@ export default function ClinicaDetailPage() {
     }
   }, [clinicData, updateClinica])
 
+  const handleExcepcionChange = (field: keyof ExcepcionHoraria, value: any) => {
+    if (editingExcepcion) {
+      setEditingExcepcion({ ...editingExcepcion, [field]: value })
+    } else {
+      setNuevaExcepcion({ ...nuevaExcepcion, [field]: value })
+    }
+  }
+
+  const handleCrearExcepcion = () => {
+    setEditingExcepcion({
+      id: Date.now().toString(),
+      clinicaId: clinicId,
+      ...crearExcepcionPorDefecto()
+    } as ExcepcionHoraria)
+    setShowExcepcionModal(true)
+  }
+
+  const handleEditarExcepcion = (excepcionId: string) => {
+    const excepcion = clinicData?.config?.excepciones?.find(exc => exc.id === excepcionId)
+    if (excepcion) {
+      setEditingExcepcion(excepcion)
+      setShowExcepcionModal(true)
+    }
+  }
+
+  const handleGuardarExcepcion = () => {
+    if (!editingExcepcion) return
+
+    const excepcionesActualizadas = [
+      ...(clinicData?.config?.excepciones || []).filter(exc => exc.id !== editingExcepcion.id),
+      editingExcepcion
+    ]
+    
+    handleClinicUpdate({ excepciones: excepcionesActualizadas })
+    setShowExcepcionModal(false)
+    setEditingExcepcion(null)
+    
+    toast({
+      title: "Excepción de horario guardada",
+      description: "La excepción ha sido guardada correctamente",
+    })
+  }
+
+  const handleEliminarExcepcion = (excepcionId: string) => {
+    const excepcionesActualizadas = (clinicData?.config?.excepciones || []).filter(exc => exc.id !== excepcionId)
+    handleClinicUpdate({ excepciones: excepcionesActualizadas })
+    
+    toast({
+      title: "Excepción eliminada",
+      description: "La excepción ha sido eliminada exitosamente.",
+    })
+  }
+
+  const handleToggleDiaExcepcion = (diaIndex: number, activo: boolean) => {
+    if (!editingExcepcion) return
+    
+    const diasActualizados = [...editingExcepcion.dias]
+    diasActualizados[diaIndex] = {
+      ...diasActualizados[diaIndex],
+      activo,
+      franjas: activo ? diasActualizados[diaIndex].franjas : []
+    }
+    
+    setEditingExcepcion({
+      ...editingExcepcion,
+      dias: diasActualizados
+    })
+  }
+
+  const handleAddFranjaExcepcion = (diaIndex: number, inicio: string, fin: string) => {
+    if (!editingExcepcion) return
+    
+    const nuevaFranja: FranjaHoraria = {
+      id: Date.now().toString(),
+      inicio,
+      fin
+    }
+    
+    const diasActualizados = [...editingExcepcion.dias]
+    diasActualizados[diaIndex] = {
+      ...diasActualizados[diaIndex],
+      franjas: [...diasActualizados[diaIndex].franjas, nuevaFranja]
+    }
+    
+    setEditingExcepcion({
+      ...editingExcepcion,
+      dias: diasActualizados
+    })
+  }
+
+  const handleRemoveFranjaExcepcion = (diaIndex: number, franjaId: string) => {
+    if (!editingExcepcion) return
+    
+    const diasActualizados = [...editingExcepcion.dias]
+    diasActualizados[diaIndex] = {
+      ...diasActualizados[diaIndex],
+      franjas: diasActualizados[diaIndex].franjas.filter(franja => franja.id !== franjaId)
+    }
+    
+    setEditingExcepcion({
+      ...editingExcepcion,
+      dias: diasActualizados
+    })
+  }
+  
+  const handleUpdateFranjaExcepcion = (diaIndex: number, franjaId: string, inicio: string, fin: string) => {
+    if (!editingExcepcion) return
+    
+    const diasActualizados = [...editingExcepcion.dias]
+    const franjas = [...diasActualizados[diaIndex].franjas]
+    const franjaIndex = franjas.findIndex(f => f.id === franjaId)
+    
+    if (franjaIndex >= 0) {
+      franjas[franjaIndex] = { ...franjas[franjaIndex], inicio, fin }
+      diasActualizados[diaIndex] = { ...diasActualizados[diaIndex], franjas: franjas }
+      
+      setEditingExcepcion({
+        ...editingExcepcion,
+        dias: diasActualizados
+      })
+    }
+  }
+
   if (!clinicData) {
     return null
   }
 
   const { config } = clinicData
   const typedConfig = config as any
-
+  
   const defaultOpenTime = "00:00"
   const defaultCloseTime = "23:59"
+
+  // Comprobar si hay excepciones activas - como función normal
+  const verificarExcepcionesActivas = () => {
+    // Verificar si hay excepciones configuradas
+    if (!typedConfig.excepciones || typedConfig.excepciones.length === 0) return false;
+    
+    // Fecha actual
+    const today = new Date();
+    
+    // Buscar alguna excepción activa
+    return typedConfig.excepciones.some(excepcion => {
+      const fechaInicio = new Date(excepcion.fechaInicio);
+      const fechaFin = new Date(excepcion.fechaFin);
+      
+      // Comprobar si la fecha actual está dentro del rango de la excepción
+      return fechaInicio <= today && today <= fechaFin;
+    });
+  };
+  
+  // Variable para almacenar el resultado
+  const hayExcepcionesActivas = verificarExcepcionesActivas();
 
   const handleSave = async () => {
     setIsSaving(true)
@@ -317,6 +500,61 @@ export default function ClinicaDetailPage() {
     { id: "almacenamiento", label: "Almacenamiento" },
     { id: "depuracion", label: "Depuración" },
   ]
+
+  const traducirDia = (dia: string): string => {
+    const traducciones: Record<string, string> = {
+      'lunes': 'Lunes',
+      'martes': 'Martes',
+      'miercoles': 'Miércoles',
+      'jueves': 'Jueves',
+      'viernes': 'Viernes',
+      'sabado': 'Sábado',
+      'domingo': 'Domingo',
+    }
+    return traducciones[dia] || dia
+  }
+
+  const crearExcepcionPorDefecto = () => {
+    // Obtener horario general de la clínica
+    const horarioApertura = typedConfig.openTime || defaultOpenTime;
+    const horarioCierre = typedConfig.closeTime || defaultCloseTime;
+    
+    return {
+      nombre: "",
+      fechaInicio: "",
+      fechaFin: "",
+      dias: diasSemana.map(dia => ({
+        dia,
+        franjas: [{
+          id: Date.now().toString() + Math.random().toString(36).substring(2, 10),
+          inicio: horarioApertura,
+          fin: horarioCierre
+        }],
+        activo: true
+      }))
+    }
+  }
+
+  // Agregar una función para crear la excepción de ejemplo
+  const crearExcepcionEjemplo = () => {
+    if (!clinicData) return;
+    
+    // Crear y aplicar la excepción de ejemplo
+    const exceptionToAdd = createExampleException(clinicData);
+    
+    // Actualizar la clínica con la nueva excepción
+    const excepcionesActualizadas = [
+      ...(typedConfig.excepciones || []),
+      exceptionToAdd
+    ];
+    
+    handleClinicUpdate({ excepciones: excepcionesActualizadas });
+    
+    toast({
+      title: "Excepción de ejemplo creada",
+      description: "Se ha creado una excepción de ejemplo que comienza hoy y dura una semana.",
+    });
+  }
 
   return (
     <div className="container px-0 pt-4 pb-8">
@@ -793,8 +1031,104 @@ export default function ClinicaDetailPage() {
                     </TabsContent>
 
                     <TabsContent value="excepciones">
-                      <div className="p-4 text-center text-gray-500">
-                        <p>Sección de excepciones en desarrollo</p>
+                      <div className="space-y-6">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-lg font-medium">Excepciones horarias de la clínica</h3>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              onClick={crearExcepcionEjemplo}
+                              className="bg-amber-100 text-amber-800 hover:bg-amber-200 border-amber-300"
+                            >
+                              Crear excepción de ejemplo
+                            </Button>
+                            <Button 
+                              onClick={handleCrearExcepcion}
+                              className="bg-purple-600 hover:bg-purple-700"
+                            >
+                              <Plus className="w-4 h-4 mr-2" />
+                              Nueva excepción
+                            </Button>
+                          </div>
+                        </div>
+                        
+                        {hayExcepcionesActivas && (
+                          <div className="flex items-center gap-2 p-4 text-green-800 border border-green-300 rounded-lg bg-green-50">
+                            <AlertTriangle className="w-5 h-5 text-green-600" />
+                            <div>
+                              <p className="font-medium">Hay excepciones activas actualmente</p>
+                              <p className="text-sm">Los horarios de la agenda se están mostrando según estas excepciones.</p>
+                            </div>
+                          </div>
+                        )}
+                        
+                        <p className="text-sm text-gray-600">
+                          Configure periodos específicos con horarios diferentes al horario general de la clínica.
+                          Las excepciones se aplican durante las fechas seleccionadas y tienen prioridad sobre el horario general.
+                        </p>
+                        
+                        <div className="border rounded-md">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Nombre</TableHead>
+                                <TableHead>Fecha Inicio</TableHead>
+                                <TableHead>Fecha Fin</TableHead>
+                                <TableHead className="text-right">Acciones</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {(typedConfig.excepciones || []).map((excepcion) => (
+                                <TableRow key={excepcion.id}>
+                                  <TableCell className="font-medium">{excepcion.nombre}</TableCell>
+                                  <TableCell>
+                                    <div className="flex items-center gap-2">
+                                      <Calendar className="w-4 h-4 text-gray-500" />
+                                      <span>
+                                        {new Date(excepcion.fechaInicio).toLocaleDateString()}
+                                      </span>
+                                    </div>
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="flex items-center gap-2">
+                                      <Calendar className="w-4 h-4 text-gray-500" />
+                                      <span>
+                                        {new Date(excepcion.fechaFin).toLocaleDateString()}
+                                      </span>
+                                    </div>
+                                  </TableCell>
+                                  <TableCell className="text-right">
+                                    <div className="flex justify-end space-x-2">
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => handleEditarExcepcion(excepcion.id)}
+                                      >
+                                        Editar
+                                      </Button>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="text-red-600 hover:text-red-700"
+                                        onClick={() => handleEliminarExcepcion(excepcion.id)}
+                                      >
+                                        Eliminar
+                                      </Button>
+                                    </div>
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                              
+                              {(!typedConfig.excepciones || typedConfig.excepciones.length === 0) && (
+                                <TableRow>
+                                  <TableCell colSpan={4} className="text-center text-gray-500">
+                                    No hay excepciones configuradas
+                                  </TableCell>
+                                </TableRow>
+                              )}
+                            </TableBody>
+                          </Table>
+                        </div>
                       </div>
                     </TabsContent>
                   </Tabs>
@@ -1165,6 +1499,281 @@ export default function ClinicaDetailPage() {
           <HelpCircle className="w-4 h-4" />
         </Button>
       </div>
+
+      {/* Modal para editar excepciones de horario */}
+      {showExcepcionModal && editingExcepcion && !showHorarioModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="w-full max-w-2xl p-6 bg-white rounded-lg shadow-lg">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">
+                {editingExcepcion.id ? "Editar excepción de horario" : "Nueva excepción de horario"}
+              </h3>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="w-8 h-8 rounded-full"
+                onClick={() => {
+                  setShowExcepcionModal(false);
+                  setEditingExcepcion(null);
+                }}
+              >
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <Label htmlFor="nombreExcepcion">Nombre de la excepción</Label>
+                  <Input 
+                    id="nombreExcepcion" 
+                    value={editingExcepcion.nombre}
+                    onChange={(e) => setEditingExcepcion({...editingExcepcion, nombre: e.target.value})}
+                    placeholder="Ej: Vacaciones, Periodo especial, etc."
+                  />
+                </div>
+                
+                <div className="flex items-end gap-2">
+                  <div className="flex-grow">
+                    <Label htmlFor="fechaInicioExcepcion">Fecha inicio</Label>
+                    <Input 
+                      id="fechaInicioExcepcion" 
+                      type="date"
+                      value={editingExcepcion.fechaInicio}
+                      onChange={(e) => setEditingExcepcion({...editingExcepcion, fechaInicio: e.target.value})}
+                    />
+                  </div>
+                  <div className="flex-grow">
+                    <Label htmlFor="fechaFinExcepcion">Fecha fin</Label>
+                    <Input 
+                      id="fechaFinExcepcion" 
+                      type="date"
+                      value={editingExcepcion.fechaFin}
+                      min={editingExcepcion.fechaInicio}
+                      onChange={(e) => setEditingExcepcion({...editingExcepcion, fechaFin: e.target.value})}
+                    />
+                  </div>
+                </div>
+              </div>
+              
+              <div className="p-3 mb-4 text-sm text-blue-700 rounded-md bg-blue-50">
+                <p className="font-medium">Configuración de horario general de la clínica:</p>
+                <p className="text-gray-600">
+                  <span className="font-medium">Horario general:</span> {typedConfig.openTime || defaultOpenTime} - {typedConfig.closeTime || defaultCloseTime}
+                </p>
+                <p className="mt-1 text-xs italic text-gray-500">
+                  Los horarios de excepción permiten modificar temporalmente el horario general de la clínica durante un periodo específico.
+                </p>
+              </div>
+              
+              <div className="mt-5">
+                <h4 className="mb-3 text-sm font-medium">Configuración por día</h4>
+                
+                <div className="overflow-hidden border rounded-md">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="hover:bg-transparent">
+                        <TableHead className="py-2 h-9 w-[100px]">Día</TableHead>
+                        <TableHead className="py-2 h-9">Franjas horarias</TableHead>
+                        <TableHead className="py-2 h-9 w-[100px] text-center">Activo</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {editingExcepcion.dias.map((dia, index) => (
+                        <TableRow key={dia.dia}>
+                          <TableCell className="font-medium">{traducirDia(dia.dia)}</TableCell>
+                          <TableCell>
+                            <div className="flex flex-wrap gap-2">
+                              {dia.franjas.length === 0 ? (
+                                <span className="text-sm italic text-gray-500">Sin horario definido</span>
+                              ) : (
+                                dia.franjas.map((franja) => (
+                                  <Badge 
+                                    key={franja.id} 
+                                    variant="outline"
+                                    className="flex items-center gap-1 text-blue-700 border-blue-200 cursor-pointer hover:bg-blue-100 bg-blue-50"
+                                    onClick={() => {
+                                      setEditingFranja({
+                                        diaId: dia.dia,
+                                        franjaId: franja.id,
+                                        inicio: franja.inicio,
+                                        fin: franja.fin,
+                                        excepcionDiaIndex: index
+                                      });
+                                      setShowHorarioModal(true);
+                                    }}
+                                  >
+                                    <Clock className="w-3 h-3 mr-1" />
+                                    {franja.inicio} - {franja.fin}
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="w-4 h-4 p-0 ml-1 text-gray-500 rounded-full hover:text-red-500 hover:bg-transparent"
+                                      onClick={(e) => {
+                                        e.stopPropagation(); // Evitar que se abra el modal de edición
+                                        handleRemoveFranjaExcepcion(index, franja.id);
+                                      }}
+                                    >
+                                      ×
+                                    </Button>
+                                  </Badge>
+                                ))
+                              )}
+                              {dia.activo && (
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm"
+                                  className="h-6 text-gray-700 bg-gray-100 rounded-full hover:bg-gray-200"
+                                  onClick={() => {
+                                    handleAddFranjaExcepcion(
+                                      index,
+                                      typedConfig.openTime || defaultOpenTime,
+                                      typedConfig.closeTime || defaultCloseTime
+                                    );
+                                  }}
+                                >
+                                  <Plus className="w-3 h-3 mr-1" />
+                                  Añadir
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Checkbox 
+                              checked={dia.activo}
+                              onCheckedChange={(checked) => handleToggleDiaExcepcion(index, checked === true)}
+                            />
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+              
+              <div className="flex justify-end gap-2 mt-6">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowExcepcionModal(false);
+                    setEditingExcepcion(null);
+                  }}
+                  className="h-9"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  className="bg-purple-600 h-9 hover:bg-purple-700"
+                  onClick={handleGuardarExcepcion}
+                  disabled={
+                    !editingExcepcion.nombre || 
+                    !editingExcepcion.fechaInicio || 
+                    !editingExcepcion.fechaFin
+                  }
+                >
+                  Guardar Excepción
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Modal para editar franjas horarias */}
+      {showHorarioModal && editingFranja && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="w-full max-w-md p-6 bg-white rounded-lg shadow-lg">
+            <h3 className="mb-4 text-lg font-semibold">
+              {editingFranja.franjaId ? "Editar franja horaria" : "Añadir franja horaria"}
+            </h3>
+            
+            <div className="space-y-4">
+              <div className="p-3 mb-4 text-sm text-blue-700 rounded-md bg-blue-50">
+                <p className="font-medium">Día: {traducirDia(editingFranja.diaId)}</p>
+                <p className="text-gray-600">
+                  <span className="font-medium">Horario general:</span> {typedConfig.openTime || defaultOpenTime} - {typedConfig.closeTime || defaultCloseTime}
+                </p>
+                <p className="mt-1 text-xs italic text-gray-500">
+                  Configura un rango de tiempo para este día específico.
+                </p>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="horaInicio">Hora de inicio</Label>
+                  <Input
+                    id="horaInicio"
+                    type="time"
+                    value={editingFranja.inicio}
+                    onChange={(e) => setEditingFranja({
+                      ...editingFranja,
+                      inicio: e.target.value
+                    })}
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="horaFin">Hora de fin</Label>
+                  <Input
+                    id="horaFin"
+                    type="time"
+                    value={editingFranja.fin}
+                    onChange={(e) => setEditingFranja({
+                      ...editingFranja,
+                      fin: e.target.value
+                    })}
+                  />
+                </div>
+              </div>
+              
+              <div className="flex justify-end gap-2 mt-6">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowHorarioModal(false);
+                    setEditingFranja(null);
+                  }}
+                  className="h-9"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  className="bg-purple-600 h-9 hover:bg-purple-700"
+                  onClick={() => {
+                    if (editingFranja.excepcionDiaIndex !== undefined) {
+                      if (editingFranja.franjaId) {
+                        // Actualizar franja existente
+                        handleUpdateFranjaExcepcion(
+                          editingFranja.excepcionDiaIndex,
+                          editingFranja.franjaId,
+                          editingFranja.inicio,
+                          editingFranja.fin
+                        );
+                      } else {
+                        // Añadir nueva franja
+                        handleAddFranjaExcepcion(
+                          editingFranja.excepcionDiaIndex,
+                          editingFranja.inicio,
+                          editingFranja.fin
+                        );
+                      }
+                    }
+                    setShowHorarioModal(false);
+                    setEditingFranja(null);
+                  }}
+                  disabled={
+                    !editingFranja.inicio || 
+                    !editingFranja.fin || 
+                    editingFranja.inicio >= editingFranja.fin
+                  }
+                >
+                  Guardar
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

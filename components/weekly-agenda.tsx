@@ -2,9 +2,9 @@
 
 import React, { useMemo, useEffect, useState, useCallback, useRef } from "react"
 
-import { format, parse, addDays, startOfWeek, isSameDay, differenceInDays, isToday } from "date-fns"
+import { format, parse, addDays, startOfWeek, isSameDay, differenceInDays, isToday, addWeeks, subWeeks, isSameMonth, parseISO, isBefore, isAfter } from "date-fns"
 import { es } from "date-fns/locale"
-import { useClinic } from "@/contexts/clinic-context"
+import { useClinic, type ClinicConfig } from "@/contexts/clinic-context"
 import { AgendaNavBar } from "./agenda-nav-bar"
 import { HydrationWrapper } from "@/components/hydration-wrapper"
 import { useRouter } from "next/navigation"
@@ -17,13 +17,23 @@ import { NewClientDialog } from "@/components/new-client-dialog"
 import { AppointmentItem } from "./appointment-item"
 import { DragDropContext, Droppable } from "react-beautiful-dnd"
 import { ScheduleBlock, useScheduleBlocks } from "@/contexts/schedule-blocks-context"
-import { Lock } from "lucide-react"
-import { parseISO, isAfter, isBefore, getDay, getDate } from "date-fns"
+import { Lock, AlertTriangle } from "lucide-react"
+import { getDay, getDate } from "date-fns"
 import { useToast } from "@/hooks/use-toast"
 import { BlockScheduleModal } from "./block-schedule-modal"
 import { WeekSchedule } from "@/types/schedule"
 import { Calendar } from "lucide-react"
 import { Appointment } from "@/types/appointments"
+import { Card } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { ChevronLeft, ChevronRight } from "lucide-react"
+import { ClinicConfigAlert } from "@/components/clinic-config-alert"
+import { 
+  isBusinessDay, 
+  findActiveExceptions,
+  applyScheduleExceptions
+} from "@/services/clinic-schedule-service"
+import { Clinica } from "@/services/data/models/interfaces"
 
 // Función para generar slots de tiempo
 function getTimeSlots(startTime: string, endTime: string, interval = 15): string[] {
@@ -198,6 +208,29 @@ export default function WeeklyAgenda({
   // Función para verificar si un día está activo en la configuración
   const isDayActive = useCallback(
     (date: Date) => {
+      // Crear objeto compatible con Clinica
+      if (effectiveClinic) {
+        const clinicData: Partial<Clinica> = {
+          id: effectiveClinic.id,
+          config: effectiveClinic.config,
+          // Añadir campos mínimos necesarios
+          name: '',
+          prefix: '',
+          city: '',
+          isActive: true
+        };
+        
+        // Usar nuestro servicio de excepciones para verificar si el día está activo
+        return isBusinessDay(date, clinicData as Clinica);
+      }
+      return true;
+    },
+    [effectiveClinic],
+  );
+
+  // Función para verificar si un horario está disponible
+  const isTimeSlotAvailable = useCallback(
+    (date: Date, time: string) => {
       const day = format(date, "EEEE", { locale: es }).toLowerCase()
       // Mapear los nombres de días en español a las claves en inglés usadas en el objeto schedule
       const dayMap = {
@@ -211,36 +244,32 @@ export default function WeeklyAgenda({
       } as const
       
       type DayMapKey = keyof typeof dayMap
-      const dayKey = (dayMap[day as DayMapKey] || day) as keyof WeekSchedule
-      return clinicConfig.schedule?.[dayKey]?.isOpen ?? false
-    },
-    [clinicConfig.schedule],
-  )
-
-  // Función para verificar si un horario está disponible
-  const isTimeSlotAvailable = useCallback(
-    (date: Date, time: string) => {
-      const day = format(date, "EEEE", { locale: es }).toLowerCase()
-      const dayMap = {
-        lunes: "monday",
-        martes: "tuesday",
-        miércoles: "wednesday",
-        jueves: "thursday",
-        viernes: "friday",
-        sábado: "saturday",
-        domingo: "sunday",
-      } as const
       
-      type DayMapKey = keyof typeof dayMap
-      const dayKey = (dayMap[day as DayMapKey] || day) as keyof WeekSchedule
-      const daySchedule = clinicConfig.schedule?.[dayKey]
+      // Aplicar excepciones si las hay
+      const effectiveSchedule = effectiveClinic ? 
+        applyScheduleExceptions(
+          effectiveClinic.config?.schedule || clinicConfig.schedule || {},
+          {
+            id: effectiveClinic.id,
+            config: effectiveClinic.config,
+            name: '',
+            prefix: '',
+            city: '',
+            isActive: true
+          } as Clinica,
+          date
+        ) : 
+        clinicConfig.schedule || {};
+      
+      const dayKey = (dayMap[day as DayMapKey] || day) as keyof typeof effectiveSchedule
+      const daySchedule = effectiveSchedule[dayKey]
 
       if (!daySchedule?.isOpen) return false
 
       // Verificar si el horario está dentro de algún rango definido para ese día
       return daySchedule.ranges.some((range) => time >= range.start && time <= range.end)
     },
-    [clinicConfig.schedule],
+    [clinicConfig.schedule, effectiveClinic],
   )
 
   // Referencia para el contenedor de la agenda
@@ -873,6 +902,34 @@ export default function WeeklyAgenda({
     setIsBlockModalOpen(true);
   };
 
+  // Agregar al componente WeeklyAgenda
+  const activeExceptions = useMemo(() => {
+    if (!effectiveClinic) return [];
+    
+    // Convertir effectiveClinic a un objeto compatible con Clinica
+    const clinicData: Partial<Clinica> = {
+      id: effectiveClinic.id,
+      config: effectiveClinic.config,
+      // Añadir campos mínimos necesarios
+      name: '',
+      prefix: '',
+      city: '',
+      isActive: true
+    };
+    
+    // Comprobar excepciones activas para cada día de la semana actual
+    return weekDays.map(date => {
+      const exception = findActiveExceptions(date, clinicData as Clinica);
+      return {
+        date,
+        exception
+      };
+    }).filter(item => item.exception);
+  }, [effectiveClinic, weekDays]);
+
+  // Verificar si hay alguna excepción activa esta semana
+  const hasActiveExceptions = activeExceptions.length > 0;
+
   if (containerMode) {
     return (
       <div className="h-full" style={transitionStyles}>
@@ -995,6 +1052,21 @@ export default function WeeklyAgenda({
             }
           }}
         />
+        
+        {hasActiveExceptions && (
+          <div className="px-4 py-2 bg-amber-50 border-y border-amber-200 flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 text-amber-500" />
+            <div>
+              <p className="text-sm font-medium text-amber-800">
+                Horario especial activo
+              </p>
+              <p className="text-xs text-amber-700">
+                Hay excepciones al horario general configuradas para {activeExceptions.length === 1 ? 'el día' : 'los días'} {activeExceptions.map(e => format(e.date, "d 'de' MMMM", { locale: es })).join(', ')}.
+              </p>
+            </div>
+          </div>
+        )}
+
         {renderWeeklyGrid()}
 
         {/* Dialogs */}
