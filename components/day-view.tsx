@@ -32,8 +32,8 @@ import { AppointmentDialog as AppointmentDialogType } from "@/components/appoint
 import { AppointmentItem as AppointmentItemType } from "@/components/appointment-item"
 import { CustomDatePicker } from "@/components/custom-date-picker"
 import { Appointment } from "@/types/appointments"
-import { Cabin } from '@prisma/client';
-import { WeekSchedule } from "@/types/schedule";
+import { Cabin, ScheduleTemplateBlock, ClinicScheduleBlock } from '@prisma/client';
+import { WeekSchedule, DaySchedule } from "@/types/schedule";
 
 // Función para generar slots de tiempo
 function getTimeSlots(startTime: string, endTime: string, interval = 15): string[] {
@@ -86,6 +86,43 @@ interface DayViewProps {
   onAppointmentClick?: (appointmentId: string) => void
   onViewChange?: (view: "weekly" | "day") => void
 }
+
+// --- COPIED HELPER FUNCTIONS from WeeklyAgenda --- 
+const getDayKey = (date: Date) => {
+  const day = format(date, "EEEE", { locale: es }).toLowerCase();
+  const dayMap = {
+    lunes: "monday", martes: "tuesday", miércoles: "wednesday", jueves: "thursday",
+    viernes: "friday", sábado: "saturday", domingo: "sunday",
+  } as const;
+  return dayMap[day as keyof typeof dayMap] || day;
+};
+
+const convertBlocksToWeekSchedule = (
+    blocks: (ScheduleTemplateBlock | ClinicScheduleBlock)[] | undefined | null,
+    defaultOpenTime: string,
+    defaultCloseTime: string
+): WeekSchedule => {
+    const initialSchedule: WeekSchedule = {
+        monday: { isOpen: false, ranges: [] }, tuesday: { isOpen: false, ranges: [] },
+        wednesday: { isOpen: false, ranges: [] }, thursday: { isOpen: false, ranges: [] },
+        friday: { isOpen: false, ranges: [] }, saturday: { isOpen: false, ranges: [] },
+        sunday: { isOpen: false, ranges: [] },
+    };
+    if (!blocks || blocks.length === 0) { 
+        return initialSchedule; 
+    }
+    const weekSchedule = blocks.reduce((acc, block) => {
+        const dayKey = block.dayOfWeek.toLowerCase() as keyof WeekSchedule;
+        if (acc[dayKey]) { 
+            acc[dayKey].isOpen = true;
+            acc[dayKey].ranges.push({ start: block.startTime, end: block.endTime });
+            acc[dayKey].ranges.sort((a, b) => a.start.localeCompare(b.start));
+        }
+        return acc;
+    }, initialSchedule);
+    return weekSchedule;
+};
+// --- END COPIED HELPERS ---
 
 export default function DayView({
   date,
@@ -184,44 +221,76 @@ export default function DayView({
     }
   }, [initialAppointments, appointments])
 
-  // Derivar configuración del activeClinic
-  const schedule = useMemo(() => activeClinic?.scheduleJson as unknown as WeekSchedule | null, [activeClinic?.scheduleJson]);
-  const openTime = useMemo(() => activeClinic?.openTime ?? "09:00", [activeClinic?.openTime]);
-  const closeTime = useMemo(() => activeClinic?.closeTime ?? "20:00", [activeClinic?.closeTime]);
-  const slotDuration = useMemo(() => activeClinic?.slotDuration ?? 15, [activeClinic?.slotDuration]);
+  // REMOVE useMemo that depends on scheduleJson
+  // const schedule = useMemo(() => activeClinic?.scheduleJson as unknown as WeekSchedule | null, [activeClinic?.scheduleJson]);
 
-  // --- LOG: Configuración de horario derivada ---
-  console.log("[DayView] Derived schedule config:", { openTime, closeTime, slotDuration, schedule });
-  // ------------------------------------------
+  // <<< ADD useMemo to calculate correctSchedule >>>
+  const correctSchedule = useMemo(() => {
+    if (!activeClinic) return null;
+    console.log("[DayView useMemo] Deriving correct schedule from activeClinic:", activeClinic);
+    const templateBlocks = activeClinic.linkedScheduleTemplate?.blocks;
+    const independentBlocks = activeClinic.independentScheduleBlocks;
+    const defaultOpen = activeClinic.openTime || "00:00";
+    const defaultClose = activeClinic.closeTime || "23:59";
+    let blocksToUse: (ScheduleTemplateBlock | ClinicScheduleBlock)[] | undefined | null = null;
+    if (templateBlocks && templateBlocks.length > 0) {
+      console.log("[DayView useMemo] Using template blocks.");
+      blocksToUse = templateBlocks;
+    } else if (independentBlocks && independentBlocks.length > 0) {
+      console.log("[DayView useMemo] Using independent blocks.");
+      blocksToUse = independentBlocks;
+    } else {
+      console.log("[DayView useMemo] No blocks found.");
+      return convertBlocksToWeekSchedule(null, defaultOpen, defaultClose);
+    }
+    return convertBlocksToWeekSchedule(blocksToUse, defaultOpen, defaultClose);
+  }, [activeClinic]);
+
+  // --- Derive general config and log --- 
+  const openTime = useMemo(() => activeClinic?.openTime ?? "09:00", [activeClinic?.openTime]);
+  const closeTime = useMemo(() => activeClinic?.closeTime ?? "18:00", [activeClinic?.closeTime]);
+  const slotDuration = useMemo(() => activeClinic?.slotDuration ?? 15, [activeClinic?.slotDuration]);
+  
+  // <<< UPDATE this log to show correctSchedule >>>
+  console.log("[DayView] Derived schedule config:", { openTime, closeTime, slotDuration, schedule: correctSchedule });
+  // -----------------------------------------
 
   // Usar la prop 'cabins' directamente (ya es del tipo Prisma y filtrada en el padre)
   const effectiveCabins = cabins;
 
-  // Regenerar timeSlots si es necesario
+  // <<< UPDATE timeSlots calculation to use correctSchedule >>>
   const timeSlots = useMemo(() => {
-     const slots = [];
-     let [h, m] = openTime.split(':').map(Number);
-     const [endH, endM] = closeTime.split(':').map(Number);
-     const endTotalMinutes = endH * 60 + endM;
-     let currentTotalMinutes = h * 60 + m;
+    if (!correctSchedule) return getTimeSlots(openTime, closeTime, slotDuration); // Fallback
 
-     // Asegurar un límite para evitar bucles infinitos si la configuración es inválida
-     let safeGuard = 0;
-     const maxSlots = (24 * 60) / slotDuration; // Máximo de slots en un día
+    const dayKey = getDayKey(currentDate);
+    const daySchedule = correctSchedule[dayKey as keyof WeekSchedule];
 
-     while (currentTotalMinutes <= endTotalMinutes && safeGuard < maxSlots * 2) {
-       slots.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
-       currentTotalMinutes += slotDuration;
-       h = Math.floor(currentTotalMinutes / 60);
-       m = currentTotalMinutes % 60;
-       safeGuard++;
-     }
-     if (safeGuard >= maxSlots * 2) {
-        console.warn("Posible bucle infinito detectado en la generación de timeSlots. Verifique la configuración openTime/closeTime/slotDuration.", { openTime, closeTime, slotDuration });
-        return []; // Devolver array vacío en caso de problema
-     }
-     return slots;
-  }, [openTime, closeTime, slotDuration]);
+    let earliestStart = openTime;
+    let latestEnd = closeTime;
+
+    if (daySchedule?.isOpen && daySchedule.ranges.length > 0) {
+        earliestStart = daySchedule.ranges.reduce((min, r) => r.start < min ? r.start : min, "23:59");
+        latestEnd = daySchedule.ranges.reduce((max, r) => r.end > max ? r.end : max, "00:00");
+        // Ensure latestEnd is valid if ranges cross midnight (e.g., 23:00-01:00), though unlikely here
+        if (latestEnd <= earliestStart) latestEnd = closeTime > earliestStart ? closeTime : "23:59"; 
+    } else {
+        // If day is closed or no ranges, maybe return empty slots?
+        // Or use default open/close times?
+        // For now, let's use default open/close if the day IS configured but has no ranges or is closed
+        earliestStart = openTime;
+        latestEnd = closeTime;
+        // If you want to show NO slots on closed days:
+        // if (!daySchedule?.isOpen) return []; 
+    }
+    
+    console.log(`[DayView] Generating time slots for ${format(currentDate, 'yyyy-MM-dd')} from ${earliestStart} to ${latestEnd}`);
+    if (latestEnd <= earliestStart) { 
+        console.warn("[DayView] latestEnd time is not after earliestStart, using default times for slots.");
+        return getTimeSlots(openTime, closeTime, slotDuration); 
+    } 
+
+    return getTimeSlots(earliestStart, latestEnd, slotDuration);
+  }, [correctSchedule, currentDate, openTime, closeTime, slotDuration, getDayKey]);
 
   // Función para verificar si un día está activo en la configuración
   const isDayActive = useCallback(
@@ -239,50 +308,36 @@ export default function DayView({
       const dayKey = dayMap[day as keyof typeof dayMap] || day;
       let isActive = false;
       try {
-         isActive = schedule?.[dayKey as keyof WeekSchedule]?.isOpen ?? false;
+         isActive = correctSchedule?.[dayKey as keyof WeekSchedule]?.isOpen ?? false;
          // --- LOG: Comprobación isDayActive ---
-         console.log(`[DayView] isDayActive check for ${format(date, 'yyyy-MM-dd')} (key: ${dayKey}): ${isActive}`);
+         // console.log(`[DayView] isDayActive check for ${format(date, 'yyyy-MM-dd')} (key: ${dayKey}): ${isActive}`); // <<< COMMENT OUT
          // -----------------------------------
       } catch (error) {
          console.error("[DayView] Error in isDayActive:", error);
       }
       return isActive;
     },
-    [schedule],
+    [correctSchedule],
   )
 
-  // Función para verificar si un horario está disponible
-  const isTimeSlotAvailable = useCallback(
-    (date: Date, time: string) => {
-      const day = format(date, "EEEE", { locale: es }).toLowerCase()
-      const dayMap = {
-        lunes: "monday",
-        martes: "tuesday",
-        miércoles: "wednesday",
-        jueves: "thursday",
-        viernes: "friday",
-        sábado: "saturday",
-        domingo: "sunday",
-      } as const;
-      const dayKey = dayMap[day as keyof typeof dayMap] || day;
-      let isAvailable = false;
-      try {
-        const daySchedule = schedule?.[dayKey as keyof WeekSchedule];
-        if (!daySchedule || !daySchedule.isOpen || !daySchedule.ranges) {
-          isAvailable = false;
-        } else {
-          isAvailable = daySchedule.ranges.some((range) => time >= range.start && time < range.end);
-        }
-        // --- LOG: Comprobación isTimeSlotAvailable ---
-        console.log(`[DayView] isTimeSlotAvailable check for ${format(date, 'yyyy-MM-dd')} ${time} (key: ${dayKey}): ${isAvailable}`);
-        // -------------------------------------------
-      } catch(error) {
-         console.error("[DayView] Error in isTimeSlotAvailable:", error);
+  // <<< UPDATE isTimeSlotAvailable to use correctSchedule >>>
+  const isTimeSlotAvailable = useCallback((time: string) => {
+    const dayKey = getDayKey(currentDate);
+    let isAvailable = false;
+    try {
+      // <<< Use correctSchedule directly >>>
+      const daySchedule = correctSchedule?.[dayKey as keyof WeekSchedule]; 
+      if (!daySchedule || !daySchedule.isOpen || !daySchedule.ranges) {
+        isAvailable = false;
+      } else {
+        isAvailable = daySchedule.ranges.some((range) => time >= range.start && time < range.end);
       }
-      return isAvailable;
-    },
-    [schedule],
-  )
+      // console.log(`[DayView] isTimeSlotAvailable check for ${format(currentDate, 'yyyy-MM-dd')} ${time} (key: ${dayKey}): ${isAvailable}`); // Already commented
+    } catch (error) {
+      console.error("[DayView] Error in isTimeSlotAvailable:", error);
+    }
+    return isAvailable;
+  }, [correctSchedule, currentDate, getDayKey]); // <<< Add correctSchedule and getDayKey to dependencies
 
   // Referencia para el contenedor de la agenda
   const agendaRef = useRef<HTMLDivElement>(null)
@@ -462,7 +517,7 @@ export default function DayView({
     }
 
     // Solo si no está bloqueada, continuar con la lógica original
-    if (!isTimeSlotAvailable(date, time)) return
+    if (!isTimeSlotAvailable(time)) return
 
     // Intentar diferentes formas de comparación para encontrar la cabina
     const cabin = effectiveCabins.find((c) => {
@@ -681,7 +736,7 @@ export default function DayView({
                 </div>
                 {/* Celdas de Cabina */}
                 {effectiveCabins.map((cabin, cabinIndex) => {
-                  const isAvailable = isTimeSlotAvailable(currentDate, time);
+                  const isAvailable = isTimeSlotAvailable(time);
                   const dayString = format(currentDate, "yyyy-MM-dd");
                   const blockForCell = findBlockForCell ? findBlockForCell(dayString, time, cabin.id.toString()) : null;
                   const isCellInteractive = isAvailable && !blockForCell;

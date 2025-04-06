@@ -43,14 +43,15 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [isLoadingClinics, setIsLoadingClinics] = useState(true)
   const [isLoadingCabinsContext, setIsLoadingCabinsContext] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [isLoadingDetails, setIsLoadingDetails] = useState(false);
 
-  // setActiveClinic interna (solo actualiza estado)
   const internalSetActiveClinic = useCallback((clinic: Clinica | null) => {
-    console.log("[ClinicContext] internalSetActiveClinic called with:", JSON.stringify(clinic, null, 2));
+    console.log("[ClinicContext] internalSetActiveClinic called with:", JSON.stringify(clinic, (key, value) => key === 'linkedScheduleTemplate' || key === 'independentScheduleBlocks' ? '...' : value, 2));
     if (clinic) {
-      console.log(`[ClinicContext] internalSetActiveClinic - Checking scheduleJson:`, clinic.scheduleJson);
-      console.log(`[ClinicContext] internalSetActiveClinic - Checking openTime:`, clinic.openTime);
-      console.log(`[ClinicContext] internalSetActiveClinic - Checking closeTime:`, clinic.closeTime);
+      // Remove old detailed logs if not needed
+      // console.log(`[ClinicContext] internalSetActiveClinic - Checking scheduleJson:`, clinic.scheduleJson); 
+      // console.log(`[ClinicContext] internalSetActiveClinic - Checking openTime:`, clinic.openTime);
+      // console.log(`[ClinicContext] internalSetActiveClinic - Checking closeTime:`, clinic.closeTime);
     } else {
       console.log("[ClinicContext] internalSetActiveClinic - Clinic is null");
     }
@@ -62,7 +63,26 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   }, []);
 
-  // fetchClinics (sin cambios)
+  const fetchAndUpdateDetailedClinic = useCallback(async (clinicId: string) => {
+    if (!clinicId) return;
+    console.log(`[ClinicContext] fetchAndUpdateDetailedClinic - Fetching details for clinic: ${clinicId}`);
+    setIsLoadingDetails(true);
+    try {
+      const response = await fetch(`/api/clinics/${clinicId}`);
+      if (!response.ok) {
+        throw new Error(`Error ${response.status} fetching detailed clinic ${clinicId}`);
+      }
+      const detailedClinicData: Clinica = await response.json();
+      console.log(`[ClinicContext] fetchAndUpdateDetailedClinic - Received detailed data for ${clinicId}. Updating active clinic state.`);
+      internalSetActiveClinic(detailedClinicData); 
+    } catch (err) {
+      console.error(`[ClinicContext] fetchAndUpdateDetailedClinic - Error fetching details for ${clinicId}:`, err);
+      setError(err instanceof Error ? err.message : `Error fetching details for clinic ${clinicId}`);
+    } finally {
+      setIsLoadingDetails(false);
+    }
+  }, [internalSetActiveClinic, setError]);
+
   const fetchClinics = useCallback(async () => {
     console.log("ClinicContext: Iniciando fetchClinics");
     setIsLoadingClinics(true);
@@ -90,7 +110,6 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     fetchClinics();
   }, [fetchClinics]);
 
-  // useEffect para establecer activa (simplificado)
   useEffect(() => {
     console.log("[ClinicContext] useEffect[clinics, isLoading] - Determinando activa...");
     if (!isLoadingClinics && clinics.length > 0) {
@@ -98,29 +117,46 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       let clinicToActivate: Clinica | null = null;
 
       if (storedActiveId) {
-        clinicToActivate = clinics.find(c => c.id === storedActiveId) || null;
+        clinicToActivate = clinics.find(c => String(c.id) === storedActiveId) || null; 
         console.log(`[ClinicContext] useEffect[clinics, isLoading] - Found stored ID ${storedActiveId}. Found clinic? ${!!clinicToActivate}`);
       }
 
       if (!clinicToActivate) {
-        clinicToActivate = clinics[0];
-        console.log("[ClinicContext] useEffect[clinics, isLoading] - No stored ID or not found, using first clinic:", clinicToActivate?.id);
+        clinicToActivate = clinics.find(c => c.isActive) || clinics[0]; 
+        console.log("[ClinicContext] useEffect[clinics, isLoading] - No stored ID or not found, using first active/available clinic:", clinicToActivate?.id);
       }
       
-      // Solo llamar a internalSetActiveClinic si la clínica a activar es diferente de la actual
-      if (clinicToActivate && clinicToActivate.id !== activeClinic?.id) {
-         console.log(`[ClinicContext] useEffect[clinics, isLoading] - Estableciendo nueva clínica activa: ${clinicToActivate.id}`);
-         internalSetActiveClinic(clinicToActivate); // Usar la función interna con logs
-      } else if (clinicToActivate) {
-         console.log(`[ClinicContext] useEffect[clinics, isLoading] - Clínica activa ${clinicToActivate.id} ya es correcta.`);
-      } else {
+      // Ensure clinicToActivate and its ID exist before proceeding
+      if (clinicToActivate && clinicToActivate.id != null) { // Check for null/undefined ID
+          // <<< ENSURE ID is passed as STRING >>>
+          const clinicIdToFetch = String(clinicToActivate.id); 
+
+          if (clinicIdToFetch !== String(activeClinic?.id)) { // Compare as string
+             console.log(`[ClinicContext] useEffect[clinics, isLoading] - Setting initial active clinic: ${clinicIdToFetch}`);
+             internalSetActiveClinic(clinicToActivate); 
+             
+             fetchAndUpdateDetailedClinic(clinicIdToFetch); // Pass the guaranteed string
+
+          } else if (clinicIdToFetch === String(activeClinic?.id) && !isLoadingDetails) {
+             const hasBlocks = activeClinic.linkedScheduleTemplate?.blocks || activeClinic.independentScheduleBlocks;
+             if (!hasBlocks) {
+                 console.log(`[ClinicContext] useEffect[clinics, isLoading] - Active clinic ${clinicIdToFetch} present but lacks details. Refetching details.`);
+                 fetchAndUpdateDetailedClinic(clinicIdToFetch); // Pass the guaranteed string
+             } else {
+                 console.log(`[ClinicContext] useEffect[clinics, isLoading] - Active clinic ${clinicIdToFetch} already correct and has details.`);
+             }
+          } else {
+             console.log(`[ClinicContext] useEffect[clinics, isLoading] - Clinic ${clinicIdToFetch} already set or details are loading.`);
+          }
+      } else if (!clinicToActivate) {
          console.log("[ClinicContext] useEffect[clinics, isLoading] - No clinic to activate.");
+         if(activeClinic) internalSetActiveClinic(null);
       }
       
     } else {
        console.log(`[ClinicContext] useEffect[clinics, isLoading] - Skipping activation (isLoading: ${isLoadingClinics}, clinics.length: ${clinics.length})`);
     }
-  }, [clinics, isLoadingClinics, activeClinic?.id, internalSetActiveClinic]); // Depender de internalSetActiveClinic
+  }, [clinics, isLoadingClinics, activeClinic?.id, internalSetActiveClinic, fetchAndUpdateDetailedClinic, isLoadingDetails, activeClinic]);
 
   // --- Simplificar getClinicaById --- 
   const getClinicaById = useCallback(async (id: string): Promise<Clinica | null> => {
@@ -323,7 +359,7 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     activeClinic,
     setActiveClinic: exposedSetActiveClinic, // Usar la función renombrada internamente
     clinics,
-    isLoading: isLoadingClinics, // Usar el estado interno renombrado
+    isLoading: isLoadingClinics || isLoadingDetails, // Usar el estado interno renombrado
     error,
     refetchClinics: exposedRefetchClinics, // Usar la función renombrada internamente
     getAllClinicas: async () => clinics, // Simplificado
@@ -342,6 +378,7 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     exposedSetActiveClinic,
     clinics,
     isLoadingClinics,
+    isLoadingDetails,
     error,
     exposedRefetchClinics,
     getClinicaById,

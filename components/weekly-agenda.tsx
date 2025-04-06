@@ -21,7 +21,7 @@ import { Lock, AlertTriangle } from "lucide-react"
 import { getDay, getDate } from "date-fns"
 import { useToast } from "@/hooks/use-toast"
 import { BlockScheduleModal } from "./block-schedule-modal"
-import { WeekSchedule } from "@/types/schedule"
+import { WeekSchedule, DaySchedule, TimeRange } from "@/types/schedule"
 import { Calendar } from "lucide-react"
 import { Appointment } from "@/types/appointments"
 import { Card } from "@/components/ui/card"
@@ -34,7 +34,7 @@ import {
   applyScheduleExceptions
 } from "@/services/clinic-schedule-service"
 import { Clinica } from "@/services/data/models/interfaces"
-import { Cabin } from '@prisma/client'
+import { Cabin, ScheduleTemplateBlock, ClinicScheduleBlock } from '@prisma/client'
 
 // Función para generar slots de tiempo
 function getTimeSlots(startTime: string, endTime: string, interval = 15): string[] {
@@ -191,30 +191,85 @@ export default function WeeklyAgenda({
     }
   }, [appointments, onAppointmentsChange])
 
-  // Derivar configuración del activeClinic
-  const schedule = useMemo(() => activeClinic?.scheduleJson as unknown as WeekSchedule | null, [activeClinic?.scheduleJson]);
+  // --- Derive CORRECT schedule and related config --- 
+  const correctSchedule = useMemo(() => {
+      if (!activeClinic) return null;
+      
+      console.log("[WeeklyAgenda useMemo] Deriving correct schedule from activeClinic:", activeClinic);
+      
+      const templateBlocks = activeClinic.linkedScheduleTemplate?.blocks;
+      const independentBlocks = activeClinic.independentScheduleBlocks;
+      const defaultOpen = activeClinic.openTime || "00:00";
+      const defaultClose = activeClinic.closeTime || "23:59";
+      
+      let blocksToUse: (ScheduleTemplateBlock | ClinicScheduleBlock)[] | undefined | null = null;
+      
+      if (templateBlocks && templateBlocks.length > 0) {
+          console.log("[WeeklyAgenda useMemo] Using template blocks.");
+          blocksToUse = templateBlocks;
+      } else if (independentBlocks && independentBlocks.length > 0) {
+          console.log("[WeeklyAgenda useMemo] Using independent blocks.");
+          blocksToUse = independentBlocks;
+      } else {
+          console.log("[WeeklyAgenda useMemo] No blocks found, will use default logic inside converter if needed.");
+          // Return a schedule based purely on open/close for L-V? Or let converter handle empty?
+          // Let's return the converted empty schedule for now, checker functions handle isOpen=false
+          return convertBlocksToWeekSchedule(null, defaultOpen, defaultClose);
+      }
+      
+      return convertBlocksToWeekSchedule(blocksToUse, defaultOpen, defaultClose);
+      
+  }, [activeClinic]); // Depend on the whole activeClinic object
+
+  // REMOVE const schedule = useMemo(() => activeClinic?.scheduleJson as unknown as WeekSchedule | null, [activeClinic?.scheduleJson]);
+  
+  // Get general open/close/slot, but grid generation might need adjustment
   const openTime = useMemo(() => activeClinic?.openTime ?? "09:00", [activeClinic?.openTime]);
   const closeTime = useMemo(() => activeClinic?.closeTime ?? "20:00", [activeClinic?.closeTime]);
   const slotDuration = useMemo(() => activeClinic?.slotDuration ?? 15, [activeClinic?.slotDuration]);
+  
+  console.log("[WeeklyAgenda] General derived config:", { openTime, closeTime, slotDuration });
+  console.log("[WeeklyAgenda] Correct derived schedule:", correctSchedule);
 
-  // --- LOG: Configuración de horario derivada ---
-  console.log("[WeeklyAgenda] Derived schedule config:", { openTime, closeTime, slotDuration, schedule });
-  // ------------------------------------------
+  // --- Time Slot Generation using useMemo (adjust loop) --- 
+  const timeSlots = useMemo(() => {
+      if (!correctSchedule) return [];
+
+      let earliestStart = "23:59";
+      let latestEnd = "00:00";
+      let hasAnyRange = false;
+
+      Object.values(correctSchedule).forEach(day => {
+          const daySchedule = day as DaySchedule; 
+          if (daySchedule.isOpen && daySchedule.ranges.length > 0) {
+              hasAnyRange = true;
+              daySchedule.ranges.forEach(range => {
+                  if (range.start < earliestStart) earliestStart = range.start;
+                  if (range.end > latestEnd) latestEnd = range.end;
+              });
+          }
+      });
+
+      // If no ranges found at all, use general open/close as fallback
+      if (!hasAnyRange) {
+          earliestStart = openTime; 
+          latestEnd = closeTime;
+      }
+
+      console.log(`[WeeklyAgenda] Generating time slots from ${earliestStart} to ${latestEnd} with interval ${slotDuration}`);
+      // Ensure latestEnd is actually later than earliestStart
+      if (latestEnd <= earliestStart) {
+          console.warn("[WeeklyAgenda] latestEnd time is not after earliestStart, using default times for slots.");
+          return getTimeSlots(openTime, closeTime, slotDuration);
+      }
+
+      return getTimeSlots(earliestStart, latestEnd, slotDuration);
+
+  }, [correctSchedule, slotDuration, openTime, closeTime]);
+  // --- End Time Slot Generation Adjustment ---
 
   // Obtener cabinas activas
   const activeCabins = cabins;
-
-  // Generar slots de tiempo
-  const [timeSlots, setTimeSlots] = useState<string[]>([])
-
-  useEffect(() => {
-    if (openTime && closeTime) {
-      const newTimeSlots = getTimeSlots(openTime, closeTime, slotDuration)
-      setTimeSlots(newTimeSlots)
-    } else {
-      setTimeSlots([])
-    }
-  }, [openTime, closeTime, slotDuration])
 
   // Función para verificar si un día está activo en la configuración
   const getDayKey = useCallback((date: Date) => {
@@ -235,35 +290,31 @@ export default function WeeklyAgenda({
     const dayKey = getDayKey(date);
     let isActive = false;
     try {
-      isActive = schedule?.[dayKey as keyof WeekSchedule]?.isOpen ?? false;
-      // --- LOG: Comprobación isDayActive ---
-      console.log(`[WeeklyAgenda] isDayActive check for ${format(date, 'yyyy-MM-dd')} (key: ${dayKey}): ${isActive}`);
-      // -----------------------------------
+      isActive = correctSchedule?.[dayKey as keyof WeekSchedule]?.isOpen ?? false;
+      // console.log(`[WeeklyAgenda] isDayActive check for ${format(date, 'yyyy-MM-dd')} (key: ${dayKey}): ${isActive}`);
     } catch (error) {
       console.error("[WeeklyAgenda] Error in isDayActive:", error);
     }
     return isActive;
-  }, [schedule, getDayKey]);
+  }, [correctSchedule, getDayKey]);
 
   // Función para verificar si un horario está disponible
   const isTimeSlotAvailable = useCallback((date: Date, time: string) => {
     const dayKey = getDayKey(date);
     let isAvailable = false;
     try {
-      const daySchedule = schedule?.[dayKey as keyof WeekSchedule];
+      const daySchedule = correctSchedule?.[dayKey as keyof WeekSchedule];
       if (!daySchedule || !daySchedule.isOpen || !daySchedule.ranges) {
         isAvailable = false;
       } else {
         isAvailable = daySchedule.ranges.some((range) => time >= range.start && time < range.end);
       }
-      // --- LOG: Comprobación isTimeSlotAvailable ---
-      console.log(`[WeeklyAgenda] isTimeSlotAvailable check for ${format(date, 'yyyy-MM-dd')} ${time} (key: ${dayKey}): ${isAvailable}`);
-      // -------------------------------------------
+      // console.log(`[WeeklyAgenda] isTimeSlotAvailable check for ${format(date, 'yyyy-MM-dd')} ${time} (key: ${dayKey}): ${isAvailable}`);
     } catch (error) {
       console.error("[WeeklyAgenda] Error in isTimeSlotAvailable:", error);
     }
     return isAvailable;
-  }, [schedule, getDayKey]);
+  }, [correctSchedule, getDayKey]);
 
   // Referencia para el contenedor de la agenda
   const agendaRef = useRef<HTMLDivElement>(null)
@@ -301,7 +352,6 @@ export default function WeeklyAgenda({
       setIsNewClientDialogOpen(false);
       
       // Reiniciar otros estados sensibles a la clínica
-      setTimeSlots([]);
       
       // Forzar limpieza de memory heap
       if (typeof window !== 'undefined') {
@@ -338,36 +388,27 @@ export default function WeeklyAgenda({
       try {
         if (!effectiveClinic?.id) return;
         
-        // Calcular fechas para el rango
         const monday = startOfWeek(currentDate, { weekStartsOn: 1 });
         const sunday = addDays(monday, 6);
-        
-        // Formatear fechas para la llamada a la API
         const startDate = format(monday, "yyyy-MM-dd");
         const endDate = format(sunday, "yyyy-MM-dd");
-        
-        // Usar el ID de la clínica desde la propiedad o contexto
         const clinicId = String(effectiveClinic.id);
         
-        // Obtener bloques de horario
         const blocks = await getBlocksByDateRange(clinicId, startDate, endDate);
         
-        // Verificar si hay cambios antes de actualizar el estado
         const currentBlockIds = scheduleBlocks.map(block => block.id).sort().join(',');
         const newBlockIds = blocks.map(block => block.id).sort().join(',');
         
         if (currentBlockIds !== newBlockIds) {
           setScheduleBlocks(blocks);
-          // Forzar actualización de la vista
           setUpdateKey(prev => prev + 1);
         }
       } catch (error) {
         console.error("Error al obtener bloques de horario:", error);
       }
     };
-    
     fetchBlocks();
-  }, [effectiveClinic?.id, currentDate, getBlocksByDateRange]);
+  }, [effectiveClinic?.id, currentDate, getBlocksByDateRange, scheduleBlocks]);
 
   // Corregir la función findBlockForCell
   const findBlockForCell = (date: string, time: string, roomId: string): ScheduleBlock | null => {
@@ -1108,4 +1149,35 @@ export default function WeeklyAgenda({
     </HydrationWrapper>
   )
 }
+
+// --- Helper function defined locally (Ensure it's present) ---
+const convertBlocksToWeekSchedule = (
+    blocks: (ScheduleTemplateBlock | ClinicScheduleBlock)[] | undefined | null,
+    defaultOpenTime: string,
+    defaultCloseTime: string
+): WeekSchedule => {
+    const initialSchedule: WeekSchedule = {
+        monday: { isOpen: false, ranges: [] }, tuesday: { isOpen: false, ranges: [] },
+        wednesday: { isOpen: false, ranges: [] }, thursday: { isOpen: false, ranges: [] },
+        friday: { isOpen: false, ranges: [] }, saturday: { isOpen: false, ranges: [] },
+        sunday: { isOpen: false, ranges: [] },
+    };
+    if (!blocks || blocks.length === 0) { 
+        // Optionally fill default Mon-Fri based on open/close times here if needed
+        // Example:
+        // Object.keys(initialSchedule).forEach(dayKey => { ... });
+        return initialSchedule; 
+    }
+    const weekSchedule = blocks.reduce((acc, block) => {
+        const dayKey = block.dayOfWeek.toLowerCase() as keyof WeekSchedule;
+        if (acc[dayKey]) { 
+            acc[dayKey].isOpen = true;
+            acc[dayKey].ranges.push({ start: block.startTime, end: block.endTime });
+            acc[dayKey].ranges.sort((a, b) => a.start.localeCompare(b.start));
+        }
+        return acc;
+    }, initialSchedule);
+    return weekSchedule;
+};
+// -------------------------------------
 
