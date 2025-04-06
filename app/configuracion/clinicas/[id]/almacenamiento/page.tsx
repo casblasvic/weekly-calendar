@@ -29,7 +29,7 @@ export default function AlmacenamientoClinicaPage({ clinicId: propClinicId }: Al
   // Obtener información de almacenamiento y archivos
   const { files, getFilesByFilter, deleteFile, getStorageStats } = useFiles();
   const { getQuota } = useStorage();
-  const { getClinicaById, getAllClinicas } = useClinic();
+  const { getClinicaById } = useClinic();
   const [clinicFiles, setClinicFiles] = useState<BaseFile[]>([]);
   const [activeTab, setActiveTab] = useState('overview');
   const [clinic, setClinic] = useState<any>(null);
@@ -94,29 +94,31 @@ export default function AlmacenamientoClinicaPage({ clinicId: propClinicId }: Al
   // Para clínicas con cuota global, calcular el espacio disponible teniendo en cuenta
   // el uso de todas las clínicas
   useEffect(() => {
-    // Si usa cuota global, obtener uso de todas las clínicas
     if (!hasCustomQuota) {
-      try {
-        // Obtenemos todas las clínicas para calcular uso total
-        const calculateGlobalUsage = async () => {
-          const allClinics = await getAllClinicas();
-          let totalUsed = 0;
-          
-          // Sumamos uso de todas las clínicas
-          for (const c of allClinics) {
-            const cStats = await getStorageStats(c.id.toString());
-            totalUsed += cStats.used || 0;
+      const calculateGlobalUsage = async () => {
+        try {
+          // REEMPLAZAR getAllClinicas con fetch
+          const response = await fetch('/api/clinics');
+          if (!response.ok) {
+            throw new Error(`Error fetching clinics: ${response.statusText}`);
           }
+          const allClinics = await response.json();
           
+          let totalUsed = 0;
+          for (const c of allClinics) {
+            // Asumiendo que getStorageStats sigue funcionando como antes
+            const cStats = await getStorageStats(c.id.toString()); 
+            totalUsed += cStats?.used || 0;
+          }
           setGlobalStorageUsage(totalUsed);
-        };
-        
-        calculateGlobalUsage();
-      } catch (error) {
-        console.error("Error calculando uso global:", error);
-      }
+        } catch (error) {
+          console.error("Error calculando uso global:", error);
+          // Podríamos poner un estado de error aquí si fuera necesario
+        }
+      };
+      calculateGlobalUsage();
     }
-  }, [hasCustomQuota, getStorageStats, getAllClinicas]);
+  }, [hasCustomQuota, getStorageStats]);
   
   // Calcular el porcentaje de uso
   const percentUsed = activeQuota.isUnlimited 

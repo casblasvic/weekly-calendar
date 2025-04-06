@@ -2,12 +2,15 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { useRouter, usePathname } from "next/navigation"
-import { format, parse } from "date-fns"
+import { format, parse, startOfWeek, addDays } from "date-fns"
 import { es } from "date-fns/locale"
 import { useClinic } from "@/contexts/clinic-context"
 import { AgendaNavBar } from "./agenda-nav-bar"
 import { HydrationWrapper } from "@/components/hydration-wrapper"
 import dynamic from "next/dynamic"
+import { WeekSchedule, DEFAULT_SCHEDULE } from "@/types/schedule"
+import { Loader2 } from "lucide-react"
+import { useTheme } from "next-themes"
 
 // Importaciones dinámicas para mejorar el rendimiento inicial
 const WeeklyAgenda = dynamic(
@@ -54,7 +57,7 @@ interface AgendaContainerProps {
 }
 
 export default function AgendaContainer({
-  initialDate = format(new Date(), "yyyy-MM-dd"),
+  initialDate: initialDateProp = format(new Date(), "yyyy-MM-dd"),
   initialView = "week",
 }: AgendaContainerProps) {
   const router = useRouter()
@@ -73,7 +76,7 @@ export default function AgendaContainer({
   // Parsear la fecha inicial
   const [currentDate, setCurrentDate] = useState(() => {
     try {
-      return parse(initialDate, "yyyy-MM-dd", new Date())
+      return parse(initialDateProp, "yyyy-MM-dd", new Date())
     } catch (error) {
       console.error("Error parsing date:", error)
       return new Date()
@@ -83,22 +86,45 @@ export default function AgendaContainer({
   // Inicializar las referencias en el montaje inicial
   useEffect(() => {
     previousView.current = initialView
-    previousDateStr.current = initialDate
+    previousDateStr.current = initialDateProp
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Estado para almacenar las citas
   const [appointments, setAppointments] = useState<any[]>([])
 
-  // Obtener la configuración de la clínica
-  const { activeClinic } = useClinic()
-  const clinicConfig = activeClinic?.config || {}
-  
-  // Memoizar la clínica para evitar re-renders
-  const memoizedClinic = useMemo(() => ({
-    id: activeClinic?.id,
-    config: clinicConfig
-  }), [activeClinic?.id, clinicConfig]);
+  // Obtener datos del contexto
+  const {
+    activeClinic,
+    isLoading,
+    activeClinicCabins,
+    isLoadingCabinsContext,
+  } = useClinic()
+
+  const { theme } = useTheme()
+
+  // ESTADO PARA DETECTAR CAMBIO DE CLÍNICA
+  const previousClinicIdRef = useRef<string | null | undefined>(null);
+  const [isClinicSwitchLoading, setIsClinicSwitchLoading] = useState(false);
+
+  // OBTENER SOLO LAS CABINAS ACTIVAS PARA PASAR A LA AGENDA
+  const activeCabinsForAgenda = useMemo(() => {
+    return activeClinicCabins?.filter(cabin => cabin.isActive) ?? [];
+  }, [activeClinicCabins])
+
+  // Memoizar solo la info básica necesaria que no venga del contexto directamente en los hijos
+  const memoizedClinicInfo = useMemo(() => {
+    if (!activeClinic) return null;
+    return {
+      id: activeClinic.id,
+      // Podemos añadir aquí otras props si son estrictamente necesarias
+      // y no pueden obtenerse directamente del contexto en los hijos.
+    };
+  }, [activeClinic]);
+
+  const memoizedActiveCabins = useMemo(() => {
+    return activeClinicCabins?.filter(cabin => cabin.isActive) ?? [];
+  }, [activeClinicCabins]);
 
   // Actualizar la vista de manera optimizada con transiciones suaves
   const updateView = useCallback((newView: "week" | "day") => {
@@ -219,11 +245,16 @@ export default function AgendaContainer({
 
   // Función para verificar si un día está activo en la configuración
   const isDayActive = useCallback((date: Date) => {
-    const dayKey = getDayKey(date)
-    // Usar aserciones de tipo para evitar errores de tipado
-    const config = clinicConfig as any
-    return config?.schedule?.[dayKey]?.isOpen ?? false
-  }, [clinicConfig, getDayKey]);
+    const dayKey = getDayKey(date);
+    try {
+      // Asegurarse de que scheduleJson se trata como WeekSchedule
+      const schedule = activeClinic?.scheduleJson as unknown as WeekSchedule | null;
+      return schedule?.[dayKey as keyof WeekSchedule]?.isOpen ?? false;
+    } catch (error) {
+      console.error("Error al verificar si el día está activo en scheduleJson:", error, activeClinic?.scheduleJson);
+      return false;
+    }
+  }, [activeClinic?.scheduleJson, getDayKey]);
 
   // Función optimizada para cambiar entre vistas y actualizar la URL
   const handleViewChange = useCallback((newView: "week" | "day", newDate?: Date) => {
@@ -298,13 +329,8 @@ export default function AgendaContainer({
 
   const getViewSubtitle = useCallback(() => {
     if (view === "week") {
-      // Calcular el primer y último día de la semana
-      const monday = new Date(currentDate)
-      monday.setDate(monday.getDate() - monday.getDay() + (monday.getDay() === 0 ? -6 : 1))
-
-      const sunday = new Date(monday)
-      sunday.setDate(monday.getDate() + 6)
-
+      const monday = startOfWeek(currentDate, { weekStartsOn: 1 });
+      const sunday = addDays(monday, 6);
       return `${format(monday, "d 'de' MMMM", { locale: es })} - ${format(sunday, "d 'de' MMMM 'de' yyyy", { locale: es })}`
     } else {
       return format(currentDate, "EEEE, d 'de' MMMM 'de' yyyy", { locale: es })
@@ -318,63 +344,111 @@ export default function AgendaContainer({
   // Formato de fecha para pasar a los componentes
   const formattedDate = useMemo(() => format(currentDate, "yyyy-MM-dd"), [currentDate]);
 
+  // *** LÓGICA PARA MANEJAR EL ESTADO DE CARGA AL CAMBIAR DE CLÍNICA ***
+  useEffect(() => {
+    const currentClinicId = activeClinic?.id;
+    // Si el ID de clínica ha cambiado...
+    if (currentClinicId !== previousClinicIdRef.current) {
+       // ...y las cabinas están cargando (isLoadingCabinsContext viene del contexto)
+      if (isLoadingCabinsContext) {
+        setIsClinicSwitchLoading(true); // Activar nuestro estado de carga específico
+      } else {
+         // Si las cabinas NO están cargando (quizás ya estaban en caché o hubo error?)
+         setIsClinicSwitchLoading(false); 
+      }
+    } else {
+       // Si el ID de clínica NO ha cambiado, pero isLoadingCabinsContext es true
+       // (podría ser por un refetch manual), no activamos nuestro bloqueo
+       // pero sí respetamos isLoadingCabinsContext si ya terminó el switch.
+      if (!isLoadingCabinsContext) {
+          setIsClinicSwitchLoading(false); // Asegurar que se desactiva si la carga termina
+      }
+    }
+    // Actualizar la referencia para la próxima comparación
+    previousClinicIdRef.current = currentClinicId;
+    
+  }, [activeClinic?.id, isLoadingCabinsContext]);
+
+  // ----- Lógica de Carga Principal -----
+  if (isLoading || !activeClinic || isLoadingCabinsContext || activeClinicCabins === null) { 
+    console.log(`AgendaContainer: Showing loading - isLoading: ${isLoading}, !activeClinic: ${!activeClinic}, isLoadingCabinsContext: ${isLoadingCabinsContext}, activeClinicCabins === null: ${activeClinicCabins === null}`);
+    return (
+      <div className="flex flex-col h-screen">
+        <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+          <div className="container flex h-14 items-center">
+            <AgendaNavBar 
+              view={view} 
+              selectedDate={currentDate} 
+              setSelectedDate={setCurrentDate} 
+            />
+          </div>
+        </header>
+        <main className="flex-1 container mx-auto p-4 flex items-center justify-center">
+          <div className="text-center">
+            <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
+            <p className="text-muted-foreground">
+              {isLoading ? "Cargando clínicas..." 
+               : !activeClinic ? "Seleccionando clínica..." 
+               : isLoadingCabinsContext ? "Cargando configuración de agenda..." 
+               : "Inicializando agenda..." // Nuevo estado posible si activeClinicCabins es null pero no está cargando
+              }
+            </p>
+          </div>
+        </main>
+      </div>
+    );
+  }
+  // -----------------------------------
+
+  console.log("AgendaContainer: Rendering agenda content");
+
   return (
     <div className="flex flex-col h-screen bg-white">
-      {/* Cabecera unificada */}
       <header className="px-4 py-3 z-30 relative bg-white border-b">
-        <div className="px-4 py-3">
-          <h1 className="text-2xl font-medium mb-4">{getViewTitle()}</h1>
-          <div className="text-sm text-gray-500">{getViewSubtitle()}</div>
-        </div>
-
-        {/* Barra de navegación unificada */}
+         <div className="mb-4">
+             <h1 className="text-xl font-semibold mb-1">{getViewTitle()}</h1>
+             <p className="text-sm text-gray-500">{getViewSubtitle()}</p>
+         </div>
         <AgendaNavBar
           currentDate={currentDate}
           setCurrentDate={setCurrentDate}
           view={view}
-          isDayActive={isDayActive}
-          appointments={appointments}
           onViewChange={handleViewChange}
+          isDayActive={isDayActive}
         />
       </header>
-
-      {/* Contenido con transiciones simplificadas */}
-      <div className="flex-1 overflow-auto relative">
-        {/* Vista semanal - optimizada para reducir renderizados */}
-        <div 
-          className="absolute inset-0 w-full h-full"
-          style={{ 
-            display: activeView === "week" ? "block" : "none",
-            // No usar transiciones CSS para evitar repintados innecesarios
-            zIndex: activeView === "week" ? 10 : 1
-          }}
-        >
-          <WeeklyAgenda
-            key={weekKey}
-            initialDate={formattedDate}
-            onAppointmentsChange={setAppointments}
-            containerMode={true}
-            initialClinic={memoizedClinic}
-          />
-        </div>
-        
-        {/* Vista diaria - optimizada para reducir renderizados */}
-        <div 
-          className="absolute inset-0 w-full h-full"
-          style={{ 
-            display: activeView === "day" ? "block" : "none",
-            // No usar transiciones CSS para evitar repintados innecesarios
-            zIndex: activeView === "day" ? 10 : 1
-          }}
-        >
-          <DayView
-            key={dayKey}
-            date={formattedDate}
-            containerMode={true}
-            appointments={appointments}
-            onViewChange={(newView) => handleViewChange(newView === "weekly" ? "week" : "day")}
-          />
-        </div>
+      <div className="flex-1 overflow-hidden p-4 bg-gray-50 relative">
+        {isClinicSwitchLoading ? (
+          // Mostrar overlay de carga centrado
+          <div className="absolute inset-0 flex items-center justify-center bg-gray-50/50 z-50">
+            <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
+          </div>
+        ) : (
+          // Si no hay cambio de clínica, mostrar las vistas normalmente
+          <>
+            {/* Vista Semanal */}
+            <div className={activeView === 'week' ? 'block h-full' : 'hidden'}>
+              <WeeklyAgenda
+                key={String(activeClinic.id)}
+                initialDate={format(currentDate, 'yyyy-MM-dd')}
+                cabins={memoizedActiveCabins}
+                appointments={[]}
+                onAppointmentClick={(appId) => console.log("Click Cita:", appId)}
+              />
+            </div>
+            {/* Vista Diaria */}
+            <div className={activeView === 'day' ? 'block h-full' : 'hidden'}>
+              <DayView
+                key={String(activeClinic.id)}
+                date={format(currentDate, 'yyyy-MM-dd')}
+                cabins={memoizedActiveCabins}
+                containerMode={true}
+                appointments={[]}
+                onAppointmentClick={(appId) => console.log("Click Cita:", appId)}
+              />
+            </div>
+          </>
+        )}
       </div>
     </div>
   )

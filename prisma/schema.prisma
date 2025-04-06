@@ -1,0 +1,1452 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider     = "postgresql"
+  url          = env("DATABASE_URL") // Usado por el cliente en runtime (Pooler)
+  relationMode = "prisma"
+  directUrl    = env("DIRECT_URL") // Usado por Prisma Migrate (Directa)
+}
+
+// --- Multi-Tenant Setup ---
+// Tabla central para identificar cada Sistema/Tenant/Cliente del SaaS
+model System {
+  id        String   @id @default(cuid()) // Identificador único para cada sistema
+  name      String // Nombre del sistema/cliente
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relaciones Inversas
+  users               User[]
+  clinics             Clinic[]
+  roles               Role[]
+  companies           Company[]
+  contactPersons      ContactPerson[]
+  leads               Lead[]
+  clients             Client[]
+  employmentContracts EmploymentContract[]
+  timeLogs            TimeLog[]
+  bankAccounts        BankAccount[]
+  posTerminals        PosTerminal[]
+  devices             Device[]
+  equipment           Equipment[]
+  appointments        Appointment[]
+  scheduleTemplates   ScheduleTemplate[]
+  userSchedules       UserSchedule[]
+  scheduleExceptions  ScheduleException[]
+  services            Service[]
+  products            Product[]
+  stockLedgers        StockLedger[]
+  vatTypes            VATType[]
+  tariffs             Tariff[]
+  tickets             Ticket[]
+  payments            Payment[]
+  cashSessions        CashSession[]
+  bonoDefinitions     BonoDefinition[]
+  bonoInstances       BonoInstance[]
+  packageDefinitions  PackageDefinition[]
+  promotions          Promotion[]
+  skills              Skill[]
+  loyaltyLedgers      LoyaltyLedger[]
+  entityImages        EntityImage[]
+  entityDocuments     EntityDocument[]
+  categories          Category[]
+  cabins              Cabin[]
+
+  @@map("systems")
+}
+
+// --- Modelos de la Aplicación (Se definirán en Fase 1) ---
+
+// Modelo para los usuarios del sistema (empleados, administradores)
+model User {
+  id              String   @id @default(cuid())
+  email           String   @unique // Email único global y obligatorio
+  firstName       String
+  lastName        String
+  passwordHash    String // Almacenar el hash de la contraseña
+  profileImageUrl String? // URL a la imagen de perfil, opcional
+  isActive        Boolean  @default(true) // Nuevo campo para activar/desactivar
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relación con System
+  systemId String
+  system   System @relation(fields: [systemId], references: [id], onDelete: Cascade)
+
+  // Relaciones Inversas (Corregidas y Añadidas)
+  roles              UserRole[]
+  userSchedules      UserSchedule[] // Añadido inverso para UserSchedule
+  timeLogs           TimeLog[]
+  contracts          EmploymentContract[]
+  assignedLeads      Lead[]
+  appointmentsAsProf Appointment[]          @relation("ProfessionalUserAppointments")
+  ticketsAsCashier   Ticket[]               @relation("CashierUserTickets")
+  paymentsRegistered Payment[]
+  cashSessionsOpened CashSession[]
+  loyaltyAdjustments LoyaltyLedger[]
+  stockAdjustments   StockLedger[]
+  skills             UserSkill[]
+  scheduleExceptions ScheduleException[] // Añadido inverso para ScheduleException
+  imagesUploaded     EntityImage[]          @relation("UploadedImages")
+  documentsUploaded  EntityDocument[]       @relation("UploadedDocuments")
+  clinicAssignments  UserClinicAssignment[] // << AÑADIR RELACIÓN INVERSA
+
+  @@index([systemId])
+  @@map("users")
+}
+
+// --- Modelo Clínica ---
+
+model Clinic {
+  id          String   @id @default(cuid())
+  name        String
+  address     String?
+  city        String?
+  postalCode  String?
+  province    String?
+  countryCode String? // Código ISO del país
+  timezone    String? // Ej: "Europe/Madrid"
+  currency    String // Código ISO de la moneda (ej: "EUR")
+  phone       String?
+  email       String?
+  isActive    Boolean  @default(true)
+  systemId    String
+  system      System   @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // --- CAMPOS AÑADIDOS PARA AJUSTAR A LA UI ---
+  prefix         String?
+  commercialName String? 
+  businessName   String? 
+  cif            String? 
+  country        String? // Nombre completo del país?
+  phone2         String? 
+  initialCash    Float?  
+  ticketSize     String? // ej: \"80mm\", \"58mm\"
+  ip             String? 
+  blockSignArea  Boolean? @default(false) 
+  blockPersonalData Boolean? @default(false) 
+  delayedPayments Boolean? @default(false) 
+  affectsStats   Boolean? @default(true)  
+  appearsInApp   Boolean? @default(true)  
+  scheduleControl Boolean? @default(false) 
+  professionalSkills Boolean? @default(false) 
+  notes          String? 
+  openTime       String? // Formato HH:MM
+  closeTime      String? // Formato HH:MM
+  slotDuration   Int?    // Minutos
+  scheduleJson   Json?   // Para almacenar la estructura detallada del horario diario
+  tariffId       String? // ID de la tarifa asociada
+  tariff         Tariff? @relation(fields: [tariffId], references: [id], onDelete: SetNull) // Relación con Tarifa
+  // --- FIN CAMPOS AÑADIDOS ---
+
+  // Relaciones existentes (verificar si falta alguna inversa)
+  bankAccounts       BankAccount[]
+  posTerminals       PosTerminal[]
+  equipment          Equipment[]
+  appointments       Appointment[]
+  clientsOrigin      Client[]
+  scheduleExceptions ScheduleException[] 
+  tickets            Ticket[] 
+  cashSessions       CashSession[] 
+  userAssignments    UserClinicAssignment[] 
+  cabins             Cabin[] 
+
+  @@unique([name, systemId], name: "Clinic_name_systemId_key")
+  @@index([systemId])
+  @@index([tariffId]) // Añadir índice para tariffId
+  @@map("clinics")
+}
+
+// --- Modelos RBAC (Role-Based Access Control) ---
+
+model Role {
+  id          String   @id @default(cuid())
+  name        String // Nombre del rol (ej: "Administrador", "Personal Clínica")
+  description String? // Descripción opcional del rol
+  systemId    String // A qué sistema pertenece este rol
+  system      System   @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relaciones
+  users       UserRole[] // Usuarios que tienen este rol
+  permissions RolePermission[] // Permisos asociados a este rol
+
+  @@unique([name, systemId]) // El nombre del rol debe ser único dentro de un sistema
+  @@index([systemId])
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(cuid())
+  action      String // Acción específica (ej: "crear", "leer", "actualizar", "eliminar", "bloquear_agenda")
+  module      String // Módulo al que pertenece (ej: "cita", "cliente", "agenda")
+  description String? // Descripción opcional del permiso
+  createdAt   DateTime @default(now())
+
+  // Relación
+  roles RolePermission[] // Roles que incluyen este permiso
+
+  @@unique([action, module]) // La combinación acción/módulo debe ser única
+  @@map("permissions")
+}
+
+// Tabla de unión para la relación Muchos-a-Muchos entre User y Role
+model UserRole {
+  userId     String
+  roleId     String
+  assignedAt DateTime @default(now())
+
+  // Relaciones
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId]) // Clave primaria compuesta
+  @@index([userId])
+  @@index([roleId])
+  @@map("user_roles")
+}
+
+// Tabla de unión para la relación Muchos-a-Muchos entre Role y Permission
+model RolePermission {
+  roleId       String
+  permissionId String
+  assignedAt   DateTime @default(now())
+
+  // Relaciones
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId]) // Clave primaria compuesta
+  @@index([roleId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+// --- Modelos Empresa/Contacto ---
+
+model Company {
+  id             String   @id @default(cuid())
+  legalName      String // Razón Social
+  commercialName String? // Nombre Comercial (opcional)
+  taxId          String?  @unique // CIF/NIF/VAT ID, único a nivel global o por país? Por ahora global único opcional.
+  address        String?
+  city           String?
+  postalCode     String?
+  province       String?
+  countryCode    String? // Código ISO del país
+  email          String? // Email general de la empresa
+  phone          String? // Teléfono general de la empresa
+  website        String?
+  notes          String?
+  isClient       Boolean  @default(false) // Es un cliente?
+  isSupplier     Boolean  @default(false) // Es un proveedor?
+  systemId       String // A qué sistema pertenece esta empresa
+  system         System   @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relaciones
+  contactPersons ContactPerson[] // Personas de contacto asociadas
+  ticketsAsPayer Ticket[] // Añadido inverso para Ticket (Company)
+
+  @@index([systemId])
+  @@map("companies")
+}
+
+model ContactPerson {
+  id        String   @id @default(cuid())
+  firstName String
+  lastName  String
+  position  String? // Cargo (ej: "Gerente Compras")
+  email     String? // Email del contacto (puede ser único si se desea)
+  phone     String?
+  notes     String?
+  companyId String // A qué empresa pertenece
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  systemId  String // A qué sistema pertenece (derivado de Company? O explícito?)
+  system    System   @relation(fields: [systemId], references: [id], onDelete: Cascade) // Mantener por si un contacto se mueve o por consistencia
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([systemId])
+  @@map("contact_persons")
+}
+
+// --- Modelo CRM (Leads/Presuntos) ---
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  CONVERTED // Se convirtió en Client/Company
+  LOST
+}
+
+model Lead {
+  id               String     @id @default(cuid())
+  firstName        String?
+  lastName         String?
+  email            String?
+  phone            String?
+  companyName      String? // Si el lead es B2B
+  source           String? // Origen del lead (ej: "Web", "Referido", "Campaña X")
+  status           LeadStatus @default(NEW)
+  notes            String?
+  assignedToUserId String? // ID del User (empleado) asignado
+  assignedToUser   User?      @relation(fields: [assignedToUserId], references: [id], onDelete: SetNull) // Relación opcional con User
+  systemId         String // A qué sistema pertenece este lead
+  system           System     @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  // Índices para búsquedas comunes
+  @@index([status])
+  @@index([assignedToUserId])
+  @@index([systemId])
+  @@map("leads")
+}
+
+// --- Modelo Cliente Final (Persona Física) ---
+
+model Client {
+  id                    String    @id @default(cuid())
+  firstName             String
+  lastName              String
+  birthDate             DateTime?
+  gender                String? // Podría ser un Enum (MALE, FEMALE, OTHER, UNDISCLOSED)
+  email                 String? // Email opcional y no único
+  phone                 String?
+  address               String?
+  city                  String?
+  postalCode            String?
+  province              String?
+  countryCode           String? // Código ISO del país
+  notes                 String?
+  marketingConsent      Boolean   @default(false)
+  medicalHistoryConsent Boolean   @default(false)
+  loyaltyPoints         Int       @default(0)
+  isActive              Boolean   @default(true)
+  originClinicId        String? // ID de la Clínica donde se captó (opcional)
+  originClinic          Clinic?   @relation(fields: [originClinicId], references: [id], onDelete: SetNull) // Relación a definir con Clinic
+
+  systemId  String // A qué sistema pertenece este cliente
+  system    System   @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relación reflexiva para vínculos familiares/otros
+  relatedClients   ClientRelation[] @relation("ClientA") // Clientes relacionados CON este
+  relatedToClients ClientRelation[] @relation("ClientB") // Clientes A LOS que este está relacionado
+
+  // Otras relaciones (Corregidas y Añadidas)
+  appointments   Appointment[]
+  tickets        Ticket[] // Añadido inverso para Ticket (Client)
+  bonoInstances  BonoInstance[] // Añadido inverso para BonoInstance
+  loyaltyLedgers LoyaltyLedger[] // Añadido inverso para LoyaltyLedger
+  // companyAssociation Company? // Si está vinculado a una empresa
+
+  @@index([systemId])
+  @@index([lastName, firstName]) // Índice para búsquedas por nombre
+  @@index([originClinicId]) // Añadir índice por originClinicId
+  @@map("clients")
+}
+
+// Tabla de unión explícita para la relación Muchos-a-Muchos reflexiva de Client
+model ClientRelation {
+  clientAId    String
+  clientBId    String
+  relationType String // Tipo de relación (ej: "MADRE_HIJA", "TUTOR_LEGAL", "CONTACTO_EMERGENCIA")
+  notes        String?
+  createdAt    DateTime @default(now())
+
+  // Relaciones
+  clientA Client @relation("ClientA", fields: [clientAId], references: [id], onDelete: Cascade)
+  clientB Client @relation("ClientB", fields: [clientBId], references: [id], onDelete: Cascade)
+
+  @@id([clientAId, clientBId]) // Clave primaria compuesta
+  @@index([clientBId])
+  @@map("client_relations")
+}
+
+// --- Modelos Datos Empleado (User) ---
+
+model EmploymentContract {
+  id           String    @id @default(cuid())
+  userId       String // A qué User pertenece este contrato
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contractType String? // Tipo de contrato (ej: "Indefinido", "Temporal", "Prácticas")
+  startDate    DateTime
+  endDate      DateTime? // Fecha de fin, si aplica
+  jobTitle     String? // Puesto de trabajo
+  salaryInfo   String? // Información salarial (Texto plano, encriptado, o referencia a otro sistema? Por ahora texto)
+  details      String? // Otros detalles o cláusulas
+  documentUrl  String? // URL al documento del contrato escaneado (opcional)
+  systemId     String // A qué sistema pertenece (redundante con User.systemId, pero útil para queries directas)
+  system       System    @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("employment_contracts")
+}
+
+model TimeLog {
+  id              String    @id @default(cuid())
+  userId          String // A qué User pertenece este fichaje
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clockInTime     DateTime // Hora de entrada
+  clockOutTime    DateTime? // Hora de salida (opcional hasta que se ficha)
+  date            DateTime  @db.Date // La fecha del fichaje (solo día)
+  durationMinutes Int? // Duración calculada en minutos (opcional, se puede calcular al vuelo o al fichar salida)
+  notes           String?
+  source          String? // Origen del fichaje (ej: "WEB", "APP_MOVIL", "KIOSK")
+  systemId        String // A qué sistema pertenece
+  system          System    @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([userId, date]) // Índice común para buscar fichajes de un usuario en un día
+  @@index([userId])
+  @@index([systemId])
+  @@map("time_logs")
+}
+
+// --- Modelos Financieros Base ---
+
+model BankAccount {
+  id          String   @id @default(cuid())
+  accountName String // Nombre descriptivo (ej: "Cuenta Principal Santander")
+  iban        String   @unique // IBAN único globalmente
+  swiftBic    String? // SWIFT/BIC
+  bankName    String?
+  currency    String // Código ISO de la moneda (ej: "EUR", "USD")
+  notes       String?
+  systemId    String // A qué sistema pertenece
+  system      System   @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  clinicId    String? // Opcionalmente vinculada a una clínica específica
+  clinic      Clinic?  @relation(fields: [clinicId], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relaciones
+  posTerminals PosTerminal[] // TPVs asociados a esta cuenta
+  payments     Payment[] // Añadido inverso para Payment
+
+  @@index([systemId])
+  @@index([clinicId])
+  @@map("bank_accounts")
+}
+
+model PosTerminal {
+  id                 String      @id @default(cuid())
+  terminalIdProvider String? // ID que da el proveedor del TPV (ej: número de serie, ID de Stripe Terminal)
+  name               String // Nombre descriptivo (ej: "TPV Mostrador", "Stripe Online")
+  bankAccountId      String // A qué cuenta bancaria van los fondos
+  bankAccount        BankAccount @relation(fields: [bankAccountId], references: [id])
+  clinicId           String? // A qué clínica está asignado físicamente (si aplica)
+  clinic             Clinic?     @relation(fields: [clinicId], references: [id], onDelete: SetNull)
+  provider           String? // Proveedor del TPV (ej: "Redsys", "Stripe", "PayPal", "Ingenico")
+  isActive           Boolean     @default(true)
+  systemId           String // A qué sistema pertenece
+  system             System      @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  // Relaciones
+  payments Payment[] // Añadido inverso para Payment
+
+  @@unique([terminalIdProvider, provider, systemId]) // Combinación única para identificar TPVs de proveedores
+  @@index([systemId])
+  @@index([bankAccountId])
+  @@index([clinicId]) // Añadir índice por clinicId
+  @@map("pos_terminals")
+}
+
+// --- Modelo Dispositivo Inteligente (Anti-Fraude) ---
+
+enum DeviceStatus {
+  ONLINE
+  OFFLINE
+  ERROR
+}
+
+// --- Modelo Equipamiento ---
+
+model Equipment {
+  id              String    @id @default(cuid())
+  name            String // Nombre del equipo (ej: "Láser Diodo A")
+  description     String?
+  serialNumber    String?   @unique // Número de serie, si aplica y es único
+  modelNumber     String?
+  purchaseDate    DateTime?
+  warrantyEndDate DateTime?
+  location        String? // Ubicación específica dentro de la clínica (ej: "Sala 3")
+  notes           String?
+  isActive        Boolean   @default(true)
+  systemId        String // A qué sistema pertenece
+  system          System    @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  clinicId        String? // A qué clínica pertenece
+  clinic          Clinic?   @relation(fields: [clinicId], references: [id], onDelete: SetNull)
+
+  // Relación con el Dispositivo Inteligente que lo controla (opcional)
+  deviceId String? @unique // Un dispositivo controla un solo equipo
+  device   Device? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relaciones
+  // requiredForServices Service[] // Servicios que requieren este equipo
+  appointmentsUsing Appointment[] // Citas que usan este equipo específico
+
+  @@unique([name, systemId])
+  @@index([systemId])
+  @@index([clinicId]) // Añadir índice por clinicId
+  @@index([deviceId])
+  @@map("equipment")
+}
+
+model Device {
+  id               String        @id @default(cuid())
+  name             String // Nombre descriptivo (ej: "Enchufe Láser Sala 1")
+  deviceIdProvider String?       @unique // ID único del fabricante/API (MAC, ID Cloud), único globalmente?
+  deviceType       String? // Tipo de dispositivo (ej: "SMART_PLUG", "LASER_MACHINE_API")
+  apiEndpoint      String? // URL o identificador para interactuar con la API del dispositivo
+  lastKnownStatus  DeviceStatus? // Último estado conocido (podría actualizarse por un servicio externo)
+  notes            String?
+  systemId         String // A qué sistema pertenece
+  system           System        @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  // Relaciones
+  equipmentControlled Equipment? // El equipo que controla este dispositivo (relación One-to-One)
+
+  @@index([systemId])
+  @@index([deviceIdProvider])
+  @@map("devices")
+}
+
+// --- Modelo Cita (Appointment) ---
+
+enum AppointmentStatus {
+  SCHEDULED // Agendada
+  CONFIRMED // Confirmada por cliente/sistema
+  CHECKED_IN // Cliente ha llegado
+  IN_PROGRESS // En curso (opcional, si se quiere marcar)
+  COMPLETED // Completada
+  CANCELLED // Cancelada (por cliente o clínica)
+  NO_SHOW // No presentado
+  LOCKED // Bloqueada por uso de dispositivo (anti-fraude)
+}
+
+model Appointment {
+  id              String            @id @default(cuid())
+  startTime       DateTime // Hora de inicio
+  endTime         DateTime // Hora de fin (calculada o fijada)
+  durationMinutes Int // Duración en minutos (calculada a partir de los servicios)
+  status          AppointmentStatus @default(SCHEDULED)
+  notes           String? // Notas internas sobre la cita
+  clientNotes     String? // Notas o peticiones del cliente al reservar
+
+  // Relaciones Clave
+  clientId           String
+  client             Client @relation(fields: [clientId], references: [id])
+  professionalUserId String // ID del User (profesional) que realiza el servicio
+  professionalUser   User   @relation("ProfessionalUserAppointments", fields: [professionalUserId], references: [id])
+  systemId           String
+  system             System @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  clinicId           String // Clínica donde se realiza
+  clinic             Clinic @relation(fields: [clinicId], references: [id])
+  // serviceId     String // Servicio principal (o relación muchos-a-muchos si son varios?)
+  // service       Service @relation(fields: [serviceId], references: [id])
+
+  // Relación con Equipo (para anti-fraude y tracking)
+  equipmentId String? // Equipo específico utilizado (opcional si no aplica)
+  equipment   Equipment? @relation(fields: [equipmentId], references: [id], onDelete: SetNull)
+
+  // Campos Anti-Fraude (Dispositivo Inteligente)
+  deviceActivationTimestamp   DateTime? // Hora real de encendido del dispositivo
+  deviceDeactivationTimestamp DateTime? // Hora real de apagado del dispositivo
+  actualUsageMinutes          Int? // Minutos reales de uso del dispositivo
+  isUsageLocked               Boolean   @default(false) // Bloqueada si el dispositivo se usó
+
+  // Otros campos
+  originalAppointmentId String? // Para citas reagendadas, apunta a la original
+  // originalAppointment Appointment? @relation("Reagendadas", fields: [originalAppointmentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  // reagendadaPor       Appointment[] @relation("Reagendadas")
+  tickets               Ticket[] // Relación inversa con Ticket
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([startTime])
+  @@index([clientId])
+  @@index([professionalUserId])
+  @@index([systemId])
+  @@index([clinicId]) // Añadir índice por clinicId
+  @@index([equipmentId])
+  @@index([status])
+  @@index([originalAppointmentId])
+  @@map("appointments")
+}
+
+// --- Modelos Horarios y Excepciones ---
+
+enum DayOfWeek {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
+enum ExceptionType {
+  HOLIDAY // Festivo
+  VACATION // Vacaciones empleado
+  LEAVE // Baja médica/Permiso
+  SPECIAL_CLOSURE // Cierre excepcional clínica
+  SPECIAL_OPENING // Apertura excepcional
+  OTHER
+}
+
+enum ExceptionScope {
+  USER
+  CLINIC
+  SYSTEM // Aplica a todo el sistema (ej: festivo nacional)
+}
+
+// Plantilla de Horario reutilizable
+model ScheduleTemplate {
+  id          String   @id @default(cuid())
+  name        String // Ej: "Jornada Completa L-V", "Media Jornada Mañanas"
+  description String?
+  systemId    String
+  system      System   @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relaciones
+  blocks          ScheduleTemplateBlock[] // Bloques que componen la plantilla
+  userSchedules   UserSchedule[] // Asignaciones de esta plantilla a usuarios
+
+  @@unique([name, systemId])
+  @@index([systemId])
+  @@map("schedule_templates")
+}
+
+// Bloque de tiempo dentro de una plantilla de horario
+model ScheduleTemplateBlock {
+  id         String           @id @default(cuid())
+  templateId String
+  template   ScheduleTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  dayOfWeek  DayOfWeek // Día de la semana
+  startTime  String // Hora de inicio (formato "HH:MM")
+  endTime    String // Hora de fin (formato "HH:MM")
+  isWorking  Boolean          @default(true) // Indica si es tiempo de trabajo o descanso (ej: pausa comida)
+  // resourceType       String? // Podría indicar si es para un tipo de recurso (ej: "CABINA_1", "GENERAL")
+  createdAt  DateTime         @default(now())
+
+  @@index([templateId])
+  @@map("schedule_template_blocks")
+}
+
+// Asignación de una plantilla de horario a un usuario
+model UserSchedule {
+  id         String           @id @default(cuid())
+  userId     String
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  templateId String
+  template   ScheduleTemplate @relation(fields: [templateId], references: [id])
+  startDate  DateTime         @db.Date // Fecha desde la que aplica
+  endDate    DateTime?        @db.Date // Fecha hasta la que aplica (null si indefinido)
+  systemId   String
+  system     System           @relation(fields: [systemId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  @@index([userId])
+  @@index([templateId])
+  @@index([systemId])
+  @@map("user_schedules")
+}
+
+// Excepciones a los horarios base
+model ScheduleException {
+  id          String         @id @default(cuid())
+  description String
+  startDate   DateTime 
+  endDate     DateTime 
+  isAllDay    Boolean        @default(false) 
+  type        ExceptionType
+  scope       ExceptionScope 
+  userId      String? 
+  user        User?          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clinicId    String? 
+  clinic      Clinic?        @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  systemId    String 
+  system      System         @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  // --- CAMPO AÑADIDO PARA HORARIO DE EXCEPCIÓN ---
+  overrideScheduleJson Json? // Para almacenar la estructura del horario que aplica DURANTE la excepción
+  // --- FIN CAMPO AÑADIDO ---
+
+  @@index([startDate, endDate])
+  @@index([systemId, scope])
+  @@index([userId])
+  @@index([clinicId])
+  @@map("schedule_exceptions")
+}
+
+// --- Modelos Catálogo (Servicios, Productos) y Stock ---
+
+model Service {
+  id                     String  @id @default(cuid())
+  code                   String? // Código interno o SKU (OJO: Hacerlo opcional o asegurar que sea único si se usa en where)
+  name                   String // Nombre del servicio
+  description            String?
+  durationMinutes        Int // Duración estándar del servicio
+  price                  Float? // Precio base (puede sobrescribirse por Tarifa)
+  colorCode              String? // Color para la agenda
+  requiresMedicalSignOff Boolean @default(false) // Requiere firma médica?
+  pointsAwarded          Int     @default(0) // Puntos de fidelidad otorgados
+  isActive               Boolean @default(true)
+  systemId               String
+  system                 System  @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  // categoryId           String? // Opcional, para agrupar servicios
+  // category             ServiceCategory? @relation(fields: [categoryId], references: [id])
+
+  // Relaciones
+  ticketItems        TicketItem[] // Añadido inverso para TicketItem
+  bonoDefinitions    BonoDefinition[] // Añadido inverso para BonoDefinition
+  includedInPackages PackageItem[] // Añadido inverso para PackageItem
+  // requiredSkills       Skill[] // Habilidades requeridas para realizarlo
+  // requiredEquipment    Equipment[] // Equipamiento requerido
+  // consumesProducts     ServiceProductConsumption[] // Productos que consume
+  // appointments         Appointment[] // Citas de este servicio
+  // tariffs              TariffService[] // Tarifas que aplican a este servicio
+
+  // Relación con Category/Familia
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull) // SetNull: si se borra categoría, el servicio no se borra
+
+  // Relación con VATType
+  vatTypeId String? // << CAMPO CORRECTO
+  vatType   VATType? @relation(fields: [vatTypeId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([name, systemId])
+  @@index([systemId])
+  @@index([categoryId])
+  @@index([vatTypeId]) // << Añadir índice para vatTypeId
+  @@map("services")
+}
+
+model Product {
+  id                String  @id @default(cuid())
+  name              String
+  description       String?
+  sku               String? @unique // Stock Keeping Unit, único global o por sistema?
+  barcode           String? // Código de barras
+  price             Float? // Precio de venta (si es para venta)
+  costPrice         Float? // Precio de coste
+  currentStock      Int     @default(0) // Stock actual (podría ser calculado o un snapshot)
+  minStockThreshold Int? // Umbral mínimo para alertas
+  isForSale         Boolean @default(true) // Se vende directamente?
+  isInternalUse     Boolean @default(false) // Es para consumo interno?
+  isActive          Boolean @default(true)
+  systemId          String
+  system            System  @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  // categoryId      String?
+  // category        ProductCategory? @relation(fields: [categoryId], references: [id])
+  // supplierId      String?
+  // supplier        Company? @relation(fields: [supplierId], references: [id]) // Si se quiere vincular a proveedor principal
+
+  // Relaciones
+  stockMovements     StockLedger[] // Movimientos de stock
+  ticketItems        TicketItem[] // Añadido inverso para TicketItem
+  includedInPackages PackageItem[] // Añadido inverso para PackageItem
+  // consumedByServices ServiceProductConsumption[] // Servicios que lo consumen
+  // tariffs           TariffProduct[] // Tarifas que aplican a este producto
+
+  // Relación con Category/Familia
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull) // SetNull: si se borra categoría, el producto no se borra
+
+  // Relación con VATType
+  vatTypeId String? // << AÑADIR CAMPO DE RELACIÓN
+  vatType   VATType? @relation(fields: [vatTypeId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([name, systemId])
+  @@index([systemId])
+  @@map("products")
+}
+
+// Registro de movimientos de stock
+enum StockMovementType {
+  INITIAL // Carga inicial
+  PURCHASE // Compra a proveedor
+  SALE // Venta directa
+  CONSUMPTION // Consumo en servicio
+  ADJUSTMENT // Ajuste manual (inventario)
+  TRANSFER_IN // Transferencia desde otra clínica
+  TRANSFER_OUT // Transferencia a otra clínica
+  RETURN_SUPPLIER // Devolución a proveedor
+  RETURN_CLIENT // Devolución de cliente
+}
+
+model StockLedger {
+  id           String            @id @default(cuid())
+  productId    String
+  product      Product           @relation(fields: [productId], references: [id])
+  movementType StockMovementType
+  quantity     Int // Cantidad movida (+ para entradas, - para salidas)
+  movementDate DateTime          @default(now())
+  notes        String?
+  userId       String? // Usuario que realizó/registró el movimiento
+  user         User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  systemId     String
+  system       System            @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  createdAt    DateTime          @default(now())
+
+  @@index([productId])
+  @@index([movementDate])
+  @@index([userId])
+  @@index([systemId])
+  @@map("stock_ledgers")
+}
+
+// Tabla de unión para indicar qué productos consume un servicio y en qué cantidad (Opcional, alternativa a lógica)
+// model ServiceProductConsumption {
+//   serviceId String
+//   service   Service @relation(fields: [serviceId], references: [id])
+//   productId String
+//   product   Product @relation(fields: [productId], references: [id])
+//   quantity  Float // Cantidad consumida por servicio
+//   unit      String // Unidad (ej: "ml", "unidad", "gramo")
+//
+//   @@id([serviceId, productId])
+//   @@map("service_product_consumption")
+// }
+
+// --- Modelos Tarifas y Precios ---
+
+model VATType {
+  id                  String       @id @default(cuid())
+  name                String // Nombre (ej: "General", "Reducido")
+  rate                Float // Tasa porcentual (ej: 21.0, 10.0) - CONFIRMADO
+  isDefault           Boolean      @default(false)
+  systemId            String
+  system              System       @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  services            Service[]
+  products            Product[]
+  tariffs             Tariff[]
+  appliedTicketItems  TicketItem[] @relation("AppliedVATType")
+  originalTicketItems TicketItem[] @relation("OriginalVATType")
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  @@unique([name, systemId])
+  @@index([systemId])
+  @@map("vat_types")
+}
+
+// Tarifa o Lista de Precios
+model Tariff {
+  id          String    @id @default(cuid())
+  name        String // Ej: "Tarifa General 2024", "Tarifa VIP", "Tarifa Online"
+  description String?
+  isDefault   Boolean   @default(false) // Es la tarifa por defecto del sistema/clínica?
+  validFrom   DateTime? @db.Date // Fecha desde la que es válida
+  validUntil  DateTime? @db.Date // Fecha hasta la que es válida (null si indefinida)
+  isActive    Boolean   @default(true)
+  systemId    String
+  system      System    @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  // clinicId    String? // Opcional: ¿Asociada a una clínica específica?
+  // clinic      Clinic? @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  // Relaciones (Precios específicos dentro de esta tarifa)
+  // servicePrices TariffServicePrice[]
+  // productPrices TariffProductPrice[]
+
+  // Relación con VATType
+  defaultVatTypeId String?
+  defaultVatType   VATType? @relation(fields: [defaultVatTypeId], references: [id])
+
+  // --- RELACIÓN INVERSA AÑADIDA ---
+  clinics     Clinic[] // Clínicas que usan esta tarifa
+  // --- FIN RELACIÓN INVERSA ---
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([name, systemId]) // Nombre único por sistema
+  // @@unique([name, systemId, clinicId]) // Si son específicas de clínica
+  @@index([systemId])
+  @@map("tariffs")
+}
+
+// Tablas para precios específicos por tarifa (Alternativa a lógica compleja)
+// Si se necesita granularidad extrema, si no, la lógica puede buscar
+// el precio en Service/Product y aplicar descuentos/reglas de Tariff.
+
+// model TariffServicePrice {
+//   tariffId  String
+//   tariff    Tariff  @relation(fields: [tariffId], references: [id])
+//   serviceId String
+//   service   Service @relation(fields: [serviceId], references: [id])
+//   price     Float   // Precio específico del servicio en esta tarifa
+//
+//   @@id([tariffId, serviceId])
+// }
+//
+// model TariffProductPrice {
+//   tariffId  String
+//   tariff    Tariff  @relation(fields: [tariffId], references: [id])
+//   productId String
+//   product   Product @relation(fields: [productId], references: [id])
+//   price     Float   // Precio específico del producto en esta tarifa
+//
+//   @@id([tariffId, productId])
+// }
+
+// --- Modelos Ventas, Pagos y Caja ---
+
+enum TicketStatus {
+  DRAFT // Borrador (presupuesto?)
+  OPEN // Abierto (pendiente de pago total)
+  PAID // Pagado
+  PARTIALLY_PAID // Parcialmente pagado
+  VOID // Anulado
+  REFUNDED // Reembolsado (total o parcial)
+  PARTIALLY_REFUNDED
+}
+
+enum PaymentMethod {
+  CASH
+  CARD // Tarjeta (genérico)
+  BANK_TRANSFER
+  STRIPE
+  PAYPAL
+  BIZUM
+  BONO // Pago con sesión de bono
+  PACKAGE // Consumo de paquete
+  LOYALTY_POINTS // Pago con puntos
+  CHEQUE // Cheque bancario
+  GIFT_VOUCHER // Cheque regalo
+  OTHER
+}
+
+model Ticket {
+  id             String       @id @default(cuid())
+  ticketNumber   String // Número de ticket/factura (generado, único por System?)
+  status         TicketStatus @default(OPEN)
+  issueDate      DateTime     @default(now())
+  totalAmount    Float // Importe total bruto
+  discountAmount Float        @default(0)
+  taxAmount      Float // Importe total de impuestos
+  finalAmount    Float // Importe final (total - descuento + impuestos)
+  notes          String?
+
+  // Relaciones (Corregidas)
+  clientId      String? // Cliente (persona física) si aplica
+  client        Client?      @relation(fields: [clientId], references: [id])
+  companyId     String? // Empresa cliente si aplica (factura a empresa)
+  company       Company?     @relation(fields: [companyId], references: [id])
+  cashierUserId String // User que emitió el ticket
+  cashierUser   User         @relation("CashierUserTickets", fields: [cashierUserId], references: [id]) // Verificado nombre relación
+  clinicId      String // Clínica donde se emitió
+  clinic        Clinic       @relation(fields: [clinicId], references: [id])
+  systemId      String
+  system        System       @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  appointmentId String?      @unique // Cita asociada (si la venta proviene de una cita)
+  appointment   Appointment? @relation(fields: [appointmentId], references: [id])
+
+  items    TicketItem[] // Líneas del ticket
+  payments Payment[] // Pagos asociados a este ticket
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([ticketNumber, systemId])
+  @@index([issueDate])
+  @@index([clientId])
+  @@index([companyId])
+  @@index([cashierUserId])
+  @@index([clinicId])
+  @@index([systemId])
+  @@index([appointmentId])
+  @@map("tickets")
+}
+
+model TicketItem {
+  id              String   @id @default(cuid())
+  ticketId        String
+  ticket          Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  itemType        String // "SERVICE" o "PRODUCT"
+  serviceId       String? // ID si es servicio
+  service         Service? @relation(fields: [serviceId], references: [id])
+  productId       String? // ID si es producto
+  product         Product? @relation(fields: [productId], references: [id])
+  description     String // Descripción (puede venir de Service/Product o ser manual)
+  quantity        Float // Cantidad (Float por si son horas, gramos, etc.)
+  unitPrice       Float // Precio unitario antes de descuentos e impuestos
+  discountPercent Float    @default(0) // Descuento aplicado a esta línea (%)
+  discountAmount  Float    @default(0) // Descuento aplicado a esta línea (cantidad fija)
+  vatRateId       String? // Asumiendo que el campo de relación para vatRate se llama vatRateId
+  vatRate         VATType? @relation("AppliedVATType", fields: [vatRateId], references: [id])
+  vatAmount       Float // Cantidad de IVA para esta línea
+  finalPrice      Float // Precio final de la línea (unitPrice * quantity - discount + vatAmount)
+  // professionalUserId String? // Profesional que realizó el servicio (si aplica y diferente al cajero)
+  // professionalUser  User?   @relation("ProfessionalTicketItem", fields: [professionalUserId], references: [id])
+  // consumedBonoId    String? // Si esta línea consume un bono
+  // consumedPackageId String? // Si esta línea consume un paquete
+
+  // Relación con VATType (para registrar el tipo original)
+  originalVatTypeId String?
+  originalVatType   VATType? @relation("OriginalVATType", fields: [originalVatTypeId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ticketId])
+  @@index([serviceId])
+  @@index([productId])
+  @@index([vatRateId])
+  @@map("ticket_items")
+}
+
+model Payment {
+  id                   String        @id @default(cuid())
+  ticketId             String // Ticket al que pertenece este pago
+  ticket               Ticket        @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  amount               Float // Cantidad pagada
+  paymentMethod        PaymentMethod // Método de pago
+  paymentDate          DateTime      @default(now())
+  transactionReference String? // Referencia externa (ID Stripe, nº transferencia, nº cheque)
+  notes                String?
+  cashSessionId        String? // Si fue un pago en efectivo durante una sesión de caja
+  cashSession          CashSession?  @relation(fields: [cashSessionId], references: [id])
+  posTerminalId        String? // Si se usó un TPV específico
+  posTerminal          PosTerminal?  @relation(fields: [posTerminalId], references: [id])
+  bankAccountId        String? // Si fue transferencia a una cuenta específica
+  bankAccount          BankAccount?  @relation(fields: [bankAccountId], references: [id])
+  userId               String // User que registró el pago
+  user                 User          @relation(fields: [userId], references: [id])
+  systemId             String
+  system               System        @relation(fields: [systemId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  @@index([ticketId])
+  @@index([paymentDate])
+  @@index([userId])
+  @@index([systemId])
+  @@index([cashSessionId])
+  @@index([posTerminalId])
+  @@index([bankAccountId])
+  @@map("payments")
+}
+
+enum CashSessionStatus {
+  OPEN
+  CLOSED
+  RECONCILED // Arqueada/Conciliada
+}
+
+model CashSession {
+  id              String            @id @default(cuid())
+  userId          String // Usuario que abre/cierra la caja
+  user            User              @relation(fields: [userId], references: [id])
+  clinicId        String // Clínica donde se realiza la sesión
+  clinic          Clinic            @relation(fields: [clinicId], references: [id])
+  openingTime     DateTime          @default(now())
+  closingTime     DateTime?
+  status          CashSessionStatus @default(OPEN)
+  openingBalance  Float // Saldo inicial en efectivo
+  closingBalance  Float? // Saldo final contado
+  expectedBalance Float? // Saldo esperado según movimientos
+  difference      Float? // Diferencia (contado - esperado)
+  notes           String?
+  systemId        String
+  system          System            @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  // Relaciones (Corregidas)
+  cashMovements Payment[] // Descomentado inverso Payment
+
+  @@index([userId])
+  @@index([clinicId])
+  @@index([openingTime])
+  @@index([status])
+  @@index([systemId])
+  @@map("cash_sessions")
+}
+
+// --- Modelos Bonos y Paquetes ---
+
+// Definición de un tipo de Bono
+model BonoDefinition {
+  id               String   @id @default(cuid())
+  name             String // Ej: "Bono 10 Sesiones Piernas", "Bono 5 Consultas"
+  description      String?
+  serviceId        String // Servicio al que aplica el bono
+  service          Service  @relation(fields: [serviceId], references: [id])
+  numberOfSessions Int // Número de sesiones incluidas
+  price            Float // Precio de venta del bono
+  validityDays     Int? // Días de validez desde la compra (null si indefinido)
+  isActive         Boolean  @default(true)
+  systemId         String
+  system           System   @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Relaciones
+  instances BonoInstance[] // Instancias de este bono compradas por clientes
+
+  @@unique([name, systemId])
+  @@index([serviceId])
+  @@index([systemId])
+  @@map("bono_definitions")
+}
+
+// Instancia específica de un bono comprada por un cliente
+model BonoInstance {
+  id                   String         @id @default(cuid())
+  bonoDefinitionId     String
+  bonoDefinition       BonoDefinition @relation(fields: [bonoDefinitionId], references: [id])
+  clientId             String
+  client               Client         @relation(fields: [clientId], references: [id])
+  purchaseDate         DateTime       @default(now())
+  expiryDate           DateTime? // Fecha de caducidad (calculada o fijada)
+  remainingSessions    Int // Sesiones restantes
+  purchaseTicketItemId String?        @unique // Item del ticket donde se compró este bono
+  // purchaseTicketItem TicketItem? @relation(fields: [purchaseTicketItemId], references: [id])
+  systemId             String
+  system               System         @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  // Relaciones
+  // consumedInItems TicketItem[] // Items de ticket donde se consumió una sesión de este bono
+
+  @@index([clientId])
+  @@index([bonoDefinitionId])
+  @@index([systemId])
+  @@index([purchaseTicketItemId])
+  @@map("bono_instances")
+}
+
+// Definición de un Paquete (agrupación de servicios/productos)
+model PackageDefinition {
+  id          String   @id @default(cuid())
+  name        String // Ej: "Pack Bienvenida", "Tratamiento Completo Facial"
+  description String?
+  price       Float // Precio de venta del paquete completo
+  isActive    Boolean  @default(true)
+  systemId    String
+  system      System   @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relaciones
+  items PackageItem[] // Items incluidos en el paquete
+  // ticketItems TicketItem[] // Items de ticket donde se vendió este paquete
+
+  @@unique([name, systemId])
+  @@index([systemId])
+  @@map("package_definitions")
+}
+
+// Item dentro de un Paquete (puede ser Servicio o Producto)
+model PackageItem {
+  id                  String            @id @default(cuid())
+  packageDefinitionId String
+  packageDefinition   PackageDefinition @relation(fields: [packageDefinitionId], references: [id], onDelete: Cascade)
+  itemType            String // "SERVICE" o "PRODUCT"
+  serviceId           String? // ID si es servicio
+  service             Service?          @relation(fields: [serviceId], references: [id])
+  productId           String? // ID si es producto
+  product             Product?          @relation(fields: [productId], references: [id])
+  quantity            Float // Cantidad del item incluida en el paquete
+  // description       String? // Descripción específica para este item en el paquete
+  createdAt           DateTime          @default(now())
+
+  @@index([packageDefinitionId])
+  @@index([serviceId])
+  @@index([productId])
+  @@map("package_items")
+}
+
+// --- Modelo Promociones ---
+
+enum PromotionType {
+  PERCENTAGE_DISCOUNT // Descuento porcentual sobre item/ticket
+  FIXED_AMOUNT_DISCOUNT // Descuento de cantidad fija
+  FREE_ITEM // Artículo gratuito (ej: compra X, llévate Y)
+  BUY_X_GET_Y // Compra X unidades, obtén Y con descuento/gratis
+  POINTS_MULTIPLIER // Multiplicador de puntos de fidelidad
+}
+
+model Promotion {
+  id                String        @id @default(cuid())
+  name              String
+  description       String?
+  code              String?       @unique // Código promocional opcional
+  type              PromotionType
+  value             Float? // Valor (porcentaje, cantidad fija, multiplicador)
+  // targetType      String?       // A qué aplica ("SERVICE", "PRODUCT", "TICKET")
+  // targetServiceId String?
+  // targetService   Service?      @relation(fields: [targetServiceId], references: [id])
+  // targetProductId String?
+  // targetProduct   Product?      @relation(fields: [targetProductId], references: [id])
+  minPurchaseAmount Float? // Compra mínima para aplicar
+  maxDiscountAmount Float? // Descuento máximo aplicable
+  startDate         DateTime
+  endDate           DateTime?
+  maxUses           Int? // Usos máximos totales
+  usesPerClient     Int? // Usos máximos por cliente
+  currentUses       Int           @default(0) // Contador de usos actuales
+  isActive          Boolean       @default(true)
+  systemId          String
+  system            System        @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  // Relaciones
+  // appliedToTickets Ticket[] // Tickets donde se aplicó
+
+  @@unique([name, systemId])
+  @@index([systemId])
+  @@index([code])
+  @@index([startDate, endDate])
+  @@map("promotions")
+}
+
+// --- Modelo Fidelidad (Puntos) ---
+
+enum LoyaltyMovementType {
+  AWARDED_PURCHASE // Puntos ganados por compra
+  REDEEMED_PAYMENT // Puntos usados para pagar
+  MANUAL_ADJUSTMENT // Ajuste manual (positivo o negativo)
+  EXPIRATION // Puntos caducados
+  PROMOTION_AWARD // Puntos extra por promoción
+  INITIAL_BALANCE // Saldo inicial
+}
+
+model LoyaltyLedger {
+  id           String              @id @default(cuid())
+  clientId     String
+  client       Client              @relation(fields: [clientId], references: [id])
+  movementType LoyaltyMovementType
+  points       Int // Puntos ganados (+) o gastados (-)
+  movementDate DateTime            @default(now())
+  notes        String?
+  expiryDate   DateTime? // Fecha de caducidad para estos puntos (si aplica)
+  // relatedTicketId String?          // Ticket que generó/consumió los puntos
+  // relatedTicket   Ticket?           @relation(fields: [relatedTicketId], references: [id])
+  // relatedPromotionId String?       // Promoción que generó los puntos
+  // relatedPromotion   Promotion?      @relation(fields: [relatedPromotionId], references: [id])
+  userId       String? // Usuario que realizó el ajuste manual
+  user         User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
+  systemId     String
+  system       System              @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  createdAt    DateTime            @default(now())
+
+  @@index([clientId])
+  @@index([movementDate])
+  @@index([systemId])
+  @@map("loyalty_ledgers")
+}
+
+// --- Modelos Habilidades Profesionales ---
+
+model Skill {
+  id          String   @id @default(cuid())
+  name        String // Nombre de la habilidad (ej: "Experto Láser Diodo", "Masaje Terapéutico")
+  description String?
+  // category    String? // Categoría de habilidad (opcional)
+  systemId    String // ¿Habilidades globales o por sistema? Por ahora por sistema.
+  system      System   @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relaciones
+  users UserSkill[] // Usuarios que tienen esta habilidad
+  // requiredByServices Service[] // Servicios que requieren esta habilidad
+
+  @@unique([name, systemId])
+  @@index([systemId])
+  @@map("skills")
+}
+
+// Tabla de unión para la relación Muchos-a-Muchos entre User y Skill
+model UserSkill {
+  userId     String
+  skillId    String
+  assignedAt DateTime @default(now())
+  // proficiencyLevel String? // Nivel de habilidad (opcional: Básico, Intermedio, Avanzado)
+
+  // Relaciones
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skill Skill @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@id([userId, skillId]) // Clave primaria compuesta
+  @@map("user_skills")
+}
+
+// --- Modelos Archivos Adjuntos (Polimórfico) ---
+
+enum EntityType {
+  SYSTEM
+  USER
+  CLIENT
+  COMPANY
+  CONTACT_PERSON
+  LEAD
+  CLINIC
+  EQUIPMENT
+  DEVICE
+  SERVICE
+  PRODUCT
+  APPOINTMENT
+  TICKET
+  PAYMENT
+  EMPLOYMENT_CONTRACT
+  // Añadir más tipos según sea necesario
+}
+
+model EntityImage {
+  id               String     @id @default(cuid())
+  entityId         String // ID de la entidad relacionada (Client.id, User.id, etc.)
+  entityType       EntityType // Tipo de la entidad relacionada
+  imageUrl         String // URL de la imagen (ej: Supabase Storage)
+  altText          String? // Texto alternativo para accesibilidad
+  caption          String? // Leyenda o descripción corta
+  order            Int? // Orden opcional si hay múltiples imágenes para una entidad
+  isProfilePic     Boolean    @default(false) // Indicador especial para fotos de perfil (User/Client)
+  uploadedByUserId String?
+  uploadedByUser   User?      @relation("UploadedImages", fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+  systemId         String
+  system           System     @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  @@index([entityId, entityType]) // Índice clave para buscar imágenes de una entidad
+  @@index([uploadedByUserId]) // Índice añadido
+  @@index([systemId])
+  @@map("entity_images")
+}
+
+model EntityDocument {
+  id               String     @id @default(cuid())
+  entityId         String // ID de la entidad relacionada
+  entityType       EntityType // Tipo de la entidad relacionada
+  documentUrl      String // URL del documento (ej: Supabase Storage)
+  fileName         String // Nombre original del archivo
+  fileType         String? // Tipo MIME (ej: "application/pdf", "image/jpeg")
+  fileSize         Int? // Tamaño en bytes
+  description      String?
+  uploadedByUserId String?
+  uploadedByUser   User?      @relation("UploadedDocuments", fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+  systemId         String
+  system           System     @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  @@index([entityId, entityType]) // Índice clave para buscar documentos de una entidad
+  @@index([uploadedByUserId]) // Índice añadido
+  @@index([systemId])
+  @@map("entity_documents")
+}
+
+// --- NUEVO MODELO PARA ASIGNACIÓN USUARIO-CLINICA ---
+model UserClinicAssignment {
+  userId     String
+  clinicId   String
+  assignedAt DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  @@id([userId, clinicId])
+  @@index([userId])
+  @@index([clinicId])
+  @@map("user_clinic_assignments")
+}
+
+// --- FIN NUEVO MODELO ---
+
+// --- NUEVO MODELO PARA CATEGORÍAS/FAMILIAS ---
+model Category {
+  id          String   @id @default(cuid())
+  name        String // Nombre de la categoría/familia
+  description String?
+  // Podríamos añadir un Enum Type si necesitamos diferenciar (SERVICE, PRODUCT)
+  // type        CategoryType? 
+  systemId    String // A qué sistema pertenece esta categoría
+  system      System   @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relaciones Inversas
+  services Service[]
+  products Product[]
+  // Añadir relaciones inversas si se usa en Tariff, PackageDefinition, etc.
+
+  @@unique([name, systemId]) // Nombre único por sistema
+  @@index([systemId])
+  @@map("categories")
+}
+
+// --- FIN NUEVO MODELO ---
+
+// --- NUEVO MODELO PARA CABINAS DE CLÍNICA ---
+model Cabin {
+  id        String   @id @default(cuid())
+  name      String // Nombre de la cabina (ej: "Cabina Láser 1", "Sala Estética")
+  code      String? // Código corto identificativo (ej: "CAB1", "EST")
+  color     String? // Color asociado para visualización (ej: "#4f46e5")
+  order     Int? // Orden de visualización
+  isActive  Boolean  @default(true)
+  clinicId  String // Clínica a la que pertenece
+  clinic    Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  systemId  String // Sistema al que pertenece (derivado de Clinic)
+  system    System   @relation(fields: [systemId], references: [id], onDelete: Cascade) // Para queries directas
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([name, clinicId]) // Nombre único por clínica
+  @@unique([code, clinicId]) // Código único por clínica (si se usa)
+  @@index([clinicId])
+  @@index([systemId])
+  @@map("cabins")
+}
+
+// --- FIN NUEVO MODELO CABINA ---
+
+// --- FIN DE LA DEFINICIÓN DE MODELOS PRINCIPALES (FASE 1.1) ---

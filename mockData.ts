@@ -6,8 +6,7 @@
  * métodos de los contextos respectivos.
  */
 
-import {
-  useInterfaz,
+import type {
   Clinica,
   Tarifa,
   FamiliaTarifa,
@@ -18,8 +17,8 @@ import {
   EntityImage,
   EntityDocument,
   ClinicConfig
-} from "@/contexts/interfaz-Context";
-import { getDataService } from "@/services/data";
+} from "./contexts/interfaz-Context.tsx";
+import { getDataService } from "./services/data/index.ts";
 
 // Re-exportamos los tipos para mantener compatibilidad
 export type {
@@ -170,7 +169,7 @@ export const initialMockData = {
       isActive: true
     }
   ],
-  familiasTarifa: [
+  familias: [
     { id: 'fam-1', nombre: 'Tratamientos Faciales', descripcion: 'Servicios para el rostro', tarifaId: 'tarifa-1', isActive: true },
     { id: 'fam-2', nombre: 'Tratamientos Corporales', descripcion: 'Servicios para el cuerpo', tarifaId: 'tarifa-1', isActive: true },
     { id: 'fam-3', nombre: 'Depilación Láser', descripcion: 'Servicios de depilación', tarifaId: 'tarifa-1', isActive: true },

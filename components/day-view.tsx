@@ -26,12 +26,14 @@ import { Button } from "@/components/ui/button"
 import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Search, Calendar as CalendarIcon } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Separator } from "@/components/ui/separator"
-import { useSchedule } from "@/hooks/use-schedule"
-import { Modal } from "@/components/ui/modal"
+// import { useSchedule } from "@/hooks/use-schedule"
+// import { Modal } from "@/components/ui/modal"
 import { AppointmentDialog as AppointmentDialogType } from "@/components/appointment-dialog"
 import { AppointmentItem as AppointmentItemType } from "@/components/appointment-item"
 import { CustomDatePicker } from "@/components/custom-date-picker"
 import { Appointment } from "@/types/appointments"
+import { Cabin } from '@prisma/client';
+import { WeekSchedule } from "@/types/schedule";
 
 // Función para generar slots de tiempo
 function getTimeSlots(startTime: string, endTime: string, interval = 15): string[] {
@@ -64,23 +66,6 @@ interface Employee {
   name: string
 }
 
-interface Cabin {
-  id: string
-  name: string
-  code: string
-  color: string
-  isActive: boolean
-  order: number
-}
-
-interface ClinicConfig {
-  openTime: string
-  closeTime: string
-  slotDuration: number
-  cabins: Cabin[]
-  schedule: any
-}
-
 // Interfaz para bloques contiguos
 interface ContiguousBlock {
   block: ScheduleBlock
@@ -91,27 +76,23 @@ interface ContiguousBlock {
   roomId: string
 }
 
-// Modificar la definición de props para incluir onViewChange:
 interface DayViewProps {
   date: string
   containerMode?: boolean
-  appointments?: any[]
+  appointments?: Appointment[]
   employees?: Employee[]
   cabins?: Cabin[]
-  clinicConfig?: ClinicConfig
   onAddAppointment?: (startTime: Date, endTime: Date, cabinId: string) => void
-  onAppointmentClick?: (appointment: Appointment) => void
+  onAppointmentClick?: (appointmentId: string) => void
   onViewChange?: (view: "weekly" | "day") => void
 }
 
-// Modificar la firma de la función para aceptar props
 export default function DayView({
   date,
   containerMode = false,
   appointments: initialAppointments = [],
   employees = [],
   cabins = [],
-  clinicConfig = {},
   onAddAppointment,
   onAppointmentClick,
   onViewChange,
@@ -203,28 +184,18 @@ export default function DayView({
     }
   }, [initialAppointments, appointments])
 
-  // Usar la configuración de la clínica activa o los valores proporcionados como props
-  const effectiveClinicConfig: ClinicConfig = useMemo(() => ({
-    openTime: activeClinic?.config?.openTime || clinicConfig?.openTime || "09:00",
-    closeTime: activeClinic?.config?.closeTime || clinicConfig?.closeTime || "20:00",
-    slotDuration: activeClinic?.config?.slotDuration || clinicConfig?.slotDuration || 15,
-    cabins: Array.isArray(activeClinic?.config?.cabins) ? activeClinic.config.cabins : (Array.isArray(clinicConfig?.cabins) ? clinicConfig.cabins : []),
-    schedule: activeClinic?.config?.schedule || clinicConfig?.schedule || {}
-  }), [activeClinic?.config, clinicConfig]);
-  
-  // Reemplazar todas las referencias a clinicConfigContext por effectiveClinicConfig
-  const openTime = effectiveClinicConfig.openTime;
-  const closeTime = effectiveClinicConfig.closeTime;
-  const slotDuration = effectiveClinicConfig.slotDuration;
-  
-  // Obtener cabinas de la configuración efectiva
-  const effectiveCabins = useMemo(() => {
-    const active = (effectiveClinicConfig.cabins || [])
-                     .filter(c => c.isActive)
-                     .sort((a, b) => a.order - b.order);
-    console.log("DayView - 'effectiveCabins' recalculadas desde effectiveClinicConfig:", active);
-    return active;
-  }, [effectiveClinicConfig]);
+  // Derivar configuración del activeClinic
+  const schedule = useMemo(() => activeClinic?.scheduleJson as unknown as WeekSchedule | null, [activeClinic?.scheduleJson]);
+  const openTime = useMemo(() => activeClinic?.openTime ?? "09:00", [activeClinic?.openTime]);
+  const closeTime = useMemo(() => activeClinic?.closeTime ?? "20:00", [activeClinic?.closeTime]);
+  const slotDuration = useMemo(() => activeClinic?.slotDuration ?? 15, [activeClinic?.slotDuration]);
+
+  // --- LOG: Configuración de horario derivada ---
+  console.log("[DayView] Derived schedule config:", { openTime, closeTime, slotDuration, schedule });
+  // ------------------------------------------
+
+  // Usar la prop 'cabins' directamente (ya es del tipo Prisma y filtrada en el padre)
+  const effectiveCabins = cabins;
 
   // Regenerar timeSlots si es necesario
   const timeSlots = useMemo(() => {
@@ -246,17 +217,16 @@ export default function DayView({
        safeGuard++;
      }
      if (safeGuard >= maxSlots * 2) {
-        console.warn("Posible bucle infinito detectado en la generación de timeSlots. Verifique la configuración openTime/closeTime/slotDuration.", effectiveClinicConfig);
+        console.warn("Posible bucle infinito detectado en la generación de timeSlots. Verifique la configuración openTime/closeTime/slotDuration.", { openTime, closeTime, slotDuration });
         return []; // Devolver array vacío en caso de problema
      }
      return slots;
-  }, [effectiveClinicConfig]);
+  }, [openTime, closeTime, slotDuration]);
 
   // Función para verificar si un día está activo en la configuración
   const isDayActive = useCallback(
     (date: Date) => {
       const day = format(date, "EEEE", { locale: es }).toLowerCase()
-      // Mapear los nombres de días en español a las claves en inglés usadas en el objeto schedule
       const dayMap = {
         lunes: "monday",
         martes: "tuesday",
@@ -265,11 +235,20 @@ export default function DayView({
         viernes: "friday",
         sábado: "saturday",
         domingo: "sunday",
+      } as const;
+      const dayKey = dayMap[day as keyof typeof dayMap] || day;
+      let isActive = false;
+      try {
+         isActive = schedule?.[dayKey as keyof WeekSchedule]?.isOpen ?? false;
+         // --- LOG: Comprobación isDayActive ---
+         console.log(`[DayView] isDayActive check for ${format(date, 'yyyy-MM-dd')} (key: ${dayKey}): ${isActive}`);
+         // -----------------------------------
+      } catch (error) {
+         console.error("[DayView] Error in isDayActive:", error);
       }
-      const dayKey = dayMap[day] || day
-      return effectiveClinicConfig.schedule?.[dayKey]?.isOpen ?? false
+      return isActive;
     },
-    [effectiveClinicConfig.schedule],
+    [schedule],
   )
 
   // Función para verificar si un horario está disponible
@@ -284,16 +263,25 @@ export default function DayView({
         viernes: "friday",
         sábado: "saturday",
         domingo: "sunday",
+      } as const;
+      const dayKey = dayMap[day as keyof typeof dayMap] || day;
+      let isAvailable = false;
+      try {
+        const daySchedule = schedule?.[dayKey as keyof WeekSchedule];
+        if (!daySchedule || !daySchedule.isOpen || !daySchedule.ranges) {
+          isAvailable = false;
+        } else {
+          isAvailable = daySchedule.ranges.some((range) => time >= range.start && time < range.end);
+        }
+        // --- LOG: Comprobación isTimeSlotAvailable ---
+        console.log(`[DayView] isTimeSlotAvailable check for ${format(date, 'yyyy-MM-dd')} ${time} (key: ${dayKey}): ${isAvailable}`);
+        // -------------------------------------------
+      } catch(error) {
+         console.error("[DayView] Error in isTimeSlotAvailable:", error);
       }
-      const dayKey = dayMap[day] || day
-      const daySchedule = effectiveClinicConfig.schedule?.[dayKey]
-
-      if (!daySchedule?.isOpen) return false
-
-      // Verificar si el horario está dentro de algún rango definido para ese día
-      return daySchedule.ranges.some((range) => time >= range.start && time <= range.end)
+      return isAvailable;
     },
-    [effectiveClinicConfig.schedule],
+    [schedule],
   )
 
   // Referencia para el contenedor de la agenda
@@ -913,10 +901,10 @@ export default function DayView({
             }
           }}
           clinicConfig={{
-            openTime: effectiveClinicConfig.openTime || "09:00",
-            closeTime: effectiveClinicConfig.closeTime || "20:00",
-            weekendOpenTime: effectiveClinicConfig.openTime || "09:00",
-            weekendCloseTime: effectiveClinicConfig.closeTime || "14:00",
+            openTime: openTime,
+            closeTime: closeTime,
+            weekendOpenTime: openTime,
+            weekendCloseTime: closeTime,
           }}
         />
       </>

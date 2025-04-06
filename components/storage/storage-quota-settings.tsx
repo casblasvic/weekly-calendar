@@ -12,6 +12,7 @@ import { useStorage } from '@/contexts/storage-context';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { useClinic } from '@/contexts/clinic-context';
 
 interface StorageQuotaSettingsProps {
   onCancel?: () => void;
@@ -33,6 +34,7 @@ const StorageQuotaSettings: React.FC<StorageQuotaSettingsProps> = ({
   showTotalInfo = false
 }) => {
   const { getStorageStats, getQuota, setQuota, getClinicQuotas } = useStorage();
+  const clinicContext = useClinic();
   
   // Estados para configuración de cuota
   const [isUnlimited, setIsUnlimited] = useState(false);
@@ -53,63 +55,6 @@ const StorageQuotaSettings: React.FC<StorageQuotaSettingsProps> = ({
   // Estadísticas de uso
   const [usageStats, setUsageStats] = useState<Record<string, any>>({});
   const [refreshing, setRefreshing] = useState(false);
-  
-  // Funciones auxiliares
-  const getClinicsList = async () => {
-    // Implementación adaptada para usar la interfaz disponible
-    try {
-      // Usar la interfaz para obtener las clínicas
-      const { useClinic } = require('@/contexts/clinic-context');
-      const clinicContext = useClinic();
-      if (clinicContext && clinicContext.getAllClinics) {
-        return await clinicContext.getAllClinics();
-      }
-      
-      // Fallback a datos de ejemplo si no está disponible
-      return [
-        { id: '1', name: 'Clínica A', city: 'Ciudad A' },
-        { id: '2', name: 'Clínica B', city: 'Ciudad B' },
-        { id: '3', name: 'Clínica C', city: 'Ciudad C' }
-      ];
-    } catch (error) {
-      console.error('Error obteniendo lista de clínicas:', error);
-      return [];
-    }
-  };
-  
-  // Cargar clínicas y estadísticas
-  useEffect(() => {
-    const loadClinicData = async () => {
-      setLoadingClinics(true);
-      try {
-        // Obtener clínicas usando el contexto de almacenamiento
-        const clinicsList = await getClinicsList();
-        
-        // Formatear los datos para mantener compatibilidad
-        const formattedClinics = clinicsList.map(clinic => ({
-          id: clinic.id.toString(),
-          name: clinic.name,
-          city: clinic.city || '',
-          active: true
-        }));
-        
-        setClinics(formattedClinics);
-        
-        // Inicializar selección
-        setSelectedClinics([]);
-        
-        // Cargar estadísticas
-        refreshStorageStats();
-      } catch (error) {
-        console.error('Error al cargar clínicas:', error);
-        toast.error('Error al cargar información de clínicas');
-      } finally {
-        setLoadingClinics(false);
-      }
-    };
-    
-    loadClinicData();
-  }, [getClinicsList]);
   
   // Función para refrescar estadísticas
   const refreshStorageStats = useCallback(() => {
@@ -144,6 +89,40 @@ const StorageQuotaSettings: React.FC<StorageQuotaSettingsProps> = ({
       setRefreshing(false);
     }
   }, [clinics, getStorageStats, getQuota]);
+  
+  // Cargar clínicas y estadísticas
+  useEffect(() => {
+    const loadClinicData = async () => {
+      setLoadingClinics(true);
+      try {
+        // Obtener clínicas usando el nombre correcto de la función
+        const clinicsList = await clinicContext.getAllClinicas();
+        
+        // Formatear los datos para mantener compatibilidad
+        const formattedClinics = clinicsList.map(clinic => ({
+          id: clinic.id.toString(),
+          name: clinic.name,
+          city: clinic.city || '',
+          active: true
+        }));
+        
+        setClinics(formattedClinics);
+        
+        // Inicializar selección
+        setSelectedClinics([]);
+        
+        // Cargar estadísticas INICIALES
+        refreshStorageStats();
+      } catch (error) {
+        console.error('Error al cargar clínicas:', error);
+        toast.error('Error al cargar información de clínicas');
+      } finally {
+        setLoadingClinics(false);
+      }
+    };
+    
+    loadClinicData();
+  }, [clinicContext.getAllClinicas, refreshStorageStats]);
   
   // Estado para almacenar los datos
   const [clinicQuotas, setClinicQuotas] = useState(usageStats);

@@ -1,8 +1,8 @@
 "use client"
 
-import { createContext, useContext, useState, type ReactNode, useEffect } from "react"
-import { useInterfaz } from "@/contexts/interfaz-Context"
+import { createContext, useContext, useState, type ReactNode, useEffect, useCallback } from "react"
 import { Usuario as UsuarioModel } from "@/services/data/models/interfaces"
+import { User as PrismaUser } from '@prisma/client';
 
 // Función auxiliar para comparar IDs que pueden ser string o number
 const isSameId = (id1: string | number | undefined | null, id2: string | number | undefined | null): boolean => {
@@ -10,16 +10,19 @@ const isSameId = (id1: string | number | undefined | null, id2: string | number 
   return String(id1) === String(id2);
 }
 
-// Definir alias para los tipos usando los tipos del modelo central
-export type Usuario = UsuarioModel;
+// Usar un tipo que excluya passwordHash por defecto
+export type Usuario = Omit<PrismaUser, 'passwordHash'>;
+// Nota: Las funciones de API ya devuelven este tipo sin el hash
 
 interface UserContextType {
   usuarios: Usuario[];
-  getAllUsuarios: () => Promise<Usuario[]>;
+  isLoading: boolean;
+  error: string | null;
+  refetchUsuarios: () => Promise<void>;
   getUsuarioById: (id: string) => Promise<Usuario | null>;
   getUsuariosByClinica: (clinicaId: string) => Promise<Usuario[]>;
-  createUsuario: (usuario: Omit<Usuario, 'id'>) => Promise<string>;
-  updateUsuario: (id: string, usuario: Partial<Usuario>) => Promise<boolean>;
+  createUsuario: (usuarioData: Omit<Usuario, 'id' | 'createdAt' | 'updatedAt' | 'systemId'> & { password?: string }) => Promise<Usuario | null>;
+  updateUsuario: (id: string, usuarioUpdate: Partial<Omit<Usuario, 'id' | 'createdAt' | 'updatedAt' | 'systemId'>>) => Promise<Usuario | null>;
   deleteUsuario: (id: string) => Promise<boolean>;
   toggleUsuarioStatus: (id: string) => Promise<boolean>;
 }
@@ -28,170 +31,167 @@ const UserContext = createContext<UserContextType | undefined>(undefined)
 
 export function UserProvider({ children }: { children: ReactNode }) {
   const [usuarios, setUsuarios] = useState<Usuario[]>([])
-  const [initialized, setInitialized] = useState(false)
-  const [dataFetched, setDataFetched] = useState(false)
-  const interfaz = useInterfaz()
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  // Cargar datos iniciales
-  useEffect(() => {
-    const loadUsuarios = async () => {
-      if (interfaz.initialized && !dataFetched) {
-        try {
-          // Cargar usuarios
-          const loadedUsuarios = await interfaz.getAllUsuarios();
-          
-          // Establecer los usuarios
-          setUsuarios(loadedUsuarios);
-          
-          setDataFetched(true);
-          setInitialized(true);
-          console.log("UserContext: Datos cargados correctamente");
-        } catch (error) {
-          console.error("Error al cargar usuarios:", error);
-          setUsuarios([]);
-          setInitialized(true);
-        }
-      }
-    };
-    
-    loadUsuarios();
-  }, [interfaz.initialized, dataFetched]);
-
-  // Obtener todos los usuarios
-  const getAllUsuarios = async (): Promise<Usuario[]> => {
+  // Función para cargar/recargar usuarios desde la API
+  const fetchUsuarios = useCallback(async () => {
+    setIsLoading(true)
+    setError(null)
     try {
-      const usuarios = await interfaz.getAllUsuarios();
-      setUsuarios(usuarios);
-      return usuarios;
-    } catch (error) {
-      console.error("Error al obtener todos los usuarios:", error);
-      return usuarios; // Devolver estado local como fallback
+      const response = await fetch('/api/users')
+      if (!response.ok) {
+        throw new Error(`Error ${response.status}: ${response.statusText}`)
+      }
+      const loadedUsuarios: Usuario[] = await response.json()
+      setUsuarios(loadedUsuarios)
+      console.log("UserContext: Usuarios cargados/actualizados desde API")
+    } catch (err) {
+      console.error("Error al cargar usuarios desde API:", err)
+      setError(err instanceof Error ? err.message : 'Error desconocido al cargar usuarios')
+      setUsuarios([])
+    } finally {
+      setIsLoading(false)
     }
-  };
+  }, [])
+
+  // Cargar datos iniciales al montar
+  useEffect(() => {
+    fetchUsuarios()
+  }, [fetchUsuarios])
 
   // Obtener usuario por ID
   const getUsuarioById = async (id: string): Promise<Usuario | null> => {
+    const localUser = usuarios.find(u => isSameId(u.id, id))
+    if (localUser) return localUser
+
+    setIsLoading(true)
     try {
-      const usuario = await interfaz.getUsuarioById(id);
-      
-      // Si el usuario no está en el estado local, o tiene datos diferentes, 
-      // actualizar el estado local para asegurar sincronización
-      if (usuario) {
-        const localUserIndex = usuarios.findIndex(u => isSameId(u.id, id));
-        if (localUserIndex === -1 || JSON.stringify(usuarios[localUserIndex]) !== JSON.stringify(usuario)) {
-          setUsuarios(prev => {
-            const newUsuarios = [...prev];
-            if (localUserIndex === -1) {
-              newUsuarios.push(usuario);
-            } else {
-              newUsuarios[localUserIndex] = usuario;
-            }
-            return newUsuarios;
-          });
-        }
-      }
-      
-      return usuario;
-    } catch (error) {
-      console.error("Error al obtener usuario por ID:", error);
-      // Intentar recuperar del estado local
-      const localUser = usuarios.find(u => isSameId(u.id, id));
-      return localUser || null;
+      const response = await fetch(`/api/users/${id}`)
+      if (response.status === 404) return null
+      if (!response.ok) throw new Error(`Error ${response.status}: ${response.statusText}`)
+      const usuario: Usuario = await response.json()
+      // Opcional: Actualizar estado local
+      setUsuarios(prev => prev.map(u => isSameId(u.id, id) ? usuario : u))
+      return usuario
+    } catch (err) {
+      console.error(`Error fetching user ${id} from API:`, err)
+      setError(err instanceof Error ? err.message : 'Error desconocido')
+      return null
+    } finally {
+      setIsLoading(false)
     }
-  };
+  }
 
   // Obtener usuarios por clínica
   const getUsuariosByClinica = async (clinicaId: string): Promise<Usuario[]> => {
-    try {
-      const usuariosClinica = await interfaz.getUsuariosByClinica(clinicaId);
-      return usuariosClinica;
-    } catch (error) {
-      console.error(`Error al obtener usuarios para la clínica ${clinicaId}:`, error);
-      // Filtrar usuarios del estado local que pertenecen a esta clínica
-      return usuarios.filter(u => u.clinicasIds.includes(clinicaId));
-    }
-  };
+    console.warn("getUsuariosByClinica no implementado con API (filtrado necesario en backend)")
+    // TODO: Implementar /api/users?clinicId=... o similar en backend
+    // Devolver filtrado local como fallback temporal
+    // Esta lógica asume que `Usuario` tiene `clinicasIds` lo cual no es cierto con PrismaUser
+    // return usuarios.filter(u => u.clinicasIds?.includes(clinicaId)); 
+    return [] // Devolver vacío hasta implementar API
+  }
 
-  // Crear nuevo usuario
-  const createUsuario = async (usuario: Omit<Usuario, 'id'>): Promise<string> => {
-    try {
-      const nuevoUsuario = await interfaz.createUsuario(usuario);
-      
-      if (nuevoUsuario && nuevoUsuario.id) {
-        // Actualizar estado local
-        setUsuarios(prev => [...prev, nuevoUsuario]);
-        return String(nuevoUsuario.id);
-      } else {
-        throw new Error("No se pudo crear el usuario");
-      }
-    } catch (error) {
-      console.error("Error al crear usuario:", error);
-      throw error;
+  // Crear nuevo usuario (requiere contraseña)
+  const createUsuario = async (usuarioData: Omit<Usuario, 'id' | 'createdAt' | 'updatedAt' | 'systemId'> & { password?: string }): Promise<Usuario | null> => {
+    if (!usuarioData.password) {
+      setError("La contraseña es obligatoria para crear un usuario.")
+      return null
     }
-  };
+    setIsLoading(true)
+    setError(null)
+    try {
+      const response = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(usuarioData), // La API espera la contraseña aquí
+      })
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || `Error ${response.status}`)
+      }
+      const newUser: Usuario = await response.json()
+      setUsuarios(prev => [...prev, newUser])
+      return newUser
+    } catch (err) {
+      console.error("Error creando usuario vía API:", err)
+      setError(err instanceof Error ? err.message : 'Error desconocido al crear')
+      return null
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
-  // Actualizar usuario
-  const updateUsuario = async (id: string, usuario: Partial<Usuario>): Promise<boolean> => {
+  // Actualizar usuario (sin contraseña)
+  const updateUsuario = async (id: string, usuarioUpdate: Partial<Omit<Usuario, 'id' | 'createdAt' | 'updatedAt' | 'systemId'>>): Promise<Usuario | null> => {
+    setIsLoading(true)
+    setError(null)
+    const usuarioId = String(id)
     try {
-      // Asegurar que el ID siempre sea un string
-      const usuarioId = String(id);
-      const updatedUsuario = await interfaz.updateUsuario(usuarioId, usuario);
-      
-      if (updatedUsuario) {
-        // Actualizar estado local
-        setUsuarios(prev => 
-          prev.map(u => isSameId(u.id, usuarioId) ? { ...u, ...usuario } : u)
-        );
-        
-        return true;
+      const response = await fetch(`/api/users/${usuarioId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(usuarioUpdate), // La API ignora password si se envía
+      })
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || `Error ${response.status}`)
       }
-      
-      return false;
-    } catch (error) {
-      console.error("Error al actualizar usuario:", error);
-      return false;
+      const updatedUser: Usuario = await response.json()
+      setUsuarios(prev => 
+        prev.map(u => isSameId(u.id, usuarioId) ? updatedUser : u)
+      )
+      return updatedUser
+    } catch (err) {
+      console.error(`Error updating user ${usuarioId} via API:`, err)
+      setError(err instanceof Error ? err.message : 'Error desconocido al actualizar')
+      return null
+    } finally {
+      setIsLoading(false)
     }
-  };
+  }
 
   // Eliminar usuario
   const deleteUsuario = async (id: string): Promise<boolean> => {
+    setIsLoading(true)
+    setError(null)
+    const stringId = String(id)
     try {
-      const stringId = String(id);
-      const success = await interfaz.deleteUsuario(stringId);
-      
-      if (success) {
-        // Actualizar estado local
-        setUsuarios(prev => prev.filter(u => !isSameId(u.id, stringId)));
-        
-        return true;
+      const response = await fetch(`/api/users/${stringId}`, {
+        method: 'DELETE',
+      })
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || `Error ${response.status}`)
       }
-      
-      return false;
-    } catch (error) {
-      console.error("Error al eliminar usuario:", error);
-      return false;
+      setUsuarios(prev => prev.filter(u => !isSameId(u.id, stringId)))
+      return true
+    } catch (err) {
+      console.error(`Error deleting user ${stringId} via API:`, err)
+      setError(err instanceof Error ? err.message : 'Error desconocido al eliminar')
+      return false
+    } finally {
+      setIsLoading(false)
     }
-  };
+  }
 
-  // Activar/desactivar usuario
+  // Cambiar estado activo/inactivo (PENDIENTE API)
   const toggleUsuarioStatus = async (id: string): Promise<boolean> => {
-    try {
-      const usuario = await getUsuarioById(id);
-      if (!usuario) return false;
-      
-      const nuevoEstado = !usuario.isActive;
-      const resultado = await updateUsuario(id, { isActive: nuevoEstado });
-      
-      return resultado;
-    } catch (error) {
-      console.error("Error al cambiar estado del usuario:", error);
-      return false;
-    }
-  };
+    console.warn("toggleUsuarioStatus no implementado con API todavía.")
+    // Podría ser un PUT a /api/users/[id] con { isActive: ... } o una ruta dedicada.
+    // const currentUser = usuarios.find(u => isSameId(u.id, id));
+    // if (!currentUser) return false;
+    // const result = await updateUsuario(id, { isActive: !currentUser.isActive });
+    // return !!result;
+    return false
+  }
 
-  const value = {
+  const contextValue: UserContextType = {
     usuarios,
-    getAllUsuarios,
+    isLoading,
+    error,
+    refetchUsuarios: fetchUsuarios,
     getUsuarioById,
     getUsuariosByClinica,
     createUsuario,
@@ -200,13 +200,13 @@ export function UserProvider({ children }: { children: ReactNode }) {
     toggleUsuarioStatus,
   }
 
-  return <UserContext.Provider value={value}>{children}</UserContext.Provider>
+  return <UserContext.Provider value={contextValue}>{children}</UserContext.Provider>
 }
 
 export function useUser() {
   const context = useContext(UserContext)
   if (context === undefined) {
-    throw new Error("useUser debe ser usado dentro de un UserProvider")
+    throw new Error("useUser debe usarse dentro de un UserProvider")
   }
   return context
 } 

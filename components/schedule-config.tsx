@@ -31,20 +31,20 @@ const DAYS = {
 
 export function ScheduleConfig({ value, onChange, showTemplateSelector = false }: ScheduleConfigProps) {
   const { templates } = useTemplates()
-  const { activeClinic, updateClinicConfig } = useClinic()
+  const { activeClinic } = useClinic()
 
   // Inicializar los estados con los valores de la clínica activa
-  const [openTime, setOpenTime] = useState(activeClinic?.config?.openTime || "00:00")
-  const [closeTime, setCloseTime] = useState(activeClinic?.config?.closeTime || "23:59")
-  const [slotDuration, setSlotDuration] = useState(activeClinic?.config?.slotDuration || 15)
+  const [openTime, setOpenTime] = useState(activeClinic?.openTime || "00:00")
+  const [closeTime, setCloseTime] = useState(activeClinic?.closeTime || "23:59")
+  const [slotDuration, setSlotDuration] = useState(activeClinic?.slotDuration || 15)
   const [expandedDays, setExpandedDays] = React.useState<string[]>([])
 
   // Actualizar los estados cuando cambie la clínica activa
   useEffect(() => {
-    if (activeClinic?.config) {
-      setOpenTime(activeClinic.config.openTime)
-      setCloseTime(activeClinic.config.closeTime)
-      setSlotDuration(activeClinic.config.slotDuration || 15)
+    if (activeClinic) {
+      setOpenTime(activeClinic.openTime ?? "00:00")
+      setCloseTime(activeClinic.closeTime ?? "23:59")
+      setSlotDuration(activeClinic.slotDuration ?? 15)
     }
   }, [activeClinic])
 
@@ -83,38 +83,17 @@ export function ScheduleConfig({ value, onChange, showTemplateSelector = false }
   const handleOpenTimeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newOpenTime = e.target.value
     setOpenTime(newOpenTime)
-    // Actualizar la configuración de la clínica
-    if (activeClinic) {
-      updateClinicConfig(activeClinic.id, {
-        ...activeClinic.config,
-        openTime: newOpenTime,
-      })
-    }
   }
 
   const handleCloseTimeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newCloseTime = e.target.value
     setCloseTime(newCloseTime)
-    // Actualizar la configuración de la clínica
-    if (activeClinic) {
-      updateClinicConfig(activeClinic.id, {
-        ...activeClinic.config,
-        closeTime: newCloseTime,
-      })
-    }
   }
 
   const handleSlotDurationChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newDuration = Number.parseInt(e.target.value, 10)
     if (!isNaN(newDuration) && newDuration > 0 && newDuration <= 60) {
       setSlotDuration(newDuration)
-      // Actualizar la configuración de la clínica
-      if (activeClinic) {
-        updateClinicConfig(activeClinic.id, {
-          ...activeClinic.config,
-          slotDuration: newDuration,
-        })
-      }
     }
   }
 

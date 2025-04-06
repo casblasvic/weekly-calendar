@@ -5,21 +5,23 @@
  */
 
 import {
-  BaseEntity,
-  Clinica,
-  EntityDocument,
-  EntityImage,
-  Equipo,
-  FamiliaTarifa,
-  ScheduleBlock,
-  Servicio,
-  Tarifa,
-  TipoIVA,
-  Producto,
-  Consumo,
-  Bono,
-  Usuario
-} from './models/interfaces';
+  // BaseEntity, // Eliminar temporalmente
+  // Clinica, // Eliminar temporalmente
+  // EntityDocument, // Eliminar temporalmente
+  // EntityImage, // Eliminar temporalmente
+  // Equipo, // Eliminar temporalmente
+  // FamiliaTarifa, // Eliminar temporalmente
+  // ScheduleBlock, // Eliminar temporalmente
+  // Servicio, // Eliminar temporalmente
+  // Tarifa, // Eliminar temporalmente
+  // TipoIVA, // Eliminar temporalmente
+  // Producto, // Eliminar temporalmente
+  // Consumo, // Eliminar temporalmente
+  // Bono, // Eliminar temporalmente
+  // Usuario, // Eliminar temporalmente
+  // ExcepcionHoraria, // Eliminar temporalmente
+  // ExcepcionHorariaUsuario // Eliminar temporalmente
+} from './models/interfaces.ts';
 
 /**
  * Interfaz para Clientes
@@ -172,14 +174,6 @@ export interface DataService {
   deleteProducto(id: string): Promise<boolean>;
   getProductosByTarifaId(tarifaId: string): Promise<Producto[]>;
   getProductosByFamilia(familia: string): Promise<Producto[]>;
-  
-  // Operaciones de Consumos
-  getAllConsumos(): Promise<Consumo[]>;
-  getConsumoById(id: string): Promise<Consumo | null>;
-  createConsumo(consumo: Omit<Consumo, 'id'>): Promise<Consumo>;
-  updateConsumo(id: string, consumo: Partial<Consumo>): Promise<Consumo | null>;
-  deleteConsumo(id: string): Promise<boolean>;
-  getConsumosByServicioId(servicioId: string): Promise<Consumo[]>;
   
   // Operaciones de Bonos
   getAllBonos(): Promise<Bono[]>;

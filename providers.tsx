@@ -20,13 +20,15 @@ export function Providers({ children }: { children: React.ReactNode }) {
         <AuthProvider>
           <GlobalSettingsProvider>
             <ClinicProvider>
-              <ClinicScheduleProvider>
-                <EmployeeProvider>
-                  <ClientProvider>
-                    <AppointmentProvider>{children}</AppointmentProvider>
-                  </ClientProvider>
-                </EmployeeProvider>
-              </ClinicScheduleProvider>
+              <EmployeeProvider>
+                <ClientProvider>
+                  <AppointmentProvider>
+                    <ClinicScheduleProvider>
+                      {children}
+                    </ClinicScheduleProvider>
+                  </AppointmentProvider>
+                </ClientProvider>
+              </EmployeeProvider>
             </ClinicProvider>
           </GlobalSettingsProvider>
         </AuthProvider>

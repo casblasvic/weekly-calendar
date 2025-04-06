@@ -4,7 +4,7 @@ import React, { useMemo, useEffect, useState, useCallback, useRef } from "react"
 
 import { format, parse, addDays, startOfWeek, isSameDay, differenceInDays, isToday, addWeeks, subWeeks, isSameMonth, parseISO, isBefore, isAfter } from "date-fns"
 import { es } from "date-fns/locale"
-import { useClinic, type ClinicConfig } from "@/contexts/clinic-context"
+import { useClinic } from "@/contexts/clinic-context"
 import { AgendaNavBar } from "./agenda-nav-bar"
 import { HydrationWrapper } from "@/components/hydration-wrapper"
 import { useRouter } from "next/navigation"
@@ -34,6 +34,7 @@ import {
   applyScheduleExceptions
 } from "@/services/clinic-schedule-service"
 import { Clinica } from "@/services/data/models/interfaces"
+import { Cabin } from '@prisma/client'
 
 // Función para generar slots de tiempo
 function getTimeSlots(startTime: string, endTime: string, interval = 15): string[] {
@@ -65,21 +66,28 @@ interface WeeklyAgendaProps {
   initialDate?: string
   containerMode?: boolean
   onAppointmentsChange?: (appointments: Appointment[]) => void
-  initialClinic?: {
-    id: string | number
-    config?: any
-  }
+  cabins: Cabin[]
+  isLoadingCabins?: boolean
+  appointments?: Appointment[]
+  onAppointmentClick?: (appointmentId: string) => void
 }
 
 export default function WeeklyAgenda({
   initialDate = format(new Date(), "yyyy-MM-dd"),
   containerMode = false,
   onAppointmentsChange,
-  initialClinic,
+  cabins,
+  isLoadingCabins = false,
+  appointments: initialAppointments = [],
+  onAppointmentClick,
 }: WeeklyAgendaProps) {
   const router = useRouter()
   const { activeClinic } = useClinic()
   const { getBlocksByDateRange } = useScheduleBlocks()
+  
+  // --- LOG: Clínica activa recibida del contexto ---
+  console.log("[WeeklyAgenda] activeClinic from context:", activeClinic);
+  // ---------------------------------------------
   
   // Añadir state para controlar transiciones
   const [isTransitioning, setIsTransitioning] = useState(false);
@@ -97,7 +105,7 @@ export default function WeeklyAgenda({
   // Usar initialClinic si se proporciona, de lo contrario usar activeClinic del contexto
   // Esto es crucial para evitar ciclos de renderizado cuando cambia activeClinic,
   // ya que podemos recibir una versión estable a través de props
-  const effectiveClinic = useMemo(() => initialClinic || activeClinic, [initialClinic, activeClinic]);
+  const effectiveClinic = activeClinic;
 
   // Añadir una nueva optimización para reducir renderizados innecesarios
   // Cerca del inicio del componente, justo después de las referencias al useClinic
@@ -143,6 +151,15 @@ export default function WeeklyAgenda({
 
   // Estado para almacenar las citas
   const [appointments, setAppointments] = useState<Appointment[]>(() => {
+    if (initialAppointments && initialAppointments.length > 0) {
+      // Convertir fechas si es necesario (si initialAppointments viene de API)
+       return initialAppointments.map((apt: any) => ({
+         ...apt,
+         date: typeof apt.date === 'string' ? parseISO(apt.date) : apt.date, 
+         startTime: typeof apt.startTime === 'string' ? parseISO(apt.startTime) : apt.startTime,
+         endTime: typeof apt.endTime === 'string' ? parseISO(apt.endTime) : apt.endTime,
+       }));
+    }
     if (typeof window !== "undefined") {
       const storedAppointments = sessionStorage.getItem("weeklyAppointments")
       if (storedAppointments) {
@@ -174,24 +191,18 @@ export default function WeeklyAgenda({
     }
   }, [appointments, onAppointmentsChange])
 
-  const clinicConfig = effectiveClinic?.config || {
-    openTime: "09:00",
-    closeTime: "18:00",
-    slotDuration: 15,
-    cabins: [],
-    schedule: {},
-    weekendOpenTime: "10:00",
-    weekendCloseTime: "14:00"
-  };
+  // Derivar configuración del activeClinic
+  const schedule = useMemo(() => activeClinic?.scheduleJson as unknown as WeekSchedule | null, [activeClinic?.scheduleJson]);
+  const openTime = useMemo(() => activeClinic?.openTime ?? "09:00", [activeClinic?.openTime]);
+  const closeTime = useMemo(() => activeClinic?.closeTime ?? "20:00", [activeClinic?.closeTime]);
+  const slotDuration = useMemo(() => activeClinic?.slotDuration ?? 15, [activeClinic?.slotDuration]);
 
-  // Obtener configuración de horarios
-  const openTime = clinicConfig.openTime || "09:00"
-  const closeTime = clinicConfig.closeTime || "18:00"
-  const slotDuration = clinicConfig.slotDuration || 15
+  // --- LOG: Configuración de horario derivada ---
+  console.log("[WeeklyAgenda] Derived schedule config:", { openTime, closeTime, slotDuration, schedule });
+  // ------------------------------------------
 
   // Obtener cabinas activas
-  const { cabins = [] } = clinicConfig
-  const activeCabins = cabins.filter((cabin) => cabin.isActive).sort((a, b) => a.order - b.order)
+  const activeCabins = cabins;
 
   // Generar slots de tiempo
   const [timeSlots, setTimeSlots] = useState<string[]>([])
@@ -206,71 +217,53 @@ export default function WeeklyAgenda({
   }, [openTime, closeTime, slotDuration])
 
   // Función para verificar si un día está activo en la configuración
-  const isDayActive = useCallback(
-    (date: Date) => {
-      // Crear objeto compatible con Clinica
-      if (effectiveClinic) {
-        const clinicData: Partial<Clinica> = {
-          id: effectiveClinic.id,
-          config: effectiveClinic.config,
-          // Añadir campos mínimos necesarios
-          name: '',
-          prefix: '',
-          city: '',
-          isActive: true
-        };
-        
-        // Usar nuestro servicio de excepciones para verificar si el día está activo
-        return isBusinessDay(date, clinicData as Clinica);
-      }
-      return true;
-    },
-    [effectiveClinic],
-  );
+  const getDayKey = useCallback((date: Date) => {
+    const day = format(date, "EEEE", { locale: es }).toLowerCase();
+    const dayMap = {
+      lunes: "monday",
+      martes: "tuesday",
+      miércoles: "wednesday",
+      jueves: "thursday",
+      viernes: "friday",
+      sábado: "saturday",
+      domingo: "sunday",
+    } as const;
+    return dayMap[day as keyof typeof dayMap] || day;
+  }, []);
+
+  const isDayActive = useCallback((date: Date) => {
+    const dayKey = getDayKey(date);
+    let isActive = false;
+    try {
+      isActive = schedule?.[dayKey as keyof WeekSchedule]?.isOpen ?? false;
+      // --- LOG: Comprobación isDayActive ---
+      console.log(`[WeeklyAgenda] isDayActive check for ${format(date, 'yyyy-MM-dd')} (key: ${dayKey}): ${isActive}`);
+      // -----------------------------------
+    } catch (error) {
+      console.error("[WeeklyAgenda] Error in isDayActive:", error);
+    }
+    return isActive;
+  }, [schedule, getDayKey]);
 
   // Función para verificar si un horario está disponible
-  const isTimeSlotAvailable = useCallback(
-    (date: Date, time: string) => {
-      const day = format(date, "EEEE", { locale: es }).toLowerCase()
-      // Mapear los nombres de días en español a las claves en inglés usadas en el objeto schedule
-      const dayMap = {
-        lunes: "monday",
-        martes: "tuesday",
-        miércoles: "wednesday",
-        jueves: "thursday",
-        viernes: "friday",
-        sábado: "saturday",
-        domingo: "sunday",
-      } as const
-      
-      type DayMapKey = keyof typeof dayMap
-      
-      // Aplicar excepciones si las hay
-      const effectiveSchedule = effectiveClinic ? 
-        applyScheduleExceptions(
-          effectiveClinic.config?.schedule || clinicConfig.schedule || {},
-          {
-            id: effectiveClinic.id,
-            config: effectiveClinic.config,
-            name: '',
-            prefix: '',
-            city: '',
-            isActive: true
-          } as Clinica,
-          date
-        ) : 
-        clinicConfig.schedule || {};
-      
-      const dayKey = (dayMap[day as DayMapKey] || day) as keyof typeof effectiveSchedule
-      const daySchedule = effectiveSchedule[dayKey]
-
-      if (!daySchedule?.isOpen) return false
-
-      // Verificar si el horario está dentro de algún rango definido para ese día
-      return daySchedule.ranges.some((range) => time >= range.start && time <= range.end)
-    },
-    [clinicConfig.schedule, effectiveClinic],
-  )
+  const isTimeSlotAvailable = useCallback((date: Date, time: string) => {
+    const dayKey = getDayKey(date);
+    let isAvailable = false;
+    try {
+      const daySchedule = schedule?.[dayKey as keyof WeekSchedule];
+      if (!daySchedule || !daySchedule.isOpen || !daySchedule.ranges) {
+        isAvailable = false;
+      } else {
+        isAvailable = daySchedule.ranges.some((range) => time >= range.start && time < range.end);
+      }
+      // --- LOG: Comprobación isTimeSlotAvailable ---
+      console.log(`[WeeklyAgenda] isTimeSlotAvailable check for ${format(date, 'yyyy-MM-dd')} ${time} (key: ${dayKey}): ${isAvailable}`);
+      // -------------------------------------------
+    } catch (error) {
+      console.error("[WeeklyAgenda] Error in isTimeSlotAvailable:", error);
+    }
+    return isAvailable;
+  }, [schedule, getDayKey]);
 
   // Referencia para el contenedor de la agenda
   const agendaRef = useRef<HTMLDivElement>(null)
@@ -445,7 +438,7 @@ export default function WeeklyAgenda({
     // Código original para abrir el modal de cita
     if (!isTimeSlotAvailable(day, time)) return
 
-    const cabin = cabins.find((c) => {
+    const cabin = activeCabins.find((c) => {
       const cabinId = String(c.id)
       const targetId = String(roomId)
       return cabinId === targetId
@@ -480,38 +473,33 @@ export default function WeeklyAgenda({
   }, [selectedSlot])
 
   const handleSaveAppointment = useCallback(
-    (appointmentData: {
-      client: { name: string; phone: string }
-      services: { id: string; name: string; category: string }[]
-      time: string
-      comment?: string
-    }) => {
+     (appointmentData: { // Definir tipo esperado para appointmentData si es necesario
+       client: { name: string; phone: string };
+       services: any[]; // Ajustar tipo según sea necesario
+       time: string;
+       comment?: string;
+     }) => {
       if (selectedSlot) {
-        const cabin =
-          cabins.find(
-            (c) =>
-              String(c.id) === selectedSlot.roomId
-          ) || cabins[0]
-
+        const cabin = activeCabins.find((c) => String(c.id) === selectedSlot.roomId) || activeCabins[0];
         if (cabin) {
           const newAppointment: Appointment = {
-            id: Math.random().toString(36).substr(2, 9),
+            id: Math.random().toString(36).substr(2, 9), // ID temporal
             name: appointmentData.client.name,
             service: appointmentData.services.map((s) => s.name).join(", "),
             date: selectedSlot.date,
             roomId: selectedSlot.roomId,
-            startTime: appointmentData.time,
-            duration: 2, // Default duration
-            color: cabin.color, // Use cabin color
+            startTime: format(selectedSlot.date, 'yyyy-MM-dd') + 'T' + appointmentData.time + ':00Z', // Añadir segundos y Z para formato ISO
+            duration: 2,
+            color: cabin.color ?? '#d1d5db',
             phone: appointmentData.client.phone,
-          }
-
-          setAppointments((prev) => [...prev, newAppointment])
+          };
+          setAppointments((prev) => [...prev, newAppointment]);
         }
       }
+       setIsAppointmentDialogOpen(false); // Cerrar diálogo después de guardar
     },
-    [selectedSlot, cabins],
-  )
+    [selectedSlot, activeCabins, setAppointments] // Añadir setAppointments a dependencias
+  );
 
   const handleAppointmentResize = (id: string, newDuration: number) => {
     // Esta función ya no es necesaria con el nuevo componente sin redimensionamiento
@@ -550,246 +538,243 @@ export default function WeeklyAgenda({
 
   // Estructura corregida para el renderWeeklyGrid
   const renderWeeklyGrid = () => (
-    <div className="flex-1 overflow-auto">
-      <DragDropContext onDragEnd={onDragEnd}>
-        <div ref={agendaRef} className="relative z-0" style={{ scrollBehavior: "smooth" }}>
-          <div className="min-w-[1200px] relative">
-            <div
-              className="grid"
-              style={{
-                gridTemplateColumns: `auto repeat(7, 1fr)`,
-                width: "100%",
-              }}
-            >
-              {/* Columna de tiempo - Fija */}
-              <div className="sticky top-0 z-20 w-20 p-4 bg-white border-b border-r border-gray-300">
-                <div className="text-sm text-gray-500">Hora</div>
-              </div>
-
-              {/* Cabeceras de días - Fijas */}
-              {weekDays.map((day, index) => {
-                const today = isToday(day);
-                const active = isDayActive(day);
-                return (
-                  <div key={index} className={cn(
-                    "sticky top-0 z-20 bg-white border-b border-gray-300",
-                    today ? "border-l-2 border-r-2 border-purple-300" : "border-l border-r border-gray-300",
-                    !active && "bg-gray-100"
-                  )}>
-                    <div
-                      className={cn(
-                        "p-4 border-b border-gray-300",
-                        active ? "cursor-pointer hover:bg-gray-50" : "cursor-not-allowed opacity-70",
-                        today && "bg-purple-50/10",
-                      )}
-                      onClick={() => active && handleDayClick(day)}
-                      title={active ? "Ir a vista diaria" : "Día no activo"}
-                    >
-                      <div className="flex items-center justify-start gap-2">
-                        <div>
-                          <div className="text-base font-medium capitalize">{format(day, "EEEE", { locale: es })}</div>
-                          <div className={cn("text-sm", today ? "text-purple-600 font-bold" : "text-gray-500")}>
-                            {format(day, "d/M/yyyy")}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    <div
-                      className="grid"
-                      style={{ gridTemplateColumns: `repeat(${activeCabins.length || 1}, 1fr)` }}
-                    >
-                      {activeCabins.map((cabin) => (
-                        <div
-                          key={cabin.id}
-                          className={cn(
-                            "text-white text-xs py-1 px-1 text-center font-medium border-r border-gray-300 last:border-r-0",
-                            !active && "opacity-70"
-                          )}
-                          style={{ backgroundColor: cabin.color }}
-                          title={cabin.name}
-                        >
-                          {cabin.code || cabin.name}
-                        </div>
-                      ))}
-                      {activeCabins.length === 0 && (
-                        <div className="px-1 py-1 text-xs italic text-center text-gray-400">
-                          Sin cabinas
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-
-              {/* Filas de Slots de Tiempo */}
-              {timeSlots.map((time) => (
-                <React.Fragment key={time}>
-                  {/* Celda de Hora */}
-                  <div
-                    className="sticky left-0 z-10 w-20 p-2 text-sm font-medium text-purple-600 bg-white border-b border-r border-gray-300"
-                    data-time={time}
-                  >
-                    {time}
-                  </div>
-                  {/* Celdas de Día/Cabina */}
-                  {weekDays.map((day, dayIndex) => {
-                    const today = isToday(day);
-                    const active = isDayActive(day);
-                    return (
-                      <div
-                        key={`${dayIndex}-${time}`}
-                        className={cn(
-                          "border-b border-gray-200 relative",
-                          today ? "border-l-2 border-r-2 border-purple-300" : "border-l border-r border-gray-300",
-                          today && "bg-purple-50/10",
-                          !active && !today && "bg-gray-100"
-                        )}
-                        data-time={time}
-                        style={{ minWidth: `${activeCabins.length * 80}px` }}
-                      >
-                        <div
-                          className="grid h-full"
-                          style={{ gridTemplateColumns: `repeat(${activeCabins.length || 1}, 1fr)` }}
-                        >
-                          {activeCabins.length > 0 ? activeCabins.map((cabin, cabinIndex) => {
-                            const isAvailable = isTimeSlotAvailable(day, time);
-                            const dayString = format(day, "yyyy-MM-dd");
-                            const blockForCell = findBlockForCell(dayString, time, cabin.id.toString());
-                            const isCellInteractive = active && isAvailable && !blockForCell;
-                            const isCellClickable = isCellInteractive || (blockForCell && active);
-
-                            const timeIndex = timeSlots.indexOf(time);
-                            const prevTime = timeIndex > 0 ? timeSlots[timeIndex - 1] : null;
-                            const blockForPrevCell = prevTime ? findBlockForCell(dayString, prevTime, cabin.id.toString()) : null;
-                            const isStartOfBlock = blockForCell && (!blockForPrevCell || blockForPrevCell.id !== blockForCell.id);
-
-                            let blockDurationSlots = 0;
-                            if (isStartOfBlock && blockForCell) {
-                              blockDurationSlots = 1;
-                              for (let i = timeIndex + 1; i < timeSlots.length; i++) {
-                                const nextTime = timeSlots[i];
-                                const blockForNextCell = findBlockForCell(dayString, nextTime, cabin.id.toString());
-                                if (blockForNextCell && blockForNextCell.id === blockForCell.id) {
-                                  blockDurationSlots++;
-                                } else {
-                                  break;
-                                }
-                              }
-                            }
-
-                            return (
-                              <Droppable
-                                droppableId={`${dayIndex}-${cabin.id}-${time}`}
-                                key={`${cabin.id}-${time}`}
-                                type="appointment"
-                                isDropDisabled={!isCellInteractive}
-                                isCombineEnabled={false}
-                                ignoreContainerClipping={false}
-                              >
-                                {(provided, snapshot) => (
-                                  <div
-                                    ref={provided.innerRef}
-                                    {...provided.droppableProps}
-                                    className={cn(
-                                      "relative h-full", // Base
-
-                                      // --- Prioridad 1: Día Inactivo ---
-                                      !active && "opacity-70 bg-gray-100 cursor-not-allowed border border-gray-200",
-
-                                      // --- Prioridad 2: Slot Inactivo (dentro de un día activo) ---
-                                      active && !isAvailable && [
-                                        "bg-gray-300 dark:bg-gray-700 cursor-not-allowed",
-                                        // Cambiado: Bordes blancos para mejor contraste sobre gris
-                                        "border border-white/50 dark:border-white/30",
-                                      ],
-
-                                      // --- Prioridad 3: Celda Activa y Disponible ---
-                                      active && isAvailable && [
-                                        // Aplicar borde derecho por defecto (excepto el último)
-                                        "border-r border-gray-200 last:border-r-0",
-                                        // Aplicar borde superior solo si NO es una celda de continuación de bloque
-                                        !(blockForCell && !isStartOfBlock) && "border-t border-gray-200",
-                                        // Estilos si está bloqueada (el fondo)
-                                        blockForCell && "bg-rose-100 cursor-pointer",
-                                        // Estilos si es interactiva (hover, zebra)
-                                        isCellInteractive && [
-                                          "hover:bg-purple-100/50 cursor-pointer",
-                                          !today && (cabinIndex % 2 === 0 ? ZEBRA_LIGHT : ZEBRA_DARK), // Zebra
-                                        ],
-                                      ]
-                                    )}
-                                    style={{
-                                      height: `${AGENDA_CONFIG.ROW_HEIGHT}px`,
-                                      backgroundColor: snapshot.isDraggingOver && isCellInteractive
-                                        ? "rgba(167, 139, 250, 0.2)"
-                                        : undefined,
-                                    }}
-                                    onClick={(e) => {
-                                      if (isCellInteractive) {
-                                        e.stopPropagation();
-                                        handleCellClick(day, time, cabin.id.toString());
-                                      } else if (blockForCell && active) {
-                                        e.stopPropagation();
-                                        openBlockModal(blockForCell);
-                                      }
-                                    }}
-                                  >
-                                    {isStartOfBlock && active && blockForCell && (
-                                      <div
-                                        className="absolute inset-x-0 top-0 z-10 flex items-center justify-center p-1 m-px overflow-hidden border rounded-sm pointer-events-none bg-rose-200/80 border-rose-300"
-                                        style={{
-                                          height: `calc(${blockDurationSlots * AGENDA_CONFIG.ROW_HEIGHT}px - 2px)`,
-                                          display: 'flex',
-                                          alignItems: 'center',
-                                          justifyContent: 'center'
-                                        }}
-                                      >
-                                        <Lock className="flex-shrink-0 w-3 h-3 text-rose-600" />
-                                      </div>
-                                    )}
-                                    {!(blockForCell && !isStartOfBlock) && provided.placeholder}
-                                  </div>
-                                )}
-                              </Droppable>
-                            );
-                          }) : (
-                            <div className="flex items-center justify-center h-full p-1 text-xs italic text-gray-400 border-t border-r border-gray-200 last:border-r-0" style={{ height: `${AGENDA_CONFIG.ROW_HEIGHT}px` }}>
-                              Sin cabinas activas
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </React.Fragment>
-              ))}
+    <DragDropContext onDragEnd={onDragEnd}>
+      <div ref={agendaRef} className="relative z-0" style={{ scrollBehavior: "smooth" }}>
+        <div className="min-w-[1200px] relative">
+          <div
+            className="grid"
+            style={{
+              gridTemplateColumns: `auto repeat(7, 1fr)`,
+              width: "100%",
+            }}
+          >
+            {/* Columna de tiempo - Fija - z-30 */}
+            <div className="sticky top-0 z-30 w-20 p-4 bg-white border-b border-r border-gray-300">
+              <div className="text-sm text-gray-500">Hora</div>
             </div>
 
-            {/* Renderizar citas */}
-            {appointments.map((appointment, index) => (
-              <AppointmentItem
-                key={appointment.id}
-                appointment={appointment}
-                index={index}
-                onClick={undefined}
-              />
+            {/* Cabeceras de días - Fijas - z-30 */}
+            {weekDays.map((day, index) => {
+              const today = isToday(day);
+              const active = isDayActive(day);
+              return (
+                <div key={index} className={cn(
+                  "sticky top-0 z-30 bg-white border-b border-gray-300",
+                  today ? "border-l-2 border-r-2 border-purple-300" : "border-l border-r border-gray-300",
+                  !active && "bg-gray-100"
+                )}>
+                  <div
+                    className={cn(
+                      "p-4 border-b border-gray-300",
+                      active ? "cursor-pointer hover:bg-gray-50" : "cursor-not-allowed opacity-70",
+                      today && "bg-purple-50/10",
+                    )}
+                    onClick={() => active && handleDayClick(day)}
+                    title={active ? "Ir a vista diaria" : "Día no activo"}
+                  >
+                    <div className="flex items-center justify-start gap-2">
+                      <div>
+                        <div className="text-base font-medium capitalize">{format(day, "EEEE", { locale: es })}</div>
+                        <div className={cn("text-sm", today ? "text-purple-600 font-bold" : "text-gray-500")}>
+                          {format(day, "d/M/yyyy")}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div
+                    className="grid"
+                    style={{ gridTemplateColumns: `repeat(${activeCabins.length || 1}, 1fr)` }}
+                  >
+                    {activeCabins.map((cabin) => (
+                      <div
+                        key={cabin.id}
+                        className={cn(
+                          "text-white text-xs py-1 px-1 text-center font-medium border-r border-gray-300 last:border-r-0",
+                          !active && "opacity-70"
+                        )}
+                        style={{ backgroundColor: cabin.color }}
+                        title={cabin.name}
+                      >
+                        {cabin.code || cabin.name}
+                      </div>
+                    ))}
+                    {activeCabins.length === 0 && (
+                      <div className="px-1 py-1 text-xs italic text-center text-gray-400">
+                        Sin cabinas
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Filas de Slots de Tiempo */}
+            {timeSlots.map((time) => (
+              <React.Fragment key={time}>
+                {/* Celda de Hora */}
+                <div
+                  className="sticky left-0 z-10 w-20 p-2 text-sm font-medium text-purple-600 bg-white border-b border-r border-gray-300"
+                  data-time={time}
+                >
+                  {time}
+                </div>
+                {/* Celdas de Día/Cabina */}
+                {weekDays.map((day, dayIndex) => {
+                  const today = isToday(day);
+                  const active = isDayActive(day);
+                  return (
+                    <div
+                      key={`${dayIndex}-${time}`}
+                      className={cn(
+                        "border-b border-gray-200 relative",
+                        today ? "border-l-2 border-r-2 border-purple-300" : "border-l border-r border-gray-300",
+                        today && "bg-purple-50/10",
+                        !active && !today && "bg-gray-100"
+                      )}
+                      data-time={time}
+                      style={{ minWidth: `${activeCabins.length * 80}px` }}
+                    >
+                      <div
+                        className="grid h-full"
+                        style={{ gridTemplateColumns: `repeat(${activeCabins.length || 1}, 1fr)` }}
+                      >
+                        {activeCabins.length > 0 ? activeCabins.map((cabin, cabinIndex) => {
+                          const isAvailable = isTimeSlotAvailable(day, time);
+                          const dayString = format(day, "yyyy-MM-dd");
+                          const blockForCell = findBlockForCell(dayString, time, cabin.id.toString());
+                          const isCellInteractive = active && isAvailable && !blockForCell;
+                          const isCellClickable = isCellInteractive || (blockForCell && active);
+
+                          const timeIndex = timeSlots.indexOf(time);
+                          const prevTime = timeIndex > 0 ? timeSlots[timeIndex - 1] : null;
+                          const blockForPrevCell = prevTime ? findBlockForCell(dayString, prevTime, cabin.id.toString()) : null;
+                          const isStartOfBlock = blockForCell && (!blockForPrevCell || blockForPrevCell.id !== blockForCell.id);
+
+                          let blockDurationSlots = 0;
+                          if (isStartOfBlock && blockForCell) {
+                            blockDurationSlots = 1;
+                            for (let i = timeIndex + 1; i < timeSlots.length; i++) {
+                              const nextTime = timeSlots[i];
+                              const blockForNextCell = findBlockForCell(dayString, nextTime, cabin.id.toString());
+                              if (blockForNextCell && blockForNextCell.id === blockForCell.id) {
+                                blockDurationSlots++;
+                              } else {
+                                break;
+                              }
+                            }
+                          }
+
+                          return (
+                            <Droppable
+                              droppableId={`${dayIndex}-${cabin.id}-${time}`}
+                              key={`${cabin.id}-${time}`}
+                              type="appointment"
+                              isDropDisabled={!isCellInteractive}
+                              isCombineEnabled={false}
+                              ignoreContainerClipping={false}
+                            >
+                              {(provided, snapshot) => (
+                                <div
+                                  ref={provided.innerRef}
+                                  {...provided.droppableProps}
+                                  className={cn(
+                                    "relative h-full", // Base
+
+                                    // --- Prioridad 1: Día Inactivo ---
+                                    !active && "opacity-70 bg-gray-100 cursor-not-allowed border border-gray-200",
+
+                                    // --- Prioridad 2: Slot Inactivo (dentro de un día activo) ---
+                                    active && !isAvailable && [
+                                      "bg-gray-300 dark:bg-gray-700 cursor-not-allowed",
+                                      // Cambiado: Bordes blancos para mejor contraste sobre gris
+                                      "border border-white/50 dark:border-white/30",
+                                    ],
+
+                                    // --- Prioridad 3: Celda Activa y Disponible ---
+                                    active && isAvailable && [
+                                      // Aplicar borde derecho por defecto (excepto el último)
+                                      "border-r border-gray-200 last:border-r-0",
+                                      // Aplicar borde superior solo si NO es una celda de continuación de bloque
+                                      !(blockForCell && !isStartOfBlock) && "border-t border-gray-200",
+                                      // Estilos si está bloqueada (el fondo)
+                                      blockForCell && "bg-rose-100 cursor-pointer",
+                                      // Estilos si es interactiva (hover, zebra)
+                                      isCellInteractive && [
+                                        "hover:bg-purple-100/50 cursor-pointer",
+                                        !today && (cabinIndex % 2 === 0 ? ZEBRA_LIGHT : ZEBRA_DARK), // Zebra
+                                      ],
+                                    ]
+                                  )}
+                                  style={{
+                                    height: `${AGENDA_CONFIG.ROW_HEIGHT}px`,
+                                    backgroundColor: snapshot.isDraggingOver && isCellInteractive
+                                      ? "rgba(167, 139, 250, 0.2)"
+                                      : undefined,
+                                  }}
+                                  onClick={(e) => {
+                                    if (isCellInteractive) {
+                                      e.stopPropagation();
+                                      handleCellClick(day, time, cabin.id.toString());
+                                    } else if (blockForCell && active) {
+                                      e.stopPropagation();
+                                      openBlockModal(blockForCell);
+                                    }
+                                  }}
+                                >
+                                  {isStartOfBlock && active && blockForCell && (
+                                    <div
+                                      className="absolute inset-x-0 top-0 z-10 flex items-center justify-center p-1 m-px overflow-hidden border rounded-sm pointer-events-none bg-rose-200/80 border-rose-300"
+                                      style={{
+                                        height: `calc(${blockDurationSlots * AGENDA_CONFIG.ROW_HEIGHT}px - 2px)`,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center'
+                                      }}
+                                    >
+                                      <Lock className="flex-shrink-0 w-3 h-3 text-rose-600" />
+                                    </div>
+                                  )}
+                                  {!(blockForCell && !isStartOfBlock) && provided.placeholder}
+                                </div>
+                              )}
+                            </Droppable>
+                          );
+                        }) : (
+                          <div className="flex items-center justify-center h-full p-1 text-xs italic text-gray-400 border-t border-r border-gray-200 last:border-r-0" style={{ height: `${AGENDA_CONFIG.ROW_HEIGHT}px` }}>
+                            Sin cabinas activas
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </React.Fragment>
             ))}
-
-            {/* Indicador de tiempo actual RENDERIZADO AQUÍ */}
-            <CurrentTimeIndicator
-              timeSlots={timeSlots}
-              rowHeight={AGENDA_CONFIG.ROW_HEIGHT}
-              isMobile={false}
-              className="current-time-indicator"
-              agendaRef={agendaRef}
-              clinicOpenTime={openTime}
-              clinicCloseTime={closeTime}
-            />
-
           </div>
+
+          {/* Renderizar citas */}
+          {appointments.map((appointment, index) => (
+            <AppointmentItem
+              key={appointment.id}
+              appointment={appointment}
+              index={index}
+              onClick={undefined}
+            />
+          ))}
+
+          {/* Indicador de tiempo actual RENDERIZADO AQUÍ */}
+          <CurrentTimeIndicator
+            timeSlots={timeSlots}
+            rowHeight={AGENDA_CONFIG.ROW_HEIGHT}
+            isMobile={false}
+            className="current-time-indicator"
+            agendaRef={agendaRef}
+            clinicOpenTime={openTime}
+            clinicCloseTime={closeTime}
+          />
         </div>
-      </DragDropContext>
-    </div>
+      </div>
+    </DragDropContext>
   )
 
   // Modificar la función handleAppointmentAdd para ser más eficiente
@@ -906,20 +891,9 @@ export default function WeeklyAgenda({
   const activeExceptions = useMemo(() => {
     if (!effectiveClinic) return [];
     
-    // Convertir effectiveClinic a un objeto compatible con Clinica
-    const clinicData: Partial<Clinica> = {
-      id: effectiveClinic.id,
-      config: effectiveClinic.config,
-      // Añadir campos mínimos necesarios
-      name: '',
-      prefix: '',
-      city: '',
-      isActive: true
-    };
-    
     // Comprobar excepciones activas para cada día de la semana actual
     return weekDays.map(date => {
-      const exception = findActiveExceptions(date, clinicData as Clinica);
+      const exception = findActiveExceptions(date, effectiveClinic as Clinica);
       return {
         date,
         exception
@@ -1008,10 +982,10 @@ export default function WeeklyAgenda({
                   }
                 }}
                 clinicConfig={{
-                  openTime: clinicConfig.openTime || "09:00",
-                  closeTime: clinicConfig.closeTime || "20:00",
-                  weekendOpenTime: clinicConfig.weekendOpenTime || "09:00",
-                  weekendCloseTime: clinicConfig.weekendCloseTime || "14:00",
+                  openTime: openTime,
+                  closeTime: closeTime,
+                  weekendOpenTime: "09:00",
+                  weekendCloseTime: "14:00",
                 }}
               />
             )}
@@ -1024,79 +998,55 @@ export default function WeeklyAgenda({
   // Return original para cuando se usa de forma independiente
   return (
     <HydrationWrapper>
-      <div style={transitionStyles}>
-        <AgendaNavBar
-          currentDate={currentDate}
-          setCurrentDate={setCurrentDateWithTransition}
-          view="week"
-          isDayActive={isDayActive}
-          appointments={appointments}
-          onBlocksChanged={() => {
-            if (effectiveClinic?.id) {
-              // Usar el contexto especializado para obtener bloques
-              const startDate = format(weekDays[0], "yyyy-MM-dd");
-              const endDate = format(weekDays[6], "yyyy-MM-dd");
-              
-              getBlocksByDateRange(
-                String(effectiveClinic.id),
-                startDate,
-                endDate
-              ).then(blocks => {
-                if (Array.isArray(blocks)) {
-                  setScheduleBlocks(blocks);
-                }
-                setUpdateKey((prev) => prev + 1);
-              }).catch(error => {
-                console.error("Error al cargar bloques:", error);
-              });
-            }
-          }}
-        />
+      {/* Asegurar que el contenedor principal sea flex y ocupe toda la altura */}
+      <div className="flex flex-col h-full" style={transitionStyles}>
+        {/* El bloque de AgendaNavBar eliminado completamente */}
+
+        {/* Contenedor de la rejilla que debe tener scroll */}
+        <div className="flex-1 overflow-auto relative">
+            {renderWeeklyGrid()}
+            {/* Asegurarse de que CurrentTimeIndicator esté relacionado con este div si usa refs */}
+        </div>
         
-        {hasActiveExceptions && (
-          <div className="px-4 py-2 bg-amber-50 border-y border-amber-200 flex items-center gap-2">
-            <AlertTriangle className="w-5 h-5 text-amber-500" />
-            <div>
-              <p className="text-sm font-medium text-amber-800">
-                Horario especial activo
-              </p>
-              <p className="text-xs text-amber-700">
-                Hay excepciones al horario general configuradas para {activeExceptions.length === 1 ? 'el día' : 'los días'} {activeExceptions.map(e => format(e.date, "d 'de' MMMM", { locale: es })).join(', ')}.
-              </p>
-            </div>
-          </div>
+        {/* Renderizar diálogos aquí, no afectan el layout principal */}
+        {isSearchDialogOpen && (
+          <ClientSearchDialog
+            isOpen={isSearchDialogOpen}
+            onClose={() => setIsSearchDialogOpen(false)}
+            onClientSelect={handleClientSelect}
+            selectedTime={selectedSlot?.time}
+          />
         )}
 
-        {renderWeeklyGrid()}
+        {isAppointmentDialogOpen && selectedSlot && (
+          <AppointmentDialog
+            isOpen={isAppointmentDialogOpen}
+            onClose={() => setIsAppointmentDialogOpen(false)}
+            client={selectedClient}
+            selectedTime={selectedSlot?.time}
+            onSearchClick={() => {
+              setIsAppointmentDialogOpen(false)
+              setIsSearchDialogOpen(true)
+            }}
+            onNewClientClick={() => {
+              setIsAppointmentDialogOpen(false)
+              setIsNewClientDialogOpen(true)
+            }}
+            onDelete={handleDeleteAppointment}
+            onSave={handleSaveAppointment}
+            isEditing={!!selectedSlot}
+          />
+        )}
 
-        {/* Dialogs */}
-        <ClientSearchDialog
-          isOpen={isSearchDialogOpen}
-          onClose={() => setIsSearchDialogOpen(false)}
-          onClientSelect={handleClientSelect}
-          selectedTime={selectedSlot?.time}
-        />
-
-        <AppointmentDialog
-          isOpen={isAppointmentDialogOpen}
-          onClose={() => setIsAppointmentDialogOpen(false)}
-          client={selectedClient}
-          selectedTime={selectedSlot?.time}
-          onSearchClick={() => {
-            setIsAppointmentDialogOpen(false)
-            setIsSearchDialogOpen(true)
-          }}
-          onNewClientClick={() => {
-            setIsAppointmentDialogOpen(false)
-            setIsNewClientDialogOpen(true)
-          }}
-          onDelete={handleDeleteAppointment}
-          onSave={handleSaveAppointment}
-          isEditing={!!selectedSlot}
-        />
-
-        <NewClientDialog isOpen={isNewClientDialogOpen} onClose={() => setIsNewClientDialogOpen(false)} />
+        {isNewClientDialogOpen && (
+          <NewClientDialog 
+            isOpen={isNewClientDialogOpen} 
+            onClose={() => setIsNewClientDialogOpen(false)} 
+          />
+        )}
       </div>
+      
+      {/* BlockScheduleModal puede quedar fuera del contenedor flex principal */}
       <BlockScheduleModal
         open={isBlockModalOpen}
         onOpenChange={(open) => {
@@ -1149,10 +1099,10 @@ export default function WeeklyAgenda({
           }
         }}
         clinicConfig={{
-          openTime: clinicConfig.openTime || "09:00",
-          closeTime: clinicConfig.closeTime || "20:00",
-          weekendOpenTime: clinicConfig.weekendOpenTime || "09:00",
-          weekendCloseTime: clinicConfig.weekendCloseTime || "14:00",
+          openTime: openTime,
+          closeTime: closeTime,
+          weekendOpenTime: "09:00",
+          weekendCloseTime: "14:00",
         }}
       />
     </HydrationWrapper>

@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { CabinColorSelect } from "./cabin-color-select"
+import { Cabin } from '@prisma/client';
 
 interface CabinEditDialogProps {
   isOpen: boolean
@@ -15,40 +16,27 @@ interface CabinEditDialogProps {
   onSave: (cabin: Cabin) => void
 }
 
-interface Cabin {
-  id: number
-  code: string
-  name: string
-  color: string
-  isActive: boolean
-  order?: number
-}
+const defaultCabinData: Omit<Cabin, 'id' | 'clinicId' | 'systemId' | 'createdAt' | 'updatedAt'> & { id?: string } = {
+  code: "",
+  name: "",
+  color: "#5a1e9d",
+  isActive: true,
+  order: 0,
+};
 
 export function CabinEditDialog({ isOpen, onClose, cabin, onSave }: CabinEditDialogProps) {
-  const [formData, setFormData] = useState<Cabin>({
-    id: 0,
-    code: "",
-    name: "",
-    color: "#5a1e9d",
-    isActive: true,
-  })
+  const [formData, setFormData] = useState<Partial<Cabin>>(defaultCabinData);
 
   useEffect(() => {
     if (cabin) {
       setFormData(cabin)
     } else {
-      setFormData({
-        id: 0,
-        code: "",
-        name: "",
-        color: "#5a1e9d",
-        isActive: true,
-      })
+      setFormData(defaultCabinData)
     }
-  }, [cabin])
+  }, [cabin, isOpen])
 
   const handleSave = () => {
-    onSave(formData)
+    onSave(formData as Cabin)
     onClose()
   }
 
@@ -56,7 +44,7 @@ export function CabinEditDialog({ isOpen, onClose, cabin, onSave }: CabinEditDia
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>{cabin && cabin.id !== 0 ? "Editar cabina" : "Nueva cabina"}</DialogTitle>
+          <DialogTitle>{formData.id ? "Editar cabina" : "Nueva cabina"}</DialogTitle>
         </DialogHeader>
         <div className="grid gap-4 py-4">
           <div className="grid grid-cols-4 items-center gap-4">
@@ -65,8 +53,8 @@ export function CabinEditDialog({ isOpen, onClose, cabin, onSave }: CabinEditDia
             </Label>
             <Input
               id="code"
-              value={formData.code}
-              onChange={(e) => setFormData({ ...formData, code: e.target.value })}
+              value={formData.code ?? ''}
+              onChange={(e) => setFormData({ ...formData, code: e.target.value || null })}
               className="col-span-3"
             />
           </div>
@@ -87,10 +75,23 @@ export function CabinEditDialog({ isOpen, onClose, cabin, onSave }: CabinEditDia
             </Label>
             <div className="col-span-3">
               <CabinColorSelect
-                value={formData.color}
+                value={formData.color ?? '#ffffff'}
                 onValueChange={(value) => setFormData({ ...formData, color: value })}
               />
             </div>
+          </div>
+          <div className="grid grid-cols-4 items-center gap-4">
+            <Label htmlFor="order" className="text-right">
+              Orden
+            </Label>
+            <Input
+              id="order"
+              type="number"
+              value={formData.order ?? ''}
+              onChange={(e) => setFormData({ ...formData, order: e.target.value ? parseInt(e.target.value, 10) : null })}
+              className="col-span-3"
+              placeholder="Ej: 1, 2, 3..."
+            />
           </div>
           <div className="grid grid-cols-4 items-center gap-4">
             <Label htmlFor="status" className="text-right">

@@ -180,44 +180,64 @@ const MenuItemComponent = ({
   useEffect(() => {
     if ((isOpen || (isHovered && hasSubmenu)) && submenuRef.current && menuRef.current) {
       try {
-        const rect = menuRef.current.getBoundingClientRect();
-        submenuRef.current.style.display = "block";
-        submenuRef.current.style.position = "fixed";
-        submenuRef.current.style.left = `${rect.right}px`;
-        
-        // Modificación para el posicionamiento del submenú de configuración
-        if (item.id === "configuracion") {
-          // Calcular la posición óptima considerando el espacio disponible
-          const menuHeight = 450; // Altura aproximada del submenú
-          const windowHeight = window.innerHeight;
-          
-          // Si hay suficiente espacio debajo del elemento padre, alinear desde arriba
-          if (rect.bottom + 20 < windowHeight) {
-            submenuRef.current.style.top = `${rect.top}px`;
-          } else {
-            // Si no hay suficiente espacio, alinear desde abajo
-            // Garantizar que no se salga de la pantalla
-            const topPosition = Math.max(10, rect.bottom - menuHeight);
-            submenuRef.current.style.top = `${topPosition}px`;
-          }
+        const parentRect = menuRef.current.getBoundingClientRect();
+        const submenuElement = submenuRef.current;
+        const windowHeight = window.innerHeight;
+        const buffer = 10; // Margen para evitar tocar los bordes
+
+        // Estimar altura del submenú (ajustar si es necesario)
+        // Podemos hacerlo más dinámico si contamos los items, pero una estimación suele bastar.
+        const estimatedSubmenuHeight = Math.min(450, submenuElement.scrollHeight > 0 ? submenuElement.scrollHeight : 450);
+
+        // Calcular espacio disponible arriba y abajo
+        const spaceBelow = windowHeight - parentRect.bottom - buffer;
+        const spaceAbove = parentRect.top - buffer;
+
+        // Determinar posición vertical
+        let topPosition;
+        if (spaceBelow >= estimatedSubmenuHeight) {
+          // Cabe debajo: alinear con el top del padre
+          topPosition = parentRect.top;
+        } else if (spaceAbove >= estimatedSubmenuHeight) {
+          // No cabe abajo pero sí arriba: alinear con el bottom del padre hacia arriba
+          topPosition = parentRect.bottom - estimatedSubmenuHeight;
         } else {
-          // Para otros menús, mantener el comportamiento original
-          submenuRef.current.style.top = `${rect.top}px`;
+          // No cabe bien en ningún lado: intentar centrar o ponerlo donde más quepa
+          // Opción: Posicionar arriba y limitar altura máxima
+          topPosition = buffer;
+          // (La altura máxima se ajustará después)
         }
-        
-        submenuRef.current.style.zIndex = "99999";
-        submenuRef.current.style.backgroundColor = "white";
-        submenuRef.current.style.border = "1px solid #e5e7eb";
-        submenuRef.current.style.borderRadius = "0.375rem";
-        submenuRef.current.style.boxShadow = "0 4px 6px rgba(0,0,0,0.1)";
-        submenuRef.current.style.minWidth = "16rem";
-        submenuRef.current.style.maxHeight = item.id === "configuracion" ? "450px" : "400px";
-        submenuRef.current.style.overflowY = "auto";
-        submenuRef.current.style.visibility = "visible";
-        submenuRef.current.style.opacity = "1";
+
+        // Asegurar que no se salga por arriba
+        topPosition = Math.max(buffer, topPosition);
+
+        // Calcular altura máxima permitida
+        const maxHeight = windowHeight - topPosition - buffer;
+
+        // Aplicar estilos
+        submenuElement.style.display = "block";
+        submenuElement.style.position = "fixed";
+        submenuElement.style.left = `${parentRect.right + 4}px`; // Añadir pequeño espacio
+        submenuElement.style.top = `${topPosition}px`;
+        submenuElement.style.maxHeight = `${maxHeight}px`;
+        submenuElement.style.overflowY = "auto";
+        submenuElement.style.zIndex = "99999";
+        submenuElement.style.backgroundColor = "white";
+        submenuElement.style.border = "1px solid #e5e7eb";
+        submenuElement.style.borderRadius = "0.375rem";
+        submenuElement.style.boxShadow = "0 4px 6px rgba(0,0,0,0.1)";
+        submenuElement.style.minWidth = "16rem";
+        submenuElement.style.visibility = "visible";
+        submenuElement.style.opacity = "1";
+
       } catch (error) {
         console.error("Error al actualizar el estilo del submenú:", error);
       }
+    } else if (submenuRef.current && !(isOpen || (isHovered && hasSubmenu))) {
+      // Ocultar si no está abierto ni hovered
+      submenuRef.current.style.display = 'none';
+      submenuRef.current.style.visibility = 'hidden';
+      submenuRef.current.style.opacity = '0';
     }
   }, [isOpen, isHovered, isCollapsed, hasSubmenu, item.id]);
 

@@ -1,11 +1,11 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Search, ChevronUp, ChevronDown, Edit } from "lucide-react"
+import { Search, ChevronUp, ChevronDown, Edit, AlertTriangle, CalendarRange } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useRouter } from "next/navigation"
 import { useUser } from "@/contexts/user-context"
@@ -15,39 +15,87 @@ import { toast } from "@/components/ui/use-toast"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
+import { ConflictoHorario } from "@/services/exceptions-conflict-service"
+import { tieneExcepcionesActivas, contarExcepcionesActivas } from "@/services/exceptions-user-service"
 
-type SortField = "nombre" | "email" | "perfil"
+// Importar el tipo Usuario para usarlo directamente
+import type { Usuario } from "@/contexts/user-context";
+
+// Actualizar SortField para usar los nuevos campos
+type SortField = "lastName" | "firstName" | "email" // Quitar "nombre" y "perfil"
 type SortDirection = "asc" | "desc"
+
+interface UserRowIndicatorsProps {
+  conflictos?: number;
+  excepciones?: number;
+}
+
+// Componente para mostrar indicadores en la fila de usuario
+function UserRowIndicators({ conflictos = 0, excepciones = 0 }: UserRowIndicatorsProps) {
+  if (conflictos <= 0 && excepciones <= 0) return null;
+  
+  return (
+    <div className="flex items-center gap-2 ml-2">
+      {conflictos > 0 && (
+        <Badge variant="outline" className="text-amber-600 bg-amber-50 border-amber-200">
+          <AlertTriangle className="w-3 h-3 mr-1" />
+          {conflictos} {conflictos === 1 ? 'conflicto' : 'conflictos'}
+        </Badge>
+      )}
+      
+      {excepciones > 0 && (
+        <Badge variant="outline" className="text-blue-600 border-blue-200 bg-blue-50">
+          <CalendarRange className="w-3 h-3 mr-1" />
+          {excepciones} {excepciones === 1 ? 'excepción' : 'excepciones'}
+        </Badge>
+      )}
+    </div>
+  );
+}
 
 interface UsuariosClinicaProps {
   clinicId: string;
   onNewUser?: () => void;
   showNewUserDialog?: boolean;
   onCloseNewUserDialog?: () => void;
+  userConflicts?: Record<string, number>; // Número de conflictos por usuario
 }
 
-export function UsuariosClinica({ clinicId, onNewUser, showNewUserDialog = false, onCloseNewUserDialog }: UsuariosClinicaProps) {
+export function UsuariosClinica({ 
+  clinicId, 
+  onNewUser, 
+  showNewUserDialog = false, 
+  onCloseNewUserDialog,
+  userConflicts = {} // Valor por defecto vacío
+}: UsuariosClinicaProps) {
   const router = useRouter()
   const [searchTerm, setSearchTerm] = useState("")
   const [showDisabled, setShowDisabled] = useState(false)
-  const [sortField, setSortField] = useState<SortField>("nombre")
+  const [sortField, setSortField] = useState<SortField>("lastName") // Default a lastName
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc")
   const [localShowNewUserDialog, setLocalShowNewUserDialog] = useState(false)
+  const [userExceptions, setUserExceptions] = useState<Record<string, number>>({})
   
-  // Form fields for new user
-  const [nombre, setNombre] = useState("")
+  // Form fields for new user - Refactorizado
+  // const [nombre, setNombre] = useState("") // <- Eliminar
+  const [firstName, setFirstName] = useState("") // <- Añadir
+  const [lastName, setLastName] = useState("")   // <- Añadir
   const [email, setEmail] = useState("")
   const [confirmEmail, setConfirmEmail] = useState("")
-  const [prefijo, setPrefijo] = useState("")
-  const [telefono, setTelefono] = useState("")
-  const [perfil, setPerfil] = useState("")
+  // const [prefijo, setPrefijo] = useState("") // <- Eliminar si no está en payload
+  const [telefono, setTelefono] = useState("") // <- Usar 'phone'
+  // const [perfil, setPerfil] = useState("")   // <- Eliminar (manejar roles por separado)
+  const [password, setPassword] = useState("") // <- Añadir
 
   const { usuarios, toggleUsuarioStatus, createUsuario, getUsuariosByClinica } = useUser()
   const { clinics, getClinicaById } = useClinic()
   
-  const [clinicaUsuarios, setClinicaUsuarios] = useState<any[]>([])
+  const [clinicaUsuarios, setClinicaUsuarios] = useState<Usuario[]>([]) // Usar el tipo Usuario
   const [clinica, setClinica] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+
+  // Ref para rastrear el estado previo del diálogo
+  const prevDialogStateRef = useRef(showNewUserDialog || localShowNewUserDialog);
 
   // Cargar datos de la clínica y sus usuarios
   useEffect(() => {
@@ -66,8 +114,19 @@ export function UsuariosClinica({ clinicId, onNewUser, showNewUserDialog = false
         setClinica(clinicaData)
         
         // Cargar usuarios de la clínica
-        const usuariosClinica = await getUsuariosByClinica(clinicId)
-        setClinicaUsuarios(usuariosClinica)
+        const usuariosData = await getUsuariosByClinica(clinicId)
+        setClinicaUsuarios(usuariosData)
+        
+        // Verificar excepciones activas para cada usuario
+        const excepciones = usuariosData.reduce((acc, usuario) => {
+          const numExcepciones = contarExcepcionesActivas(usuario as any);
+          if (numExcepciones > 0) {
+            acc[usuario.id] = numExcepciones;
+          }
+          return acc;
+        }, {} as Record<string, number>);
+        
+        setUserExceptions(excepciones);
         setLoading(false)
       } catch (error) {
         console.error("Error al cargar datos:", error)
@@ -82,22 +141,40 @@ export function UsuariosClinica({ clinicId, onNewUser, showNewUserDialog = false
     loadData()
   }, [clinicId, getClinicaById, getUsuariosByClinica])
   
-  // Actualizar la lista cuando showNewUserDialog cambia (probablemente después de cerrar el diálogo)
+  // Refactorizado: useEffect para recargar usuarios SOLO al cerrar el diálogo
   useEffect(() => {
-    if (!showNewUserDialog && !localShowNewUserDialog) {
-      // Recargar usuarios cuando se cierra el diálogo
+    const isDialogOpen = showNewUserDialog || localShowNewUserDialog;
+    // Comprobar si el diálogo acaba de cerrarse (estado previo era true, actual es false)
+    if (prevDialogStateRef.current && !isDialogOpen) {
+      console.log("[UsuariosClinica] Dialog closed, reloading users...");
       const reloadUsers = async () => {
         try {
-          const usuariosClinica = await getUsuariosByClinica(clinicId)
-          setClinicaUsuarios(usuariosClinica)
+          // Usar la función del contexto directamente aquí
+          const usuariosData = await getUsuariosByClinica(clinicId) 
+          setClinicaUsuarios(usuariosData)
+          
+          // Actualizar las excepciones activas
+          const excepciones = usuariosData.reduce((acc, usuario) => {
+            const numExcepciones = contarExcepcionesActivas(usuario as any);
+            if (numExcepciones > 0) {
+              acc[usuario.id] = numExcepciones;
+            }
+            return acc;
+          }, {} as Record<string, number>);
+          
+          setUserExceptions(excepciones);
         } catch (error) {
-          console.error("Error al recargar usuarios:", error)
+          console.error("Error al recargar usuarios después de cerrar diálogo:", error)
         }
       }
       
-      reloadUsers()
+      reloadUsers();
     }
-  }, [showNewUserDialog, localShowNewUserDialog, getUsuariosByClinica, clinicId])
+    // Actualizar la referencia con el estado actual para la próxima comprobación
+    prevDialogStateRef.current = isDialogOpen;
+
+  // Dependencias: Solo necesitamos re-evaluar cuando el estado del diálogo cambie
+  }, [showNewUserDialog, localShowNewUserDialog, clinicId, getUsuariosByClinica]); // Mantenemos getUsuariosByClinica por si acaso cambia, pero el if interno controla la ejecución
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -110,13 +187,24 @@ export function UsuariosClinica({ clinicId, onNewUser, showNewUserDialog = false
 
   const getSortIcon = (field: SortField) => {
     if (sortField !== field) return null
-    return sortDirection === "asc" ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />
+    return sortDirection === "asc" ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />
   }
 
   const sortedUsuarios = [...clinicaUsuarios].sort((a, b) => {
     const modifier = sortDirection === "asc" ? 1 : -1
-    if (a[sortField] < b[sortField]) return -1 * modifier
-    if (a[sortField] > b[sortField]) return 1 * modifier
+
+    // Manejar campos potencialmente nulos o undefined
+    const valA = a[sortField] ?? '';
+    const valB = b[sortField] ?? '';
+
+    if (typeof valA === 'string' && typeof valB === 'string') {
+      return valA.localeCompare(valB) * modifier;
+    }
+
+    // Fallback para otros tipos (aunque aquí deberían ser string)
+    if (valA < valB) return -1 * modifier
+    if (valA > valB) return 1 * modifier
+
     return 0
   })
 
@@ -150,13 +238,14 @@ export function UsuariosClinica({ clinicId, onNewUser, showNewUserDialog = false
   const filteredUsuarios = sortedUsuarios.filter(
     (usuario) => {
       // Primero filtramos por término de búsqueda
+      const searchLower = searchTerm.toLowerCase();
       const matchesSearch = 
-        usuario.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        usuario.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        usuario.perfil.toLowerCase().includes(searchTerm.toLowerCase());
+        (usuario.firstName ?? '').toLowerCase().includes(searchLower) ||
+        (usuario.lastName ?? '').toLowerCase().includes(searchLower) ||
+        (usuario.email ?? '').toLowerCase().includes(searchLower);
       
       // Luego filtramos por estado (activo/inactivo)
-      const matchesStatus = showDisabled ? true : usuario.isActive;
+      const matchesStatus = showDisabled ? true : (usuario.isActive ?? true); // Default a true si isActive es null/undefined
       
       return matchesSearch && matchesStatus;
     }
@@ -164,10 +253,19 @@ export function UsuariosClinica({ clinicId, onNewUser, showNewUserDialog = false
 
   const handleCreateUser = async () => {
     // Validaciones
-    if (!nombre.trim()) {
+    if (!firstName.trim()) {
       toast({
         title: "Error",
         description: "El nombre es obligatorio",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!lastName.trim()) {
+      toast({
+        title: "Error",
+        description: "El apellido es obligatorio",
         variant: "destructive",
       });
       return;
@@ -191,53 +289,66 @@ export function UsuariosClinica({ clinicId, onNewUser, showNewUserDialog = false
       return;
     }
 
-    if (!perfil) {
+    if (!password) {
       toast({
         title: "Error",
-        description: "Debe seleccionar un perfil",
+        description: "La contraseña es obligatoria",
         variant: "destructive",
       });
       return;
     }
 
     try {
-      const newUser = {
-        nombre,
-        email,
-        prefijoTelefonico: prefijo,
-        telefono,
-        perfil,
-        clinicasIds: [clinicId], // Asignamos automáticamente la clínica actual
-        isActive: true,
-        fechaCreacion: new Date().toISOString()
+      // Refactorizado: Crear el payload del nuevo usuario
+      // Asegúrate de que los nombres de campo coincidan con el esquema Prisma
+      // y las expectativas de tu API/función `createUsuario`.
+      const newUserPayload = {
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        email: email.trim().toLowerCase(),
+        phone: telefono.trim() || null, // Usar 'phone', asegurar que sea null si está vacío
+        password: password, // Enviar la contraseña
+        // profileImageUrl: null, // Comentado/Eliminado - No esperado por el tipo Omit
+        isActive: true, // Por defecto activo
+        // roles: [], // Manejar roles por separado si es necesario
+        clinicasIds: [clinicId], // Asignar a la clínica actual por defecto
+        systemId: clinica?.systemId || "" // Asegurar que systemId se incluya
       };
 
-      await createUsuario(newUser);
-      
-      // Actualizar la lista local de usuarios
-      const updatedUsuarios = await getUsuariosByClinica(clinicId);
-      setClinicaUsuarios(updatedUsuarios);
-      
-      toast({
-        title: "Usuario creado",
-        description: "El usuario ha sido creado correctamente",
-      });
-      
-      // Limpiar formulario
-      setNombre("");
-      setEmail("");
-      setConfirmEmail("");
-      setPrefijo("");
-      setTelefono("");
-      setPerfil("");
-      
-      // Cerrar el diálogo de forma controlada
-      if (onCloseNewUserDialog) {
-        onCloseNewUserDialog();
-      } else {
-        setLocalShowNewUserDialog(false);
+      // Validar que tenemos systemId
+      if (!newUserPayload.systemId) {
+         toast({ title: "Error", description: "No se pudo determinar el ID del sistema para crear el usuario.", variant: "destructive" });
+         return;
       }
-      
+
+      // Llamar a la función del contexto para crear el usuario
+      const createdUser = await createUsuario(newUserPayload as any); // Usar 'as any' temporalmente si hay problemas de tipo
+
+      if (createdUser) {
+        toast({
+          title: "Usuario creado",
+          description: "El usuario ha sido creado correctamente",
+        });
+        
+        // Actualizar la lista local de usuarios
+        const updatedUsuarios = await getUsuariosByClinica(clinicId);
+        setClinicaUsuarios(updatedUsuarios);
+        
+        // Limpiar formulario
+        setFirstName("");
+        setLastName("");
+        setEmail("");
+        setConfirmEmail("");
+        setTelefono("");
+        setPassword("");
+        
+        // Cerrar el diálogo de forma controlada
+        if (onCloseNewUserDialog) {
+          onCloseNewUserDialog();
+        } else {
+          setLocalShowNewUserDialog(false);
+        }
+      }
     } catch (error) {
       console.error("Error al crear usuario:", error);
       toast({
@@ -261,7 +372,7 @@ export function UsuariosClinica({ clinicId, onNewUser, showNewUserDialog = false
       >
         {clinica.prefix}
         {!clinica.isActive && (
-          <span className="ml-1 text-red-500 text-xs">•</span>
+          <span className="ml-1 text-xs text-red-500">•</span>
         )}
       </Badge>
     );
@@ -274,10 +385,27 @@ export function UsuariosClinica({ clinicId, onNewUser, showNewUserDialog = false
   // Usar el diálogo controlado externamente o el local
   const isDialogOpen = showNewUserDialog || localShowNewUserDialog;
 
+  // Función para mostrar conflictos de usuario
+  const handleShowUserConflicts = (userId: string) => {
+    console.log(`Ver conflictos/excepciones del usuario: ${userId}`);
+    
+    // Aquí mostraríamos un diálogo con los detalles de conflictos y excepciones
+    // Por ahora solo imprimimos en consola para depuración
+    const numConflictos = userConflicts[userId] || 0;
+    const numExcepciones = userExceptions[userId] || 0;
+    
+    console.log(`Conflictos: ${numConflictos}, Excepciones: ${numExcepciones}`);
+    
+    toast({
+      title: "Información de usuario",
+      description: `Este usuario tiene ${numConflictos} conflictos y ${numExcepciones} excepciones activas.`,
+    });
+  };
+
   return (
     <div>
       {/* Add filter above search bar */}
-      <div className="mb-4 flex justify-end">
+      <div className="flex justify-end mb-4">
         <div className="flex items-center space-x-2">
           <Checkbox 
             id="showDisabled" 
@@ -289,7 +417,7 @@ export function UsuariosClinica({ clinicId, onNewUser, showNewUserDialog = false
       </div>
 
       <div className="relative mb-6">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+        <Search className="absolute w-4 h-4 text-gray-500 -translate-y-1/2 left-3 top-1/2" />
         <Input
           placeholder="Buscador"
           value={searchTerm}
@@ -298,14 +426,20 @@ export function UsuariosClinica({ clinicId, onNewUser, showNewUserDialog = false
         />
       </div>
 
-      <div className="rounded-md border">
+      <div className="border rounded-md">
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
-              <TableHead className="cursor-pointer" onClick={() => handleSort("nombre")}>
+              <TableHead className="cursor-pointer" onClick={() => handleSort("firstName")}>
                 <div className="flex items-center gap-2">
                   Nombre de usuario
-                  {getSortIcon("nombre")}
+                  {getSortIcon("firstName")}
+                </div>
+              </TableHead>
+              <TableHead className="cursor-pointer" onClick={() => handleSort("lastName")}>
+                <div className="flex items-center gap-2">
+                  Apellidos
+                  {getSortIcon("lastName")}
                 </div>
               </TableHead>
               <TableHead className="cursor-pointer" onClick={() => handleSort("email")}>
@@ -314,56 +448,76 @@ export function UsuariosClinica({ clinicId, onNewUser, showNewUserDialog = false
                   {getSortIcon("email")}
                 </div>
               </TableHead>
-              <TableHead className="w-[100px] cursor-pointer text-center">
-                Restringir IP
-              </TableHead>
-              <TableHead className="cursor-pointer" onClick={() => handleSort("perfil")}>
-                <div className="flex items-center gap-2">
-                  Perfil
-                  {getSortIcon("perfil")}
-                </div>
-              </TableHead>
               <TableHead className="w-[100px] text-right">Acciones</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filteredUsuarios.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-4 text-gray-500">
+                <TableCell colSpan={4} className="py-4 text-center text-gray-500">
                   No hay usuarios asignados a esta clínica
                 </TableCell>
               </TableRow>
             ) : (
-              filteredUsuarios.map((usuario, index) => (
-                <TableRow key={usuario.id} className={cn(index % 2 === 0 ? "bg-purple-50/50" : "")}>
-                  <TableCell>{usuario.nombre}</TableCell>
-                  <TableCell>{usuario.email}</TableCell>
-                  <TableCell className="text-center">-</TableCell>
-                  <TableCell>{usuario.perfil}</TableCell>
-                  <TableCell>
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-purple-600 hover:text-purple-700 hover:bg-purple-100"
-                        onClick={() => toggleUserStatus(String(usuario.id))}
-                      >
-                        <span className={`px-2 py-1 text-xs rounded-full ${usuario.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                          {usuario.isActive ? 'Activo' : 'Inactivo'}
-                        </span>
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-purple-600 hover:text-purple-700 hover:bg-purple-100"
-                        onClick={() => router.push(`/configuracion/usuarios/${usuario.id}?returnTo=/configuracion/clinicas/${clinicId}&tab=usuarios`)}
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
+              filteredUsuarios.map((usuario, index) => {
+                const numConflictos = userConflicts[usuario.id] || 0;
+                const numExcepciones = userExceptions[usuario.id] || 0;
+                const tieneIndicadores = numConflictos > 0 || numExcepciones > 0;
+                
+                return (
+                  <TableRow 
+                    key={usuario.id}
+                    className={tieneIndicadores ? "bg-amber-50/30" : ""}
+                  >
+                    <TableCell className="flex items-center font-medium">
+                      {`${usuario.firstName ?? ''} ${usuario.lastName ?? ''}`.trim() || 'Usuario sin nombre'}
+                      <UserRowIndicators 
+                        conflictos={numConflictos} 
+                        excepciones={numExcepciones}
+                      />
+                    </TableCell>
+                    <TableCell>{usuario.email}</TableCell>
+                    <TableCell className="space-x-1 text-right">
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="w-8 h-8 text-purple-600 hover:text-purple-700 hover:bg-purple-100"
+                          onClick={() => toggleUserStatus(String(usuario.id))}
+                        >
+                          <span className={`px-2 py-1 text-xs rounded-full ${usuario.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                            {usuario.isActive ? 'Activo' : 'Inactivo'}
+                          </span>
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="w-8 h-8 text-purple-600 hover:text-purple-700 hover:bg-purple-100"
+                          onClick={() => router.push(`/configuracion/usuarios/${usuario.id}?returnTo=/configuracion/clinicas/${clinicId}&tab=usuarios`)}
+                        >
+                          <Edit className="w-4 h-4" />
+                        </Button>
+                        
+                        {tieneIndicadores && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className={`h-8 w-8 ${numConflictos > 0 ? 'text-amber-500' : 'text-blue-500'}`}
+                            onClick={() => handleShowUserConflicts(usuario.id.toString())}
+                          >
+                            {numConflictos > 0 ? (
+                              <AlertTriangle className="w-4 h-4" />
+                            ) : (
+                              <CalendarRange className="w-4 h-4" />
+                            )}
+                            <span className="sr-only">Ver detalles</span>
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>
@@ -392,18 +546,28 @@ export function UsuariosClinica({ clinicId, onNewUser, showNewUserDialog = false
             <div className="space-y-2">
               <Label className="font-medium">Clínica</Label>
               <div className="flex items-center p-3 border rounded-md bg-gray-50">
-                <Badge variant="outline" className="text-sm px-2 py-1">
+                <Badge variant="outline" className="px-2 py-1 text-sm">
                   {clinica?.prefix} - {clinica?.name}
                 </Badge>
               </div>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="nombre" className="font-medium">Nombre</Label>
+              <Label htmlFor="firstName" className="font-medium">Nombre</Label>
               <Input 
-                id="nombre" 
-                value={nombre}
-                onChange={(e) => setNombre(e.target.value)}
+                id="firstName" 
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
+                className="h-10"
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="lastName" className="font-medium">Apellidos</Label>
+              <Input 
+                id="lastName" 
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
                 className="h-10"
               />
             </div>
@@ -430,57 +594,29 @@ export function UsuariosClinica({ clinicId, onNewUser, showNewUserDialog = false
               />
             </div>
             
-            <div className="flex gap-4">
-              <div className="w-1/3 space-y-2">
-                <Label htmlFor="prefijo" className="font-medium">Prefijo</Label>
-                <Select onValueChange={setPrefijo}>
-                  <SelectTrigger id="prefijo" className="h-10">
-                    <SelectValue placeholder="Seleccione" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ES">ES (+34)</SelectItem>
-                    <SelectItem value="MA">MA (+212)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              
-              <div className="w-2/3 space-y-2">
-                <Label htmlFor="telefono" className="font-medium">Teléfono</Label>
-                <Input 
-                  id="telefono" 
-                  value={telefono}
-                  onChange={(e) => setTelefono(e.target.value)}
-                  className="h-10"
-                />
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="telefono" className="font-medium">Teléfono</Label>
+              <Input 
+                id="telefono" 
+                value={telefono}
+                onChange={(e) => setTelefono(e.target.value)}
+                className="h-10"
+              />
             </div>
             
             <div className="space-y-2">
-              <Label htmlFor="perfil" className="font-medium">Perfil</Label>
-              <Select onValueChange={setPerfil}>
-                <SelectTrigger id="perfil" className="h-10">
-                  <SelectValue placeholder="Seleccione una opción" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Administrador">Administrador</SelectItem>
-                  <SelectItem value="Central">Central</SelectItem>
-                  <SelectItem value="Contabilidad">Contabilidad</SelectItem>
-                  <SelectItem value="Doctor Administrador">Doctor Administrador</SelectItem>
-                  <SelectItem value="Encargado">Encargado</SelectItem>
-                  <SelectItem value="Gerente de zona">Gerente de zona</SelectItem>
-                  <SelectItem value="Marketing">Marketing</SelectItem>
-                  <SelectItem value="Operador Call Center">Operador Call Center</SelectItem>
-                  <SelectItem value="Personal sin acceso">Personal sin acceso</SelectItem>
-                  <SelectItem value="Personal">Personal</SelectItem>
-                  <SelectItem value="Profesional">Profesional</SelectItem>
-                  <SelectItem value="Recepción">Recepción</SelectItem>
-                  <SelectItem value="Supervisor Call Center">Supervisor Call Center</SelectItem>
-                </SelectContent>
-              </Select>
+              <Label htmlFor="password">Contraseña</Label>
+              <Input 
+                id="password" 
+                type="password" 
+                value={password}
+                onChange={(e) => setPassword(e.target.value)} 
+                className="h-10"
+              />
             </div>
           </div>
 
-          <DialogFooter className="pt-4 border-t flex justify-end gap-3">
+          <DialogFooter className="flex justify-end gap-3 pt-4 border-t">
             <Button 
               variant="outline" 
               onClick={() => {
@@ -496,7 +632,7 @@ export function UsuariosClinica({ clinicId, onNewUser, showNewUserDialog = false
             </Button>
             <Button 
               onClick={handleCreateUser}
-              className="px-5 bg-purple-600 hover:bg-purple-700 text-white"
+              className="px-5 text-white bg-purple-600 hover:bg-purple-700"
             >
               Guardar
             </Button>

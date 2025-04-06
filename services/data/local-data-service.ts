@@ -4,28 +4,27 @@
  * En producción, se reemplazará por una implementación que utilice una API real
  */
 
-import { DataService } from './data-service';
-import {
-  BaseEntity,
+import type { DataService, Client } from './data-service.ts';
+import type {
+  // BaseEntity, // Eliminar temporalmente
   Clinica,
   EntityDocument,
   EntityImage,
   Equipo,
   FamiliaTarifa,
+  HorarioDia,
   ScheduleBlock,
   Servicio,
   Tarifa,
   TipoIVA,
   Producto,
   Consumo,
-  Bono,
-  Usuario
-} from './models/interfaces';
-import {
-  Client
-} from './data-service';
-// Importar los datos iniciales desde mockData.ts
-import { initialMockData } from '@/mockData';
+  // Bono, // Eliminar temporalmente
+  Usuario,
+  ExcepcionHorariaUsuario
+} from './models/interfaces.ts';
+// Eliminar importación problemática de mockData
+// import { initialMockData } from '../../mockData.js';
 
 /**
  * Generador de IDs secuenciales para entidades
@@ -81,28 +80,52 @@ export class LocalDataService implements DataService {
 
   /**
    * Inicializa el servicio de datos cargando los datos iniciales en memoria
-   * desde mockData.ts
+   * desde localStorage o mockData.ts si localStorage está vacío
    */
   async initialize(): Promise<void> {
     if (this.initialized) return;
 
     try {
-      // Cargar datos iniciales desde mockData haciendo una copia profunda
-      this.data = JSON.parse(JSON.stringify(initialMockData));
+      // 1. Intentar cargar desde localStorage primero
+      let rawData;
+      let dataLoaded = false;
+      
+      // Verificar si estamos en un entorno con localStorage (navegador)
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const storedData = localStorage.getItem('localAppData');
+        if (storedData) {
+          try {
+            rawData = JSON.parse(storedData);
+            console.log('[LocalDataService] Datos cargados desde localStorage.');
+            dataLoaded = true;
+          } catch (e) {
+            console.warn('[LocalDataService] Error al parsear datos del localStorage:', e);
+            // Si hay error, se usará mockData como respaldo
+          }
+        }
+      }
+      
+      // 2. Si no hay datos en localStorage o hubo error, usar initialMockData
+      if (!dataLoaded) {
+        // Cargar datos iniciales desde mockData haciendo una copia profunda
+        rawData = JSON.parse(JSON.stringify(initialMockData));
+        console.log('[LocalDataService] Datos cargados desde initialMockData (localStorage vacío o inaccesible).');
+      }
       
       // Inicializar usuarios si no existen en los datos iniciales
-      if (!this.data.usuarios) {
-        this.data.usuarios = [];
+      if (!rawData.usuarios) {
+        rawData.usuarios = [];
         
         // Crear algunos usuarios de ejemplo
-        this.data.usuarios = [
+        rawData.usuarios = [
           {
             id: "1",
             nombre: "Houda",
             email: "houda@multilaser.ma",
             perfil: "Personal",
             clinicasIds: ["1"],
-            isActive: true
+            isActive: true,
+            excepciones: []
           },
           {
             id: "2",
@@ -110,7 +133,8 @@ export class LocalDataService implements DataService {
             email: "islam.alaoui@multilaser.ma",
             perfil: "Central",
             clinicasIds: ["1", "2", "3"],
-            isActive: true
+            isActive: true,
+            excepciones: []
           },
           {
             id: "3",
@@ -118,7 +142,8 @@ export class LocalDataService implements DataService {
             email: "latifa@multilaser.ma",
             perfil: "Personal",
             clinicasIds: ["2"],
-            isActive: true
+            isActive: true,
+            excepciones: []
           },
           {
             id: "4",
@@ -126,7 +151,8 @@ export class LocalDataService implements DataService {
             email: "is.organizare@gmail.com",
             perfil: "Administrador",
             clinicasIds: ["1", "2", "3"],
-            isActive: true
+            isActive: true,
+            excepciones: []
           },
           {
             id: "5",
@@ -134,7 +160,8 @@ export class LocalDataService implements DataService {
             email: "casblaxic@gmail.com",
             perfil: "Administrador",
             clinicasIds: ["1", "2", "3"],
-            isActive: true
+            isActive: true,
+            excepciones: []
           },
           {
             id: "6",
@@ -142,7 +169,8 @@ export class LocalDataService implements DataService {
             email: "bouregbasalma7@gmail.com",
             perfil: "Personal",
             clinicasIds: ["3"],
-            isActive: true
+            isActive: true,
+            excepciones: []
           },
           {
             id: "7",
@@ -150,13 +178,57 @@ export class LocalDataService implements DataService {
             email: "yasmine@multilaser.ma",
             perfil: "Personal",
             clinicasIds: ["1"],
-            isActive: true
+            isActive: true,
+            excepciones: []
           }
         ];
       }
       
+      // ----> Procesar usuarios para convertir objetos a Map y asegurar arrays <----
+      rawData.usuarios = rawData.usuarios.map((user: any) => {
+        const processedUser = { ...user };
+
+        // Convertir horarios de objeto a Map
+        if (typeof processedUser.horarios === 'object' && processedUser.horarios !== null && !(processedUser.horarios instanceof Map)) {
+          try {
+            processedUser.horarios = new Map<string, HorarioDia[]>(Object.entries(processedUser.horarios));
+          } catch (e) {
+            console.warn(`Error convirtiendo horarios para usuario ${processedUser.id}, usando Map vacío.`);
+            processedUser.horarios = new Map<string, HorarioDia[]>();
+          }
+        } else if (!processedUser.horarios) {
+           processedUser.horarios = new Map<string, HorarioDia[]>();
+        }
+        
+        // Convertir habilidades de objeto a Map
+        if (typeof processedUser.habilidadesProfesionales === 'object' && processedUser.habilidadesProfesionales !== null && !(processedUser.habilidadesProfesionales instanceof Map)) {
+           try {
+             processedUser.habilidadesProfesionales = new Map<string, string[]>(Object.entries(processedUser.habilidadesProfesionales));
+           } catch (e) {
+             console.warn(`Error convirtiendo habilidades para usuario ${processedUser.id}, usando Map vacío.`);
+             processedUser.habilidadesProfesionales = new Map<string, string[]>();
+           }
+        } else if (!processedUser.habilidadesProfesionales) {
+            processedUser.habilidadesProfesionales = new Map<string, string[]>();
+        }
+
+        // Asegurar que excepciones es un array
+        if (!Array.isArray(processedUser.excepciones)) {
+          processedUser.excepciones = [];
+        }
+
+        return processedUser;
+      });
+      // ----> Fin del procesamiento <----
+
+      this.data = rawData;
       this.initialized = true;
-      console.log('LocalDataService: Inicializado con copia de initialMockData importado.');
+      console.log('LocalDataService: Inicializado y procesado.');
+      
+      // Si cargamos desde initialMockData, guardar en localStorage para futuros usos
+      if (!dataLoaded && typeof window !== 'undefined' && window.localStorage) {
+        this.saveData(); // Guardar los datos iniciales en localStorage
+      }
     } catch (error) {
       console.error('Error al inicializar LocalDataService:', error);
       // Mantener datos vacíos en caso de error
@@ -182,22 +254,48 @@ export class LocalDataService implements DataService {
   }
 
   /**
-   * Guarda los datos (simulado, solo opera en memoria)
+   * Guarda los datos en localStorage para persistencia entre recargas
    */
   private saveData(): void {
-    // En esta implementación local, no hay persistencia real más allá de la memoria.
-    // Si se quisiera guardar en localStorage o un archivo, se haría aquí.
-    console.log('[LocalDataService] Datos actualizados en memoria (no persistente).');
+    try {
+      // Solo intentar guardar si estamos en un entorno con localStorage (navegador)
+      if (typeof window !== 'undefined' && window.localStorage) {
+        // Crear una copia para serializar (los Map no son serializables directamente)
+        const dataCopy = JSON.parse(JSON.stringify(this.data, (key, value) => {
+          // Convertir Map a objeto para serialización
+          if (value instanceof Map) {
+            return Object.fromEntries(value);
+          }
+          return value;
+        }));
+        
+        // Guardar en localStorage
+        localStorage.setItem('localAppData', JSON.stringify(dataCopy));
+        console.log('[LocalDataService] Datos guardados en localStorage correctamente.');
+      } else {
+        console.log('[LocalDataService] localStorage no disponible. Datos actualizados solo en memoria.');
+      }
+    } catch (error) {
+      console.error('[LocalDataService] Error al guardar en localStorage:', error);
+      // Continuar sin errores aunque la persistencia falle
+    }
   }
 
   /**
-   * Limpia todos los datos y fuerza la recarga de los datos iniciales
+   * Limpia todos los datos del localStorage y fuerza la recarga de los datos iniciales
    */
   async clearStorageAndReloadData(): Promise<void> {
     try {
+      // Limpiar localStorage si está disponible
+      if (typeof window !== 'undefined' && window.localStorage) {
+        localStorage.removeItem('localAppData');
+        console.log('[LocalDataService] Datos eliminados de localStorage.');
+      }
+      
       // Reiniciar los datos cargando de nuevo la copia inicial
       this.data = JSON.parse(JSON.stringify(initialMockData));
-      console.log('[LocalDataService] Datos reiniciados a partir de initialMockData.');
+      this.saveData(); // Guardar los datos reiniciados en localStorage
+      console.log('[LocalDataService] Datos reiniciados a partir de initialMockData y guardados en localStorage.');
     } catch (error) {
       console.error('Error al reiniciar los datos locales:', error);
       throw error;
@@ -1611,22 +1709,49 @@ export class LocalDataService implements DataService {
     return JSON.parse(JSON.stringify(newUsuario)); // Devolver copia
   }
 
-  async updateUsuario(id: string, usuario: Partial<Usuario>): Promise<Usuario | null> {
+  async updateUsuario(id: string, usuarioUpdate: Partial<Usuario>): Promise<Usuario | null> {
+    // --- DIAGNÓSTICO: Verificar datos RECIBIDOS por el servicio ---
+    console.log(`[LocalDataService] updateUsuario RECIBIDO para id ${id}. Datos:`, JSON.stringify(usuarioUpdate, null, 2));
+    // --- FIN DIAGNÓSTICO ---
     const index = this.data.usuarios.findIndex(u => String(u.id) === String(id));
     
     if (index === -1) {
       return null;
     }
     
-    // Actualizar fecha de modificación
-    this.data.usuarios[index] = { 
-      ...this.data.usuarios[index], 
-      ...usuario,
+    // Obtener usuario existente
+    const usuarioExistente = this.data.usuarios[index];
+    
+    // Crear usuario actualizado fusionando campos básicos
+    const usuarioActualizado = { 
+      ...usuarioExistente, 
+      ...usuarioUpdate,
       fechaModificacion: new Date().toISOString()
     };
+
+    // Gestionar específicamente el array de excepciones si viene en la actualización
+    if (usuarioUpdate.excepciones && Array.isArray(usuarioUpdate.excepciones)) {
+      const existingExceptions = usuarioExistente.excepciones || [];
+      const incomingExceptions = usuarioUpdate.excepciones;
+      
+      // Usar un Map para fusionar: clave=id, valor=excepcion
+      const exceptionsMap = new Map<string, ExcepcionHorariaUsuario>(
+        existingExceptions.map(exc => [exc.id, exc])
+      );
+      
+      incomingExceptions.forEach(incomingExc => {
+        exceptionsMap.set(incomingExc.id, incomingExc); // Añade o actualiza
+      });
+      
+      // Convertir el Map de nuevo a un array
+      usuarioActualizado.excepciones = Array.from(exceptionsMap.values());
+    }
+
+    // Reemplazar el usuario en el array de datos
+    this.data.usuarios[index] = usuarioActualizado;
     
     this.saveData();
-    return JSON.parse(JSON.stringify(this.data.usuarios[index])); // Devolver copia
+    return JSON.parse(JSON.stringify(usuarioActualizado)); // Devolver copia
   }
 
   async deleteUsuario(id: string): Promise<boolean> {

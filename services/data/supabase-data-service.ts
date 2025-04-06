@@ -3,19 +3,20 @@
  * Esta implementación permite conectar con una base de datos PostgreSQL en Supabase
  */
 
-import { DataService, Client } from './data-service';
-import {
-  BaseEntity,
-  Clinica,
-  EntityDocument,
-  EntityImage,
-  Equipo,
-  FamiliaTarifa,
-  ScheduleBlock,
-  Servicio,
-  Tarifa,
-  TipoIVA
-} from './models/interfaces';
+// Comentar importaciones problemáticas
+// import type { DataService, Client } from './data-service.ts'; 
+// import type {
+//   BaseEntity,
+//   Clinica,
+//   EntityDocument,
+//   EntityImage,
+//   Equipo,
+//   FamiliaTarifa,
+//   ScheduleBlock,
+//   Servicio,
+//   Tarifa,
+//   TipoIVA
+// } from './models/interfaces.ts';
 
 // Tipos para la configuración de Supabase
 export interface SupabaseConnectionConfig {

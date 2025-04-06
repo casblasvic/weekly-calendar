@@ -1,22 +1,24 @@
 "use client"
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from "react"
-import { useInterfaz } from "./interfaz-Context"
-import { Client as ClientModel } from "@/services/data/data-service"
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react"
+// QUITAR: import { useInterfaz } from "./interfaz-Context"
+// QUITAR: import { Client as ClientModel } from "@/services/data/data-service" // Usaremos Prisma.Client
+import { Client as PrismaClient } from '@prisma/client';
 
-// Definir alias para los tipos usando los tipos del modelo central
-export type Client = ClientModel;
+// Usar tipo de Prisma directamente
+export type Client = PrismaClient;
 
 // Interfaz del contexto
 interface ClientContextType {
   clients: Client[]
-  loading: boolean
+  isLoading: boolean // Cambiar nombre loading a isLoading
+  error: string | null;
+  refetchClients: () => Promise<void>; // Cambiar nombre refreshClients a refetchClients
   getClientById: (id: string) => Promise<Client | null>
-  createClient: (client: Omit<Client, 'id'>) => Promise<Client>
-  updateClient: (id: string, client: Partial<Client>) => Promise<Client | null>
+  createClient: (client: Omit<Client, 'id' | 'createdAt' | 'updatedAt' | 'systemId'>) => Promise<Client | null> // Ajustar tipo y retorno
+  updateClient: (id: string, client: Partial<Omit<Client, 'id' | 'createdAt' | 'updatedAt' | 'systemId'>>) => Promise<Client | null> // Ajustar tipo y retorno
   deleteClient: (id: string) => Promise<boolean>
-  refreshClients: () => Promise<void>
-  getClientsByClinicId: (clinicId: string) => Promise<Client[]>
+  getClientsByClinicId: (clinicId: string) => Promise<Client[]> // PENDIENTE API
 }
 
 // Crear el contexto
@@ -25,131 +27,160 @@ const ClientContext = createContext<ClientContextType | undefined>(undefined)
 // Provider del contexto
 export function ClientProvider({ children }: { children: ReactNode }) {
   const [clients, setClients] = useState<Client[]>([])
-  const [loading, setLoading] = useState<boolean>(true)
-  const [dataFetched, setDataFetched] = useState(false)
-  const interfaz = useInterfaz()
+  const [isLoading, setIsLoading] = useState<boolean>(true)
+  const [error, setError] = useState<string | null>(null);
+  // QUITAR: const interfaz = useInterfaz()
+  // QUITAR: dataFetched
+
+  // Función para cargar/recargar clientes desde la API
+  const fetchClients = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await fetch('/api/clients');
+      if (!response.ok) {
+        throw new Error(`Error ${response.status}: ${response.statusText}`);
+      }
+      const clientsList: Client[] = await response.json();
+      setClients(clientsList);
+      console.log("ClientContext: Clientes cargados/actualizados desde API");
+    } catch (err) {
+      console.error("Error al cargar clientes desde API:", err);
+      setError(err instanceof Error ? err.message : 'Error desconocido al cargar clientes');
+      setClients([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
   // Cargar clientes al iniciar
   useEffect(() => {
-    const loadClients = async () => {
-      if (interfaz.initialized && !dataFetched) {
-        try {
-          setLoading(true)
-          const clientsList = await interfaz.getAllClients()
-          setClients(clientsList)
-          setDataFetched(true)
-        } catch (error) {
-          console.error("Error al cargar clientes:", error)
-          setClients([])
-        } finally {
-          setLoading(false)
-        }
-      }
-    }
+    fetchClients();
+  }, [fetchClients]);
 
-    loadClients()
-  }, [interfaz.initialized, dataFetched])
+  // Métodos del contexto usando API
 
-  // Métodos del contexto
   const getClientById = async (id: string): Promise<Client | null> => {
-    try {
-      return await interfaz.getClientById(id)
-    } catch (error) {
-      console.error(`Error al obtener cliente ${id}:`, error)
-      
-      // Intentar recuperar del estado local en caso de error
-      const clienteLocal = clients.find(c => c.id === id);
-      if (clienteLocal) {
-        console.log("Cliente recuperado del estado local tras error:", id);
-        return clienteLocal;
-      }
-      
-      return null
-    }
-  }
+    // Intentar desde estado local primero
+    const localClient = clients.find(c => c.id === id);
+    if (localClient) return localClient;
 
-  const createClient = async (client: Omit<Client, 'id'>): Promise<Client> => {
+    setIsLoading(true);
     try {
-      const newClient = await interfaz.createClient(client)
-      setClients(prev => [...prev, newClient])
-      return newClient
-    } catch (error) {
-      console.error("Error al crear cliente:", error)
-      throw error
+      const response = await fetch(`/api/clients/${id}`);
+      if (response.status === 404) return null;
+      if (!response.ok) throw new Error(`Error ${response.status}: ${response.statusText}`);
+      const client: Client = await response.json();
+      // Opcional: actualizar estado local
+      setClients(prev => prev.map(c => c.id === id ? client : c));
+      return client;
+    } catch (err) {
+      console.error(`Error fetching client ${id} from API:`, err);
+      setError(err instanceof Error ? err.message : 'Error desconocido');
+      return null;
+    } finally {
+        setIsLoading(false);
     }
-  }
+  };
 
-  const updateClient = async (id: string, client: Partial<Client>): Promise<Client | null> => {
+  const createClient = async (clientData: Omit<Client, 'id' | 'createdAt' | 'updatedAt' | 'systemId'>): Promise<Client | null> => {
+    setIsLoading(true);
+    setError(null);
     try {
-      const updatedClient = await interfaz.updateClient(id, client)
-      if (updatedClient) {
-        setClients(prev => prev.map(c => c.id === id ? updatedClient : c))
+      const response = await fetch('/api/clients', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(clientData),
+      });
+      if (!response.ok) {
+         const errorData = await response.json();
+         throw new Error(errorData.message || `Error ${response.status}`);
       }
-      return updatedClient
-    } catch (error) {
-      console.error(`Error al actualizar cliente ${id}:`, error)
-      return null
+      const newClient: Client = await response.json();
+      setClients(prev => [...prev, newClient]);
+      return newClient;
+    } catch (err) {
+      console.error("Error creando cliente vía API:", err);
+      setError(err instanceof Error ? err.message : 'Error desconocido al crear');
+      return null;
+    } finally {
+      setIsLoading(false);
     }
-  }
+  };
+
+  const updateClient = async (id: string, clientUpdate: Partial<Omit<Client, 'id' | 'createdAt' | 'updatedAt' | 'systemId'>>): Promise<Client | null> => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/clients/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(clientUpdate),
+      });
+       if (!response.ok) {
+         const errorData = await response.json();
+         throw new Error(errorData.message || `Error ${response.status}`);
+      }
+      const updatedClient: Client = await response.json();
+      setClients(prev => 
+        prev.map(c => c.id === id ? updatedClient : c)
+      );
+      return updatedClient;
+    } catch (err) {
+      console.error(`Error updating client ${id} via API:`, err);
+      setError(err instanceof Error ? err.message : 'Error desconocido al actualizar');
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const deleteClient = async (id: string): Promise<boolean> => {
+    setIsLoading(true);
+    setError(null);
     try {
-      const success = await interfaz.deleteClient(id)
-      if (success) {
-        setClients(prev => prev.filter(c => c.id !== id))
+       const response = await fetch(`/api/clients/${id}`, {
+        method: 'DELETE',
+      });
+       if (!response.ok) {
+         const errorData = await response.json();
+         throw new Error(errorData.message || `Error ${response.status}`);
       }
-      return success
-    } catch (error) {
-      console.error(`Error al eliminar cliente ${id}:`, error)
-      return false
-    }
-  }
-
-  const refreshClients = async (): Promise<void> => {
-    try {
-      setLoading(true)
-      const clientsList = await interfaz.getAllClients()
-      setClients(clientsList)
-    } catch (error) {
-      console.error("Error al actualizar clientes:", error)
+      setClients(prev => prev.filter(c => c.id !== id));
+      return true;
+    } catch (err) {
+      console.error(`Error deleting client ${id} via API:`, err);
+      setError(err instanceof Error ? err.message : 'Error desconocido al eliminar');
+      return false;
     } finally {
-      setLoading(false)
+      setIsLoading(false);
     }
-  }
+  };
 
   const getClientsByClinicId = async (clinicId: string): Promise<Client[]> => {
-    try {
-      return await interfaz.getClientsByClinicId(clinicId)
-    } catch (error) {
-      console.error(`Error al obtener clientes de la clínica ${clinicId}:`, error)
-      
-      // Intentar recuperar del estado local en caso de error
-      const clientesLocales = clients.filter(c => c.clinicId === clinicId);
-      if (clientesLocales.length > 0) {
-        console.log("Clientes recuperados del estado local tras error para clínica:", clinicId);
-        return clientesLocales;
-      }
-      
-      return []
-    }
-  }
+      console.warn("getClientsByClinicId no implementado con API (filtrado backend necesario)");
+      // TODO: Implementar API route /api/clients?clinicId=...
+      // Devolver filtrado local como fallback temporal? No, porque el estado local puede no tener todos.
+      return [];
+  };
+
+  const contextValue: ClientContextType = {
+      clients,
+      isLoading,
+      error,
+      refetchClients: fetchClients,
+      getClientById,
+      createClient,
+      updateClient,
+      deleteClient,
+      getClientsByClinicId
+  };
 
   return (
-    <ClientContext.Provider
-      value={{
-        clients,
-        loading,
-        getClientById,
-        createClient,
-        updateClient,
-        deleteClient,
-        refreshClients,
-        getClientsByClinicId
-      }}
-    >
+    <ClientContext.Provider value={contextValue}>
       {children}
     </ClientContext.Provider>
-  )
+  );
 }
 
 // Hook para usar el contexto

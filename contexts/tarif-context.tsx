@@ -1,523 +1,241 @@
 "use client"
 
-import { createContext, useContext, useState, useEffect, ReactNode } from "react"
-import { useRouter } from "next/navigation"
-import { useInterfaz } from "./interfaz-Context"
-import { Tarifa as TarifaModel, FamiliaTarifa as FamiliaTarifaModel, EntityImage } from "@/services/data/models/interfaces"
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react"
+// QUITAR: import { useRouter } from "next/navigation"
+// QUITAR: import { useInterfaz } from "./interfaz-Context"
+// QUITAR: import { Tarifa as TarifaModel, FamiliaTarifa as FamiliaTarifaModel, EntityImage } from "@/services/data/models/interfaces"
+import { Tariff as PrismaTariff, TariffFamily as PrismaTariffFamily } from '@prisma/client'; // Usar tipos Prisma
 
-// Definir alias para los tipos usando los tipos del modelo central
-export type Tarifa = TarifaModel;
-export type FamiliaTarifa = FamiliaTarifaModel;
-export type TarifaImage = EntityImage;
+// Definir alias para los tipos usando los tipos de Prisma
+export type Tarifa = PrismaTariff;
+export type FamiliaTarifa = PrismaTariffFamily;
+// export type TarifaImage = EntityImage; // PENDIENTE
 
 interface TarifContextType {
   tarifas: Tarifa[]
-  familiasTarifa: FamiliaTarifa[]
-  addTarifa: (tarifa: Omit<Tarifa, "id">) => Promise<string>
-  updateTarifa: (id: string, tarifa: Partial<Tarifa>) => Promise<boolean>
-  getTarifaById: (id: string) => Promise<Tarifa | null>
-  addFamiliaTarifa: (familia: Omit<FamiliaTarifa, "id">) => Promise<string>
-  updateFamiliaTarifa: (id: string, familia: Partial<FamiliaTarifa>) => Promise<boolean>
-  getFamiliasByTarifaId: (tarifaId: string) => Promise<FamiliaTarifa[]>
-  toggleFamiliaStatus: (id: string) => Promise<boolean>
-  getRootFamilias: (tarifaId: string) => Promise<FamiliaTarifa[]>
-  getSubfamilias: (parentId: string) => Promise<FamiliaTarifa[]>
-  // Funciones para manejar imágenes de tarifas
-  getTarifaImages: (tarifaId: string) => Promise<TarifaImage[]>
-  saveTarifaImages: (tarifaId: string, images: TarifaImage[]) => Promise<boolean>
-  deleteTarifaImages: (tarifaId: string) => Promise<boolean>
-  // Funciones para gestionar clínicas asociadas
-  addClinicaToTarifa: (tarifaId: string, clinicaId: string, isPrimary?: boolean) => Promise<boolean>
-  removeClinicaFromTarifa: (tarifaId: string, clinicaId: string) => Promise<boolean>
-  setPrimaryClinicaForTarifa: (tarifaId: string, clinicaId: string) => Promise<boolean>
+  familiasTarifa: FamiliaTarifa[]; // Mantener estado local, pero carga/CRUD pendiente
+  isLoading: boolean;
+  error: string | null;
+  refetchTariffs: () => Promise<void>;
+  // CRUD Tarifas (refactorizado)
+  addTarifa: (tarifa: Omit<Tarifa, "id" | 'createdAt' | 'updatedAt' | 'systemId'>) => Promise<Tarifa | null>; // Ajustar tipo y retorno
+  updateTarifa: (id: string, tarifa: Partial<Omit<Tarifa, "id" | 'createdAt' | 'updatedAt' | 'systemId'>>) => Promise<Tarifa | null>; // Ajustar tipo y retorno
+  getTarifaById: (id: string) => Promise<Tarifa | null>;
+  deleteTarifa: (id: string) => Promise<boolean>; // Añadir deleteTarifa
+  // Pendiente API / Refactor
+  addFamiliaTarifa: (familia: Omit<FamiliaTarifa, "id" | 'tarifaId' | 'parentId'> & { tarifaId: string; parentId?: string | null }) => Promise<string>; // Ajustar tipo, pendiente
+  updateFamiliaTarifa: (id: string, familia: Partial<FamiliaTarifa>) => Promise<boolean>; // Pendiente
+  getFamiliasByTarifaId: (tarifaId: string) => Promise<FamiliaTarifa[]>; // Pendiente
+  toggleFamiliaStatus: (id: string) => Promise<boolean>; // Pendiente
+  getRootFamilias: (tarifaId: string) => Promise<FamiliaTarifa[]>; // Pendiente
+  getSubfamilias: (parentId: string) => Promise<FamiliaTarifa[]>; // Pendiente
+  getTarifaImages?: (tarifaId: string) => Promise<any[]>; // Pendiente
+  saveTarifaImages?: (tarifaId: string, images: any[]) => Promise<boolean>; // Pendiente
+  deleteTarifaImages?: (tarifaId: string) => Promise<boolean>; // Pendiente
+  addClinicaToTarifa?: (tarifaId: string, clinicaId: string, isPrimary?: boolean) => Promise<boolean>; // Pendiente
+  removeClinicaFromTarifa?: (tarifaId: string, clinicaId: string) => Promise<boolean>; // Pendiente
+  setPrimaryClinicaForTarifa?: (tarifaId: string, clinicaId: string) => Promise<boolean>; // Pendiente
 }
 
 const TarifContext = createContext<TarifContextType | undefined>(undefined);
 
 export const TarifProvider = ({ children }: { children: ReactNode }) => {
   const [tarifas, setTarifas] = useState<Tarifa[]>([]);
-  const [familiasTarifa, setFamiliasTarifa] = useState<FamiliaTarifa[]>([]);
-  const [dataFetched, setDataFetched] = useState(false);
-  const router = useRouter();
-  const interfaz = useInterfaz();
+  const [familiasTarifa, setFamiliasTarifa] = useState<FamiliaTarifa[]>([]); // Mantener, pero carga pendiente
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  // QUITAR: const router = useRouter();
+  // QUITAR: const interfaz = useInterfaz();
+  // QUITAR: dataFetched
 
-  // Cargar datos iniciales
+  // Cargar tarifas iniciales desde API
+  const fetchTariffs = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await fetch('/api/tariffs');
+      if (!response.ok) {
+        throw new Error(`Error ${response.status}: ${response.statusText}`);
+      }
+      const loadedTarifas: Tarifa[] = await response.json();
+      setTarifas(loadedTarifas);
+      console.log("TarifContext: Tarifas cargadas/actualizadas desde API");
+      // TODO: Cargar familias de tarifa cuando la API esté lista
+      // const familiasResponse = await fetch('/api/tariff-families'); ... setFamiliasTarifa(...)
+    } catch (err) {
+      console.error("Error al cargar tarifas desde API:", err);
+      setError(err instanceof Error ? err.message : 'Error desconocido al cargar tarifas');
+      setTarifas([]);
+      setFamiliasTarifa([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
-    const loadInitialData = async () => {
-      if (interfaz.initialized && !dataFetched) {
-        try {
-          // Cargar tarifas y familias
-          const loadedTarifas = await interfaz.getAllTarifas();
-          const loadedFamilias = await interfaz.getAllFamiliasTarifa();
-          
-          setTarifas(loadedTarifas);
-          setFamiliasTarifa(loadedFamilias);
-          setDataFetched(true);
-          
-          console.log("TarifContext: Datos cargados correctamente");
-        } catch (error) {
-          console.error("Error al cargar datos iniciales en TarifContext:", error);
-        }
-      }
-    };
-    
-    loadInitialData();
-  }, [interfaz.initialized, dataFetched]);
+    fetchTariffs();
+  }, [fetchTariffs]);
 
-  // Función para disparar eventos de actualización
-  const dispatchUpdateEvent = (type: 'tarifas' | 'familias', tarifaId: string = '', action: string) => {
+  // QUITAR: dispatchUpdateEvent si ya no se usa o se rediseña
+
+  // --- Funciones CRUD Tarifas (con API) ---
+
+  const addTarifa = async (tarifaData: Omit<Tarifa, "id" | 'createdAt' | 'updatedAt' | 'systemId'>): Promise<Tarifa | null> => {
+    setIsLoading(true);
+    setError(null);
     try {
-      window.dispatchEvent(new CustomEvent(`${type}-updated`, {
-        detail: { tarifaId, action }
-      }));
-    } catch (eventError) {
-      console.error(`Error al disparar evento de actualización de ${type}:`, eventError);
-      // No bloqueamos la operación principal por un error en el evento
+      const response = await fetch('/api/tariffs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(tarifaData),
+      });
+      if (!response.ok) {
+         const errorData = await response.json();
+         throw new Error(errorData.message || `Error ${response.status}`);
+      }
+      const newTariff: Tarifa = await response.json();
+      setTarifas(prev => [...prev, newTariff]);
+      return newTariff;
+    } catch (err) {
+      console.error("Error al añadir tarifa vía API:", err);
+      setError(err instanceof Error ? err.message : 'Error desconocido al crear tarifa');
+      return null;
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  // Funciones para manejar tarifas
-  const addTarifa = async (tarifa: Omit<Tarifa, "id">): Promise<string> => {
+  const updateTarifa = async (id: string, tarifaUpdate: Partial<Omit<Tarifa, "id" | 'createdAt' | 'updatedAt' | 'systemId'>>): Promise<Tarifa | null> => {
+    setIsLoading(true);
+    setError(null);
     try {
-      const newTarifa = await interfaz.createTarifa(tarifa);
-      
-      if (!newTarifa || !newTarifa.id) {
-        throw new Error("No se pudo crear la tarifa. Respuesta incompleta del servidor.");
+      const response = await fetch(`/api/tariffs/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(tarifaUpdate),
+      });
+      if (!response.ok) {
+         const errorData = await response.json();
+         throw new Error(errorData.message || `Error ${response.status}`);
       }
-      
-      // Actualizar estado local
-      setTarifas(prev => [...prev, newTarifa]);
-      
-      // Notificar la actualización
-      dispatchUpdateEvent('tarifas', '', 'create');
-      
-      return newTarifa.id;
-    } catch (error) {
-      console.error("Error al añadir tarifa:", error);
-      throw error;
-    }
-  };
-
-  const updateTarifa = async (id: string, tarifaActualizada: Partial<Tarifa>): Promise<boolean> => {
-    try {
-      const updatedTarifa = await interfaz.updateTarifa(id, tarifaActualizada);
-      
-      if (!updatedTarifa) {
-        throw new Error("No se pudo actualizar la tarifa.");
-      }
-      
-      // Actualizar estado local
+      const updatedTariff: Tarifa = await response.json();
       setTarifas(prev => 
-        prev.map(tarifa => 
-          tarifa.id === id ? { ...tarifa, ...tarifaActualizada } : tarifa
-        )
+        prev.map(tarifa => (tarifa.id === id ? updatedTariff : tarifa))
       );
-      
-      // Notificar la actualización
-      dispatchUpdateEvent('tarifas', id, 'update');
-      
-      return true;
-    } catch (error) {
-      console.error("Error al actualizar tarifa:", error);
-      return false;
+      return updatedTariff;
+    } catch (err) {
+      console.error(`Error al actualizar tarifa ${id} vía API:`, err);
+      setError(err instanceof Error ? err.message : 'Error desconocido al actualizar');
+      return null;
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const getTarifaById = async (id: string): Promise<Tarifa | null> => {
-    if (!id) {
-      console.warn("Se solicitó una tarifa con ID vacío");
-      return null;
-    }
-    
+    if (!id) return null;
+    const localTariff = tarifas.find(t => t.id === id);
+    if (localTariff) return localTariff;
+
+    setIsLoading(true);
     try {
-      const tarifa = await interfaz.getTarifaById(id);
-      
-      // Si no se encuentra en la interfaz pero está en nuestro estado local
-      if (!tarifa) {
-        const tarifaLocal = tarifas.find(t => t.id === id);
-        if (tarifaLocal) {
-          console.log("Tarifa obtenida del estado local:", id);
-          return tarifaLocal;
-        }
-        return null;
-      }
-      
-      return tarifa;
-    } catch (error) {
-      console.error("Error al obtener tarifa por ID:", error);
-      
-      // Intentar recuperar del estado local en caso de error
-      const tarifaLocal = tarifas.find(t => t.id === id);
-      if (tarifaLocal) {
-        console.log("Tarifa recuperada del estado local tras error:", id);
-        return tarifaLocal;
-      }
-      
+      const response = await fetch(`/api/tariffs/${id}`);
+      if (response.status === 404) return null;
+      if (!response.ok) throw new Error(`Error ${response.status}: ${response.statusText}`);
+      const tariff: Tarifa = await response.json();
+      // Opcional: actualizar estado local
+      setTarifas(prev => prev.map(t => (t.id === id ? tariff : t)));
+      return tariff;
+    } catch (err) {
+      console.error(`Error fetching tariff ${id} from API:`, err);
+      setError(err instanceof Error ? err.message : 'Error desconocido');
       return null;
+    } finally {
+        setIsLoading(false);
     }
   };
 
-  // Funciones para manejar familias de tarifa
+  const deleteTarifa = async (id: string): Promise<boolean> => {
+    setIsLoading(true);
+    setError(null);
+    try {
+       const response = await fetch(`/api/tariffs/${id}`, {
+        method: 'DELETE',
+      });
+       if (!response.ok) {
+         const errorData = await response.json();
+         throw new Error(errorData.message || `Error ${response.status}`);
+      }
+      setTarifas(prev => prev.filter(t => t.id !== id));
+      // TODO: ¿Eliminar familias asociadas del estado local también?
+      return true;
+    } catch (err) {
+      console.error(`Error deleting tariff ${id} via API:`, err);
+      setError(err instanceof Error ? err.message : 'Error desconocido al eliminar');
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // --- Funciones pendientes (Familias, Imágenes, Clínicas) ---
+  // Mantener placeholders o funciones que devuelvan error/estado local
+
   const addFamiliaTarifa = async (familia: Omit<FamiliaTarifa, "id">): Promise<string> => {
-    try {
-      const nuevaFamilia = await interfaz.createFamiliaTarifa(familia);
-      
-      if (!nuevaFamilia || !nuevaFamilia.id) {
-        throw new Error("No se pudo crear la familia de tarifa. Respuesta incompleta del servidor.");
-      }
-      
-      // Actualizar estado local
-      setFamiliasTarifa(prev => [...prev, nuevaFamilia]);
-      
-      // Notificar la actualización
-      dispatchUpdateEvent('familias', familia.tarifaId, 'create');
-      
-      return nuevaFamilia.id;
-    } catch (error) {
-      console.error("Error al añadir familia de tarifa:", error);
-      throw error;
-    }
+      console.warn("addFamiliaTarifa pendiente de API"); throw new Error("No implementado");
   };
-
-  const updateFamiliaTarifa = async (id: string, familiaActualizada: Partial<FamiliaTarifa>): Promise<boolean> => {
-    try {
-      const updatedFamilia = await interfaz.updateFamiliaTarifa(id, familiaActualizada);
-      
-      if (!updatedFamilia) {
-        throw new Error("No se pudo actualizar la familia de tarifa.");
-      }
-      
-      // Actualizar estado local
-      setFamiliasTarifa(prev => 
-        prev.map(familia => 
-          familia.id === id ? { ...familia, ...familiaActualizada } : familia
-        )
-      );
-      
-      // Determinar tarifaId para el evento
-      const tarifaId = familiaActualizada.tarifaId || 
-        familiasTarifa.find(f => f.id === id)?.tarifaId || '';
-        
-      // Notificar la actualización
-      dispatchUpdateEvent('familias', tarifaId, 'update');
-      
-      return true;
-    } catch (error) {
-      console.error("Error al actualizar familia de tarifa:", error);
-      return false;
-    }
+  const updateFamiliaTarifa = async (id: string, familia: Partial<FamiliaTarifa>): Promise<boolean> => {
+      console.warn("updateFamiliaTarifa pendiente de API"); return false;
   };
-
   const getFamiliasByTarifaId = async (tarifaId: string): Promise<FamiliaTarifa[]> => {
-    if (!tarifaId) {
-      console.warn("Se solicitaron familias con tarifaId vacío");
-      return [];
-    }
-    
-    try {
-      const familias = await interfaz.getFamiliasByTarifaId(tarifaId);
-      return familias || [];
-    } catch (error) {
-      console.error("Error al obtener familias por tarifaId:", error);
-      
-      // Intentar recuperar del estado local en caso de error
-      const familiasLocales = familiasTarifa.filter(f => f.tarifaId === tarifaId);
-      if (familiasLocales.length > 0) {
-        console.log("Familias recuperadas del estado local tras error:", tarifaId);
-        return familiasLocales;
-      }
-      
-      return [];
-    }
+      console.warn("getFamiliasByTarifaId pendiente de API, devolviendo estado local");
+      return familiasTarifa.filter(f => f.tarifaId === tarifaId);
   };
-
   const toggleFamiliaStatus = async (id: string): Promise<boolean> => {
-    if (!id) {
-      console.warn("Se intentó cambiar el estado de una familia con ID vacío");
-      return false;
-    }
-    
-    try {
-      const success = await interfaz.toggleFamiliaStatus(id);
-      
-      if (!success) {
-        throw new Error("No se pudo cambiar el estado de la familia de tarifa.");
-      }
-      
-      // Actualizar estado local
-      setFamiliasTarifa(prev => 
-        prev.map(familia => 
-          familia.id === id ? { ...familia, isActive: !familia.isActive } : familia
-        )
-      );
-      
-      // Determinar tarifaId para el evento
-      const tarifaId = familiasTarifa.find(f => f.id === id)?.tarifaId || '';
-      
-      // Notificar la actualización
-      dispatchUpdateEvent('familias', tarifaId, 'toggle-status');
-      
-      return true;
-    } catch (error) {
-      console.error("Error al cambiar estado de familia de tarifa:", error);
-      return false;
-    }
+      console.warn("toggleFamiliaStatus pendiente de API"); return false;
   };
-
   const getRootFamilias = async (tarifaId: string): Promise<FamiliaTarifa[]> => {
-    if (!tarifaId) {
-      console.warn("Se solicitaron familias raíz con tarifaId vacío");
-      return [];
-    }
-    
-    try {
-      const familias = await interfaz.getRootFamilias(tarifaId);
-      return familias || [];
-    } catch (error) {
-      console.error("Error al obtener familias raíz:", error);
-      
-      // Intentar recuperar del estado local en caso de error
-      const familiasLocales = familiasTarifa.filter(f => f.tarifaId === tarifaId && !f.parentId);
-      if (familiasLocales.length > 0) {
-        console.log("Familias raíz recuperadas del estado local tras error:", tarifaId);
-        return familiasLocales;
-      }
-      
-      return [];
-    }
+      console.warn("getRootFamilias pendiente de API, devolviendo estado local");
+       return familiasTarifa.filter(f => f.tarifaId === tarifaId && !f.parentId);
   };
-
   const getSubfamilias = async (parentId: string): Promise<FamiliaTarifa[]> => {
-    if (!parentId) {
-      console.warn("Se solicitaron subfamilias con parentId vacío");
-      return [];
-    }
-    
-    try {
-      const subfamilias = await interfaz.getSubfamilias(parentId);
-      return subfamilias || [];
-    } catch (error) {
-      console.error("Error al obtener subfamilias:", error);
-      
-      // Intentar recuperar del estado local en caso de error
-      const subfamiliasLocales = familiasTarifa.filter(f => f.parentId === parentId);
-      if (subfamiliasLocales.length > 0) {
-        console.log("Subfamilias recuperadas del estado local tras error:", parentId);
-        return subfamiliasLocales;
-      }
-      
-      return [];
-    }
+      console.warn("getSubfamilias pendiente de API, devolviendo estado local");
+       return familiasTarifa.filter(f => f.parentId === parentId);
+  };
+  // ... añadir placeholders similares para imágenes y clínicas ...
+
+  const contextValue: TarifContextType = {
+    tarifas,
+    familiasTarifa,
+    isLoading,
+    error,
+    refetchTariffs: fetchTariffs,
+    addTarifa,
+    updateTarifa,
+    getTarifaById,
+    deleteTarifa,
+    // Pendientes
+    addFamiliaTarifa,
+    updateFamiliaTarifa,
+    getFamiliasByTarifaId,
+    toggleFamiliaStatus,
+    getRootFamilias,
+    getSubfamilias,
+    // getTarifaImages: async () => [],
+    // saveTarifaImages: async () => false,
+    // deleteTarifaImages: async () => false,
+    // addClinicaToTarifa: async () => false,
+    // removeClinicaFromTarifa: async () => false,
+    // setPrimaryClinicaForTarifa: async () => false,
   };
 
-  // Funciones para manejar imágenes
-  const getTarifaImages = async (tarifaId: string): Promise<TarifaImage[]> => {
-    if (!tarifaId) {
-      console.warn("Se solicitaron imágenes con tarifaId vacío");
-      return [];
-    }
-    
-    try {
-      const imagenes = await interfaz.getEntityImages('tarifa', tarifaId);
-      return imagenes || [];
-    } catch (error) {
-      console.error("Error al obtener imágenes de tarifa:", error);
-      return [];
-    }
-  };
-
-  const saveTarifaImages = async (tarifaId: string, images: TarifaImage[]): Promise<boolean> => {
-    if (!tarifaId) {
-      console.warn("Se intentaron guardar imágenes con tarifaId vacío");
-      return false;
-    }
-    
-    try {
-      const resultado = await interfaz.saveEntityImages('tarifa', tarifaId, images);
-      
-      // Disparar evento de actualización si fue exitoso
-      if (resultado) {
-        dispatchUpdateEvent('tarifas', tarifaId, 'update-images');
-      }
-      
-      return resultado;
-    } catch (error) {
-      console.error("Error al guardar imágenes de tarifa:", error);
-      return false;
-    }
-  };
-
-  const deleteTarifaImages = async (tarifaId: string): Promise<boolean> => {
-    if (!tarifaId) {
-      console.warn("Se intentaron eliminar imágenes con tarifaId vacío");
-      return false;
-    }
-    
-    try {
-      const resultado = await interfaz.deleteEntityImages('tarifa', tarifaId);
-      
-      if (resultado) {
-        dispatchUpdateEvent('tarifas', tarifaId, 'delete-images');
-      }
-      
-      return resultado;
-    } catch (error) {
-      console.error("Error al eliminar imágenes de tarifa:", error);
-      return false;
-    }
-  };
-
-  // Funciones para gestionar clínicas asociadas
-  const addClinicaToTarifa = async (tarifaId: string, clinicaId: string, isPrimary: boolean = false): Promise<boolean> => {
-    if (!tarifaId || !clinicaId) {
-      console.warn("Se intentó añadir una clínica con IDs incompletos");
-      return false;
-    }
-    
-    try {
-      const success = await interfaz.addClinicaToTarifa(tarifaId, clinicaId, isPrimary);
-      
-      if (success) {
-        // Actualizar el estado local
-        const updatedTarifa = await interfaz.getTarifaById(tarifaId);
-        if (updatedTarifa) {
-          setTarifas(prev => 
-            prev.map(tarifa => 
-              tarifa.id === tarifaId ? updatedTarifa : tarifa
-            )
-          );
-          
-          dispatchUpdateEvent('tarifas', tarifaId, 'update-clinicas');
-        }
-      }
-      
-      return success;
-    } catch (error) {
-      console.error("Error al añadir clínica a tarifa:", error);
-      return false;
-    }
-  };
-
-  const removeClinicaFromTarifa = async (tarifaId: string, clinicaId: string): Promise<boolean> => {
-    if (!tarifaId || !clinicaId) {
-      console.warn("Se intentó eliminar una clínica con IDs incompletos");
-      return false;
-    }
-    
-    try {
-      const success = await interfaz.removeClinicaFromTarifa(tarifaId, clinicaId);
-      
-      if (success) {
-        // Actualizar el estado local
-        const updatedTarifa = await interfaz.getTarifaById(tarifaId);
-        if (updatedTarifa) {
-          setTarifas(prev => 
-            prev.map(tarifa => 
-              tarifa.id === tarifaId ? updatedTarifa : tarifa
-            )
-          );
-          
-          dispatchUpdateEvent('tarifas', tarifaId, 'update-clinicas');
-        }
-      }
-      
-      return success;
-    } catch (error) {
-      console.error("Error al eliminar clínica de tarifa:", error);
-      return false;
-    }
-  };
-
-  const setPrimaryClinicaForTarifa = async (tarifaId: string, clinicaId: string): Promise<boolean> => {
-    if (!tarifaId || !clinicaId) {
-      console.warn("Se intentó establecer clínica primaria con IDs incompletos");
-      return false;
-    }
-    
-    try {
-      const success = await interfaz.setPrimaryClinicaForTarifa(tarifaId, clinicaId);
-      
-      if (success) {
-        // Actualizar el estado local
-        const updatedTarifa = await interfaz.getTarifaById(tarifaId);
-        if (updatedTarifa) {
-          setTarifas(prev => 
-            prev.map(tarifa => 
-              tarifa.id === tarifaId ? updatedTarifa : tarifa
-            )
-          );
-          
-          dispatchUpdateEvent('tarifas', tarifaId, 'update-clinica-primaria');
-        }
-      }
-      
-      return success;
-    } catch (error) {
-      console.error("Error al establecer clínica primaria para tarifa:", error);
-      return false;
-    }
-  };
-
-  // Proveer un valor por defecto mientras se inicializa
-  if (!dataFetched) {
-    return (
-      <TarifContext.Provider
-        value={{
-          tarifas: [],
-          familiasTarifa: [],
-          addTarifa: async () => { throw new Error("Contexto no inicializado"); },
-          updateTarifa: async () => { throw new Error("Contexto no inicializado"); },
-          getTarifaById: async () => null,
-          addFamiliaTarifa: async () => { throw new Error("Contexto no inicializado"); },
-          updateFamiliaTarifa: async () => { throw new Error("Contexto no inicializado"); },
-          getFamiliasByTarifaId: async () => [],
-          toggleFamiliaStatus: async () => { throw new Error("Contexto no inicializado"); },
-          getRootFamilias: async () => [],
-          getSubfamilias: async () => [],
-          getTarifaImages: async () => [],
-          saveTarifaImages: async () => false,
-          deleteTarifaImages: async () => false,
-          addClinicaToTarifa: async () => false,
-          removeClinicaFromTarifa: async () => false,
-          setPrimaryClinicaForTarifa: async () => false
-        }}
-      >
-        {children}
-      </TarifContext.Provider>
-    );
-  }
-
-  return (
-    <TarifContext.Provider
-      value={{
-        tarifas,
-        familiasTarifa,
-        addTarifa,
-        updateTarifa,
-        getTarifaById,
-        addFamiliaTarifa,
-        updateFamiliaTarifa,
-        getFamiliasByTarifaId,
-        toggleFamiliaStatus,
-        getRootFamilias,
-        getSubfamilias,
-        getTarifaImages,
-        saveTarifaImages,
-        deleteTarifaImages,
-        addClinicaToTarifa,
-        removeClinicaFromTarifa,
-        setPrimaryClinicaForTarifa
-      }}
-    >
-      {children}
-    </TarifContext.Provider>
-  );
+  return <TarifContext.Provider value={contextValue}>{children}</TarifContext.Provider>;
 };
 
 export const useTarif = () => {
   const context = useContext(TarifContext);
   if (context === undefined) {
-    throw new Error('useTarif debe ser usado dentro de un TarifProvider');
+    throw new Error("useTarif debe usarse dentro de un TarifProvider");
   }
   return context;
 }; 
