@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef, useMemo } from "react"
+import { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import { useRouter, useParams } from "next/navigation"
 import { ChevronDown, Pencil, Trash2, ShoppingCart, Package, User, ChevronUp, ArrowUpDown, ChevronsLeft, ChevronLeft, ChevronRight, ChevronsRight, Wrench, ShoppingBag, SmilePlus, Plus, Edit3, Building2, AlertCircle, X, Star } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -11,15 +11,29 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { useFamily } from "@/contexts/family-context"
 import Link from "next/link"
 import { useTarif } from "@/contexts/tarif-context"
-import { Card, CardContent } from "@/components/ui/card"
+import { Card, CardContent, CardFooter } from "@/components/ui/card"
 import React from 'react'
 import { useServicio } from "@/contexts/servicios-context"
 import { useIVA } from "@/contexts/iva-context"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { toast } from "@/components/ui/use-toast"
 import { useClinic } from "@/contexts/clinic-context"
-import { Tarifa, FamiliaTarifa, Servicio } from "@/services/data/models/interfaces"
+import { Tarifa, Servicio } from "@/services/data/models/interfaces"
 import { toast as sonnerToast } from "sonner"
+import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/components/ui/table"
+import { VATType, Category } from '@prisma/client'
+
+// Interfaz para el formato esperado por la tabla de servicios (ajustada)
+interface ServicioFormateado {
+  id: string;
+  nombre: string;       // Usar 'nombre' para display si quieres, pero mapear desde 'name'
+  codigo: string;
+  familia: string;      // Ahora contendrá el categoryId o nombre de categoría global
+  precio: number;      // Usar 'precio' numérico
+  iva: string;         // Esto puede necesitar recalcularse o venir de la API
+  tipo: 'Servicio';
+  deshabilitado: boolean;
+}
 
 export default function ConfiguracionTarifa() {
   const router = useRouter()
@@ -27,7 +41,7 @@ export default function ConfiguracionTarifa() {
   const tarifaId = params.id as string
   
   const { families } = useFamily()
-  const { getTarifaById, getFamiliasByTarifaId, updateTarifa, tarifas: todasLasTarifas } = useTarif()
+  const { getTarifaById, updateTarifa, isLoading } = useTarif()
   const { getServiciosByTarifaId, eliminarServicio, getServicioById, actualizarServicio, getServiceImages, saveServiceImages, getServiceDocuments, saveServiceDocuments, deleteServiceImages, deleteServiceDocuments } = useServicio()
   const { getTiposIVAByTarifaId } = useIVA()
   const { clinics } = useClinic()
@@ -50,9 +64,6 @@ export default function ConfiguracionTarifa() {
   const [editingClinics, setEditingClinics] = useState(false)
   const [includeDisabledClinics, setIncludeDisabledClinics] = useState(false)
   
-  // Familias de la tarifa actual
-  const [tarifaFamilies, setTarifaFamilies] = useState<FamiliaTarifa[]>([])
-
   // Estado para almacenar los servicios cargados
   const [serviciosTarifa, setServiciosTarifa] = useState<Servicio[]>([])
   
@@ -64,18 +75,6 @@ export default function ConfiguracionTarifa() {
   // Obtener los tipos de IVA
   const tiposIVATarifa = getTiposIVAByTarifaId ? getTiposIVAByTarifaId(tarifaId) : []
 
-  // Interfaz para servicios formateados para la tabla
-  interface ServicioFormateado {
-    id: string;
-    nombre: string;
-    codigo: string;
-    familia: string;
-    precio: string | number;
-    iva?: string;
-    tipo: string;
-    deshabilitado?: boolean;
-  }
-  
   // Estado para los servicios formateados
   const [serviciosFormateados, setServiciosFormateados] = useState<ServicioFormateado[]>([]);
   
@@ -84,61 +83,53 @@ export default function ConfiguracionTarifa() {
   const [confirmEliminarOpen, setConfirmEliminarOpen] = useState(false);
   const [nombreServicioEliminar, setNombreServicioEliminar] = useState("");
 
-  // Modificar getFamiliaName para usar tarifaFamilies
-  const getFamiliaName = (familiaId: string) => {
-    if (!familiaId) return "(Ninguna)";
-    // Buscar en las familias cargadas para esta tarifa
-    const familia = tarifaFamilies.find(f => f.id === familiaId);
-    return familia ? (familia.name || familia.id) : "(Ninguna)";
-  }
-
-  // Cargar las familias asociadas a la tarifa
+  // Cargar datos iniciales de la tarifa (Esto está bien)
   useEffect(() => {
-    const loadFamilies = async () => {
-      try {
-        if (tarifaId) {
-          console.log("Cargando familias para tarifa:", tarifaId);
-          const familiesData = await getFamiliasByTarifaId(tarifaId);
-          if (Array.isArray(familiesData)) {
-            setTarifaFamilies(familiesData);
-            console.log("Familias cargadas:", familiesData.length);
-          } else {
-            console.error("getFamiliasByTarifaId no devolvió un array:", familiesData);
-            setTarifaFamilies([]);
-          }
+    const loadTarifa = async () => {
+      if (tarifaId) {
+        const tarifaData = await getTarifaById(tarifaId);
+        if (tarifaData) {
+          setTarifa(tarifaData);
+          setTarifaEditada(tarifaData);
+        } else {
+          sonnerToast.error("Tarifa no encontrada"); 
+          router.push("/configuracion/tarifas");
         }
-      } catch (error) {
-        console.error("Error al cargar familias de tarifa:", error);
-        setTarifaFamilies([]);
       }
     };
-    
-    loadFamilies();
-  }, [tarifaId, getFamiliasByTarifaId]);
-  
+    loadTarifa();
+  }, [tarifaId, getTarifaById, router]);
+
+  // Detectar cambios (Esto está bien)
+  const [isDirty, setIsDirty] = useState(false);
+  useEffect(() => {
+    if (!tarifaEditada || !tarifa) return;
+    const hasChanged = JSON.stringify(tarifa) !== JSON.stringify(tarifaEditada);
+    setIsDirty(hasChanged);
+  }, [tarifa, tarifaEditada]);
+
   // Cargar y formatear servicios
   useEffect(() => {
     const loadServicios = async () => {
       try {
         if (tarifaId) {
           console.log("Cargando servicios para tarifa:", tarifaId);
-          const serviciosData = await getServiciosByTarifaId(tarifaId);
-          console.log('Datos recibidos de getServiciosByTarifaId:', JSON.stringify(serviciosData)); // DEBUG
+          // Usar la función del contexto
+          const serviciosData = await getServiciosByTarifaId(tarifaId); 
           if (Array.isArray(serviciosData)) {
             setServiciosTarifa(serviciosData);
             console.log("Servicios cargados:", serviciosData.length);
             
-            // Formatear para la vista de tabla
+            // Formatear para la vista de tabla (CORREGIDO)
             const serviciosFormateados = serviciosData.map(servicio => ({
               id: String(servicio.id),
-              nombre: servicio.nombre,
-              codigo: servicio.codigo || '',
-              // Usar la función getFamiliaName actualizada
-              familia: getFamiliaName(servicio.familiaId) || 'Sin familia', 
-              precio: servicio.precioConIVA || '0',
-              iva: "N/A",
+              nombre: servicio.name, // Usar name
+              codigo: servicio.code || '', // Usar code
+              familia: servicio.categoryId || '(Sin categoría)', // Usar categoryId directamente o buscar nombre global
+              precio: servicio.price || 0, // Usar price
+              iva: "N/A", // TODO: Calcular o obtener IVA correcto
               tipo: 'Servicio',
-              deshabilitado: servicio.deshabilitado || false
+              deshabilitado: !servicio.isActive // Usar isActive negado
             })) as ServicioFormateado[];
             
             setServiciosFormateados(serviciosFormateados);
@@ -153,14 +144,14 @@ export default function ConfiguracionTarifa() {
         console.error("Error al cargar servicios:", error);
         setServiciosTarifa([]);
         setServiciosFormateados([]);
+        sonnerToast.error("Error al cargar los servicios de la tarifa."); 
       }
     };
     
-    // Solo cargar si tarifaFamilies ya tiene datos
-    if (tarifaFamilies.length > 0) {
-       loadServicios();
+    if (tarifa) {
+      loadServicios();
     }
-  }, [tarifaId, getServiciosByTarifaId, itemsPerPage, tarifaFamilies]);
+  }, [tarifaId, getServiciosByTarifaId, itemsPerPage, tarifa]);
 
   // Efecto para resetear includeDisabledClinics cuando se abre el modal
   useEffect(() => {
@@ -171,37 +162,29 @@ export default function ConfiguracionTarifa() {
 
   // Cargar la tarifa completa al montar el componente y CUANDO los datos estén listos
   useEffect(() => {
-    const loadTarifa = async () => {
+    const loadTarifaCompleta = async () => {
       try {
-        // *** AÑADIR GUARDA: Salir si las tarifas generales no están listas ***
-        if (!todasLasTarifas || todasLasTarifas.length === 0) {
-          console.log("Esperando a que se carguen las tarifas generales...");
-          return; // Salir y esperar a que el contexto actualice todasLasTarifas
+        if (!tarifa) {
+          console.log("Esperando a que se cargue la tarifa...");
+          return;
         }
-        
         if (tarifaId) {
-          console.log("Intentando cargar tarifa con ID (datos listos):", tarifaId);
-          // Ahora getTarifaById debería funcionar si el ID existe
           const tarifaData = await getTarifaById(tarifaId);
-          
           if (tarifaData) {
-            const tarifaPreparada = prepararTarifaConClinicas(tarifaData);
-            console.log("Tarifa cargada (datos listos):", tarifaPreparada);
-            setTarifa(tarifaPreparada);
-            setTarifaEditada(tarifaPreparada);
+            console.log("Tarifa cargada (datos listos):");
+            setTarifa(tarifaData);
+            setTarifaEditada(tarifaData);
           } else {
-            console.error("No se encontró la tarifa con ID (incluso con datos listos):", tarifaId);
+            console.error("No se encontró la tarifa con ID:", tarifaId);
             router.push('/configuracion/tarifas');
           }
         }
       } catch (error) {
-        console.error("Error al cargar la tarifa:", error);
+        console.error("Error al cargar la tarifa completa:", error);
       }
     };
-    
-    loadTarifa();
-  // Añadir todasLasTarifas a las dependencias
-  }, [tarifaId, getTarifaById, router, todasLasTarifas]); 
+    loadTarifaCompleta();
+  }, [tarifaId, getTarifaById, router, tarifa]);
 
   // Funciones para manejar la creación de diferentes tipos
   const handleNuevoServicio = () => {
@@ -387,12 +370,13 @@ export default function ConfiguracionTarifa() {
         // Actualizar la vista de tabla
         const serviciosActualizados = nuevoServiciosTarifa.map(servicio => ({
           id: String(servicio.id),
-          nombre: servicio.nombre,
-          codigo: servicio.codigo || '',
-          familia: String(getFamiliaName(servicio.familiaId)),
-          precio: parseFloat(servicio.precioConIVA) || 0,
+          nombre: servicio.name,
+          codigo: servicio.code || '',
+          familia: servicio.categoryId || '(Sin categoría)',
+          precio: servicio.price || 0,
           iva: "N/A",
-          tipo: 'servicio'
+          tipo: 'Servicio',
+          deshabilitado: !servicio.isActive
         })) as ServicioFormateado[];
         
         setServiciosFormateados(serviciosActualizados);
@@ -426,173 +410,6 @@ export default function ConfiguracionTarifa() {
     }
   };
 
-  // Función para asegurar que la tarifa tenga clinicasIds correctamente
-  const prepararTarifaConClinicas = (tarifaOriginal: any): Tarifa => {
-    // Crear una copia para no modificar el original
-    const tarifaFormateada = { ...tarifaOriginal };
-    
-    // Asegurar que exista clinicasIds y sea un array
-    if (!tarifaFormateada.clinicasIds || !Array.isArray(tarifaFormateada.clinicasIds)) {
-      // Si hay clinicaId, usarla como base para clinicasIds
-      if (tarifaFormateada.clinicaId) {
-        tarifaFormateada.clinicasIds = [tarifaFormateada.clinicaId];
-      } else {
-        // De lo contrario, inicializar como array vacío
-        tarifaFormateada.clinicasIds = [];
-      }
-    }
-    
-    // Asegurar que clinicaId sea válido y esté en clinicasIds
-    if (tarifaFormateada.clinicaId && tarifaFormateada.clinicasIds.length > 0) {
-      // Si la clinicaId no está en clinicasIds, añadirla
-      if (!tarifaFormateada.clinicasIds.includes(tarifaFormateada.clinicaId)) {
-        tarifaFormateada.clinicasIds.push(tarifaFormateada.clinicaId);
-      }
-    } 
-    // Si no hay clinicaId pero hay clinicasIds, establecer la primera como principal
-    else if (!tarifaFormateada.clinicaId && tarifaFormateada.clinicasIds.length > 0) {
-      tarifaFormateada.clinicaId = tarifaFormateada.clinicasIds[0];
-    }
-    
-    // Asegurar que isActive exista (opuesto a deshabilitada si no existe)
-    if (tarifaFormateada.isActive === undefined) {
-      tarifaFormateada.isActive = !tarifaFormateada.deshabilitada;
-    }
-    
-    console.log("Tarifa formateada:", tarifaFormateada);
-    
-    return tarifaFormateada as Tarifa;
-  };
-
-  // Función para obtener una tarifa directamente del contexto
-  const getTarifaFromAllSources = async (tarifaId: string): Promise<Tarifa | null> => {
-    console.log("Buscando tarifa con ID:", tarifaId);
-    
-    // Obtener desde el contexto de tarifas (única fuente de verdad)
-    const tarifaFromContext = getTarifaById(tarifaId);
-    if (tarifaFromContext) {
-      console.log("Tarifa encontrada en el contexto");
-      return prepararTarifaConClinicas(tarifaFromContext);
-    }
-    
-    console.log("Tarifa no encontrada en el contexto");
-    return null;
-  };
-
-  // Funciones específicas para la gestión de clínicas asociadas
-  // Estas funciones facilitarán la migración a base de datos
-
-  // Añadir una clínica a una tarifa
-  const addClinicToTarifa = async (tarifaId: string, clinicaId: string, isPrimary?: boolean): Promise<boolean> => {
-    try {
-      // Obtener la tarifa actual
-      const tarifaActual = await getTarifaById(tarifaId);
-      if (!tarifaActual) return false;
-      
-      // Clonar los arrays para evitar mutaciones
-      const clinicasIds = [...(tarifaActual.clinicasIds || [])];
-      
-      // Verificar si la clínica ya está asociada
-      if (clinicasIds.includes(clinicaId)) {
-        console.log("La clínica ya está asociada a esta tarifa");
-        
-        // Si debe ser primaria pero no lo es, actualizamos
-        if (isPrimary && tarifaActual.clinicaId !== clinicaId) {
-          updateTarifa(tarifaId, { clinicaId });
-          return true;
-        }
-        
-        return true; // No hay cambios necesarios
-      }
-      
-      // Añadir la clínica a la lista
-      clinicasIds.push(clinicaId);
-      
-      // Actualizar datos
-      const updateData: Partial<Tarifa> = { clinicasIds };
-      
-      // Si es primaria o no hay clínica primaria, establecerla como primaria
-      if (isPrimary || !tarifaActual.clinicaId) {
-        updateData.clinicaId = clinicaId;
-      }
-      
-      // Guardar directamente en el contexto de tarifas
-      updateTarifa(tarifaId, updateData);
-      return true;
-    } catch (error) {
-      console.error("Error al añadir clínica a tarifa:", error);
-      return false;
-    }
-  };
-
-  // Eliminar una clínica de una tarifa
-  const removeClinicFromTarifa = async (tarifaId: string, clinicaId: string): Promise<boolean> => {
-    try {
-      // Obtener la tarifa actual
-      const tarifaActual = await getTarifaById(tarifaId);
-      if (!tarifaActual) return false;
-      
-      // Clonar los arrays para evitar mutaciones
-      const clinicasIds = [...(tarifaActual.clinicasIds || [])];
-      
-      // Verificar si la clínica está asociada
-      if (!clinicasIds.includes(clinicaId)) {
-        console.log("La clínica no está asociada a esta tarifa");
-        return true; // No hay cambios necesarios
-      }
-      
-      // Eliminar la clínica de la lista
-      const newClinicasIds = clinicasIds.filter(id => id !== clinicaId);
-      
-      // Preparar datos para actualizar
-      const updateData: Partial<Tarifa> = { clinicasIds: newClinicasIds };
-      
-      // Si era la clínica primaria, establecer otra como primaria
-      if (tarifaActual.clinicaId === clinicaId) {
-        if (newClinicasIds.length > 0) {
-          // Usar la primera clínica disponible como principal
-          updateData.clinicaId = newClinicasIds[0];
-        } else {
-          // Si no hay más clínicas, limpiar clinicaId
-          updateData.clinicaId = "";
-        }
-      }
-      
-      // Guardar directamente en el contexto de tarifas
-      updateTarifa(tarifaId, updateData);
-      return true;
-    } catch (error) {
-      console.error("Error al eliminar clínica de tarifa:", error);
-      return false;
-    }
-  };
-
-  // Establecer una clínica como primaria para una tarifa
-  const setPrimaryClinicForTarifa = async (tarifaId: string, clinicaId: string): Promise<boolean> => {
-    try {
-      // Obtener la tarifa actual
-      const tarifaActual = await getTarifaById(tarifaId);
-      if (!tarifaActual) return false;
-      
-      // Verificar si la clínica está asociada
-      const clinicasIds = [...(tarifaActual.clinicasIds || [])];
-      if (!clinicasIds.includes(clinicaId)) {
-        // Si la clínica no está asociada, añadirla primero
-        clinicasIds.push(clinicaId);
-      }
-      
-      // Actualizar directamente en el contexto de tarifas
-      updateTarifa(tarifaId, { 
-        clinicaId,
-        clinicasIds
-      });
-      return true;
-    } catch (error) {
-      console.error("Error al establecer clínica primaria:", error);
-      return false;
-    }
-  };
-
   // Funciones simple para manejar eventos de servicio (evita el error)
   const handleServiciosUpdated = () => {
     console.log("Evento de actualización de servicios recibido");
@@ -603,7 +420,7 @@ export default function ConfiguracionTarifa() {
       {/* Contenedor del título y acciones */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center space-x-4">
-          <h1 className="text-2xl font-semibold">{tarifa ? tarifa.nombre : 'Cargando Tarifa...'}</h1>
+          <h1 className="text-2xl font-semibold">{tarifa ? tarifa.name : 'Cargando Tarifa...'}</h1>
           {tarifa && (
             <Button variant="ghost" size="icon" onClick={() => setEditingTarifa(true)} className="text-gray-500 hover:text-purple-600">
               <Edit3 className="w-5 h-5" />
@@ -662,7 +479,7 @@ export default function ConfiguracionTarifa() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">(Todas)</SelectItem>
-                    {tarifaFamilies.map((familia) => (
+                    {families.map((familia) => (
                       <SelectItem key={familia.id} value={familia.name}>
                         {familia.name}
                       </SelectItem>
@@ -772,19 +589,8 @@ export default function ConfiguracionTarifa() {
                 <Button
                   variant="outline"
                   className="justify-start w-full text-purple-600 border-purple-600 hover:bg-purple-50"
-                  onClick={() => {
-                    if (tarifa) {
-                      setTarifaEditada(tarifa);
-                      setEditingClinics(true);
-                    } else {
-                      console.error("No hay tarifa cargada para editar clínicas");
-                      toast({
-                        title: "Error",
-                        description: "No se pudo cargar la tarifa para editar clínicas",
-                        variant: "destructive"
-                      });
-                    }
-                  }}
+                  onClick={() => sonnerToast.info("Funcionalidad de clínicas asociadas en revisión.")}
+                  disabled
                 >
                   <Building2 className="w-5 h-5 mr-2" />
                   <span>Clínicas asociadas</span>
@@ -799,7 +605,8 @@ export default function ConfiguracionTarifa() {
                 </Button>
               </div>
               
-              {/* Mostrar clínicas asociadas - CON BÚSQUEDA CORREGIDA */}
+              {/* Mostrar clínicas asociadas - COMENTADO TEMPORALMENTE */}
+              {/* 
               {tarifa?.clinicasIds && tarifa.clinicasIds.length > 0 && (
                 <div className="mt-5 space-y-2">
                   <div className="flex items-center">
@@ -827,13 +634,14 @@ export default function ConfiguracionTarifa() {
                   </div>
                 </div>
               )}
+              */}
             </div>
           </div>
         </CardContent>
       </Card>
 
       {/* --- SECCIÓN TABLA SERVICIOS - COMPLETA Y VERIFICADA --- */}
-      <div className="flex justify-between mb-4 items-center">
+      <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-semibold">Listado de Servicios ({serviciosFiltrados.length})</h2>
       </div>
 
@@ -920,8 +728,7 @@ export default function ConfiguracionTarifa() {
         )}
       </div>
 
-      {/* --- MODALES --- */} 
-      {/* Modal de confirmación para eliminar servicio */} 
+      {/* --- MODALES --- */}
       <Dialog open={confirmEliminarOpen} onOpenChange={setConfirmEliminarOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -939,155 +746,27 @@ export default function ConfiguracionTarifa() {
         </DialogContent>
       </Dialog>
 
-      {/* Modal de edición de clínicas asociadas */}
+      {/* Modal Editar Clínicas Asociadas - COMENTADO TEMPORALMENTE */}
+      {/*
       <Dialog open={editingClinics} onOpenChange={setEditingClinics}>
         <DialogContent className="p-6 sm:max-w-md">
           <DialogHeader className="mb-4">
-            <DialogTitle>Clínicas asociadas</DialogTitle>
-            <DialogDescription>Selecciona las clínicas a las que estará asociada esta tarifa.</DialogDescription>
+            <DialogTitle>Clínicas asociadas (En Revisión)</DialogTitle>
+            <DialogDescription>La gestión de clínicas asociadas está siendo refactorizada.</DialogDescription>
           </DialogHeader>
           
           <div className="my-4 space-y-4">
-            {/* Checkbox para incluir clínicas deshabilitadas */}
-            <div className="flex items-center space-x-2">
-              <Checkbox id="includeDisabledClinics" checked={includeDisabledClinics} onCheckedChange={(checked) => setIncludeDisabledClinics(!!checked)} />
-              <label htmlFor="includeDisabledClinics" className="leading-none text-sm font-medium cursor-pointer">Mostrar clínicas deshabilitadas</label>
-            </div>
-            
-            {/* Selector de clínicas para AÑADIR */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Añadir clínica</label>
-              <Select
-                onValueChange={async (value) => {
-                   // ... (Lógica para añadir clínica usando addClinicToTarifa)
-                   // Asegurarse que value es el ID de la clínica
-                   if (tarifaId && value) {
-                      const isPrimary = !tarifaEditada?.clinicasIds || tarifaEditada.clinicasIds.length === 0;
-                      sonnerToast.info("Asociando clínica...");
-                      const success = await addClinicToTarifa(tarifaId, value, isPrimary);
-                      if (success) {
-                         const updatedTarifa = await getTarifaById(tarifaId);
-                         if (updatedTarifa) {
-                           setTarifa(prepararTarifaConClinicas(updatedTarifa));
-                           setTarifaEditada(prepararTarifaConClinicas(updatedTarifa));
-                         }
-                         sonnerToast.success("Clínica asociada correctamente.");
-                      } else {
-                         sonnerToast.error("Error al asociar la clínica.");
-                      }
-                   }
-                }}
-              >
-                <SelectTrigger className="w-full bg-white border-gray-300"><SelectValue placeholder="Seleccionar clínica" /></SelectTrigger>
-                <SelectContent className="bg-white">
-                  {/* RESTAURAR Y CORREGIR LÓGICA DE FILTRADO */}
-                  {clinics
-                     .filter(c => {
-                       // Filtrar si ya está asociada
-                       const isAlreadyAssociated = tarifaEditada?.clinicasIds?.includes(String(c.id));
-                       if (isAlreadyAssociated) return false;
-                       // Filtrar por estado si no se incluyen deshabilitadas
-                       if (!includeDisabledClinics && !c.isActive) return false;
-                       // Si pasa los filtros, se muestra
-                       return true;
-                     })
-                     .map((clinic) => (
-                       // Usar clinic.id como value
-                       <SelectItem key={clinic.id} value={String(clinic.id)} className={!clinic.isActive ? "text-amber-600" : ""}>
-                         {clinic.name} {!clinic.isActive && " (Deshabilitada)"}
-                       </SelectItem>
-                     ))}
-                  {/* Mensaje si no hay clínicas disponibles (después de filtrar) */}
-                  {clinics.filter(c => {
-                       const isAlreadyAssociated = tarifaEditada?.clinicasIds?.includes(String(c.id));
-                       if (isAlreadyAssociated) return false;
-                       if (!includeDisabledClinics && !c.isActive) return false;
-                       return true;
-                     }).length === 0 && (
-                       <div className="p-2 text-sm text-center text-gray-500">No hay más clínicas disponibles.</div>
-                     )
-                  }
-                </SelectContent>
-              </Select>
-            </div>
-            
-            {/* Lista de Clínicas seleccionadas para ELIMINAR/CAMBIAR PRINCIPAL */}
-            {tarifaEditada?.clinicasIds && tarifaEditada.clinicasIds.length > 0 ? (
-              <div className="space-y-2">
-                <label className="block mb-2 text-sm font-medium">Clínicas seleccionadas ({tarifaEditada.clinicasIds.length})</label>
-                <div className="flex flex-wrap gap-2 mt-2">
-                  {tarifaEditada.clinicasIds.map((clinicaId) => {
-                    const clinic = clinics.find(c => String(c.id) === String(clinicaId));
-                    const isPrimary = String(clinicaId) === String(tarifaEditada.clinicaId);
-                    return (
-                      <div key={clinicaId} className={`px-3 py-1.5 rounded-full flex items-center gap-1 text-sm ${isPrimary ? 'bg-indigo-100 text-indigo-800 border border-indigo-300' : 'bg-gray-100 text-gray-800 border border-gray-200'}`}>
-                        <span>{clinic?.name || clinicaId}</span>
-                        {isPrimary && <span className="px-1.5 py-0.5 ml-1 text-xs rounded-full bg-indigo-200 text-indigo-800">Principal</span>}
-                        {/* Botón Eliminar Clínica - IMPLEMENTAR onClick */}
-                        <button 
-                          onClick={async () => {
-                            sonnerToast.info("Eliminando asociación...");
-                            const success = await removeClinicFromTarifa(tarifaId, clinicaId);
-                            if (success) {
-                              // Actualizar estados locales tras eliminar
-                              const updatedTarifa = await getTarifaById(tarifaId);
-                              if (updatedTarifa) {
-                                setTarifa(prepararTarifaConClinicas(updatedTarifa));
-                                setTarifaEditada(prepararTarifaConClinicas(updatedTarifa));
-                              }
-                              sonnerToast.success("Clínica desasociada correctamente.");
-                            } else {
-                              sonnerToast.error("Error al desasociar la clínica.");
-                            }
-                          }} 
-                          className="ml-1 text-gray-500 hover:text-red-500" 
-                          title="Eliminar clínica"
-                        >
-                          <X size={14} />
-                        </button>
-                        {/* Botón Hacer Principal */} 
-                        {!isPrimary && (
-                          <button 
-                            onClick={async () => {
-                               // Implementar lógica similar para setPrimaryClinicForTarifa
-                               sonnerToast.info("Estableciendo como principal...");
-                               const success = await setPrimaryClinicForTarifa(tarifaId, clinicaId);
-                               if (success) {
-                                 const updatedTarifa = await getTarifaById(tarifaId);
-                                 if (updatedTarifa) {
-                                   setTarifa(prepararTarifaConClinicas(updatedTarifa));
-                                   setTarifaEditada(prepararTarifaConClinicas(updatedTarifa));
-                                 }
-                                 sonnerToast.success("Clínica establecida como principal.");
-                               } else {
-                                  sonnerToast.error("Error al establecer como principal.");
-                               }
-                            }} 
-                            className="ml-1 text-indigo-500 hover:text-indigo-700" 
-                            title="Establecer como principal"
-                          >
-                            <Star size={14} />
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : (
-               <div className="p-4 text-sm border rounded-md bg-amber-50 text-amber-700">
-                 <p>No hay clínicas asociadas a esta tarifa.</p>
-               </div>
-            )}
+            {/* ... (Contenido del modal basado en tarifaEditada.clinicasIds / clinicaId) ... * /}
           </div>
           
-          {/* Footer DENTRO de DialogContent */}
           <DialogFooter className="mt-4">
             <Button variant="outline" onClick={() => setEditingClinics(false)}>Cerrar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      */}
+
     </div>
-  )
+  );
 }
 

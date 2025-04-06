@@ -4,12 +4,10 @@ import { Prisma } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-export async function GET(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
+export async function GET(request: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const { id: clinicId } = params;
-  
+
   console.log(`[API GET /api/clinics/[id]/cabins] Received request for clinicId: ${clinicId}`);
 
   if (!clinicId || typeof clinicId !== 'string') {
@@ -38,10 +36,8 @@ export async function GET(
   }
 }
 
-export async function POST(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
+export async function POST(request: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   // TODO: Añadir autenticación/autorización
   const { id: clinicId } = params;
 

@@ -41,8 +41,6 @@ model System {
   equipment           Equipment[]
   appointments        Appointment[]
   scheduleTemplates   ScheduleTemplate[]
-  userSchedules       UserSchedule[]
-  scheduleExceptions  ScheduleException[]
   services            Service[]
   products            Product[]
   stockLedgers        StockLedger[]
@@ -85,7 +83,6 @@ model User {
 
   // Relaciones Inversas (Corregidas y Añadidas)
   roles              UserRole[]
-  userSchedules      UserSchedule[] // Añadido inverso para UserSchedule
   timeLogs           TimeLog[]
   contracts          EmploymentContract[]
   assignedLeads      Lead[]
@@ -96,7 +93,6 @@ model User {
   loyaltyAdjustments LoyaltyLedger[]
   stockAdjustments   StockLedger[]
   skills             UserSkill[]
-  scheduleExceptions ScheduleException[] // Añadido inverso para ScheduleException
   imagesUploaded     EntityImage[]          @relation("UploadedImages")
   documentsUploaded  EntityDocument[]       @relation("UploadedDocuments")
   clinicAssignments  UserClinicAssignment[] // << AÑADIR RELACIÓN INVERSA
@@ -125,31 +121,48 @@ model Clinic {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  // --- CAMPOS AÑADIDOS PARA AJUSTAR A LA UI ---
-  prefix         String?
-  commercialName String? 
-  businessName   String? 
-  cif            String? 
-  country        String? // Nombre completo del país?
-  phone2         String? 
-  initialCash    Float?  
-  ticketSize     String? // ej: \"80mm\", \"58mm\"
-  ip             String? 
-  blockSignArea  Boolean? @default(false) 
-  blockPersonalData Boolean? @default(false) 
-  delayedPayments Boolean? @default(false) 
-  affectsStats   Boolean? @default(true)  
-  appearsInApp   Boolean? @default(true)  
-  scheduleControl Boolean? @default(false) 
-  professionalSkills Boolean? @default(false) 
-  notes          String? 
+  // --- CAMPOS AÑADIDOS/MODIFICADOS PARA HORARIO HÍBRIDO ---
+  // Campos para horario INDEPENDIENTE o como CACHÉ/DISPLAY si está vinculado
   openTime       String? // Formato HH:MM
   closeTime      String? // Formato HH:MM
   slotDuration   Int?    // Minutos
-  scheduleJson   Json?   // Para almacenar la estructura detallada del horario diario
+
+  // ID de la plantilla vinculada (si existe). Si es null, el horario es independiente.
+  linkedScheduleTemplateId String?
+  linkedScheduleTemplate   ScheduleTemplate? @relation("LinkedClinicTemplate", fields: [linkedScheduleTemplateId], references: [id], onDelete: SetNull)
+
+  // Bloques específicos de esta clínica si NO está vinculada a una plantilla
+  independentScheduleBlocks ClinicScheduleBlock[] // Nueva relación
+
+  // ELIMINAR O IGNORAR scheduleJson: Json?
+  // scheduleJson   Json?
+
+  // --- FIN CAMPOS HORARIO HÍBRIDO ---
+
+  // --- CAMPOS AÑADIDOS PARA AJUSTAR A LA UI (Mantener) ---
+  prefix         String?
+  commercialName String?
+  businessName   String?
+  cif            String?
+  country        String? // Nombre completo del país?
+  phone2         String?
+  initialCash    Float?
+  ticketSize     String? // ej: \"80mm\", \"58mm\"
+  ip             String?
+  blockSignArea  Boolean? @default(false)
+  blockPersonalData Boolean? @default(false)
+  delayedPayments Boolean? @default(false)
+  affectsStats   Boolean? @default(true)
+  appearsInApp   Boolean? @default(true)
+  scheduleControl Boolean? @default(false)
+  professionalSkills Boolean? @default(false)
+  notes          String?
+  // openTime, closeTime, slotDuration ya están arriba en la sección Híbrida
+  // scheduleJson comentado/eliminado arriba
   tariffId       String? // ID de la tarifa asociada
   tariff         Tariff? @relation(fields: [tariffId], references: [id], onDelete: SetNull) // Relación con Tarifa
-  // --- FIN CAMPOS AÑADIDOS ---
+  // --- FIN CAMPOS AÑADIDOS UI ---
+
 
   // Relaciones existentes (verificar si falta alguna inversa)
   bankAccounts       BankAccount[]
@@ -157,15 +170,15 @@ model Clinic {
   equipment          Equipment[]
   appointments       Appointment[]
   clientsOrigin      Client[]
-  scheduleExceptions ScheduleException[] 
-  tickets            Ticket[] 
-  cashSessions       CashSession[] 
-  userAssignments    UserClinicAssignment[] 
-  cabins             Cabin[] 
+  tickets            Ticket[]
+  cashSessions       CashSession[]
+  userAssignments    UserClinicAssignment[]
+  cabins             Cabin[]
 
   @@unique([name, systemId], name: "Clinic_name_systemId_key")
   @@index([systemId])
   @@index([tariffId]) // Añadir índice para tariffId
+  @@index([linkedScheduleTemplateId]) // Añadir índice para la nueva FK
   @@map("clinics")
 }
 
@@ -635,16 +648,27 @@ enum ExceptionScope {
 // Plantilla de Horario reutilizable
 model ScheduleTemplate {
   id          String   @id @default(cuid())
-  name        String // Ej: "Jornada Completa L-V", "Media Jornada Mañanas"
+  name        String
   description String?
   systemId    String
   system      System   @relation(fields: [systemId], references: [id], onDelete: Cascade)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  // Relaciones
-  blocks          ScheduleTemplateBlock[] // Bloques que componen la plantilla
-  userSchedules   UserSchedule[] // Asignaciones de esta plantilla a usuarios
+  // --- CAMPOS AÑADIDOS PARA ESTRUCTURA COMPLETA ---
+  openTime String? // Formato HH:MM (Propio de la plantilla)
+  closeTime String? // Formato HH:MM (Propio de la plantilla)
+  // slotDuration Int? // Podría tenerlo, pero quizás es mejor que cada clínica defina su slot
+  // --- FIN CAMPOS AÑADIDOS ---
+
+  // Bloques detallados de la plantilla
+  blocks ScheduleTemplateBlock[]
+
+  // Clínicas que están VINCULADAS a esta plantilla
+  linkedClinics Clinic[] @relation("LinkedClinicTemplate")
+
+  // ELIMINAR relación inversa a ClinicSchedule
+  // clinicSchedules ClinicSchedule[]
 
   @@unique([name, systemId])
   @@index([systemId])
@@ -653,67 +677,34 @@ model ScheduleTemplate {
 
 // Bloque de tiempo dentro de una plantilla de horario
 model ScheduleTemplateBlock {
-  id         String           @id @default(cuid())
-  templateId String
-  template   ScheduleTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
-  dayOfWeek  DayOfWeek // Día de la semana
-  startTime  String // Hora de inicio (formato "HH:MM")
-  endTime    String // Hora de fin (formato "HH:MM")
-  isWorking  Boolean          @default(true) // Indica si es tiempo de trabajo o descanso (ej: pausa comida)
-  // resourceType       String? // Podría indicar si es para un tipo de recurso (ej: "CABINA_1", "GENERAL")
-  createdAt  DateTime         @default(now())
+  id          String   @id @default(cuid())
+  templateId  String
+  template    ScheduleTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  dayOfWeek   DayOfWeek // Enum: MONDAY, TUESDAY, etc.
+  startTime   String    // Formato HH:MM
+  endTime     String    // Formato HH:MM
+  isWorking   Boolean   @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@index([templateId])
   @@map("schedule_template_blocks")
 }
 
-// Asignación de una plantilla de horario a un usuario
-model UserSchedule {
-  id         String           @id @default(cuid())
-  userId     String
-  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  templateId String
-  template   ScheduleTemplate @relation(fields: [templateId], references: [id])
-  startDate  DateTime         @db.Date // Fecha desde la que aplica
-  endDate    DateTime?        @db.Date // Fecha hasta la que aplica (null si indefinido)
-  systemId   String
-  system     System           @relation(fields: [systemId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  createdAt  DateTime         @default(now())
-  updatedAt  DateTime         @updatedAt
+// --- NUEVO MODELO: Bloque de Horario Específico de Clínica (Independiente) ---
+model ClinicScheduleBlock {
+  id          String   @id @default(cuid())
+  clinicId    String
+  clinic      Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  dayOfWeek   DayOfWeek
+  startTime   String
+  endTime     String
+  isWorking   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  @@index([userId])
-  @@index([templateId])
-  @@index([systemId])
-  @@map("user_schedules")
-}
-
-// Excepciones a los horarios base
-model ScheduleException {
-  id          String         @id @default(cuid())
-  description String
-  startDate   DateTime 
-  endDate     DateTime 
-  isAllDay    Boolean        @default(false) 
-  type        ExceptionType
-  scope       ExceptionScope 
-  userId      String? 
-  user        User?          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  clinicId    String? 
-  clinic      Clinic?        @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  systemId    String 
-  system      System         @relation(fields: [systemId], references: [id], onDelete: Cascade)
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
-
-  // --- CAMPO AÑADIDO PARA HORARIO DE EXCEPCIÓN ---
-  overrideScheduleJson Json? // Para almacenar la estructura del horario que aplica DURANTE la excepción
-  // --- FIN CAMPO AÑADIDO ---
-
-  @@index([startDate, endDate])
-  @@index([systemId, scope])
-  @@index([userId])
   @@index([clinicId])
-  @@map("schedule_exceptions")
+  @@map("clinic_schedule_blocks")
 }
 
 // --- Modelos Catálogo (Servicios, Productos) y Stock ---
@@ -751,6 +742,9 @@ model Service {
   // Relación con VATType
   vatTypeId String? // << CAMPO CORRECTO
   vatType   VATType? @relation(fields: [vatTypeId], references: [id])
+
+  // Relación inversa para precios específicos por tarifa
+  // tariffPrices TariffServicePrice[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -796,6 +790,9 @@ model Product {
   // Relación con VATType
   vatTypeId String? // << AÑADIR CAMPO DE RELACIÓN
   vatType   VATType? @relation(fields: [vatTypeId], references: [id])
+
+  // Relación inversa para precios específicos por tarifa
+  // tariffPrices TariffProductPrice[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -898,7 +895,12 @@ model Tariff {
 
   // --- RELACIÓN INVERSA AÑADIDA ---
   clinics     Clinic[] // Clínicas que usan esta tarifa
+  // tariffFamilies TariffFamily[] // Añadir esta línea para la relación inversa
   // --- FIN RELACIÓN INVERSA ---
+
+  // Relaciones inversas para precios específicos
+  // servicePrices TariffServicePrice[]
+  // productPrices TariffProductPrice[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1410,6 +1412,11 @@ model Category {
   // type        CategoryType? 
   systemId    String // A qué sistema pertenece esta categoría
   system      System   @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  // --- Añadir Jerarquía ---
+  parentId  String? // ID de la categoría padre
+  parent    Category? @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: Restrict, onUpdate: Restrict) // Auto-relación (Restrict para evitar borrar padres con hijos)
+  children  Category[] @relation("CategoryHierarchy") // Subcategorías
+  // --- Fin Jerarquía ---
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -1420,6 +1427,7 @@ model Category {
 
   @@unique([name, systemId]) // Nombre único por sistema
   @@index([systemId])
+  @@index([parentId]) // Índice para buscar hijos
   @@map("categories")
 }
 

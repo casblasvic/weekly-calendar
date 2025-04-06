@@ -21,13 +21,11 @@ const UpdateCabinSchema = z.object({
 });
 
 // --- Función PUT --- 
-export async function PUT(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
+export async function PUT(request: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   // TODO: Add authentication/authorization
   const { id: cabinId } = params;
-  
+
   // *** LOG RECIBIDO ***
   console.log(`[API PUT /api/cabins/[id]] Received request for cabinId: ${cabinId}`);
 
@@ -91,10 +89,8 @@ export async function PUT(
 }
 
 // --- Función DELETE --- 
-export async function DELETE(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(request: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   // 1. Validar ID de ruta
   const paramsValidation = ParamsSchema.safeParse(params);
   if (!paramsValidation.success) {

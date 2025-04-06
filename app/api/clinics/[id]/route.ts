@@ -57,12 +57,10 @@ const UpdateClinicSchema = z.object({
  * @param context Objeto que contiene los parámetros de la ruta dinámica (ej: { id: '...' }).
  * @returns NextResponse con la clínica encontrada (JSON) o un mensaje de error.
  */
-export async function GET(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
+export async function GET(request: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   // 1. Validar ID de la ruta
-  console.log("[API GET /api/clinics/[id]] Received params:", params); 
+  console.log("[API GET /api/clinics/[id]] Received params:", params);
 
   // --- Acceder al ID directamente ---
   const clinicIdFromParams = params.id;
@@ -87,6 +85,16 @@ export async function GET(
     console.log(`[API GET /api/clinics/[id]] Fetching clinic details for ID: ${clinicId}`);
     const clinic = await prisma.clinic.findUnique({
       where: { id: clinicId },
+      include: {
+        linkedScheduleTemplate: {
+          include: {
+            blocks: true
+          }
+        },
+        independentScheduleBlocks: true,
+        tariff: true,
+        cabins: true,
+      }
     });
 
     if (!clinic) {
@@ -113,10 +121,8 @@ export async function GET(
  * @param params Objeto que contiene el ID de la clínica a actualizar.
  * @returns NextResponse con la clínica actualizada (JSON) o un mensaje de error.
  */
-export async function PUT(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
+export async function PUT(request: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   // 1. Validar ID de la ruta
   console.log("[API PUT /api/clinics/[id]] Received params:", params);
   const clinicIdFromParams = params.id;
@@ -177,10 +183,8 @@ export async function PUT(
  * @param params Objeto que contiene el ID de la clínica a eliminar.
  * @returns NextResponse con un mensaje de éxito y estado 200/204, o un mensaje de error.
  */
-export async function DELETE(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(request: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const clinicId = params.id;
 
   try {

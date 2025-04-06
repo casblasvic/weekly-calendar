@@ -21,10 +21,8 @@ const UpdateClinicScheduleSchema = z.object({
 });
 
 
-export async function PUT(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
+export async function PUT(request: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   // 1. Validar ID de ruta
   const paramsValidation = ParamsSchema.safeParse(params);
   if (!paramsValidation.success) {
@@ -44,7 +42,7 @@ export async function PUT(
   } catch (error) {
     return NextResponse.json({ error: 'Error al parsear los datos de la solicitud.' }, { status: 400 });
   }
-  
+
   // Convertir strings de fecha a objetos Date si existen
   const dataToUpdate: any = { ...validatedData };
   if (validatedData.startDate) {

@@ -3,7 +3,24 @@
  * Estas interfaces definen la estructura de todas las entidades que se manejan en la aplicación
  */
 
-import type { ScheduleException as PrismaScheduleException, Tariff as PrismaTariff } from '@prisma/client'; // Importar tipos Prisma
+// Eliminar estas líneas que causan conflicto
+// import { toast } from "@/components/ui/use-toast";
+// import type { Clinica } from "@/services/data/models/interfaces"
+// import type { Cabin } from '@prisma/client'
+// --- Fin Eliminación ---
+
+import type { Tariff as PrismaTariff } from '@prisma/client'; // Importar Tariff
+import type {
+    System as PrismaSystem,
+    User as PrismaUser,
+    Clinic as PrismaClinic,
+    ScheduleTemplate as PrismaScheduleTemplate,
+    ScheduleTemplateBlock as PrismaScheduleTemplateBlock,
+    ClinicScheduleBlock as PrismaClinicScheduleBlock,
+    VATType as PrismaVATType,
+    Category as PrismaCategory,
+    Cabin as PrismaCabin
+} from '@prisma/client';
 
 // Interfaces básicas
 
@@ -64,6 +81,9 @@ export interface Clinica extends BaseEntity, Activable {
   currency: string;
   phone: string | null;
   systemId: string;
+  linkedScheduleTemplateId?: string | null;
+  linkedScheduleTemplate?: (PrismaScheduleTemplate & { blocks?: PrismaScheduleTemplateBlock[] }) | null;
+  independentScheduleBlocks?: PrismaClinicScheduleBlock[] | null;
   commercialName: string | null;
   businessName: string | null;
   cif: string | null;
@@ -81,10 +101,8 @@ export interface Clinica extends BaseEntity, Activable {
   professionalSkills: boolean | null;
   notes: string | null;
   slotDuration: number | null;
-  scheduleJson: any | null;
   tariffId: string | null;
   tariff?: PrismaTariff | null;
-  scheduleExceptions?: PrismaScheduleException[];
 }
 
 /** Interfaz para Cabina en una clínica */
@@ -348,4 +366,17 @@ export interface PerfilEmpleado extends BaseEntity {
   name: string;
   description?: string | null;
   systemId: string;
-} 
+}
+
+export type { 
+    PrismaSystem, 
+    PrismaUser, 
+    PrismaClinic, 
+    PrismaScheduleTemplate, 
+    PrismaScheduleTemplateBlock, 
+    PrismaClinicScheduleBlock, 
+    PrismaTariff,
+    PrismaVATType,
+    PrismaCategory,
+    PrismaCabin
+}; 

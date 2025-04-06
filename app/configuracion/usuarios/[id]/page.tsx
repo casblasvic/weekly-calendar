@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useMemo, useCallback } from "react"
+import React, { useState, useEffect, useMemo, useCallback, use } from "react";
 import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -209,19 +209,20 @@ const traducirDia = (dia: string): string => {
   return traducciones[dia.toLowerCase()] || dia;
 }
 
-export default function EditarUsuarioPage({ params }: { params: { id: string } }) {
+export default function EditarUsuarioPage(props: { params: Promise<{ id: string }> }) {
+  const params = use(props.params);
   // Utilizamos React.use para desenvolver params (recomendación de Next.js)
   // y forzamos el tipo correcto con una doble aserción
   const paramsUnwrapped = React.use(params as any) as { id: string };
   const userId = paramsUnwrapped.id;
-  
+
   const router = useRouter()
   const searchParams = useSearchParams()
-  
+
   // Obtener los parámetros de la URL
   const returnToBase = searchParams.get('returnTo') || "/configuracion/usuarios"
   const tabParam = searchParams.get('tab')
-  
+
   // Construir la URL de retorno completa
   // Si returnToBase ya contiene un signo de interrogación, usamos & para añadir el parámetro tab
   // Si no, usamos ? para iniciar los parámetros de consulta
@@ -230,12 +231,12 @@ export default function EditarUsuarioPage({ params }: { params: { id: string } }
       ? `${returnToBase}&tab=${tabParam}` 
       : `${returnToBase}?tab=${tabParam}`
     : returnToBase
-  
+
   const { getUsuarioById, updateUsuario } = useUser()
   const { clinics } = useClinic()
   const { roles } = useRole()
   const { familias, servicios } = useService()
-  
+
   // Estados básicos refactorizados
   // const [nombre, setNombre] = useState("") // <- Eliminar
   const [firstName, setFirstName] = useState("") // <- Añadir
@@ -246,11 +247,11 @@ export default function EditarUsuarioPage({ params }: { params: { id: string } }
   const [telefono, setTelefono] = useState("") // Asumiendo que 'phone' en Prisma es esto
   // const [perfil, setPerfil] = useState("") // <- Eliminar? El perfil/rol ahora podría estar en UserRole o similar
   const [isActive, setIsActive] = useState(true)
-  
+
   // Estructura para almacenar permisos más detallados: Map<clinicaId, string[]>
   // **COMENTADO TEMPORALMENTE - Requiere API y posible refactor de modelo**
   // const [permisosClinicas, setPermisosClinicas] = useState<Map<string, string[]>>(new Map())
-  
+
   // Convertir Map a array usando useMemo para estabilizar la referencia
   // **COMENTADO TEMPORALMENTE**
   // const selectedClinicas = React.useMemo(() => 
@@ -258,12 +259,12 @@ export default function EditarUsuarioPage({ params }: { params: { id: string } }
   //   [permisosClinicas] // Dependencia
   // );
   // Usar un array vacío temporalmente para que el código no falle
-  const selectedClinicas: string[] = [] 
+  const selectedClinicas: string[] = []
   const permisosClinicas: Map<string, string[]> = new Map() // Temporalmente vacío
-  
+
   const [loading, setLoading] = useState(true)
   const [showDisabledClinics, setShowDisabledClinics] = useState(false)
-  
+
   // Nuevos estados para campos adicionales (mantener, revisar si existen en Prisma User)
   const [dni, setDni] = useState("")
   const [fechaNacimiento, setFechaNacimiento] = useState("")
@@ -271,20 +272,20 @@ export default function EditarUsuarioPage({ params }: { params: { id: string } }
   const [telefono2, setTelefono2] = useState("") // Existe en Prisma?
   const [contrasena, setContrasena] = useState("") // Se maneja en creación/edición?
   const [idioma, setIdioma] = useState("") // Existe en Prisma?
-  
+
   // Estados para los datos de colegiado (mantener, revisar si existen en Prisma User)
   const [colegio, setColegio] = useState("")
   const [numeroColegiado, setNumeroColegiado] = useState("")
   const [especialidad, setEspecialidad] = useState("")
   const [universidad, setUniversidad] = useState("")
-  
+
   // Estados para dirección (mantener, revisar si existen en Prisma User)
   const [direccion, setDireccion] = useState("")
   const [provincia, setProvincia] = useState("")
   const [pais, setPais] = useState("")
   const [localidad, setLocalidad] = useState("")
   const [cp, setCp] = useState("")
-  
+
   // Estados para configuración (mantener, revisar si existen en Prisma User o modelo relacionado)
   const [exportCsv, setExportCsv] = useState("")
   const [indiceControl, setIndiceControl] = useState("")
@@ -294,24 +295,24 @@ export default function EditarUsuarioPage({ params }: { params: { id: string } }
   const [mostrarCitasPropias, setMostrarCitasPropias] = useState(false)
   const [restringirIP, setRestringirIP] = useState(false)
   const [deshabilitado, setDeshabilitado] = useState(false)
-  
+
   // Estado para la pestaña actual
   const [activeTab, setActiveTab] = useState("datos-personales")
-  
+
   // Estado para la búsqueda en permisos
   const [searchPermisos, setSearchPermisos] = useState("")
-  
+
   // Estado para añadir nueva clínica y perfil
   const [nuevaClinicaId, setNuevaClinicaId] = useState("")
   const [nuevoPerfilClinica, setNuevoPerfilClinica] = useState("")
-  
+
   // Estado para manejo de excepciones
   // **COMENTADO TEMPORALMENTE - Requiere API y posible refactor de modelo**
   // const [showExcepcionModal, setShowExcepcionModal] = useState(false);
   // const [editingExcepcion, setEditingExcepcion] = useState<{\n    id?: string;\n    nombre: string;\n    fechaInicio: string;\n    fechaFin: string;\n    dias: HorarioDia[];\n  } | null>(null);
   const showExcepcionModal = false; // Temporal
   const editingExcepcion = null; // Temporal
-  
+
   // Función para crear una excepción por defecto
   // **COMENTADO TEMPORALMENTE**
   /*
@@ -319,7 +320,7 @@ export default function EditarUsuarioPage({ params }: { params: { id: string } }
     // ... (código existente)
   };
   */
-  
+
   // Función para añadir una excepción (MANUAL del usuario)
   // **COMENTADO TEMPORALMENTE**
   /*
@@ -327,7 +328,7 @@ export default function EditarUsuarioPage({ params }: { params: { id: string } }
     // ... (código existente)
   };
   */
-  
+
   // Función para añadir franja a un día en una excepción
   // **COMENTADO TEMPORALMENTE**
   /*
@@ -335,7 +336,7 @@ export default function EditarUsuarioPage({ params }: { params: { id: string } }
     // ... (código existente)
   };
   */
-  
+
   // Función para eliminar franja de un día en una excepción
   // **COMENTADO TEMPORALMENTE**
   /*
@@ -343,7 +344,7 @@ export default function EditarUsuarioPage({ params }: { params: { id: string } }
     // ... (código existente)
   };
   */
-  
+
   // Función para activar/desactivar un día en una excepción
   // **COMENTADO TEMPORALMENTE**
   /*
@@ -351,7 +352,7 @@ export default function EditarUsuarioPage({ params }: { params: { id: string } }
     // ... (código existente)
   };
   */
-  
+
   // Función para eliminar una excepción
   // **COMENTADO TEMPORALMENTE**
   /*
@@ -359,13 +360,13 @@ export default function EditarUsuarioPage({ params }: { params: { id: string } }
     // ... (código existente)
   };
   */
-  
+
   // Filtrar las clínicas activas
   const activeClinicas = clinics.filter(clinic => clinic.isActive)
-  
+
   // Clínicas a mostrar en el selector (según el filtro)
   const clinicasToShow = showDisabledClinics ? clinics : activeClinicas
-  
+
   // Lista de todos los perfiles disponibles en el sistema
   // **COMENTADO TEMPORALMENTE - Usar roles del contexto useRole**
   /*
@@ -377,7 +378,7 @@ export default function EditarUsuarioPage({ params }: { params: { id: string } }
   // const PERFILES_DISPONIBLES = roles.map(r => r.name) ?? []; // Error: name no existe en PerfilEmpleado
   // Asumiendo que el tipo PerfilEmpleado tiene un campo 'nombre' o similar
   const PERFILES_DISPONIBLES = roles.map(r => r.nombre) ?? []; // <- Usar 'nombre' (o el campo correcto)
-  
+
   // Estado para la asignación de habilidades profesionales
   // **COMENTADO TEMPORALMENTE - Requiere API y posible refactor de modelo**
   // const [habilidadesProfesionales, setHabilidadesProfesionales] = useState<Map<string, string[]>>(new Map())
@@ -387,11 +388,11 @@ export default function EditarUsuarioPage({ params }: { params: { id: string } }
   const [nuevoServicio, setNuevoServicio] = useState("")
   const [tipoSeleccion, setTipoSeleccion] = useState<"familia" | "servicio">("familia")
   const [searchHabilidades, setSearchHabilidades] = useState("")
-  
+
   // Datos mock para las familias y servicios (estos vendrían de una API real)
   // **PENDIENTE - Mover a contexto/API useService**
   const FAMILIAS_MOCK = familias ?? []; // Usar datos del contexto si existen
-  
+
   // **PENDIENTE - Mover a contexto/API useService**
   // Reconstruir SERVICIOS_MOCK basado en servicios del contexto
   const SERVICIOS_MOCK: Record<string, { id: string, nombre: string, duracion?: string | null }[]> = {};
@@ -419,21 +420,21 @@ export default function EditarUsuarioPage({ params }: { params: { id: string } }
     // ... (lógica existente comentada temporalmente)
     return []; // Devuelve array vacío temporalmente
   }, [/* habilidadesProfesionales */]); // Quitar dependencia comentada
-  
+
   // **COMENTADO TEMPORALMENTE**
   /*
   const handleAddHabilidad = () => {
     // ... (código existente)
   };
   */
-  
+
   // **COMENTADO TEMPORALMENTE**
   /*
   const handleRemoveHabilidad = (clinicaId: string, itemToRemove: string) => {
     // ... (código existente)
   };
   */
-  
+
   useEffect(() => {
     // **COMENTADO TEMPORALMENTE - Carga de habilidades mock**
     /*
@@ -446,7 +447,7 @@ export default function EditarUsuarioPage({ params }: { params: { id: string } }
     }
     */
   }, [loading, clinics]);
-  
+
   useEffect(() => {
     const loadUsuario = async () => {
       if (!userId || userId === 'nuevo') { // Evitar carga si es 'nuevo' o no hay ID
@@ -609,14 +610,14 @@ export default function EditarUsuarioPage({ params }: { params: { id: string } }
     // ... (código existente)
   }
   */
-  
+
   // **COMENTADO TEMPORALMENTE - Lógica de permisos/clínicas**
   /*
   const handleRemoveClinica = (clinicaId: string, perfilToRemove?: string) => {
     // ... (código existente)
   }
   */
-  
+
   const handleSave = async () => {
     // Validaciones básicas refactorizadas
     // if (!nombre.trim()) { // <- Eliminar
@@ -784,14 +785,14 @@ export default function EditarUsuarioPage({ params }: { params: { id: string } }
       })
     }
   };
-  
+
   // Estado para horarios
   const [selectedClinicaHorario, setSelectedClinicaHorario] = useState<string>("");
   // **COMENTADO TEMPORALMENTE - Requiere API/Modelo**
   const [horarioSemanal, setHorarioSemanal] = useState<Map<string, HorarioDia[]>>(new Map());
   const [excepciones, setExcepciones] = useState<ExcepcionHorariaUsuario[]>([]);
   const [horarioSubTab, setHorarioSubTab] = useState<"semanal" | "excepciones" | "vista">("semanal");
-  
+
   // Estado para modal de edición de franjas horarias
   // **COMENTADO TEMPORALMENTE - Requiere API/Modelo**
   const [showHorarioModal, setShowHorarioModal] = useState(false);
@@ -803,7 +804,7 @@ export default function EditarUsuarioPage({ params }: { params: { id: string } }
     isExcepcion?: boolean; // Indica si estamos editando una franja de excepción
     excepcionDiaIndex?: number; // Índice del día en el array de días de la excepción
   } | null>(null);
-  
+
   // Memoizar las opciones de clínicas para el selector de horarios
   // **COMENTADO TEMPORALMENTE - Depende de selectedClinicas**
   const opcionesClinicasHorario = React.useMemo(() => 
@@ -816,7 +817,7 @@ export default function EditarUsuarioPage({ params }: { params: { id: string } }
       };
     }
   ), [selectedClinicas, clinics]); // Mantener dependencias
-  
+
   // Horarios mock de clínicas (esto vendría de un contexto real)
   // **PENDIENTE - Mover a contexto/API useClinic**
   const HORARIOS_CLINICA_MOCK: Record<string, { 
@@ -839,7 +840,7 @@ export default function EditarUsuarioPage({ params }: { params: { id: string } }
       ]
     }
   };
-  
+
   // Inicialización de horarios cuando se carga el usuario o cambia la clínica seleccionada
   // **COMENTADO TEMPORALMENTE - Requiere API/Modelo y selectedClinicas**
   /*
@@ -849,7 +850,7 @@ export default function EditarUsuarioPage({ params }: { params: { id: string } }
     }
   }, [loading, clinics, selectedClinicas]);
   */
-  
+
   // Función para distribuir proporcionalmente los horarios
   // **COMENTADO TEMPORALMENTE - Requiere API/Modelo y selectedClinicas**
   /*
@@ -857,7 +858,7 @@ export default function EditarUsuarioPage({ params }: { params: { id: string } }
     // ... (lógica existente comentada)
   };
   */
-  
+
   // Función para verificar si una franja horaria está dentro del horario de la clínica
   // **COMENTADO TEMPORALMENTE - Depende de HORARIOS_CLINICA_MOCK y lógica interna**
   /*
@@ -866,10 +867,10 @@ export default function EditarUsuarioPage({ params }: { params: { id: string } }
     return true; // Temporalmente permitir todo
   };
   */
-   // Placeholder mientras está comentado
-   const esFranjaValida = (clinicaId: string, inicio: string, fin: string, dia: string): boolean => true;
+  // Placeholder mientras está comentado
+  const esFranjaValida = (clinicaId: string, inicio: string, fin: string, dia: string): boolean => true;
 
-  
+
   // Función para añadir franja horaria
   // **COMENTADO TEMPORALMENTE - Requiere API/Modelo**
   /*
@@ -877,7 +878,7 @@ export default function EditarUsuarioPage({ params }: { params: { id: string } }
     // ... (lógica existente comentada)
   };
   */
-  
+
   // Función para eliminar franja horaria
   // **COMENTADO TEMPORALMENTE - Requiere API/Modelo**
   /*
@@ -885,10 +886,10 @@ export default function EditarUsuarioPage({ params }: { params: { id: string } }
     // ... (lógica existente comentada)
   };
   */
-  
+
   // Traducción de días de la semana (Mantener)
   // ... (código existente)
-  
+
   // Función para verificar si una franja horaria se superpone con otras existentes
   // **COMENTADO TEMPORALMENTE - Depende de horarioSemanal**
   /*
@@ -906,7 +907,7 @@ export default function EditarUsuarioPage({ params }: { params: { id: string } }
   // Placeholder mientras está comentado
   const hayFranjasSuperpuestas = (clinicaId: string, dia: string, inicio: string, fin: string, franjaIdActual?: string): boolean => false;
 
-  
+
   // Función para calcular las horas totales por clínica y por día
   // **COMENTADO TEMPORALMENTE - Depende de horarioSemanal**
   /*
@@ -915,15 +916,15 @@ export default function EditarUsuarioPage({ params }: { params: { id: string } }
     return { totalPorClinica: {}, totalGlobal: 0 }; // Temporal
   };
   */
-   // Placeholder mientras está comentado
-   const calcularHorasTotales = (horarioSemanal: Map<string, HorarioDia[]>) => ({ totalPorClinica: {}, totalGlobal: 0 });
+  // Placeholder mientras está comentado
+  const calcularHorasTotales = (horarioSemanal: Map<string, HorarioDia[]>) => ({ totalPorClinica: {}, totalGlobal: 0 });
 
   // Convierte un string de hora (HH:MM) a minutos (Mantener)
   // ... (código existente)
-  
+
   // Convierte minutos a formato de hora legible (Mantener)
   // ... (código existente)
-  
+
   if (loading && userId !== 'nuevo') { // Añadir chequeo para 'nuevo'
     return (
       <div className="container p-6 mx-auto space-y-6">
@@ -933,7 +934,7 @@ export default function EditarUsuarioPage({ params }: { params: { id: string } }
       </div>
     )
   }
-  
+
   return (
     <div className="container max-w-5xl p-6 mx-auto space-y-6">
       <div className="flex items-center justify-between">

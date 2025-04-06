@@ -4,16 +4,16 @@ import { createContext, useContext, useState, useEffect, useCallback, ReactNode 
 // QUITAR: import { useRouter } from "next/navigation"
 // QUITAR: import { useInterfaz } from "./interfaz-Context"
 // QUITAR: import { Tarifa as TarifaModel, FamiliaTarifa as FamiliaTarifaModel, EntityImage } from "@/services/data/models/interfaces"
-import { Tariff as PrismaTariff, TariffFamily as PrismaTariffFamily } from '@prisma/client'; // Usar tipos Prisma
+import { Tariff as PrismaTariff } from '@prisma/client'; // Usar tipos Prisma
 
 // Definir alias para los tipos usando los tipos de Prisma
 export type Tarifa = PrismaTariff;
-export type FamiliaTarifa = PrismaTariffFamily;
+// export type FamiliaTarifa = PrismaTariffFamily;
 // export type TarifaImage = EntityImage; // PENDIENTE
 
 interface TarifContextType {
   tarifas: Tarifa[]
-  familiasTarifa: FamiliaTarifa[]; // Mantener estado local, pero carga/CRUD pendiente
+  // familiasTarifa: FamiliaTarifa[]; // Mantener estado local, pero carga/CRUD pendiente
   isLoading: boolean;
   error: string | null;
   refetchTariffs: () => Promise<void>;
@@ -23,12 +23,12 @@ interface TarifContextType {
   getTarifaById: (id: string) => Promise<Tarifa | null>;
   deleteTarifa: (id: string) => Promise<boolean>; // Añadir deleteTarifa
   // Pendiente API / Refactor
-  addFamiliaTarifa: (familia: Omit<FamiliaTarifa, "id" | 'tarifaId' | 'parentId'> & { tarifaId: string; parentId?: string | null }) => Promise<string>; // Ajustar tipo, pendiente
-  updateFamiliaTarifa: (id: string, familia: Partial<FamiliaTarifa>) => Promise<boolean>; // Pendiente
-  getFamiliasByTarifaId: (tarifaId: string) => Promise<FamiliaTarifa[]>; // Pendiente
-  toggleFamiliaStatus: (id: string) => Promise<boolean>; // Pendiente
-  getRootFamilias: (tarifaId: string) => Promise<FamiliaTarifa[]>; // Pendiente
-  getSubfamilias: (parentId: string) => Promise<FamiliaTarifa[]>; // Pendiente
+  // addFamiliaTarifa: (familia: Omit<FamiliaTarifa, "id" | 'tarifaId' | 'parentId'> & { tarifaId: string; parentId?: string | null }) => Promise<string>; // Ajustar tipo, pendiente
+  // updateFamiliaTarifa: (id: string, familia: Partial<FamiliaTarifa>) => Promise<boolean>; // Pendiente
+  // getFamiliasByTarifaId: (tarifaId: string) => Promise<FamiliaTarifa[]>; // Pendiente
+  // toggleFamiliaStatus: (id: string) => Promise<boolean>; // Pendiente
+  // getRootFamilias: (tarifaId: string) => Promise<FamiliaTarifa[]>; // Pendiente
+  // getSubfamilias: (parentId: string) => Promise<FamiliaTarifa[]>; // Pendiente
   getTarifaImages?: (tarifaId: string) => Promise<any[]>; // Pendiente
   saveTarifaImages?: (tarifaId: string, images: any[]) => Promise<boolean>; // Pendiente
   deleteTarifaImages?: (tarifaId: string) => Promise<boolean>; // Pendiente
@@ -41,7 +41,7 @@ const TarifContext = createContext<TarifContextType | undefined>(undefined);
 
 export const TarifProvider = ({ children }: { children: ReactNode }) => {
   const [tarifas, setTarifas] = useState<Tarifa[]>([]);
-  const [familiasTarifa, setFamiliasTarifa] = useState<FamiliaTarifa[]>([]); // Mantener, pero carga pendiente
+  // const [familiasTarifa, setFamiliasTarifa] = useState<FamiliaTarifa[]>([]); // Mantener, pero carga pendiente
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // QUITAR: const router = useRouter();
@@ -66,7 +66,7 @@ export const TarifProvider = ({ children }: { children: ReactNode }) => {
       console.error("Error al cargar tarifas desde API:", err);
       setError(err instanceof Error ? err.message : 'Error desconocido al cargar tarifas');
       setTarifas([]);
-      setFamiliasTarifa([]);
+      // setFamiliasTarifa([]);
     } finally {
       setIsLoading(false);
     }
@@ -80,7 +80,7 @@ export const TarifProvider = ({ children }: { children: ReactNode }) => {
 
   // --- Funciones CRUD Tarifas (con API) ---
 
-  const addTarifa = async (tarifaData: Omit<Tarifa, "id" | 'createdAt' | 'updatedAt' | 'systemId'>): Promise<Tarifa | null> => {
+  const addTarifa = useCallback(async (tarifaData: Omit<Tarifa, "id" | 'createdAt' | 'updatedAt' | 'systemId'>): Promise<Tarifa | null> => {
     setIsLoading(true);
     setError(null);
     try {
@@ -103,9 +103,9 @@ export const TarifProvider = ({ children }: { children: ReactNode }) => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [setIsLoading, setError, setTarifas]);
 
-  const updateTarifa = async (id: string, tarifaUpdate: Partial<Omit<Tarifa, "id" | 'createdAt' | 'updatedAt' | 'systemId'>>): Promise<Tarifa | null> => {
+  const updateTarifa = useCallback(async (id: string, tarifaUpdate: Partial<Omit<Tarifa, "id" | 'createdAt' | 'updatedAt' | 'systemId'>>): Promise<Tarifa | null> => {
     setIsLoading(true);
     setError(null);
     try {
@@ -130,20 +130,21 @@ export const TarifProvider = ({ children }: { children: ReactNode }) => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [setIsLoading, setError, setTarifas]);
 
-  const getTarifaById = async (id: string): Promise<Tarifa | null> => {
+  const getTarifaById = useCallback(async (id: string): Promise<Tarifa | null> => {
     if (!id) return null;
     const localTariff = tarifas.find(t => t.id === id);
     if (localTariff) return localTariff;
-
+    // Si no está local, buscar en API
+    console.log(`TarifContext: Tarifa ${id} no encontrada localmente, buscando en API...`)
     setIsLoading(true);
     try {
       const response = await fetch(`/api/tariffs/${id}`);
       if (response.status === 404) return null;
       if (!response.ok) throw new Error(`Error ${response.status}: ${response.statusText}`);
       const tariff: Tarifa = await response.json();
-      // Opcional: actualizar estado local
+      // Opcional: actualizar estado local si se encuentra en API
       setTarifas(prev => prev.map(t => (t.id === id ? tariff : t)));
       return tariff;
     } catch (err) {
@@ -153,9 +154,9 @@ export const TarifProvider = ({ children }: { children: ReactNode }) => {
     } finally {
         setIsLoading(false);
     }
-  };
+  }, [tarifas, setIsLoading, setError]);
 
-  const deleteTarifa = async (id: string): Promise<boolean> => {
+  const deleteTarifa = useCallback(async (id: string): Promise<boolean> => {
     setIsLoading(true);
     setError(null);
     try {
@@ -176,37 +177,37 @@ export const TarifProvider = ({ children }: { children: ReactNode }) => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [setIsLoading, setError, setTarifas]);
 
   // --- Funciones pendientes (Familias, Imágenes, Clínicas) ---
   // Mantener placeholders o funciones que devuelvan error/estado local
 
-  const addFamiliaTarifa = async (familia: Omit<FamiliaTarifa, "id">): Promise<string> => {
-      console.warn("addFamiliaTarifa pendiente de API"); throw new Error("No implementado");
-  };
-  const updateFamiliaTarifa = async (id: string, familia: Partial<FamiliaTarifa>): Promise<boolean> => {
-      console.warn("updateFamiliaTarifa pendiente de API"); return false;
-  };
-  const getFamiliasByTarifaId = async (tarifaId: string): Promise<FamiliaTarifa[]> => {
-      console.warn("getFamiliasByTarifaId pendiente de API, devolviendo estado local");
-      return familiasTarifa.filter(f => f.tarifaId === tarifaId);
-  };
-  const toggleFamiliaStatus = async (id: string): Promise<boolean> => {
-      console.warn("toggleFamiliaStatus pendiente de API"); return false;
-  };
-  const getRootFamilias = async (tarifaId: string): Promise<FamiliaTarifa[]> => {
-      console.warn("getRootFamilias pendiente de API, devolviendo estado local");
-       return familiasTarifa.filter(f => f.tarifaId === tarifaId && !f.parentId);
-  };
-  const getSubfamilias = async (parentId: string): Promise<FamiliaTarifa[]> => {
-      console.warn("getSubfamilias pendiente de API, devolviendo estado local");
-       return familiasTarifa.filter(f => f.parentId === parentId);
-  };
+  // const addFamiliaTarifa = async (familia: Omit<FamiliaTarifa, "id">): Promise<string> => {
+  //     console.warn("addFamiliaTarifa pendiente de API"); throw new Error("No implementado");
+  // };
+  // const updateFamiliaTarifa = async (id: string, familia: Partial<FamiliaTarifa>): Promise<boolean> => {
+  //     console.warn("updateFamiliaTarifa pendiente de API"); return false;
+  // };
+  // const getFamiliasByTarifaId = async (tarifaId: string): Promise<FamiliaTarifa[]> => {
+  //     console.warn("getFamiliasByTarifaId pendiente de API, devolviendo estado local");
+  //     return familiasTarifa.filter(f => f.tarifaId === tarifaId);
+  // };
+  // const toggleFamiliaStatus = async (id: string): Promise<boolean> => {
+  //     console.warn("toggleFamiliaStatus pendiente de API"); return false;
+  // };
+  // const getRootFamilias = async (tarifaId: string): Promise<FamiliaTarifa[]> => {
+  //     console.warn("getRootFamilias pendiente de API, devolviendo estado local");
+  //      return familiasTarifa.filter(f => f.tarifaId === tarifaId && !f.parentId);
+  // };
+  // const getSubfamilias = async (parentId: string): Promise<FamiliaTarifa[]> => {
+  //     console.warn("getSubfamilias pendiente de API, devolviendo estado local");
+  //      return familiasTarifa.filter(f => f.parentId === parentId);
+  // };
   // ... añadir placeholders similares para imágenes y clínicas ...
 
   const contextValue: TarifContextType = {
     tarifas,
-    familiasTarifa,
+    // familiasTarifa,
     isLoading,
     error,
     refetchTariffs: fetchTariffs,
@@ -215,18 +216,18 @@ export const TarifProvider = ({ children }: { children: ReactNode }) => {
     getTarifaById,
     deleteTarifa,
     // Pendientes
-    addFamiliaTarifa,
-    updateFamiliaTarifa,
-    getFamiliasByTarifaId,
-    toggleFamiliaStatus,
-    getRootFamilias,
-    getSubfamilias,
-    // getTarifaImages: async () => [],
-    // saveTarifaImages: async () => false,
-    // deleteTarifaImages: async () => false,
-    // addClinicaToTarifa: async () => false,
-    // removeClinicaFromTarifa: async () => false,
-    // setPrimaryClinicaForTarifa: async () => false,
+    // addFamiliaTarifa,
+    // updateFamiliaTarifa,
+    // getFamiliasByTarifaId,
+    // toggleFamiliaStatus,
+    // getRootFamilias,
+    // getSubfamilias,
+    getTarifaImages: async () => [],
+    saveTarifaImages: async () => false,
+    deleteTarifaImages: async () => false,
+    addClinicaToTarifa: async () => false,
+    removeClinicaFromTarifa: async () => false,
+    setPrimaryClinicaForTarifa: async () => false,
   };
 
   return <TarifContext.Provider value={contextValue}>{children}</TarifContext.Provider>;

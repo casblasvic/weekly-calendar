@@ -8,10 +8,8 @@ import { Prisma } from '@prisma/client';
  * @param params Objeto con el ID del cliente.
  * @returns NextResponse con el cliente encontrado o un error.
  */
-export async function GET(
-  request: Request, 
-  { params }: { params: { id: string } }
-) {
+export async function GET(request: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const clientId = params.id;
   try {
     // TODO: Añadir lógica de autorización - ¿Puede este usuario ver este cliente?
@@ -36,10 +34,8 @@ export async function GET(
  * @param params Objeto con el ID del cliente.
  * @returns NextResponse con el cliente actualizado o un error.
  */
-export async function PUT(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
+export async function PUT(request: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const clientId = params.id;
   try {
     const body = await request.json();
@@ -84,10 +80,8 @@ export async function PUT(
  * @param params Objeto con el ID del cliente.
  * @returns NextResponse con mensaje de éxito o error.
  */
-export async function DELETE(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(request: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const clientId = params.id;
   try {
     // TODO: Lógica de autorización

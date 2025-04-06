@@ -8,10 +8,8 @@ import { Prisma } from '@prisma/client';
  * @param params Objeto con el ID del usuario.
  * @returns NextResponse con el usuario encontrado (sin passwordHash) o un error.
  */
-export async function GET(
-  request: Request, 
-  { params }: { params: { id: string } }
-) {
+export async function GET(request: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const userId = params.id;
   try {
     const user = await prisma.user.findUniqueOrThrow({
@@ -38,10 +36,8 @@ export async function GET(
  * @param params Objeto con el ID del usuario.
  * @returns NextResponse con el usuario actualizado (sin passwordHash) o un error.
  */
-export async function PUT(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
+export async function PUT(request: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const userId = params.id;
   try {
     const body = await request.json();
@@ -82,10 +78,8 @@ export async function PUT(
  * @param params Objeto con el ID del usuario.
  * @returns NextResponse con mensaje de éxito o error.
  */
-export async function DELETE(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(request: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const userId = params.id;
   try {
     // TODO: Añadir lógica de autorización. ¿Se puede eliminar a sí mismo?

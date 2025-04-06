@@ -111,19 +111,6 @@ const SectionTitle = ({ icon: Icon, title, color }: { icon: any; title: string; 
   </div>
 )
 
-// --- Inicio: Definir Horario 24/7 ---
-// Renombrar constante para evitar conflictos
-const FULL_DAY_SCHEDULE: WeekSchedule = {
-  monday: { isOpen: true, ranges: [{ start: "00:00", end: "23:59" }] },
-  tuesday: { isOpen: true, ranges: [{ start: "00:00", end: "23:59" }] },
-  wednesday: { isOpen: true, ranges: [{ start: "00:00", end: "23:59" }] },
-  thursday: { isOpen: true, ranges: [{ start: "00:00", end: "23:59" }] },
-  friday: { isOpen: true, ranges: [{ start: "00:00", end: "23:59" }] },
-  saturday: { isOpen: true, ranges: [{ start: "00:00", end: "23:59" }] },
-  sunday: { isOpen: true, ranges: [{ start: "00:00", end: "23:59" }] },
-};
-// --- Fin: Definir Horario 24/7 ---
-
 export default function ClinicaDetailPage() {
   const clinicContext = useClinic()
   const { clinics, updateClinica, getClinicaById, refreshActiveClinicCabins } = clinicContext 
@@ -146,13 +133,10 @@ export default function ClinicaDetailPage() {
   const [isCabinDialogOpen, setIsCabinDialogOpen] = useState(false)
   const [editingCabin, setEditingCabin] = useState<Cabin | null>(null)
   const [isLoadingClinic, setIsLoadingClinic] = useState(true);
-  const [scheduleExceptions, setScheduleExceptions] = useState<any[]>([])
   const [cabinFilterText, setCabinFilterText] = useState("")
   const [equipmentFilterText, setEquipmentFilterText] = useState("")
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null)
   const [equipmentData, setEquipmentData] = useState<any[]>([])
-  const [advancedSchedule, setAdvancedSchedule] = useState<WeekSchedule>(DEFAULT_SCHEDULE);
-  const [isSaving, setIsSaving] = useState(false)
   const [tarifaAplicada, setTarifaAplicada] = useState<Tarifa | null | undefined>(undefined)
   const [isLoadingTarifa, setIsLoadingTarifa] = useState(false)
   const [showNewUserDialog, setShowNewUserDialog] = useState(false)
@@ -172,6 +156,7 @@ export default function ClinicaDetailPage() {
     fin: string;
     excepcionDiaIndex?: number;
   } | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
   
   const diasSemana = [
     'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'
@@ -193,14 +178,12 @@ export default function ClinicaDetailPage() {
     }
 
       setIsLoadingClinic(true);
-      setClinicData(null); 
-      // Usar la constante renombrada
-      setAdvancedSchedule(FULL_DAY_SCHEDULE); 
+      setClinicData(null);
       console.log(`ClinicaDetailPage - Loading details for clinicId: ${clinicId}`);
 
       try {
         // Usar getClinicaById del contexto para asegurar datos completos
-        const detailedClinicData = await getClinicaById(clinicId); 
+        const detailedClinicData = await getClinicaById(clinicId);
 
         if (!detailedClinicData) {
           console.error(`ClinicaDetailPage - Clinic not found with ID: ${clinicId}`);
@@ -211,83 +194,6 @@ export default function ClinicaDetailPage() {
 
         console.log("ClinicaDetailPage - Detailed clinic data received:", detailedClinicData);
         setClinicData(detailedClinicData); // <--- Establecer el estado con los datos detallados
-
-        // --- SINCRONIZAR HORARIO AVANZADO (WeekSchedule) ---
-        // LOG: Añadido para ver el JSON crudo
-        console.log("ClinicaDetailPage - Raw scheduleJson from clinic data:", detailedClinicData.scheduleJson);
-        try {
-          let scheduleFromJson: Partial<WeekSchedule> | null = null; // Permitir null
-          let scheduleToUse: WeekSchedule;
-
-          if (detailedClinicData.scheduleJson) {
-            try {
-              scheduleFromJson = JSON.parse(detailedClinicData.scheduleJson as string);
-            } catch (parseError) {
-              console.error("Error parsing scheduleJson:", parseError, "JSON:", detailedClinicData.scheduleJson);
-              scheduleFromJson = null; // Considerar JSON inválido como null
-            }
-          } else {
-             console.log("ClinicaDetailPage - scheduleJson is null or empty.");
-             scheduleFromJson = null;
-          }
-          // LOG: Añadido para ver el JSON parseado (o null)
-          console.log("ClinicaDetailPage - Parsed scheduleFromJson:", scheduleFromJson);
-
-          // Si el JSON parseado es null o vacío, usar el horario 24/7
-          if (!scheduleFromJson || Object.keys(scheduleFromJson).length === 0) {
-             console.log("ClinicaDetailPage - Using 24/7 schedule as default.");
-             // Usar la constante renombrada
-             scheduleToUse = FULL_DAY_SCHEDULE;
-        } else {
-             // Si hay datos en JSON, reconstruir el horario final asegurando todas las claves y tipos
-             console.log("ClinicaDetailPage - Reconstructing schedule from parsed JSON.");
-             // Usar la constante renombrada como base
-             scheduleToUse = { ...FULL_DAY_SCHEDULE }; 
-             const ALL_DAYS: (keyof WeekSchedule)[] = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
-
-             ALL_DAYS.forEach(dayKey => {
-                const dayDataFromJson = scheduleFromJson![dayKey]; // Usar '!' porque ya comprobamos que no es null
-                if (dayDataFromJson && typeof dayDataFromJson === 'object') { // Comprobar que es un objeto
-                  scheduleToUse[dayKey] = {
-                      // Usar la constante renombrada para fallbacks
-                      isOpen: dayDataFromJson.isOpen ?? FULL_DAY_SCHEDULE[dayKey].isOpen, 
-                      ranges: Array.isArray(dayDataFromJson.ranges) && dayDataFromJson.ranges.length > 0 
-                                ? dayDataFromJson.ranges.map((range: any) => ({ // Asegurar que las franjas son válidas
-                                    start: typeof range.start === 'string' ? range.start : '00:00',
-                                    end: typeof range.end === 'string' ? range.end : '23:59'
-                                  }))
-                                // Usar la constante renombrada para fallbacks
-                                : FULL_DAY_SCHEDULE[dayKey].ranges 
-                  };
-                } else {
-                    // Si falta un día en el JSON o no es un objeto, usar el default 24/7 para ese día
-                    console.warn(`ClinicaDetailPage - Invalid or missing data for day ${dayKey} in scheduleJson. Using default.`);
-                    // Usar la constante renombrada
-                    scheduleToUse[dayKey] = FULL_DAY_SCHEDULE[dayKey];
-                }
-             });
-          }
-          // LOG: Añadido para ver el horario final antes de establecer el estado
-          console.log("ClinicaDetailPage - Final scheduleToUse before setting state:", scheduleToUse);
-
-          setAdvancedSchedule(scheduleToUse);
-          console.log("ClinicaDetailPage - Advanced schedule state *should* be updated now.");
-
-        } catch (error) {
-          console.error("ClinicaDetailPage - Error processing schedule:", error);
-          // Fallback a horario 24/7 en caso de error inesperado
-          // Usar la constante renombrada
-          setAdvancedSchedule(FULL_DAY_SCHEDULE);
-          console.log("ClinicaDetailPage - Setting 24/7 schedule due to error.");
-        }
-        // --- FIN SINCRONIZAR HORARIO AVANZADO ---
-
-        // Cargar excepciones (si vienen con los datos detallados)
-        if (detailedClinicData.scheduleExceptions && Array.isArray(detailedClinicData.scheduleExceptions)) {
-          setScheduleExceptions(detailedClinicData.scheduleExceptions);
-        } else {
-          setScheduleExceptions([]);
-        }
 
       } catch (error) {
         console.error("ClinicaDetailPage - Error loading clinic details:", error);
@@ -402,13 +308,25 @@ export default function ClinicaDetailPage() {
   }
 
   const handleClinicUpdate = useCallback(
-    (updatedFields: Partial<Clinica>) => {
+    (updatedFields: Record<string, any>) => {
       if (clinicData) {
-        console.log("Updating clinic state with:", updatedFields); // Log para ver qué actualiza
-        setClinicData((prev) => (prev ? { ...prev, ...updatedFields } : null))
+        console.log("Updating clinic state with:", updatedFields);
+        
+        // --- Create a new object explicitly excluding scheduleJson ---
+        const { scheduleJson, ...fieldsToActuallyUpdate } = updatedFields;
+        
+        if (scheduleJson !== undefined) {
+            console.warn("Attempted to update scheduleJson from handleClinicUpdate. Ignoring.");
+        }
+        // ------------------------------------------------------------
+        
+        if (Object.keys(fieldsToActuallyUpdate).length > 0) {
+             // Cast back to Partial<Clinica> for setClinicData
+             setClinicData((prev) => (prev ? { ...prev, ...(fieldsToActuallyUpdate as Partial<Clinica>) } : null));
+        }
       }
     },
-    [clinicData], // Dependencia para que se recree si clinicData cambia externamente
+    [clinicData],
   )
 
   // --- Versión Debounced de la actualización ---
@@ -421,9 +339,9 @@ export default function ClinicaDetailPage() {
   const handleTemplateChange = (templateId: string) => {
     const selectedTemplate = templates.find((t) => t.id === templateId)
     if (selectedTemplate) {
-      setAdvancedSchedule(selectedTemplate.schedule)
       setSelectedTemplateId(templateId)
-      handleClinicUpdate({ scheduleJson: selectedTemplate.schedule as any })
+      debouncedHandleClinicUpdate({ linkedScheduleTemplateId: templateId });
+      console.warn("handleTemplateChange - Schedule update logic might need refinement after removing local state.");
     }
   }
 
@@ -623,7 +541,7 @@ export default function ClinicaDetailPage() {
           currency: clinicData.currency,
           phone: clinicData.phone,
           email: clinicData.email,
-          isActive: clinicData.isActive ?? false, // Asegurar true/false
+          isActive: clinicData.isActive ?? false,
           prefix: clinicData.prefix,
           commercialName: clinicData.commercialName,
           businessName: clinicData.businessName,
@@ -633,24 +551,28 @@ export default function ClinicaDetailPage() {
           initialCash: clinicData.initialCash ? Number(clinicData.initialCash) : null,
           ticketSize: clinicData.ticketSize,
           ip: clinicData.ip,
-          blockSignArea: clinicData.blockSignArea ?? null, // Asegurar true/false/null
+          blockSignArea: clinicData.blockSignArea ?? null,
           blockPersonalData: clinicData.blockPersonalData ?? null,
           delayedPayments: clinicData.delayedPayments ?? null,
-          affectsStats: clinicData.affectsStats ?? null,  
-          appearsInApp: clinicData.appearsInApp ?? null,  
-          scheduleControl: clinicData.scheduleControl ?? null, 
-          professionalSkills: clinicData.professionalSkills ?? null, 
+          affectsStats: clinicData.affectsStats ?? null,
+          appearsInApp: clinicData.appearsInApp ?? null,
+          scheduleControl: clinicData.scheduleControl ?? null,
+          professionalSkills: clinicData.professionalSkills ?? null,
           notes: clinicData.notes,
           openTime: clinicData.openTime,
           closeTime: clinicData.closeTime,
           slotDuration: clinicData.slotDuration ? Number(clinicData.slotDuration) : null,
-          scheduleJson: clinicData.scheduleJson, // Asumimos que ya es string o null
           tariffId: clinicData.tariffId,
+          linkedScheduleTemplateId: clinicData.linkedScheduleTemplateId // Make sure this is included
         };
+
+        // --- EXCLUDE scheduleJson specifically if it sneaked in ---
+        delete (dataToSend as any).scheduleJson;
+        // ---------------------------------------------------------
 
         console.log("Datos enviados a updateClinica:", JSON.stringify(dataToSend, null, 2));
 
-        const success = await updateClinica(clinicId, dataToSend as Clinica)
+        const success = await updateClinica(String(clinicData.id), dataToSend as Clinica) // Pass clinicId as string
 
         if (success) {
           toast({
@@ -671,7 +593,7 @@ export default function ClinicaDetailPage() {
     } finally {
       setIsSaving(false)
     }
-  }, [clinicData, updateClinica])
+  }, [clinicData, updateClinica]) // Ensure updateClinica is in dependencies
 
   const handleExcepcionChange = (field: keyof ExcepcionHoraria, value: any) => {
     if (editingExcepcion) {
@@ -776,41 +698,6 @@ export default function ClinicaDetailPage() {
     })
   }
 
-  const handleAdvancedScheduleChange = useCallback((newScheduleJson: any) => {
-    // Manejar cambios que vienen del componente ScheduleConfig
-    console.log("handleAdvancedScheduleChange - Recibido nuevo scheduleJson:", newScheduleJson);
-    setClinicData(prev => prev ? { 
-      ...prev, 
-      scheduleJson: JSON.stringify(newScheduleJson) // Asegurarse que se guarda como string JSON
-    } : null);
-  }, []);
-
-  // --- Condición de carga --- 
-  if (isLoadingClinic || !clinicData) {
-    return (
-      <div className="container flex items-center justify-center h-64 px-0 pt-4 pb-8">
-        <p className="text-lg text-gray-500">Cargando datos de la clínica...</p> 
-      </div>
-    );
-  }
-  // --- Fin Condición de carga ---
-
-  const verificarExcepcionesActivas = () => {
-    if (!scheduleExceptions || scheduleExceptions.length === 0) return false;
-    const today = new Date();
-    
-    return scheduleExceptions.some((excepcion: any) => {
-      if (!excepcion || !excepcion.startDate || !excepcion.endDate) return false;
-      
-      const fechaInicio = new Date(excepcion.startDate);
-      const fechaFin = new Date(excepcion.endDate);
-      
-      return fechaInicio <= today && today <= fechaFin;
-    });
-  };
-  
-  const hayExcepcionesActivas = clinicData ? verificarExcepcionesActivas() : false;
-
   const handleSave = async () => {
     setIsSaving(true)
     // Simular una operación de guardado
@@ -870,6 +757,15 @@ export default function ClinicaDetailPage() {
       title: "Excepción de ejemplo creada",
       description: "Se ha creado una excepción de ejemplo que comienza hoy y dura una semana.",
     });
+  }
+
+  // --- Condition based on isLoadingClinic and clinicData only ---
+  if (isLoadingClinic || !clinicData) {
+    return (
+      <div className="container flex items-center justify-center h-64 px-0 pt-4 pb-8">
+        <p className="text-lg text-gray-500">Cargando datos de la clínica...</p>
+      </div>
+    );
   }
 
   return (
@@ -1336,9 +1232,7 @@ export default function ClinicaDetailPage() {
                         <Card>
                           <CardContent className="pt-6">
                             <ScheduleConfig
-                              // Pasar el estado 'advancedSchedule' que contiene el horario 24/7 por defecto
-                              value={advancedSchedule} 
-                              onChange={handleAdvancedScheduleChange}
+                              clinic={clinicData} // Pass the clinic data object
                             />
                           </CardContent>
                         </Card>
@@ -1346,106 +1240,10 @@ export default function ClinicaDetailPage() {
                     </TabsContent>
 
                     <TabsContent value="excepciones">
-                      <div className="space-y-6">
-                        <div className="flex items-center justify-between">
-                          <h3 className="text-lg font-medium">Excepciones horarias de la clínica</h3>
-                          <div className="flex gap-2">
-                            <Button
-                              variant="outline"
-                              onClick={crearExcepcionEjemplo}
-                              className="bg-amber-100 text-amber-800 hover:bg-amber-200 border-amber-300"
-                            >
-                              Crear excepción de ejemplo
-                            </Button>
-                            <Button 
-                              onClick={handleCrearExcepcion}
-                              className="bg-purple-600 hover:bg-purple-700"
-                            >
-                              <Plus className="w-4 h-4 mr-2" />
-                              Nueva excepción
-                            </Button>
-                          </div>
-                        </div>
-                        
-                        {hayExcepcionesActivas && (
-                          <div className="flex items-center gap-2 p-4 text-green-800 border border-green-300 rounded-lg bg-green-50">
-                            <AlertTriangle className="w-5 h-5 text-green-600" />
-                            <div>
-                              <p className="font-medium">Hay excepciones activas actualmente</p>
-                              <p className="text-sm">Los horarios de la agenda se están mostrando según estas excepciones.</p>
-                            </div>
-                          </div>
-                        )}
-                        
-                        <p className="text-sm text-gray-600">
-                          Configure periodos específicos con horarios diferentes al horario general de la clínica.
-                          Las excepciones se aplican durante las fechas seleccionadas y tienen prioridad sobre el horario general.
-                        </p>
-                        
-                        <div className="border rounded-md">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                                <TableHead>Nombre</TableHead>
-                                <TableHead>Fecha Inicio</TableHead>
-                                <TableHead>Fecha Fin</TableHead>
-                                <TableHead className="text-right">Acciones</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                              {scheduleExceptions.map((excepcion) => (
-                                <TableRow key={excepcion.id}>
-                                  <TableCell className="font-medium">{excepcion.description}</TableCell>
-                                <TableCell>
-                                    <div className="flex items-center gap-2">
-                                      <Calendar className="w-4 h-4 text-gray-500" />
-                                      <span>
-                                        {new Date(excepcion.startDate).toLocaleDateString()}
-                                      </span>
-                                    </div>
-                                  </TableCell>
-                                  <TableCell>
-                                    <div className="flex items-center gap-2">
-                                      <Calendar className="w-4 h-4 text-gray-500" />
-                                      <span>
-                                        {new Date(excepcion.endDate).toLocaleDateString()}
-                                      </span>
-                                    </div>
-                                  </TableCell>
-                                  <TableCell className="text-right">
-                                    <div className="flex justify-end space-x-2">
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => handleEditarExcepcion(excepcion.id)}
-                                      >
-                                        Editar
-                                      </Button>
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="text-red-600 hover:text-red-700"
-                                        onClick={() => handleEliminarExcepcion(excepcion.id)}
-                                      >
-                                        Eliminar
-                                      </Button>
-                                    </div>
-                                </TableCell>
-                              </TableRow>
-                              ))}
-                              
-                              {scheduleExceptions.length === 0 && (
-                                <TableRow>
-                                  <TableCell colSpan={4} className="text-center text-gray-500">
-                                    No hay excepciones configuradas
-                                  </TableCell>
-                                </TableRow>
-                              )}
-                        </TableBody>
-                      </Table>
-                    </div>
+                      <div className="p-6 text-center text-gray-500">
+                        Funcionalidad de excepciones horarias en desarrollo o refactorización.
                       </div>
-        </TabsContent>
+                    </TabsContent>
                   </Tabs>
                 </Card>
               )}
@@ -1828,277 +1626,6 @@ export default function ClinicaDetailPage() {
           <HelpCircle className="w-4 h-4" />
         </Button>
       </div>
-
-      {showExcepcionModal && editingExcepcion && !showHorarioModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="w-full max-w-2xl p-6 bg-white rounded-lg shadow-lg">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">
-                {editingExcepcion.id ? "Editar excepción de horario" : "Nueva excepción de horario"}
-              </h3>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="w-8 h-8 rounded-full"
-                onClick={() => {
-                  setShowExcepcionModal(false);
-                  setEditingExcepcion(null);
-                }}
-              >
-                <X className="w-4 h-4" />
-              </Button>
-    </div>
-            
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div>
-                  <Label htmlFor="nombreExcepcion">Nombre de la excepción</Label>
-                  <Input 
-                    id="nombreExcepcion" 
-                    value={editingExcepcion?.nombre || ''}
-                    onChange={(e) => handleExcepcionChange('nombre', e.target.value)}
-                    placeholder="Ej: Vacaciones, Periodo especial, etc."
-                  />
-                </div>
-                
-                <div className="flex items-end gap-2">
-                  <div className="flex-grow">
-                    <Label htmlFor="fechaInicioExcepcion">Fecha inicio</Label>
-                    <Input 
-                      id="fechaInicioExcepcion" 
-                      type="date"
-                      value={editingExcepcion?.fechaInicio || ''}
-                      onChange={(e) => handleExcepcionChange('fechaInicio', e.target.value)}
-                    />
-                  </div>
-                  <div className="flex-grow">
-                    <Label htmlFor="fechaFinExcepcion">Fecha fin</Label>
-                    <Input 
-                      id="fechaFinExcepcion" 
-                      type="date"
-                      value={editingExcepcion?.fechaFin || ''}
-                      min={editingExcepcion?.fechaInicio || ''}
-                      onChange={(e) => handleExcepcionChange('fechaFin', e.target.value)}
-                    />
-                  </div>
-                </div>
-              </div>
-              
-              <div className="p-3 mb-4 text-sm text-blue-700 rounded-md bg-blue-50">
-                <p className="font-medium">Configuración de horario general de la clínica:</p>
-                <p className="text-gray-600">
-                  <span className="font-medium">Horario general:</span> {clinicData?.openTime || defaultOpenTime} - {clinicData?.closeTime || defaultCloseTime}
-                </p>
-                <p className="mt-1 text-xs italic text-gray-500">
-                  Los horarios de excepción permiten modificar temporalmente el horario general de la clínica durante un periodo específico.
-                </p>
-              </div>
-              
-              <div className="mt-5">
-                <h4 className="mb-3 text-sm font-medium">Configuración por día</h4>
-                
-                <div className="overflow-hidden border rounded-md">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="hover:bg-transparent">
-                        <TableHead className="py-2 h-9 w-[100px]">Día</TableHead>
-                        <TableHead className="py-2 h-9">Franjas horarias</TableHead>
-                        <TableHead className="py-2 h-9 w-[100px] text-center">Activo</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {editingExcepcion.dias.map((dia, index) => (
-                        <TableRow key={dia.dia}>
-                          <TableCell className="font-medium">{traducirDia(dia.dia)}</TableCell>
-                          <TableCell>
-                            <div className="flex flex-wrap gap-2">
-                              {dia.franjas.length === 0 ? (
-                                <span className="text-sm italic text-gray-500">Sin horario definido</span>
-                              ) : (
-                                dia.franjas.map((franja) => (
-                                  <Badge 
-                                    key={franja.id} 
-                                    variant="outline"
-                                    className="flex items-center gap-1 text-blue-700 border-blue-200 cursor-pointer hover:bg-blue-100 bg-blue-50"
-                                    onClick={() => {
-                                      setEditingFranja({
-                                        diaId: dia.dia,
-                                        franjaId: franja.id,
-                                        inicio: franja.inicio,
-                                        fin: franja.fin,
-                                        excepcionDiaIndex: index
-                                      });
-                                      setShowHorarioModal(true);
-                                    }}
-                                  >
-                                    <Clock className="w-3 h-3 mr-1" />
-                                    {franja.inicio} - {franja.fin}
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      className="w-4 h-4 p-0 ml-1 text-gray-500 rounded-full hover:text-red-500 hover:bg-transparent"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleRemoveFranjaExcepcion(index, franja.id);
-                                      }}
-                                    >
-                                      ×
-                                    </Button>
-                                  </Badge>
-                                ))
-                              )}
-                              {dia.activo && (
-                                <Button 
-                                  variant="ghost" 
-                                  size="sm"
-                                  className="h-6 text-gray-700 bg-gray-100 rounded-full hover:bg-gray-200"
-                                  onClick={() => {
-                                    handleAddFranjaExcepcion(
-                                      index,
-                                      clinicData?.openTime || defaultOpenTime,
-                                      clinicData?.closeTime || defaultCloseTime
-                                    );
-                                  }}
-                                >
-                                  <Plus className="w-3 h-3 mr-1" />
-                                  Añadir
-                                </Button>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-center">
-                            <Checkbox 
-                              checked={dia.activo}
-                              onCheckedChange={(checked) => handleToggleDiaExcepcion(index, checked === true)}
-                            />
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              </div>
-              
-              <div className="flex justify-end gap-2 mt-6">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setShowExcepcionModal(false);
-                    setEditingExcepcion(null);
-                  }}
-                  className="h-9"
-                >
-                  Cancelar
-                </Button>
-                <Button
-                  className="bg-purple-600 h-9 hover:bg-purple-700"
-                  onClick={handleGuardarExcepcion}
-                  disabled={
-                    !editingExcepcion?.nombre ||
-                    !editingExcepcion?.fechaInicio ||
-                    !editingExcepcion?.fechaFin
-                  }
-                >
-                  Guardar Excepción
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {showHorarioModal && editingFranja && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="w-full max-w-md p-6 bg-white rounded-lg shadow-lg">
-            <h3 className="mb-4 text-lg font-semibold">
-              {editingFranja.franjaId ? "Editar franja horaria" : "Añadir franja horaria"}
-            </h3>
-            
-            <div className="space-y-4">
-              <div className="p-3 mb-4 text-sm text-blue-700 rounded-md bg-blue-50">
-                <p className="font-medium">Día: {traducirDia(editingFranja.diaId)}</p>
-                <p className="text-gray-600">
-                  <span className="font-medium">Horario general:</span> {clinicData?.openTime || defaultOpenTime} - {clinicData?.closeTime || defaultCloseTime}
-                </p>
-                <p className="mt-1 text-xs italic text-gray-500">
-                  Configura un rango de tiempo para este día específico.
-                </p>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="horaInicio">Hora de inicio</Label>
-                  <Input
-                    id="horaInicio"
-                    type="time"
-                    value={editingFranja.inicio}
-                    onChange={(e) => setEditingFranja({
-                      ...editingFranja,
-                      inicio: e.target.value
-                    })}
-                  />
-                </div>
-                
-                <div className="space-y-2">
-                  <Label htmlFor="horaFin">Hora de fin</Label>
-                  <Input
-                    id="horaFin"
-                    type="time"
-                    value={editingFranja.fin}
-                    onChange={(e) => setEditingFranja({
-                      ...editingFranja,
-                      fin: e.target.value
-                    })}
-                  />
-                </div>
-              </div>
-              
-              <div className="flex justify-end gap-2 mt-6">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setShowHorarioModal(false);
-                    setEditingFranja(null);
-                  }}
-                  className="h-9"
-                >
-                  Cancelar
-                </Button>
-                <Button
-                  className="bg-purple-600 h-9 hover:bg-purple-700"
-                  onClick={() => {
-                    if (editingFranja.excepcionDiaIndex !== undefined) {
-                      if (editingFranja.franjaId) {
-                        handleUpdateFranjaExcepcion(
-                          editingFranja.excepcionDiaIndex,
-                          editingFranja.franjaId,
-                          editingFranja.inicio,
-                          editingFranja.fin
-                        );
-                      } else {
-                        handleAddFranjaExcepcion(
-                          editingFranja.excepcionDiaIndex,
-                          editingFranja.inicio,
-                          editingFranja.fin
-                        );
-                      }
-                    }
-                    setShowHorarioModal(false);
-                    setEditingFranja(null);
-                  }}
-                  disabled={
-                    !editingFranja.inicio || 
-                    !editingFranja.fin || 
-                    editingFranja.inicio >= editingFranja.fin
-                  }
-                >
-                  Guardar
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

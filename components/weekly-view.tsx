@@ -24,18 +24,14 @@ import { ScheduleBlock, useScheduleBlocks } from "@/contexts/schedule-blocks-con
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react"
-import { AppointmentScheduler } from "@/components/appointment-scheduler"
-import { Appointment } from "@/types/appointment"
-import { ScheduleBlock as ScheduleBlockType } from "@/services/data/models/interfaces"
-import { useScheduleBlockCreator } from "@/hooks/use-schedule-block"
+import type { Appointment } from "@/types/appointment"
+import type { Cabin } from "@prisma/client"
 import { 
   isBusinessDay, 
   isTimeSlotAvailable as checkTimeSlotAvailable,
   applyScheduleExceptions
 } from "@/services/clinic-schedule-service"
-import { ClinicConfigDialog } from "@/components/clinic-config-dialog"
-import { ClinicConfig as ClinicConfigContext } from "@/contexts/clinic-context"
-import { useClinicConfig } from "@/hooks/use-clinic-config"
+import { AgendaWeeklySkeleton } from "@/components/skeletons/agenda-weekly-skeleton"
 
 // Función para generar slots de tiempo
 function getTimeSlots(startTime: string, endTime: string, interval = 15): string[] {
@@ -63,42 +59,9 @@ function getTimeSlots(startTime: string, endTime: string, interval = 15): string
 const ZEBRA_LIGHT = "bg-purple-50/20"
 const ZEBRA_DARK = "bg-white"
 
-interface Appointment {
-  id: string
-  name: string
-  service: string
-  date: Date
-  roomId: string
-  startTime: string
-  duration: number
-  color: string
-  completed?: boolean
-  phone?: string
-  tags?: string[]
-}
-
 interface Employee {
   id: string
   name: string
-}
-
-interface Cabin {
-  id: string
-  name: string
-  code: string
-  color: string
-  isActive: boolean
-  order: number
-}
-
-interface ClinicConfig {
-  openTime: string
-  closeTime: string
-  slotDuration: number
-  cabins: Cabin[]
-  schedule: any
-  weekendOpenTime?: string
-  weekendCloseTime?: string
 }
 
 // Interfaz para bloques contiguos
@@ -118,7 +81,6 @@ interface WeeklyViewProps {
   appointments?: any[]
   employees?: Employee[]
   cabins?: Cabin[]
-  clinicConfig?: ClinicConfig
   onAddAppointment?: (startTime: Date, endTime: Date, cabinId: string) => void
   onAppointmentClick?: (appointment: Appointment) => void
   onViewChange?: (view: "weekly" | "daily", date?: string) => void
@@ -129,8 +91,7 @@ export default function WeeklyView({
   containerMode = false,
   appointments: initialAppointments = [],
   employees = [],
-  cabins = [],
-  clinicConfig = {} as ClinicConfig,
+  cabins: propCabins = [],
   onAddAppointment,
   onAppointmentClick,
   onViewChange,
@@ -210,9 +171,11 @@ export default function WeeklyView({
     }
   }, [initialAppointments])
 
-  const { activeClinic } = useClinic()
-  const { getBlocksByDateRange } = useScheduleBlocks()
-  const clinicConfigContext = activeClinic?.config || {} as ClinicConfig
+  const { activeClinic, activeClinicCabins, isLoading: isLoadingClinic } = useClinic()
+  const { getBlocksByDateRange, loading: isLoadingBlocks } = useScheduleBlocks()
+
+  // Crear un estado de carga combinado
+  const isLoading = isLoadingClinic || isLoadingBlocks;
 
   // Añadir este efecto para cargar los bloqueos:
   useEffect(() => {
@@ -247,14 +210,23 @@ export default function WeeklyView({
   }, [activeClinic?.id, currentDate, getBlocksByDateRange]);
 
   // Obtener configuración de horarios
-  const openTime = clinicConfig.openTime || clinicConfigContext.openTime || "09:00"
-  const closeTime = clinicConfig.closeTime || clinicConfigContext.closeTime || "18:00"
-  const slotDuration = clinicConfig.slotDuration || clinicConfigContext.slotDuration || 15
+  const openTime = activeClinic?.openTime || "09:00"
+  const closeTime = activeClinic?.closeTime || "18:00"
+  const slotDuration = activeClinic?.slotDuration || 15
+  const schedule = activeClinic?.scheduleJson
 
   // Obtener cabinas activas
-  const activeCabins = (cabins.length > 0 ? cabins : clinicConfigContext.cabins || [])
-    .filter((cabin) => cabin.isActive)
-    .sort((a, b) => a.order - b.order)
+  const cabinsToUse = useMemo(() => {
+    if (propCabins && propCabins.length > 0) {
+      return propCabins.filter(c => c.isActive).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    }
+    if (activeClinicCabins && activeClinicCabins.length > 0) {
+      return activeClinicCabins;
+    }
+    return [];
+  }, [propCabins, activeClinicCabins]);
+  
+  const activeCabins = cabinsToUse;
 
   // Generar slots de tiempo
   const [timeSlots, setTimeSlots] = useState<string[]>([])
@@ -275,29 +247,19 @@ export default function WeeklyView({
   // Función para verificar si un día está activo en la configuración
   const isDayActive = useCallback(
     (date: Date) => {
-      // Verificar primero si hay una excepción activa para esta fecha
-      return isBusinessDay(date, { 
-        config: { 
-          ...clinicConfig,
-          schedule: clinicConfig.schedule || clinicConfigContext.schedule
-        }
-      } as any);
+      if (!activeClinic) return false;
+      return isBusinessDay(date, activeClinic);
     },
-    [clinicConfig, clinicConfigContext.schedule],
+    [activeClinic],
   )
 
   // Función para verificar si un horario está disponible
   const isTimeSlotAvailable = useCallback(
     (date: Date, time: string) => {
-      // Verificar usando el servicio de horarios que tiene en cuenta excepciones
-      return checkTimeSlotAvailable(date, time, { 
-        config: { 
-          ...clinicConfig,
-          schedule: clinicConfig.schedule || clinicConfigContext.schedule
-        }
-      } as any);
+      if (!activeClinic) return false;
+      return checkTimeSlotAvailable(date, time, activeClinic);
     },
-    [clinicConfig, clinicConfigContext.schedule],
+    [activeClinic],
   )
 
   // Referencia para el contenedor de la agenda
@@ -435,29 +397,18 @@ export default function WeeklyView({
 
   // Funciones para manejar citas
   const handleCellClick = (date: Date, time: string, roomId: string) => {
-    // Verificar si la celda está bloqueada
     const dayString = format(date, "yyyy-MM-dd")
     const blockForCell = findBlockForCell(dayString, time, roomId)
 
     if (blockForCell) {
-      // Si está bloqueada, abrimos el modal de bloqueo con los datos
-      console.log("Celda bloqueada: ", blockForCell)
-      // Usar setTimeout para asegurar que el estado se actualice correctamente
-      setTimeout(() => {
-        openBlockModal(blockForCell)
-      }, 0)
-      return // Importante añadir este return
+      setTimeout(() => { openBlockModal(blockForCell) }, 0)
+      return
     }
 
-    // Solo si no está bloqueada, continuar con la lógica original
-    if (!isTimeSlotAvailable(date, time)) return
+    if (!isTimeSlotAvailable(date, time)) return 
 
-    // Intentar diferentes formas de comparación para encontrar la cabina
-    const cabin = activeCabins.find((c) => {
-      return c.id === roomId || c.id.toString() === roomId || String(c.id) === roomId
-    })
+    const cabin = activeCabins.find((c) => String(c.id) === roomId)
 
-    // Si encontramos una cabina, o si forzamos la apertura del diálogo
     if (cabin || activeCabins.length > 0) {
       setSelectedSlot({ date, time, roomId })
       setIsSearchDialogOpen(true)
@@ -495,14 +446,7 @@ export default function WeeklyView({
       tags?: string[]
     }) => {
       if (selectedSlot) {
-        // Modificar esta parte para usar la primera cabina activa si no se encuentra la específica
-        const cabin =
-          activeCabins.find(
-            (c) =>
-              c.id === selectedSlot.roomId ||
-              c.id.toString() === selectedSlot.roomId ||
-              String(c.id) === selectedSlot.roomId,
-          ) || activeCabins[0]
+        const cabin = activeCabins[0]
 
         if (cabin) {
           const newAppointment: Appointment = {
@@ -512,10 +456,10 @@ export default function WeeklyView({
             date: selectedSlot.date,
             roomId: selectedSlot.roomId,
             startTime: appointmentData.time,
-            duration: appointmentData.blocks || 2, // Usar la duración especificada o valor por defecto
-            color: cabin.color, // Use cabin color
+            duration: appointmentData.blocks || 2,
+            color: cabin.color,
             phone: appointmentData.client.phone,
-            tags: appointmentData.tags || [], // Incluir etiquetas
+            tags: appointmentData.tags || [],
           }
 
           setAppointments((prev) => [...prev, newAppointment])
@@ -713,7 +657,7 @@ export default function WeeklyView({
 
   if (containerMode) {
     return (
-      <HydrationWrapper fallback={<div>Cargando vista semanal...</div>}>
+      <HydrationWrapper fallback={<AgendaWeeklySkeleton />}>
         <div className="flex flex-col h-full bg-white">
           {renderWeeklyGrid()}
 
@@ -729,11 +673,11 @@ export default function WeeklyView({
             isOpen={isAppointmentDialogOpen}
             onClose={() => {
               setIsAppointmentDialogOpen(false)
-              setSelectedAppointment(null) // Limpiar la cita seleccionada al cerrar
+              setSelectedAppointment(null)
             }}
             client={selectedClient}
             selectedTime={selectedSlot?.time}
-            appointment={selectedAppointment} // Pasar la cita seleccionada al diálogo
+            appointment={selectedAppointment}
             onSearchClick={() => {
               setIsAppointmentDialogOpen(false)
               setIsSearchDialogOpen(true)
@@ -744,19 +688,16 @@ export default function WeeklyView({
             }}
             onDelete={handleDeleteAppointment}
             onSave={handleSaveAppointment}
-            isEditing={!!selectedAppointment} // Indicar si estamos en modo edición
+            isEditing={!!selectedAppointment}
           />
 
           <NewClientDialog isOpen={isNewClientDialogOpen} onClose={() => setIsNewClientDialogOpen(false)} />
 
-          {/* Añadir el modal de bloqueo aquí también para el modo contenedor */}
           <BlockScheduleModal
             open={isBlockModalOpen}
             onOpenChange={(open) => {
               setIsBlockModalOpen(open)
-              // Si se cierra el modal, recargar los bloques para actualizar la UI
               if (!open && activeClinic?.id) {
-                // Usar interfaz para obtener bloques
                 const startDate = format(startOfWeek(currentDate, { weekStartsOn: 1 }), "yyyy-MM-dd");
                 const endDate = format(addDays(startOfWeek(currentDate, { weekStartsOn: 1 }), 6), "yyyy-MM-dd");
                 
@@ -780,32 +721,11 @@ export default function WeeklyView({
             }))}
             blockToEdit={selectedBlock}
             clinicId={String(activeClinic?.id || "1")}
-            onBlockSaved={() => {
-              // Recargar los bloques
-              if (activeClinic?.id) {
-                // Usar interfaz para obtener bloques
-                const startDate = format(startOfWeek(currentDate, { weekStartsOn: 1 }), "yyyy-MM-dd");
-                const endDate = format(addDays(startOfWeek(currentDate, { weekStartsOn: 1 }), 6), "yyyy-MM-dd");
-                
-                getBlocksByDateRange(
-                  String(activeClinic.id),
-                  startDate,
-                  endDate
-                ).then(blocks => {
-                  if (Array.isArray(blocks)) {
-                    setScheduleBlocks(blocks);
-                  }
-                  setUpdateKey((prev) => prev + 1);
-                }).catch(error => {
-                  console.error("Error al cargar bloques:", error);
-                });
-              }
-            }}
             clinicConfig={{
-              openTime: clinicConfig.openTime || "09:00",
-              closeTime: clinicConfig.closeTime || "20:00",
-              weekendOpenTime: clinicConfig.weekendOpenTime || "09:00",
-              weekendCloseTime: clinicConfig.weekendCloseTime || "14:00",
+              openTime: openTime,
+              closeTime: closeTime,
+              weekendOpenTime: openTime,
+              weekendCloseTime: closeTime,
             }}
           />
         </div>
@@ -815,7 +735,7 @@ export default function WeeklyView({
 
   // Return original para cuando se usa de forma independiente
   return (
-    <HydrationWrapper fallback={<div>Cargando vista semanal...</div>}>
+    <HydrationWrapper fallback={<AgendaWeeklySkeleton />}>
       <div className="flex flex-col h-screen bg-white">
         <header className="relative z-30 px-4 py-3 bg-white border-b">
           <div className="px-4 py-3">
@@ -835,7 +755,6 @@ export default function WeeklyView({
             appointments={appointments}
             onBlocksChanged={() => {
               if (activeClinic?.id) {
-                // Usar interfaz para obtener bloques
                 const startDate = format(startOfWeek(currentDate, { weekStartsOn: 1 }), "yyyy-MM-dd");
                 const endDate = format(addDays(startOfWeek(currentDate, { weekStartsOn: 1 }), 6), "yyyy-MM-dd");
                 
@@ -870,11 +789,11 @@ export default function WeeklyView({
           isOpen={isAppointmentDialogOpen}
           onClose={() => {
             setIsAppointmentDialogOpen(false)
-            setSelectedAppointment(null) // Limpiar la cita seleccionada al cerrar
+            setSelectedAppointment(null)
           }}
           client={selectedClient}
           selectedTime={selectedSlot?.time}
-          appointment={selectedAppointment} // Pasar la cita seleccionada al diálogo
+          appointment={selectedAppointment}
           onSearchClick={() => {
             setIsAppointmentDialogOpen(false)
             setIsSearchDialogOpen(true)
@@ -885,19 +804,16 @@ export default function WeeklyView({
           }}
           onDelete={handleDeleteAppointment}
           onSave={handleSaveAppointment}
-          isEditing={!!selectedAppointment} // Indicar si estamos en modo edición
+          isEditing={!!selectedAppointment}
         />
 
         <NewClientDialog isOpen={isNewClientDialogOpen} onClose={() => setIsNewClientDialogOpen(false)} />
 
-        {/* Añadir el modal de bloqueo al final del componente, justo antes del cierre del return: */}
         <BlockScheduleModal
           open={isBlockModalOpen}
           onOpenChange={(open) => {
             setIsBlockModalOpen(open)
-            // Si se cierra el modal, recargar los bloques para actualizar la UI
             if (!open && activeClinic?.id) {
-              // Usar interfaz para obtener bloques
               const startDate = format(startOfWeek(currentDate, { weekStartsOn: 1 }), "yyyy-MM-dd");
               const endDate = format(addDays(startOfWeek(currentDate, { weekStartsOn: 1 }), 6), "yyyy-MM-dd");
               
@@ -921,32 +837,11 @@ export default function WeeklyView({
           }))}
           blockToEdit={selectedBlock}
           clinicId={String(activeClinic?.id || "1")}
-          onBlockSaved={() => {
-            // Recargar los bloques
-            if (activeClinic?.id) {
-              // Usar interfaz para obtener bloques
-              const startDate = format(startOfWeek(currentDate, { weekStartsOn: 1 }), "yyyy-MM-dd");
-              const endDate = format(addDays(startOfWeek(currentDate, { weekStartsOn: 1 }), 6), "yyyy-MM-dd");
-              
-              getBlocksByDateRange(
-                String(activeClinic.id),
-                startDate,
-                endDate
-              ).then(blocks => {
-                if (Array.isArray(blocks)) {
-                  setScheduleBlocks(blocks);
-                }
-                setUpdateKey((prev) => prev + 1);
-              }).catch(error => {
-                console.error("Error al cargar bloques:", error);
-              });
-            }
-          }}
           clinicConfig={{
-            openTime: clinicConfig.openTime || "09:00",
-            closeTime: clinicConfig.closeTime || "20:00",
-            weekendOpenTime: clinicConfig.weekendOpenTime || "09:00",
-            weekendCloseTime: clinicConfig.weekendCloseTime || "14:00",
+            openTime: openTime,
+            closeTime: closeTime,
+            weekendOpenTime: openTime,
+            weekendCloseTime: closeTime,
           }}
         />
       </div>

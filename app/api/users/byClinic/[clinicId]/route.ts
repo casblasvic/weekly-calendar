@@ -3,10 +3,8 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma' // Correcto: importar como nombrado
 // import { auth } from '@/lib/auth' // Comentado temporalmente hasta implementar auth (Paso 2.2)
 
-export async function GET(
-  request: Request,
-  { params }: { params: { clinicId: string } }
-) {
+export async function GET(request: Request, props: { params: Promise<{ clinicId: string }> }) {
+  const params = await props.params;
   try {
     // const session = await auth() // Descomentar cuando la autenticación esté lista
     // if (!session?.user) {

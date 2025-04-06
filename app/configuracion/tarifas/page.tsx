@@ -80,7 +80,7 @@ export default function GestionTarifas() {
   const [isSaving, setIsSaving] = useState(false)
 
   // Filtrar tarifas según término de búsqueda
-  const tarifasFiltradas = tarifas.filter((tarifa) => tarifa.nombre.toLowerCase().includes(searchTerm.toLowerCase()))
+  const tarifasFiltradas = tarifas.filter((tarifa) => tarifa.name?.toLowerCase().includes(searchTerm.toLowerCase()))
 
   // Filtrar clínicas según el estado del checkbox "Deshabilitada"
   const clinicasFiltradas = clinics.filter((clinic) => {
@@ -189,7 +189,7 @@ export default function GestionTarifas() {
             {tarifasFiltradas.map((tarifa) => (
               <tr key={tarifa.id} className="table-row-hover">
                 <td className="px-6 py-4 text-sm font-medium text-gray-900 whitespace-nowrap">
-                  {tarifa.nombre}
+                  {tarifa.name}
                   {tarifa.isActive === false && (
                     <AlertCircle className="inline-block w-4 h-4 ml-2 text-amber-500" aria-label="Tarifa deshabilitada" />
                   )}

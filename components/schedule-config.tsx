@@ -9,12 +9,15 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import type { WeekSchedule, DaySchedule, TimeRange } from "@/types/schedule"
 import { useTemplates } from "@/hooks/use-templates"
-import { useClinic } from "@/contexts/clinic-context"
 import { Input } from "@/components/ui/input"
 import { useState, useEffect } from "react"
+// Importar tipos necesarios del schema Prisma
+import type { ScheduleTemplateBlock, ClinicScheduleBlock, DayOfWeek as PrismaDayOfWeek } from '@prisma/client'
+// Importar Clinica si no está ya importada
+import type { Clinica } from '@/services/data/models/interfaces'; 
 
-interface ScheduleConfigProps {
-  value: WeekSchedule
+export interface ScheduleConfigProps {
+  clinic: Clinica | null;
   onChange: (schedule: WeekSchedule) => void
   showTemplateSelector?: boolean
 }
@@ -29,36 +32,132 @@ const DAYS = {
   sunday: "Domingo",
 } as const
 
-export function ScheduleConfig({ value, onChange, showTemplateSelector = false }: ScheduleConfigProps) {
-  const { templates } = useTemplates()
-  const { activeClinic } = useClinic()
+// --- Función Helper para convertir bloques al formato WeekSchedule ---
+const convertBlocksToWeekSchedule = (
+    blocks: (ScheduleTemplateBlock | ClinicScheduleBlock)[] | undefined | null,
+    defaultOpenTime: string,
+    defaultCloseTime: string
+): WeekSchedule => {
+    const initialSchedule: WeekSchedule = {
+        monday: { isOpen: false, ranges: [] },
+        tuesday: { isOpen: false, ranges: [] },
+        wednesday: { isOpen: false, ranges: [] },
+        thursday: { isOpen: false, ranges: [] },
+        friday: { isOpen: false, ranges: [] },
+        saturday: { isOpen: false, ranges: [] },
+        sunday: { isOpen: false, ranges: [] },
+    };
 
-  // Inicializar los estados con los valores de la clínica activa
-  const [openTime, setOpenTime] = useState(activeClinic?.openTime || "00:00")
-  const [closeTime, setCloseTime] = useState(activeClinic?.closeTime || "23:59")
-  const [slotDuration, setSlotDuration] = useState(activeClinic?.slotDuration || 15)
+    if (!blocks || blocks.length === 0) {
+        // Si no hay bloques, podríamos devolver un horario por defecto basado en open/close generales
+        // O el 24/7 como antes. Por ahora, mantengamos el cerrado por defecto.
+        // Opcionalmente: rellenar L-V con open/close
+        /*
+        Object.keys(initialSchedule).forEach(dayKey => {
+            if (dayKey !== 'saturday' && dayKey !== 'sunday') {
+                initialSchedule[dayKey as keyof WeekSchedule] = {
+                    isOpen: true,
+                    ranges: [{ start: defaultOpenTime, end: defaultCloseTime }]
+                };
+            }
+        });
+        */
+        return initialSchedule; 
+    }
+
+    const weekSchedule = blocks.reduce((acc, block) => {
+        const dayKey = block.dayOfWeek.toLowerCase() as keyof WeekSchedule;
+        if (acc[dayKey]) { // Asegurar que el día existe en nuestro objeto
+            acc[dayKey].isOpen = true;
+            acc[dayKey].ranges.push({ start: block.startTime, end: block.endTime });
+            // Ordenar rangos por hora de inicio si hay múltiples
+            acc[dayKey].ranges.sort((a, b) => a.start.localeCompare(b.start));
+        }
+        return acc;
+    }, initialSchedule);
+
+    return weekSchedule;
+};
+// --- Fin Función Helper ---
+
+export function ScheduleConfig({ clinic, onChange, showTemplateSelector = false }: ScheduleConfigProps) {
+  const { templates } = useTemplates()
+
+  const [currentSchedule, setCurrentSchedule] = useState<WeekSchedule | null>(null);
   const [expandedDays, setExpandedDays] = React.useState<string[]>([])
 
-  // Actualizar los estados cuando cambie la clínica activa
+  // *** useEffect ahora depende de la PROP 'clinic' ***
   useEffect(() => {
-    if (activeClinic) {
-      setOpenTime(activeClinic.openTime ?? "00:00")
-      setCloseTime(activeClinic.closeTime ?? "23:59")
-      setSlotDuration(activeClinic.slotDuration ?? 15)
-    }
-  }, [activeClinic])
+      const defaultEmptySchedule: WeekSchedule = {
+          monday: { isOpen: false, ranges: [] }, tuesday: { isOpen: false, ranges: [] },
+          wednesday: { isOpen: false, ranges: [] }, thursday: { isOpen: false, ranges: [] },
+          friday: { isOpen: false, ranges: [] }, saturday: { isOpen: false, ranges: [] },
+          sunday: { isOpen: false, ranges: [] },
+      };
+      
+      if (!clinic) {
+          console.log("[ScheduleConfig] No clinic prop provided, setting empty schedule.");
+          setCurrentSchedule(defaultEmptySchedule);
+          setExpandedDays([]); 
+          return;
+      }
+
+      console.log("[ScheduleConfig useEffect] Checking clinic prop:", JSON.stringify(clinic, null, 2));
+
+      console.log("[ScheduleConfig] Clinic prop updated, deriving schedule...");
+      let derivedSchedule: WeekSchedule;
+      const defaultOpen = clinic.openTime || "00:00";
+      const defaultClose = clinic.closeTime || "23:59";
+
+      // --- Leer bloques desde la PROP clinic --- 
+      const templateBlocks = clinic.linkedScheduleTemplate?.blocks; 
+      const independentBlocks = clinic.independentScheduleBlocks;
+      
+      console.log(`[ScheduleConfig useEffect] Found templateBlocks: ${templateBlocks ? templateBlocks.length : 'null or empty'}`);
+      console.log(`[ScheduleConfig useEffect] Found independentBlocks: ${independentBlocks ? independentBlocks.length : 'null or empty'}`);
+      
+      if (templateBlocks && templateBlocks.length > 0) {
+          console.log("[ScheduleConfig] Using blocks from LINKED template (from prop).");
+          derivedSchedule = convertBlocksToWeekSchedule(templateBlocks, defaultOpen, defaultClose);
+      } else if (independentBlocks && independentBlocks.length > 0) {
+          console.log("[ScheduleConfig] Using INDEPENDENT blocks (from prop).");
+          derivedSchedule = convertBlocksToWeekSchedule(independentBlocks, defaultOpen, defaultClose);
+      } else {
+          console.log(`[ScheduleConfig] No blocks found in prop, using default schedule based on open/close times: ${defaultOpen} - ${defaultClose}`);
+           derivedSchedule = convertBlocksToWeekSchedule(null, defaultOpen, defaultClose); 
+           Object.keys(derivedSchedule).forEach(dayKey => {
+                if (dayKey !== 'saturday' && dayKey !== 'sunday') {
+                    derivedSchedule[dayKey as keyof WeekSchedule] = {
+                        isOpen: true,
+                        ranges: [{ start: defaultOpen, end: defaultClose }]
+                    };
+                }
+            });
+      }
+
+      console.log("[ScheduleConfig] Derived schedule being set (from prop):", JSON.stringify(derivedSchedule, null, 2)); 
+      setCurrentSchedule(derivedSchedule); 
+
+      // Expandir días basados en el horario derivado
+      const openDays = Object.entries(derivedSchedule)
+          .filter(([_, daySchedule]) => daySchedule.isOpen)
+          .map(([dayKey]) => dayKey);
+      setExpandedDays(openDays);
+
+  }, [clinic]); // Ya no depende de initialValueFromProp
 
   const toggleDay = (day: string) => {
     setExpandedDays((current) => (current.includes(day) ? current.filter((d) => d !== day) : [...current, day]))
   }
 
+  // ESTA FUNCIÓN AHORA ACTUALIZA 'currentSchedule' y llama a 'onChange'
   const updateDaySchedule = (day: keyof WeekSchedule, schedule: DaySchedule) => {
     const updatedSchedule = {
-      ...value,
+      ...currentSchedule, // Usar currentSchedule como base
       [day]: schedule,
     }
-
-    onChange(updatedSchedule)
+    setCurrentSchedule(updatedSchedule); // Actualizar estado interno
+    onChange(updatedSchedule); // Notificar al padre del cambio
 
     // Notificar a la agenda que la configuración ha cambiado
     if (typeof window !== "undefined" && (window as any).notifyClinicConfigUpdated) {
@@ -67,61 +166,70 @@ export function ScheduleConfig({ value, onChange, showTemplateSelector = false }
   }
 
   const copySchedule = (fromDay: keyof WeekSchedule, toDay: keyof WeekSchedule) => {
-    onChange({
-      ...value,
-      [toDay]: { ...value[fromDay] },
-    })
+    const scheduleToCopy = currentSchedule[fromDay]; // Copiar desde el estado actual
+    const updatedSchedule = {
+        ...currentSchedule,
+        [toDay]: { ...scheduleToCopy }
+    }
+    setCurrentSchedule(updatedSchedule); // Actualizar estado interno
+    onChange(updatedSchedule); // Notificar al padre
   }
 
   const handleTemplateChange = (templateId: string) => {
     const template = templates.find((t) => t.id === templateId)
-    if (template) {
-      onChange(template.schedule)
-    }
-  }
-
-  const handleOpenTimeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newOpenTime = e.target.value
-    setOpenTime(newOpenTime)
-  }
-
-  const handleCloseTimeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newCloseTime = e.target.value
-    setCloseTime(newCloseTime)
-  }
-
-  const handleSlotDurationChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newDuration = Number.parseInt(e.target.value, 10)
-    if (!isNaN(newDuration) && newDuration > 0 && newDuration <= 60) {
-      setSlotDuration(newDuration)
+    if (template && template.schedule) { // Asumiendo que la plantilla tiene un campo 'schedule' con formato WeekSchedule
+        // O si la plantilla tiene .blocks, convertirla
+        // const scheduleFromTemplate = convertBlocksToWeekSchedule(template.blocks, activeClinic?.openTime ?? "00:00", activeClinic?.closeTime ?? "23:59");
+        // setCurrentSchedule(scheduleFromTemplate);
+        // onChange(scheduleFromTemplate);
+        
+        // --- Si template.schedule ya tiene formato WeekSchedule --- 
+        setCurrentSchedule(template.schedule); 
+        onChange(template.schedule); 
+        // --- FIN --- 
     }
   }
 
   const updateTimeRange = (day: keyof WeekSchedule, index: number, field: "start" | "end", newValue: string) => {
-    // Validar que el horario no exceda los límites de la clínica
-    if (field === "start" && newValue < openTime) {
-      newValue = openTime
+    const currentOpenTime = clinic?.openTime ?? "00:00";
+    const currentCloseTime = clinic?.closeTime ?? "23:59";
+    
+    if (field === "start" && newValue < currentOpenTime) {
+      newValue = currentOpenTime
     }
-    if (field === "end" && newValue > closeTime) {
-      newValue = closeTime
+    if (field === "end" && newValue > currentCloseTime) {
+      newValue = currentCloseTime
     }
 
-    const updatedRanges = [...value[day].ranges]
+    const daySchedule = currentSchedule[day];
+    if (!daySchedule) return;
+
+    const updatedRanges = [...daySchedule.ranges]
     updatedRanges[index] = { ...updatedRanges[index], [field]: newValue }
-    updateDaySchedule(day, { ...value[day], ranges: updatedRanges })
+    updateDaySchedule(day, { ...daySchedule, ranges: updatedRanges })
   }
 
   const removeTimeRange = (day: keyof WeekSchedule, index: number) => {
-    const updatedRanges = value[day].ranges.filter((_, i) => i !== index)
-    updateDaySchedule(day, { ...value[day], ranges: updatedRanges })
+    const daySchedule = currentSchedule[day];
+    if (!daySchedule) return;
+    const updatedRanges = daySchedule.ranges.filter((_, i) => i !== index)
+    updateDaySchedule(day, { ...daySchedule, ranges: updatedRanges })
   }
 
   const addTimeRange = (day: keyof WeekSchedule) => {
+    const daySchedule = currentSchedule[day];
+    if (!daySchedule) return;
     const newRange: TimeRange = {
-      start: openTime,
-      end: closeTime,
+      start: clinic?.openTime ?? "00:00",
+      end: clinic?.closeTime ?? "23:59",
     }
-    updateDaySchedule(day, { ...value[day], ranges: [...value[day].ranges, newRange] })
+    updateDaySchedule(day, { ...daySchedule, ranges: [...daySchedule.ranges, newRange] })
+  }
+
+  // En el renderizado, añadir comprobación por si currentSchedule es null inicialmente
+  if (!currentSchedule) {
+      // Mostrar un loader o un mensaje mientras se carga el horario
+      return <div>Cargando horario...</div>; 
   }
 
   return (
@@ -135,7 +243,7 @@ export function ScheduleConfig({ value, onChange, showTemplateSelector = false }
             </SelectTrigger>
             <SelectContent>
               {templates.map((template) => (
-                <SelectItem key={template.id} value={template.id}>
+                <SelectItem key={String(template.id)} value={String(template.id)}>
                   {template.description}
                 </SelectItem>
               ))}
@@ -150,18 +258,20 @@ export function ScheduleConfig({ value, onChange, showTemplateSelector = false }
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div className="flex items-center space-x-4">
                 <Checkbox
-                  checked={value[day as keyof WeekSchedule]?.isOpen || false}
-                  onCheckedChange={(checked) =>
-                    updateDaySchedule(day as keyof WeekSchedule, {
-                      ...(value[day as keyof WeekSchedule] || { ranges: [] }),
+                  checked={currentSchedule[day as keyof WeekSchedule]?.isOpen || false}
+                  onCheckedChange={(checked) => {
+                    const dayKey = day as keyof WeekSchedule;
+                    const currentDaySchedule = currentSchedule[dayKey] || { ranges: [] };
+                    updateDaySchedule(dayKey, {
+                      ...currentDaySchedule,
                       isOpen: checked as boolean,
                       ranges: checked
-                        ? (value[day as keyof WeekSchedule]?.ranges?.length
-                          ? value[day as keyof WeekSchedule].ranges
-                          : [{ start: openTime, end: closeTime }])
+                        ? (currentDaySchedule.ranges?.length
+                          ? currentDaySchedule.ranges
+                          : [{ start: clinic?.openTime ?? "00:00", end: clinic?.closeTime ?? "23:59" }])
                         : [],
                     })
-                  }
+                  }}
                 />
                 <Label className="font-medium">{label}</Label>
               </div>
@@ -194,9 +304,9 @@ export function ScheduleConfig({ value, onChange, showTemplateSelector = false }
               </div>
             </div>
 
-            {expandedDays.includes(day) && value[day as keyof WeekSchedule]?.isOpen && (
+            {expandedDays.includes(day) && currentSchedule[day as keyof WeekSchedule]?.isOpen && (
               <div className="mt-4 space-y-4">
-                {value[day as keyof WeekSchedule].ranges.map((range, index) => (
+                {currentSchedule[day as keyof WeekSchedule].ranges.map((range, index) => (
                   <div key={index} className="flex items-center space-x-4">
                     <Clock className="h-4 w-4 text-gray-500" />
                     <div className="grid grid-cols-2 gap-4 flex-1">

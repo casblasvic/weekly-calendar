@@ -8,10 +8,8 @@ import { Prisma } from '@prisma/client';
  * @param params Objeto con el ID de la tarifa.
  * @returns NextResponse con la tarifa encontrada o un error.
  */
-export async function GET(
-  request: Request, 
-  { params }: { params: { id: string } }
-) {
+export async function GET(request: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const tariffId = params.id;
   try {
     // TODO: Autorización, filtro systemId?
@@ -35,10 +33,8 @@ export async function GET(
  * @param params Objeto con el ID de la tarifa.
  * @returns NextResponse con la tarifa actualizada o un error.
  */
-export async function PUT(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
+export async function PUT(request: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const tariffId = params.id;
   try {
     const body = await request.json();
@@ -73,10 +69,8 @@ export async function PUT(
  * @param params Objeto con el ID de la tarifa.
  * @returns NextResponse con mensaje de éxito o error.
  */
-export async function DELETE(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(request: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const tariffId = params.id;
   try {
     // TODO: Autorización

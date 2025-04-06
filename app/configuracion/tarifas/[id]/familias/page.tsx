@@ -20,7 +20,7 @@ export default function GestionFamilias() {
   const tarifaId = params.id as string // Asumiendo que el parámetro se llama 'id'
 
   // Obtener familiasTarifa Y la lista completa de tarifas para la guarda
-  const { familiasTarifa, addFamiliaTarifa, updateFamiliaTarifa, toggleFamiliaStatus, getFamiliasByTarifaId, tarifas: todasLasTarifas } = useTarif()
+  const { tarifas: todasLasTarifas } = useTarif()
   const [searchTerm, setSearchTerm] = useState("")
   const [showDisabled, setShowDisabled] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
@@ -55,14 +55,16 @@ export default function GestionFamilias() {
   useEffect(() => {
     const loadFamilies = async () => {
       // *** GUARDA MEJORADA: Esperar a que las tarifas generales estén listas ***
-      // Si no hay tarifas generales, asumimos que el contexto aún no ha cargado
-      // los datos base necesarios para obtener las familias correctamente.
       if (!todasLasTarifas || todasLasTarifas.length === 0) {
-         console.log("[familias/page.tsx] Esperando a que se carguen las tarifas generales (y por ende, familias) del contexto...");
+         console.log("[familias/page.tsx] Esperando a que se carguen las tarifas generales...");
          return; 
       }
       
       if (tarifaId) { 
+        // --- NO LLAMAR A getFamiliasByTarifaId --- 
+        console.log(`[familias/page.tsx] Lógica de carga de familias por tarifa (${tarifaId}) eliminada. Las familias ahora son globales (Category).`);
+        setFamilies([]); // Establecer familias a vacío, ya que no hay específicas de tarifa
+        /*
         try {
           console.log("[familias/page.tsx] Intentando cargar familias para tarifa (tarifas generales listas):", tarifaId);
           const familiesData = await getFamiliasByTarifaId(tarifaId);
@@ -72,14 +74,15 @@ export default function GestionFamilias() {
           console.error(`[familias/page.tsx] Error al cargar familias para tarifa ${tarifaId}:`, error);
           setFamilies([]);
         }
+        */
       } else {
-         console.warn("[familias/page.tsx] No se proporcionó tarifaId para cargar familias.");
+         console.warn("[familias/page.tsx] No se proporcionó tarifaId.");
          setFamilies([]);
       }
     };
     loadFamilies();
-  // Quitar familiasTarifa de las dependencias
-  }, [getFamiliasByTarifaId, tarifaId, todasLasTarifas]);
+  // QUITAR getFamiliasByTarifaId de las dependencias
+  }, [/* QUITAR getFamiliasByTarifaId */ tarifaId, todasLasTarifas]);
 
   // ... (requestSort, getSortIcon, filteredFamilies, filteredAndSortedFamilies - restaurados como estaban)
   // Solicitar ordenación de una columna
@@ -200,9 +203,11 @@ export default function GestionFamilias() {
     setTimeout(() => {
       // currentFamily ya tiene el tarifaId correcto
       if (isNewFamily) {
-        addFamiliaTarifa(currentFamily)
+        // NO LLAMAR A addFamiliaTarifa
+        toast.info("La gestión de familias ahora es global (Categorías).");
       } else if (currentFamily.id) {
-        updateFamiliaTarifa(currentFamily.id, currentFamily)
+        // NO LLAMAR A updateFamiliaTarifa
+        toast.info("La gestión de familias ahora es global (Categorías).");
       }
       setIsSaving(false)
       setIsEditDialogOpen(false)
@@ -211,7 +216,8 @@ export default function GestionFamilias() {
 
   // Cambiar estado activo/inactivo (restaurado)
   const handleToggleStatus = (id: string) => {
-    toggleFamiliaStatus(id)
+    // NO LLAMAR A toggleFamiliaStatus(id)
+    toast.info("La gestión de familias ahora es global (Categorías).");
   }
 
   // Confirmar eliminación de familia (restaurado)
@@ -222,11 +228,10 @@ export default function GestionFamilias() {
 
   // Eliminar familia (restaurado)
   const handleDeleteFamily = () => {
-    if (familyToDelete) {
-      updateFamiliaTarifa(familyToDelete, { isActive: false })
-      setIsDeleteConfirmOpen(false)
-      setFamilyToDelete(null)
-    }
+    // NO LLAMAR A updateFamiliaTarifa
+    toast.info("La gestión de familias ahora es global (Categorías).");
+    setIsDeleteConfirmOpen(false)
+    setFamilyToDelete(null)
   }
 
   return (

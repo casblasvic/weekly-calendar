@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, use } from "react";
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -20,13 +20,14 @@ import * as React from 'react'
 type SortField = "lastName" | "firstName" | "email" | "isActive"
 type SortDirection = "asc" | "desc"
 
-export default function ClinicaUsuariosPage({ params }: { params: { id: string } }) {
+export default function ClinicaUsuariosPage(props: { params: Promise<{ id: string }> }) {
+  const params = use(props.params);
   const router = useRouter()
   const clinicaId = params.id
-  
+
   const { usuarios: allUsuarios, isLoading: isLoadingUsers, error: userError, refetchUsuarios, toggleUsuarioStatus, createUsuario, getUsuariosByClinica } = useUser()
   const { getClinicaById } = useClinic()
-  
+
   const [usuarios, setUsuarios] = useState<Usuario[]>([])
   const [clinica, setClinica] = useState<Clinica | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -36,7 +37,7 @@ export default function ClinicaUsuariosPage({ params }: { params: { id: string }
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc")
   const [showHelp, setShowHelp] = useState(false)
   const [showNewUserDialog, setShowNewUserDialog] = useState(false)
-  
+
   // Form fields for new user
   const [firstName, setFirstName] = useState("")
   const [lastName, setLastName] = useState("")
