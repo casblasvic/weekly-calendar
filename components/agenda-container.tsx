@@ -229,6 +229,11 @@ export default function AgendaContainer({
 
   // Función para obtener la clave del día en inglés a partir de una fecha
   const getDayKey = useCallback((date: Date) => {
+    if (!date || !(date instanceof Date) || isNaN(date.getTime())) {
+      console.error("[AgendaContainer] Invalid date passed to getDayKey:", date);
+      return "monday"; // Fallback seguro
+    }
+
     const day = format(date, "EEEE", { locale: es }).toLowerCase()
     // Mapear los nombres de días en español a las claves en inglés usadas en el objeto schedule
     const dayMap = {
@@ -239,22 +244,53 @@ export default function AgendaContainer({
       viernes: "friday",
       sábado: "saturday",
       domingo: "sunday",
-    }
-    return dayMap[day] || day
+    } as const;
+
+    // Asegurar que siempre devolvemos una clave válida
+    return dayMap[day as keyof typeof dayMap] || "monday";
   }, []);
 
   // Función para verificar si un día está activo en la configuración
   const isDayActive = useCallback((date: Date) => {
-    const dayKey = getDayKey(date);
-    try {
-      // Asegurarse de que scheduleJson se trata como WeekSchedule
-      const schedule = activeClinic?.scheduleJson as unknown as WeekSchedule | null;
-      return schedule?.[dayKey as keyof WeekSchedule]?.isOpen ?? false;
-    } catch (error) {
-      console.error("Error al verificar si el día está activo en scheduleJson:", error, activeClinic?.scheduleJson);
+    if (!date || !(date instanceof Date) || isNaN(date.getTime())) {
+      console.error("[AgendaContainer] Invalid date passed to isDayActive:", date);
       return false;
     }
-  }, [activeClinic?.scheduleJson, getDayKey]);
+
+    const dayKey = getDayKey(date);
+    try {
+      // Usar la configuración correcta: bloques de plantilla o bloques independientes
+      const hasTemplateBlocks = activeClinic?.linkedScheduleTemplate?.blocks?.length > 0;
+      const hasIndependentBlocks = activeClinic?.independentScheduleBlocks?.length > 0;
+      
+      // No hay configuración, consideramos que ningún día está activo
+      if (!hasTemplateBlocks && !hasIndependentBlocks) {
+        console.log(`[AgendaContainer] Sin bloques configurados. Día ${format(date, 'yyyy-MM-dd')} (${dayKey}) no está activo.`);
+        return false;
+      }
+      
+      const blocks = hasTemplateBlocks 
+        ? activeClinic?.linkedScheduleTemplate?.blocks 
+        : activeClinic?.independentScheduleBlocks;
+      
+      if (!blocks || blocks.length === 0) {
+        return false;
+      }
+      
+      // Un día está activo si tiene al menos un bloque configurado
+      const isDayActive = blocks.some(block => 
+        block.dayOfWeek.toLowerCase() === dayKey.toLowerCase() &&
+        block.isWorking === true
+      );
+      
+      console.log(`[AgendaContainer] Verificando si el día ${format(date, 'yyyy-MM-dd')} (${dayKey}) está activo: ${isDayActive}`);
+      
+      return isDayActive;
+    } catch (error) {
+      console.error("[AgendaContainer] Error checking if day is active:", error);
+      return false;
+    }
+  }, [activeClinic?.linkedScheduleTemplate?.blocks, activeClinic?.independentScheduleBlocks, getDayKey]);
 
   // Función optimizada para cambiar entre vistas y actualizar la URL
   const handleViewChange = useCallback((newView: "week" | "day", newDate?: Date) => {

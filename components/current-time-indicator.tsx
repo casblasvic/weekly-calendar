@@ -285,45 +285,102 @@ export const CurrentTimeIndicator: React.FC<CurrentTimeIndicatorProps> = ({
     };
   }, [timeSlots, updatePosition]);
 
-  // Verificar si debemos mostrar el indicador
-  const shouldShowIndicator = position !== null && isWithinTimeRange && isWithinClinicHours()
+  // Aplicar los cambios de estado y estilo
+  useEffect(() => {
+    // Skip si no tenemos posición o no somos visibles
+    if (position === null || !isVisible || !indicatorRef.current) {
+      return;
+    }
+
+    // Aplicar estilo de posición
+    indicatorRef.current.style.top = `${position}px`;
+    
+    // Asegurar que la línea se extienda por todo el contenido, incluso al hacer scroll
+    if (agendaRef.current) {
+      // Calculamos el ancho total del contenido, incluyendo la parte no visible
+      const totalWidth = agendaRef.current.scrollWidth;
+      indicatorRef.current.style.width = `${totalWidth}px`;
+      
+      // Asegurar que la posición izquierda sea 0 relativa al contenedor, no al viewport
+      indicatorRef.current.style.left = '0px';
+      
+      // Configurar la posición en relación con el contenedor, no con el viewport
+      indicatorRef.current.style.position = 'absolute';
+    }
+    
+  }, [position, isVisible, isWithinTimeRange]);
+
+  // Mantener el indicador actualizado cuando cambie el tamaño o scroll del contenedor
+  useEffect(() => {
+    if (!agendaRef.current || !indicatorRef.current) return;
+    
+    const handleResize = () => {
+      if (indicatorRef.current && agendaRef.current) {
+        indicatorRef.current.style.width = `${agendaRef.current.scrollWidth}px`;
+      }
+    };
+    
+    // Actualizar cuando cambie el tamaño de la ventana
+    window.addEventListener('resize', handleResize);
+    
+    // Actualizar cuando cambie el contenido (scroll)
+    const observer = new ResizeObserver(handleResize);
+    observer.observe(agendaRef.current);
+    
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      observer.disconnect();
+    };
+  }, [agendaRef]);
+
+  // Verificar si mostrar
+  const shouldShow = isWithinTimeRange && isVisible && isWithinClinicHours() && position !== null;
 
   // Actualizar las referencias solo después de un renderizado completo
   useEffect(() => {
     prevPositionRef.current = position;
-    prevVisibilityRef.current = shouldShowIndicator;
+    prevVisibilityRef.current = shouldShow;
     skipRenderRef.current = false;
-  }, [position, shouldShowIndicator]);
+  }, [position, shouldShow]);
 
-  // Si no debemos mostrar el indicador, retornar null
-  if (!shouldShowIndicator) {
-    return null
+  // Solo renderizar si es visible y está dentro del rango
+  if (!shouldShow) {
+    return null;
   }
 
   return (
     <div
       ref={indicatorRef}
       className={cn(
-        "absolute left-0 right-0 border-t-2 border-red-500",
-        "pointer-events-none",
-        isMobile ? "w-full" : "",
         className,
+        "absolute left-0 h-[2px] bg-red-500",
+        "pointer-events-none"
       )}
       style={{
-        top: `${position}px`,
-        zIndex: 10,
+        position: 'absolute',
+        zIndex: 15,
+        left: 0,
+        width: '100%',
+        minWidth: '100%',
+        boxShadow: '0 0 4px rgba(239, 68, 68, 0.4)'
       }}
     >
       <span
-        className={cn(
-          "absolute -top-3 bg-red-500 text-white text-xs px-1 py-0.5 rounded",
-          isMobile ? "left-1" : "left-0",
-        )}
+        className="absolute bg-red-500 text-white text-xs px-1 py-0.5 rounded shadow-sm"
+        style={{
+          zIndex: 110,
+          whiteSpace: 'nowrap',
+          fontSize: '10px',
+          position: 'sticky',
+          left: '80px',
+          top: '0',
+          transform: 'translate(-50%, -50%)'
+        }}
       >
         {format(currentTime, "HH:mm")}
       </span>
     </div>
-  )
+  );
 }
 
 // Función auxiliar para convertir tiempo a minutos

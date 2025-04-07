@@ -137,27 +137,17 @@ export default function DayView({
   const router = useRouter()
   const { activeClinic } = useClinic()
   const { getBlocksByDateRange, createBlock, updateBlock, deleteBlock } = useScheduleBlocks()
-  const [currentDate, setCurrentDate] = useState(() => {
+  
+  // <<< CREATE parsedDateProp using useMemo >>>
+  const parsedDateProp = useMemo(() => {
     try {
-      return parseISO(date)
+      // Parse the date prop coming from the parent
+      return parse(date, "yyyy-MM-dd", new Date());
     } catch (error) {
-      console.error("Error al parsear fecha:", error)
-      return new Date()
+      console.error("[DayView] Error parsing date prop:", date, error);
+      return new Date(); // Fallback to today on error
     }
-  })
-
-  // Añadir un efecto para actualizar currentDate cuando cambia la prop date
-  useEffect(() => {
-    try {
-      const parsedDate = parse(date, "yyyy-MM-dd", new Date())
-      // Solo actualizar si la fecha realmente cambió
-      if (!isSameDay(parsedDate, currentDate)) {
-        setCurrentDate(parsedDate)
-      }
-    } catch (error) {
-      // Error silencioso
-    }
-  }, [date, currentDate])
+  }, [date]); // Only re-calculates when the 'date' prop changes
 
   // Estados para diálogos y selección
   const [selectedSlot, setSelectedSlot] = useState<{
@@ -262,7 +252,7 @@ export default function DayView({
   const timeSlots = useMemo(() => {
     if (!correctSchedule) return getTimeSlots(openTime, closeTime, slotDuration); // Fallback
 
-    const dayKey = getDayKey(currentDate);
+    const dayKey = getDayKey(parsedDateProp);
     const daySchedule = correctSchedule[dayKey as keyof WeekSchedule];
 
     let earliestStart = openTime;
@@ -283,14 +273,14 @@ export default function DayView({
         // if (!daySchedule?.isOpen) return []; 
     }
     
-    console.log(`[DayView] Generating time slots for ${format(currentDate, 'yyyy-MM-dd')} from ${earliestStart} to ${latestEnd}`);
+    console.log(`[DayView] Generating time slots for ${format(parsedDateProp, 'yyyy-MM-dd')} from ${earliestStart} to ${latestEnd}`);
     if (latestEnd <= earliestStart) { 
         console.warn("[DayView] latestEnd time is not after earliestStart, using default times for slots.");
         return getTimeSlots(openTime, closeTime, slotDuration); 
     } 
 
     return getTimeSlots(earliestStart, latestEnd, slotDuration);
-  }, [correctSchedule, currentDate, openTime, closeTime, slotDuration, getDayKey]);
+  }, [correctSchedule, parsedDateProp, openTime, closeTime, slotDuration, getDayKey]);
 
   // Función para verificar si un día está activo en la configuración
   const isDayActive = useCallback(
@@ -308,21 +298,33 @@ export default function DayView({
       const dayKey = dayMap[day as keyof typeof dayMap] || day;
       let isActive = false;
       try {
-         isActive = correctSchedule?.[dayKey as keyof WeekSchedule]?.isOpen ?? false;
-         // --- LOG: Comprobación isDayActive ---
-         // console.log(`[DayView] isDayActive check for ${format(date, 'yyyy-MM-dd')} (key: ${dayKey}): ${isActive}`); // <<< COMMENT OUT
-         // -----------------------------------
+         const daySchedule = correctSchedule?.[dayKey as keyof WeekSchedule];
+         
+         // Si no hay configuración para ese día, no está activo
+         if (!daySchedule) return false;
+         
+         // Si está explícitamente marcado como isOpen: true, está activo
+         if (daySchedule.isOpen === true) return true;
+         
+         // Si tiene rangos configurados y al menos uno válido, está activo
+         if (daySchedule.ranges && daySchedule.ranges.length > 0) {
+            // Comprobar que al menos un rango tenga horas válidas
+            return daySchedule.ranges.some(range => range.start && range.end);
+         }
+         
+         // En cualquier otro caso, no está activo
+         return false;
       } catch (error) {
          console.error("[DayView] Error in isDayActive:", error);
+         return false;
       }
-      return isActive;
     },
     [correctSchedule],
   )
 
   // <<< UPDATE isTimeSlotAvailable to use correctSchedule >>>
   const isTimeSlotAvailable = useCallback((time: string) => {
-    const dayKey = getDayKey(currentDate);
+    const dayKey = getDayKey(parsedDateProp);
     let isAvailable = false;
     try {
       // <<< Use correctSchedule directly >>>
@@ -337,7 +339,7 @@ export default function DayView({
       console.error("[DayView] Error in isTimeSlotAvailable:", error);
     }
     return isAvailable;
-  }, [correctSchedule, currentDate, getDayKey]); // <<< Add correctSchedule and getDayKey to dependencies
+  }, [correctSchedule, parsedDateProp, getDayKey]); // <<< Add correctSchedule and getDayKey to dependencies
 
   // Referencia para el contenedor de la agenda
   const agendaRef = useRef<HTMLDivElement>(null)
@@ -371,7 +373,7 @@ export default function DayView({
   }, []);
 
   // Filtrar citas para el día actual
-  const dayAppointments = appointments.filter((apt) => apt.date.toDateString() === currentDate.toDateString())
+  const dayAppointments = appointments.filter((apt) => apt.date.toDateString() === parsedDateProp.toDateString())
 
   // Corregir la función findBlockForCell
   const findBlockForCell = (date: string, time: string, roomId: string): ScheduleBlock | null => {
@@ -502,34 +504,40 @@ export default function DayView({
 
   // Funciones para manejar citas
   const handleCellClick = (date: Date, time: string, roomId: string) => {
-    // Verificar si la celda está bloqueada
-    const dayString = format(date, "yyyy-MM-dd")
-    const blockForCell = findBlockForCell(dayString, time, roomId)
+    console.log("[DayView] handleCellClick", { date, time, roomId });
+
+    // Use parsedDateProp for the current date context if needed
+    const targetDate = date; // Keep using the date of the cell clicked
+
+    // Find manual blocks for this specific cell's date
+    const dayString = format(targetDate, "yyyy-MM-dd");
+    const blockForCell = findBlockForCell(dayString, time, roomId);
 
     if (blockForCell) {
-      // Si está bloqueada, abrimos el modal de bloqueo con los datos
-      console.log("Celda bloqueada: ", blockForCell)
-      // Usar setTimeout para asegurar que el estado se actualice correctamente
-      setTimeout(() => {
-        openBlockModal(blockForCell)
-      }, 0)
-      return // Importante añadir este return
+      if (blockForCell.isBlocked) {
+        toast({ title: "Horario bloqueado", description: blockForCell.notes || "Este horario está bloqueado manualmente.", variant: "destructive" });
+        return;
+      } else {
+        // If it's a non-blocking note, allow opening modal or selecting
+        // For now, just log it and maybe open the block modal later
+        console.log("Clicked on a non-blocking note block:", blockForCell);
+        // Potentially open block modal for editing note?
+        // setSelectedBlock(blockForCell);
+        // setIsBlockModalOpen(true);
+        // return; // Decide if clicking a note prevents appointment creation
+      }
     }
 
-    // Solo si no está bloqueada, continuar con la lógica original
-    if (!isTimeSlotAvailable(time)) return
-
-    // Intentar diferentes formas de comparación para encontrar la cabina
-    const cabin = effectiveCabins.find((c) => {
-      return c.id === roomId || c.id.toString() === roomId || String(c.id) === roomId
-    })
-
-    // Si encontramos una cabina, o si forzamos la apertura del diálogo
-    if (cabin || effectiveCabins.length > 0) {
-      setSelectedSlot({ date, time, roomId })
-      setIsSearchDialogOpen(true)
+    // Check availability using the component's current date context
+    if (!isTimeSlotAvailable(time)) {
+       toast({ title: "Horario no disponible", description: "La clínica está cerrada en este horario.", variant: "default" });
+       return;
     }
-  }
+
+    console.log("Slot seleccionado:", { date: targetDate, time, roomId });
+    setSelectedSlot({ date: targetDate, time, roomId });
+    setIsSearchDialogOpen(true);
+  };
 
   const handleClientSelect = (client: { name: string; phone: string }) => {
     setSelectedClient(client)
@@ -611,7 +619,7 @@ export default function DayView({
 
     const updatedAppointment = {
       ...movedAppointment,
-      date: currentDate,
+      date: parsedDateProp,
       roomId,
       startTime: time,
     }
@@ -737,7 +745,7 @@ export default function DayView({
                 {/* Celdas de Cabina */}
                 {effectiveCabins.map((cabin, cabinIndex) => {
                   const isAvailable = isTimeSlotAvailable(time);
-                  const dayString = format(currentDate, "yyyy-MM-dd");
+                  const dayString = format(parsedDateProp, "yyyy-MM-dd");
                   const blockForCell = findBlockForCell ? findBlockForCell(dayString, time, cabin.id.toString()) : null;
                   const isCellInteractive = isAvailable && !blockForCell;
                   const isCellClickable = isCellInteractive || !!blockForCell;
@@ -780,7 +788,7 @@ export default function DayView({
                       onClick={(e) => {
                         if (isCellInteractive) {
                           e.stopPropagation();
-                          handleCellClick(currentDate, time, cabin.id.toString());
+                          handleCellClick(parsedDateProp, time, cabin.id.toString());
                         } else if (blockForCell) {
                           e.stopPropagation();
                           openBlockModal(blockForCell);
@@ -849,7 +857,7 @@ export default function DayView({
       
       try {
         // Obtener la fecha formateada
-        const dateStr = format(currentDate, "yyyy-MM-dd");
+        const dateStr = format(parsedDateProp, "yyyy-MM-dd");
         
         // Usar el contexto especializado para obtener bloques
         const blocks = await getBlocksByDateRange(
@@ -871,7 +879,7 @@ export default function DayView({
     };
     
     loadBlocks();
-  }, [activeClinic?.id, currentDate, getBlocksByDateRange, updateKey]);
+  }, [activeClinic?.id, parsedDateProp, getBlocksByDateRange, updateKey]);
 
   // Implementar una función que renderice los modales para evitar duplicación
   const renderModals = () => {
@@ -918,7 +926,7 @@ export default function DayView({
             // Si se cierra el modal, recargar los bloques para actualizar la UI
             if (!open && activeClinic?.id) {
               // Recargar bloques usando la interfaz
-              const formattedDate = format(currentDate, "yyyy-MM-dd");
+              const formattedDate = format(parsedDateProp, "yyyy-MM-dd");
               getBlocksByDateRange(
                 String(activeClinic.id),
                 formattedDate,
@@ -940,7 +948,7 @@ export default function DayView({
             // Recargar los bloques
             if (activeClinic?.id) {
               // Recargar bloques usando la interfaz
-              const formattedDate = format(currentDate, "yyyy-MM-dd");
+              const formattedDate = format(parsedDateProp, "yyyy-MM-dd");
               getBlocksByDateRange(
                 String(activeClinic.id),
                 formattedDate,
@@ -990,16 +998,16 @@ export default function DayView({
             <div>
               <h1 className="text-2xl font-bold">Agenda Diaria</h1>
               <p className="text-gray-500 capitalize">
-                {format(currentDate, "EEEE, d 'de' MMMM 'de' yyyy", { locale: es })}
+                {format(parsedDateProp, "EEEE, d 'de' MMMM 'de' yyyy", { locale: es })}
               </p>
             </div>
           </div>
           
           {/* Barra de navegación */}
           <AgendaNavBar
-            currentDate={currentDate}
+            currentDate={parsedDateProp}
             setCurrentDate={(date) => {
-              setCurrentDate(date)
+              console.log(`[DayView] Navigating to date: ${format(date, "yyyy-MM-dd")}`);
               router.push(`/agenda/dia/${format(date, "yyyy-MM-dd")}`)
             }}
             view="day"
@@ -1007,7 +1015,7 @@ export default function DayView({
             appointments={appointments}
             onViewChange={(newView) => {
               if (newView === "week") {
-                onViewChange ? onViewChange("weekly") : router.push(`/agenda/semana/${format(currentDate, "yyyy-MM-dd")}`)
+                onViewChange ? onViewChange("weekly") : router.push(`/agenda/semana/${format(parsedDateProp, "yyyy-MM-dd")}`)
               }
             }}
           />

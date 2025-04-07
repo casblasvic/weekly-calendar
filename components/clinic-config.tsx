@@ -138,7 +138,7 @@ export function ClinicConfig({ clinicId }: ClinicConfigProps) {
               <CardDescription>Define los horarios de atención para cada día de la semana</CardDescription>
             </CardHeader>
             <CardContent>
-              <ScheduleConfig onChange={handleScheduleChange} showTemplateSelector />
+              <ScheduleConfig onChange={handleScheduleChange} showTemplateSelector clinic={activeClinic} />
             </CardContent>
           </Card>
         </TabsContent>

@@ -290,12 +290,26 @@ export default function WeeklyAgenda({
     const dayKey = getDayKey(date);
     let isActive = false;
     try {
-      isActive = correctSchedule?.[dayKey as keyof WeekSchedule]?.isOpen ?? false;
-      // console.log(`[WeeklyAgenda] isDayActive check for ${format(date, 'yyyy-MM-dd')} (key: ${dayKey}): ${isActive}`);
+      const daySchedule = correctSchedule?.[dayKey as keyof WeekSchedule];
+      
+      // Si no hay configuración para ese día, no está activo
+      if (!daySchedule) return false;
+      
+      // Si está explícitamente marcado como isOpen: true, está activo
+      if (daySchedule.isOpen === true) return true;
+      
+      // Si tiene rangos configurados y al menos uno válido, está activo
+      if (daySchedule.ranges && daySchedule.ranges.length > 0) {
+        // Comprobar que al menos un rango tenga horas válidas
+        return daySchedule.ranges.some(range => range.start && range.end);
+      }
+      
+      // En cualquier otro caso, no está activo
+      return false;
     } catch (error) {
       console.error("[WeeklyAgenda] Error in isDayActive:", error);
+      return false;
     }
-    return isActive;
   }, [correctSchedule, getDayKey]);
 
   // Función para verificar si un horario está disponible
@@ -590,7 +604,7 @@ export default function WeeklyAgenda({
             }}
           >
             {/* Columna de tiempo - Fija - z-30 */}
-            <div className="sticky top-0 z-30 w-20 p-4 bg-white border-b border-r border-gray-300">
+            <div className="sticky left-0 top-0 w-20 p-4 bg-white border-b border-r border-gray-300 hour-header" style={{ zIndex: 999 }}>
               <div className="text-sm text-gray-500">Hora</div>
             </div>
 
@@ -600,10 +614,10 @@ export default function WeeklyAgenda({
               const active = isDayActive(day);
               return (
                 <div key={index} className={cn(
-                  "sticky top-0 z-30 bg-white border-b border-gray-300",
+                  "sticky top-0 bg-white border-b border-gray-300 day-header",
                   today ? "border-l-2 border-r-2 border-purple-300" : "border-l border-r border-gray-300",
                   !active && "bg-gray-100"
-                )}>
+                )} style={{ zIndex: 20 }}>
                   <div
                     className={cn(
                       "p-4 border-b border-gray-300",
@@ -654,8 +668,9 @@ export default function WeeklyAgenda({
               <React.Fragment key={time}>
                 {/* Celda de Hora */}
                 <div
-                  className="sticky left-0 z-10 w-20 p-2 text-sm font-medium text-purple-600 bg-white border-b border-r border-gray-300"
+                  className="sticky left-0 w-20 p-2 text-sm font-medium text-purple-600 bg-white border-b border-r border-gray-300 hour-column"
                   data-time={time}
+                  style={{ zIndex: 90 }}
                 >
                   {time}
                 </div>

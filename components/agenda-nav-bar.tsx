@@ -68,16 +68,8 @@ export function AgendaNavBar({
 
   // Actualizar URL sin recargar la página - versión simplificada
   const updatePathSilently = useCallback((path: string) => {
-    if (typeof window !== 'undefined' && !isUpdatingRef.current) {
-      isUpdatingRef.current = true;
-      try {
-        window.history.pushState({}, "", path);
-      } finally {
-        // Asegurar que se restablece la bandera incluso en caso de error
-        setTimeout(() => {
-          isUpdatingRef.current = false;
-        }, 0);
-      }
+    if (typeof window !== 'undefined') {
+      window.history.pushState({}, "", path);
     }
   }, []);
 
@@ -183,56 +175,98 @@ export function AgendaNavBar({
   const handlePrevDay = useCallback(() => {
     if (isUpdatingRef.current) return;
     
+    // Establecer que estamos actualizando para evitar múltiples llamadas
+    isUpdatingRef.current = true;
+    
     let prevDay = subDays(currentDate, 1);
-    // Buscar el día activo anterior
-    while (!isDayActive(prevDay)) {
+    console.log(`[AgendaNavBar DEBUG] Buscando día anterior a ${format(currentDate, 'yyyy-MM-dd')}, evaluando ${format(prevDay, 'yyyy-MM-dd')}`);
+    console.log(`[AgendaNavBar DEBUG] ¿Es activo ${format(prevDay, 'yyyy-MM-dd')}? ${isDayActive(prevDay)}`);
+    
+    // Buscar el día activo anterior con límite de 30 días para evitar bucles infinitos
+    let safetyCount = 0;
+    while (!isDayActive(prevDay) && safetyCount < 30) {
       prevDay = subDays(prevDay, 1);
+      safetyCount++;
+      console.log(`[AgendaNavBar DEBUG] Iteración ${safetyCount}: Evaluando ${format(prevDay, 'yyyy-MM-dd')}, activo: ${isDayActive(prevDay)}`);
     }
+    
+    // Registrar en consola para depuración
+    console.log(`[AgendaNavBar] Navegando al día anterior: ${format(prevDay, 'yyyy-MM-dd')}`);
     
     // Si tenemos onViewChange, lo usamos para transición suave
     if (onViewChange) {
-      onViewChange("day", prevDay);
+      try {
+        onViewChange("day", prevDay);
+      } finally {
+        // Asegurar que se libera el bloqueo incluso si hay error
+        setTimeout(() => {
+          isUpdatingRef.current = false;
+        }, 100);
+      }
     } else {
       // Fallback al comportamiento anterior
       setCurrentDate(prevDay);
       
-      // Actualizar URL silenciosamente
-      const formattedDate = format(prevDay, "yyyy-MM-dd");
-      updatePathSilently(`/agenda/dia/${formattedDate}`);
+      try {
+        // Navegar usando router.push es más fiable que modificar el historial manualmente
+        const formattedDate = format(prevDay, "yyyy-MM-dd");
+        router.push(`/agenda/dia/${formattedDate}`);
+      } finally {
+        // Asegurar que se libera el bloqueo incluso si hay error
+        setTimeout(() => {
+          isUpdatingRef.current = false;
+        }, 100);
+      }
     }
-  }, [currentDate, setCurrentDate, isDayActive, updatePathSilently, onViewChange]);
+  }, [currentDate, setCurrentDate, isDayActive, onViewChange, router]);
 
   const handleNextDay = useCallback(() => {
     if (isUpdatingRef.current) return;
     
+    // Establecer que estamos actualizando para evitar múltiples llamadas
+    isUpdatingRef.current = true;
+    
     let nextDay = addDays(currentDate, 1);
-    // Buscar el día activo siguiente
-    while (!isDayActive(nextDay)) {
+    console.log(`[AgendaNavBar DEBUG] Buscando día siguiente a ${format(currentDate, 'yyyy-MM-dd')}, evaluando ${format(nextDay, 'yyyy-MM-dd')}`);
+    console.log(`[AgendaNavBar DEBUG] ¿Es activo ${format(nextDay, 'yyyy-MM-dd')}? ${isDayActive(nextDay)}`);
+    
+    // Buscar el día activo siguiente con límite de 30 días para evitar bucles infinitos
+    let safetyCount = 0;
+    while (!isDayActive(nextDay) && safetyCount < 30) {
       nextDay = addDays(nextDay, 1);
+      safetyCount++;
+      console.log(`[AgendaNavBar DEBUG] Iteración ${safetyCount}: Evaluando ${format(nextDay, 'yyyy-MM-dd')}, activo: ${isDayActive(nextDay)}`);
     }
+    
+    // Registrar en consola para depuración
+    console.log(`[AgendaNavBar] Navegando al día siguiente: ${format(nextDay, 'yyyy-MM-dd')}`);
     
     // Si tenemos onViewChange, lo usamos para transición suave
     if (onViewChange) {
-      onViewChange("day", nextDay);
+      try {
+        onViewChange("day", nextDay);
+      } finally {
+        // Asegurar que se libera el bloqueo incluso si hay error
+        setTimeout(() => {
+          isUpdatingRef.current = false;
+        }, 100);
+      }
     } else {
       // Fallback al comportamiento anterior
       setCurrentDate(nextDay);
       
-      // Actualizar URL silenciosamente
-      const formattedDate = format(nextDay, "yyyy-MM-dd");
-      updatePathSilently(`/agenda/dia/${formattedDate}`);
+      try {
+        // Navegar usando router.push es más fiable que modificar el historial manualmente
+        const formattedDate = format(nextDay, "yyyy-MM-dd");
+        router.push(`/agenda/dia/${formattedDate}`);
+      } finally {
+        // Asegurar que se libera el bloqueo incluso si hay error
+        setTimeout(() => {
+          isUpdatingRef.current = false;
+        }, 100);
+      }
     }
-  }, [currentDate, setCurrentDate, isDayActive, updatePathSilently, onViewChange]);
-
-  // Función para verificar si un día es activo en la configuración de la clínica
-  const isActiveDayInClinic = (date: Date) => {
-    // Obtener el día de la semana (0 = domingo, 1 = lunes, etc.)
-    const dayOfWeek = getDay(date)
-    // Aquí debes usar la configuración real de días activos de la clínica
-    // Este es solo un ejemplo, reemplázalo con tu lógica real
-    const activeDays = [1, 2, 3, 4, 5] // Lunes a viernes
-    return activeDays.includes(dayOfWeek)
-  }
+  }, [currentDate, setCurrentDate, isDayActive, onViewChange, router]);
 
   const handleGoToToday = () => {
     const today = new Date();
