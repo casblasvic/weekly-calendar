@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 import type { WeekSchedule } from '@/types/schedule'; // Importar tipo WeekSchedule
+import type { HorarioSemanal, HorarioDia, FranjaHoraria } from '@/services/data/models/interfaces'; // <-- Importar tipos necesarios
 
 // Esquema para validar los parámetros de la ruta y query
 const ParamsSchema = z.object({
@@ -15,30 +16,92 @@ const QuerySchema = z.object({
 
 // Esquema Zod para validar el cuerpo de la solicitud PUT (el horario)
 // Se asegura que el objeto recibido tenga la estructura de WeekSchedule
+// CORREGIDO: Hacer que el esquema coincida exactamente con WeekSchedule (campos no opcionales)
+const DayScheduleSchema = z.object({
+  isOpen: z.boolean(),
+  ranges: z.array(z.object({
+    start: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Formato HH:MM inválido en start"),
+    end: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Formato HH:MM inválido en end")
+  }))
+});
+
 const ScheduleBodySchema = z.object({
-  monday: z.object({ isOpen: z.boolean(), ranges: z.array(z.object({ start: z.string().regex(/^([01]\\d|2[0-3]):([0-5]\\d)$/, "Formato HH:MM inválido"), end: z.string().regex(/^([01]\\d|2[0-3]):([0-5]\\d)$/, "Formato HH:MM inválido") })) }),
-  tuesday: z.object({ isOpen: z.boolean(), ranges: z.array(z.object({ start: z.string().regex(/^([01]\\d|2[0-3]):([0-5]\\d)$/, "Formato HH:MM inválido"), end: z.string().regex(/^([01]\\d|2[0-3]):([0-5]\\d)$/, "Formato HH:MM inválido") })) }),
-  wednesday: z.object({ isOpen: z.boolean(), ranges: z.array(z.object({ start: z.string().regex(/^([01]\\d|2[0-3]):([0-5]\\d)$/, "Formato HH:MM inválido"), end: z.string().regex(/^([01]\\d|2[0-3]):([0-5]\\d)$/, "Formato HH:MM inválido") })) }),
-  thursday: z.object({ isOpen: z.boolean(), ranges: z.array(z.object({ start: z.string().regex(/^([01]\\d|2[0-3]):([0-5]\\d)$/, "Formato HH:MM inválido"), end: z.string().regex(/^([01]\\d|2[0-3]):([0-5]\\d)$/, "Formato HH:MM inválido") })) }),
-  friday: z.object({ isOpen: z.boolean(), ranges: z.array(z.object({ start: z.string().regex(/^([01]\\d|2[0-3]):([0-5]\\d)$/, "Formato HH:MM inválido"), end: z.string().regex(/^([01]\\d|2[0-3]):([0-5]\\d)$/, "Formato HH:MM inválido") })) }),
-  saturday: z.object({ isOpen: z.boolean(), ranges: z.array(z.object({ start: z.string().regex(/^([01]\\d|2[0-3]):([0-5]\\d)$/, "Formato HH:MM inválido"), end: z.string().regex(/^([01]\\d|2[0-3]):([0-5]\\d)$/, "Formato HH:MM inválido") })) }),
-  sunday: z.object({ isOpen: z.boolean(), ranges: z.array(z.object({ start: z.string().regex(/^([01]\\d|2[0-3]):([0-5]\\d)$/, "Formato HH:MM inválido"), end: z.string().regex(/^([01]\\d|2[0-3]):([0-5]\\d)$/, "Formato HH:MM inválido") })) }),
-}).strict(); // .strict() para no permitir propiedades extra
+  monday: DayScheduleSchema,
+  tuesday: DayScheduleSchema,
+  wednesday: DayScheduleSchema,
+  thursday: DayScheduleSchema,
+  friday: DayScheduleSchema,
+  saturday: DayScheduleSchema,
+  sunday: DayScheduleSchema
+});
+
+// --- NUEVA FUNCIÓN DE CONVERSIÓN ---
+const convertWeekScheduleToHorarioSemanal = (
+  schedule: WeekSchedule | null,
+  clinicId: string,
+  userId: string // Opcional: para generar IDs únicos si es necesario
+): HorarioSemanal | null => {
+  if (!schedule) {
+    console.log(`[convertWeekScheduleToHorarioSemanal] Input schedule is null for clinic ${clinicId}. Returning null.`);
+    return null;
+  }
+
+  const weekDaysMap: { [key in keyof WeekSchedule]: HorarioDia['dia'] } = {
+    monday: 'lunes',
+    tuesday: 'martes',
+    wednesday: 'miercoles',
+    thursday: 'jueves',
+    friday: 'viernes',
+    saturday: 'sabado',
+    sunday: 'domingo',
+  };
+
+  const dias: HorarioDia[] = Object.entries(schedule)
+    .map(([dayKey, daySchedule]) => {
+      const diaNombre = weekDaysMap[dayKey as keyof WeekSchedule];
+      if (!diaNombre) {
+        console.warn(`[convertWeekScheduleToHorarioSemanal] Invalid day key encountered: ${dayKey}`);
+        return null; // O manejar de otra forma
+      }
+
+      // Crear franjas con IDs únicos (simples por ahora)
+      const franjas: FranjaHoraria[] = daySchedule.ranges.map((range, index) => ({
+        // Generar un ID simple. Podría ser más robusto si se necesita.
+        id: `${userId}-${clinicId}-${diaNombre}-${index}-${range.start}-${range.end}`,
+        inicio: range.start,
+        fin: range.end,
+      }));
+
+      return {
+        dia: diaNombre,
+        activo: daySchedule.isOpen,
+        franjas: franjas,
+      };
+    })
+    .filter((dia): dia is HorarioDia => dia !== null); // Filtrar posibles nulos
+
+  // Ordenar los días si es necesario (opcional)
+  const ordenDias: HorarioDia['dia'][] = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'];
+  dias.sort((a, b) => ordenDias.indexOf(a.dia) - ordenDias.indexOf(b.dia));
+
+  const resultado: HorarioSemanal = { clinicaId: clinicId, dias };
+  console.log(`[convertWeekScheduleToHorarioSemanal] Conversion successful for clinic ${clinicId}. Result:`, JSON.stringify(resultado, null, 2));
+  return resultado;
+};
+// --- FIN NUEVA FUNCIÓN ---
 
 /**
  * GET handler para obtener el horario personalizado de un usuario para una clínica.
  */
 export async function GET(request: Request, props: { params: Promise<{ id: string }> }) {
-  const params = await props.params;
-  const url = new URL(request.url);
-  const queryParams = Object.fromEntries(url.searchParams.entries());
-
-  // Validar ID de usuario de la ruta
-  const paramsValidation = ParamsSchema.safeParse(params);
+  const paramsValidation = ParamsSchema.safeParse(await props.params);
   if (!paramsValidation.success) {
     return NextResponse.json({ error: 'ID de usuario inválido.', details: paramsValidation.error.errors }, { status: 400 });
   }
   const { id: userId } = paramsValidation.data;
+  
+  const url = new URL(request.url);
+  const queryParams = Object.fromEntries(url.searchParams.entries());
 
   // Validar ID de clínica de los query params
   const queryValidation = QuerySchema.safeParse(queryParams);
@@ -50,34 +113,60 @@ export async function GET(request: Request, props: { params: Promise<{ id: strin
   console.log(`[API GET /users/${userId}/schedule] Request for clinicId: ${clinicId}`);
 
   try {
-    const userSchedule = await prisma.userClinicSchedule.findUnique({
+    const userScheduleData = await prisma.userClinicSchedule.findUnique({ // Renombrado para claridad
       where: {
-        userId_clinicId: { // Usar el índice único
+        userId_clinicId: {
           userId: userId,
           clinicId: clinicId,
         }
       },
       select: {
-        scheduleJson: true,
-        // Podemos incluir updatedAt si es útil para el cliente
-        // updatedAt: true
+        scheduleJson: true, // Obtener el JSON directamente
       }
     });
 
-    if (!userSchedule) {
-      console.log(`[API GET /users/${userId}/schedule] No custom schedule found for clinic ${clinicId}.`);
-      // Devolver null o un objeto vacío si no se encuentra horario personalizado
-      // Devolver null es generalmente preferible para indicar ausencia de recurso
-      return NextResponse.json(null, { status: 200 });
+    if (!userScheduleData || !userScheduleData.scheduleJson) {
+      console.log(`[API GET /users/${userId}/schedule] No custom schedule found or scheduleJson is empty for clinic ${clinicId}.`);
+      return NextResponse.json({ message: `No se encontró horario personalizado para el usuario ${userId} en la clínica ${clinicId}` }, { status: 404 });
     }
 
-    console.log(`[API GET /users/${userId}/schedule] Custom schedule found for clinic ${clinicId}.`);
-    // Devolver solo el objeto scheduleJson
-    // Asegurarse que el JSON parseado es del tipo correcto si es necesario, aunque Prisma lo devuelve como JsonValue
-    return NextResponse.json(userSchedule.scheduleJson, { status: 200 });
+    console.log(`[API GET /users/${userId}/schedule] Custom schedule found (raw JSON) for clinic ${clinicId}. Validating and converting...`);
+
+    // --- Validar el JSON recuperado con Zod ---
+    const scheduleValidation = ScheduleBodySchema.safeParse(userScheduleData.scheduleJson);
+
+    if (!scheduleValidation.success) {
+      console.error(`[API GET /users/${userId}/schedule] Validation failed for stored scheduleJson (does not match WeekSchedule format):`, scheduleValidation.error.format(), "Raw Data:", userScheduleData.scheduleJson);
+      // Si la validación falla, significa que los datos en la BD están corruptos o en un formato inesperado.
+      return NextResponse.json({ error: 'El formato del horario almacenado es inválido.' }, { status: 500 });
+    }
+
+    // --- Si la validación pasa, sabemos que es WeekSchedule ---
+    const validWeekSchedule = scheduleValidation.data;
+    console.log(`[API GET /users/${userId}/schedule] Stored scheduleJson validated successfully as WeekSchedule.`);
+
+
+    // --- Realizar la conversión a HorarioSemanal ---
+    const horarioSemanal = convertWeekScheduleToHorarioSemanal(
+      validWeekSchedule as WeekSchedule,
+      clinicId,
+      userId
+    );
+
+    if (!horarioSemanal) {
+       console.error(`[API GET /users/${userId}/schedule] Failed to convert validated WeekSchedule to HorarioSemanal for clinic ${clinicId}.`);
+       return NextResponse.json({ error: 'Error interno al convertir el formato del horario.' }, { status: 500 });
+    }
+
+    // --- Devolver el formato HorarioSemanal convertido ---
+    console.log(`[API GET /users/${userId}/schedule] Returning converted schedule (HorarioSemanal format) for clinic ${clinicId}.`);
+    return NextResponse.json(horarioSemanal, { status: 200 });
 
   } catch (error) {
-    console.error(`[API GET /users/${userId}/schedule] Error fetching schedule for clinic ${clinicId}:`, error);
+    console.error(`[API GET /users/${userId}/schedule] Error fetching or processing schedule for clinic ${clinicId}:`, error);
+    if (error instanceof Error) {
+       return NextResponse.json({ error: `Error interno del servidor al obtener el horario: ${error.message}` }, { status: 500 });
+    }
     return NextResponse.json({ error: 'Error interno del servidor al obtener el horario.' }, { status: 500 });
   }
 }
@@ -87,16 +176,14 @@ export async function GET(request: Request, props: { params: Promise<{ id: strin
  * de un usuario para una clínica específica.
  */
 export async function PUT(request: Request, props: { params: Promise<{ id: string }> }) {
-  const params = await props.params;
-  const url = new URL(request.url);
-  const queryParams = Object.fromEntries(url.searchParams.entries());
-
-  // Validar ID de usuario de la ruta
-  const paramsValidation = ParamsSchema.safeParse(params);
+  const paramsValidation = ParamsSchema.safeParse(await props.params);
   if (!paramsValidation.success) {
     return NextResponse.json({ error: 'ID de usuario inválido.', details: paramsValidation.error.errors }, { status: 400 });
   }
   const { id: userId } = paramsValidation.data;
+
+  const url = new URL(request.url);
+  const queryParams = Object.fromEntries(url.searchParams.entries());
 
   // Validar ID de clínica de los query params
   const queryValidation = QuerySchema.safeParse(queryParams);
@@ -112,14 +199,12 @@ export async function PUT(request: Request, props: { params: Promise<{ id: strin
   try {
     const rawBody = await request.json();
     console.log(`[API PUT /users/${userId}/schedule] Received raw body for clinic ${clinicId}:`, JSON.stringify(rawBody));
-    // Usar el esquema Zod para validar la estructura del horario
     const bodyValidation = ScheduleBodySchema.safeParse(rawBody);
     if (!bodyValidation.success) {
       console.error(`[API PUT /users/${userId}/schedule] Zod validation failed for schedule body:`, bodyValidation.error.format());
-      // Devolver detalles del error de validación Zod
       return NextResponse.json({ error: 'Datos de horario inválidos en el cuerpo.', details: bodyValidation.error.format() }, { status: 400 });
     }
-    scheduleData = bodyValidation.data;
+    scheduleData = bodyValidation.data as WeekSchedule;
     console.log(`[API PUT /users/${userId}/schedule] Schedule body validation successful for clinic ${clinicId}.`);
   } catch (error) {
     console.error(`[API PUT /users/${userId}/schedule] Error parsing request body for clinic ${clinicId}:`, error);
@@ -127,57 +212,55 @@ export async function PUT(request: Request, props: { params: Promise<{ id: strin
   }
 
   try {
-    // Verificar que la asignación UserClinicAssignment existe antes del upsert
-    // Esto previene crear horarios huérfanos si la asignación se elimina concurrentemente.
     const assignmentExists = await prisma.userClinicAssignment.findUnique({
-       where: { userId_clinicId: { userId, clinicId } }
+       where: { 
+           userId_clinicId: { 
+               userId: userId, 
+               clinicId: clinicId 
+            } 
+        }
     });
 
     if (!assignmentExists) {
        console.warn(`[API PUT /users/${userId}/schedule] Attempted to upsert schedule for non-existent assignment (Clinic: ${clinicId}).`);
-       return NextResponse.json({ error: `El usuario ${userId} no está asignado a la clínica ${clinicId}. No se puede guardar el horario.` }, { status: 404 }); // Not Found o Bad Request (400)
+       return NextResponse.json({ error: `El usuario ${userId} no está asignado a la clínica ${clinicId}. No se puede guardar el horario.` }, { status: 404 });
     }
 
-    // Realizar un upsert: crea si no existe, actualiza si existe
     const upsertedSchedule = await prisma.userClinicSchedule.upsert({
       where: {
-        userId_clinicId: { // Usar el índice único
+        userId_clinicId: { 
           userId: userId,
           clinicId: clinicId,
         }
       },
       update: {
-        scheduleJson: scheduleData as any, // Prisma espera Json, hacemos cast
+        scheduleJson: scheduleData as any,
       },
       create: {
         userId: userId,
         clinicId: clinicId,
-        scheduleJson: scheduleData as any, // Prisma espera Json
-        // El campo 'assignment' se relaciona automáticamente por los campos userId/clinicId
+        scheduleJson: scheduleData as any,
       },
-      select: { // Devolver el horario guardado
-          userId: true,
-          clinicId: true,
-          scheduleJson: true,
-          updatedAt: true
+      select: { 
+        userId: true,
+        clinicId: true,
+        scheduleJson: true,
+        updatedAt: true
       }
     });
 
     console.log(`[API PUT /users/${userId}/schedule] Schedule upserted successfully for clinic ${clinicId}.`);
-    return NextResponse.json(upsertedSchedule, { status: 200 }); // 200 OK para upsert exitoso
+    return NextResponse.json(upsertedSchedule, { status: 200 });
 
   } catch (error) {
     console.error(`[API PUT /users/${userId}/schedule] Error upserting schedule for clinic ${clinicId}:`, error);
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
-       // Manejar errores específicos de Prisma si es necesario (ej: P2003 FK constraint)
        console.error(`[API PUT /users/${userId}/schedule] Prisma Error Code: ${error.code}`);
-       // Código P2003 indica violación de FK, podría ser que User o Clinic no existan
        if (error.code === 'P2003') {
            return NextResponse.json({ error: 'Error de referencia: El usuario o la clínica especificados no existen.'}, { status: 400 });
        }
        return NextResponse.json({ error: 'Error de base de datos al guardar el horario.', code: error.code }, { status: 400 });
     }
-    // Capturar otros posibles errores
     if (error instanceof Error) {
         return NextResponse.json({ error: `Error interno del servidor: ${error.message}` }, { status: 500 });
     }

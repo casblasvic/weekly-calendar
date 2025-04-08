@@ -34,11 +34,20 @@ export async function GET(request: Request, props: { params: Promise<{ id: strin
   try {
     const user = await prisma.user.findUniqueOrThrow({
       where: { id: userId },
-      select: { // Excluir hash
+      select: { 
         id: true, email: true, firstName: true, lastName: true, profileImageUrl: true, 
-        isActive: true, createdAt: true, updatedAt: true, systemId: true 
+        isActive: true, createdAt: true, updatedAt: true, systemId: true, 
+        clinicAssignments: { 
+          select: {
+            clinicId: true,
+            roleId: true, 
+            clinic: { select: { name: true, prefix: true, isActive: true } },
+            role: { select: { name: true } } 
+          }
+        }
       }
     });
+    console.log(`[API GET /users/${userId}] User data fetched including assignments:`, JSON.stringify(user, null, 2));
     return NextResponse.json(user);
   } catch (error) {
     console.error(`Error fetching user ${userId}:`, error);
@@ -82,29 +91,19 @@ export async function PUT(request: Request, props: { params: Promise<{ id: strin
     const updatedUserResult = await prisma.$transaction(async (tx) => {
       console.log(`[API PUT /users/${userId}] Starting transaction...`);
 
-      // 1. Actualizar datos base del usuario (firstName, lastName, isActive, etc.)
-      // FILTRAR los datos recibidos para incluir SOLO los campos válidos del modelo User
-      const validUserFields = ['firstName', 'lastName', 'profileImageUrl', 'isActive', 'email']; // Añadir email si se permite actualizar
-      const fieldsToUpdate = Object.keys(userBaseUpdateData)
-        .filter(key => validUserFields.includes(key) && userBaseUpdateData[key] !== undefined) // Filtrar por claves válidas y definidas
-        .reduce((obj, key) => {
-          // Asegurar que los valores nulos se manejan correctamente si el campo es opcional
-          if (key === 'profileImageUrl' && userBaseUpdateData[key] === null) {
-            obj[key] = null; // Permitir establecer a null si es opcional
-          } else if (userBaseUpdateData[key] !== null && userBaseUpdateData[key] !== undefined) {
-            obj[key] = userBaseUpdateData[key]; // Incluir solo si no es null/undefined (excepto profileImageUrl)
-          }
-          // Si un campo opcional como lastName viene como "" y queremos guardarlo así, no lo filtramos aquí.
-          // Si queremos guardar null en lugar de "", la lógica de reducción o el payload inicial deben ajustarse.
-          // Por ahora, guardamos string vacío si viene así.
-          return obj;
-        }, {} as any); // Usar {} as any temporalmente para el objeto acumulador
-        
-      if (Object.keys(fieldsToUpdate).length > 0) {
-          console.log(`[API PUT /users/${userId}] Updating user base data (filtered):`, fieldsToUpdate);
+      // 1. Actualizar datos base del usuario (SOLO campos válidos del modelo User)
+      const baseDataToUpdate: Prisma.UserUpdateInput = {};
+      if (userBaseUpdateData.firstName !== undefined) baseDataToUpdate.firstName = userBaseUpdateData.firstName;
+      if (userBaseUpdateData.lastName !== undefined) baseDataToUpdate.lastName = userBaseUpdateData.lastName;
+      if (userBaseUpdateData.profileImageUrl !== undefined) baseDataToUpdate.profileImageUrl = userBaseUpdateData.profileImageUrl;
+      if (userBaseUpdateData.isActive !== undefined) baseDataToUpdate.isActive = userBaseUpdateData.isActive;
+      // ¡NO incluir otros campos como dni, fechaNacimiento, etc. si no existen en el modelo User!
+
+      if (Object.keys(baseDataToUpdate).length > 0) {
+          console.log(`[API PUT /users/${userId}] Updating user base data:`, baseDataToUpdate);
           await tx.user.update({
             where: { id: userId },
-            data: fieldsToUpdate, // <-- Usar datos filtrados
+            data: baseDataToUpdate, // Usar datos base preparados y válidos
           });
           console.log(`[API PUT /users/${userId}] User base data updated.`);
       } else {
@@ -147,7 +146,7 @@ export async function PUT(request: Request, props: { params: Promise<{ id: strin
 
       // 3. Devolver el usuario actualizado incluyendo las asignaciones con roles
       console.log(`[API PUT /users/${userId}] Transaction finished. Fetching final user state...`);
-      return await tx.user.findUniqueOrThrow({
+      const finalUser = await tx.user.findUniqueOrThrow({
         where: { id: userId },
         select: {
           id: true, email: true, firstName: true, lastName: true, profileImageUrl: true,
@@ -162,7 +161,12 @@ export async function PUT(request: Request, props: { params: Promise<{ id: strin
           }
         }
       });
+      // DEVOLVER EL USUARIO FINAL DE LA TRANSACCIÓN
+      return finalUser;
     }); // Fin de la transacción
+
+    // <<< AÑADIR LOG AQUÍ para inspeccionar el resultado ANTES de enviarlo >>>
+    console.log(`[API PUT /users/${userId}] Final user object BEFORE sending response:`, JSON.stringify(updatedUserResult, null, 2));
 
     console.log(`[API PUT /users/${userId}] Update successful. Returning updated user data.`);
     return NextResponse.json(updatedUserResult);

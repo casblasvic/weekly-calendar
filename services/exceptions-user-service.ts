@@ -1,10 +1,9 @@
 import {
   Usuario,
   ExcepcionHoraria,
-  ExcepcionHorariaUsuario,
   HorarioDia,
-  TipoPropagacion
 } from "./data/models/interfaces";
+import type { UserClinicScheduleException } from "@prisma/client";
 import { detectarConflictos, ConflictoHorario } from "./exceptions-conflict-service";
 
 /**
@@ -18,24 +17,24 @@ export function crearExcepcionUsuario(
   usuario: Usuario,
   excepcionClinica: ExcepcionHoraria,
   diasModificados?: HorarioDia[]
-): ExcepcionHorariaUsuario {
+): UserClinicScheduleException {
   // Crear una excepción de usuario basada en la excepción de clínica
-  const excepcionUsuario: ExcepcionHorariaUsuario = {
+  const excepcionUsuario: UserClinicScheduleException = {
     id: `${usuario.id}-${excepcionClinica.id}`,
     userId: usuario.id.toString(),
-    nombre: `[Auto] ${excepcionClinica.nombre}`,
-    fechaInicio: excepcionClinica.fechaInicio,
-    fechaFin: excepcionClinica.fechaFin,
-    dias: diasModificados || excepcionClinica.dias.map(dia => ({
+    clinicId: excepcionClinica.clinicaId,
+    name: `[Auto] ${excepcionClinica.nombre}`,
+    startDate: new Date(excepcionClinica.fechaInicio),
+    endDate: new Date(excepcionClinica.fechaFin),
+    scheduleJson: { dias: diasModificados || excepcionClinica.dias.map(dia => ({
       ...dia,
       franjas: dia.franjas.map(franja => ({
         ...franja,
         id: `${usuario.id}-${franja.id}`
       }))
-    })),
-    origenExcepcionId: excepcionClinica.id,
-    origenClinicaId: excepcionClinica.clinicaId,
-    generadaAutomaticamente: true
+    })) } as any,
+    createdAt: new Date(),
+    updatedAt: new Date(),
   };
 
   return excepcionUsuario;
@@ -54,7 +53,7 @@ export function aplicarSolucionesUsuario(
   excepcionClinica: ExcepcionHoraria,
   conflictos: ConflictoHorario[],
   soluciones: Record<string, string>
-): ExcepcionHorariaUsuario {
+): UserClinicScheduleException {
   // Crear estructura de días modificados
   const diasModificados: HorarioDia[] = [];
   
@@ -164,25 +163,25 @@ export function aplicarSolucionesUsuario(
  */
 export function guardarExcepcionUsuario(
   usuario: Usuario,
-  excepcion: ExcepcionHorariaUsuario
+  excepcion: UserClinicScheduleException
 ): Usuario {
   // Crear una copia del usuario
   const usuarioActualizado = { ...usuario };
   
   // Inicializar el array de excepciones si no existe
-  if (!usuarioActualizado.excepciones) {
-    usuarioActualizado.excepciones = [];
+  if (!usuarioActualizado.customScheduleExceptions) {
+    usuarioActualizado.customScheduleExceptions = [];
   }
   
   // Comprobar si ya existe una excepción con el mismo ID
-  const indiceExcepcion = usuarioActualizado.excepciones.findIndex(e => e.id === excepcion.id);
+  const indiceExcepcion = usuarioActualizado.customScheduleExceptions.findIndex(e => e.id === excepcion.id);
   
   if (indiceExcepcion >= 0) {
     // Actualizar una excepción existente
-    usuarioActualizado.excepciones[indiceExcepcion] = excepcion;
+    usuarioActualizado.customScheduleExceptions[indiceExcepcion] = excepcion;
   } else {
     // Añadir una nueva excepción
-    usuarioActualizado.excepciones.push(excepcion);
+    usuarioActualizado.customScheduleExceptions.push(excepcion);
   }
   
   return usuarioActualizado;
@@ -196,7 +195,7 @@ export function guardarExcepcionUsuario(
  */
 export function aplicarExcepcionesUsuarios(
   usuarios: Usuario[],
-  excepciones: ExcepcionHorariaUsuario[]
+  excepciones: UserClinicScheduleException[]
 ): Usuario[] {
   // Crear una copia de los usuarios
   const usuariosActualizados = [...usuarios];
@@ -208,7 +207,7 @@ export function aplicarExcepcionesUsuarios(
     }
     grupos[excepcion.userId].push(excepcion);
     return grupos;
-  }, {} as Record<string, ExcepcionHorariaUsuario[]>);
+  }, {} as Record<string, UserClinicScheduleException[]>);
   
   // Aplicar las excepciones a cada usuario
   Object.entries(excepcionesPorUsuario).forEach(([userId, excepcionesUsuario]) => {
@@ -239,14 +238,14 @@ export function tieneExcepcionesActivas(
   usuario: Usuario,
   fecha: Date = new Date()
 ): boolean {
-  if (!usuario.excepciones || usuario.excepciones.length === 0) {
+  if (!usuario.customScheduleExceptions || usuario.customScheduleExceptions.length === 0) {
     return false;
   }
   
   // Verificar si alguna excepción está activa en la fecha indicada
-  return usuario.excepciones.some(excepcion => {
-    const fechaInicio = new Date(excepcion.fechaInicio);
-    const fechaFin = new Date(excepcion.fechaFin);
+  return usuario.customScheduleExceptions.some(excepcion => {
+    const fechaInicio = new Date(excepcion.startDate);
+    const fechaFin = new Date(excepcion.endDate);
     
     return fechaInicio <= fecha && fecha <= fechaFin;
   });
@@ -262,14 +261,14 @@ export function contarExcepcionesActivas(
   usuario: Usuario,
   fecha: Date = new Date()
 ): number {
-  if (!usuario.excepciones || usuario.excepciones.length === 0) {
+  if (!usuario.customScheduleExceptions || usuario.customScheduleExceptions.length === 0) {
     return 0;
   }
   
   // Contar excepciones activas en la fecha indicada
-  return usuario.excepciones.filter(excepcion => {
-    const fechaInicio = new Date(excepcion.fechaInicio);
-    const fechaFin = new Date(excepcion.fechaFin);
+  return usuario.customScheduleExceptions.filter(excepcion => {
+    const fechaInicio = new Date(excepcion.startDate);
+    const fechaFin = new Date(excepcion.endDate);
     
     return fechaInicio <= fecha && fecha <= fechaFin;
   }).length;

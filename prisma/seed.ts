@@ -992,6 +992,7 @@ async function main() {
   // ... (lógica de creación de Cabin) ...
 
   // --- Crear Usuarios de Ejemplo --- 
+  // --- BLOQUE RESTAURADO ---
   console.log('Creating example users...');
   const usersDataFromMock = initialMockData.usuarios || []; // Renombrar para claridad
 
@@ -1006,74 +1007,109 @@ async function main() {
 
     // Verificar si el usuario ya existe por email GLOBALMENTE (Corregido previamente)
     const existingUser = await prisma.user.findUnique({
-      where: { email: userData.email }, 
+      where: { email: userData.email },
     });
 
-    if (existingUser) {
-      console.log(`User with email ${userData.email} already exists. Skipping creation.`);
-      continue; // Saltar a la siguiente iteración si ya existe
-    }
+    let userToProcess: { id: string, email: string }; // Variable para guardar el ID del usuario a procesar
 
-    try {
-      const createdUser = await prisma.user.create({
-        data: {
-          // CORREGIDO: Usar 'nombre' como 'firstName'
-          firstName: userData.nombre, 
-          // CORREGIDO: Añadir 'lastName' (vacío o derivado si es posible)
-          lastName: "", // Dejar vacío si no hay apellido en mockData
-                  email: userData.email,
-                  passwordHash: hashedPassword,
-                  isActive: userData.isActive !== false, 
-                  systemId: system.id,
-          // CORREGIDO: Usar 'create' en la relación de unión 'roles' para conectar al Role
-          roles: { 
-            create: [ // Crear una entrada en la tabla UserRole
-              {
-                role: { // Especificar el Role a conectar dentro de UserRole
-                  connect: {
-                    id: userRole.id // Conectar al Role existente por su ID
-                  }
-                }
-              }
-            ]
+    if (existingUser) {
+      console.log(`User with email ${userData.email} already exists. Proceeding to assign roles/clinics.`);
+      userToProcess = existingUser; // Usar el usuario existente
+      // NO usar continue aquí
+    } else {
+      // Si no existe, crear el usuario básico
+      try {
+        const createdUserBasic = await prisma.user.create({
+          data: {
+            firstName: userData.nombre,
+            lastName: "",
+            email: userData.email,
+            passwordHash: hashedPassword,
+            isActive: userData.isActive !== false,
+            systemId: system.id,
           },
-          // Crear asignaciones de clínicas (Lógica correcta)
-          clinicAssignments: {
-            create: userData.clinicasIds
-              .map((mockClinicId: string) => createdClinicsMap.get(mockClinicId)) 
-              .filter((clinic: any) => clinic) 
-              .map((clinic: any) => ({ 
-                clinicId: clinic.id,
-                roleId: userRole.id // Asignar el roleId determinado para el usuario
-              })),
-          },
-        },
-        // Asegurar que el include está correcto Y anida la información del rol
-        include: { 
-            roles: { // Incluir UserRole
-                include: { // Dentro de UserRole, incluir Role
-                    role: true // Traer el objeto Role completo
-                }
-            }, 
-            clinicAssignments: { 
-                include: { clinic: true } 
-            } 
-        }, 
-      });
-      
-      // Log adaptado para acceder al nombre del rol anidado
-      const assignedClinicNames = createdUser.clinicAssignments.map(ca => ca.clinic.name).join(', ');
-      console.log(`Created user: ${createdUser.email} (ID: ${createdUser.id}) with role ${createdUser.roles[0]?.role?.name}, assigned to clinics: ${assignedClinicNames || 'None'}.`);
-      
+        });
+        console.log(`Created basic user: ${createdUserBasic.email} (ID: ${createdUserBasic.id})`);
+        userToProcess = createdUserBasic; // Usar el usuario recién creado
       } catch (error) {
-        console.error(`Error creating user "${userData.email}":`, error);
-         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-             console.log(`Skipping user creation due to unique constraint violation (likely email already exists): ${userData.email}`);
+        // Capturar errores de la creación básica del usuario
+        console.error(`Error creating base user data for "${userData.email}":`, error);
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+          console.log(`Skipping processing for user due to unique constraint violation: ${userData.email}`);
+        }
+        continue; // Saltar al siguiente usuario si la creación básica falla
       }
     }
-  }
-  console.log('Example users ensured.');
 
+    // --- AHORA, asignar roles y clínicas usando userToProcess.id ---
+
+    // --- PASO 2: Crear UserRole por separado ---
+    if (userToProcess) { // Asegurarse de que tenemos un usuario válido
+      try {
+        // Usar upsert para evitar error si la relación ya existe
+        await prisma.userRole.upsert({
+          where: { userId_roleId: { userId: userToProcess.id, roleId: userRole.id } },
+          update: {}, // No hay nada que actualizar si ya existe
+          create: {
+            userId: userToProcess.id,
+            roleId: userRole.id,
+            // assignedAt se establecerá por defecto (@default(now()))
+          }
+        });
+        console.log(` -> Ensured role assignment: ${userRole.name} for ${userToProcess.email}`);
+      } catch (roleError) {
+        console.error(`  -> Error ensuring role ${userRole.name} for ${userToProcess.email}:`, roleError);
+      }
+
+      // --- PASO 3: Crear UserClinicAssignments por separado (usando bucle y upsert) ---
+      const clinicAssignmentsData = userData.clinicasIds
+        .map((mockClinicId: string) => createdClinicsMap.get(mockClinicId))
+        .filter((clinic: any) => clinic)
+        .map((clinic: any) => ({
+          userId: userToProcess.id, // Usar el ID del usuario procesado
+          clinicId: clinic.id,
+          roleId: userRole.id, // Usar el mismo rol que se asignó en UserRole
+          // assignedAt se establecerá por defecto (@default(now()))
+        }));
+
+      if (clinicAssignmentsData.length > 0) {
+        console.log(` -> Attempting to ensure ${clinicAssignmentsData.length} clinic assignments for ${userToProcess.email}...`);
+        let successfulAssignments = 0;
+        for (const assignmentData of clinicAssignmentsData) {
+          try {
+            await prisma.userClinicAssignment.upsert({
+              where: { 
+                userId_clinicId: { 
+                  userId: assignmentData.userId,
+                  clinicId: assignmentData.clinicId
+                }
+              },
+              update: { 
+                // Asegurarse de que el rol está correcto si ya existe la asignación
+                roleId: assignmentData.roleId 
+              },
+              create: {
+                userId: assignmentData.userId,
+                clinicId: assignmentData.clinicId,
+                roleId: assignmentData.roleId,
+                // assignedAt se establecerá por defecto (@default(now()))
+              }
+            });
+            successfulAssignments++;
+          } catch (assignmentError) {
+            console.error(`  -> Error upserting clinic assignment (User: ${assignmentData.userId}, Clinic: ${assignmentData.clinicId}):`, assignmentError);
+            // No detener el bucle si una falla, intentar las demás
+          }
+        }
+        const assignedClinicNames = clinicAssignmentsData.map(d => createdClinicsMap.get(Object.keys(createdClinicsMap).find(key => createdClinicsMap.get(key)?.id === d.clinicId) || '')?.name).filter(Boolean).join(', ');
+        console.log(` -> Ensured ${successfulAssignments}/${clinicAssignmentsData.length} clinic assignments for ${userToProcess.email}: ${assignedClinicNames || 'None'}`);
+      }
+    } // Fin if(userToProcess)
+  } // Fin del bucle for
+  console.log('Example users ensured.');
+  // --- FIN BLOQUE RESTAURADO ---
+  // console.log('SKIPPING Example users creation due to potential 'assignedAt' issue.'); // Mensaje indicativo
+  
   console.log(`Seeding finished.`);
 }
 

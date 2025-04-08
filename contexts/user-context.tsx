@@ -16,6 +16,16 @@ const isSameId = (id1: string | number | undefined | null, id2: string | number 
 export type Usuario = Omit<PrismaUser, 'passwordHash'>;
 // Nota: Las funciones de API ya devuelven este tipo sin el hash
 
+// --- NUEVO TIPO para datos de actualización --- 
+// Incluye los campos base OMITIDOS de Usuario y 
+// opcionalmente el campo clinicAssignments
+export type UsuarioUpdatePayload = 
+  Partial<Omit<Usuario, 'id' | 'createdAt' | 'updatedAt' | 'systemId'>> 
+  & { 
+    clinicAssignments?: { clinicId: string; roleId: string }[];
+    // Añadir otros campos si se gestionan aquí (ej: contraseña al crear)
+  };
+
 interface UserContextType {
   usuarios: Usuario[];
   isLoading: boolean;
@@ -24,7 +34,7 @@ interface UserContextType {
   getUsuarioById: (id: string) => Promise<Usuario | null>;
   getUsuariosByClinica: (clinicaId: string) => Promise<Usuario[]>;
   createUsuario: (usuarioData: Omit<Usuario, 'id' | 'createdAt' | 'updatedAt' | 'systemId'> & { password?: string }) => Promise<Usuario | null>;
-  updateUsuario: (id: string, usuarioUpdate: Partial<Omit<Usuario, 'id' | 'createdAt' | 'updatedAt' | 'systemId'>>) => Promise<Usuario | null>;
+  updateUsuario: (id: string, usuarioUpdate: UsuarioUpdatePayload) => Promise<Usuario | null>;
   deleteUsuario: (id: string) => Promise<boolean>;
   toggleUsuarioStatus: (id: string) => Promise<boolean>;
 }
@@ -64,15 +74,8 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
   // Obtener usuario por ID
   const getUsuarioById = useCallback(async (id: string): Promise<Usuario | null> => {
-    // Comprobar caché local primero
-    const localUser = usuarios.find(u => isSameId(u.id, id))
-    if (localUser) {
-        console.log(`[UserContext] getUsuarioById(${id}) - Encontrado en caché local.`);
-        return localUser;
-    }
-
-    // Si no está en caché, buscar en API
-    console.log(`[UserContext] getUsuarioById(${id}) - No encontrado en caché. Buscando en API...`);
+    // Siempre buscar en API para obtener datos completos
+    console.log(`[UserContext] getUsuarioById(${id}) - Buscando en API...`);
     // setIsLoading(true) // Considerar si este isLoading debe afectar a toda la lista o ser específico
     try {
       const response = await fetch(`/api/users/${id}`)
@@ -89,7 +92,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
     } finally {
       // setIsLoading(false)
     }
-  }, [usuarios])
+  }, [setUsuarios])
 
   // Obtener usuarios por clínica
   const getUsuariosByClinica = useCallback(async (clinicaId: string): Promise<Usuario[]> => {
@@ -151,21 +154,26 @@ export function UserProvider({ children }: { children: ReactNode }) {
   }, [setUsuarios])
 
   // Actualizar usuario (sin contraseña)
-  const updateUsuario = useCallback(async (id: string, usuarioUpdate: Partial<Omit<Usuario, 'id' | 'createdAt' | 'updatedAt' | 'systemId'>>): Promise<Usuario | null> => {
+  const updateUsuario = useCallback(async (id: string, usuarioUpdate: UsuarioUpdatePayload): Promise<Usuario | null> => {
     setIsLoading(true)
     setError(null)
     const usuarioId = String(id)
     try {
+      console.log(`[UserContext] updateUsuario(${usuarioId}) - Payload:`, JSON.stringify(usuarioUpdate, null, 2)); // Log para depurar
       const response = await fetch(`/api/users/${usuarioId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(usuarioUpdate), // La API ignora password si se envía
+        body: JSON.stringify(usuarioUpdate), // Enviar el payload completo
       })
       if (!response.ok) {
         const errorData = await response.json()
+        // Log detallado del error de la API
+        console.error(`[UserContext] updateUsuario(${usuarioId}) - API Error ${response.status}:`, errorData);
         throw new Error(errorData.message || `Error ${response.status}`)
       }
       const updatedUser: Usuario = await response.json()
+      console.log(`[UserContext] updateUsuario(${usuarioId}) - Success. API Response:`, updatedUser);
+      // Actualizar estado local (crucial que updatedUser incluya las asignaciones actualizadas)
       setUsuarios(prev => 
         prev.map(u => isSameId(u.id, usuarioId) ? updatedUser : u)
       )
@@ -203,44 +211,29 @@ export function UserProvider({ children }: { children: ReactNode }) {
     }
   }, [setUsuarios])
 
-  // Cambiar estado activo/inactivo (PENDIENTE API)
+  // Cambiar estado activo/inactivo
   const toggleUsuarioStatus = useCallback(async (id: string): Promise<boolean> => {
-    console.warn("toggleUsuarioStatus no implementado con API todavía.")
-    // Podría ser un PUT a /api/users/[id]/toggle-status
-    // Por ahora, simulamos la actualización local y devolvemos éxito
-    const stringId = String(id);
-    setUsuarios(prev => 
-        prev.map(u => 
-            isSameId(u.id, stringId) ? { ...u, isActive: !u.isActive } : u
-        )
-    );
-    // Idealmente, aquí llamaríamos a la API y revertiríamos si falla
-    return true; // Simular éxito por ahora
-    
-    /* Lógica API (cuando esté lista)
-    setIsLoading(true);
+    // Lógica API (Descomentada y activada)
     setError(null);
     const stringId = String(id);
     try {
+        // Asegurarse que la ruta y método son correctos (PATCH es común para toggle)
         const response = await fetch(`/api/users/${stringId}/toggle-status`, { method: 'PATCH' });
         if (!response.ok) {
             const errorData = await response.json();
             throw new Error(errorData.message || `Error ${response.status}`);
         }
-        const updatedUser: Usuario = await response.json();
-        setUsuarios(prev => prev.map(u => isSameId(u.id, stringId) ? updatedUser : u));
-        return true;
+        // La API debe devolver el usuario actualizado para reflejar el cambio
+        // const updatedUser: Usuario = await response.json(); // Ya no es necesario si no actualizamos estado global
+        // --- MODIFICADO: Eliminar actualización de estado global aquí ---\n        // setUsuarios(prev => prev.map(u => isSameId(u.id, stringId) ? updatedUser : u)); \n        return true; // Éxito\n    } catch (err) {\n        console.error(`Error toggling status for user ${stringId}:`, err);\n        setError(err instanceof Error ? err.message : 'Error desconocido al cambiar estado');
+        return true; // Éxito
     } catch (err) {
         console.error(`Error toggling status for user ${stringId}:`, err);
         setError(err instanceof Error ? err.message : 'Error desconocido al cambiar estado');
-        // Opcional: Revertir el cambio local si la API falla?
-        return false;
-    } finally {
-        setIsLoading(false);
+        // MODIFICADO: Devolver false en caso de error
+        return false; // Fallo
     }
-    */
-  // Dependencia: setUsuarios para la simulación local
-  }, [setUsuarios])
+  }, [setError])
 
   // Las dependencias de useMemo son los valores que contiene
   // y las funciones memoizadas (envueltas en useCallback)

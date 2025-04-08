@@ -19,7 +19,8 @@ import type {
     ClinicScheduleBlock as PrismaClinicScheduleBlock,
     VATType as PrismaVATType,
     Category as PrismaCategory,
-    Cabin as PrismaCabin
+    Cabin as PrismaCabin,
+    UserClinicScheduleException as PrismaUserClinicScheduleException
 } from '@prisma/client';
 
 // Interfaces básicas
@@ -250,9 +251,11 @@ export interface Usuario extends BaseEntity, Activable {
   firstName: string;
   lastName: string;
   email: string;
-  passwordHash: string;
-  profileImageUrl?: string | null;
+  passwordHash?: string;
+  profileImageUrl?: string;
+  isActive: boolean;
   systemId: string;
+  customScheduleExceptions?: PrismaUserClinicScheduleException[];
 }
 
 /** Interfaz para Perfil de usuario */
@@ -382,5 +385,6 @@ export type {
     PrismaTariff,
     PrismaVATType,
     PrismaCategory,
-    PrismaCabin
+    PrismaCabin,
+    PrismaUserClinicScheduleException
 }; 
