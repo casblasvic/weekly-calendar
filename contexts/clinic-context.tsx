@@ -222,15 +222,62 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const clinicIdString = String(id); // Asegurar string
     setIsLoadingClinics(true);
     setError(null);
+    let response: Response | null = null; // << Declare response here
+
+    // <<< INICIO: Sanitizar el payload >>>
+    // Lista de campos permitidos según UpdateClinicAndScheduleSchema en la API
+    const allowedFields: (keyof Partial<Clinica> | 'independentScheduleData')[] = [
+        'name', 'address', 'city', 'postalCode', 'province', 'countryCode', 'phone',
+        'email', 'currency', 'timezone', 'isActive', 'prefix', 'commercialName', 
+        'businessName', 'cif', 'country', 'phone2', 'initialCash', 'ticketSize', 
+        'ip', 'blockSignArea', 'blockPersonalData', 'delayedPayments', 'affectsStats', 
+        'appearsInApp', 'scheduleControl', 'professionalSkills', 'notes', 'openTime', 
+        'closeTime', 'slotDuration', 'tariffId', 'linkedScheduleTemplateId',
+        'independentScheduleData' // Campo especial para el horario independiente
+    ];
+
+    const payload: Record<string, any> = {};
+    for (const key in clinicaUpdate) {
+      if (allowedFields.includes(key as any)) {
+        // Caso especial: Si se envía scheduleJson pero no es plantilla, enviarlo como independentScheduleData
+        if (key === 'scheduleJson' && !clinicaUpdate.linkedScheduleTemplateId) {
+            payload['independentScheduleData'] = (clinicaUpdate as any)[key];
+        } else if (key !== 'scheduleJson') { // No incluir scheduleJson directamente
+            payload[key] = (clinicaUpdate as any)[key];
+        }
+      }
+    }
+    // Asegurarse de que linkedScheduleTemplateId esté presente si corresponde (incluso si es null)
+    if (clinicaUpdate.hasOwnProperty('linkedScheduleTemplateId')) {
+      payload['linkedScheduleTemplateId'] = clinicaUpdate.linkedScheduleTemplateId;
+    }
+    
+    console.log(`[updateClinica] Sanitized Payload being sent to PUT /api/clinics/${clinicIdString}:`, JSON.stringify(payload, null, 2));
+    // <<< FIN: Sanitizar el payload >>>
+
     try {
-      const response = await fetch(`/api/clinics/${clinicIdString}`, {
+      response = await fetch(`/api/clinics/${clinicIdString}`, { // << Assign to response
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(clinicaUpdate),
+        // Usar el payload sanitizado
+        body: JSON.stringify(payload),
       });
        if (!response.ok) {
-         const errorData = await response.json();
-         throw new Error(errorData.message || `Error ${response.status}`);
+         let errorData: any = { message: `Error ${response.status}` }; // Default error
+         try {
+           // Try to parse JSON error body
+           errorData = await response.json();
+         } catch (jsonError) {
+           // If JSON parsing fails, try to get the raw text body
+           try {
+              const errorText = await response.text();
+              console.error("API Error Response (Non-JSON):", errorText); // << Log raw text
+              errorData.message = errorText.substring(0, 200) || errorData.message; // Use text snippet as message
+           } catch (textError) {
+              console.error("Failed to get error response text body:", textError);
+           }
+         }
+         throw new Error(errorData.message || `Error ${response.status} (no details)`); // Use extracted message or default
       }
       const updatedClinic: Clinica = await response.json();
       
@@ -243,9 +290,13 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
       return updatedClinic;
     } catch (err) {
-      console.error(`Error al actualizar clínica ${clinicIdString} vía API:`, err);
-      setError(err instanceof Error ? err.message : 'Error desconocido al actualizar');
-      return null;
+       console.error(`Error al actualizar clínica ${clinicIdString} vía API:`, err);
+       // Log the full response object if available
+       if (response) {
+         console.error("Full API Response Object:", response);
+       }
+       setError(err instanceof Error ? err.message : 'Error desconocido al actualizar');
+       return null;
     } finally {
       setIsLoadingClinics(false);
     }

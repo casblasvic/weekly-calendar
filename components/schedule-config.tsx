@@ -18,8 +18,9 @@ import type { Clinica } from '@/services/data/models/interfaces';
 
 export interface ScheduleConfigProps {
   clinic: Clinica | null;
-  onChange: (schedule: WeekSchedule) => void
-  showTemplateSelector?: boolean
+  onChange: (updates: { schedule: WeekSchedule } | Record<string, any>) => void;
+  showTemplateSelector?: boolean;
+  isReadOnly?: boolean;
 }
 
 const DAYS = {
@@ -80,7 +81,7 @@ const convertBlocksToWeekSchedule = (
 };
 // --- Fin Función Helper ---
 
-export function ScheduleConfig({ clinic, onChange, showTemplateSelector = false }: ScheduleConfigProps) {
+export function ScheduleConfig({ clinic, onChange, showTemplateSelector = false, isReadOnly = false }: ScheduleConfigProps) {
   const { templates } = useTemplates()
 
   const [currentSchedule, setCurrentSchedule] = useState<WeekSchedule | null>(null);
@@ -144,7 +145,7 @@ export function ScheduleConfig({ clinic, onChange, showTemplateSelector = false 
           .map(([dayKey]) => dayKey);
       setExpandedDays(openDays);
 
-  }, [clinic]); // Ya no depende de initialValueFromProp
+  }, [clinic?.id, clinic?.linkedScheduleTemplateId, JSON.stringify(clinic?.scheduleJson)]); // <<-- CAMBIADO: Depender de id, plantilla vinculada y scheduleJson 
 
   const toggleDay = (day: string) => {
     setExpandedDays((current) => (current.includes(day) ? current.filter((d) => d !== day) : [...current, day]))
@@ -152,12 +153,24 @@ export function ScheduleConfig({ clinic, onChange, showTemplateSelector = false 
 
   // ESTA FUNCIÓN AHORA ACTUALIZA 'currentSchedule' y llama a 'onChange'
   const updateDaySchedule = (day: keyof WeekSchedule, schedule: DaySchedule) => {
+    // --- BEGIN LOGS ---
+    console.log(`[ScheduleConfig updateDaySchedule] Called with: day=${day}, schedule=`, JSON.stringify(schedule));
+    // --- END LOGS ---
     const updatedSchedule = {
-      ...currentSchedule, // Usar currentSchedule como base
+      ...(currentSchedule ?? {}), // Usar currentSchedule como base, manejar null inicial
       [day]: schedule,
-    }
-    setCurrentSchedule(updatedSchedule); // Actualizar estado interno
-    onChange(updatedSchedule); // Notificar al padre del cambio
+    } as WeekSchedule; // Asegurar el tipo
+    
+    // --- BEGIN LOGS ---
+    console.log("[ScheduleConfig updateDaySchedule] Calculated updatedSchedule:", JSON.stringify(updatedSchedule));
+    console.log("[ScheduleConfig updateDaySchedule] Calling setCurrentSchedule...");
+    // --- END LOGS ---
+    setCurrentSchedule(updatedSchedule); // Actualizar estado interno <<-- PUNTO CLAVE 1
+    
+    // --- BEGIN LOGS ---
+    console.log("[ScheduleConfig updateDaySchedule] State potentially updated. Calling PARENT onChange...");
+    // --- END LOGS ---
+    onChange({ schedule: updatedSchedule }); // <<-- CAMBIADO: Enviar objeto con clave 'schedule'
 
     // Notificar a la agenda que la configuración ha cambiado
     if (typeof window !== "undefined" && (window as any).notifyClinicConfigUpdated) {
@@ -172,7 +185,7 @@ export function ScheduleConfig({ clinic, onChange, showTemplateSelector = false 
         [toDay]: { ...scheduleToCopy }
     }
     setCurrentSchedule(updatedSchedule); // Actualizar estado interno
-    onChange(updatedSchedule); // Notificar al padre
+    onChange({ schedule: updatedSchedule }); // Notificar al padre
   }
 
   const handleTemplateChange = (templateId: string) => {
@@ -185,45 +198,91 @@ export function ScheduleConfig({ clinic, onChange, showTemplateSelector = false 
         
         // --- Si template.schedule ya tiene formato WeekSchedule --- 
         setCurrentSchedule(template.schedule); 
-        onChange(template.schedule); 
+        onChange({ schedule: template.schedule }); 
         // --- FIN --- 
     }
   }
 
   const updateTimeRange = (day: keyof WeekSchedule, index: number, field: "start" | "end", newValue: string) => {
-    const currentOpenTime = clinic?.openTime ?? "00:00";
-    const currentCloseTime = clinic?.closeTime ?? "23:59";
-    
-    if (field === "start" && newValue < currentOpenTime) {
-      newValue = currentOpenTime
-    }
-    if (field === "end" && newValue > currentCloseTime) {
-      newValue = currentCloseTime
-    }
+    // --- BEGIN LOGS ---
+    console.log(`[ScheduleConfig updateTimeRange] Called with: day=${day}, index=${index}, field=${field}, newValue=${newValue}`);
+    console.log('[ScheduleConfig updateTimeRange] currentSchedule BEFORE update:', JSON.stringify(currentSchedule));
+    // --- END LOGS ---
 
-    const daySchedule = currentSchedule[day];
-    if (!daySchedule) return;
+    const daySchedule = currentSchedule?.[day];
+    if (!daySchedule) {
+        // --- BEGIN LOGS ---
+        console.error(`[ScheduleConfig updateTimeRange] ERROR: daySchedule for ${day} is null or undefined. Exiting.`);
+        // --- END LOGS ---
+        return;
+    }
 
     const updatedRanges = [...daySchedule.ranges]
+    // --- BEGIN LOGS ---
+    console.log('[ScheduleConfig updateTimeRange] current daySchedule.ranges:', JSON.stringify(daySchedule.ranges));
+    // --- END LOGS ---
+    if (index < 0 || index >= updatedRanges.length) {
+        // --- BEGIN LOGS ---
+        console.error(`[ScheduleConfig updateTimeRange] ERROR: Invalid index ${index} for ranges length ${updatedRanges.length}. Exiting.`);
+        // --- END LOGS ---
+        return;
+    }
     updatedRanges[index] = { ...updatedRanges[index], [field]: newValue }
+    // --- BEGIN LOGS ---
+    console.log('[ScheduleConfig updateTimeRange] updatedRanges calculated:', JSON.stringify(updatedRanges));
+    console.log('[ScheduleConfig updateTimeRange] Calling updateDaySchedule...');
+    // --- END LOGS ---
+    
+    // <<< NUEVO LOG para verificar el objeto actualizado >>>
+    console.log(`[ScheduleConfig updateTimeRange] updatedRanges[${index}] AFTER update:`, JSON.stringify(updatedRanges[index]));
+    
     updateDaySchedule(day, { ...daySchedule, ranges: updatedRanges })
   }
 
   const removeTimeRange = (day: keyof WeekSchedule, index: number) => {
-    const daySchedule = currentSchedule[day];
+    const daySchedule = currentSchedule?.[day];
     if (!daySchedule) return;
     const updatedRanges = daySchedule.ranges.filter((_, i) => i !== index)
     updateDaySchedule(day, { ...daySchedule, ranges: updatedRanges })
   }
 
   const addTimeRange = (day: keyof WeekSchedule) => {
-    const daySchedule = currentSchedule[day];
+    const daySchedule = currentSchedule?.[day];
     if (!daySchedule) return;
-    const newRange: TimeRange = {
-      start: clinic?.openTime ?? "00:00",
-      end: clinic?.closeTime ?? "23:59",
+
+    // Determinar hora de inicio por defecto (ej: fin de la última franja + 15 min, o 09:00)
+    let defaultStartTime = "09:00";
+    if (daySchedule.ranges.length > 0) {
+        const lastEndTime = daySchedule.ranges[daySchedule.ranges.length - 1].end;
+        // Lógica simple para añadir 1 hora (mejorar si es necesario)
+        try {
+           const [hour, minute] = lastEndTime.split(':').map(Number);
+           let nextHour = hour + 1;
+           if (nextHour < 24) { // Evitar pasar de medianoche
+               defaultStartTime = `${String(nextHour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+           }
+        } catch (e) { /* usar 09:00 si falla */ }
     }
-    updateDaySchedule(day, { ...daySchedule, ranges: [...daySchedule.ranges, newRange] })
+
+    // Hora de fin por defecto (ej: 1 hora después del inicio)
+    let defaultEndTime = "10:00";
+    try {
+       const [startH, startM] = defaultStartTime.split(':').map(Number);
+       let endHour = startH + 1;
+       if (endHour < 24) {
+           defaultEndTime = `${String(endHour).padStart(2, '0')}:${String(startM).padStart(2, '0')}`;
+       }
+    } catch(e) { /* usar 10:00 si falla */ }
+    
+    // Asegurarse de que end > start
+    if (defaultEndTime <= defaultStartTime) defaultEndTime = defaultStartTime; // O manejar mejor el error
+
+    const newRange: TimeRange = { start: defaultStartTime, end: defaultEndTime };
+    const updatedRanges = [...daySchedule.ranges, newRange];
+    // Opcional: ordenar rangos después de añadir
+    updatedRanges.sort((a, b) => a.start.localeCompare(b.start));
+
+    updateDaySchedule(day, { ...daySchedule, ranges: updatedRanges });
   }
 
   // En el renderizado, añadir comprobación por si currentSchedule es null inicialmente
@@ -233,7 +292,7 @@ export function ScheduleConfig({ clinic, onChange, showTemplateSelector = false 
   }
 
   return (
-    <div className="space-y-4">
+    <div className={`space-y-4 ${isReadOnly ? 'opacity-70 pointer-events-none' : ''}`}>
       {showTemplateSelector && templates.length > 0 && (
         <div className="space-y-2">
           <Label>Seleccionar plantilla</Label>
@@ -253,95 +312,120 @@ export function ScheduleConfig({ clinic, onChange, showTemplateSelector = false 
       )}
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        {Object.entries(DAYS).map(([day, label]) => (
-          <Card key={day} className="p-4">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <div className="flex items-center space-x-4">
-                <Checkbox
-                  checked={currentSchedule[day as keyof WeekSchedule]?.isOpen || false}
-                  onCheckedChange={(checked) => {
-                    const dayKey = day as keyof WeekSchedule;
-                    const currentDaySchedule = currentSchedule[dayKey] || { ranges: [] };
-                    updateDaySchedule(dayKey, {
-                      ...currentDaySchedule,
-                      isOpen: checked as boolean,
-                      ranges: checked
-                        ? (currentDaySchedule.ranges?.length
-                          ? currentDaySchedule.ranges
-                          : [{ start: clinic?.openTime ?? "00:00", end: clinic?.closeTime ?? "23:59" }])
-                        : [],
-                    })
-                  }}
-                />
-                <Label className="font-medium">{label}</Label>
-              </div>
-              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-                <Button variant="ghost" size="sm" onClick={() => toggleDay(day)} className="flex-shrink-0">
-                  {expandedDays.includes(day) ? "Ocultar" : "Mostrar"}
-                </Button>
-                <Select
-                  value=""
-                  onValueChange={(copyFrom) => {
-                    if (copyFrom) {
-                      copySchedule(copyFrom as keyof WeekSchedule, day as keyof WeekSchedule)
-                    }
-                  }}
-                >
-                  <SelectTrigger className="w-full sm:w-[130px]">
-                    <SelectValue placeholder="Copiar de..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(DAYS).map(
-                      ([key, label]) =>
-                        key !== day && (
-                          <SelectItem key={key} value={key}>
-                            {label}
-                          </SelectItem>
-                        ),
-                    )}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
+        {Object.entries(DAYS).map(([dayKey, dayName]) => {
+          const daySchedule = currentSchedule[dayKey as keyof WeekSchedule];
+          const isExpanded = expandedDays.includes(dayKey);
+          // Asegurar que daySchedule existe antes de acceder a isOpen
+          const isOpen = daySchedule?.isOpen ?? false; 
 
-            {expandedDays.includes(day) && currentSchedule[day as keyof WeekSchedule]?.isOpen && (
-              <div className="mt-4 space-y-4">
-                {currentSchedule[day as keyof WeekSchedule].ranges.map((range, index) => (
-                  <div key={index} className="flex items-center space-x-4">
-                    <Clock className="h-4 w-4 text-gray-500" />
-                    <div className="grid grid-cols-2 gap-4 flex-1">
-                      <div>
-                        <Label>Hora inicio</Label>
-                        <Input
-                          type="time"
-                          value={range.start}
-                          onChange={(e) => updateTimeRange(day as keyof WeekSchedule, index, "start", e.target.value)}
-                          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2"
-                        />
-                      </div>
-                      <div>
-                        <Label>Hora fin</Label>
-                        <Input
-                          type="time"
-                          value={range.end}
-                          onChange={(e) => updateTimeRange(day as keyof WeekSchedule, index, "end", e.target.value)}
-                          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2"
-                        />
-                      </div>
-                    </div>
-                    <Button variant="ghost" size="icon" onClick={() => removeTimeRange(day as keyof WeekSchedule, index)}>
-                      <Trash className="h-4 w-4" />
-                    </Button>
-                  </div>
-                ))}
-                <Button variant="outline" size="sm" onClick={() => addTimeRange(day as keyof WeekSchedule)} className="w-full">
-                  <Plus className="mr-2 h-4 w-4" />
-                  Añadir rango horario
-                </Button>
+          return (
+            <Card key={dayKey} className="overflow-hidden">
+              <div
+                className="flex items-center justify-between p-4 cursor-pointer bg-gray-50 hover:bg-gray-100"
+                onClick={() => toggleDay(dayKey)}
+              >
+                <div className="flex items-center">
+                  <Checkbox
+                    id={`cb-${dayKey}`}
+                    checked={isOpen}
+                    onCheckedChange={(checked) => {
+                      // Solo permitir cambio si NO es read-only
+                      if (!isReadOnly) {
+                         updateDaySchedule(dayKey as keyof WeekSchedule, { ...(daySchedule ?? { ranges: [] }), isOpen: !!checked });
+                      }
+                    }}
+                    // Deshabilitar si es read-only
+                    disabled={isReadOnly}
+                    className="mr-3"
+                  />
+                  <Label htmlFor={`cb-${dayKey}`} className="font-medium">
+                    {dayName}
+                  </Label>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                  <Button variant="ghost" size="sm" className="flex-shrink-0" disabled={isReadOnly}>
+                    {isExpanded ? "Ocultar" : "Mostrar"}
+                  </Button>
+                  <Select
+                    value=""
+                    onValueChange={(copyFrom) => {
+                      if (copyFrom) {
+                        copySchedule(copyFrom as keyof WeekSchedule, dayKey as keyof WeekSchedule)
+                      }
+                    }}
+                    disabled={isReadOnly}
+                  >
+                    <SelectTrigger className="w-full sm:w-[130px]" disabled={isReadOnly}>
+                      <SelectValue placeholder="Copiar de..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(DAYS).map(
+                        ([key, label]) =>
+                          key !== dayKey && (
+                            <SelectItem key={key} value={key} disabled={isReadOnly}>
+                              {label}
+                            </SelectItem>
+                          ),
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-            )}
-          </Card>
-        ))}
+
+              {isExpanded && isOpen && (
+                <div className="p-4 space-y-3 border-t">
+                  {daySchedule?.ranges.map((range, index) => (
+                    <div key={index} className="flex items-center space-x-2">
+                      <Input
+                        type="time"
+                        value={range.start}
+                        onChange={(e) => updateTimeRange(dayKey as keyof WeekSchedule, index, "start", e.target.value)}
+                        className="w-32"
+                        // Deshabilitar si es read-only
+                        disabled={isReadOnly} 
+                      />
+                      <span>-</span>
+                      <Input
+                        type="time"
+                        value={range.end}
+                        onChange={(e) => updateTimeRange(dayKey as keyof WeekSchedule, index, "end", e.target.value)}
+                        className="w-32"
+                        // Deshabilitar si es read-only
+                        disabled={isReadOnly}
+                      />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeTimeRange(dayKey as keyof WeekSchedule, index);
+                        }}
+                        className="text-red-500 hover:text-red-700"
+                        // Deshabilitar si es read-only
+                        disabled={isReadOnly}
+                      >
+                        <Trash className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  ))}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      addTimeRange(dayKey as keyof WeekSchedule);
+                    }}
+                    // Deshabilitar si es read-only
+                    disabled={isReadOnly}
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Añadir franja
+                  </Button>
+                </div>
+              )}
+            </Card>
+          );
+        })}
       </div>
     </div>
   )

@@ -285,7 +285,17 @@ export const CurrentTimeIndicator: React.FC<CurrentTimeIndicatorProps> = ({
     };
   }, [timeSlots, updatePosition]);
 
-  // Aplicar los cambios de estado y estilo
+  // Verificar si mostrar
+  const shouldShow = isWithinTimeRange && isVisible && isWithinClinicHours() && position !== null;
+
+  // Actualizar las referencias solo después de un renderizado completo
+  useEffect(() => {
+    prevPositionRef.current = position;
+    prevVisibilityRef.current = shouldShow;
+    skipRenderRef.current = false;
+  }, [position, shouldShow]);
+
+  // Aplicar los cambios de estado y estilo - versión modificada para asegurar la posición correcta
   useEffect(() => {
     // Skip si no tenemos posición o no somos visibles
     if (position === null || !isVisible || !indicatorRef.current) {
@@ -297,18 +307,38 @@ export const CurrentTimeIndicator: React.FC<CurrentTimeIndicatorProps> = ({
     
     // Asegurar que la línea se extienda por todo el contenido, incluso al hacer scroll
     if (agendaRef.current) {
-      // Calculamos el ancho total del contenido, incluyendo la parte no visible
-      const totalWidth = agendaRef.current.scrollWidth;
-      indicatorRef.current.style.width = `${totalWidth}px`;
-      
-      // Asegurar que la posición izquierda sea 0 relativa al contenedor, no al viewport
-      indicatorRef.current.style.left = '0px';
-      
-      // Configurar la posición en relación con el contenedor, no con el viewport
-      indicatorRef.current.style.position = 'absolute';
+      try {
+        // Calculamos el ancho total del contenido, incluyendo la parte no visible
+        const totalWidth = agendaRef.current.scrollWidth;
+        indicatorRef.current.style.width = `${totalWidth}px`;
+        
+        // Asegurar que la posición izquierda sea 0 relativa al contenedor
+        indicatorRef.current.style.left = '0';
+        
+        // Forzar visibilidad
+        indicatorRef.current.style.display = 'block';
+        indicatorRef.current.style.visibility = 'visible';
+        indicatorRef.current.style.opacity = '1';
+        
+        // Asegurar un z-index MENOR que las cabeceras pero mayor que las celdas
+        indicatorRef.current.style.zIndex = '120';
+        
+        // Actualizar también la posición de la etiqueta
+        const span = indicatorRef.current.querySelector('span');
+        if (span) {
+          // La etiqueta debe estar dentro de la columna de horas, no fixed
+          (span as HTMLElement).style.position = 'absolute';
+          (span as HTMLElement).style.left = '40px';
+          (span as HTMLElement).style.top = '50%';
+          (span as HTMLElement).style.transform = 'translate(-50%, -50%)';
+          (span as HTMLElement).style.zIndex = '150';
+          (span as HTMLElement).style.visibility = 'visible';
+        }
+      } catch (error) {
+        console.error('Error updating time indicator position:', error);
+      }
     }
-    
-  }, [position, isVisible, isWithinTimeRange]);
+  }, [position, isVisible, agendaRef]);
 
   // Mantener el indicador actualizado cuando cambie el tamaño o scroll del contenedor
   useEffect(() => {
@@ -320,61 +350,64 @@ export const CurrentTimeIndicator: React.FC<CurrentTimeIndicatorProps> = ({
       }
     };
     
-    // Actualizar cuando cambie el tamaño de la ventana
-    window.addEventListener('resize', handleResize);
+    // Ya no necesitamos actualizar la posición de la etiqueta en cada scroll
+    // porque ahora está posicionada de forma relativa a la barra
     
     // Actualizar cuando cambie el contenido (scroll)
     const observer = new ResizeObserver(handleResize);
     observer.observe(agendaRef.current);
     
     return () => {
-      window.removeEventListener('resize', handleResize);
       observer.disconnect();
     };
   }, [agendaRef]);
-
-  // Verificar si mostrar
-  const shouldShow = isWithinTimeRange && isVisible && isWithinClinicHours() && position !== null;
-
-  // Actualizar las referencias solo después de un renderizado completo
-  useEffect(() => {
-    prevPositionRef.current = position;
-    prevVisibilityRef.current = shouldShow;
-    skipRenderRef.current = false;
-  }, [position, shouldShow]);
 
   // Solo renderizar si es visible y está dentro del rango
   if (!shouldShow) {
     return null;
   }
 
+  // Usar una mezcla de estilos CSS y estilos inline para mayor control
   return (
     <div
       ref={indicatorRef}
       className={cn(
-        className,
-        "absolute left-0 h-[2px] bg-red-500",
-        "pointer-events-none"
+        "current-time-indicator",
+        className
       )}
       style={{
+        // Añadir styles directos para garantizar visibilidad
         position: 'absolute',
-        zIndex: 15,
-        left: 0,
-        width: '100%',
+        top: position ? `${position}px` : '0',
+        left: '0',
+        width: '100%', 
         minWidth: '100%',
-        boxShadow: '0 0 4px rgba(239, 68, 68, 0.4)'
+        height: '2px',
+        backgroundColor: '#ef4444',
+        display: 'block',
+        visibility: 'visible',
+        opacity: 1,
+        zIndex: 120, // Más bajo que las cabeceras (1500, 2000)
+        pointerEvents: 'none'
       }}
+      data-time-indicator="true"
     >
       <span
-        className="absolute bg-red-500 text-white text-xs px-1 py-0.5 rounded shadow-sm"
         style={{
-          zIndex: 110,
+          position: 'absolute',
+          left: '40px',
+          top: '50%',
+          transform: 'translate(-50%, -50%)',
+          backgroundColor: '#ef4444',
+          color: 'white',
+          padding: '2px 6px',
+          borderRadius: '2px',
+          fontSize: '11px',
+          fontWeight: 500,
           whiteSpace: 'nowrap',
-          fontSize: '10px',
-          position: 'sticky',
-          left: '80px',
-          top: '0',
-          transform: 'translate(-50%, -50%)'
+          zIndex: 150,
+          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.2)',
+          pointerEvents: 'none'
         }}
       >
         {format(currentTime, "HH:mm")}

@@ -107,15 +107,15 @@ export function WeekView({
   }, [selectedDate, daysToShow, activeClinic?.id, getBlocksByDateRange])
 
   return (
-    <Card className="shadow-none border rounded-lg bg-white">
+    <Card className="bg-white border rounded-lg shadow-none">
       {showNavigation && (
-        <div className="flex justify-between p-4 items-center border-b">
+        <div className="flex items-center justify-between p-4 border-b">
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={() => changeWeek("prev")}>
-              <ChevronLeft className="h-4 w-4 mr-1" /> Anterior
+              <ChevronLeft className="w-4 h-4 mr-1" /> Anterior
             </Button>
             <Button variant="outline" size="sm" onClick={() => changeWeek("next")}>
-              Siguiente <ChevronRight className="h-4 w-4 ml-1" />
+              Siguiente <ChevronRight className="w-4 h-4 ml-1" />
             </Button>
           </div>
           <div className="text-sm font-medium">
@@ -124,9 +124,9 @@ export function WeekView({
           <HoverCard>
             <HoverCardTrigger asChild>
               <Button variant="outline" size="sm" onClick={toggleView}>
-                <CalendarDays className="h-4 w-4 mr-1" />
+                <CalendarDays className="w-4 h-4 mr-1" />
                 {daysToShow === 7 ? "Semana" : "2 Semanas"}
-                <ArrowLeftRight className="h-3 w-3 ml-1" />
+                <ArrowLeftRight className="w-3 h-3 ml-1" />
               </Button>
             </HoverCardTrigger>
             <HoverCardContent side="bottom" className="w-52">

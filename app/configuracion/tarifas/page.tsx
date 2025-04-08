@@ -10,63 +10,54 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useRouter } from "next/navigation"
 import { useClinic } from "@/contexts/clinic-context"
 import { Tarifa, useTarif } from "@/contexts/tarif-context"
+import { Skeleton } from "@/components/ui/skeleton"
+import { Table, TableHeader, TableBody, TableCell, TableHead, TableRow } from "@/components/ui/table"
+
+// --- Skeleton para la tabla de tarifas ---
+const renderTarifTableSkeleton = () => (
+  <div className="space-y-4">
+    <div className="border rounded-md">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead><Skeleton className="h-5 w-32" /></TableHead>
+            <TableHead><Skeleton className="h-5 w-48" /></TableHead>
+            <TableHead><Skeleton className="h-5 w-20" /></TableHead>
+            <TableHead className="text-right"><Skeleton className="h-5 w-24" /></TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {Array.from({ length: 5 }).map((_, index) => (
+            <TableRow key={`skeleton-tarif-${index}`}>
+              <TableCell><Skeleton className="h-5 w-full" /></TableCell>
+              <TableCell><Skeleton className="h-5 w-full" /></TableCell>
+              <TableCell><Skeleton className="h-5 w-full" /></TableCell>
+              <TableCell className="text-right">
+                <div className="flex justify-end space-x-2">
+                  <Skeleton className="w-8 h-8 rounded-md" />
+                  <Skeleton className="w-8 h-8 rounded-md" />
+                </div>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  </div>
+);
+// --- Fin Skeleton ---
 
 export default function GestionTarifas() {
   const router = useRouter()
   const clinicContext = useClinic()
   const tarifContext = useTarif()
-  const tarifas = tarifContext.tarifas || []
 
-  // Obtenemos las clínicas directamente del contexto
-  const [clinics, setClinics] = useState<any[]>([])
-  
-  // Cargar las clínicas cuando el contexto esté disponible
-  useEffect(() => {
-    if (clinicContext && clinicContext.clinics && clinicContext.clinics.length > 0) {
-      setClinics(clinicContext.clinics);
-      console.log("Clínicas cargadas desde el contexto:", clinicContext.clinics.length);
-    } else {
-      console.log("Context no disponible o sin clínicas - usando clínicas hardcoded");
-      
-      // Hardcodear las clínicas que sabemos que existen en defaultClinics
-      const clinicasHardcoded = [
-        {
-          id: 1,
-          prefix: "000001",
-          name: "Californie Multilaser - Organicare",
-          city: "Casablanca",
-          isActive: true
-        },
-        {
-          id: 2,
-          prefix: "Cafc",
-          name: "Cafc Multilaser",
-          city: "Casablanca",
-          isActive: true
-        },
-        {
-          id: 3,
-          prefix: "TEST",
-          name: "CENTRO TEST",
-          city: "Casablanca",
-          isActive: false
-        }
-      ];
-      
-      setClinics(clinicasHardcoded);
-      console.log("Cargadas clínicas hardcoded:", clinicasHardcoded.length);
-    }
-  }, [clinicContext]);
-  
-  // Para depuración
-  console.log("Clínicas disponibles:", clinics)
-  console.log("¿Array de clínicas vacío?", clinics.length === 0)
-  console.log("¿clinicContext es null?", clinicContext === null)
-  console.log("¿clinicContext es undefined?", clinicContext === undefined)
-  console.log("Valores exactos de isActive en clínicas:")
-  clinics.forEach(c => {
-    console.log(`Clínica: ${c.name}, isActive: ${c.isActive}, tipo: ${typeof c.isActive}, es true?: ${c.isActive === true}, es false?: ${c.isActive === false}`)
-  });
+  const isLoadingTarifs = tarifContext?.isLoading ?? true;
+  const tarifas = tarifContext?.tarifas ?? [];
+  const addTarifa = tarifContext?.addTarifa;
+  const updateTarifa = tarifContext?.updateTarifa;
+
+  const clinics = clinicContext?.clinics ?? [];
 
   const [isNewTarifaOpen, setIsNewTarifaOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
@@ -102,6 +93,12 @@ export default function GestionTarifas() {
   // Manejar creación de nueva tarifa
   const handleCrearTarifa = () => {
     setIsSaving(true)
+    // >>> Comprobar si addTarifa existe <<<
+    if (!addTarifa) {
+        console.error("addTarifa function not available from context.");
+        setIsSaving(false);
+        return; // Salir si la función no está disponible
+    }
 
     // Asegurar que tengamos clinicasIds
     const tarifaToSave = {
@@ -112,7 +109,7 @@ export default function GestionTarifas() {
     // Simulamos guardado
     setTimeout(() => {
       // Añadir la tarifa usando la función del contexto
-      const newId = tarifContext.addTarifa(tarifaToSave);
+      const newId = addTarifa(tarifaToSave);
 
       setIsSaving(false)
       setIsNewTarifaOpen(false)
@@ -126,11 +123,16 @@ export default function GestionTarifas() {
   const handleEliminarTarifa = (id: string | number) => {
     // Convertir id a string
     const stringId = String(id);
+    // >>> Comprobar si updateTarifa existe <<<
+    if (!updateTarifa) {
+        console.error("updateTarifa function not available from context.");
+        return; // Salir si la función no está disponible
+    }
     const tarifasActualizadas = tarifas.filter((tarifa) => String(tarifa.id) !== stringId)
 
     // Actualizar todas las tarifas en el contexto
     tarifasActualizadas.forEach(tarifa => {
-      tarifContext.updateTarifa(String(tarifa.id), tarifa)
+      updateTarifa(String(tarifa.id), tarifa)
     })
   }
 
@@ -166,120 +168,124 @@ export default function GestionTarifas() {
         />
       </div>
 
-      {/* Tabla de tarifas */}
-      <div className="overflow-x-auto border rounded-md">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead>
-            <tr className="table-header">
-              <th scope="col" className="px-6 py-3 text-xs font-medium tracking-wider text-left uppercase">
-                Nombre
-              </th>
-              <th scope="col" className="px-6 py-3 text-xs font-medium tracking-wider text-left uppercase">
-                Clínica
-              </th>
-              <th scope="col" className="px-6 py-3 text-xs font-medium tracking-wider text-left uppercase">
-                Estado
-              </th>
-              <th scope="col" className="px-6 py-3 text-xs font-medium tracking-wider text-right uppercase">
-                Acciones
-              </th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {tarifasFiltradas.map((tarifa) => (
-              <tr key={tarifa.id} className="table-row-hover">
-                <td className="px-6 py-4 text-sm font-medium text-gray-900 whitespace-nowrap">
-                  {tarifa.name}
-                  {tarifa.isActive === false && (
-                    <AlertCircle className="inline-block w-4 h-4 ml-2 text-amber-500" aria-label="Tarifa deshabilitada" />
-                  )}
-                </td>
-                <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">
-                  {tarifa.clinicasIds && tarifa.clinicasIds.length > 0 ? (
-                    <div className="flex flex-col space-y-1">
-                      {/* Mostrar la clínica principal */}
-                      <div className="flex items-center">
-                        <span className="font-medium">
-                          {clinics.find(c => c.prefix === tarifa.clinicaId)?.name || 
-                           (tarifa.clinicaId ? `${tarifa.clinicaId}` : '-')}
-                        </span>
-                        <span className="ml-1.5 text-xs bg-indigo-100 px-1.5 py-0.5 rounded-full text-indigo-700">
-                          Principal
-                        </span>
-                      </div>
-                      
-                      {/* Mostrar las clínicas adicionales si existen */}
-                      {tarifa.clinicasIds.length > 1 && (
-                        <div className="flex flex-wrap gap-1 mt-1">
-                          {tarifa.clinicasIds
-                            .filter((id: string) => id !== tarifa.clinicaId)
-                            .map((clinicaId: string) => {
-                              const clinic = clinics.find(c => c.prefix === clinicaId);
-                              return clinic ? (
-                                <span 
-                                  key={clinic.prefix} 
-                                  className="text-xs px-1.5 py-0.5 bg-gray-100 rounded-full"
-                                  title={`${clinic.prefix} - ${clinic.name}`}
-                                >
-                                  {clinic.name}
-                                </span>
-                              ) : (
-                                <span 
-                                  key={clinicaId} 
-                                  className="text-xs px-1.5 py-0.5 bg-gray-100 rounded-full"
-                                >
-                                  {clinicaId}
-                                </span>
-                              );
-                            })
-                          }
+      {/* Tabla de tarifas - Condicional */} 
+      {isLoadingTarifs ? (
+        renderTarifTableSkeleton()
+      ) : (
+        <div className="overflow-x-auto border rounded-md">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead>
+              <tr className="table-header">
+                <th scope="col" className="px-6 py-3 text-xs font-medium tracking-wider text-left uppercase">
+                  Nombre
+                </th>
+                <th scope="col" className="px-6 py-3 text-xs font-medium tracking-wider text-left uppercase">
+                  Clínica
+                </th>
+                <th scope="col" className="px-6 py-3 text-xs font-medium tracking-wider text-left uppercase">
+                  Estado
+                </th>
+                <th scope="col" className="px-6 py-3 text-xs font-medium tracking-wider text-right uppercase">
+                  Acciones
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {tarifasFiltradas.map((tarifa) => (
+                <tr key={tarifa.id} className="table-row-hover">
+                  <td className="px-6 py-4 text-sm font-medium text-gray-900 whitespace-nowrap">
+                    {tarifa.name}
+                    {tarifa.isActive === false && (
+                      <AlertCircle className="inline-block w-4 h-4 ml-2 text-amber-500" aria-label="Tarifa deshabilitada" />
+                    )}
+                  </td>
+                  <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">
+                    {tarifa.clinicasIds && tarifa.clinicasIds.length > 0 ? (
+                      <div className="flex flex-col space-y-1">
+                        {/* Mostrar la clínica principal */}
+                        <div className="flex items-center">
+                          <span className="font-medium">
+                            {clinics.find(c => c.prefix === tarifa.clinicaId)?.name || 
+                             (tarifa.clinicaId ? `${tarifa.clinicaId}` : '-')}
+                          </span>
+                          <span className="ml-1.5 text-xs bg-indigo-100 px-1.5 py-0.5 rounded-full text-indigo-700">
+                            Principal
+                          </span>
                         </div>
-                      )}
+                        
+                        {/* Mostrar las clínicas adicionales si existen */}
+                        {tarifa.clinicasIds.length > 1 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {tarifa.clinicasIds
+                              .filter((id: string) => id !== tarifa.clinicaId)
+                              .map((clinicaId: string) => {
+                                const clinic = clinics.find(c => c.prefix === clinicaId);
+                                return clinic ? (
+                                  <span 
+                                    key={clinic.prefix} 
+                                    className="text-xs px-1.5 py-0.5 bg-gray-100 rounded-full"
+                                    title={`${clinic.prefix} - ${clinic.name}`}
+                                  >
+                                    {clinic.name}
+                                  </span>
+                                ) : (
+                                  <span 
+                                    key={clinicaId} 
+                                    className="text-xs px-1.5 py-0.5 bg-gray-100 rounded-full"
+                                  >
+                                    {clinicaId}
+                                  </span>
+                                );
+                              })
+                            }
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <span>{clinics.find(c => c.prefix === tarifa.clinicaId)?.name || 
+                             (tarifa.clinicaId ? `${tarifa.clinicaId}` : '-')}</span>
+                    )}
+                  </td>
+                  <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">
+                    <span
+                      className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                        tarifa.isActive === false
+                          ? "bg-yellow-100 text-yellow-800"
+                          : "bg-green-100 text-green-800"
+                      }`}
+                    >
+                      {tarifa.isActive === false ? "Desactivada" : "Activa"}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 text-sm font-medium text-right whitespace-nowrap">
+                    <div className="flex justify-end space-x-2">
+                      <button
+                        onClick={() => handleEditarTarifa(String(tarifa.id))}
+                        className="text-indigo-600 hover:text-indigo-900"
+                      >
+                        <Pencil size={18} />
+                      </button>
+                      <button 
+                        onClick={() => handleEliminarTarifa(String(tarifa.id))} 
+                        className="text-red-600 hover:text-red-900"
+                      >
+                        <Trash2 size={18} />
+                      </button>
                     </div>
-                  ) : (
-                    <span>{clinics.find(c => c.prefix === tarifa.clinicaId)?.name || 
-                           (tarifa.clinicaId ? `${tarifa.clinicaId}` : '-')}</span>
-                  )}
-                </td>
-                <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">
-                  <span
-                    className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                      tarifa.isActive === false
-                        ? "bg-yellow-100 text-yellow-800"
-                        : "bg-green-100 text-green-800"
-                    }`}
-                  >
-                    {tarifa.isActive === false ? "Desactivada" : "Activa"}
-                  </span>
-                </td>
-                <td className="px-6 py-4 text-sm font-medium text-right whitespace-nowrap">
-                  <div className="flex justify-end space-x-2">
-                    <button
-                      onClick={() => handleEditarTarifa(String(tarifa.id))}
-                      className="text-indigo-600 hover:text-indigo-900"
-                    >
-                      <Pencil size={18} />
-                    </button>
-                    <button 
-                      onClick={() => handleEliminarTarifa(String(tarifa.id))} 
-                      className="text-red-600 hover:text-red-900"
-                    >
-                      <Trash2 size={18} />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-            {tarifasFiltradas.length === 0 && (
-              <tr>
-                <td colSpan={4} className="px-6 py-4 text-sm text-center text-gray-500">
-                  No se encontraron tarifas
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+                  </td>
+                </tr>
+              ))}
+              {tarifasFiltradas.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-6 py-4 text-sm text-center text-gray-500">
+                    No se encontraron tarifas
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* Botones de acción fijos */}
       <div className="fixed flex space-x-2 bottom-6 right-6">

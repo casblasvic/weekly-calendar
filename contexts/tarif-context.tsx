@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react"
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode, useMemo } from "react"
 // QUITAR: import { useRouter } from "next/navigation"
 // QUITAR: import { useInterfaz } from "./interfaz-Context"
 // QUITAR: import { Tarifa as TarifaModel, FamiliaTarifa as FamiliaTarifaModel, EntityImage } from "@/services/data/models/interfaces"
@@ -205,7 +205,7 @@ export const TarifProvider = ({ children }: { children: ReactNode }) => {
   // };
   // ... añadir placeholders similares para imágenes y clínicas ...
 
-  const contextValue: TarifContextType = {
+  const contextValue = useMemo(() => ({
     tarifas,
     // familiasTarifa,
     isLoading,
@@ -228,7 +228,16 @@ export const TarifProvider = ({ children }: { children: ReactNode }) => {
     addClinicaToTarifa: async () => false,
     removeClinicaFromTarifa: async () => false,
     setPrimaryClinicaForTarifa: async () => false,
-  };
+  }), [
+    tarifas,
+    isLoading,
+    error,
+    fetchTariffs,
+    addTarifa,
+    updateTarifa,
+    getTarifaById,
+    deleteTarifa,
+  ]);
 
   return <TarifContext.Provider value={contextValue}>{children}</TarifContext.Provider>;
 };

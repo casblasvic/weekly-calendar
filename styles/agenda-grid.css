@@ -1,4 +1,24 @@
-/* Estilos base para el grid de agenda */
+/* Base z-index layers */
+:root {
+  --z-base: 1;
+  /* --z-time-indicator-container: 105; /* No lo usamos directamente en el indicador */
+  /* --z-time-indicator: 120; /* Vamos a bajarlo */
+  /* --z-time-indicator-label: 130; /* Vamos a bajarlo */
+  --z-cells: 10;
+  --z-events: 20;
+  --z-grid-container: 95; /* << NUEVO: Mayor que el indicador (90), menor que hour-column (100) */
+  --z-hour-column: 100;
+  --z-day-headers: 110; /* Ajustado: > hour-column */
+  --z-hour-header: 110; /* Ajustado: > hour-column */
+  /* --z-time-indicator-label: 130; /* Superior al indicador pero menor que cabeceras */
+
+  /* Nuevos valores para el indicador */
+  --z-time-indicator-new: 90; /* Se mantiene < hour-column y < headers */
+  --z-time-indicator-label-new: 95; /* Se mantiene < hour-column y < headers */
+  --z-time-indicator-container: 1; /* Restaurado y bajado a 1 */
+}
+
+/* Estilos base para la cuadrícula */
 .agenda-container {
   display: flex;
   flex-direction: column;
@@ -7,183 +27,166 @@
   overflow: hidden;
 }
 
-/* Cabeceras de días - z-index muy alto para garantizar que todo pase por debajo */
-.agenda-header {
-  position: sticky;
-  top: 0;
-  z-index: 2000 !important;
-  background-color: white;
-  border-bottom: 1px solid #e5e7eb;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-  width: 100%;
-}
-
-/* Estilo específico para las cabeceras de los días */
-.day-header {
-  z-index: 2000 !important;
-  position: relative;
-}
-
-/* Estilo para la celda de cabecera "Hora" */
-.hour-header {
-  position: sticky !important;
-  left: 0;
-  top: 0;
-  z-index: 2000 !important;
-  background-color: white;
-  box-shadow: 2px 0 5px rgba(0, 0, 0, 0.2);
-}
-
-/* Estilo para las celdas de hora en la columna izquierda */
-.hour-column {
-  position: sticky !important;
-  left: 0;
-  z-index: 90 !important;
-  background-color: white;
-  box-shadow: 2px 0 5px rgba(0, 0, 0, 0.2);
-}
-
-/* Selector extremadamente específico para la cabecera Hora */
-div.sticky.left-0.top-0.hour-header,
-div[class*="sticky"][class*="left-0"][class*="top-0"][class*="hour-header"] {
-  position: sticky !important;
-  z-index: 2000 !important;
-  background-color: white !important;
-  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.3) !important;
-}
-
 .agenda-body {
   flex: 1;
   overflow: auto;
   position: relative;
   min-height: 0;
-  z-index: 10;
+  z-index: var(--z-time-indicator-container); /* Restaurado con valor 1 */
 }
 
 .agenda-grid {
   position: relative;
   width: 100%;
   border-collapse: collapse;
+  z-index: var(--z-base);
 }
 
+/* Contenedor real del grid dentro del body */
+.agenda-body .grid-container {
+  position: relative; /* Necesario para z-index y apilamiento */
+  z-index: var(--z-grid-container); /* << RESTAURADO con valor 95 */
+  min-width: fit-content;
+  isolation: isolate; /* Forzar un nuevo contexto de apilamiento */
+}
+
+/* Celdas base donde van las citas */
 .grid-cell {
   position: relative;
   border: 1px solid #e5e7eb;
   height: 40px;
   background-color: white;
-  z-index: 10;
-}
-
-.grid-header-cell {
-  background-color: white;
-  position: relative;
-  z-index: 2000 !important;
+  z-index: var(--z-cells);
 }
 
 /* Elementos superpuestos como citas o bloques */
 .agenda-event {
   position: absolute;
-  z-index: 20;
+  z-index: var(--z-events);
   border-radius: 4px;
   box-shadow: 0 1px 2px rgba(0,0,0,0.1);
 }
 
-/* Indicador de hora actual */
-.current-time-indicator {
-  position: absolute !important;
-  left: 0;
-  width: 100%;
-  height: 2px;
-  background-color: #ef4444;
-  z-index: 15 !important; /* Debe estar por debajo de las celdas de hora */
-  pointer-events: none;
-  /* Asegurar que la línea se extienda por todo el contenido */
-  min-width: 100%;
-  /* Añadir un pequeño degradado para mejorar la visibilidad */
-  box-shadow: 0 0 4px rgba(239, 68, 68, 0.4);
-}
-
-/* Estilo para la etiqueta del indicador de tiempo */
-.current-time-indicator span {
-  z-index: 110 !important;
-  position: sticky !important;
-  left: 80px !important; /* Ancho de la columna de horas */
-  background-color: #ef4444 !important;
-  color: white !important;
-  padding: 1px 4px !important; /* Reducido el padding vertical */
-  border-radius: 2px !important; /* Reducido para que se vea mejor */
-  font-size: 10px !important;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2) !important;
-  white-space: nowrap !important;
-  top: 0 !important;
-  transform: translate(-50%, 0) !important; /* Eliminado el desplazamiento vertical */
-  margin-top: -1px !important; /* Ajuste fino para eliminar el espacio */
-}
-
-/* Celda de la cabecera de la columna de horas ("Hora") */
-.agenda-body .grid-container > div:first-child, 
-div[class*="sticky"][class*="left-0"][class*="top-0"] {
-  position: sticky !important;
-  left: 0;
-  z-index: 100 !important;
-  background-color: white;
-  box-shadow: 2px 0 4px rgba(0, 0, 0, 0.1);
-}
-
-/* Columnas de horas */
+/* Columna de horas - sticky horizontal */
+.hour-column,
 .agenda-body .grid-container [class*="sticky"][class*="left-0"],
 div[class*="sticky"][class*="left-0"] {
   position: sticky !important;
   left: 0;
-  z-index: 90 !important;
+  z-index: var(--z-hour-column);
   background-color: white;
-  box-shadow: 2px 0 4px rgba(0, 0, 0, 0.1);
+  box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
 }
 
-/* Intersección de fila con columna (celda de esquina superior izquierda - "Hora") */
+/* Cabeceras de días y cabinas */
+.day-header,
+.grid-header-cell,
+div[class*="sticky"][class*="top-0"]:not([class*="left-0"]) {
+  position: sticky !important;
+  top: 0 !important;
+  /* z-index: 9999 !important; */ /* Usar variable */
+  z-index: var(--z-day-headers) !important;
+  background-color: white !important;
+  border-bottom: 1px solid #e5e7eb !important;
+  transform: translateZ(0); /* Mantener por si acaso */
+}
+
+/* Cabecera especial "Hora" - esquina superior izquierda */
+.hour-header,
+div.sticky.left-0.top-0.hour-header,
+div[class*="sticky"][class*="left-0"][class*="top-0"][class*="hour-header"],
 .agenda-body .grid-container > div:first-child.top-0,
 div[class*="sticky"][class*="left-0"][class*="top-0"] {
-  z-index: 2000 !important;
+  position: sticky !important;
+  left: 0;
+  top: 0;
+  z-index: var(--z-hour-header) !important; /* Usar variable y !important */
+  background-color: white;
   box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.15);
 }
 
-/* Asegurar que el contenedor padre tenga el contexto adecuado */
-.agenda-body .grid-container {
-  position: relative;
-  min-width: fit-content;
+/* Indicador de tiempo actual */
+.current-time-indicator {
+  position: absolute !important;
+  left: 0 !important;
+  right: 0 !important;
+  width: 100% !important;
+  height: 2px !important;
+  background-color: #ef4444 !important;
+  /* z-index: 120 !important; */ /* Usar nueva variable */
+  z-index: var(--z-time-indicator-new) !important;
+  pointer-events: none !important;
+  min-width: 100% !important;
+  box-shadow: 0 0 4px rgba(239, 68, 68, 0.4) !important;
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
 }
 
-/* Forzar a las cabeceras de día a tener un z-index específico */
-div[class*="sticky"][class*="top-0"]:not([class*="left-0"]) {
-  z-index: 2000 !important;
+/* Garantizar que el pseudoelemento se vea sobre la columna de horas - AJUSTADO */
+.current-time-indicator::before {
+  content: '' !important;
+  position: absolute !important;
+  left: 0 !important;
+  width: 80px !important; /* Ancho de la columna de hora */
+  height: 2px !important;
+  background-color: #ef4444 !important;
+  /* z-index: 125 !important; */ /* Ajustar relativo a la nueva base */
+  z-index: calc(var(--z-time-indicator-new) + 1) !important; /* Un poco por encima del indicador base */
+  pointer-events: none !important;
 }
 
-/* Asegurar el comportamiento correcto en navegadores WebKit */
+/* Etiqueta de hora con posicionamiento absoluto para que se mueva con la columna */
+.current-time-indicator span {
+  position: absolute !important;
+  left: 40px !important; /* Centrado en la columna de hora */
+  top: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  /* z-index: 130 !important; */ /* Usar nueva variable */
+  z-index: var(--z-time-indicator-label-new) !important;
+  background-color: #ef4444 !important;
+  color: white !important;
+  padding: 2px 6px !important;
+  border-radius: 2px !important;
+  font-size: 11px !important;
+  white-space: nowrap !important;
+  display: inline-block !important;
+  font-weight: 500 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2) !important;
+  pointer-events: none !important;
+}
+
+/* Eliminar estilos fixed que ya no necesitamos */
+body:has(.current-time-indicator) .current-time-indicator span {
+  position: absolute !important;
+  /* z-index: var(--z-time-indicator-label) !important; */ /* Usar nueva variable */
+  z-index: var(--z-time-indicator-label-new) !important;
+}
+
+/* Eliminar estilos obsoletos */
+.current-time-indicator-portal {
+  display: none;
+}
+
+/* Asegurar que el indicador tenga menor z-index que todas las cabeceras */
+.agenda-body .current-time-indicator {
+  /* z-index: var(--z-time-indicator) !important; */
+  z-index: var(--z-time-indicator-new) !important;
+}
+
+/* Asegurar que la etiqueta no sea ocultada por la columna de horas */
+/* Esta regla podría ser problemática si la etiqueta tiene z-index < columna */
+/* Vamos a comentarla temporalmente para ver el efecto del z-index */
+/*
+.hour-column:has(+ .current-time-indicator),
+.hour-column:has(~ .current-time-indicator) {
+  overflow: visible !important;
+}
+*/
+
+/* Soporte para WebKit */
 @supports (-webkit-touch-callout: none) {
-  .hour-header, .hour-column {
-    position: -webkit-sticky !important;
-    z-index: 2000 !important;
-  }
-  
-  .day-header {
-    position: -webkit-sticky !important;
-    z-index: 2000 !important;
-  }
-  
-  .current-time-indicator span {
-    position: -webkit-sticky !important;
-    left: 80px !important;
-    top: 0 !important;
-    transform: translate(-50%, 0) !important;
-    margin-top: -1px !important;
-    z-index: 110 !important;
-  }
-}
-
-/* Asegurar que el contenedor padre relativo tenga contexto */
-/* Esto ya debería estar en tu componente con 'relative' en la línea 541 */
-/* .min-w-\[1200px\].relative { position: relative; } */
-
-/* Asegurar que el contenedor de scroll funcione para sticky */
-/* Esto ya debería estar en tu componente con 'overflow-auto' en la línea 538 */
-/* .flex-1.overflow-auto { overflow: auto; } */ 
+  .hour-header { position: -webkit-sticky; z-index: var(--z-hour-header) !important; }
+  .day-header { position: -webkit-sticky; z-index: var(--z-day-headers) !important; }
+  .hour-column { position: -webkit-sticky; z-index: var(--z-hour-column); }
+} 

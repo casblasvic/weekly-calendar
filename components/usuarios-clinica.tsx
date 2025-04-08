@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge"
 import { ConflictoHorario } from "@/services/exceptions-conflict-service"
 import { tieneExcepcionesActivas, contarExcepcionesActivas } from "@/services/exceptions-user-service"
+import { Skeleton } from "@/components/ui/skeleton"
 
 // Importar el tipo Usuario para usarlo directamente
 import type { Usuario } from "@/contexts/user-context";
@@ -378,8 +379,48 @@ export function UsuariosClinica({
     );
   };
 
+  // --- Skeleton para la tabla de usuarios ---
+  const renderUserTableSkeleton = () => (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-4">
+        <Skeleton className="h-10 w-2/3" /> 
+        <Skeleton className="h-6 w-40" /> 
+      </div>
+      <div className="border rounded-md">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-[50px]"><Skeleton className="w-5 h-5" /></TableHead>
+              <TableHead><Skeleton className="h-5 w-24" /></TableHead>
+              <TableHead><Skeleton className="h-5 w-32" /></TableHead>
+              <TableHead className="text-right"><Skeleton className="h-5 w-20" /></TableHead>
+              <TableHead className="text-center"><Skeleton className="h-5 w-16" /></TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {Array.from({ length: 5 }).map((_, index) => (
+              <TableRow key={`skeleton-${index}`}>
+                <TableCell><Skeleton className="w-5 h-5" /></TableCell>
+                <TableCell><Skeleton className="h-5 w-full" /></TableCell>
+                <TableCell><Skeleton className="h-5 w-full" /></TableCell>
+                <TableCell className="text-right"><Skeleton className="h-5 w-20" /></TableCell>
+                <TableCell className="text-center">
+                  <div className="flex justify-center space-x-1">
+                     <Skeleton className="w-8 h-8 rounded-md" />
+                     <Skeleton className="w-8 h-8 rounded-md" />
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  );
+  // --- Fin Skeleton ---
+
   if (loading) {
-    return <div>Cargando usuarios...</div>;
+    return renderUserTableSkeleton();
   }
 
   // Usar el diálogo controlado externamente o el local

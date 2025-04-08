@@ -1,41 +1,48 @@
 "use client"
 
-import { useScheduleTemplates } from "@/contexts/schedule-templates-context"
-import type { WeekSchedule } from "@/types/schedule"
+import { useScheduleTemplates, ScheduleTemplate as ContextScheduleTemplate } from "@/contexts/schedule-templates-context"
+// Eliminamos la interfaz local y WeekSchedule si no se usa directamente aquí
+// import type { WeekSchedule } from "@/types/schedule"
 
-export interface ScheduleTemplate {
-  id: string
-  description: string
-  schedule: WeekSchedule
-}
+// // Eliminamos la interfaz local
+// export interface ScheduleTemplate {
+//   id: string
+//   description: string
+//   schedule: WeekSchedule
+// }
 
 /**
- * Hook para acceder a las plantillas horarias
- * Actúa como un wrapper sobre el contexto para mantener compatibilidad
+ * Hook para acceder a las plantillas horarias (ya NO actúa como wrapper)
+ * Devuelve directamente los datos y funciones del contexto.
  */
 export const useTemplates = () => {
   const context = useScheduleTemplates()
   
-  // Adaptamos el contexto para que tenga la misma interfaz que antes
-  const templates = context.templates.map(template => ({
-    id: template.id,
-    description: template.description,
-    schedule: template.schedule
-  }))
+  // // Eliminamos la adaptación
+  // const templates = context.templates.map(template => ({
+  //   id: template.id,
+  //   description: template.description,
+  //   schedule: template.schedule
+  // }))
   
+  // Devolver directamente lo del contexto
   return {
-    templates,
-    addTemplate: (template: ScheduleTemplate) => 
-      context.createTemplate({
-        ...template,
-        isDefault: false
-      }),
-    updateTemplate: (template: ScheduleTemplate) => 
-      context.updateTemplate(template.id, {
-        description: template.description,
-        schedule: template.schedule
-      }),
-    deleteTemplate: context.deleteTemplate
+    templates: context.templates, // Devuelve el array completo del contexto
+    loading: context.loading,     // Exponer el estado de carga
+    getTemplateById: context.getTemplateById,
+    // Ajustar addTemplate para aceptar el tipo completo del contexto (Omitiendo campos auto-generados)
+    addTemplate: (templateData: Omit<ContextScheduleTemplate, 'id' | 'createdAt' | 'updatedAt'>) => 
+      context.createTemplate(templateData), // Pasar directamente
+    // Ajustar updateTemplate para aceptar Partial del tipo completo del contexto
+    updateTemplate: (id: string, templateData: Partial<ContextScheduleTemplate>) => 
+      context.updateTemplate(id, templateData), // Pasar directamente
+    deleteTemplate: context.deleteTemplate,
+    refreshTemplates: context.refreshTemplates, // Exponer refresh si es necesario
+    // Añadir otras funciones del contexto si son útiles aquí
+    setDefaultTemplate: context.setDefaultTemplate,
+    getTemplatesByClinic: context.getTemplatesByClinic,
+    exportTemplates: context.exportTemplates,
+    importTemplates: context.importTemplates,
   }
 }
 

@@ -22,6 +22,7 @@ import { Tarifa, Servicio } from "@/services/data/models/interfaces"
 import { toast as sonnerToast } from "sonner"
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/components/ui/table"
 import { VATType, Category } from '@prisma/client'
+import { Skeleton } from "@/components/ui/skeleton"
 
 // Interfaz para el formato esperado por la tabla de servicios (ajustada)
 interface ServicioFormateado {
@@ -34,6 +35,79 @@ interface ServicioFormateado {
   tipo: 'Servicio';
   deshabilitado: boolean;
 }
+
+// --- Skeleton para la página de edición de tarifa ---
+const renderTarifEditSkeleton = () => (
+  <div className="p-6 space-y-6">
+    {/* Header Skeleton */}
+    <div className="flex items-center justify-between mb-6">
+      <Skeleton className="h-8 w-1/2" />
+      <div className="flex gap-2">
+        <Skeleton className="h-9 w-24" />
+        <Skeleton className="h-9 w-24" />
+      </div>
+    </div>
+
+    {/* Tarifa Edit Fields Skeleton */}
+    <Card>
+      <CardContent className="p-6 space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+        </div>
+        <Skeleton className="h-6 w-40" />
+      </CardContent>
+    </Card>
+
+    {/* Services Section Skeleton */}
+    <h2 className="mt-6 text-lg font-medium"><Skeleton className="h-6 w-1/4" /></h2>
+    <div className="flex flex-col md:flex-row gap-4 mb-4">
+      <Skeleton className="h-10 flex-1" /> {/* Search */} 
+      <Skeleton className="h-10 w-40" />   {/* Filter */} 
+      <Skeleton className="h-10 w-40" />   {/* Filter */} 
+      <Skeleton className="h-10 w-32" />   {/* Button */} 
+    </div>
+    <div className="border rounded-md">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            {Array.from({ length: 5 }).map((_, i) => (
+              <TableHead key={`skel-head-${i}`}><Skeleton className="h-5 w-full" /></TableHead>
+            ))}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {Array.from({ length: 8 }).map((_, index) => (
+            <TableRow key={`skel-row-${index}`}>
+              <TableCell><Skeleton className="h-5 w-full" /></TableCell>
+              <TableCell><Skeleton className="h-5 w-full" /></TableCell>
+              <TableCell><Skeleton className="h-5 w-full" /></TableCell>
+              <TableCell><Skeleton className="h-5 w-full" /></TableCell>
+              <TableCell>
+                <div className="flex justify-end space-x-2">
+                  <Skeleton className="w-8 h-8 rounded-md" />
+                  <Skeleton className="w-8 h-8 rounded-md" />
+                </div>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+    {/* Pagination Skeleton */}
+    <div className="flex items-center justify-between mt-4">
+      <Skeleton className="h-8 w-24" />
+      <div className="flex gap-1">
+        <Skeleton className="h-8 w-8" />
+        <Skeleton className="h-8 w-8" />
+        <Skeleton className="h-8 w-8" />
+        <Skeleton className="h-8 w-8" />
+      </div>
+    </div>
+
+  </div>
+);
+// --- Fin Skeleton ---
 
 export default function ConfiguracionTarifa() {
   const router = useRouter()
@@ -414,6 +488,12 @@ export default function ConfiguracionTarifa() {
   const handleServiciosUpdated = () => {
     console.log("Evento de actualización de servicios recibido");
   };
+
+  // --- Check loading state --- 
+  if (isLoading) { // Usar isLoading del contexto useTarif
+    return renderTarifEditSkeleton();
+  }
+  // --- Fin Check loading state ---
 
   return (
     <div className="flex flex-col p-4 py-8">

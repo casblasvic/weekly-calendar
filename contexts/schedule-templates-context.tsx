@@ -27,11 +27,16 @@ interface ScheduleTemplatesContextType {
 const defaultTemplates: ScheduleTemplate[] = [
   {
     id: "template-default",
-    description: "Plantilla Estándar",
+    name: "Plantilla Estándar",
+    description: "Plantilla por defecto inicial",
     schedule: DEFAULT_SCHEDULE,
+    systemId: "system-default-placeholder",
     clinicId: null,
     isDefault: true,
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    openTime: null,
+    closeTime: null,
+    slotDuration: 15,
   }
 ];
 
@@ -43,62 +48,49 @@ export function ScheduleTemplatesProvider({ children }: { children: ReactNode })
   const [templates, setTemplates] = useState<ScheduleTemplate[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const interfaz = useInterfaz();
-  const [dataFetched, setDataFetched] = useState(false);
 
   // Cargar plantillas al iniciar
   useEffect(() => {
-    if (interfaz.initialized && !dataFetched) {
+    if (interfaz.initialized) {
       loadTemplates();
     }
-  }, [interfaz.initialized, dataFetched]);
+  }, [interfaz.initialized]);
 
   const loadTemplates = async () => {
     try {
       setLoading(true);
-      
-      // Usar la interfaz centralizada
-      try {
-        // Llamar al método específico cuando esté implementado
-        // const templatesList = await interfaz.getScheduleTemplates();
-        
-        // Mientras tanto, como fallback temporal, cargar de localStorage
-        const storedTemplates = localStorage.getItem('schedule-templates');
-        if (storedTemplates) {
-          const parsedTemplates = JSON.parse(storedTemplates);
-          setTemplates(parsedTemplates);
-        } else {
-          setTemplates(defaultTemplates);
-        }
-      } catch (error) {
-        console.error("Error al cargar plantillas:", error);
-        
-        // Si falla, usar plantillas predeterminadas
-        setTemplates(defaultTemplates);
+      console.log("[ScheduleTemplatesProvider] Fetching templates from API...");
+      // --- LLAMAR A LA API REAL --- 
+      const response = await fetch('/api/templates'); // <-- Ajustar endpoint si es necesario
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: `HTTP error ${response.status}` }));
+        throw new Error(errorData.message || `Error ${response.status}`);
       }
+      const templatesFromApi: ScheduleTemplate[] = await response.json();
+      console.log(`[ScheduleTemplatesProvider] Received ${templatesFromApi.length} templates from API.`);
       
-      setDataFetched(true);
+      // Asegurarse de que los datos recibidos tienen el formato esperado
+      // Podríamos añadir validación Zod aquí si fuera necesario
+      
+      setTemplates(templatesFromApi); 
+      // --- FIN LLAMADA API --- 
     } catch (error) {
-      console.error("Error al cargar plantillas horarias:", error);
-      setTemplates(defaultTemplates);
+      console.error("Error al cargar plantillas horarias desde API:", error);
+      setTemplates([]); // Poner array vacío en caso de error de API
     } finally {
       setLoading(false);
     }
   }
 
-  // Guardar plantillas (usando la interfaz)
+  // Guardar plantillas (DEBERÍA USAR API TAMBIÉN)
   const saveTemplates = async (updatedTemplates: ScheduleTemplate[]) => {
-    // Actualizar estado
+    // ESTA FUNCIÓN DEBERÍA LLAMAR A LAS APIS POST/PUT/DELETE INDIVIDUALES
+    // NO guardar todo el array
+    console.warn("saveTemplates function needs refactoring to use individual API calls (POST/PUT/DELETE)");
+    // Actualizar estado local SÍ es correcto
     setTemplates(updatedTemplates);
-    
-    // Guardar mediante la interfaz centralizada (cuando esté disponible)
-    // En el futuro: await interfaz.saveScheduleTemplates(updatedTemplates);
-    
-    // Mientras tanto, mantener el guardado en localStorage
-    try {
-      localStorage.setItem('schedule-templates', JSON.stringify(updatedTemplates));
-    } catch (error) {
-      console.error("Error al guardar plantillas en localStorage:", error);
-    }
+    // Quitar localStorage
+    // localStorage.setItem('schedule-templates', JSON.stringify(updatedTemplates));
   }
 
   // Métodos del contexto
@@ -137,29 +129,42 @@ export function ScheduleTemplatesProvider({ children }: { children: ReactNode })
     }
   }
 
-  const updateTemplate = async (id: string, template: Partial<ScheduleTemplate>): Promise<ScheduleTemplate | null> => {
+  const updateTemplate = async (id: string, templateData: Partial<ScheduleTemplate>): Promise<ScheduleTemplate | null> => {
+    console.log(`[ScheduleTemplatesProvider] Updating template ${id} with data:`, templateData);
     try {
-      // En el futuro: return await interfaz.updateTemplate(id, template);
+      // --- LLAMADA A LA API PUT --- 
+      const response = await fetch(`/api/templates/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(templateData), // Enviar solo los datos parciales a actualizar
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: `Error HTTP ${response.status}` }));
+        console.error(`[ScheduleTemplatesProvider] API Error updating template ${id}:`, errorData);
+        // Podríamos lanzar el error o devolver null
+        // throw new Error(errorData.message || `Error al actualizar plantilla ${response.status}`);
+        return null; // Devolver null si la API falla
+      }
+
+      const updatedTemplateFromApi: ScheduleTemplate = await response.json();
+      console.log(`[ScheduleTemplatesProvider] Template ${id} updated successfully via API:`, updatedTemplateFromApi);
+
+      // Actualizar estado local CON la respuesta de la API
+      setTemplates(currentTemplates => 
+        currentTemplates.map(t => 
+          t.id === id ? updatedTemplateFromApi : t
+        )
+      );
       
-      // Buscar plantilla
-      const index = templates.findIndex(t => t.id === id);
-      if (index === -1) return null;
-      
-      // Actualizar con nuevos datos
-      const now = new Date().toISOString();
-      const updatedTemplate: ScheduleTemplate = {
-        ...templates[index],
-        ...template,
-        updatedAt: now
-      };
-      
-      // Actualización local
-      const updatedTemplates = [...templates];
-      updatedTemplates[index] = updatedTemplate;
-      await saveTemplates(updatedTemplates);
-      return updatedTemplate;
-    } catch (error) {
-      console.error(`Error al actualizar plantilla ${id}:`, error);
+      return updatedTemplateFromApi; // Devolver la plantilla actualizada desde la API
+      // --- FIN LLAMADA API --- 
+
+    } catch (error: any) {
+      console.error(`[ScheduleTemplatesProvider] Unexpected error updating template ${id}:`, error);
+      // throw error; // O devolver null
       return null;
     }
   }
@@ -220,7 +225,7 @@ export function ScheduleTemplatesProvider({ children }: { children: ReactNode })
   }
 
   const refreshTemplates = async (): Promise<void> => {
-    setDataFetched(false); // Esto forzará la recarga en el useEffect
+    // setDataFetched(false); // Esto forzará la recarga en el useEffect
   }
 
   const exportTemplates = (): string => {

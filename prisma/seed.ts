@@ -3,7 +3,8 @@ import pkg from '@prisma/client';
 const { PrismaClient, Prisma } = pkg; // Obtener constructor y namespace Prisma
 
 // --- Importación de Tipos Específicos ---
-import type { ScheduleTemplate, DayOfWeek } from '@prisma/client'; // Importar SOLO como tipos
+import type { ScheduleTemplate as PrismaScheduleTemplateType, ScheduleTemplateBlock as PrismaScheduleTemplateBlockType, DayOfWeek, ScheduleTemplate } from '@prisma/client'; // Renombrar para evitar conflicto
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library'; // Importar error específico
 // --- FIN Importación de Tipos ---
 
 // --- IMPORTACIÓN EXPLÍCITA (Eliminada) ---
@@ -14,9 +15,6 @@ import type { ScheduleTemplate, DayOfWeek } from '@prisma/client'; // Importar S
 //   DayOfWeek
 // } from '@prisma/client';
 // --- FIN IMPORTACIÓN EXPLÍCITA ---
-
-// Importar explícitamente el tipo de error si es necesario (depende de la versión de Prisma)
-// import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library'; // Puede no ser necesario importar explícitamente
 
 // Ya no necesitamos importar Permission aquí
 // import { Permission } from '@prisma/client'; // Comentar o eliminar si estaba duplicada
@@ -144,6 +142,7 @@ async function main() {
     { action: 'gestionar', module: 'roles_permisos' },
     { action: 'gestionar', module: 'catalogo_servicios' },
     { action: 'gestionar', module: 'catalogo_productos' },
+    { action: 'gestionar', module: 'plantillas_horarias' },
   ];
 
   try {
@@ -208,6 +207,72 @@ async function main() {
   });
   console.log(`Ensured role "${staffRole.name}" with ${staffRole.permissions.length} permissions.`);
 
+  // --- Crear Plantillas de Horario y Bloques --- 
+  console.log('Creating schedule templates and blocks...');
+
+  // >>> Declarar variables de plantilla en scope superior <<<
+  let template1: (pkg.ScheduleTemplate & { blocks: pkg.ScheduleTemplateBlock[] }) | null = null;
+  let template2: (pkg.ScheduleTemplate & { blocks: pkg.ScheduleTemplateBlock[] }) | null = null;
+
+  try {
+    // Plantilla 1: Lunes a Viernes (9-17)
+    // >>> Asignar a la variable declarada arriba <<<
+    const template1Result = await prisma.scheduleTemplate.upsert({
+      where: { name_systemId: { name: 'Lunes a Viernes (9h-17h)', systemId: system.id } },
+      update: {},
+      create: {
+        name: 'Lunes a Viernes (9h-17h)',
+        description: 'Horario estándar de oficina L-V de 9:00 a 17:00',
+        systemId: system.id,
+        openTime: '09:00',
+        closeTime: '17:00',
+        blocks: {
+          create: [
+            { dayOfWeek: 'MONDAY', startTime: '09:00', endTime: '17:00', isWorking: true },
+            { dayOfWeek: 'TUESDAY', startTime: '09:00', endTime: '17:00', isWorking: true },
+            { dayOfWeek: 'WEDNESDAY', startTime: '09:00', endTime: '17:00', isWorking: true },
+            { dayOfWeek: 'THURSDAY', startTime: '09:00', endTime: '17:00', isWorking: true },
+            { dayOfWeek: 'FRIDAY', startTime: '09:00', endTime: '17:00', isWorking: true },
+          ],
+        },
+      },
+      include: { blocks: true } // Incluir bloques para log
+    });
+    // Usar una aserción de tipo más segura o validación si es posible
+    template1 = template1Result as (pkg.ScheduleTemplate & { blocks: pkg.ScheduleTemplateBlock[] });
+    console.log(`Ensured template "${template1.name}" with ${template1.blocks.length} blocks.`);
+
+    // Plantilla 2: Fines de Semana (Mañana)
+    // >>> Asignar a la variable declarada arriba <<<
+    const template2Result = await prisma.scheduleTemplate.upsert({
+      where: { name_systemId: { name: 'Fines de Semana (Mañana)', systemId: system.id } },
+      update: {},
+      create: {
+        name: 'Fines de Semana (Mañana)',
+        description: 'Horario solo mañanas de Sábado y Domingo (10h-14h)',
+        systemId: system.id,
+        openTime: '10:00',
+        closeTime: '14:00',
+        blocks: {
+          create: [
+            { dayOfWeek: 'SATURDAY', startTime: '10:00', endTime: '14:00', isWorking: true },
+            { dayOfWeek: 'SUNDAY', startTime: '10:00', endTime: '14:00', isWorking: true },
+          ],
+        },
+      },
+      include: { blocks: true }
+    });
+    // Usar una aserción de tipo más segura o validación si es posible
+    template2 = template2Result as (pkg.ScheduleTemplate & { blocks: pkg.ScheduleTemplateBlock[] });
+    console.log(`Ensured template "${template2.name}" with ${template2.blocks.length} blocks.`);
+
+  } catch (error) {
+    console.error("Error creating schedule templates:", error);
+    await prisma.$disconnect();
+    process.exit(1);
+  }
+  // --- FIN Crear Plantillas --- 
+
   const saltRounds = 10;
   const defaultPassword = 'password123';
   const hashedPassword = await bcrypt.hash(defaultPassword, saltRounds);
@@ -238,6 +303,7 @@ async function main() {
            },
            create: {
              name: clinicData.name,
+             prefix: clinicData.prefix,
              address: clinicData.direccion,
              city: clinicData.city,
              currency: 'EUR',
@@ -292,7 +358,7 @@ async function main() {
                 });
                 console.log(`Upserted cabin "${cabinData.name}" for clinic "${realClinic.name}"`);
             } catch (error) {
-                if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+                if (error instanceof PrismaClientKnownRequestError && error.code === 'P2002') {
                     console.warn(`Cabin upsert failed for "${cabinData.name}" in clinic "${realClinic.name}". Potential duplicate code "${cabinData.code}". Error:`, error.message);
                 } else {
                     console.error(`Error upserting cabin "${cabinData.name}" for clinic ${realClinic.name}:`, error);
@@ -304,6 +370,25 @@ async function main() {
     }
   }
   console.log('Finished creating cabins.');
+
+  // --- PRIMERO: Eliminar plantillas auto-generadas antiguas/previas ---
+  try {
+    console.log('[Seed Cleanup] Deleting previously auto-generated schedule templates...');
+    const deleteResult = await prisma.scheduleTemplate.deleteMany({
+      where: {
+        systemId: system.id,
+        OR: [
+          { name: { contains: ':' } }, // Eliminar las que tienen el formato antiguo
+          { name: { startsWith: 'Horario Detallado (' } } // Eliminar las que tienen el formato nuevo (para recrearlas)
+        ]
+      }
+    });
+    console.log(`[Seed Cleanup] Deleted ${deleteResult.count} old auto-generated templates.`);
+  } catch (error) {
+      console.error("[Seed Cleanup] Error deleting old templates:", error);
+      // Considerar si fallar aquí o continuar
+  }
+  // --- FIN Limpieza ---
 
   console.log('Creating clinic schedules...');
   const dayOfWeekMap: { [key: string]: DayOfWeek } = {
@@ -328,7 +413,7 @@ async function main() {
         const templateOpenTime = clinicData.config.openTime || realClinic.openTime; // Template gets its own times
         const templateCloseTime = clinicData.config.closeTime || realClinic.closeTime;
         // Array para los datos de bloque SIN templateId todavía
-        const templateBlocksDataTemp: Omit<Prisma.ScheduleTemplateBlockCreateManyInput, 'templateId'>[] = [];
+        const templateBlocksDataTemp: Omit<pkg.Prisma.ScheduleTemplateBlockCreateManyInput, 'templateId'>[] = [];
         let nameParts: string[] = [];
 
         // Generate blocks data
@@ -356,10 +441,11 @@ async function main() {
         }
 
         // Generate template name
-        let templateName = `Plantilla Detallada ${realClinic.name}`;
-        if (nameParts.length > 0) {
-            templateName = nameParts.join(' ');
-        }
+        let templateName = `Horario Detallado (${realClinic.name})`;
+        let templateDescription = `Plantilla detallada generada para ${realClinic.name} desde mockData`;
+        // Usar la descripción del mock si existe y es más útil?
+        // if (clinicData?.description) templateDescription = clinicData.description;
+        // --- FIN NUEVO NOMBRE ---
 
         // Upsert/Update the ScheduleTemplate (WITHOUT blocks initially)
         try {
@@ -379,7 +465,7 @@ async function main() {
                          openTime: templateOpenTime, // Update times
                          closeTime: templateCloseTime,
                          // Potentially update description if needed
-                         description: `Plantilla detallada generada para ${realClinic.name} desde mockData (actualizada)`,
+                         description: templateDescription + " (actualizada)", // Actualizar descripción
                     }
                  });
                  // Delete old blocks before creating new ones
@@ -391,23 +477,19 @@ async function main() {
                  console.log(`[Seed Hybrid] Creating new ScheduleTemplate: ${templateName}`);
                  scheduleTemplate = await prisma.scheduleTemplate.create({
                     data: {
-                        name: templateName,
-                        description: `Plantilla detallada generada para ${realClinic.name} desde mockData`,
+                        name: templateName, // Usar nuevo nombre
+                        description: templateDescription, // Usar nueva descripción
                         systemId: system.id,
                         openTime: templateOpenTime,
                         closeTime: templateCloseTime,
                         // Blocks are created separately below
                     },
                  });
-                 // No need to delete blocks for a new template
-                 // We don't need createdTemplatesMap anymore if we query directly
-                 // createdTemplatesMap.set(templateName, scheduleTemplate);
-                 // console.log(`[Seed Hybrid] Created new ScheduleTemplate: ${scheduleTemplate.name}`); // Logged below anyway
             }
 
             // 3. Create blocks (common step for new or existing templates)
             if (scheduleTemplate && templateBlocksDataTemp.length > 0) {
-                 const blocksToCreate: Prisma.ScheduleTemplateBlockCreateManyInput[] = templateBlocksDataTemp.map(block => ({
+                 const blocksToCreate: pkg.Prisma.ScheduleTemplateBlockCreateManyInput[] = templateBlocksDataTemp.map(block => ({
                       ...block,
                       templateId: scheduleTemplate!.id // Add the obtained templateId
                  }));
@@ -449,7 +531,7 @@ async function main() {
         const independentOpenTime = realClinic.openTime;
         const independentCloseTime = realClinic.closeTime;
         // Array para los datos de bloque SIN clinicId todavía
-        const independentBlocksDataTemp: Omit<Prisma.ClinicScheduleBlockCreateManyInput, 'clinicId'>[] = [];
+        const independentBlocksDataTemp: Omit<pkg.Prisma.ClinicScheduleBlockCreateManyInput, 'clinicId'>[] = [];
 
         const defaultWorkingDaysEnum: DayOfWeek[] = [
             pkg.DayOfWeek.MONDAY, pkg.DayOfWeek.TUESDAY, pkg.DayOfWeek.WEDNESDAY,
@@ -499,7 +581,7 @@ async function main() {
 
             // Now, create the independent blocks using createMany, adding the clinicId
             if (independentBlocksDataTemp.length > 0) {
-                const blocksToCreate: Prisma.ClinicScheduleBlockCreateManyInput[] = independentBlocksDataTemp.map(block => ({
+                const blocksToCreate: pkg.Prisma.ClinicScheduleBlockCreateManyInput[] = independentBlocksDataTemp.map(block => ({
                      ...block,
                      clinicId: realClinic.id // Add the clinicId
                 }));
@@ -536,376 +618,383 @@ async function main() {
 
   console.log('Finished processing clinic schedules.');
 
-  // --- Crear Tipos de IVA (VAT Types) ---
+  // --- Crear VATTypes --- 
   console.log('Creating VAT types...');
-  const vatTypesData = [
-    { name: 'General', rate: 21.0, isDefault: true, systemId: system.id },
-    { name: 'Reducido', rate: 10.0, isDefault: false, systemId: system.id },
-    { name: 'Superreducido', rate: 4.0, isDefault: false, systemId: system.id },
-    { name: 'Exento', rate: 0.0, isDefault: false, systemId: system.id },
-  ];
-  let defaultVatType: any = null;
-  try {
+  const vatTypesData = initialMockData.tiposIVA || [];
+  const createdVatTypesMap = new Map<string, any>();
+
     for (const vatData of vatTypesData) {
+    try {
       const vatType = await prisma.vATType.upsert({
-        where: { name_systemId: { name: vatData.name, systemId: vatData.systemId } },
-        update: { rate: vatData.rate, isDefault: vatData.isDefault },
-        create: vatData,
+        where: { name_systemId: { name: vatData.descripcion, systemId: system.id } }, // Usar 'descripcion' como nombre unico?
+        update: { rate: vatData.porcentaje },
+        create: {
+          name: vatData.descripcion, // Asumiendo que 'descripcion' es el nombre
+          rate: vatData.porcentaje,
+          // isDefault: vatData.isDefault, // Campo isDefault no existe en PrismaVATType
+          systemId: system.id,
+        },
       });
-      console.log(`Upserted VAT type: ${vatType.name} (${vatType.rate}%)`);
-      if (vatType.isDefault) {
-        defaultVatType = vatType;
+      // Usar vatData.id original como key en el map si existe y es string
+      if (typeof vatData.id === 'string') {
+          createdVatTypesMap.set(vatData.id, vatType);
       }
-    }
-    if (!defaultVatType) {
-      // Si no se encontró un default, usar el primero creado o el general
-      defaultVatType = await prisma.vATType.findFirst({ where: { systemId: system.id, name: 'General' } });
-    }
-    console.log('Finished creating VAT types.');
+      console.log(`Ensured VAT type "${vatType.name}".`);
   } catch (error) {
-    console.error('Error creating VAT types:', error);
-    // Considerar salir o continuar dependiendo de la criticidad
+      console.error(`Error creating VAT type "${vatData.descripcion}":`, error);
+      // No salir, intentar crear los siguientes
+    }
   }
 
-  // --- Crear Tarifas (Tariffs) --- 
-  console.log('Creating tariffs...');
-  const tariffsData = [
-    // Usar los IDs definidos en mockData.ts (clinic.config.rate)
-    { id: 'tarifa-1', name: 'Tarifa General', isDefault: true, systemId: system.id, defaultVatTypeId: defaultVatType?.id },
-    { id: 'tarifa-2', name: 'Tarifa VIP', isDefault: false, systemId: system.id, defaultVatTypeId: defaultVatType?.id },
-    // Añadir más tarifas si son referenciadas en mockData
-  ];
-  const createdTariffsMap = new Map<string, any>();
-  try {
-    for (const tariffData of tariffsData) {
-       if (!tariffData.defaultVatTypeId) {
-            console.warn(`Skipping tariff '${tariffData.name}' creation because default VAT type was not found.`);
-            continue;
-        }
-      // Usar create directamente ya que especificamos el ID
-      // Podríamos usar upsert si quisiéramos actualizar tarifas existentes por ID
-      const tariff = await prisma.tariff.upsert({
-         where: { id: tariffData.id }, // Buscar por el ID que proporcionamos
-         update: { // Qué actualizar si ya existe
-             name: tariffData.name,
-             isDefault: tariffData.isDefault,
-             defaultVatTypeId: tariffData.defaultVatTypeId, 
-             systemId: tariffData.systemId // Asegurar que systemId esté en update también
-         },
-         create: { // Qué crear si no existe
-             id: tariffData.id,
-             name: tariffData.name,
-             description: `Tarifa ${tariffData.name} generada por seed`,
-             isDefault: tariffData.isDefault,
-             isActive: true,
-             systemId: tariffData.systemId,
-             defaultVatTypeId: tariffData.defaultVatTypeId, // Asegurarse que el ID de VAT exista
-         }
-      });
-      createdTariffsMap.set(tariff.id, tariff);
-      console.log(`Upserted tariff: ${tariff.name} (ID: ${tariff.id})`);
-    }
-    console.log('Finished creating tariffs.');
-
-    // Ahora, actualizar las clínicas con el tariffId REAL de la tarifa creada
-    console.log('Assigning tariffs to clinics...');
-    for (const [mockClinicId, realClinic] of createdClinicsMap.entries()) {
-        const clinicData = clinicsData.find((c: any) => c.id === mockClinicId);
-        const targetTariffId = clinicData?.config?.rate; // El ID 'tarifa-1', 'tarifa-2' de mockData
-        const realTariff = createdTariffsMap.get(targetTariffId);
-
-        if (realClinic && realTariff) {
-            // Solo actualizar si la tarifa asignada actualmente es diferente o nula
-            if(realClinic.tariffId !== realTariff.id) { 
-                 await prisma.clinic.update({
-                     where: { id: realClinic.id },
-                     data: { tariffId: realTariff.id },
-                 });
-                 console.log(`Assigned tariff '${realTariff.name}' to clinic '${realClinic.name}'`);
-            }
-        } else if (realClinic && targetTariffId) {
-            console.warn(`Tariff with ID '${targetTariffId}' needed by clinic '${realClinic.name}' was not found or created.`);
-        }
-    }
-    console.log('Finished assigning tariffs to clinics.');
-
-  } catch (error) {
-    console.error('Error creating or assigning tariffs:', error);
-  }
-
-  // --- Crear Categorías (con Jerarquía) ---
-  console.log('Creating categories...');
-  let catFacial: any = null, catCorporal: any = null, catLaser: any = null, 
-      catProductos: any = null, subcatLimpieza: any = null, subcatCremas: any = null;
+  // --- Crear Categorías de Servicios/Productos ---
+  console.log('Creating Categories...');
+  const categoriesData = initialMockData.familias || [];
   const createdCategoriesMap = new Map<string, any>();
-  try {
-    // Nivel Raíz
-    catFacial = await prisma.category.upsert({
-      where: { name_systemId: { name: 'Facial', systemId: system.id } },
-      update: {}, create: { name: 'Facial', description: 'Tratamientos Faciales', systemId: system.id }
-    });
-    createdCategoriesMap.set(catFacial.id, catFacial);
-    catCorporal = await prisma.category.upsert({
-      where: { name_systemId: { name: 'Corporal', systemId: system.id } },
-      update: {}, create: { name: 'Corporal', description: 'Tratamientos Corporales', systemId: system.id }
-    });
-    createdCategoriesMap.set(catCorporal.id, catCorporal);
-    catLaser = await prisma.category.upsert({
-      where: { name_systemId: { name: 'Depilación Láser', systemId: system.id } },
-      update: {}, create: { name: 'Depilación Láser', description: 'Depilación Láser', systemId: system.id }
-    });
-     createdCategoriesMap.set(catLaser.id, catLaser);
-     catProductos = await prisma.category.upsert({
-      where: { name_systemId: { name: 'Productos', systemId: system.id } },
-      update: {}, create: { name: 'Productos', description: 'Productos de Venta', systemId: system.id }
-    });
-     createdCategoriesMap.set(catProductos.id, catProductos);
 
-    // Subcategorías (ejemplo)
-    subcatLimpieza = await prisma.category.upsert({
-      where: { name_systemId: { name: 'Limpieza Facial', systemId: system.id } },
-      update: { parentId: catFacial.id }, 
-      create: { name: 'Limpieza Facial', description: 'Limpiezas faciales', systemId: system.id, parentId: catFacial.id }
-    });
-     createdCategoriesMap.set(subcatLimpieza.id, subcatLimpieza);
-     subcatCremas = await prisma.category.upsert({
-      where: { name_systemId: { name: 'Cremas', systemId: system.id } },
-      update: { parentId: catProductos.id },
-      create: { name: 'Cremas', description: 'Cremas faciales y corporales', systemId: system.id, parentId: catProductos.id }
-    });
-     createdCategoriesMap.set(subcatCremas.id, subcatCremas);
-
-    console.log(`Upserted ${createdCategoriesMap.size} categories.`);
-  } catch (error) {
-    console.error('Error creating categories:', error);
+  for (const categoryData of categoriesData) {
+    try {
+      const category = await prisma.category.upsert({
+        where: { name_systemId: { name: categoryData.nombre, systemId: system.id } },
+        update: { description: categoryData.descripcion },
+        create: {
+          name: categoryData.nombre,
+          description: categoryData.descripcion,
+          // No hay parentId directo en Category de Prisma
+          // No hay tarifaId directo en Category de Prisma
+          systemId: system.id,
+        },
+      });
+      // Usar categoryData.id original como key en el map
+      if (typeof categoryData.id === 'string') {
+          createdCategoriesMap.set(categoryData.id, category);
+      }
+      console.log(`Ensured category "${category.name}".`);
+    } catch (error) {
+      console.error(`Error creating category "${categoryData.nombre}":`, error);
+    }
   }
 
-  // --- Crear Servicios de Ejemplo ---
-  console.log('Creating example services...');
-  const createdServicesMap = new Map<string, any>();
-  try {
-    const servicioLimpieza = await prisma.service.upsert({
-      where: { name_systemId: { name: 'Limpieza Facial Básica', systemId: system.id } },
-      update: { durationMinutes: 50, price: 45.0, categoryId: subcatLimpieza?.id, vatTypeId: defaultVatType?.id },
+  // --- Crear Servicios ---
+  console.log('Creating Services...');
+  const servicesData = initialMockData.servicios || [];
+
+  for (const serviceData of servicesData) {
+    const category = createdCategoriesMap.get(serviceData.familiaId);
+    const vatType = createdVatTypesMap.get(serviceData.tipoIvaId);
+
+    try {
+      await prisma.service.upsert({
+        where: { name_systemId: { name: serviceData.nombre, systemId: system.id } },
+        update: {
+          code: serviceData.codigo,
+          description: serviceData.descripcion,
+          durationMinutes: serviceData.duracion,
+          price: serviceData.precio != null ? Number(serviceData.precio) : null,
+          categoryId: category?.id,
+          vatTypeId: vatType?.id,
+          isActive: serviceData.activo !== false,
+        },
       create: {
-        name: 'Limpieza Facial Básica', description: 'Limpieza facial estándar', durationMinutes: 50,
-        price: 45.0, isActive: true, systemId: system.id,
-        categoryId: subcatLimpieza?.id, // Asignar subcategoría
-        vatTypeId: defaultVatType?.id // Asignar IVA por defecto
-      }
-    });
-    createdServicesMap.set(servicioLimpieza.id, servicioLimpieza);
-    const servicioMasaje = await prisma.service.upsert({
-       where: { name_systemId: { name: 'Masaje Relajante', systemId: system.id } },
-      update: { durationMinutes: 60, price: 55.0, categoryId: catCorporal?.id, vatTypeId: defaultVatType?.id },
-      create: {
-        name: 'Masaje Relajante', description: 'Masaje corporal relajante', durationMinutes: 60,
-        price: 55.0, isActive: true, systemId: system.id,
-        categoryId: catCorporal?.id, // Asignar categoría raíz
-        vatTypeId: defaultVatType?.id
-      }
-    });
-    createdServicesMap.set(servicioMasaje.id, servicioMasaje);
-     const servicioLaser = await prisma.service.upsert({
-      where: { name_systemId: { name: 'Sesión Láser Piernas', systemId: system.id } },
-      update: { durationMinutes: 45, price: 80.0, categoryId: catLaser?.id, vatTypeId: defaultVatType?.id },
-      create: {
-        name: 'Sesión Láser Piernas', description: 'Depilación láser piernas completas', durationMinutes: 45,
-        price: 80.0, isActive: true, systemId: system.id,
-        categoryId: catLaser?.id,
-        vatTypeId: defaultVatType?.id
-      }
-    });
-    createdServicesMap.set(servicioLaser.id, servicioLaser);
-    console.log(`Upserted ${createdServicesMap.size} services.`);
+          name: serviceData.nombre,
+          code: serviceData.codigo,
+          description: serviceData.descripcion,
+          durationMinutes: serviceData.duracion,
+          price: serviceData.precio != null ? Number(serviceData.precio) : null,
+          categoryId: category?.id,
+          vatTypeId: vatType?.id,
+          isActive: serviceData.activo !== false,
+          systemId: system.id,
+        },
+      });
+      console.log(`Ensured service "${serviceData.nombre}".`);
   } catch (error) {
-    console.error('Error creating services:', error);
+      console.error(`Error creating service "${serviceData.nombre}":`, error);
+      if (error instanceof PrismaClientKnownRequestError) {
+        // The .code property can be accessed in a type-safe manner
+        if (error.code === 'P2002') {
+          console.log(
+            'There is a unique constraint violation, a new service cannot be created with this code/name'
+          )
+        }
+      }
+      // No salir, intentar los siguientes
+    }
   }
 
-  // --- Crear Productos de Ejemplo ---
-  console.log('Creating example products...');
-  const createdProductsMap = new Map<string, any>();
-  try {
-    const productoCrema = await prisma.product.upsert({
-       where: { name_systemId: { name: 'Crema Hidratante Facial SPF30', systemId: system.id } },
-      update: { price: 25.0, costPrice: 10.0, categoryId: subcatCremas?.id, vatTypeId: defaultVatType?.id },
-      create: {
-        name: 'Crema Hidratante Facial SPF30', description: 'Crema hidratante con protección solar', sku: 'CREMAFAC01',
-        price: 25.0, costPrice: 10.0, currentStock: 50, isForSale: true, isActive: true, systemId: system.id,
-        categoryId: subcatCremas?.id, // Asignar subcategoría
-        vatTypeId: defaultVatType?.id // Asignar IVA
+  // --- Crear Equipos ---
+  console.log('Creating Equipment...');
+  const equipmentData = initialMockData.equipos || [];
+
+  for (const equipData of equipmentData) {
+    const clinic = createdClinicsMap.get(equipData.clinicId); // Obtener la clínica por el ID original del mock
+    if (!clinic) {
+      console.warn(`Skipping equipment "${equipData.name}" because clinic ID ${equipData.clinicId} was not found or created.`);
+      continue; // Saltar este equipo si la clínica no existe
+    }
+
+    try {
+      await prisma.equipment.upsert({
+        where: { name_systemId: { name: equipData.name, systemId: system.id } },
+        update: {
+          serialNumber: equipData.serialNumber,
+          description: equipData.description,
+          modelNumber: equipData.modelNumber,
+          purchaseDate: equipData.purchaseDate ? new Date(equipData.purchaseDate) : null,
+          warrantyEndDate: equipData.warrantyDate ? new Date(equipData.warrantyDate) : null,
+          location: equipData.location,
+          notes: equipData.notes,
+          clinicId: clinic.id,
+          isActive: equipData.isActive !== false,
+        },
+        create: {
+          name: equipData.name,
+          serialNumber: equipData.serialNumber,
+          description: equipData.description,
+          modelNumber: equipData.modelNumber,
+          purchaseDate: equipData.purchaseDate ? new Date(equipData.purchaseDate) : null,
+          warrantyEndDate: equipData.warrantyDate ? new Date(equipData.warrantyDate) : null,
+          location: equipData.location,
+          notes: equipData.notes,
+          clinicId: clinic.id,
+          isActive: equipData.isActive !== false,
+          systemId: system.id,
+        },
+      });
+      console.log(`Ensured equipment "${equipData.name}" for clinic "${clinic.name}".`);
+    } catch (error) {
+      console.error(`Error creating equipment "${equipData.name}":`, error);
+      if (error instanceof PrismaClientKnownRequestError) {
+        // The .code property can be accessed in a type-safe manner
+        if (error.code === 'P2002') {
+          console.log(
+            'There is a unique constraint violation, a new equipment cannot be created with this name/serial'
+          )
+        }
       }
-    });
-    createdProductsMap.set(productoCrema.id, productoCrema);
-     const productoSerum = await prisma.product.upsert({
-      where: { name_systemId: { name: 'Serum Reparador Noche', systemId: system.id } },
-      update: { price: 35.0, costPrice: 15.0, categoryId: catFacial?.id, vatTypeId: defaultVatType?.id }, // Categoría padre
-      create: {
-        name: 'Serum Reparador Noche', description: 'Serum facial reparador', sku: 'SERUMFAC01',
-        price: 35.0, costPrice: 15.0, currentStock: 30, isForSale: true, isActive: true, systemId: system.id,
-        categoryId: catFacial?.id, // Asignar categoría raíz
-        vatTypeId: defaultVatType?.id
-      }
-    });
-    createdProductsMap.set(productoSerum.id, productoSerum);
-    console.log(`Upserted ${createdProductsMap.size} products.`);
-  } catch (error) {
-    console.error('Error creating products:', error);
+    }
   }
 
-  // --- Crear Precios Específicos por Tarifa --- (COMMENTED OUT)
-  /*
-  console.log('Creating tariff-specific prices...');
-  try {
-    const tarifaGeneral = createdTariffsMap.get('tarifa-1');
-    const tarifaVIP = createdTariffsMap.get('tarifa-2');
+  // --- Crear Productos ---
+  console.log('Creating Products...');
+  const productsData = initialMockData.productos || [];
 
-    const limpiezaReal = await prisma.service.findUnique({ where: { name_systemId: { name: 'Limpieza Facial Básica', systemId: system.id } } });
-    const masajeReal = await prisma.service.findUnique({ where: { name_systemId: { name: 'Masaje Relajante', systemId: system.id } } });
-    const laserReal = await prisma.service.findUnique({ where: { name_systemId: { name: 'Sesión Láser Piernas', systemId: system.id } } });
-    const cremaReal = await prisma.product.findUnique({ where: { name_systemId: { name: 'Crema Hidratante Facial SPF30', systemId: system.id } } });
+  for (const productData of productsData) {
+    const category = createdCategoriesMap.get(productData.categoryId); // Mapear por ID original de familia/categoría
+    const vatType = createdVatTypesMap.get(productData.vatTypeId); // Mapear por ID original de tipo IVA
 
-    if (tarifaGeneral && limpiezaReal) {
-      await prisma.tariffServicePrice.upsert({
-        where: { tariffId_serviceId: { tariffId: tarifaGeneral.id, serviceId: limpiezaReal.id } },
-        update: { price: 45.0 }, // Mismo precio que el base en este caso
-        create: { tariffId: tarifaGeneral.id, serviceId: limpiezaReal.id, price: 45.0 }
-      });
-    }
-    if (tarifaGeneral && masajeReal) {
-      await prisma.tariffServicePrice.upsert({
-        where: { tariffId_serviceId: { tariffId: tarifaGeneral.id, serviceId: masajeReal.id } },
-        update: { price: 55.0 }, // Mismo precio
-        create: { tariffId: tarifaGeneral.id, serviceId: masajeReal.id, price: 55.0 }
-      });
-    }
-     if (tarifaGeneral && laserReal) {
-          await prisma.tariffServicePrice.upsert({
-              where: { tariffId_serviceId: { tariffId: tarifaGeneral.id, serviceId: laserReal.id } },
-              update: { price: 75.0 }, // Precio ligeramente rebajado en tarifa general
-              create: { tariffId: tarifaGeneral.id, serviceId: laserReal.id, price: 75.0 }
-          });
-      }
-    if (tarifaGeneral && cremaReal) {
-      await prisma.tariffProductPrice.upsert({
-        where: { tariffId_productId: { tariffId: tarifaGeneral.id, productId: cremaReal.id } },
-        update: { price: 24.0 }, // Precio ligeramente rebajado
-        create: { tariffId: tarifaGeneral.id, productId: cremaReal.id, price: 24.0 }
-      });
-    }
-
-    // Precios para Tarifa VIP
-    if (tarifaVIP && limpiezaReal) {
-      await prisma.tariffServicePrice.upsert({
-        where: { tariffId_serviceId: { tariffId: tarifaVIP.id, serviceId: limpiezaReal.id } },
-        update: { price: 50.0 }, // Precio VIP más caro
-        create: { tariffId: tarifaVIP.id, serviceId: limpiezaReal.id, price: 50.0 }
-      });
-    }
-    // No definir precio específico para masaje en VIP, usará el precio base del servicio (55)
-    if (tarifaVIP && laserReal) {
-        await prisma.tariffServicePrice.upsert({
-            where: { tariffId_serviceId: { tariffId: tarifaVIP.id, serviceId: laserReal.id } },
-            update: { price: 90.0 }, // Precio VIP más caro
-            create: { tariffId: tarifaVIP.id, serviceId: laserReal.id, price: 90.0 }
-        });
-    }
-    if (tarifaVIP && cremaReal) {
-        await prisma.tariffProductPrice.upsert({
-            where: { tariffId_productId: { tariffId: tarifaVIP.id, productId: cremaReal.id } },
-            update: { price: 28.0 }, // Precio VIP más caro
-            create: { tariffId: tarifaVIP.id, productId: cremaReal.id, price: 28.0 }
-        });
-    }
-
-    console.log('Finished creating tariff-specific prices.');
-  } catch (error) {
-    console.error('Error creating tariff-specific prices:', error);
-  }
-  */
-  // --- FIN Precios Específicos --- (COMMENTED OUT)
-
-  // ... (resto del código original para equipos, IVA, usuarios, etc.) ...
-  
-  // Ejemplo de creación de Usuarios (asegúrate que esté descomentado y adaptado)
-  console.log('Creating users...');
-  const usersData = initialMockData.usuarios;
-  const createdUsersMap = new Map<string, any>();
-  if (usersData && Array.isArray(usersData)) {
-    for (const userData of usersData) {
-      const nameParts = userData.nombre.split(' ');
-      const firstName = nameParts[0] || 'Usuario';
-      const lastName = nameParts.slice(1).join(' ') || 'Ejemplo';
-  
-      try {
-          const user = await prisma.user.upsert({
-              where: { email: userData.email }, 
+    try {
+      await prisma.product.upsert({
+        where: { name_systemId: { name: productData.name, systemId: system.id } },
               update: {
-                  firstName: firstName,
-                  lastName: lastName,
-                  isActive: userData.isActive !== false, 
-                  systemId: system.id,
+          sku: productData.sku,
+          description: productData.description,
+          currentStock: productData.currentStock ?? 0,
+          minStockThreshold: productData.minStockThreshold,
+          costPrice: productData.costPrice != null ? Number(productData.costPrice) : null,
+          price: productData.price != null ? Number(productData.price) : null,
+          barcode: productData.barcode,
+          isForSale: productData.isForSale !== false,
+          isInternalUse: productData.isInternalUse || false,
+          categoryId: category?.id,
+          vatTypeId: vatType?.id,
+          isActive: productData.activo !== false,
               },
               create: {
-                  email: userData.email,
-                  firstName: firstName,
-                  lastName: lastName,
-                  passwordHash: hashedPassword,
-                  profileImageUrl: null, 
-                  isActive: userData.isActive !== false, 
+          name: productData.name,
+          sku: productData.sku,
+          description: productData.description,
+          currentStock: productData.currentStock ?? 0,
+          minStockThreshold: productData.minStockThreshold,
+          costPrice: productData.costPrice != null ? Number(productData.costPrice) : null,
+          price: productData.price != null ? Number(productData.price) : null,
+          barcode: productData.barcode,
+          isForSale: productData.isForSale !== false,
+          isInternalUse: productData.isInternalUse || false,
+          categoryId: category?.id,
+          vatTypeId: vatType?.id,
+          isActive: productData.activo !== false,
                   systemId: system.id,
               },
           });
-          createdUsersMap.set(userData.id, user);
-          console.log(`Upserted user: ${user.email} (ID: ${user.id})`);
-  
-          // Asignar rol
-          try {
-              await prisma.userRole.upsert({
-                  where: { userId_roleId: { userId: user.id, roleId: staffRole.id } },
-                  update: {}, 
-                  create: { userId: user.id, roleId: staffRole.id },
-              });
-              console.log(`Assigned role "${staffRole.name}" to user ${user.email}`);
-          } catch (roleError) {
-              console.error(`Error assigning role to user ${user.email}:`, roleError);
-          }
-          
-          // Asignar clínicas
-          if (userData.clinicasIds && Array.isArray(userData.clinicasIds)) {
-            const assignmentsToCreate = userData.clinicasIds
-              .map((mockClinicId: string) => createdClinicsMap.get(mockClinicId)) 
-              .filter((clinic: any) => clinic) 
-              .map((clinic: any) => ({ 
-                  userId: user.id,
-                  clinicId: clinic.id,
-              }));
-  
-            if (assignmentsToCreate.length > 0) {
-              try {
-                  await prisma.userClinicAssignment.createMany({
-                      data: assignmentsToCreate,
-                      skipDuplicates: true,
-                  });
-                  console.log(`Assigned user ${user.email} to ${assignmentsToCreate.length} clinics.`);
+      console.log(`Ensured product "${productData.name}".`);
               } catch (error) {
-                  console.error(`Error assigning clinics to user ${user.email}:`, error);
-              }
-            }
-          } 
-      } catch (error) {
-          console.error(`Error upserting user ${userData.email}:`, error);
+      console.error(`Error creating product "${productData.name}":`, error);
+       if (error instanceof PrismaClientKnownRequestError) {
+        // The .code property can be accessed in a type-safe manner
+        if (error.code === 'P2002') {
+          console.log(
+            'There is a unique constraint violation, a new product cannot be created with this name/SKU'
+          )
+        }
       }
     }
-    console.log(`Processed ${usersData.length} users.`);
-  } else {
-      console.log('No user data found to seed.');
+  }
+
+  // --- Crear Tipos de IVA --- 
+  console.log('Creating VAT types...');
+  const vatGeneral = await prisma.vATType.upsert({
+    where: { name_systemId: { name: 'IVA General (21%)', systemId: system.id } },
+    update: { rate: 21.0, isDefault: true },
+    create: {
+      name: 'IVA General (21%)',
+      rate: 21.0,
+      isDefault: true,
+      systemId: system.id,
+    },
+  });
+  // ... (creación de otros VATTypes: Reducido, Superreducido, Exento) ...
+  console.log('VAT types ensured.');
+
+  // --- Crear Categorías Globales --- 
+  console.log('Creating global categories...');
+  // ... (lógica de creación de Category) ...
+  console.log('Global categories ensured.');
+
+  // >>> AÑADIR CREACIÓN DE TARIFAS AQUÍ <<<
+  console.log('Creating default tariffs...');
+  const defaultVatTypeId = vatGeneral.id; // Usar el ID del IVA General 21%
+
+  const tarifaGeneral = await prisma.tariff.upsert({
+    where: { name_systemId: { name: 'Tarifa General', systemId: system.id } },
+    update: { defaultVatTypeId: defaultVatTypeId }, // Asegurar VAT por defecto
+    create: {
+      name: 'Tarifa General',
+      description: 'Tarifa estándar para la mayoría de clínicas y servicios.',
+      isDefault: true,
+      isActive: true,
+      systemId: system.id,
+      defaultVatTypeId: defaultVatTypeId, // Asignar VAT por defecto
+    },
+  });
+  console.log(`Ensured tariff "${tarifaGeneral.name}" with id: ${tarifaGeneral.id}`);
+
+  const tarifaVIP = await prisma.tariff.upsert({
+    where: { name_systemId: { name: 'Tarifa VIP', systemId: system.id } },
+    update: { defaultVatTypeId: defaultVatTypeId },
+    create: {
+      name: 'Tarifa VIP',
+      description: 'Tarifa especial para clientes VIP con posibles descuentos.',
+      isDefault: false,
+      isActive: true,
+      systemId: system.id,
+      defaultVatTypeId: defaultVatTypeId,
+    },
+  });
+  console.log(`Ensured tariff "${tarifaVIP.name}" with id: ${tarifaVIP.id}`);
+  // --- FIN CREACIÓN DE TARIFAS ---
+
+  // --- Crear Servicios de Ejemplo --- 
+  console.log('Creating example services...');
+  // ... (lógica de creación de Service - SIN tariffId explícito) ...
+  console.log('Example services ensured.');
+
+  // --- Crear Clínicas de Ejemplo --- 
+  console.log('Creating example clinics...');
+  
+  const generalTariffId = tarifaGeneral.id; // Asumiendo que tarifaGeneral se creó correctamente antes
+
+  if (!generalTariffId) {
+    console.warn('Could not find General Tariff ID for clinics. Skipping tariff assignment.');
   }
   
-  // ... (Asegurarse que las secciones de categorías, equipos, IVA, servicios estén descomentadas y funcionen) ...
+  if (!template1) {
+      console.error("CRITICAL: template1 (L-V 9-17) was not created successfully. Cannot assign to clinics.");
+      await prisma.$disconnect();
+      process.exit(1); 
+  }
+  const template1Id = template1.id; 
+
+  // --- Crear/Actualizar Clínica 1 ---
+  const clinic1Name = 'Californie Multilaser - Organicare'; 
+  try {
+    const clinic1 = await prisma.clinic.upsert({
+      where: { Clinic_name_systemId_key: { name: clinic1Name, systemId: system.id } }, 
+      update: {
+        city: 'Casablanca',
+        tariffId: generalTariffId,
+        linkedScheduleTemplateId: template1Id 
+      },
+      create: {
+        prefix: '000001',
+        name: clinic1Name, 
+        address: '123 Rue Exemple',
+        city: 'Casablanca',
+        postalCode: '20000',
+        province: 'Casablanca-Settat',
+        countryCode: 'MA',
+        phone: '0522000001',
+        email: 'contact@organicare.ma',
+        currency: 'MAD',
+        timezone: 'Africa/Casablanca',
+        isActive: true,
+        system: {
+          connect: { id: system.id }
+        }
+      },
+    });
+    console.log(`Ensured clinic "${clinic1.name}" with id: ${clinic1.id}`);
+  } catch(error) {
+      console.error("Error upserting Clinic 1:", error);
+  }
+
+  // --- Crear/Actualizar Clínica 2 ---
+  const clinic2Name = 'Cafc Multilaser';
+  try {
+    const clinic2 = await prisma.clinic.upsert({
+        where: { Clinic_name_systemId_key: { name: clinic2Name, systemId: system.id } }, 
+        update: { 
+          city: 'Casablanca', 
+          tariffId: generalTariffId 
+        }, 
+        create: {
+          prefix: 'Cafc',
+          name: clinic2Name,
+          city: 'Casablanca',
+          isActive: true,
+          currency: 'MAD',
+          system: {
+            connect: { id: system.id }
+          }
+        },
+    });
+    console.log(`Ensured clinic "${clinic2.name}" with id: ${clinic2.id}`);
+  } catch(error) {
+      console.error("Error upserting Clinic 2:", error);
+  }
+
+  // --- Crear/Actualizar Clínica 3 ---
+  const clinic3Name = 'CENTRO TEST';
+  try {
+    const clinic3 = await prisma.clinic.upsert({
+        where: { Clinic_name_systemId_key: { name: clinic3Name, systemId: system.id } }, 
+        update: { 
+          city: 'Casablanca', 
+          isActive: false, 
+          tariffId: generalTariffId 
+        }, 
+        create: {
+          prefix: 'TEST',
+          name: clinic3Name,
+          city: 'Casablanca',
+          isActive: false,
+          currency: 'MAD',
+          system: {
+            connect: { id: system.id }
+          }
+        },
+    });
+    console.log(`Ensured clinic "${clinic3.name}" with id: ${clinic3.id}`);
+  } catch(error) {
+      console.error("Error upserting Clinic 3:", error);
+  }
+
+  // --- Crear Cabinas de Ejemplo --- 
+  // ... (lógica de creación de Cabin) ...
+
+  // --- Crear Usuarios de Ejemplo --- 
+  // ... (lógica de creación de User) ...
 
   console.log(`Seeding finished.`);
-  // --- FIN CÓDIGO ORIGINAL RESTAURADO ---
 }
 
 // TODO: Implementar/Ajustar funciones de mapeo si es necesario

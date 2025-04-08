@@ -71,6 +71,8 @@ import {
   // applyExampleException
 } from "@/services/clinic-schedule-service"
 import { Cabin } from '@prisma/client'
+import { Prisma } from '@prisma/client'
+import { Skeleton } from "@/components/ui/skeleton"
 
 // --- Función de utilidad Debounce ---
 function debounce<F extends (...args: any[]) => any>(func: F, waitFor: number) {
@@ -115,7 +117,7 @@ export default function ClinicaDetailPage() {
   const clinicContext = useClinic()
   const { clinics, updateClinica, getClinicaById, refreshActiveClinicCabins } = clinicContext 
   const { templates } = useTemplates()
-  const { getTarifaById } = useTarif()
+  const { getTarifaById, tarifas } = useTarif()
   const { getEquiposByClinicaId } = useEquipment()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -158,6 +160,10 @@ export default function ClinicaDetailPage() {
   } | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   
+  // --- NUEVO ESTADO --- 
+  const [useTemplateSchedule, setUseTemplateSchedule] = useState<boolean>(false);
+  // --- FIN NUEVO ESTADO ---
+
   const diasSemana = [
     'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'
   ]
@@ -283,6 +289,16 @@ export default function ClinicaDetailPage() {
     fetchCabins();
   }, [clinicId]);
 
+  // --- NUEVO useEffect para inicializar useTemplateSchedule --- 
+  useEffect(() => {
+    if (clinicData) {
+      // Inicializa el checkbox basado en si hay una plantilla vinculada al cargar
+      setUseTemplateSchedule(!!clinicData.linkedScheduleTemplateId);
+      console.log(`[ClinicaDetail] Initializing useTemplateSchedule based on linkedTemplateId (${clinicData.linkedScheduleTemplateId}): ${!!clinicData.linkedScheduleTemplateId}`);
+    }
+  }, [clinicData?.id, clinicData?.linkedScheduleTemplateId]); // Depender del ID y del linkedId
+  // --- FIN NUEVO useEffect ---
+
   const handleUpdateFranjaExcepcion = (diaIndex: number, franjaId: string, inicio: string, fin: string) => {
     if (!editingExcepcion) return
     
@@ -308,25 +324,27 @@ export default function ClinicaDetailPage() {
   }
 
   const handleClinicUpdate = useCallback(
-    (updatedFields: Record<string, any>) => {
+    (updatedFields: { schedule: WeekSchedule } | Record<string, any>) => {
       if (clinicData) {
         console.log("Updating clinic state with:", updatedFields);
         
-        // --- Create a new object explicitly excluding scheduleJson ---
-        const { scheduleJson, ...fieldsToActuallyUpdate } = updatedFields;
-        
-        if (scheduleJson !== undefined) {
-            console.warn("Attempted to update scheduleJson from handleClinicUpdate. Ignoring.");
+        // --- Distinguir si es actualización de horario u otros campos ---
+        if ('schedule' in updatedFields && typeof updatedFields.schedule === 'object') {
+          console.log("Updating scheduleJson state...");
+          // Actualizar específicamente el scheduleJson
+          setClinicData((prev) => (prev ? { ...prev, scheduleJson: updatedFields.schedule as unknown as Prisma.JsonValue } : null));
+        } else {
+          // Actualizar otros campos como antes, asegurándose de no incluir schedule si viene
+          const { schedule, ...otherFields } = updatedFields;
+           if (Object.keys(otherFields).length > 0) {
+              console.log("Updating other fields:", otherFields);
+              setClinicData((prev) => (prev ? { ...prev, ...(otherFields as Partial<Clinica>) } : null));
+           }
         }
-        // ------------------------------------------------------------
-        
-        if (Object.keys(fieldsToActuallyUpdate).length > 0) {
-             // Cast back to Partial<Clinica> for setClinicData
-             setClinicData((prev) => (prev ? { ...prev, ...(fieldsToActuallyUpdate as Partial<Clinica>) } : null));
-        }
+        // --- Fin distinción ---
       }
     },
-    [clinicData],
+    [clinicData], // Asegurar que clinicData esté en las dependencias
   )
 
   // --- Versión Debounced de la actualización ---
@@ -336,14 +354,140 @@ export default function ClinicaDetailPage() {
   );
   // --- Fin Debounced ---
 
+  // --- Modificar handleTemplateChange --- 
   const handleTemplateChange = (templateId: string) => {
-    const selectedTemplate = templates.find((t) => t.id === templateId)
+    const selectedTemplate = templates.find((t) => t.id === templateId);
     if (selectedTemplate) {
-      setSelectedTemplateId(templateId)
-      debouncedHandleClinicUpdate({ linkedScheduleTemplateId: templateId });
-      console.warn("handleTemplateChange - Schedule update logic might need refinement after removing local state.");
+        console.log(`Template selected: ${templateId}. Linking template and setting checkbox.`);
+        
+        // Obtener datos de la plantilla seleccionada (usar fallbacks si no existen)
+        const templateOpenTime = (selectedTemplate as any).openTime || clinicData?.openTime || defaultOpenTime;
+        const templateCloseTime = (selectedTemplate as any).closeTime || clinicData?.closeTime || defaultCloseTime;
+        const templateSlotDuration = (selectedTemplate as any).slotDuration || clinicData?.slotDuration || defaultSlotDuration;
+        const templateBlocks = (selectedTemplate as any).blocks;
+
+        // Calcular el nuevo scheduleJson
+        const newScheduleJson = convertBlocksToWeekSchedule(
+            templateBlocks,
+            templateOpenTime,
+            templateCloseTime
+        );
+
+        // Actualizar el estado completo
+        setClinicData(prev => prev ? {
+            ...prev,
+            linkedScheduleTemplateId: templateId,          // Actualizar ID
+            linkedScheduleTemplate: selectedTemplate as any, // Guardar objeto completo
+            scheduleJson: newScheduleJson as any,         // Actualizar schedule derivado
+            // Actualizar también los campos generales para reflejar la plantilla
+            openTime: templateOpenTime,
+            closeTime: templateCloseTime,
+            slotDuration: templateSlotDuration,
+        } : null);
+
+        // Marcar explícitamente el checkbox
+        setUseTemplateSchedule(true); 
+    } else {
+        // Manejar caso donde la plantilla no se encuentra
+        console.warn(`Template with ID ${templateId} not found.`);
+        // Desvincular y volver a horario independiente si la plantilla no existe
+        setClinicData(prev => prev ? {
+            ...prev,
+            linkedScheduleTemplateId: null,
+            linkedScheduleTemplate: null, // Limpiar objeto
+            // Podríamos mantener el scheduleJson anterior o resetearlo?
+            // Mantengamos el anterior por ahora, ya que se desvincula.
+        } : null);
+        setUseTemplateSchedule(false);
     }
   }
+
+  const handleUseTemplateToggle = (checked: boolean) => {
+    setUseTemplateSchedule(checked);
+    if (checked) {
+        const currentlySelectedTemplateIdInSelect = clinicData?.linkedScheduleTemplateId;
+        if (currentlySelectedTemplateIdInSelect) {
+             console.log("Checkbox checked: Re-linking to template", currentlySelectedTemplateIdInSelect);
+             const template = templates.find(t => t.id === currentlySelectedTemplateIdInSelect);
+             // Usar horarios generales de la clínica como fallback
+             const scheduleFromTemplate = template ? convertBlocksToWeekSchedule(
+                 (template as any).blocks, 
+                 (template as any).openTime || clinicData?.openTime || "00:00", 
+                 (template as any).closeTime || clinicData?.closeTime || "23:59"
+             ) : createDefaultSchedule(); 
+
+             setClinicData(prev => prev ? {
+                 ...prev,
+                 linkedScheduleTemplateId: currentlySelectedTemplateIdInSelect,
+                 scheduleJson: scheduleFromTemplate as any
+             } : null);
+        } else {
+            console.error("Checkbox checked, but cannot determine which template to link. Please select a template first.");
+            // Idealmente, el checkbox estaría deshabilitado si no hay plantilla seleccionable
+            // Revertir el estado del checkbox si no se puede vincular?
+            setUseTemplateSchedule(false); 
+            toast({ title: "Error", description: "Seleccione una plantilla antes de marcar esta opción.", variant: "destructive" });
+        }
+    } else {
+        // DESVINCULAR Y COPIAR
+        console.log("Checkbox unchecked: Switching to independent schedule.");
+        let scheduleToCopy: WeekSchedule | null = null;
+        // Usar 'as any' temporalmente si linkedScheduleTemplate no tiene 'blocks' en su tipo
+        const linkedTemplateBlocks = (clinicData?.linkedScheduleTemplate as any)?.blocks;
+        if (linkedTemplateBlocks) {
+            console.log("Copying schedule from currently linked template blocks.");
+            scheduleToCopy = convertBlocksToWeekSchedule(
+                linkedTemplateBlocks,
+                clinicData.openTime || "00:00",
+                clinicData.closeTime || "23:59"
+            );
+        } else {
+             console.warn("Could not find linked template blocks to copy schedule from. Using current scheduleJson or default.");
+             scheduleToCopy = clinicData?.scheduleJson as WeekSchedule ?? createDefaultSchedule(); 
+        }
+        setClinicData(prev => prev ? {
+            ...prev,
+            linkedScheduleTemplateId: null,
+            scheduleJson: scheduleToCopy as any 
+        } : null);
+    }
+  };
+
+  // --- NUEVO Handler para aplicar horario general --- 
+  const handleApplyGeneralTimesToAllDays = () => {
+      // --- MODIFICADA LA GUARDA ---
+      if (!clinicData || useTemplateSchedule) { 
+          console.warn("Cannot apply general times: Clinic data missing or template schedule is active.");
+          return;
+      }
+      // --- FIN MODIFICACIÓN GUARDA ---
+
+      const generalOpenTime = clinicData.openTime || "00:00";
+      const generalCloseTime = clinicData.closeTime || "23:59";
+      // --- Manejar scheduleJson nulo de forma segura ---
+      const currentWeekSchedule = (clinicData.scheduleJson as WeekSchedule | null) ?? createDefaultSchedule(); 
+      const newWeekSchedule = { ...currentWeekSchedule };
+      // --- Fin manejo seguro ---
+
+      console.log(`Applying general times ${generalOpenTime} - ${generalCloseTime} to open days.`);
+
+      for (const dayKey in newWeekSchedule) {
+          if (Object.prototype.hasOwnProperty.call(newWeekSchedule, dayKey)) {
+              const key = dayKey as keyof WeekSchedule;
+              // Solo modificar días que estaban abiertos
+              if (newWeekSchedule[key]?.isOpen) { 
+                  newWeekSchedule[key] = {
+                      ...newWeekSchedule[key],
+                      ranges: [{ start: generalOpenTime, end: generalCloseTime }]
+                  };
+              }
+          }
+      }
+      // Actualizar el estado local y notificar a ScheduleConfig
+      handleClinicUpdate({ schedule: newWeekSchedule }); 
+      toast({ title: "Horario Actualizado", description: "Se aplicó el horario general a los días abiertos." });
+  };
+  // --- FIN Nuevo Handler ---
 
   const handleSaveCabin = useCallback(async (cabinDataFromDialog: Partial<Cabin>) => {
     console.log("handleSaveCabin - Datos recibidos:", cabinDataFromDialog);
@@ -530,49 +674,46 @@ export default function ClinicaDetailPage() {
 
         const clinicId = String(clinicData.id)
         
-        const dataToSend: Partial<Clinica> = {
-          name: clinicData.name,
-          address: clinicData.address,
-          city: clinicData.city,
-          postalCode: clinicData.postalCode,
-          province: clinicData.province,
-          countryCode: clinicData.countryCode,
-          timezone: clinicData.timezone,
-          currency: clinicData.currency,
-          phone: clinicData.phone,
-          email: clinicData.email,
-          isActive: clinicData.isActive ?? false,
-          prefix: clinicData.prefix,
-          commercialName: clinicData.commercialName,
-          businessName: clinicData.businessName,
-          cif: clinicData.cif,
-          country: clinicData.country,
-          phone2: clinicData.phone2,
-          initialCash: clinicData.initialCash ? Number(clinicData.initialCash) : null,
-          ticketSize: clinicData.ticketSize,
-          ip: clinicData.ip,
-          blockSignArea: clinicData.blockSignArea ?? null,
-          blockPersonalData: clinicData.blockPersonalData ?? null,
-          delayedPayments: clinicData.delayedPayments ?? null,
-          affectsStats: clinicData.affectsStats ?? null,
-          appearsInApp: clinicData.appearsInApp ?? null,
-          scheduleControl: clinicData.scheduleControl ?? null,
-          professionalSkills: clinicData.professionalSkills ?? null,
-          notes: clinicData.notes,
-          openTime: clinicData.openTime,
-          closeTime: clinicData.closeTime,
-          slotDuration: clinicData.slotDuration ? Number(clinicData.slotDuration) : null,
-          tariffId: clinicData.tariffId,
-          linkedScheduleTemplateId: clinicData.linkedScheduleTemplateId // Make sure this is included
+        // Datos base (sin scheduleJson ni linkedId si se manejan por separado)
+        const { scheduleJson, linkedScheduleTemplateId: currentLinkedId, ...clinicBaseData } = clinicData;
+        
+        const baseDataToSend: Partial<Clinica> = { ...clinicBaseData }; // Copiar campos base
+        let scheduleDataToSend: { independentScheduleData?: WeekSchedule } = {};
+        let finalLinkedId: string | null;
+
+        if (useTemplateSchedule) {
+            // USANDO PLANTILLA
+            console.log("Saving with template schedule link.");
+            finalLinkedId = currentLinkedId; // Usar el ID que ya debería estar en clinicData
+            if (!finalLinkedId) {
+                console.error("Error: useTemplateSchedule is true, but linkedScheduleTemplateId is missing!");
+                // Quizás mostrar error al usuario o intentar buscar el seleccionado
+                // Por ahora, forzamos a null para evitar error, pero esto es un bug state
+                finalLinkedId = null; 
+            }
+            // NO enviar independentScheduleData
+        } else {
+            // USANDO HORARIO INDEPENDIENTE
+            console.log("Saving with independent schedule.");
+            finalLinkedId = null; // Desvincular explícitamente
+            if (scheduleJson) { // Enviar el scheduleJson como data independiente
+                console.log("Preparing independent schedule data to send...");
+                scheduleDataToSend.independentScheduleData = scheduleJson as unknown as WeekSchedule;
+            } else {
+                console.warn("Saving independent schedule, but scheduleJson is empty in local state.");
+            }
+        }
+
+        // Combinar datos a enviar
+        const dataToSend = { 
+            ...baseDataToSend, 
+            linkedScheduleTemplateId: finalLinkedId, // ID de plantilla o null
+            ...scheduleDataToSend // Datos de horario independiente (si aplica)
         };
 
-        // --- EXCLUDE scheduleJson specifically if it sneaked in ---
-        delete (dataToSend as any).scheduleJson;
-        // ---------------------------------------------------------
+        console.log("Datos finales enviados a updateClinica:", JSON.stringify(dataToSend, null, 2));
 
-        console.log("Datos enviados a updateClinica:", JSON.stringify(dataToSend, null, 2));
-
-        const success = await updateClinica(String(clinicData.id), dataToSend as Clinica) // Pass clinicId as string
+        const success = await updateClinica(clinicId, dataToSend as any);
 
         if (success) {
           toast({
@@ -593,7 +734,7 @@ export default function ClinicaDetailPage() {
     } finally {
       setIsSaving(false)
     }
-  }, [clinicData, updateClinica]) // Ensure updateClinica is in dependencies
+  }, [clinicData, updateClinica, useTemplateSchedule]) // << AÑADIR useTemplateSchedule a dependencias
 
   const handleExcepcionChange = (field: keyof ExcepcionHoraria, value: any) => {
     if (editingExcepcion) {
@@ -616,7 +757,8 @@ export default function ClinicaDetailPage() {
   }
 
   const handleEditarExcepcion = (excepcionId: string) => {
-    const excepcion = scheduleExceptions.find(exc => exc.id === excepcionId);
+    // const excepcion = scheduleExceptions.find(exc => exc.id === excepcionId); // << COMENTADO TEMPORALMENTE
+    const excepcion = null; // Placeholder para evitar error
     if (excepcion) {
       console.warn("Editing exceptions needs mapping from Prisma structure.");
       setEditingExcepcion(excepcion as ExcepcionHoraria);
@@ -759,13 +901,76 @@ export default function ClinicaDetailPage() {
     });
   }
 
+  // --- Funciones auxiliares necesarias (si no existen ya) ---
+  const convertBlocksToWeekSchedule = (
+    blocks: any[] | undefined | null, 
+    defaultOpenTime: string, 
+    defaultCloseTime: string
+  ): WeekSchedule => { 
+      // Implementación (similar a la de ScheduleConfig) - Asegúrate de que esté disponible
+      const initialSchedule: WeekSchedule = { monday: { isOpen: false, ranges: [] }, tuesday: { isOpen: false, ranges: [] }, wednesday: { isOpen: false, ranges: [] }, thursday: { isOpen: false, ranges: [] }, friday: { isOpen: false, ranges: [] }, saturday: { isOpen: false, ranges: [] }, sunday: { isOpen: false, ranges: [] } };
+      if (!blocks) return initialSchedule;
+      return blocks.reduce((acc, block) => { const dayKey = block.dayOfWeek.toLowerCase() as keyof WeekSchedule; if (acc[dayKey]) { acc[dayKey].isOpen = true; acc[dayKey].ranges.push({ start: block.startTime, end: block.endTime }); acc[dayKey].ranges.sort((a, b) => a.start.localeCompare(b.start)); } return acc; }, initialSchedule);
+  };
+
+  const createDefaultSchedule = (): WeekSchedule => {
+       // Implementación para crear un horario vacío o por defecto
+       return { monday: { isOpen: false, ranges: [] }, tuesday: { isOpen: false, ranges: [] }, wednesday: { isOpen: false, ranges: [] }, thursday: { isOpen: false, ranges: [] }, friday: { isOpen: false, ranges: [] }, saturday: { isOpen: false, ranges: [] }, sunday: { isOpen: false, ranges: [] } };
+  };
+  // --- FIN Funciones auxiliares ---
+
   // --- Condition based on isLoadingClinic and clinicData only ---
   if (isLoadingClinic || !clinicData) {
+    // --- Skeleton para la página de edición de clínica ---
     return (
-      <div className="container flex items-center justify-center h-64 px-0 pt-4 pb-8">
-        <p className="text-lg text-gray-500">Cargando datos de la clínica...</p>
+      <div className="container px-0 pt-4 pb-8">
+        <div className="mb-6 space-y-2">
+          <Skeleton className="w-3/4 h-8" /> 
+          <Skeleton className="w-1/2 h-6" /> 
+        </div>
+        <div className="flex items-start gap-6">
+          {/* Skeleton Menú Lateral */}
+          <div className="w-64 shrink-0">
+            <div className="sticky p-4 border rounded-lg shadow top-4 bg-card">
+              <div className="flex flex-col space-y-1">
+                {Array.from({ length: menuItems.length }).map((_, index) => (
+                  <Skeleton key={`menu-skeleton-${index}`} className="w-full h-9" />
+                ))}
+              </div>
+            </div>
+          </div>
+          {/* Skeleton Contenido Principal */}
+          <div className="flex-1 space-y-6">
+             <Skeleton className="w-1/4 h-8 mb-6" /> {/* Skeleton Título Pestaña */} 
+             <Card className="p-6 space-y-6">
+                <Skeleton className="w-1/3 h-6 mb-4" /> {/* Skeleton Título Sección */} 
+                <div className="grid gap-4 md:grid-cols-2">
+                    <Skeleton className="w-full h-9" />
+                    <Skeleton className="w-full h-9" />
+                    <Skeleton className="w-full h-9" />
+                    <Skeleton className="w-full h-9" />
+                </div>
+                 <Skeleton className="w-1/3 h-6 mt-6 mb-4" /> {/* Skeleton Título Sección */} 
+                 <div className="grid gap-4 md:grid-cols-2">
+                     <Skeleton className="w-full h-9" />
+                     <Skeleton className="w-full h-9" />
+                     <Skeleton className="w-full h-9 md:col-span-2" />
+                 </div>
+                 {/* Añadir más skeletons si se quiere simular más secciones */} 
+             </Card>
+          </div>
+        </div>
+        {/* Skeleton Botones Flotantes (Opcional, menos crítico) */}
+        {/* 
+        <div className="fixed z-50 flex flex-col items-end space-y-2 bottom-4 right-4 md:flex-row md:space-y-0 md:space-x-2">
+          <Skeleton className="w-24 h-10" />
+          <Skeleton className="w-32 h-10" />
+          <Skeleton className="w-24 h-10" />
+        </div>
+        */}
       </div>
     );
+    // --- FIN Skeleton ---
   }
 
   return (
@@ -1036,12 +1241,26 @@ export default function ClinicaDetailPage() {
 
                     <div className="space-y-2">
                       <Label className="text-sm">Tarifa</Label>
-                      <Select value={clinicData.tariffId || undefined} onValueChange={(value) => debouncedHandleClinicUpdate({ tariffId: value })}>
+                      <Select
+                        value={clinicData.tariffId || undefined}
+                        onValueChange={(value) => debouncedHandleClinicUpdate({ tariffId: value })}
+                      >
                         <SelectTrigger className="text-sm h-9">
-                          <SelectValue placeholder="Seleccionar tarifa" />
+                          <SelectValue placeholder="Seleccionar tarifa">
+                            {clinicData.tariffId ? tarifas?.find(t => t.id === clinicData.tariffId)?.name : "Seleccionar tarifa"}
+                          </SelectValue>
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="Tarifa Californie">Tarifa Californie</SelectItem>
+                          {tarifas?.map((tarifa) => (
+                            <SelectItem key={tarifa.id} value={tarifa.id}>
+                              {tarifa.name}
+                            </SelectItem>
+                          ))}
+                          {(!tarifas || tarifas.length === 0) && (
+                            <SelectItem value="no-tarifs" disabled>
+                              No hay tarifas disponibles
+                            </SelectItem>
+                          )}
                         </SelectContent>
                       </Select>
                     </div>
@@ -1186,7 +1405,8 @@ export default function ClinicaDetailPage() {
                             <Input
                               type="time"
                               value={clinicData.openTime || defaultOpenTime}
-                              onChange={(e) => debouncedHandleClinicUpdate({ openTime: e.target.value })}
+                              onChange={(e) => handleClinicUpdate({ openTime: e.target.value })}
+                              disabled={useTemplateSchedule}
                             />
                           </div>
                           <div className="space-y-2">
@@ -1194,7 +1414,8 @@ export default function ClinicaDetailPage() {
                             <Input
                               type="time"
                               value={clinicData.closeTime || defaultCloseTime}
-                              onChange={(e) => debouncedHandleClinicUpdate({ closeTime: e.target.value })}
+                              onChange={(e) => handleClinicUpdate({ closeTime: e.target.value })}
+                              disabled={useTemplateSchedule}
                             />
                           </div>
                           <div className="space-y-2">
@@ -1208,31 +1429,82 @@ export default function ClinicaDetailPage() {
                               onChange={(e) => {
                                 const value = Number.parseInt(e.target.value)
                                 if (value >= 1 && value <= 60) {
-                                  debouncedHandleClinicUpdate({ slotDuration: value })
+                                  handleClinicUpdate({ slotDuration: value })
                                 }
                               }}
+                              disabled={useTemplateSchedule}
                             />
                           </div>
                         </div>
+                        {/* Botón para aplicar horario general (condición revisada) */}
+                        {!useTemplateSchedule && (
+                            <div className="flex justify-end mb-4">
+                                <Button 
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={handleApplyGeneralTimesToAllDays}
+                                >
+                                    Aplicar Horario General a Días Abiertos
+                                </Button>
+                            </div>
+                        )}
+                        {/* Fin Botón */}
                         <div className="space-y-2">
                           <Label>Seleccionar plantilla horaria</Label>
-                          <Select value={selectedTemplateId || ""} onValueChange={handleTemplateChange}>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Seleccionar una plantilla" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {templates.map((template) => (
-                                <SelectItem key={String(template.id)} value={String(template.id)}>
-                              {template.description}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                  </div>
+                          <Select 
+                              value={clinicData.linkedScheduleTemplateId || ""} 
+                              onValueChange={handleTemplateChange}
+                              // Opcional: Deshabilitar el Select si useTemplateSchedule es true?
+                              // disabled={useTemplateSchedule} // <-- Considerar si se debe poder cambiar plantilla mientras está bloqueado
+                          >
+                             <SelectTrigger>
+                                <SelectValue placeholder="Seleccionar una plantilla"> {/* Placeholder si el valor es "" y no hay contenido */} 
+                                    {/* CONTENIDO DINÁMICO AQUÍ */} 
+                                    {clinicData.linkedScheduleTemplateId 
+                                        ? (templates.find(t => t.id === clinicData.linkedScheduleTemplateId) as any)?.description || 
+                                          (templates.find(t => t.id === clinicData.linkedScheduleTemplateId) as any)?.name || 
+                                          `Plantilla ID: ${clinicData.linkedScheduleTemplateId}` // Fallback final al ID
+                                        : <span className="text-muted-foreground">Horario personalizado</span>
+                                    }
+                                </SelectValue>
+                             </SelectTrigger>
+                             <SelectContent>
+                                {/* Opción para desvincular explícitamente? */} 
+                                {/* 
+                                <SelectItem value="__none__" onClick={() => handleUseTemplateToggle(false)}>
+                                    -- Usar Horario Personalizado --
+                                </SelectItem> 
+                                */} 
+                                {templates.map((template) => (
+                                    <SelectItem key={String(template.id)} value={String(template.id)}>
+                                        {(template as any)?.description || `ID: ${template.id}`} {/* Usar descripción o ID */} 
+                                    </SelectItem>
+                                ))}
+                                {templates.length === 0 && <SelectItem value="" disabled>No hay plantillas</SelectItem>}
+                             </SelectContent>
+                          </Select>
+                      </div>
+                        {/* Checkbox Usar Plantilla (SIN disabled) */}
+                        <div className="flex items-center mt-4 mb-4 space-x-2">
+                            <Checkbox 
+                                id="use-template-schedule"
+                                checked={useTemplateSchedule}
+                                onCheckedChange={handleUseTemplateToggle}
+                                // disabled={!clinicData?.linkedScheduleTemplateId} // <-- ELIMINADO
+                            />
+                            <Label htmlFor="use-template-schedule" className="text-sm font-medium">
+                                Usar horario de la plantilla vinculada (Bloquea edición)
+                            </Label>
+                        </div>
                         <Card>
                           <CardContent className="pt-6">
                             <ScheduleConfig
-                              clinic={clinicData} // Pass the clinic data object
+                              // --- AÑADIDA KEY ---
+                              key={JSON.stringify(clinicData.scheduleJson)} 
+                              // --- FIN KEY ---
+                              clinic={clinicData}
+                              onChange={handleClinicUpdate}
+                              isReadOnly={useTemplateSchedule}
                             />
                           </CardContent>
                         </Card>

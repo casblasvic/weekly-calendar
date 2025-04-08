@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@prisma/client'; // Importar tipos de Prisma si son necesarios para errores
 import { z } from 'zod';
+import { DayOfWeek as PrismaDayOfWeek } from '@prisma/client';
 
 /**
  * Esquema para validar el ID de la clínica en los parámetros
@@ -48,8 +49,71 @@ const UpdateClinicSchema = z.object({
   closeTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Formato HH:MM inválido").optional().nullable(),
   slotDuration: z.number().int().positive("Debe ser positivo").optional().nullable(), // Prisma usa Int
   scheduleJson: z.any().optional().nullable(), // z.any() o un esquema más específico si es posible
-  tariffId: z.string().cuid({ message: "ID de tarifa inválido" }).optional().nullable(), // Asumiendo CUID para IDs
+  tariffId: z.string().optional().nullable(), // Asumiendo CUID para IDs <-- CAMBIADO: Quitado .cuid()
+  linkedScheduleTemplateId: z.string().cuid({ message: "ID de plantilla inválido"}).optional().nullable(), // <<< AÑADIDO
 }).strict(); // Usar .strict() para asegurar que NO se permitan campos extra (opcional pero recomendado)
+
+// Añadir esquema Zod para WeekSchedule (o importarlo si existe)
+// Asegúrate de que coincida con la estructura enviada por el frontend
+const TimeRangeSchema = z.object({
+  start: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/), 
+  end: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/)
+});
+
+const DayScheduleSchema = z.object({
+  isOpen: z.boolean(),
+  ranges: z.array(TimeRangeSchema)
+});
+
+const WeekScheduleSchema = z.object({
+  monday: DayScheduleSchema,
+  tuesday: DayScheduleSchema,
+  wednesday: DayScheduleSchema,
+  thursday: DayScheduleSchema,
+  friday: DayScheduleSchema,
+  saturday: DayScheduleSchema,
+  sunday: DayScheduleSchema,
+});
+
+// Modificar el esquema principal para aceptar el horario independiente
+const UpdateClinicAndScheduleSchema = z.object({
+  // Copiar campos de UpdateClinicSchema (excepto scheduleJson)
+  name: z.string().min(1, "El nombre es obligatorio."),
+  address: z.string().optional().nullable(),
+  city: z.string().optional().nullable(),
+  postalCode: z.string().optional().nullable(),
+  province: z.string().optional().nullable(),
+  countryCode: z.string().optional().nullable(),
+  phone: z.string().optional().nullable(),
+  email: z.string().email({ message: "Email inválido." }).optional().nullable(),
+  currency: z.string().optional().nullable(),
+  timezone: z.string().optional().nullable(),
+  isActive: z.boolean().optional(),
+  prefix: z.string().optional().nullable(),
+  commercialName: z.string().optional().nullable(), 
+  businessName: z.string().optional().nullable(), 
+  cif: z.string().optional().nullable(), 
+  country: z.string().optional().nullable(),
+  phone2: z.string().optional().nullable(), 
+  initialCash: z.number().optional().nullable(),
+  ticketSize: z.string().optional().nullable(), 
+  ip: z.string().ip({ version: 'v4' }).optional().nullable(),
+  blockSignArea: z.boolean().optional().nullable(),
+  blockPersonalData: z.boolean().optional().nullable(), 
+  delayedPayments: z.boolean().optional().nullable(), 
+  affectsStats: z.boolean().optional().nullable(),  
+  appearsInApp: z.boolean().optional().nullable(),  
+  scheduleControl: z.boolean().optional().nullable(), 
+  professionalSkills: z.boolean().optional().nullable(), 
+  notes: z.string().optional().nullable(), 
+  openTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Formato HH:MM inválido").optional().nullable(),
+  closeTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Formato HH:MM inválido").optional().nullable(),
+  slotDuration: z.number().int().positive("Debe ser positivo").optional().nullable(),
+  tariffId: z.string().optional().nullable(),
+  linkedScheduleTemplateId: z.string().cuid({ message: "ID de plantilla inválido"}).optional().nullable(),
+  // Añadir el campo opcional para el horario independiente
+  independentScheduleData: WeekScheduleSchema.optional()
+}).strict();
 
 /**
  * Handler para obtener una clínica específica por su ID.
@@ -135,45 +199,118 @@ export async function PUT(request: Request, props: { params: Promise<{ id: strin
   const { id: clinicId } = paramsValidation.data;
   console.log(`[API PUT /api/clinics/[id]] Zod validation successful for ID: ${clinicId}`);
 
-  // 2. Validar Body de la solicitud
+  // 2. Validar Body usando el NUEVO esquema
   let validatedData;
+  let rawBody; // Guardar el body original
   try {
-    const body = await request.json();
-    const validation = UpdateClinicSchema.safeParse(body);
+    rawBody = await request.json();
+    console.log("[API PUT /api/clinics/[id]] Received raw body:", JSON.stringify(rawBody, null, 2));
+    // Usar el nuevo esquema combinado
+    const validation = UpdateClinicAndScheduleSchema.safeParse(rawBody);
     if (!validation.success) {
       console.error("Zod validation failed for PUT /api/clinics/[id] body:", validation.error.format());
-      return NextResponse.json({ error: 'Datos de clínica inválidos.', details: validation.error.format() }, { status: 400 });
+      return NextResponse.json({ error: 'Datos de clínica o horario inválidos.', details: validation.error.format() }, { status: 400 });
     }
     validatedData = validation.data;
+    console.log("[API PUT /api/clinics/[id]] Zod validation successful for combined data.");
   } catch (error) {
     console.error("Error parsing PUT request body:", error);
     return NextResponse.json({ error: 'Error al parsear los datos de la solicitud.' }, { status: 400 });
   }
 
-  // 3. Actualizar en la base de datos
+  // Separar datos base de la clínica y datos del horario independiente
+  const { independentScheduleData, ...clinicBaseUpdateData } = validatedData;
+
+  // 3. Actualizar en la base de datos usando transacción
   try {
-    // *** LOG ANTES DE ACTUALIZAR ***
-    console.log(`[API PUT /api/clinics/${clinicId}] Attempting update with validated data:`, JSON.stringify(validatedData, null, 2));
-    
-    const updatedClinic = await prisma.clinic.update({
-      where: { id: clinicId },
-      data: validatedData, // Usar los datos validados
-      // Opcionalmente, incluir relaciones si queremos devolverlas actualizadas
-      // include: { cabins: true, clinicSchedules: { where: {endDate: null}, include: {template: {include: {blocks: true}}}} }
+    console.log(`[API PUT /api/clinics/${clinicId}] Attempting update within transaction...`);
+
+    const result = await prisma.$transaction(async (tx) => {
+      // 3.1 Actualizar los datos base de la clínica
+      console.log(`[API PUT /api/clinics/${clinicId}] Updating clinic base data:`, JSON.stringify(clinicBaseUpdateData, null, 2));
+      const updatedClinic = await tx.clinic.update({
+        where: { id: clinicId },
+        data: clinicBaseUpdateData,
+        include: { independentScheduleBlocks: true } // Incluir bloques para comparar/devolver?
+      });
+      console.log(`[API PUT /api/clinics/${clinicId}] Clinic base data updated.`);
+
+      // 3.2 Si se proporcionaron datos de horario INDEPENDIENTE y la clínica NO está vinculada
+      if (independentScheduleData && !updatedClinic.linkedScheduleTemplateId) {
+        console.log(`[API PUT /api/clinics/${clinicId}] Processing independent schedule update...`);
+        
+        // 3.2.1 Borrar bloques independientes existentes para esta clínica
+        console.log(`[API PUT /api/clinics/${clinicId}] Deleting existing independent blocks...`);
+        await tx.clinicScheduleBlock.deleteMany({
+          where: { clinicId: clinicId },
+        });
+        console.log(`[API PUT /api/clinics/${clinicId}] Existing independent blocks deleted.`);
+
+        // 3.2.2 Crear los nuevos bloques independientes
+        const blocksToCreate: Prisma.ClinicScheduleBlockCreateManyInput[] = [];
+        for (const [dayKey, scheduleData] of Object.entries(independentScheduleData)) {
+          const schedule = scheduleData as z.infer<typeof DayScheduleSchema>; 
+          
+          if (schedule.isOpen && schedule.ranges.length > 0) {
+            const prismaDay = dayKey.toUpperCase() as PrismaDayOfWeek; 
+            
+            if (!Object.values(PrismaDayOfWeek).includes(prismaDay)) {
+                console.warn(`Invalid day key encountered: ${dayKey}. Skipping.`);
+                continue;
+            }
+
+            schedule.ranges.forEach(range => {
+              blocksToCreate.push({
+                clinicId: clinicId,
+                dayOfWeek: prismaDay,
+                startTime: range.start,
+                endTime: range.end,
+                isWorking: true, 
+              });
+            });
+          }
+        }
+        
+        if (blocksToCreate.length > 0) {
+            console.log(`[API PUT /api/clinics/${clinicId}] Creating ${blocksToCreate.length} new independent blocks...`);
+            await tx.clinicScheduleBlock.createMany({
+              data: blocksToCreate,
+            });
+            console.log(`[API PUT /api/clinics/${clinicId}] New independent blocks created.`);
+        } else {
+             console.log(`[API PUT /api/clinics/${clinicId}] No independent blocks to create based on schedule data.`);
+        }
+      } else if (independentScheduleData && updatedClinic.linkedScheduleTemplateId) {
+          console.warn(`[API PUT /api/clinics/${clinicId}] Received independent schedule data, but clinic is linked to template ${updatedClinic.linkedScheduleTemplateId}. Ignoring schedule update.`);
+          // No hacer nada con los bloques independientes si está vinculada
+      }
+
+      // Devolver la clínica actualizada (quizás recargarla con los nuevos bloques)
+      // Recargar para obtener la versión final con los bloques actualizados si se crearon
+      return await tx.clinic.findUnique({ 
+          where: { id: clinicId }, 
+          include: { independentScheduleBlocks: true, linkedScheduleTemplate: { include: { blocks: true }} }
+      }); 
     });
 
-    // Devolver la clínica actualizada (solo los campos base o con include)
-    return NextResponse.json(updatedClinic);
+    console.log(`[API PUT /api/clinics/${clinicId}] Transaction successful.`);
+    return NextResponse.json(result); // Devuelve la clínica con los bloques actualizados
 
   } catch (error: any) {
-    console.error("Error updating clinic:", error);
-    // Manejar error si la clínica no existe (P2025)
-    if (error.code === 'P2025') {
-        return NextResponse.json({ error: 'Clínica no encontrada.' }, { status: 404 });
-    }
-    return NextResponse.json({ error: 'Error interno del servidor al actualizar la clínica.' }, { status: 500 });
-  } finally {
-    await prisma.$disconnect();
+    // ... (Manejo de errores sin cambios, revisará errores de transacción también) ...
+     console.error(`[API PUT /api/clinics/${clinicId}] Error during transaction:`, error);
+     if (error instanceof Prisma.PrismaClientKnownRequestError) {
+         console.error(`[API PUT /api/clinics/${clinicId}] Prisma Known Error Code: ${error.code}`);
+         if (error.code === 'P2025') {
+             return NextResponse.json({ error: 'Clínica no encontrada para actualizar.', code: error.code }, { status: 404 });
+         }
+         return NextResponse.json({ error: 'Error de base de datos conocido al actualizar.', code: error.code, meta: error.meta }, { status: 400 });
+     } else if (error instanceof Prisma.PrismaClientValidationError) {
+         console.error(`[API PUT /api/clinics/${clinicId}] Prisma Validation Error:`, error.message);
+         return NextResponse.json({ error: 'Error de validación de datos de Prisma.', message: error.message }, { status: 400 });
+     } else {
+         return NextResponse.json({ error: 'Error interno del servidor al actualizar la clínica.', message: error.message || 'Unknown error' }, { status: 500 });
+     }
   }
 }
 

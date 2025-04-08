@@ -648,27 +648,26 @@ enum ExceptionScope {
 // Plantilla de Horario reutilizable
 model ScheduleTemplate {
   id          String   @id @default(cuid())
-  name        String
-  description String?
+  name        String // Ej: "Lunes a Viernes (Mañanas)", "Horario Verano"
+  description String? // Descripción opcional
   systemId    String
   system      System   @relation(fields: [systemId], references: [id], onDelete: Cascade)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  // --- CAMPOS AÑADIDOS PARA ESTRUCTURA COMPLETA ---
-  openTime String? // Formato HH:MM (Propio de la plantilla)
-  closeTime String? // Formato HH:MM (Propio de la plantilla)
-  // slotDuration Int? // Podría tenerlo, pero quizás es mejor que cada clínica defina su slot
-  // --- FIN CAMPOS AÑADIDOS ---
+  // NUEVOS CAMPOS GENERALES
+  openTime  String? // Formato HH:MM
+  closeTime String? // Formato HH:MM
+  slotDuration Int?    // <-- AÑADIR CAMPO (ej: 15, 30, 60 minutos)
 
-  // Bloques detallados de la plantilla
+  // Bloques de horario específicos de esta plantilla
   blocks ScheduleTemplateBlock[]
 
-  // Clínicas que están VINCULADAS a esta plantilla
+  // Clínicas que usan esta plantilla
   linkedClinics Clinic[] @relation("LinkedClinicTemplate")
 
-  // ELIMINAR relación inversa a ClinicSchedule
-  // clinicSchedules ClinicSchedule[]
+  // Campo obsoleto? Mantener por si acaso en seed?
+  // isDefault Boolean? @default(false)
 
   @@unique([name, systemId])
   @@index([systemId])

@@ -82,6 +82,7 @@ export interface Clinica extends BaseEntity, Activable {
   phone: string | null;
   systemId: string;
   linkedScheduleTemplateId?: string | null;
+  scheduleJson?: any | null;
   linkedScheduleTemplate?: (PrismaScheduleTemplate & { blocks?: PrismaScheduleTemplateBlock[] }) | null;
   independentScheduleBlocks?: PrismaClinicScheduleBlock[] | null;
   commercialName: string | null;
@@ -101,7 +102,7 @@ export interface Clinica extends BaseEntity, Activable {
   professionalSkills: boolean | null;
   notes: string | null;
   slotDuration: number | null;
-  tariffId: string | null;
+  tariffId?: string | null;
   tariff?: PrismaTariff | null;
 }
 
@@ -229,6 +230,15 @@ export interface ScheduleTemplate extends BaseEntity {
   name: string;
   description?: string | null;
   systemId: string;
+  schedule?: any | null;
+  clinicId?: string | null;
+  isDefault?: boolean | null;
+  createdAt?: string | Date | null;
+  updatedAt?: string | Date | null;
+  openTime?: string | null;
+  closeTime?: string | null;
+  blocks?: PrismaScheduleTemplateBlock[] | null;
+  slotDuration?: number | null;
 }
 
 /** Interfaz para Bonos */

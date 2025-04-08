@@ -233,39 +233,58 @@ export default function WeeklyAgenda({
 
   // --- Time Slot Generation using useMemo (adjust loop) --- 
   const timeSlots = useMemo(() => {
-      if (!correctSchedule) return [];
+      if (!activeClinic) return []; // Usar activeClinic como fuente principal
 
-      let earliestStart = "23:59";
-      let latestEnd = "00:00";
+      // Usar horarios generales como punto de partida
+      let overallEarliestStart = activeClinic.openTime ?? "09:00";
+      let overallLatestEnd = activeClinic.closeTime ?? "20:00";
+      console.log(`[WeeklyAgenda timeSlots] Initial general times: ${overallEarliestStart} - ${overallLatestEnd}`);
+
+      // Usar el horario derivado (puede ser de plantilla o independiente)
+      const scheduleToUse = correctSchedule; // Ya calculado en useMemo anterior
       let hasAnyRange = false;
 
-      Object.values(correctSchedule).forEach(day => {
-          const daySchedule = day as DaySchedule; 
-          if (daySchedule.isOpen && daySchedule.ranges.length > 0) {
-              hasAnyRange = true;
-              daySchedule.ranges.forEach(range => {
-                  if (range.start < earliestStart) earliestStart = range.start;
-                  if (range.end > latestEnd) latestEnd = range.end;
-              });
-          }
-      });
+      if (scheduleToUse) {
+          console.log("[WeeklyAgenda timeSlots] Checking ranges in schedule:", JSON.stringify(scheduleToUse, null, 2));
+          Object.values(scheduleToUse).forEach(day => {
+              const daySchedule = day as DaySchedule; 
+              if (daySchedule.isOpen && daySchedule.ranges.length > 0) {
+                  hasAnyRange = true;
+                  daySchedule.ranges.forEach(range => {
+                      // Comparar con los generales Y con los encontrados hasta ahora
+                      if (range.start && range.start < overallEarliestStart) {
+                          console.log(`[WeeklyAgenda timeSlots] Found earlier start range: ${range.start} < ${overallEarliestStart}`);
+                          overallEarliestStart = range.start;
+                      }
+                      if (range.end && range.end > overallLatestEnd) {
+                          console.log(`[WeeklyAgenda timeSlots] Found later end range: ${range.end} > ${overallLatestEnd}`);
+                          overallLatestEnd = range.end;
+                      }
+                  });
+              }
+          });
+      } else {
+          console.log("[WeeklyAgenda timeSlots] No derived schedule found, using only general times.");
+      }
+      
+      // Si no se encontraron rangos, los overallEarliest/Latest serán los generales iniciales.
+      // Si se encontraron rangos, ya se habrán ajustado para incluirlos.
 
-      // If no ranges found at all, use general open/close as fallback
-      if (!hasAnyRange) {
-          earliestStart = openTime; 
-          latestEnd = closeTime;
+      console.log(`[WeeklyAgenda timeSlots] Final calculated range for slots: ${overallEarliestStart} to ${overallLatestEnd}`);
+      
+      // Asegurar que latestEnd es realmente más tarde que earliestStart
+      if (overallLatestEnd <= overallEarliestStart) {
+          console.warn(`[WeeklyAgenda timeSlots] latestEnd (${overallLatestEnd}) is not after earliestStart (${overallEarliestStart}), using default fallback times.`);
+           // Podríamos usar los open/close originales de activeClinic como mejor fallback
+           const fallbackOpen = activeClinic.openTime ?? "09:00";
+           const fallbackClose = activeClinic.closeTime ?? "20:00";
+           return getTimeSlots(fallbackOpen, fallbackClose > fallbackOpen ? fallbackClose : "23:59", slotDuration);
       }
 
-      console.log(`[WeeklyAgenda] Generating time slots from ${earliestStart} to ${latestEnd} with interval ${slotDuration}`);
-      // Ensure latestEnd is actually later than earliestStart
-      if (latestEnd <= earliestStart) {
-          console.warn("[WeeklyAgenda] latestEnd time is not after earliestStart, using default times for slots.");
-          return getTimeSlots(openTime, closeTime, slotDuration);
-      }
+      // Generar slots con el rango calculado final
+      return getTimeSlots(overallEarliestStart, overallLatestEnd, slotDuration);
 
-      return getTimeSlots(earliestStart, latestEnd, slotDuration);
-
-  }, [correctSchedule, slotDuration, openTime, closeTime]);
+  }, [correctSchedule, activeClinic?.openTime, activeClinic?.closeTime, slotDuration]); // Depender de open/close generales también
   // --- End Time Slot Generation Adjustment ---
 
   // Obtener cabinas activas
@@ -604,7 +623,7 @@ export default function WeeklyAgenda({
             }}
           >
             {/* Columna de tiempo - Fija - z-30 */}
-            <div className="sticky left-0 top-0 w-20 p-4 bg-white border-b border-r border-gray-300 hour-header" style={{ zIndex: 999 }}>
+            <div className="sticky top-0 left-0 w-20 p-4 bg-white border-b border-r border-gray-300 hour-header" style={{ zIndex: 999 }}>
               <div className="text-sm text-gray-500">Hora</div>
             </div>
 
@@ -1059,7 +1078,7 @@ export default function WeeklyAgenda({
         {/* El bloque de AgendaNavBar eliminado completamente */}
 
         {/* Contenedor de la rejilla que debe tener scroll */}
-        <div className="flex-1 overflow-auto relative">
+        <div className="relative flex-1 overflow-auto">
             {renderWeeklyGrid()}
             {/* Asegurarse de que CurrentTimeIndicator esté relacionado con este div si usa refs */}
         </div>

@@ -12,6 +12,7 @@ import { useRouter } from "next/navigation"
 import { useClinic } from "@/contexts/clinic-context"
 import { Label } from "@/components/ui/label"
 import { toast } from "@/components/ui/use-toast"
+import { Skeleton } from "@/components/ui/skeleton"
 
 interface Clinic {
   id: string | number
@@ -32,7 +33,7 @@ export default function ClinicasPage() {
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc")
   const [showHelp, setShowHelp] = useState(false)
 
-  const { clinics, updateClinica } = useClinic()
+  const { clinics, updateClinica, isLoading } = useClinic()
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -175,7 +176,35 @@ export default function ClinicasPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredClinics.map((clinic, index) => {
+              {/* --- INICIO Skeleton Loading --- */}
+              {isLoading && (
+                Array.from({ length: 5 }).map((_, index) => (
+                  <TableRow key={`skeleton-${index}`}>
+                    <TableCell className="w-[100px]"><Skeleton className="h-5 w-full" /></TableCell>
+                    <TableCell><Skeleton className="h-5 w-16" /></TableCell>
+                    <TableCell><Skeleton className="h-5 w-48" /></TableCell>
+                    <TableCell><Skeleton className="h-5 w-32" /></TableCell>
+                    <TableCell className="w-[100px] text-center"><Skeleton className="h-6 w-16 mx-auto" /></TableCell>
+                    <TableCell className="w-[100px]">
+                      <div className="flex justify-end gap-2">
+                        <Skeleton className="h-8 w-8" />
+                        <Skeleton className="h-8 w-8" />
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+              {/* --- FIN Skeleton Loading --- */}
+
+              {/* --- Mostrar Datos Reales (solo si no está cargando) --- */}
+              {!isLoading && filteredClinics.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={6} className="h-24 text-center">
+                    No se encontraron clínicas con los filtros aplicados.
+                  </TableCell>
+                </TableRow>
+              )}
+              {!isLoading && filteredClinics.map((clinic, index) => {
                 // Log para depurar el ID de la clínica antes de la conversión
                 console.log(`Rendering row for clinic: ID=${clinic.id} (Tipo: ${typeof clinic.id}), Name=${clinic.name}`);
                 
