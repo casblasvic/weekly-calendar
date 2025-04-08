@@ -512,20 +512,29 @@ export class SupabaseDataService implements DataService {
   
   async getEquiposByClinicaId(clinicaId: string): Promise<Equipo[]> {
     try {
-      // Convertir a número para la comparación
-      const clinicaIdNum = Number(clinicaId);
+      console.log(`[SupabaseDataService] Buscando equipos para clinicaId (string): ${clinicaId}`);
       
-      if (isNaN(clinicaIdNum)) {
-        throw new Error(`clinicaId inválido: ${clinicaId}`);
-      }
+      // --- LÓGICA DE CONSULTA A SUPABASE (Ejemplo Comentado) --- 
+      // const { data, error } = await this.supabase
+      //   .from(`${this.schema}.equipos`) // Usar nombre de tabla correcto
+      //   .select('*')
+      //   .eq('clinicId', clinicaId); // <<< Comparar directamente con el string clinicaId
+      // 
+      // if (error) throw error;
+      // return data as Equipo[];
+      // --- FIN LÓGICA SUPABASE ---
       
-      // Implementar consulta a Supabase
-      // Por ahora, usar los datos de ejemplo
-      const equipos = this.data.equipos.filter(
-        equipo => equipo.clinicId === clinicaIdNum
-      );
+      // >>> ELIMINAR LÓGICA DE EJEMPLO BASADA EN this.data <<< 
+      // // Por ahora, usar los datos de ejemplo
+      // const equipos = this.data.equipos.filter(
+      //   equipo => equipo.clinicId === clinicaIdNum
+      // ); 
+      // return equipos || [];
       
-      return equipos || [];
+      // >>> Devolver array vacío mientras no haya implementación real <<<
+      console.warn("[SupabaseDataService] getEquiposByClinicaId no implementado, devolviendo array vacío.");
+      return []; 
+
     } catch (error) {
       console.error("Error en getEquiposByClinicaId:", error);
       return [];
@@ -556,7 +565,13 @@ export class SupabaseDataService implements DataService {
     return this.delete('schedule_blocks', id);
   }
   
-  async getBlocksByDateRange(clinicId: number, startDate: string, endDate: string): Promise<ScheduleBlock[]> {
+  /**
+   * Obtiene bloques de horario para una clínica específica dentro de un rango de fechas
+   */
+  async getBlocksByDateRange(clinicId: string, startDate: string, endDate: string): Promise<ScheduleBlock[]> {
+    console.log(`[SupabaseDataService] getBlocksByDateRange - clinicId: ${clinicId} (tipo: ${typeof clinicId}), startDate: ${startDate}, endDate: ${endDate}`);
+    // TODO: Implementar lógica real para filtrar por clinicId y rango de fechas
+    // Debería hacer una consulta a Supabase a la tabla 'schedule_blocks' (o similar)
     try {
       // Implementación pendiente
       return [];

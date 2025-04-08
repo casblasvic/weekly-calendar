@@ -4,115 +4,70 @@
  * Permite configurar el servicio para usar diferentes proveedores de datos
  */
 
-import type { DataServiceInterface } from './data-service.interface';
-// import { LocalDataService } from './local-data-service.ts';
-import { SupabaseDataService, type SupabaseConnectionConfig } from './supabase-data-service.ts';
+// >>> ELIMINAR: Ya no se usa la interfaz genérica <<<
+// import type { DataServiceInterface } from './data-service.interface'; 
+// >>> FIN ELIMINAR <<<
 
-// Reemplazo del enum con const as const
-export const DataServiceType = {
-  // LOCAL: 'local',
-  SUPABASE: 'supabase',
-} as const;
+// >>> OLD: import { LocalDataService } from './local-data-service.ts';
+import { SupabaseDataService, type SupabaseConnectionConfig } from './supabase-data-service'; // <- Asegurar extensión .ts si es necesaria
 
-// Exportar el tipo derivado del objeto
-export type DataServiceType = (typeof DataServiceType)[keyof typeof DataServiceType];
-
-// Configuración para el servicio de datos
-export interface DataServiceConfig {
-  type: DataServiceType;
-  supabaseConfig?: SupabaseConnectionConfig;
-}
+// Configuración AHORA SOLO para Supabase
+export type DataServiceConfig = SupabaseConnectionConfig;
 
 /**
- * Instancia única del servicio de datos
+ * Instancia única del servicio de datos (SIEMPRE SupabaseDataService)
  */
-let dataServiceInstance: DataServiceInterface | null = null;
+// >>> AJUSTAR TIPO: Ahora siempre será SupabaseDataService o null
+let dataServiceInstance: SupabaseDataService | null = null;
 
 /**
- * Tipo de servicio actualmente configurado
+ * Inicializa el servicio de datos (AHORA SOLO PARA SUPABASE)
+ * @param config Configuración específica de Supabase
  */
-let currentServiceType: DataServiceType = DataServiceType.SUPABASE;
+export const initializeDataService = async (config: SupabaseConnectionConfig): Promise<void> => {
 
-/**
- * Inicializa el servicio de datos con la configuración especificada
- */
-export const initializeDataService = async (config: DataServiceConfig): Promise<void> => {
-  // Si ya existe una instancia, verificar si necesita cambiarse
+  // Si ya está inicializado, no hacer nada (podría añadir un check más robusto)
   if (dataServiceInstance) {
-    if (config.type === currentServiceType) {
-      // Mismo tipo, no es necesario cambiar
+      console.warn("initializeDataService llamado de nuevo, pero ya existe una instancia.");
       return;
-    }
-    
-    // Tipo diferente, limpiar la instancia actual
-    dataServiceInstance = null;
   }
-  
-  // Ya no hay default local, config es obligatoria
-  // const finalConfig = config || { type: DataServiceType.SUPABASE };
-  currentServiceType = config.type;
-  
-  // Crear la instancia según el tipo
-  switch (config.type) {
-    case DataServiceType.SUPABASE:
-      if (!config.supabaseConfig) {
-        // Intentar obtener de env vars si no se proporciona explícitamente?
-        // Por ahora, lanzar error si no está en el objeto config.
-        throw new Error('No se ha proporcionado configuración Supabase (supabaseConfig) al inicializar.');
-      }
-      dataServiceInstance = new SupabaseDataService(config.supabaseConfig);
-      break;
-      
-    // case DataServiceType.LOCAL:
-    default:
-      // Lanzar error si se intenta usar un tipo no soportado (como LOCAL)
-      throw new Error(`Tipo de servicio de datos no soportado: ${config.type}`);
-      // dataServiceInstance = new LocalDataService();
-      // break;
+
+  console.log("[initializeDataService] Configurando instancia de SupabaseDataService.");
+
+  // Crear directamente la instancia de Supabase
+  if (!config) { // Chequeo básico por si acaso
+      throw new Error('Configuración de Supabase requerida para inicializar.');
   }
+  dataServiceInstance = new SupabaseDataService(config);
   
   // Inicializar el servicio
   await dataServiceInstance.initialize();
   
-  console.log(`Servicio de datos inicializado: ${config.type}`);
+  console.log(`Servicio de datos inicializado: supabase`); // Tipo fijo
 };
 
 /**
- * Obtiene la instancia del servicio de datos.
+ * Obtiene la instancia del servicio de datos (SIEMPRE SupabaseDataService).
  * Si no está inicializado, lanza un error.
  */
-export const getDataService = (): DataServiceInterface => {
+// >>> AJUSTAR TIPO DE RETORNO: Ahora siempre SupabaseDataService
+export const getDataService = (): SupabaseDataService => {
   if (!dataServiceInstance) {
-    // Ya no inicializa automáticamente, requiere llamada explícita a initializeDataService
     throw new Error('Servicio de datos no inicializado. Llama a initializeDataService primero.');
-    // console.log('Inicializando automáticamente el servicio de datos en modo LOCAL');
-    // dataServiceInstance = new LocalDataService();
-    // dataServiceInstance.initialize().catch(error => {
-    //   console.error('Error al inicializar automáticamente el servicio de datos:', error);
-    // });
   }
   return dataServiceInstance;
 };
 
 /**
- * Obtiene el tipo de servicio actualmente configurado
- */
-export const getCurrentServiceType = (): DataServiceType => {
-  return currentServiceType;
-};
-
-/**
  * Re-exporta las clases e interfaces para facilitar su uso
  */
-export type { DataServiceInterface };
-// export { LocalDataService, SupabaseDataService };
 export { SupabaseDataService };
 export type { SupabaseConnectionConfig };
 
 /**
  * Re-exporta los tipos de modelos para facilitar su uso
  */
-export * from './models/interfaces.ts';
+export * from './models/interfaces';
 
 // Re-exportar el tipo Client también desde data-service
 // Comentar re-exportación

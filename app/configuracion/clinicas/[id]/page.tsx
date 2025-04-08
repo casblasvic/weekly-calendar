@@ -1480,7 +1480,7 @@ export default function ClinicaDetailPage() {
                                         {(template as any)?.description || `ID: ${template.id}`} {/* Usar descripción o ID */} 
                                     </SelectItem>
                                 ))}
-                                {templates.length === 0 && <SelectItem value="" disabled>No hay plantillas</SelectItem>}
+                                {templates.length === 0 && <SelectItem value="_no_templates_" disabled>No hay plantillas</SelectItem>}
                              </SelectContent>
                           </Select>
                       </div>

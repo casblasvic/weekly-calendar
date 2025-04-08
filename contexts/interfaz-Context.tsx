@@ -1,10 +1,9 @@
 "use client"
 
 import { createContext, useContext, useState, useEffect, ReactNode } from "react"
-import { getDataService, initializeDataService } from "@/services/data"
+import { getDataService } from "@/services/data"
 import {
   Clinica,
-  ClinicConfig,
   Tarifa,
   FamiliaTarifa,
   Servicio,
@@ -18,7 +17,7 @@ import {
   Consumo,
   Usuario
 } from "@/services/data/models/interfaces"
-import { Client } from "@/services/data/data-service"
+import type { Client } from '@/services/data/data-service'
 
 // Claves de localStorage para distintas entidades
 const CLINICAS_KEY = "clinicas";
@@ -107,26 +106,16 @@ interface InterfazContextType {
   deleteScheduleBlock: (id: string) => Promise<boolean>;
   getBlocksByDateRange: (clinicId: string, startDate: string, endDate: string) => Promise<ScheduleBlock[]>;
   
-  // Funciones de imágenes
+  // Funciones de imágenes (ESPECÍFICAS, no genéricas)
   getEntityImages: (entityType: string, entityId: string) => Promise<EntityImage[]>;
   saveEntityImages: (entityType: string, entityId: string, images: EntityImage[]) => Promise<boolean>;
   deleteEntityImages: (entityType: string, entityId: string) => Promise<boolean>;
   
-  // Funciones de documentos
+  // Funciones de documentos (ESPECÍFICAS, no genéricas)
   getEntityDocuments: (entityType: string, entityId: string, category?: string) => Promise<EntityDocument[]>;
   saveEntityDocuments: (entityType: string, entityId: string, documents: EntityDocument[], category?: string) => Promise<boolean>;
   deleteEntityDocuments: (entityType: string, entityId: string, category?: string) => Promise<boolean>;
 
-  // Funciones de archivos
-  getAllFiles: () => Promise<EntityDocument[]>;
-  getFileById: (id: string) => Promise<EntityDocument | null>;
-  saveFile: (file: Omit<EntityDocument, 'id'>) => Promise<EntityDocument>;
-  deleteFile: (id: string) => Promise<boolean>;
-  updateFileMetadata: (id: string, metadata: Partial<EntityDocument>) => Promise<EntityDocument | null>;
-  restoreFile: (id: string) => Promise<boolean>;
-  getFilesByFilter: (filter: {entityType?: string, entityId?: string, category?: string}) => Promise<EntityDocument[]>;
-  getStorageStats: (clinicId?: string) => Promise<{used: number, byType: Record<string, number>}>;
-  
   // Funciones de plantillas de agenda
   getScheduleTemplates: () => Promise<ScheduleTemplate[]>;
   getTemplateById: (id: string) => Promise<ScheduleTemplate | null>;
@@ -167,19 +156,9 @@ const InterfazContext = createContext<InterfazContextType | undefined>(undefined
 export function InterfazProvider({ children }: { children: ReactNode }) {
   const [initialized, setInitialized] = useState(false);
 
-  // Inicialización del servicio de datos
+  // Marcar como inicializado inmediatamente
   useEffect(() => {
-    const initialize = async () => {
-      try {
-        await initializeDataService();
-        setInitialized(true);
-        console.log("InterfazContext: Servicio de datos inicializado correctamente");
-      } catch (error) {
-        console.error("Error al inicializar el servicio de datos:", error);
-      }
-    };
-    
-    initialize();
+    setInitialized(true);
   }, []);
 
   // Crear un objeto con todas las funciones del servicio de datos
@@ -190,479 +169,165 @@ export function InterfazProvider({ children }: { children: ReactNode }) {
     resetData: async () => {
       try {
         const dataService = getDataService();
-        await dataService.clearStorageAndReloadData();
-        // Reiniciamos el estado de inicialización para forzar la recarga
-        setInitialized(false);
-        // Permitimos que el efecto vuelva a inicializar
-        setTimeout(() => setInitialized(true), 100);
-        console.log("Datos reiniciados correctamente");
+        // >>> COMENTADO: clearStorageAndReloadData no existe en SupabaseDataService <<<
+        // await dataService.clearStorageAndReloadData(); 
+        console.warn("Interfaz.resetData() llamado, pero clearStorageAndReloadData no está implementado/es obsoleto.");
+        console.log("Datos reiniciados (acción omitida)."); // Cambiado log
       } catch (error) {
-        console.error("Error al reiniciar datos:", error);
+        console.error("Error al intentar reiniciar datos:", error);
       }
     },
     
-    // Funciones de clínicas
-    getAllClinicas: async () => {
-      try {
-        console.log("Interfaz: Obteniendo todas las clínicas");
-        
-        // Recuperar del localStorage para asegurar que tenemos los datos más recientes
-        const clinicasLocalStorage = localStorage.getItem(CLINICAS_KEY);
-        let clinicas: Clinica[] = clinicasLocalStorage ? JSON.parse(clinicasLocalStorage) : [];
-        
-        if (!Array.isArray(clinicas)) {
-          console.warn("Formato incorrecto en almacenamiento, reiniciando clínicas");
-          clinicas = [];
-        }
-        
-        // Si no hay clínicas, inicializamos con datos por defecto
-        if (clinicas.length === 0) {
-          clinicas = [
-            {
-              id: "1",
-              prefix: "BCN",
-              name: "Barcelona Centro",
-              city: "Barcelona",
-              isActive: true,
-              // Otros datos por defecto...
-            },
-            {
-              id: "2",
-              prefix: "MAD",
-              name: "Madrid Salamanca",
-              city: "Madrid",
-              isActive: true,
-              // Otros datos por defecto...
-            },
-            {
-              id: "3",
-              prefix: "VAL",
-              name: "Valencia Centro",
-              city: "Valencia",
-              isActive: true,
-              // Otros datos por defecto...
-            },
-            {
-              id: "4",
-              prefix: "SEV",
-              name: "Sevilla Este",
-              city: "Sevilla",
-              isActive: false,
-              // Agregar una clínica no activa...
-            }
-          ];
-          
-          // Guardar en localStorage
-          localStorage.setItem(CLINICAS_KEY, JSON.stringify(clinicas));
-        }
-        
-        // Devolver TODAS las clínicas, incluidas las inactivas
-        return clinicas;
-      } catch (error) {
-        console.error("Error al obtener todas las clínicas:", error);
-        return [];
-      }
-    },
-    getClinicaById: async (id) => {
-      const dataService = getDataService();
-      return await dataService.getClinicaById(id);
-    },
-    createClinica: async (clinica) => {
-      const dataService = getDataService();
-      return await dataService.createClinica(clinica);
-    },
-    updateClinica: async (id, clinica) => {
-      const dataService = getDataService();
-      return await dataService.updateClinica(id, clinica);
-    },
-    deleteClinica: async (id) => {
-      const dataService = getDataService();
-      return await dataService.deleteClinica(id);
-    },
-    getActiveClinicas: async () => {
-      try {
-        const todas = await interfaz.getAllClinicas();
-        // Filtrar solo las activas
-        return todas.filter(clinica => clinica.isActive === true);
-      } catch (error) {
-        console.error("Error al obtener clínicas activas:", error);
-        return [];
-      }
+    // --- Funciones que delegan directamente a getDataService() --- 
+    
+    // Clínicas
+    getAllClinicas: () => getDataService().getAllClinicas(),
+    getClinicaById: (id) => getDataService().getClinicaById(id),
+    createClinica: (clinica) => getDataService().createClinica(clinica),
+    updateClinica: (id, clinica) => getDataService().updateClinica(id, clinica),
+    deleteClinica: (id) => getDataService().deleteClinica(id),
+    getActiveClinicas: () => getDataService().getActiveClinicas(),
+    
+    // Clientes
+    getAllClients: () => getDataService().getAllClients(),
+    getClientById: (id) => getDataService().getClientById(id),
+    createClient: (client) => getDataService().createClient(client),
+    updateClient: (id, client) => getDataService().updateClient(id, client),
+    deleteClient: (id) => getDataService().deleteClient(id),
+    getClientsByClinicId: (clinicId) => getDataService().getClientsByClinicId(clinicId),
+    
+    // Tarifas
+    getAllTarifas: () => getDataService().getAllTarifas(),
+    getTarifaById: (id) => getDataService().getTarifaById(id),
+    createTarifa: (tarifa) => getDataService().createTarifa(tarifa),
+    updateTarifa: (id, tarifa) => getDataService().updateTarifa(id, tarifa),
+    deleteTarifa: (id) => getDataService().deleteTarifa(id),
+    getTarifasByClinicaId: (clinicaId) => getDataService().getTarifasByClinicaId(clinicaId),
+    addClinicaToTarifa: (tarifaId, clinicaId, isPrimary) => getDataService().addClinicaToTarifa(tarifaId, clinicaId, isPrimary),
+    removeClinicaFromTarifa: (tarifaId, clinicaId) => getDataService().removeClinicaFromTarifa(tarifaId, clinicaId),
+    setPrimaryClinicaForTarifa: (tarifaId, clinicaId) => getDataService().setPrimaryClinicaForTarifa(tarifaId, clinicaId),
+    
+    // Familias de Tarifas
+    getAllFamiliasTarifa: () => getDataService().getAllFamiliasTarifa(),
+    getFamiliaTarifaById: (id) => getDataService().getFamiliaTarifaById(id),
+    createFamiliaTarifa: (familia) => getDataService().createFamiliaTarifa(familia),
+    updateFamiliaTarifa: (id, familia) => getDataService().updateFamiliaTarifa(id, familia),
+    deleteFamiliaTarifa: (id) => getDataService().deleteFamiliaTarifa(id),
+    getFamiliasByTarifaId: (tarifaId) => getDataService().getFamiliasByTarifaId(tarifaId),
+    getRootFamilias: (tarifaId) => getDataService().getRootFamilias(tarifaId),
+    getSubfamilias: (parentId) => getDataService().getSubfamilias(parentId),
+    toggleFamiliaStatus: (id) => getDataService().toggleFamiliaStatus(id),
+    
+    // Servicios
+    getAllServicios: () => getDataService().getAllServicios(),
+    getServicioById: (id) => getDataService().getServicioById(id),
+    createServicio: (servicio) => getDataService().createServicio(servicio),
+    updateServicio: (id, servicio) => getDataService().updateServicio(id, servicio),
+    deleteServicio: (id) => getDataService().deleteServicio(id),
+    getServiciosByTarifaId: (tarifaId) => getDataService().getServiciosByTarifaId(tarifaId),
+    
+    // Tipos IVA
+    getAllTiposIVA: () => getDataService().getAllTiposIVA(),
+    getTipoIVAById: (id) => getDataService().getTipoIVAById(id),
+    createTipoIVA: (tipoIVA) => getDataService().createTipoIVA(tipoIVA),
+    updateTipoIVA: (id, tipoIVA) => getDataService().updateTipoIVA(id, tipoIVA),
+    deleteTipoIVA: (id) => getDataService().deleteTipoIVA(id),
+    getTiposIVAByTarifaId: (tarifaId) => getDataService().getTiposIVAByTarifaId(tarifaId),
+    
+    // Equipos
+    getAllEquipos: () => getDataService().getAllEquipos(),
+    getEquipoById: (id) => getDataService().getEquipoById(id),
+    createEquipo: (equipo) => getDataService().createEquipo(equipo),
+    updateEquipo: (id, equipo) => getDataService().updateEquipo(id, equipo),
+    deleteEquipo: (id) => getDataService().deleteEquipo(id),
+    getEquiposByClinicaId: (clinicaId) => getDataService().getEquiposByClinicaId(clinicaId),
+    
+    // Bloques de Agenda
+    getAllScheduleBlocks: () => getDataService().getAllScheduleBlocks(),
+    getScheduleBlockById: (id) => getDataService().getScheduleBlockById(id),
+    createScheduleBlock: (block) => getDataService().createScheduleBlock(block),
+    updateScheduleBlock: (id, block) => getDataService().updateScheduleBlock(id, block),
+    deleteScheduleBlock: (id) => getDataService().deleteScheduleBlock(id),
+    getBlocksByDateRange: (clinicId, startDate, endDate) => {
+        // Pasar clinicId directamente como string, ya que SupabaseDataService lo espera así
+        return getDataService().getBlocksByDateRange(clinicId, startDate, endDate);
     },
     
-    // Funciones de clientes
-    getAllClients: async () => {
-      const dataService = getDataService();
-      return await dataService.getAllClients();
-    },
-    getClientById: async (id) => {
-      const dataService = getDataService();
-      return await dataService.getClientById(id);
-    },
-    createClient: async (client) => {
-      const dataService = getDataService();
-      return await dataService.createClient(client);
-    },
-    updateClient: async (id, client) => {
-      const dataService = getDataService();
-      return await dataService.updateClient(id, client);
-    },
-    deleteClient: async (id) => {
-      const dataService = getDataService();
-      return await dataService.deleteClient(id);
-    },
-    getClientsByClinicId: async (clinicId) => {
-      const dataService = getDataService();
-      return await dataService.getClientsByClinicId(clinicId);
-    },
+    // Imágenes (Específicas)
+    getEntityImages: (entityType, entityId) => getDataService().getEntityImages(entityType, entityId),
+    saveEntityImages: (entityType, entityId, images) => getDataService().saveEntityImages(entityType, entityId, images),
+    deleteEntityImages: (entityType, entityId) => getDataService().deleteEntityImages(entityType, entityId),
     
-    // Funciones de tarifas
-    getAllTarifas: async () => {
-      const dataService = getDataService();
-      return await dataService.getAllTarifas();
-    },
-    getTarifaById: async (id) => {
-      const dataService = getDataService();
-      return await dataService.getTarifaById(id);
-    },
-    createTarifa: async (tarifa) => {
-      const dataService = getDataService();
-      return await dataService.createTarifa(tarifa);
-    },
-    updateTarifa: async (id, tarifa) => {
-      const dataService = getDataService();
-      return await dataService.updateTarifa(id, tarifa);
-    },
-    deleteTarifa: async (id) => {
-      const dataService = getDataService();
-      return await dataService.deleteTarifa(id);
-    },
-    getTarifasByClinicaId: async (clinicaId) => {
-      const dataService = getDataService();
-      return await dataService.getTarifasByClinicaId(clinicaId);
-    },
-    addClinicaToTarifa: async (tarifaId, clinicaId, isPrimary) => {
-      const dataService = getDataService();
-      return await dataService.addClinicaToTarifa(tarifaId, clinicaId, isPrimary);
-    },
-    removeClinicaFromTarifa: async (tarifaId, clinicaId) => {
-      const dataService = getDataService();
-      return await dataService.removeClinicaFromTarifa(tarifaId, clinicaId);
-    },
-    setPrimaryClinicaForTarifa: async (tarifaId, clinicaId) => {
-      const dataService = getDataService();
-      return await dataService.setPrimaryClinicaForTarifa(tarifaId, clinicaId);
-    },
-    
-    // Funciones de familias de tarifas
-    getAllFamiliasTarifa: async () => {
-      const dataService = getDataService();
-      return await dataService.getAllFamiliasTarifa();
-    },
-    getFamiliaTarifaById: async (id) => {
-      const dataService = getDataService();
-      return await dataService.getFamiliaTarifaById(id);
-    },
-    createFamiliaTarifa: async (familia) => {
-      const dataService = getDataService();
-      return await dataService.createFamiliaTarifa(familia);
-    },
-    updateFamiliaTarifa: async (id, familia) => {
-      const dataService = getDataService();
-      return await dataService.updateFamiliaTarifa(id, familia);
-    },
-    deleteFamiliaTarifa: async (id) => {
-      const dataService = getDataService();
-      return await dataService.deleteFamiliaTarifa(id);
-    },
-    getFamiliasByTarifaId: async (tarifaId) => {
-      const dataService = getDataService();
-      return await dataService.getFamiliasByTarifaId(tarifaId);
-    },
-    getRootFamilias: async (tarifaId) => {
-      const dataService = getDataService();
-      return await dataService.getRootFamilias(tarifaId);
-    },
-    getSubfamilias: async (parentId) => {
-      const dataService = getDataService();
-      return await dataService.getSubfamilias(parentId);
-    },
-    toggleFamiliaStatus: async (id) => {
-      const dataService = getDataService();
-      return await dataService.toggleFamiliaStatus(id);
-    },
-    
-    // Funciones de servicios
-    getAllServicios: async () => {
-      const dataService = getDataService();
-      return await dataService.getAllServicios();
-    },
-    getServicioById: async (id) => {
-      const dataService = getDataService();
-      return await dataService.getServicioById(id);
-    },
-    createServicio: async (servicio) => {
-      const dataService = getDataService();
-      return await dataService.createServicio(servicio);
-    },
-    updateServicio: async (id, servicio) => {
-      const dataService = getDataService();
-      return await dataService.updateServicio(id, servicio);
-    },
-    deleteServicio: async (id) => {
-      const dataService = getDataService();
-      return await dataService.deleteServicio(id);
-    },
-    getServiciosByTarifaId: async (tarifaId) => {
-      const dataService = getDataService();
-      return await dataService.getServiciosByTarifaId(tarifaId);
-    },
-    
-    // Funciones de tipos de IVA
-    getAllTiposIVA: async () => {
-      const dataService = getDataService();
-      return await dataService.getAllTiposIVA();
-    },
-    getTipoIVAById: async (id) => {
-      const dataService = getDataService();
-      return await dataService.getTipoIVAById(id);
-    },
-    createTipoIVA: async (tipoIVA) => {
-      const dataService = getDataService();
-      return await dataService.createTipoIVA(tipoIVA);
-    },
-    updateTipoIVA: async (id, tipoIVA) => {
-      const dataService = getDataService();
-      return await dataService.updateTipoIVA(id, tipoIVA);
-    },
-    deleteTipoIVA: async (id) => {
-      const dataService = getDataService();
-      return await dataService.deleteTipoIVA(id);
-    },
-    getTiposIVAByTarifaId: async (tarifaId) => {
-      const dataService = getDataService();
-      return await dataService.getTiposIVAByTarifaId(tarifaId);
-    },
-    
-    // Funciones de equipos
-    getAllEquipos: async () => {
-      const dataService = getDataService();
-      return await dataService.getAllEquipos();
-    },
-    getEquipoById: async (id) => {
-      const dataService = getDataService();
-      return await dataService.getEquipoById(id);
-    },
-    createEquipo: async (equipo) => {
-      const dataService = getDataService();
-      return await dataService.createEquipo(equipo);
-    },
-    updateEquipo: async (id, equipo) => {
-      const dataService = getDataService();
-      return await dataService.updateEquipo(id, equipo);
-    },
-    deleteEquipo: async (id) => {
-      const dataService = getDataService();
-      return await dataService.deleteEquipo(id);
-    },
-    getEquiposByClinicaId: async (clinicaId) => {
-      const dataService = getDataService();
-      return await dataService.getEquiposByClinicaId(clinicaId);
-    },
-    
-    // Funciones de bloques de agenda
-    getAllScheduleBlocks: async () => {
-      const dataService = getDataService();
-      return await dataService.getAllScheduleBlocks();
-    },
-    getScheduleBlockById: async (id) => {
-      const dataService = getDataService();
-      return await dataService.getScheduleBlockById(id);
-    },
-    createScheduleBlock: async (block) => {
-      const dataService = getDataService();
-      return await dataService.createScheduleBlock(block);
-    },
-    updateScheduleBlock: async (id, block) => {
-      const dataService = getDataService();
-      return await dataService.updateScheduleBlock(id, block);
-    },
-    deleteScheduleBlock: async (id) => {
-      const dataService = getDataService();
-      return await dataService.deleteScheduleBlock(id);
-    },
-    getBlocksByDateRange: async (clinicId, startDate, endDate) => {
-      const dataService = getDataService();
-      return await dataService.getBlocksByDateRange(clinicId, startDate, endDate);
-    },
-    
-    // Funciones de imágenes
-    getEntityImages: async (entityType, entityId) => {
-      const dataService = getDataService();
-      return await dataService.getEntityImages(entityType, entityId);
-    },
-    saveEntityImages: async (entityType, entityId, images) => {
-      const dataService = getDataService();
-      return await dataService.saveEntityImages(entityType, entityId, images);
-    },
-    deleteEntityImages: async (entityType, entityId) => {
-      const dataService = getDataService();
-      return await dataService.deleteEntityImages(entityType, entityId);
-    },
-    
-    // Funciones de documentos
-    getEntityDocuments: async (entityType, entityId, category) => {
-      const dataService = getDataService();
-      return await dataService.getEntityDocuments(entityType, entityId, category);
-    },
-    saveEntityDocuments: async (entityType, entityId, documents, category) => {
-      const dataService = getDataService();
-      return await dataService.saveEntityDocuments(entityType, entityId, documents, category);
-    },
-    deleteEntityDocuments: async (entityType, entityId, category) => {
-      const dataService = getDataService();
-      return await dataService.deleteEntityDocuments(entityType, entityId, category);
-    },
+    // Documentos (Específicos)
+    getEntityDocuments: (entityType, entityId, category) => getDataService().getEntityDocuments(entityType, entityId, category),
+    saveEntityDocuments: (entityType, entityId, documents, category) => getDataService().saveEntityDocuments(entityType, entityId, documents, category),
+    deleteEntityDocuments: (entityType, entityId, category) => getDataService().deleteEntityDocuments(entityType, entityId, category),
 
-    // Funciones de archivos
-    getAllFiles: async () => {
-      const dataService = getDataService();
-      return await dataService.getAllFiles();
-    },
-    getFileById: async (id) => {
-      const dataService = getDataService();
-      return await dataService.getFileById(id);
-    },
-    saveFile: async (file) => {
-      const dataService = getDataService();
-      return await dataService.saveFile(file);
-    },
-    deleteFile: async (id) => {
-      const dataService = getDataService();
-      return await dataService.deleteFile(id);
-    },
-    updateFileMetadata: async (id, metadata) => {
-      const dataService = getDataService();
-      return await dataService.updateFileMetadata(id, metadata);
-    },
-    restoreFile: async (id) => {
-      const dataService = getDataService();
-      return await dataService.restoreFile(id);
-    },
-    getFilesByFilter: async (filter) => {
-      const dataService = getDataService();
-      return await dataService.getFilesByFilter(filter);
-    },
-    getStorageStats: async (clinicId) => {
-      const dataService = getDataService();
-      return await dataService.getStorageStats(clinicId);
-    },
-    
     // Funciones de plantillas de agenda
-    getScheduleTemplates: async () => {
-      const dataService = getDataService();
-      return await dataService.getScheduleTemplates();
-    },
-    getTemplateById: async (id) => {
-      const dataService = getDataService();
-      return await dataService.getTemplateById(id);
-    },
-    saveTemplate: async (template) => {
-      const dataService = getDataService();
-      return await dataService.saveTemplate(template);
-    },
-    deleteTemplate: async (id) => {
-      const dataService = getDataService();
-      return await dataService.deleteTemplate(id);
-    },
-    getTemplatesByClinic: async (clinicId) => {
-      const dataService = getDataService();
-      return await dataService.getTemplatesByClinic(clinicId);
-    },
+    getScheduleTemplates: async () => { console.warn("getScheduleTemplates no implementado"); return []; },
+    getTemplateById: async (id) => { console.warn(`getTemplateById(${id}) no implementado`); return null; },
+    saveTemplate: async (template) => { console.warn("saveTemplate no implementado"); throw new Error("No implementado"); },
+    deleteTemplate: async (id) => { console.warn(`deleteTemplate(${id}) no implementado`); return false; },
+    getTemplatesByClinic: async (clinicId) => { console.warn(`getTemplatesByClinic(${clinicId}) no implementado`); return []; },
     
-    // Funciones de productos
-    getAllProductos: async () => {
-      const dataService = getDataService();
-      return await dataService.getAllProductos();
-    },
-    getProductoById: async (id) => {
-      const dataService = getDataService();
-      return await dataService.getProductoById(id);
-    },
-    createProducto: async (producto) => {
-      const dataService = getDataService();
-      return await dataService.createProducto(producto);
-    },
-    updateProducto: async (id, producto) => {
-      const dataService = getDataService();
-      return await dataService.updateProducto(id, producto);
-    },
-    deleteProducto: async (id) => {
-      const dataService = getDataService();
-      return await dataService.deleteProducto(id);
-    },
-    getProductosByTarifaId: async (tarifaId) => {
-      const dataService = getDataService();
-      return await dataService.getProductosByTarifaId(tarifaId);
-    },
-    getProductosByFamilia: async (familia) => {
-      const dataService = getDataService();
-      return await dataService.getProductosByFamilia(familia);
-    },
+    // >>> FUNCIONES DE PRODUCTOS COMENTADAS (requieren implementación en SupabaseDataService) <<<
+    // getAllProductos: () => getDataService().getAllProductos(),
+    // getProductoById: (id) => getDataService().getProductoById(id),
+    // createProducto: (producto) => getDataService().createProducto(producto),
+    // updateProducto: (id, producto) => getDataService().updateProducto(id, producto),
+    // deleteProducto: (id) => getDataService().deleteProducto(id),
+    // getProductosByTarifaId: (tarifaId) => getDataService().getProductosByTarifaId(tarifaId),
+    // getProductosByFamilia: (familia) => getDataService().getProductosByFamilia(familia),
+    // <<< FIN FUNCIONES DE PRODUCTOS >>>
     
-    // Funciones de consumos de servicios
-    getAllConsumos: async () => {
-      const dataService = getDataService();
-      return await dataService.getAllConsumos();
-    },
-    getConsumoById: async (id) => {
-      const dataService = getDataService();
-      return await dataService.getConsumoById(id);
-    },
-    createConsumo: async (consumo) => {
-      const dataService = getDataService();
-      return await dataService.createConsumo(consumo);
-    },
-    updateConsumo: async (id, consumo) => {
-      const dataService = getDataService();
-      return await dataService.updateConsumo(id, consumo);
-    },
-    deleteConsumo: async (id) => {
-      const dataService = getDataService();
-      return await dataService.deleteConsumo(id);
-    },
-    getConsumosByServicioId: async (servicioId) => {
-      const dataService = getDataService();
-      return await dataService.getConsumosByServicioId(servicioId);
-    },
+    // --- Implementaciones placeholder para PRODUCTOS --- 
+    getAllProductos: async () => { console.warn("getAllProductos no implementado"); return []; },
+    getProductoById: async (id) => { console.warn(`getProductoById(${id}) no implementado`); return null; },
+    createProducto: async (producto) => { console.warn("createProducto no implementado"); throw new Error("No implementado"); },
+    updateProducto: async (id, producto) => { console.warn(`updateProducto(${id}) no implementado`); return null; },
+    deleteProducto: async (id) => { console.warn(`deleteProducto(${id}) no implementado`); return false; },
+    getProductosByTarifaId: async (tarifaId) => { console.warn(`getProductosByTarifaId(${tarifaId}) no implementado`); return []; },
+    getProductosByFamilia: async (familia) => { console.warn(`getProductosByFamilia(${familia}) no implementado`); return []; },
+    // --- Fin placeholders PRODUCTOS --- 
+    
+    // >>> FUNCIONES DE CONSUMOS COMENTADAS (requieren implementación en SupabaseDataService) <<<
+    // getAllConsumos: () => getDataService().getAllConsumos(),
+    // getConsumoById: (id) => getDataService().getConsumoById(id),
+    // createConsumo: (consumo) => getDataService().createConsumo(consumo),
+    // updateConsumo: (id, consumo) => getDataService().updateConsumo(id, consumo),
+    // deleteConsumo: (id) => getDataService().deleteConsumo(id),
+    // getConsumosByServicioId: (servicioId) => getDataService().getConsumosByServicioId(servicioId),
+    // <<< FIN FUNCIONES DE CONSUMOS >>>
 
-    // Funciones de usuarios
-    getAllUsuarios: async () => {
-      const dataService = getDataService();
-      return await dataService.getAllUsuarios();
-    },
-    getUsuarioById: async (id) => {
-      const dataService = getDataService();
-      return await dataService.getUsuarioById(id);
-    },
-    getUsuariosByClinica: async (clinicaId) => {
-      const dataService = getDataService();
-      return await dataService.getUsuariosByClinica(clinicaId);
-    },
-    createUsuario: async (usuario) => {
-      const dataService = getDataService();
-      return await dataService.createUsuario(usuario);
-    },
-    updateUsuario: async (id, usuario) => {
-      const dataService = getDataService();
-      return await dataService.updateUsuario(id, usuario);
-    },
-    deleteUsuario: async (id) => {
-      const dataService = getDataService();
-      return await dataService.deleteUsuario(id);
-    }
+    // --- Implementaciones placeholder para CONSUMOS --- 
+    getAllConsumos: async () => { console.warn("getAllConsumos no implementado"); return []; },
+    getConsumoById: async (id) => { console.warn(`getConsumoById(${id}) no implementado`); return null; },
+    createConsumo: async (consumo) => { console.warn("createConsumo no implementado"); throw new Error("No implementado"); },
+    updateConsumo: async (id, consumo) => { console.warn(`updateConsumo(${id}) no implementado`); return null; },
+    deleteConsumo: async (id) => { console.warn(`deleteConsumo(${id}) no implementado`); return false; },
+    getConsumosByServicioId: async (servicioId) => { console.warn(`getConsumosByServicioId(${servicioId}) no implementado`); return []; },
+    // --- Fin placeholders CONSUMOS --- 
+    
+    // >>> FUNCIONES DE USUARIOS COMENTADAS (requieren implementación en SupabaseDataService) <<<
+    // getAllUsuarios: () => getDataService().getAllUsuarios(),
+    // getUsuarioById: (id) => getDataService().getUsuarioById(id),
+    // getUsuariosByClinica: (clinicaId) => getDataService().getUsuariosByClinica(clinicaId),
+    // createUsuario: (usuario) => getDataService().createUsuario(usuario),
+    // updateUsuario: (id, usuario) => getDataService().updateUsuario(id, usuario),
+    // deleteUsuario: (id) => getDataService().deleteUsuario(id),
+    // <<< FIN FUNCIONES DE USUARIOS >>>
+
+    // --- Implementaciones placeholder para USUARIOS --- 
+    getAllUsuarios: async () => { console.warn("getAllUsuarios no implementado"); return []; },
+    getUsuarioById: async (id) => { console.warn(`getUsuarioById(${id}) no implementado`); return null; },
+    getUsuariosByClinica: async (clinicaId) => { console.warn(`getUsuariosByClinica(${clinicaId}) no implementado`); return []; },
+    createUsuario: async (usuario) => { console.warn("createUsuario no implementado"); throw new Error("No implementado"); },
+    updateUsuario: async (id, usuario) => { console.warn(`updateUsuario(${id}) no implementado`); return null; },
+    deleteUsuario: async (id) => { console.warn(`deleteUsuario(${id}) no implementado`); return false; },
+
+    // Añadir aquí el resto de funciones delegadas...
   };
-  
+
   return (
     <InterfazContext.Provider value={interfaz}>
       {children}
@@ -671,18 +336,20 @@ export function InterfazProvider({ children }: { children: ReactNode }) {
 }
 
 // Hook para usar el contexto
-export function useInterfaz() {
+export const useInterfaz = () => {
   const context = useContext(InterfazContext);
   if (context === undefined) {
-    throw new Error('useInterfaz debe ser usado dentro de un InterfazProvider');
+    throw new Error("useInterfaz debe usarse dentro de un InterfazProvider");
+  }
+  if (!context.initialized) {
+    console.warn("useInterfaz llamado antes de que InterfazProvider marcara como inicializado.");
   }
   return context;
-}
+};
 
 // Exportar tipos necesarios
 export type {
   Clinica,
-  ClinicConfig,
   Tarifa,
   FamiliaTarifa,
   Servicio,

@@ -397,25 +397,34 @@ export default function PlantillasHorariasPage() {
               <CardContent className="pt-6">
                 <ScheduleConfig 
                     clinic={{
-                       id: 'new-template',
+                       id: editingTemplate ? String(editingTemplate.id) : 'new-template',
                        name: currentTemplateName,
                        openTime: currentOpenTime,
                        closeTime: currentCloseTime,
-                       independentScheduleBlocks: [],
+                       independentScheduleBlocks: convertWeekScheduleToBlocks(currentSchedule, editingTemplate ? String(editingTemplate.id) : 'new-template') as any,
                        linkedScheduleTemplateId: null,
                        slotDuration: currentSlotDuration,
-                    } as Clinica}
-                    onChange={() => {}} 
-                    isReadOnly={true}
+                    } as unknown as Clinica} 
+                    onChange={handleTemplateDataChange}
+                    isReadOnly={false}
                 /> 
               </CardContent>
             </Card>
           </div>
           <DialogFooter className="sticky bottom-0 bg-background z-10 pt-4 mt-4 px-6">
-            <Button variant="outline" onClick={() => setIsAddingTemplate(false)}>
+            <Button variant="outline" onClick={() => {
+              // Resetear estados al cancelar
+              setIsAddingTemplate(false);
+              setEditingTemplate(null);
+            }}>
               Cancelar
             </Button>
-            <Button onClick={handleAddTemplate} disabled={!currentTemplateName.trim()}>Guardar Plantilla</Button>
+            <Button 
+              onClick={editingTemplate ? handleEditTemplate : handleAddTemplate}
+              disabled={!currentTemplateName.trim() || isSaving}
+            >
+              {isSaving ? "Guardando..." : (editingTemplate ? "Guardar Cambios" : "Crear Plantilla")}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

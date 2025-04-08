@@ -16,48 +16,76 @@ import { ThemeProvider } from "@/app/contexts/theme-context"
 import { AppProviders } from '@/contexts'
 import { LayoutWrapper } from "@/components/LayoutWrapper"
 import { DatabaseProvider } from "@/contexts/database-context"
-import { useEffect } from "react"
-import { initializeDataService } from "@/services/data"
+import { useEffect, useState } from "react"
+import { initializeDataService, type SupabaseConnectionConfig } from "@/services/data"
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   
-  // Inicializar el servicio de datos al cargar la aplicación
+  const [isDataServiceInitialized, setIsDataServiceInitialized] = useState(false);
+
   useEffect(() => {
-    initializeDataService().catch(error => {
-      console.error('Error al inicializar el servicio de datos:', error);
-    });
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+    if (!supabaseUrl || !supabaseAnonKey) {
+      console.error("Error: Faltan las variables de entorno de Supabase...");
+      return; 
+    }
+
+    const config: SupabaseConnectionConfig = {
+      url: supabaseUrl,
+      apiKey: supabaseAnonKey,
+      schema: 'public'
+    };
+
+    initializeDataService(config)
+      .then(() => {
+        setIsDataServiceInitialized(true);
+        console.log("Servicio de datos inicializado correctamente.");
+      })
+      .catch(error => {
+        console.error('Error al inicializar el servicio de datos:', error);
+      });
   }, []);
   
   return (
     <html lang="es" suppressHydrationWarning>
       <body>
-        <StorageInitializer />
-        <ThemeProvider>
-          <DatabaseProvider>
-            <SystemProvider>
-              <AppProviders>
-                <EquipmentProvider>
-                  <ClinicProvider>
-                    <FamilyProvider>
-                      <CabinProvider>
-                        <LastClientProvider>
-                          <ClientCardProvider>
-                            <ServicioProvider>
-                              <ConsumoServicioProvider>
-                                <LayoutWrapper>{children}</LayoutWrapper>
-                                <Toaster />
-                              </ConsumoServicioProvider>
-                            </ServicioProvider>
-                          </ClientCardProvider>
-                        </LastClientProvider>
-                      </CabinProvider>
-                    </FamilyProvider>
-                  </ClinicProvider>
-                </EquipmentProvider>
-              </AppProviders>
-            </SystemProvider>
-          </DatabaseProvider>
-        </ThemeProvider>
+        {!isDataServiceInitialized ? (
+          <div className="flex items-center justify-center h-screen">
+            Cargando servicio de datos...
+          </div>
+        ) : (
+          <>
+            <StorageInitializer />
+            <ThemeProvider>
+              <DatabaseProvider>
+                <SystemProvider>
+                  <AppProviders>
+                    <EquipmentProvider>
+                      <ClinicProvider>
+                        <FamilyProvider>
+                          <CabinProvider>
+                            <LastClientProvider>
+                              <ClientCardProvider>
+                                <ServicioProvider>
+                                  <ConsumoServicioProvider>
+                                    <LayoutWrapper>{children}</LayoutWrapper>
+                                    <Toaster />
+                                  </ConsumoServicioProvider>
+                                </ServicioProvider>
+                              </ClientCardProvider>
+                            </LastClientProvider>
+                          </CabinProvider>
+                        </FamilyProvider>
+                      </ClinicProvider>
+                    </EquipmentProvider>
+                  </AppProviders>
+                </SystemProvider>
+              </DatabaseProvider>
+            </ThemeProvider>
+          </>
+        )}
       </body>
     </html>
   )

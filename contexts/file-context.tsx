@@ -102,7 +102,11 @@ export const FileProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const loadFiles = async () => {
       if (interfaz.initialized && !dataFetched) {
         try {
-          const loadedFiles = await interfaz.getAllFiles();
+          // >>> COMENTADO TEMPORALMENTE HASTA IMPLEMENTAR getAllFiles en SupabaseDataService <<<
+          // const loadedFiles = await interfaz.getAllFiles();
+          const loadedFiles: EntityDocument[] = []; // Devolver array vacío temporalmente
+          // >>> FIN COMENTADO <<<
+
           // Asegurar que los datos se conviertan al formato correcto
           const baseFiles: BaseFile[] = loadedFiles ? 
             loadedFiles.map(file => {
@@ -113,7 +117,7 @@ export const FileProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             }) : [];
           setFiles(baseFiles);
           setDataFetched(true);
-          console.log("FileContext: Datos cargados correctamente");
+          console.log("FileContext: Carga inicial de archivos OMITIDA (getAllFiles no implementado)");
         } catch (error) {
           console.error("Error al cargar archivos:", error);
           setFiles([]);
@@ -121,7 +125,16 @@ export const FileProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
     };
     
-    loadFiles();
+    // >>> LLAMADA A loadFiles COMENTADA <<<
+    // loadFiles(); 
+    // >>> FIN LLAMADA COMENTADA <<<
+    // Marcar como 'fetched' para evitar bucles si la dependencia cambia y la función no existe
+    // Si la función no existe, nunca cambiaría dataFetched a true
+    if (!dataFetched) {
+        console.warn("FileContext: Omitiendo llamada a loadFiles() porque getAllFiles no está implementado en el dataService.");
+        setDataFetched(true); // Prevenir reintentos
+    }
+
   }, [interfaz.initialized, dataFetched]);
   
   // Función para disparar eventos de actualización

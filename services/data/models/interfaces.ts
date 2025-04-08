@@ -129,7 +129,6 @@ export interface Tarifa extends BaseEntity, Activable {
 }
 
 /** Interfaz para Familia de Tarifa */
-/*
 export interface FamiliaTarifa extends BaseEntity, Activable {
   name?: string;
   nombre?: string;
@@ -139,17 +138,14 @@ export interface FamiliaTarifa extends BaseEntity, Activable {
   tarifaId: string;
   descripcion?: string;
 }
-*/
 
 /** Interfaz para Consumo de Servicio */
-/*
 export interface Consumo extends BaseEntity {
   cantidad: number;
   tipoConsumo: string;
   servicioId: string;
   productoId: string;
 }
-*/
 
 /** Interfaz para Tipo de IVA */
 export interface TipoIVA extends BaseEntity {
@@ -190,7 +186,6 @@ export interface Equipo extends BaseEntity, Activable {
 }
 
 /** Interfaz para Bloque de Agenda */
-/*
 export interface ScheduleBlock extends BaseEntity {
   clinicId: string;
   date: string;
@@ -206,7 +201,6 @@ export interface ScheduleBlock extends BaseEntity {
   };
   createdAt: string;
 }
-*/
 
 /** Interfaz para Productos */
 export interface Producto extends BaseEntity, Activable {
