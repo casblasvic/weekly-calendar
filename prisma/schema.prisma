@@ -96,6 +96,9 @@ model User {
   imagesUploaded     EntityImage[]          @relation("UploadedImages")
   documentsUploaded  EntityDocument[]       @relation("UploadedDocuments")
   clinicAssignments  UserClinicAssignment[] // << AÑADIR RELACIÓN INVERSA
+  // Relaciones inversas para horarios/excepciones personalizadas
+  customSchedules         UserClinicSchedule[]
+  customScheduleExceptions UserClinicScheduleException[]
 
   @@index([systemId])
   @@map("users")
@@ -174,6 +177,9 @@ model Clinic {
   cashSessions       CashSession[]
   userAssignments    UserClinicAssignment[]
   cabins             Cabin[]
+  // Relaciones inversas para horarios/excepciones personalizadas de usuarios
+  userSchedules         UserClinicSchedule[]
+  userScheduleExceptions UserClinicScheduleException[]
 
   @@unique([name, systemId], name: "Clinic_name_systemId_key")
   @@index([systemId])
@@ -196,6 +202,7 @@ model Role {
   // Relaciones
   users       UserRole[] // Usuarios que tienen este rol
   permissions RolePermission[] // Permisos asociados a este rol
+  clinicAssignments UserClinicAssignment[] // << AÑADIR INVERSA para asignaciones por clínica
 
   @@unique([name, systemId]) // El nombre del rol debe ser único dentro de un sistema
   @@index([systemId])
@@ -391,6 +398,7 @@ model ClientRelation {
   clientB Client @relation("ClientB", fields: [clientBId], references: [id], onDelete: Cascade)
 
   @@id([clientAId, clientBId]) // Clave primaria compuesta
+  @@index([clientAId])
   @@index([clientBId])
   @@map("client_relations")
 }
@@ -414,6 +422,7 @@ model EmploymentContract {
   updatedAt    DateTime  @updatedAt
 
   @@index([userId])
+  @@index([systemId])
   @@map("employment_contracts")
 }
 
@@ -798,6 +807,8 @@ model Product {
 
   @@unique([name, systemId])
   @@index([systemId])
+  @@index([categoryId])
+  @@index([vatTypeId]) // << AÑADIR ÍNDICE
   @@map("products")
 }
 
@@ -907,6 +918,7 @@ model Tariff {
   @@unique([name, systemId]) // Nombre único por sistema
   // @@unique([name, systemId, clinicId]) // Si son específicas de clínica
   @@index([systemId])
+  @@index([defaultVatTypeId]) // << AÑADIR ESTE ÍNDICE (DE NUEVO)
   @@map("tariffs")
 }
 
@@ -1037,6 +1049,7 @@ model TicketItem {
   @@index([serviceId])
   @@index([productId])
   @@index([vatRateId])
+  @@index([originalVatTypeId])
   @@map("ticket_items")
 }
 
@@ -1281,6 +1294,7 @@ model LoyaltyLedger {
   @@index([clientId])
   @@index([movementDate])
   @@index([systemId])
+  @@index([userId])
   @@map("loyalty_ledgers")
 }
 
@@ -1317,6 +1331,8 @@ model UserSkill {
   skill Skill @relation(fields: [skillId], references: [id], onDelete: Cascade)
 
   @@id([userId, skillId]) // Clave primaria compuesta
+  @@index([userId])
+  @@index([skillId])
   @@map("user_skills")
 }
 
@@ -1388,19 +1404,67 @@ model EntityDocument {
 // --- NUEVO MODELO PARA ASIGNACIÓN USUARIO-CLINICA ---
 model UserClinicAssignment {
   userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   clinicId   String
+  clinic     Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  roleId     String   // ID del Rol que el usuario tiene en ESTA clínica
+  role       Role     @relation(fields: [roleId], references: [id], onDelete: Cascade) // Relación con Role
   assignedAt DateTime @default(now())
 
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  // --- HORARIO/EXCEPCIONES PERSONALIZADAS VINCULADAS A ESTA ASIGNACIÓN ---
+  customSchedule   UserClinicSchedule?           // Un usuario puede tener UN horario personalizado por asignación
+  customExceptions UserClinicScheduleException[] // Un usuario puede tener MUCHAS excepciones por asignación
 
-  @@id([userId, clinicId])
-  @@index([userId])
+  @@id([userId, clinicId]) // Clave primaria: Usuario solo tiene UN rol por clínica
   @@index([clinicId])
+  @@index([roleId]) // << AÑADIR ÍNDICE para roleId
   @@map("user_clinic_assignments")
 }
 
-// --- FIN NUEVO MODELO ---
+// --- NUEVO MODELO: Horario Personalizado de Usuario por Clínica ---
+model UserClinicSchedule {
+  id        String   @id @default(cuid())
+  // Referencia directa a User y Clinic
+  userId    String
+  clinicId  String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clinic    Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  // Relación One-to-One explícita con UserClinicAssignment
+  assignment UserClinicAssignment @relation(fields: [userId, clinicId], references: [userId, clinicId], onDelete: Cascade)
+
+  scheduleJson Json     // Almacena el objeto WeekSchedule personalizado
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([userId, clinicId]) // Asegurar un único horario por usuario/clínica
+  @@index([userId])
+  @@index([clinicId])
+  @@map("user_clinic_schedules")
+}
+
+// --- NUEVO MODELO: Excepción de Horario Personalizada de Usuario por Clínica ---
+model UserClinicScheduleException {
+  id        String   @id @default(cuid())
+  // Referencia directa a User y Clinic
+  userId    String
+  clinicId  String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clinic    Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  // Relación Many-to-One explícita con UserClinicAssignment
+  assignment UserClinicAssignment @relation(fields: [userId, clinicId], references: [userId, clinicId], onDelete: Cascade)
+
+  name         String?  // Nombre opcional para la excepción (ej: \"Vacaciones Verano 2024\")
+  startDate    DateTime @db.Date // Fecha de inicio de la excepción
+  endDate      DateTime @db.Date // Fecha de fin de la excepción
+  scheduleJson Json     // Almacena el objeto WeekSchedule que APLICA DURANTE la excepción
+                       // Este horario sobrescribe el base/personalizado en esas fechas.
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId, clinicId, startDate]) // Índice para buscar excepciones por usuario/clínica/fecha
+  @@index([userId, clinicId]) // << AÑADIR ESTE ÍNDICE PARA LA RELACIÓN
+  @@map("user_clinic_schedule_exceptions")
+}
 
 // --- NUEVO MODELO PARA CATEGORÍAS/FAMILIAS ---
 model Category {

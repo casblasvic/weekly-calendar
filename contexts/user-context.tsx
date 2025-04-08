@@ -1,7 +1,7 @@
 "use client"
 
 import React from 'react'
-import { createContext, useContext, useState, type ReactNode, useEffect, useCallback } from "react"
+import { createContext, useContext, useState, type ReactNode, useEffect, useCallback, useMemo } from "react"
 // import { Usuario as UsuarioModel } from "@/services/data/models/interfaces.ts" // <- Comentar ruta con alias
 import { Usuario as UsuarioModel } from "../services/data/models/interfaces.ts"; // <<< Usar ruta relativa
 import { User as PrismaUser } from '@prisma/client';
@@ -63,11 +63,17 @@ export function UserProvider({ children }: { children: ReactNode }) {
   }, [fetchUsuarios])
 
   // Obtener usuario por ID
-  const getUsuarioById = async (id: string): Promise<Usuario | null> => {
+  const getUsuarioById = useCallback(async (id: string): Promise<Usuario | null> => {
+    // Comprobar caché local primero
     const localUser = usuarios.find(u => isSameId(u.id, id))
-    if (localUser) return localUser
+    if (localUser) {
+        console.log(`[UserContext] getUsuarioById(${id}) - Encontrado en caché local.`);
+        return localUser;
+    }
 
-    setIsLoading(true)
+    // Si no está en caché, buscar en API
+    console.log(`[UserContext] getUsuarioById(${id}) - No encontrado en caché. Buscando en API...`);
+    // setIsLoading(true) // Considerar si este isLoading debe afectar a toda la lista o ser específico
     try {
       const response = await fetch(`/api/users/${id}`)
       if (response.status === 404) return null
@@ -81,12 +87,12 @@ export function UserProvider({ children }: { children: ReactNode }) {
       setError(err instanceof Error ? err.message : 'Error desconocido')
       return null
     } finally {
-      setIsLoading(false)
+      // setIsLoading(false)
     }
-  }
+  }, [usuarios])
 
   // Obtener usuarios por clínica
-  const getUsuariosByClinica = async (clinicaId: string): Promise<Usuario[]> => {
+  const getUsuariosByClinica = useCallback(async (clinicaId: string): Promise<Usuario[]> => {
     // console.warn("getUsuariosByClinica no implementado con API (filtrado necesario en backend)") // Comentado
     // return [] // Comentado
     
@@ -111,12 +117,13 @@ export function UserProvider({ children }: { children: ReactNode }) {
       setIsLoading(false) // Opcional: finalizar carga específica
     }
     // >>> FIN NUEVA IMPLEMENTACIÓN <<<
-  }
+  }, [])
 
   // Crear nuevo usuario (requiere contraseña)
-  const createUsuario = async (usuarioData: Omit<Usuario, 'id' | 'createdAt' | 'updatedAt' | 'systemId'> & { password?: string }): Promise<Usuario | null> => {
+  const createUsuario = useCallback(async (usuarioData: Omit<Usuario, 'id' | 'createdAt' | 'updatedAt' | 'systemId'> & { password?: string }): Promise<Usuario | null> => {
     if (!usuarioData.password) {
-      setError("La contraseña es obligatoria para crear un usuario.")
+      // setError("La contraseña es obligatoria para crear un usuario.") // Usar toast?
+      console.error("createUsuario: La contraseña es obligatoria.");
       return null
     }
     setIsLoading(true)
@@ -141,10 +148,10 @@ export function UserProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [setUsuarios])
 
   // Actualizar usuario (sin contraseña)
-  const updateUsuario = async (id: string, usuarioUpdate: Partial<Omit<Usuario, 'id' | 'createdAt' | 'updatedAt' | 'systemId'>>): Promise<Usuario | null> => {
+  const updateUsuario = useCallback(async (id: string, usuarioUpdate: Partial<Omit<Usuario, 'id' | 'createdAt' | 'updatedAt' | 'systemId'>>): Promise<Usuario | null> => {
     setIsLoading(true)
     setError(null)
     const usuarioId = String(id)
@@ -170,10 +177,10 @@ export function UserProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [setUsuarios])
 
   // Eliminar usuario
-  const deleteUsuario = async (id: string): Promise<boolean> => {
+  const deleteUsuario = useCallback(async (id: string): Promise<boolean> => {
     setIsLoading(true)
     setError(null)
     const stringId = String(id)
@@ -194,31 +201,63 @@ export function UserProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [setUsuarios])
 
   // Cambiar estado activo/inactivo (PENDIENTE API)
-  const toggleUsuarioStatus = async (id: string): Promise<boolean> => {
+  const toggleUsuarioStatus = useCallback(async (id: string): Promise<boolean> => {
     console.warn("toggleUsuarioStatus no implementado con API todavía.")
-    // Podría ser un PUT a /api/users/[id] con { isActive: ... } o una ruta dedicada.
-    // const currentUser = usuarios.find(u => isSameId(u.id, id));
-    // if (!currentUser) return false;
-    // const result = await updateUsuario(id, { isActive: !currentUser.isActive });
-    // return !!result;
-    return false
-  }
+    // Podría ser un PUT a /api/users/[id]/toggle-status
+    // Por ahora, simulamos la actualización local y devolvemos éxito
+    const stringId = String(id);
+    setUsuarios(prev => 
+        prev.map(u => 
+            isSameId(u.id, stringId) ? { ...u, isActive: !u.isActive } : u
+        )
+    );
+    // Idealmente, aquí llamaríamos a la API y revertiríamos si falla
+    return true; // Simular éxito por ahora
+    
+    /* Lógica API (cuando esté lista)
+    setIsLoading(true);
+    setError(null);
+    const stringId = String(id);
+    try {
+        const response = await fetch(`/api/users/${stringId}/toggle-status`, { method: 'PATCH' });
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || `Error ${response.status}`);
+        }
+        const updatedUser: Usuario = await response.json();
+        setUsuarios(prev => prev.map(u => isSameId(u.id, stringId) ? updatedUser : u));
+        return true;
+    } catch (err) {
+        console.error(`Error toggling status for user ${stringId}:`, err);
+        setError(err instanceof Error ? err.message : 'Error desconocido al cambiar estado');
+        // Opcional: Revertir el cambio local si la API falla?
+        return false;
+    } finally {
+        setIsLoading(false);
+    }
+    */
+  // Dependencia: setUsuarios para la simulación local
+  }, [setUsuarios])
 
-  const contextValue: UserContextType = {
+  // Las dependencias de useMemo son los valores que contiene
+  // y las funciones memoizadas (envueltas en useCallback)
+  const contextValue = useMemo(() => ({
     usuarios,
     isLoading,
     error,
-    refetchUsuarios: fetchUsuarios,
+    refetchUsuarios: fetchUsuarios, // fetchUsuarios ya está en useCallback
     getUsuarioById,
     getUsuariosByClinica,
     createUsuario,
     updateUsuario,
     deleteUsuario,
     toggleUsuarioStatus,
-  }
+  // Las dependencias de useMemo son los valores que contiene
+  // y las funciones memoizadas
+  }), [usuarios, isLoading, error, fetchUsuarios, getUsuarioById, getUsuariosByClinica, createUsuario, updateUsuario, deleteUsuario, toggleUsuarioStatus]);
 
   return <UserContext.Provider value={contextValue}>{children}</UserContext.Provider>
 }

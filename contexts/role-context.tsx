@@ -1,202 +1,177 @@
 "use client"
 
-import { createContext, useContext, useState, type ReactNode, useEffect } from "react"
-import { useInterfaz } from "@/contexts/interfaz-Context"
-import { PerfilEmpleado } from "@/services/data/models/interfaces"
+import React from 'react';
+import { createContext, useContext, useState, type ReactNode, useEffect, useCallback, useMemo } from "react"
+// import { useInterfaz } from "@/contexts/interfaz-Context" // No parece necesario aquí
+// import { PerfilEmpleado } from "@/services/data/models/interfaces" // Usaremos el tipo Role de Prisma
+import { Role as PrismaRole } from '@prisma/client'; // Importar tipo Role de Prisma
 
-// Mock data para perfiles (roles) de usuario
+// Ya no necesitamos PERFILES_MOCK
+/*
 const PERFILES_MOCK: PerfilEmpleado[] = [
   { id: "1", nombre: "Administrador", permisos: ["admin", "read", "write"], isDefault: false },
-  { id: "2", nombre: "Central", permisos: ["read", "write"], isDefault: false },
-  { id: "3", nombre: "Contabilidad", permisos: ["read", "accounting"], isDefault: false },
-  { id: "4", nombre: "Doctor Administrador", permisos: ["read", "write", "doctor"], isDefault: false },
-  { id: "5", nombre: "Encargado", permisos: ["read", "write", "manager"], isDefault: false },
-  { id: "6", nombre: "Gerente de zona", permisos: ["read", "write", "manager"], isDefault: false },
-  { id: "7", nombre: "Marketing", permisos: ["read", "marketing"], isDefault: false },
-  { id: "8", nombre: "Operador Call Center", permisos: ["read", "callcenter"], isDefault: false },
-  { id: "9", nombre: "Personal sin acceso", permisos: [], isDefault: false },
-  { id: "10", nombre: "Personal", permisos: ["read"], isDefault: true },
-  { id: "11", nombre: "Profesional", permisos: ["read", "write", "professional"], isDefault: false },
-  { id: "12", nombre: "Recepción", permisos: ["read", "write", "reception"], isDefault: false },
-  { id: "13", nombre: "Supervisor Call Center", permisos: ["read", "write", "callcenter"], isDefault: false }
+  // ... resto de mocks
 ];
+*/
 
+// Usar el tipo Role de Prisma en la interfaz
 interface RoleContextType {
-  roles: PerfilEmpleado[];
-  getAll: () => Promise<PerfilEmpleado[]>;
-  getById: (id: string) => Promise<PerfilEmpleado | null>;
-  getByName: (name: string) => Promise<PerfilEmpleado | null>;
-  create: (role: Omit<PerfilEmpleado, 'id'>) => Promise<string>;
-  update: (id: string, role: Partial<PerfilEmpleado>) => Promise<boolean>;
-  delete: (id: string) => Promise<boolean>;
+  roles: PrismaRole[]; // <-- Usar PrismaRole
+  isLoading: boolean; // <-- Añadir estado de carga
+  error: string | null; // <-- Añadir estado de error
+  refetchRoles: () => Promise<void>; // <-- Añadir función para recargar
+  // --- Funciones que operarán sobre estado local por ahora --- 
+  getAll: () => Promise<PrismaRole[]>; // Ahora simplemente devuelve el estado
+  getById: (id: string) => Promise<PrismaRole | null>;
+  getByName: (name: string) => Promise<PrismaRole | null>;
+  // Las siguientes funciones deberían llamar a API, por ahora modifican estado local si se implementan
+  create: (roleData: Omit<PrismaRole, 'id' | 'createdAt' | 'updatedAt' | 'systemId'>) => Promise<PrismaRole | null>; 
+  update: (id: string, roleUpdate: Partial<Omit<PrismaRole, 'id' | 'createdAt' | 'updatedAt' | 'systemId'>>) => Promise<boolean>;
+  deleteRole: (id: string) => Promise<boolean>; // Renombrar para evitar conflicto con palabra reservada
   isNameAvailable: (name: string, excludeId?: string) => Promise<boolean>;
 }
 
 const RoleContext = createContext<RoleContextType | undefined>(undefined);
 
 export function RoleProvider({ children }: { children: ReactNode }) {
-  const [roles, setRoles] = useState<PerfilEmpleado[]>([]);
-  const [initialized, setInitialized] = useState(false);
-  const interfaz = useInterfaz();
+  const [roles, setRoles] = useState<PrismaRole[]>([]);
+  // const [initialized, setInitialized] = useState(false); // Ya no necesario con isLoading
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  // const interfaz = useInterfaz(); // No parece necesario
 
-  // Inicializar roles
+  // Función para cargar roles desde la API
+  const fetchRoles = useCallback(async () => {
+    // console.log("[RoleContext] fetchRoles llamado"); // DEBUG
+    setIsLoading(true);
+    setError(null);
+    try {
+      // console.log("[RoleContext] Haciendo fetch a /api/roles..."); // DEBUG
+      const response = await fetch('/api/roles');
+      // console.log("[RoleContext] Respuesta recibida:", response.status, response.ok); // DEBUG
+      if (!response.ok) {
+        throw new Error(`Error ${response.status}: ${response.statusText}`);
+      }
+      const loadedRoles: PrismaRole[] = await response.json();
+      // console.log("[RoleContext] Roles cargados desde API:", loadedRoles); // DEBUG
+      setRoles(loadedRoles);
+    } catch (err) {
+      console.error("Error al cargar roles desde API:", err);
+      setError(err instanceof Error ? err.message : 'Error desconocido al cargar roles');
+      setRoles([]); // Limpiar roles en caso de error
+    } finally {
+      setIsLoading(false);
+      // console.log("[RoleContext] fetchRoles finalizado. isLoading:", false); // DEBUG
+    }
+  }, []); // Sin dependencias externas
+
+  // Cargar roles iniciales al montar el provider
   useEffect(() => {
-    const loadRoles = async () => {
-      if (interfaz.initialized && !initialized) {
-        try {
-          // En producción, esto sería una llamada a la API
-          setRoles(PERFILES_MOCK);
-          setInitialized(true);
-        } catch (error) {
-          console.error("Error al cargar perfiles:", error);
-          setRoles([]);
-        }
-      }
+    // console.log("[RoleContext] useEffect inicial ejecutado"); // DEBUG
+    fetchRoles();
+  }, [fetchRoles]); // Dependencia correcta
+
+  // --- Implementación de funciones (Mayormente operan sobre estado local por ahora) ---
+
+  // Obtener todos los roles (devuelve la copia del estado)
+  const getAll = useCallback(async (): Promise<PrismaRole[]> => {
+    return [...roles]; // Devolver copia
+  }, [roles]);
+
+  // Obtener rol por ID (busca en el estado)
+  const getById = useCallback(async (id: string): Promise<PrismaRole | null> => {
+    const role = roles.find(r => r.id === id);
+    return role || null;
+  }, [roles]);
+
+  // Obtener rol por nombre (busca en el estado)
+  const getByName = useCallback(async (name: string): Promise<PrismaRole | null> => {
+    const role = roles.find(r => r.name.toLowerCase() === name.toLowerCase());
+    return role || null;
+  }, [roles]);
+
+  // Crear nuevo rol (MODIFICARÍA ESTADO LOCAL - PENDIENTE API)
+  const create = useCallback(async (roleData: Omit<PrismaRole, 'id' | 'createdAt' | 'updatedAt' | 'systemId'>): Promise<PrismaRole | null> => {
+    console.warn("RoleContext.create no implementado con API. Modificando estado local temporalmente.");
+    const nameExists = roles.some(r => r.name.toLowerCase() === roleData.name.toLowerCase());
+    if (nameExists) {
+        setError(`Ya existe un rol con el nombre "${roleData.name}"`);
+        return null;
+    }
+    // Simular creación local
+    const tempId = `temp_${Date.now()}`;
+    const newRole: PrismaRole = {
+        ...roleData,
+        id: tempId,
+        systemId: 'placeholder_system_id', // Necesitaríamos el systemId real
+        createdAt: new Date(),
+        updatedAt: new Date(),
     };
-    
-    loadRoles();
-  }, [interfaz.initialized, initialized]);
+    setRoles(prev => [...prev, newRole]);
+    return newRole;
+    // TODO: Llamar a POST /api/roles y actualizar estado con la respuesta real
+  }, [roles]);
 
-  // Obtener todos los roles
-  const getAll = async (): Promise<PerfilEmpleado[]> => {
-    try {
-      // En producción, esto sería una llamada a la API
-      return [...roles]; // Devolver copia para evitar mutaciones
-    } catch (error) {
-      console.error("Error al obtener todos los perfiles:", error);
-      return [];
+  // Actualizar rol (MODIFICARÍA ESTADO LOCAL - PENDIENTE API)
+  const update = useCallback(async (id: string, roleUpdate: Partial<Omit<PrismaRole, 'id' | 'createdAt' | 'updatedAt' | 'systemId'>>): Promise<boolean> => {
+    console.warn(`RoleContext.update no implementado con API para rol ${id}. Modificando estado local temporalmente.`);
+    const roleIndex = roles.findIndex(r => r.id === id);
+    if (roleIndex === -1) {
+        setError(`No se encontró rol con ID ${id} para actualizar.`);
+        return false;
     }
-  };
-
-  // Obtener rol por ID
-  const getById = async (id: string): Promise<PerfilEmpleado | null> => {
-    try {
-      // En producción, esto sería una llamada a la API
-      const role = roles.find(r => String(r.id) === String(id));
-      return role || null;
-    } catch (error) {
-      console.error(`Error al obtener perfil con ID ${id}:`, error);
-      return null;
+    // Verificar nombre duplicado si se cambia
+    if (roleUpdate.name && roles.some(r => r.id !== id && r.name.toLowerCase() === roleUpdate.name?.toLowerCase())) {
+        setError(`Ya existe otro rol con el nombre "${roleUpdate.name}"`);
+        return false;
     }
-  };
+    setRoles(prev => prev.map((r, index) => index === roleIndex ? { ...r, ...roleUpdate, updatedAt: new Date() } : r));
+    return true;
+    // TODO: Llamar a PUT /api/roles/[id] y actualizar estado con la respuesta real
+  }, [roles]);
 
-  // Obtener rol por nombre
-  const getByName = async (name: string): Promise<PerfilEmpleado | null> => {
-    try {
-      // En producción, esto sería una llamada a la API
-      const role = roles.find(r => r.nombre.toLowerCase() === name.toLowerCase());
-      return role || null;
-    } catch (error) {
-      console.error(`Error al obtener perfil con nombre "${name}":`, error);
-      return null;
+  // Eliminar rol (MODIFICARÍA ESTADO LOCAL - PENDIENTE API)
+  const deleteRole = useCallback(async (id: string): Promise<boolean> => {
+    console.warn(`RoleContext.deleteRole no implementado con API para rol ${id}. Modificando estado local temporalmente.`);
+    const roleExists = roles.some(r => r.id === id);
+    if (!roleExists) {
+        setError(`No se encontró rol con ID ${id} para eliminar.`);
+        return false;
     }
-  };
+    setRoles(prev => prev.filter(r => r.id !== id));
+    return true;
+    // TODO: Llamar a DELETE /api/roles/[id] y actualizar estado
+  }, [roles]);
 
-  // Crear nuevo rol
-  const create = async (role: Omit<PerfilEmpleado, 'id'>): Promise<string> => {
-    try {
-      // Verificar que el nombre no esté duplicado
-      const existing = await getByName(role.nombre);
-      if (existing) {
-        throw new Error(`Ya existe un perfil con el nombre "${role.nombre}"`);
-      }
-      
-      // En producción, esto sería una llamada a la API
-      const newId = String(Date.now()); // Generar ID temporal
-      const newRole: PerfilEmpleado = {
-        ...role,
-        id: newId
-      };
-      
-      // Actualizar estado
-      setRoles(prev => [...prev, newRole]);
-      
-      return newId;
-    } catch (error) {
-      console.error("Error al crear perfil:", error);
-      throw error;
-    }
-  };
+  // Verificar si un nombre está disponible (busca en el estado)
+  const isNameAvailable = useCallback(async (name: string, excludeId?: string): Promise<boolean> => {
+    const existing = roles.find(r => 
+      r.name.toLowerCase() === name.toLowerCase() && 
+      (!excludeId || r.id !== excludeId)
+    );
+    return !existing;
+  }, [roles]);
 
-  // Actualizar rol
-  const update = async (id: string, role: Partial<PerfilEmpleado>): Promise<boolean> => {
-    try {
-      // Verificar que exista el rol
-      const existing = await getById(id);
-      if (!existing) {
-        throw new Error(`No se encontró un perfil con ID ${id}`);
-      }
-      
-      // Si se cambia el nombre, verificar que no esté duplicado
-      if (role.nombre && role.nombre !== existing.nombre) {
-        const nameExists = await isNameAvailable(role.nombre, id);
-        if (!nameExists) {
-          throw new Error(`Ya existe un perfil con el nombre "${role.nombre}"`);
-        }
-      }
-      
-      // En producción, esto sería una llamada a la API
-      // Actualizar estado
-      setRoles(prev => 
-        prev.map(r => String(r.id) === String(id) ? { ...r, ...role } : r)
-      );
-      
-      return true;
-    } catch (error) {
-      console.error(`Error al actualizar perfil con ID ${id}:`, error);
-      return false;
-    }
-  };
-
-  // Eliminar rol
-  const delete_ = async (id: string): Promise<boolean> => {
-    try {
-      // Verificar que exista el rol
-      const existing = await getById(id);
-      if (!existing) {
-        throw new Error(`No se encontró un perfil con ID ${id}`);
-      }
-      
-      // En producción, esto sería una llamada a la API
-      // Actualizar estado
-      setRoles(prev => prev.filter(r => String(r.id) !== String(id)));
-      
-      return true;
-    } catch (error) {
-      console.error(`Error al eliminar perfil con ID ${id}:`, error);
-      return false;
-    }
-  };
-
-  // Verificar si un nombre está disponible
-  const isNameAvailable = async (name: string, excludeId?: string): Promise<boolean> => {
-    try {
-      const existing = roles.find(r => 
-        r.nombre.toLowerCase() === name.toLowerCase() && 
-        (!excludeId || String(r.id) !== String(excludeId))
-      );
-      
-      return !existing;
-    } catch (error) {
-      console.error(`Error al verificar disponibilidad del nombre "${name}":`, error);
-      return false;
-    }
-  };
-
-  const value = {
+  // Valor del contexto
+  const contextValue = useMemo(() => ({
     roles,
+    isLoading,
+    error,
+    refetchRoles: fetchRoles, // Usar la función de fetch
     getAll,
     getById,
     getByName,
     create,
     update,
-    delete: delete_,
+    deleteRole, // Usar nombre corregido
     isNameAvailable
-  };
+    // Las dependencias deben incluir todo lo usado en el objeto
+  }), [roles, isLoading, error, fetchRoles, getAll, getById, getByName, create, update, deleteRole, isNameAvailable]);
 
-  return <RoleContext.Provider value={value}>{children}</RoleContext.Provider>;
+  return <RoleContext.Provider value={contextValue}>{children}</RoleContext.Provider>;
 }
 
+// Hook para consumir el contexto
 export function useRole() {
   const context = useContext(RoleContext);
   if (context === undefined) {

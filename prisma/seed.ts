@@ -799,7 +799,7 @@ async function main() {
           vatTypeId: vatType?.id,
           isActive: productData.activo !== false,
               },
-              create: {
+      create: {
           name: productData.name,
           sku: productData.sku,
           description: productData.description,
@@ -835,7 +835,7 @@ async function main() {
   const vatGeneral = await prisma.vATType.upsert({
     where: { name_systemId: { name: 'IVA General (21%)', systemId: system.id } },
     update: { rate: 21.0, isDefault: true },
-    create: {
+      create: {
       name: 'IVA General (21%)',
       rate: 21.0,
       isDefault: true,
@@ -857,7 +857,7 @@ async function main() {
   const tarifaGeneral = await prisma.tariff.upsert({
     where: { name_systemId: { name: 'Tarifa General', systemId: system.id } },
     update: { defaultVatTypeId: defaultVatTypeId }, // Asegurar VAT por defecto
-    create: {
+      create: {
       name: 'Tarifa General',
       description: 'Tarifa estándar para la mayoría de clínicas y servicios.',
       isDefault: true,
@@ -1021,10 +1021,10 @@ async function main() {
           firstName: userData.nombre, 
           // CORREGIDO: Añadir 'lastName' (vacío o derivado si es posible)
           lastName: "", // Dejar vacío si no hay apellido en mockData
-          email: userData.email,
-          passwordHash: hashedPassword, 
-          isActive: userData.isActive !== false,
-          systemId: system.id,
+                  email: userData.email,
+                  passwordHash: hashedPassword,
+                  isActive: userData.isActive !== false, 
+                  systemId: system.id,
           // CORREGIDO: Usar 'create' en la relación de unión 'roles' para conectar al Role
           roles: { 
             create: [ // Crear una entrada en la tabla UserRole
@@ -1043,7 +1043,8 @@ async function main() {
               .map((mockClinicId: string) => createdClinicsMap.get(mockClinicId)) 
               .filter((clinic: any) => clinic) 
               .map((clinic: any) => ({ 
-                clinicId: clinic.id
+                clinicId: clinic.id,
+                roleId: userRole.id // Asignar el roleId determinado para el usuario
               })),
           },
         },
@@ -1064,11 +1065,11 @@ async function main() {
       const assignedClinicNames = createdUser.clinicAssignments.map(ca => ca.clinic.name).join(', ');
       console.log(`Created user: ${createdUser.email} (ID: ${createdUser.id}) with role ${createdUser.roles[0]?.role?.name}, assigned to clinics: ${assignedClinicNames || 'None'}.`);
       
-    } catch (error) {
+      } catch (error) {
         console.error(`Error creating user "${userData.email}":`, error);
          if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
              console.log(`Skipping user creation due to unique constraint violation (likely email already exists): ${userData.email}`);
-         }
+      }
     }
   }
   console.log('Example users ensured.');

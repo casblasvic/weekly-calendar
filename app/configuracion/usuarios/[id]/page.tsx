@@ -17,30 +17,44 @@ import { useToast } from "@/components/ui/use-toast"
 import { toast } from "@/components/ui/use-toast"
 import { CalendarIcon, Clock, Pencil, Plus, Settings, Trash, Eye, AlertCircle, Calendar, PlusCircle, CheckCircle, Fingerprint, Briefcase } from "lucide-react"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Skeleton } from "@/components/ui/skeleton"
 
 // Importación de contextos
 import { useUser } from "@/contexts/user-context"
 import { useClinic } from "@/contexts/clinic-context"
-import { useRole } from "@/contexts/role-context"
 import { useService } from "@/contexts/service-context"
+import { useRole } from "@/contexts/role-context"; // <-- AÑADIR IMPORTACIÓN
 
 // Importación de tipos
 import { 
   HorarioDia, 
   FranjaHoraria, 
-  ExcepcionHoraria, 
-  ExcepcionHorariaUsuario, // <-- Añadir esta importación
+  ExcepcionHoraria, // Asegurar que este es el tipo correcto
   HorarioSemanal,
   FamiliaTarifa, 
-  FamiliaServicio // <-- Añadir FamiliaServicio
+  FamiliaServicio,
+  Servicio as ServicioInterface // Renombrar import para evitar conflicto con el del contexto
 } from "@/services/data/models/interfaces"
 
 // Importar el tipo Usuario directamente desde el contexto si no está ya
 import type { Usuario } from "@/contexts/user-context";
-import type { PerfilEmpleado } from "@/contexts/role-context"; // Importar PerfilEmpleado si no está ya
-import type { Servicio } from "@/contexts/service-context"; // Importar Servicio si no está ya
+// Importar Servicio del contexto (si es diferente al de interfaces)
+import type { Servicio as ServicioContext } from "@/contexts/service-context";
 
 // Tipos para el sistema de horarios
+
+// NUEVA FUNCIÓN AUXILIAR
+const arraysEqual = (a: string[], b: string[]): boolean => {
+  if (a === b) return true;
+  if (a == null || b == null) return false;
+  if (a.length !== b.length) return false;
+  const sortedA = [...a].sort();
+  const sortedB = [...b].sort();
+  for (let i = 0; i < sortedA.length; ++i) {
+    if (sortedA[i] !== sortedB[i]) return false;
+  }
+  return true;
+};
 
 // Creamos componentes memoizados para evitar renderizados innecesarios
 const SelectClinica = React.memo(({ 
@@ -211,813 +225,746 @@ const traducirDia = (dia: string): string => {
   return traducciones[dia.toLowerCase()] || dia;
 }
 
-// Indicar que params es una Promise y usar React.use para desenvolverla
-export default function EditarUsuarioPage(props: { params: Promise<{ id: string }> }) { 
-  // Desenvolver la promesa con React.use
-  const params = React.use(props.params);
-  const userId = params.id; // Acceder al id del objeto desenvuelto
+// --- Placeholders para Mocks y Constantes (Reemplazar con datos reales) ---
+const PERFILES_DISPONIBLES: string[] = ["Admin", "Editor", "Visor"]; // Ejemplo
+const FAMILIAS_MOCK: FamiliaServicio[] = []; // Ejemplo vacío
+const SERVICIOS_MOCK: Record<string, ServicioInterface[]> = {}; // Ejemplo vacío
+// --- Fin Placeholders ---
 
-  const router = useRouter()
+// --- Componente Skeleton --- 
+const UsuarioPageSkeleton = () => {
+  return (
+    <div className="container max-w-5xl p-6 mx-auto space-y-6 animate-pulse">
+      <div className="flex items-center justify-between">
+        <Skeleton className="w-1/3 h-8" /> {/* Título */} 
+      </div>
+      
+      {/* Skeleton para Tabs */}
+      <Skeleton className="w-full h-10 mb-4" /> {/* TabsList */} 
+      
+      {/* Skeleton para Card de contenido */}
+      <Card className="p-4 space-y-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          {/* Columna Izquierda */} 
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Skeleton className="w-1/4 h-4" /> {/* Label */} 
+              <Skeleton className="w-full h-9" /> {/* Input */} 
+            </div>
+            <div className="space-y-2">
+              <Skeleton className="w-1/4 h-4" /> {/* Label */} 
+              <Skeleton className="w-full h-9" /> {/* Input */} 
+            </div>
+            <div className="space-y-2">
+              <Skeleton className="w-1/4 h-4" /> {/* Label */} 
+              <Skeleton className="w-full h-9" /> {/* Input */} 
+            </div>
+             <div className="space-y-2">
+              <Skeleton className="w-1/4 h-4" /> {/* Label */} 
+              <Skeleton className="w-full h-9" /> {/* Input */} 
+            </div>
+            <div className="space-y-2">
+              <Skeleton className="w-1/4 h-4" /> {/* Label */} 
+              <Skeleton className="w-full h-9" /> {/* Input */} 
+            </div>
+          </div>
+          {/* Columna Derecha */} 
+          <div className="space-y-4">
+             <div className="space-y-2">
+              <Skeleton className="w-1/4 h-4" /> {/* Label */} 
+              <Skeleton className="w-full h-9" /> {/* Input */} 
+            </div>
+             <div className="space-y-2">
+              <Skeleton className="w-1/4 h-4" /> {/* Label */} 
+              <Skeleton className="w-full h-9" /> {/* Input */} 
+            </div>
+             <div className="space-y-2">
+              <Skeleton className="w-1/4 h-4" /> {/* Label */} 
+              <Skeleton className="w-full h-9" /> {/* Input */} 
+            </div>
+            <div className="flex items-center pt-4 space-x-2">
+               <Skeleton className="w-10 h-6" /> {/* Switch */} 
+               <Skeleton className="w-1/5 h-4" /> {/* Label Switch */} 
+            </div>
+          </div>
+        </div>
+        {/* ... añadir más Skeletons si se quiere simular más detalle ... */} 
+      </Card>
+      
+      {/* Skeleton para Botones Flotantes */}
+       <div className="flex justify-end gap-2">
+          <Skeleton className="w-24 h-9" /> {/* Botón Cancelar */} 
+          <Skeleton className="w-28 h-9" /> {/* Botón Guardar */} 
+       </div>
+    </div>
+  );
+}
+// --- Fin Componente Skeleton ---
+
+// Componente principal
+export default function EditarUsuarioPage(props: { params: Promise<{ id: string }> }) {
+  // Desenvolver la promesa con React.use para obtener params
+  const params = React.use(props.params);
+  const userId = params.id; // Definir userId aquí
+
+  const router = useRouter() // Definir router aquí
   const searchParams = useSearchParams()
+  const { toast } = useToast() // CORREGIDO: Usar desestructuración
 
   // Obtener los parámetros de la URL
   const returnToBase = searchParams.get('returnTo') || "/configuracion/usuarios"
   const tabParam = searchParams.get('tab')
 
   // Construir la URL de retorno completa
-  // Si returnToBase ya contiene un signo de interrogación, usamos & para añadir el parámetro tab
-  // Si no, usamos ? para iniciar los parámetros de consulta
   const returnTo = tabParam 
     ? returnToBase.includes('?') 
       ? `${returnToBase}&tab=${tabParam}` 
       : `${returnToBase}?tab=${tabParam}`
     : returnToBase
 
-  const { getUsuarioById, updateUsuario } = useUser()
+  // MODIFICADO: Añadir createUsuario a la desestructuración
+  const { getUsuarioById, updateUsuario, createUsuario } = useUser() 
   const { clinics } = useClinic()
-  const { roles } = useRole()
-  const { familias, servicios } = useService()
+  const { familias, servicios } = useService() // Asumiendo que 'roles' no viene de aquí
+  const { roles: availableRoles, isLoading: isLoadingRoles } = useRole(); // <-- OBTENER ROLES Y ESTADO DE CARGA
 
-  // Estados básicos refactorizados
-  // const [nombre, setNombre] = useState("") // <- Eliminar
-  const [firstName, setFirstName] = useState("") // <- Añadir
-  const [lastName, setLastName] = useState("") // <- Añadir
+  // --- Estados del Componente ---
+  const [loading, setLoading] = useState(true)
+  const [isSaving, setIsSaving] = useState(false)
+  const [activeTab, setActiveTab] = useState('datos-personales')
+  const [horarioSubTab, setHorarioSubTab] = useState('semanal') 
+
+  // Estados para Datos del Usuario (Asegurarse que todos están declarados)
+  const [firstName, setFirstName] = useState("")
+  const [lastName, setLastName] = useState("")
   const [email, setEmail] = useState("")
   const [confirmEmail, setConfirmEmail] = useState("")
-  const [prefijo, setPrefijo] = useState("") // Mantener? O usar 'phone'? Revisar modelo Prisma
-  const [telefono, setTelefono] = useState("") // Asumiendo que 'phone' en Prisma es esto
-  // const [perfil, setPerfil] = useState("") // <- Eliminar? El perfil/rol ahora podría estar en UserRole o similar
+  const [telefono, setTelefono] = useState("")
   const [isActive, setIsActive] = useState(true)
-
-  // Estructura para almacenar permisos más detallados: Map<clinicaId, string[]>
-  // Descomentar useState
-  const [permisosClinicas, setPermisosClinicas] = useState<Map<string, string[]>>(new Map())
-
-  // Convertir Map a array usando useMemo para estabilizar la referencia
-  // Descomentar useMemo
-  const selectedClinicas = React.useMemo(() => 
-    Array.from(permisosClinicas.keys()), 
-    [permisosClinicas] // Dependencia
-  );
-  // Eliminar array temporal
-  // const selectedClinicas: string[] = []
-  // Eliminar Map temporal
-  // const permisosClinicas: Map<string, string[]> = new Map() // Temporalmente vacío
-
-  const [loading, setLoading] = useState(true)
-  const [showDisabledClinics, setShowDisabledClinics] = useState(false)
-
-  // Nuevos estados para campos adicionales (mantener, revisar si existen en Prisma User)
   const [dni, setDni] = useState("")
   const [fechaNacimiento, setFechaNacimiento] = useState("")
   const [sexo, setSexo] = useState("")
-  const [telefono2, setTelefono2] = useState("") // Existe en Prisma?
-  const [contrasena, setContrasena] = useState("") // Se maneja en creación/edición?
-  const [idioma, setIdioma] = useState("") // Existe en Prisma?
-
-  // Estados para los datos de colegiado (mantener, revisar si existen en Prisma User)
+  const [telefono2, setTelefono2] = useState("")
+  const [idioma, setIdioma] = useState("")
   const [colegio, setColegio] = useState("")
   const [numeroColegiado, setNumeroColegiado] = useState("")
   const [especialidad, setEspecialidad] = useState("")
   const [universidad, setUniversidad] = useState("")
-
-  // Estados para dirección (mantener, revisar si existen en Prisma User)
   const [direccion, setDireccion] = useState("")
   const [provincia, setProvincia] = useState("")
   const [pais, setPais] = useState("")
   const [localidad, setLocalidad] = useState("")
   const [cp, setCp] = useState("")
-
-  // Estados para configuración (mantener, revisar si existen en Prisma User o modelo relacionado)
-  const [exportCsv, setExportCsv] = useState("")
+  const [exportCsv, setExportCsv] = useState("false") 
   const [indiceControl, setIndiceControl] = useState("")
   const [numeroPIN, setNumeroPIN] = useState("")
   const [notas, setNotas] = useState("")
-  const [mostrarDesplazados, setMostrarDesplazados] = useState(false)
-  const [mostrarCitasPropias, setMostrarCitasPropias] = useState(false)
-  const [restringirIP, setRestringirIP] = useState(false)
-  const [deshabilitado, setDeshabilitado] = useState(false)
+  const [contrasena, setContrasena] = useState(""); 
+  // AÑADIDOS estados para checkboxes de Configuración (si se usan en el formulario)
+  const [mostrarDesplazados, setMostrarDesplazados] = useState(false);
+  const [mostrarCitasPropias, setMostrarCitasPropias] = useState(false);
+  const [restringirIP, setRestringirIP] = useState(false);
+  const [deshabilitado, setDeshabilitado] = useState(false); // Relacionado con isActive? verificar
 
-  // Estado para la pestaña actual
-  const [activeTab, setActiveTab] = useState("datos-personales")
+  // Estados para Permisos
+  const [permisosClinicas, setPermisosClinicas] = useState<Map<string, string[]>>(new Map()); 
+  // AÑADIDO: Estado para almacenar los permisos originales al cargar
+  const [initialPermisosClinicas, setInitialPermisosClinicas] = useState<Map<string, string[]>>(new Map());
+  const [selectedClinicas, setSelectedClinicas] = useState<string[]>([]); // IDs de clínicas asignadas
+  const [nuevaClinicaId, setNuevaClinicaId] = useState<string>("");
+  const [nuevoPerfilClinica, setNuevoPerfilClinica] = useState<string>("");
+  const [showDisabledClinics, setShowDisabledClinics] = useState(false);
 
-  // Estado para la búsqueda en permisos
-  const [searchPermisos, setSearchPermisos] = useState("")
+  // Estados para Horarios (Declaración ÚNICA aquí)
+  const [horarioEditado, setHorarioEditado] = useState<Map<string, HorarioSemanal | null>>(new Map());
+  const [horarioSemanal, setHorarioSemanal] = useState<Map<string, HorarioSemanal | null>>(new Map()); 
+  const [excepcionesUsuario, setExcepcionesUsuario] = useState<ExcepcionHoraria[]>([]);
+  const [excepcionEditada, setExcepcionEditada] = useState<ExcepcionHoraria | null>(null);
+  const [mostrarModalExcepcion, setMostrarModalExcepcion] = useState(false);
+  const [clinicaSeleccionadaHorario, setClinicaSeleccionadaHorario] = useState<string>(""); 
+  const [selectedClinicaHorario, setSelectedClinicaHorario] = useState<string>(""); 
+  const [isLoadingHorario, setIsLoadingHorario] = useState(false);
+  const [isHorarioHeredado, setIsHorarioHeredado] = useState(false);
 
-  // Estado para añadir nueva clínica y perfil
-  const [nuevaClinicaId, setNuevaClinicaId] = useState("")
-  const [nuevoPerfilClinica, setNuevoPerfilClinica] = useState("")
-
-  // Estado para manejo de excepciones
-  // **COMENTADO TEMPORALMENTE - Requiere API y posible refactor de modelo**
-  // const [showExcepcionModal, setShowExcepcionModal] = useState(false);
-  // const [editingExcepcion, setEditingExcepcion] = useState<{\n    id?: string;\n    nombre: string;\n    fechaInicio: string;\n    fechaFin: string;\n    dias: HorarioDia[];\n  } | null>(null);
-  const showExcepcionModal = false; // Temporal
-  const editingExcepcion = null; // Temporal
-
-  // Función para crear una excepción por defecto
-  // **COMENTADO TEMPORALMENTE**
-  /*
-  const crearExcepcionPorDefecto = () => {
-    // ... (código existente)
-  };
-  */
-
-  // Función para añadir una excepción (MANUAL del usuario)
-  // **COMENTADO TEMPORALMENTE**
-  /*
-  const handleAddExcepcion = (excepcionData: Omit<ExcepcionHorariaUsuario, \'id\' | \'userId\' | \'generadaAutomaticamente\'>) => {
-    // ... (código existente)
-  };
-  */
-
-  // Función para añadir franja a un día en una excepción
-  // **COMENTADO TEMPORALMENTE**
-  /*
-  const handleAddFranjaExcepcion = (diaIndex: number, inicio: string, fin: string) => {
-    // ... (código existente)
-  };
-  */
-
-  // Función para eliminar franja de un día en una excepción
-  // **COMENTADO TEMPORALMENTE**
-  /*
-  const handleRemoveFranjaExcepcion = (diaIndex: number, franjaId: string) => {
-    // ... (código existente)
-  };
-  */
-
-  // Función para activar/desactivar un día en una excepción
-  // **COMENTADO TEMPORALMENTE**
-  /*
-  const handleToggleDiaExcepcion = (diaIndex: number, activo: boolean) => {
-    // ... (código existente)
-  };
-  */
-
-  // Función para eliminar una excepción
-  // **COMENTADO TEMPORALMENTE**
-  /*
-  const handleRemoveExcepcion = (excepcionId: string) => {
-    // ... (código existente)
-  };
-  */
-
-  // Filtrar las clínicas activas
-  const activeClinicas = clinics.filter(clinic => clinic.isActive)
-
-  // Clínicas a mostrar en el selector (según el filtro)
-  const clinicasToShow = showDisabledClinics ? clinics : activeClinicas
-
-  // Lista de todos los perfiles disponibles en el sistema
-  // **COMENTADO TEMPORALMENTE - Usar roles del contexto useRole**
-  /*
-  const PERFILES_DISPONIBLES = [
-    // ... (perfiles existentes)
-  ];
-  */
-  // Usar roles del contexto
-  // const PERFILES_DISPONIBLES = roles.map(r => r.name) ?? []; // Error: name no existe en PerfilEmpleado
-  // Asumiendo que el tipo PerfilEmpleado tiene un campo 'nombre' o similar
-  const PERFILES_DISPONIBLES = roles.map(r => r.nombre) ?? []; // <- Usar 'nombre' (o el campo correcto)
-
-  // Estado para la asignación de habilidades profesionales
-  // Descomentar useState
-  const [habilidadesProfesionales, setHabilidadesProfesionales] = useState<Map<string, string[]>>(new Map())
-  // Eliminar Map temporal
-  // const habilidadesProfesionales: Map<string, string[]> = new Map() // Temporalmente vacío
-  const [nuevaClinicaHabilidad, setNuevaClinicaHabilidad] = useState("")
-  const [nuevaFamilia, setNuevaFamilia] = useState("")
-  const [nuevoServicio, setNuevoServicio] = useState("")
-  const [tipoSeleccion, setTipoSeleccion] = useState<"familia" | "servicio">("familia")
-  const [searchHabilidades, setSearchHabilidades] = useState("")
-
-  // Datos mock para las familias y servicios (estos vendrían de una API real)
-  // **PENDIENTE - Mover a contexto/API useService**
-  const FAMILIAS_MOCK = familias ?? []; // Usar datos del contexto si existen
-
-  // **PENDIENTE - Mover a contexto/API useService**
-  // Reconstruir SERVICIOS_MOCK basado en servicios del contexto
-  const SERVICIOS_MOCK: Record<string, { id: string, nombre: string, duracion?: string | null }[]> = {};
-  // servicios.forEach(servicio => { // Asumir que servicio es de tipo Servicio
-  servicios.forEach((servicio: Servicio) => { // Especificar tipo
-    const familiaId = servicio.familiaId; // Asumiendo que servicio tiene familiaId
-    if (familiaId) {
-      if (!SERVICIOS_MOCK[familiaId]) {
-        SERVICIOS_MOCK[familiaId] = [];
-      }
-      SERVICIOS_MOCK[familiaId].push({
-                id: servicio.id,
-        // nombre: servicio.name, // Error: name no existe en ServicioBase (o Servicio)
-        nombre: servicio.nombre, // <- Usar 'nombre' (o el campo correcto)
-        // duracion: servicio.duration ? `${servicio.duration} min` : null // Error: duration no existe, ¿quizás 'duracion'?
-        duracion: servicio.duracion ? `${servicio.duracion} min` : null // <- Usar 'duracion'
-      });
-    }
-  });
+  // Estados para Habilidades
+  const [habilidadesPorClinica, setHabilidadesPorClinica] = useState<Map<string, { familiaId: string, servicioId?: string, nivel: number }[]>>(new Map());
+  const [clinicaSeleccionadaHabilidades, setClinicaSeleccionadaHabilidades] = useState<string>("");
+  const [tipoSeleccion, setTipoSeleccion] = useState('familia');
+  const [elementoSeleccionadoId, setElementoSeleccionadoId] = useState('');
+  const [nivelHabilidad, setNivelHabilidad] = useState(3); // Nivel por defecto
+  const [searchHabilidades, setSearchHabilidades] = useState("");
+  const [nuevaClinicaHabilidad, setNuevaClinicaHabilidad] = useState("");
+  const [nuevaFamilia, setNuevaFamilia] = useState("");
+  const [nuevoServicio, setNuevoServicio] = useState("");
+  const [todasLasHabilidadesAsignadas, setTodasLasHabilidadesAsignadas] = useState<[string, string][]>([]);
 
 
-  // Obtener todas las habilidades asignadas (para filtrado y visualización)
-  // Descomentar useMemo
-  const todasLasHabilidadesAsignadas = React.useMemo(() => {
-    // Crear un array plano de [clinicaId, habilidad]
-    const result: [string, string][] = [];
-    habilidadesProfesionales.forEach((habilidades, clinicaId) => {
-      habilidades.forEach(habilidad => {
-        result.push([clinicaId, habilidad]);
-      });
-    });
-    return result;
-  }, [habilidadesProfesionales]); // Quitar dependencia comentada
+  // --- Fin Declaración de Estados ---
 
-  // **COMENTADO TEMPORALMENTE**
-  // Descomentar handleAddHabilidad
-  const handleAddHabilidad = () => {
-    const itemToAdd = tipoSeleccion === 'familia' ? nuevaFamilia : nuevoServicio;
-    const itemLabel = tipoSeleccion === 'familia' 
-      ? FAMILIAS_MOCK.find(f => f.id === itemToAdd)?.nombre 
-      : servicios.find(s => s.id === itemToAdd)?.nombre; // Usar servicios del contexto
-      
-    if (!nuevaClinicaHabilidad || !itemToAdd || !itemLabel) {
-      toast({ title: "Error", description: "Seleccione clínica, tipo y elemento.", variant: "destructive" });
-      return;
-    }
-    
-    setHabilidadesProfesionales(prevMap => {
-      const newMap = new Map(prevMap);
-      const currentHabilidades = (newMap.get(nuevaClinicaHabilidad) as string[] | undefined) || [];
-      // Usar itemLabel para evitar duplicados basados en el nombre mostrado
-      if (!currentHabilidades.includes(itemLabel)) {
-        newMap.set(nuevaClinicaHabilidad, [...currentHabilidades, itemLabel]);
-      }
-      return newMap;
-    });
-    
-    // Limpiar selects
-    // setNuevaClinicaHabilidad(""); // No limpiar clínica necesariamente
-    setNuevaFamilia("");
-    setNuevoServicio("");
-    
-    toast({ title: "Habilidad añadida", description: `Habilidad "${itemLabel}" lista para guardar.` });
-  };
-  
-
-  // **COMENTADO TEMPORALMENTE**
-  // Descomentar handleRemoveHabilidad
-  const handleRemoveHabilidad = (clinicaId: string, itemToRemove: string) => {
-    setHabilidadesProfesionales(prevMap => {
-      const newMap = new Map(prevMap);
-      const currentHabilidades = (newMap.get(clinicaId) as string[] | undefined) || [];
-      const updatedHabilidades = currentHabilidades.filter(h => h !== itemToRemove);
-      
-      if (updatedHabilidades.length > 0) {
-        newMap.set(clinicaId, updatedHabilidades);
-      } else {
-        newMap.delete(clinicaId); // Eliminar si no quedan habilidades para esa clínica
-      }
-      return newMap;
-    });
-    toast({ title: "Habilidad eliminada", description: `Habilidad "${itemToRemove}" eliminada localmente.` });
-  };
-  
-
+  // --- useEffect para cargar datos iniciales --- 
   useEffect(() => {
-    // **COMENTADO TEMPORALMENTE - Carga de habilidades mock**
-    /*
-    const cargarHabilidadesMock = () => {
-      // ... (código existente)
-    };
-    
-    if (!loading) {
-      cargarHabilidadesMock();
-    }
-    */
-  }, [loading, clinics]);
-
-  useEffect(() => {
-    const loadUsuario = async () => {
-      if (!userId || userId === 'nuevo') { // Evitar carga si es 'nuevo' o no hay ID
-          setLoading(false);
-          return;
+    const loadInitialData = async () => {
+      if (userId === 'nuevo') {
+        setLoading(false);
+        // Setear estado inicial para 'nuevo' si es necesario
+        setPermisosClinicas(new Map());
+        setInitialPermisosClinicas(new Map());
+        setSelectedClinicas([]);
+        setIsActive(true); // Usuario nuevo activo por defecto
+        // Inicializar otros campos si es necesario
+        setFirstName("");
+        setLastName("");
+        setEmail("");
+        setConfirmEmail("");
+        setTelefono("");
+        setContrasena("");
+        setDni("");
+        setFechaNacimiento("");
+        setSexo("");
+        setTelefono2("");
+        setIdioma("");
+        setColegio("");
+        setNumeroColegiado("");
+        setEspecialidad("");
+        setUniversidad("");
+        setDireccion("");
+        setProvincia("");
+        setPais("");
+        setLocalidad("");
+        setCp("");
+        setExportCsv("false");
+        setIndiceControl("");
+        setNumeroPIN("");
+        setNotas("");
+        setMostrarDesplazados(false);
+        setMostrarCitasPropias(false);
+        setRestringirIP(false);
+        setDeshabilitado(false);
+        
+        return; 
       }
-      setLoading(true); // Asegurar que loading sea true al iniciar
+
+      setLoading(true);
       try {
-        // Envolver todo en un try/catch para evitar que errores en la carga
-        // causen ciclos
-        try {
-          const usuario = await getUsuarioById(userId); // No castear aquí, usar tipo Usuario del contexto
-          
-          // --- DIAGNÓSTICO --- 
-          console.log(`[UsuarioPage] Datos cargados para usuario ${userId}:`, JSON.stringify(usuario, null, 2));
-          // --- FIN DIAGNÓSTICO ---\n          
-          if (!usuario) {
-            toast({
-              title: "Error",
-              description: "No se pudo encontrar el usuario",
-              variant: "destructive",
-            })
-            router.push(returnTo)
-            return
-          }
-          
-          // Datos básicos refactorizados
-          // setNombre(usuario.nombre || "") // <- Eliminar
-          setFirstName(usuario.firstName || "") // <- Usar firstName
-          setLastName(usuario.lastName || "")   // <- Usar lastName
-          setEmail(usuario.email || "")
-          setConfirmEmail(usuario.email || "") // Para el campo de confirmación
-          // setPrefijo(usuario.prefijoTelefonico || "") // <- Eliminar si no existe
-          // setTelefono(usuario.phone || "") // Error: phone no existe en Usuario. Asumir que existe un campo 'telefono' o similar
-          setTelefono(usuario.phone || "") // <- Usar 'phone' (o el campo correcto del tipo Usuario)
-          // setPerfil(usuario.perfil || "") // <- Eliminar (manejar roles por separado)
-          setIsActive(usuario.isActive ?? true) // Usar el valor de isActive, default a true si no existe
-          
-          // Cargar permisos de clínicas
-          // **COMENTADO TEMPORALMENTE - Requiere API/Modelo UserRole/UserClinic**
-          /*
-            const permisosMap = new Map<string, string[]>();
-          if (usuario.perfilesClinica) { // Usar el campo correcto del tipo UsuarioEmpleado
-            // Suponiendo que perfilesClinica es un Record<string, string[]>
-            Object.entries(usuario.perfilesClinica).forEach(([clinicaId, perfiles]) => {
-              permisosMap.set(clinicaId, perfiles);
-            });
-          } else if (usuario.clinicasIds && Array.isArray(usuario.clinicasIds)) {
-            // Fallback si perfilesClinica no existe pero sí clinicasIds
-            usuario.clinicasIds.forEach(clinicaId => {
-              permisosMap.set(clinicaId, ["Personal"]); // Perfil por defecto
-            });
-          }
-            setPermisosClinicas(permisosMap);
-          */
-          
-          // Cargar Horarios
-          // **COMENTADO TEMPORALMENTE - Requiere API/Modelo**
-          /*
-          if (usuario.horarios instanceof Map) {
-            setHorarioSemanal(new Map(usuario.horarios));
-          } else if (typeof usuario.horarios === \'object\' && usuario.horarios !== null) {
-            // Intentar convertir de objeto si no es Map
-            try {
-              const horariosMap = new Map<string, HorarioDia[]>(Object.entries(usuario.horarios));
-              setHorarioSemanal(horariosMap);
-            } catch (mapError) {
-              console.error("Error al convertir horarios a Map:", mapError);
-              setHorarioSemanal(new Map()); // Fallback a mapa vacío
-            }
-          } else {
-            console.warn("Formato de horarios inesperado:", usuario.horarios);
-            setHorarioSemanal(new Map()); // Fallback a mapa vacío
-          }
-          */
+        const userData = await getUsuarioById(userId);
+        if (userData) {
+          console.log("[UsuarioPage] Datos iniciales recibidos para usuario:", userData);
+          // Establecer datos básicos
+          setFirstName(userData.firstName || "");
+          setLastName(userData.lastName || "");
+          setEmail(userData.email || "");
+          setConfirmEmail(userData.email || "");
+          setTelefono(userData.phone || "");
+          setIsActive(userData.isActive);
+          setContrasena(""); // NO setear contraseña al cargar
 
-          // Cargar Excepciones del Usuario
-          // **COMENTADO TEMPORALMENTE - Requiere API/Modelo**
-          // setExcepciones(usuario.excepciones || []);
+          // Establecer TODOS los campos adicionales desde userData
+          setDni((userData as any).dni || ""); 
+          // Asegurar que la fecha se formatea como yyyy-mm-dd si viene como Date
+          const dob = (userData as any).fechaNacimiento;
+          setFechaNacimiento(dob ? new Date(dob).toISOString().split('T')[0] : "");
+          setSexo((userData as any).sexo || "");
+          setTelefono2((userData as any).telefono2 || "");
+          setIdioma((userData as any).idioma || "");
+          setColegio((userData as any).colegio || "");
+          setNumeroColegiado((userData as any).numeroColegiado || "");
+          setEspecialidad((userData as any).especialidad || "");
+          setUniversidad((userData as any).universidad || "");
+          setDireccion((userData as any).direccion || "");
+          setProvincia((userData as any).provincia || "");
+          setPais((userData as any).pais || "");
+          setLocalidad((userData as any).localidad || "");
+          setCp((userData as any).cp || "");
+          setExportCsv(String((userData as any).exportCsv || "false")); // Convertir boolean a string
+          setIndiceControl((userData as any).indiceControl || "");
+          setNumeroPIN((userData as any).numeroPIN || "");
+          setNotas((userData as any).notas || "");
+          // Setear checkboxes de configuración (ejemplo, ajustar nombres si son diferentes en userData)
+          setMostrarDesplazados(Boolean((userData as any).mostrarDesplazados)); 
+          setMostrarCitasPropias(Boolean((userData as any).mostrarCitasPropias)); 
+          setRestringirIP(Boolean((userData as any).restringirIP)); 
+          setDeshabilitado(Boolean((userData as any).deshabilitado)); // ¿O !userData.isActive? Revisar
 
-          // Datos adicionales (Revisar si estos campos existen en el modelo Prisma User)
-          // Si no existen, comentar o eliminar
-          setDni((usuario as any).dni || ""); // Ejemplo: castear si no está en el tipo base
-          setFechaNacimiento((usuario as any).fechaNacimiento || "");
-          setSexo((usuario as any).sexo || "");
-          setTelefono2((usuario as any).telefono2 || "");
-          setIdioma((usuario as any).idioma || "");
-          setColegio((usuario as any).colegio || "");
-          setNumeroColegiado((usuario as any).numeroColegiado || "");
-          setEspecialidad((usuario as any).especialidad || "");
-          setUniversidad((usuario as any).universidad || "");
-          setDireccion((usuario as any).direccion || "");
-          setProvincia((usuario as any).provincia || "");
-          setPais((usuario as any).pais || "");
-          setLocalidad((usuario as any).localidad || "");
-          setCp((usuario as any).cp || "");
-          setExportCsv((usuario as any).exportCsv || "");
-          setIndiceControl((usuario as any).indiceControl || "");
-          setNumeroPIN((usuario as any).numeroPIN || "");
-          setNotas((usuario as any).notas || "");
-          
-          // Configuración (Revisar si existe en Prisma o modelo relacionado)
-          const config = (usuario as any).configuracion || {};
-          setMostrarDesplazados(config.mostrarDesplazados || false);
-          setMostrarCitasPropias(config.mostrarCitasPropias || false);
-          setRestringirIP(config.restringirIP || false);
-          setDeshabilitado(config.deshabilitado || false);
-          
-          // Cargar Habilidades Profesionales
-          // **COMENTADO TEMPORALMENTE - Requiere API/Modelo**
-          /*
-          if (usuario.habilidadesProfesionales instanceof Map) {
-            setHabilidadesProfesionales(new Map(usuario.habilidadesProfesionales));
-          } else if (typeof usuario.habilidadesProfesionales === \'object\' && usuario.habilidadesProfesionales !== null) {
-            // Intentar convertir de objeto si no es Map
-            try {
-              const habilidadesMap = new Map<string, string[]>(Object.entries(usuario.habilidadesProfesionales));
-              setHabilidadesProfesionales(habilidadesMap);
-            } catch (mapError) {
-              console.error("Error al convertir habilidades a Map:", mapError);
-              setHabilidadesProfesionales(new Map());
-            }
-          } else {
-             console.warn("Formato de habilidades inesperado:", usuario.habilidadesProfesionales);
-             setHabilidadesProfesionales(new Map());
+          // Establecer permisos y guardar copia inicial
+          const initialPermisos = new Map<string, string[]>();
+          // Asegurarse que 'clinicAssignments' es el nombre correcto del campo en userData
+          const assignments = (userData as any).clinicAssignments || []; 
+          if (Array.isArray(assignments)) {
+             assignments.forEach((asignacion: any) => {
+                // Asumir que asignacion tiene clinicId y roleId
+                const clinicId = asignacion.clinicId;
+                const roleId = asignacion.roleId || asignacion.role?.id; // Intentar obtener roleId
+                if(clinicId && roleId) {
+                   const rolesClinica = initialPermisos.get(clinicId) || [];
+                   if (!rolesClinica.includes(roleId)) {
+                     rolesClinica.push(roleId);
+                   }
+                   initialPermisos.set(clinicId, rolesClinica);
+                } else {
+                   console.warn("Asignación incompleta o sin roleId encontrada:", asignacion);
+                }
+             });
           }
-          */
-          
-        } catch (innerError) {
-          console.error("Error interno al cargar datos del usuario:", innerError)
-          toast({
-            title: "Error",
-            description: "No se pudieron procesar los datos del usuario.",
-            variant: "destructive",
-          })
-          // No redirigir aquí necesariamente, podría ser un error parcial
-        } finally { // Asegurarse de quitar el loading incluso si hay error interno
-        setLoading(false)
+          setPermisosClinicas(initialPermisos); 
+          setInitialPermisosClinicas(new Map(initialPermisos)); // Guardar copia inicial
+          setSelectedClinicas(Array.from(initialPermisos.keys()));
+
+          // Seleccionar la primera clínica asignada para la pestaña Horario (si existe)
+          if (initialPermisos.size > 0) {
+            const firstClinicId = initialPermisos.keys().next().value;
+            setSelectedClinicaHorario(firstClinicId); 
+          }
+
+          // Cargar habilidades (si existen y adaptar a la estructura del estado)
+          // ... (lógica para cargar habilidades) ...
+          // Placeholder:
+          setTodasLasHabilidadesAsignadas([]); // Resetear o calcular aquí
+
+          } else {
+          console.error(`Usuario con ID ${userId} no encontrado.`);
+          toast({ title: "Error", description: "Usuario no encontrado.", variant: "destructive" }); 
+          router.push('/configuracion/usuarios');
         }
-       
       } catch (error) {
-        console.error("Error al llamar a getUsuarioById:", error)
-        toast({
-          title: "Error de Carga",
-          description: "No se pudo cargar la información del usuario desde el servidor.",
-          variant: "destructive",
-        })
-        router.push(returnTo)
+        console.error("Error cargando datos del usuario:", error);
+        toast({ title: "Error", description: "No se pudieron cargar los datos del usuario.", variant: "destructive" }); 
+      } finally {
+        setLoading(false);
       }
-    }
-    
-    loadUsuario()
-  // }, [userId, getUsuarioById, router, returnTo]); // Dependencias originales
-  }, [userId, getUsuarioById, router, returnTo, toast]); // Añadir toast a dependencias si se usa dentro
+    };
 
+    loadInitialData();
+  }, [userId, getUsuarioById, router, toast]); 
 
-  // **COMENTADO TEMPORALMENTE - Lógica de permisos/clínicas**
-  // Descomentar handleAddClinica
-  const handleAddClinica = (clinicaId: string, perfilClinica: string) => {
-    if (!clinicaId || !perfilClinica) return; // Evitar añadir si falta algo
-    
-    // Actualizar el Map de permisosClinicas (estado local)
-    setPermisosClinicas(prevMap => {
-      const newMap = new Map(prevMap);
-      // Asegurar tipo al obtener del Map
-      const currentPerfiles = (newMap.get(clinicaId) as string[] | undefined) || [];
-      // Evitar duplicados (aunque la UI de perfiles podría ser múltiple más adelante)
-      if (!currentPerfiles.includes(perfilClinica)) {
-        newMap.set(clinicaId, [...currentPerfiles, perfilClinica]);
+  // --- useEffect para cargar Horario (SIN DUPLICADOS) ---
+  useEffect(() => {
+    const cargarHorario = async () => {
+      // Usar selectedClinicaHorario que se actualiza en el primer useEffect
+      if (!userId || userId === 'nuevo' || !selectedClinicaHorario) { 
+        setHorarioEditado(prev => {
+          const nuevoMapa = new Map(prev);
+          nuevoMapa.delete(selectedClinicaHorario); // Usar el estado correcto
+          return nuevoMapa;
+        });
+        setHorarioSemanal(prev => { // Actualizar también si es necesario
+          const nuevoMapa = new Map(prev);
+          nuevoMapa.delete(selectedClinicaHorario);
+          return nuevoMapa;
+        });
+        setIsHorarioHeredado(false);
+        return;
       }
-      return newMap;
-    });
-    
-    // Limpiar los selects después de añadir
-    setNuevaClinicaId("");
-    setNuevoPerfilClinica("");
-    
-    toast({ title: "Asignación añadida", description: `Clínica y perfil listos para guardar.` });
-  }
-  
-
-  // **COMENTADO TEMPORALMENTE - Lógica de permisos/clínicas**
-  // Descomentar handleRemoveClinica
-  const handleRemoveClinica = (clinicaId: string, perfilToRemove?: string) => {
-    setPermisosClinicas(prevMap => {
-      const newMap = new Map(prevMap);
-      if (perfilToRemove) {
-        // Eliminar un perfil específico si se proporciona
-        // Asegurar tipo al obtener del Map
-        const currentPerfiles = (newMap.get(clinicaId) as string[] | undefined) || [];
-        const updatedPerfiles = currentPerfiles.filter(p => p !== perfilToRemove);
-        if (updatedPerfiles.length > 0) {
-          newMap.set(clinicaId, updatedPerfiles);
-        } else {
-          newMap.delete(clinicaId); // Eliminar la clínica si no quedan perfiles
+      setIsLoadingHorario(true);
+      setIsHorarioHeredado(false);
+      console.log(`[Horario useEffect] Cargando horario para Usuario: ${userId}, Clínica: ${selectedClinicaHorario}`); // Usar estado correcto
+      try {
+        const response = await fetch(`/api/users/${userId}/schedule?clinicId=${selectedClinicaHorario}`); // Usar estado correcto
+        if (!response.ok) {
+          if (response.status === 404) { 
+             console.warn(`[Horario useEffect] API devolvió 404 para horario personalizado. Usuario: ${userId}, Clínica: ${selectedClinicaHorario}`); // Usar estado correcto
+          } else {
+             throw new Error(`Error ${response.status} al obtener horario personalizado`);
+          }
         }
-      } else {
-        // Eliminar la clínica entera si no se especifica perfil
-        newMap.delete(clinicaId);
-      }
-      return newMap;
-    });
-    toast({ title: "Asignación eliminada", description: "La asignación ha sido eliminada de la lista local." });
-  }
-  
-
-  const handleSave = async () => {
-    // Validaciones básicas refactorizadas
-    // if (!nombre.trim()) { // <- Eliminar
-    if (!firstName.trim()) { // <- Usar firstName
-      toast({
-        title: "Error",
-        description: "El nombre es obligatorio",
-        variant: "destructive",
-      })
-      return
-    }
-    if (!lastName.trim()) { // <- Añadir validación para lastName
-      toast({
-        title: "Error",
-        description: "El apellido es obligatorio",
-        variant: "destructive",
-      })
-      return
-    }
-    
-    if (!email.trim()) {
-      toast({
-        title: "Error",
-        description: "El email es obligatorio",
-        variant: "destructive",
-      })
-      return
-    }
-    if (email !== confirmEmail) { // Añadir validación de confirmación de email
-      toast({ title: "Error", description: "Los emails no coinciden", variant: "destructive" });
+        const customScheduleData = response.status !== 404 ? await response.json() : null;
+        if (customScheduleData) {
+          console.log(`[Horario useEffect] Horario PERSONALIZADO encontrado para Clínica: ${selectedClinicaHorario}`);
+          setHorarioEditado(prev => new Map(prev).set(selectedClinicaHorario, customScheduleData as HorarioSemanal));
+        } else {
+          console.log(`[Horario useEffect] No hay horario personalizado. Cargando horario HEREDADO de Clínica: ${selectedClinicaHorario}`);
+          const clinicData = clinics.find(c => c.id === selectedClinicaHorario);
+          if (!clinicData) {
+            console.error(`[Horario useEffect] No se encontraron datos para la clínica ${selectedClinicaHorario} en el contexto.`);
+            toast({ title: "Error", description: "No se encontraron datos de la clínica seleccionada.", variant: "destructive" });
+            setHorarioEditado(prev => {
+                const mapa = new Map(prev);
+                mapa.delete(selectedClinicaHorario);
+                return mapa;
+            });
       return;
     }
-    
-    // **COMENTADO TEMPORALMENTE - Validación de perfil y clínicas**
-    /*
-    if (!perfil) {
-      toast({
-        title: "Error",
-        description: "Debe seleccionar un perfil",
-        variant: "destructive",
-      })
-      return
-    }
-    
-    if (selectedClinicas.length === 0) {
-      toast({
-        title: "Error",
-        description: "Debe seleccionar al menos una clínica",
-        variant: "destructive",
-      })
-      return
-    }
-    */
-    
-    // **COMENTADO TEMPORALMENTE - Validación y ajuste de horarios**
-    /*
-    const horariosValidados = new Map<string, HorarioDia[]>();
-    let haAjustadoHorarios = false;
-    // ... (lógica de validación de horarios existente)
-    */
-    
-    try {
-      // **COMENTADO TEMPORALMENTE - Conversión de permisos, habilidades, horarios**
-      /*
-      // Convertir el Map a un formato serializable para el API
-      const perfilesClinica: Record<string, string[]> = {};
-      permisosClinicas.forEach((perfiles, clinicaId) => {
-        perfilesClinica[clinicaId] = perfiles;
+          let horarioBaseClinica: HorarioSemanal | null = null;
+          const templateBlocks = clinicData.linkedScheduleTemplate?.blocks;
+          const independentBlocks = clinicData.independentScheduleBlocks;
+          const defaultOpen = clinicData.openTime || "00:00";
+          const defaultClose = clinicData.closeTime || "23:59";
+          if (templateBlocks && templateBlocks.length > 0) {
+            console.log(`[Horario useEffect] Clínica ${selectedClinicaHorario} usa plantilla. Convirtiendo bloques de plantilla.`);
+            // CORREGIDO: Pasar clinicId a la función
+            horarioBaseClinica = convertBlocksToWeekSchedule(selectedClinicaHorario, templateBlocks, defaultOpen, defaultClose);
+          } else if (independentBlocks && independentBlocks.length > 0) {
+            console.log(`[Horario useEffect] Clínica ${selectedClinicaHorario} usa bloques independientes. Convirtiendo bloques independientes.`);
+            // CORREGIDO: Pasar clinicId a la función
+            horarioBaseClinica = convertBlocksToWeekSchedule(selectedClinicaHorario, independentBlocks as any, defaultOpen, defaultClose);
+          } else {
+            console.log(`[Horario useEffect] Clínica ${selectedClinicaHorario} no tiene bloques definidos. Creando horario por defecto L-V ${defaultOpen}-${defaultClose}.`);
+            // CORREGIDO: Pasar clinicId a la función
+            horarioBaseClinica = createDefaultClinicSchedule(selectedClinicaHorario, defaultOpen, defaultClose);
+          }
+          if (horarioBaseClinica) {
+            console.log(`[Horario useEffect] Estableciendo horario HEREDADO para Clínica: ${selectedClinicaHorario}`);
+            setHorarioEditado(prev => new Map(prev).set(selectedClinicaHorario, horarioBaseClinica));
+            setHorarioSemanal(prev => new Map(prev).set(selectedClinicaHorario, horarioBaseClinica));
+            setIsHorarioHeredado(true);
+          } else {
+              console.error("[Horario useEffect] No se pudo determinar el horario base de la clínica.");
+               setHorarioEditado(prev => {
+                const mapa = new Map(prev);
+                mapa.delete(selectedClinicaHorario);
+                return mapa;
+               });
+          }
+        }
+      } catch (error) {
+        console.error(`[Horario useEffect] Error al cargar horario para Usuario: ${userId}, Clínica: ${selectedClinicaHorario}:`, error); // Usar estado correcto
+        toast({ title: "Error", description: "No se pudo cargar el horario para esta clínica.", variant: "destructive" }); // CORREGIDO: toast es ahora una función
+        setHorarioEditado(prev => {
+            const mapa = new Map(prev);
+            mapa.delete(selectedClinicaHorario); // Usar estado correcto
+            return mapa;
+        });
+        setHorarioSemanal(prev => { // Actualizar también si es necesario
+            const mapa = new Map(prev);
+            mapa.delete(selectedClinicaHorario);
+            return mapa;
+        });
+      } finally {
+        setIsLoadingHorario(false);
+      }
+    };
+    cargarHorario();
+  }, [userId, selectedClinicaHorario, clinics, toast]); // Depender de clinics por si cambian
+
+  // --- Funciones auxiliares (DEFINICIÓN ÚNICA) ---
+
+  // Placeholder para calcularHorasTotales
+  const calcularHorasTotales = (horarios: Map<string, HorarioDia[]>) => {
+      console.warn("calcularHorasTotales no implementada completamente");
+      return { totalPorClinica: new Map(), totalGlobal: 0 };
+  };
+
+  // Placeholders para funciones handle... (Añadir lógica real)
+  const handleRemoveClinica = (clinicId: string) => { 
+      setPermisosClinicas(prev => {
+          const newMap = new Map(prev);
+          newMap.delete(clinicId);
+          return newMap;
       });
-      
-      // Convertir el Map de habilidades a formato serializable
-      const habilidadesPorClinica: Record<string, string[]> = {};
-      habilidadesProfesionales.forEach((habilidades, clinicaId) => {
-        habilidadesPorClinica[clinicaId] = habilidades;
+      setSelectedClinicas(prev => prev.filter(id => id !== clinicId));
+      if (selectedClinicaHorario === clinicId) {
+          setSelectedClinicaHorario("");
+      }
+      console.log("handleRemoveClinica (UI)", clinicId); 
+  };
+  const handleAddClinica = (clinicId: string, perfilId: string) => { 
+      if (!clinicId || !perfilId) return; 
+      setPermisosClinicas(prev => {
+          const newMap = new Map(prev);
+          const rolesActuales = newMap.get(clinicId) || [];
+          if (!rolesActuales.includes(perfilId)) { 
+             newMap.set(clinicId, [...rolesActuales, perfilId]);
+          }
+          return newMap;
       });
-      
-      // Convertir los horarios a formato serializable
-      const horariosSerializables: Record<string, any> = {};
-      horariosValidados.forEach((diasHorario, clinicaId) => {
-        horariosSerializables[clinicaId] = diasHorario;
-      });
-      */
-      
-      // Construir payload refactorizado para updateUsuario
-      // Usar Omit<Usuario, 'id' | 'createdAt' | 'updatedAt' | 'password'> ya que password no se actualiza aquí normalmente
-      // Y el contexto/API debe manejar la actualización de updatedAt
-      const updatedUserData: Omit<Usuario, 'id' | 'createdAt' | 'updatedAt' | 'password' | 'emailVerified' | 'roles' | 'clinicas'> = {
-        // nombre, // <- Eliminar
-        firstName, // <- Usar firstName
-        lastName, // <- Usar lastName
-        email,
-        // prefijoTelefonico: prefijo, // <- Eliminar si no existe
-        // phone: telefono, // Error: phone no existe. Usar el campo correcto si existe, ej. 'telefono'
-        phone: telefono, // <- Usar 'phone' si existe en el tipo Usuario
-        // perfil, // <- Eliminar (manejar roles por separado)
-        // clinicasIds: selectedClinicas, // <- Eliminar (manejar relaciones por separado)
-        // perfilesClinica, // **COMENTADO**
-        // habilidadesProfesionales: habilidadesPorClinica, // **COMENTADO**
-        // horarios: horariosSerializables, // **COMENTADO**
-        isActive,
-        profileImageUrl: null, // Añadir explícitamente como null
-        // fechaModificacion: new Date().toISOString(), // <- Esto debería manejarlo el backend/Prisma
-        
-        // Otros campos (revisar si existen en el modelo User y si son editables aquí)
-        // Asegurarse de castear a 'any' si no están en el tipo Usuario base importado
-        ...(dni && { dni }), // Incluir solo si tiene valor
-        ...(fechaNacimiento && { fechaNacimiento }),
-        ...(sexo && { sexo }),
-        ...(telefono2 && { telefono2 }),
-        // contrasena: contrasena ? contrasena : undefined, // No enviar contraseña en actualización normal
-        ...(idioma && { idioma }),
-        
-        // Datos de colegiado
-        ...(colegio && { colegio }),
-        ...(numeroColegiado && { numeroColegiado }),
-        ...(especialidad && { especialidad }),
-        ...(universidad && { universidad }),
-        
-        // Dirección
-        ...(direccion && { direccion }),
-        ...(provincia && { provincia }),
-        ...(pais && { pais }),
-        ...(localidad && { localidad }),
-        ...(cp && { cp }),
-        
-        // Configuración (si estos campos existen directamente en User)
-        ...(exportCsv && { exportCsv }),
-        ...(indiceControl && { indiceControl }),
-        ...(numeroPIN && { numeroPIN }),
-        ...(notas && { notas }),
-        // configuracion: { // Si configuración es un objeto JSON en Prisma
-        //   mostrarDesplazados,
-        //   mostrarCitasPropias,
-        //   restringirIP,
-        //   deshabilitado
-        // }
+      setSelectedClinicas(prev => Array.from(new Set([...prev, clinicId]))); 
+      setNuevaClinicaId("");
+      setNuevoPerfilClinica("");
+      console.log("handleAddClinica (UI)", clinicId, perfilId); 
+  };
+  const handleToggleDia = (clinicId: string, dia: string, activo: boolean) => { console.log("handleToggleDia", clinicId, dia, activo); };
+  const handleRemoveFranja = (clinicId: string, dia: string, franjaId: string) => { console.log("handleRemoveFranja", clinicId, dia, franjaId); };
+  const handleRemoveExcepcion = (excepcionId: string) => { console.log("handleRemoveExcepcion", excepcionId); };
+  const handleRemoveHabilidad = (clinicId: string, habilidadNombre: string) => { console.log("handleRemoveHabilidad", clinicId, habilidadNombre); };
+  const handleAddHabilidad = () => { console.log("handleAddHabilidad"); };
+
+  // Ajustar convertBlocksToWeekSchedule para que coincida con el tipo HorarioSemanal esperado
+  // (Asumiendo que HorarioSemanal es un objeto con claves de día, no un array)
+  // CORREGIDO: Función ahora devuelve HorarioSemanal { clinicaId, dias: HorarioDia[] }
+  const convertBlocksToWeekSchedule = (
+      clinicaId: string, // AÑADIDO clinicId
+      blocks: any[] | undefined | null,
+      defaultOpenTime: string, // Mantener parámetros originales
+      defaultCloseTime: string
+  ): HorarioSemanal | null => {
+      if (!blocks || blocks.length === 0) {
+          console.warn("[convertBlocksToWeekSchedule] No blocks provided for clinic", clinicaId, ", returning null schedule.");
+          return null;
       }
       
-      // Filtrar propiedades undefined antes de enviar
-      const cleanPayload = Object.fromEntries(
-        Object.entries(updatedUserData).filter(([_, v]) => v !== undefined)
-      );
+      // CORREGIDO: Inicializar array de HorarioDia
+      const diasSemana: HorarioDia[] = [
+          { dia: 'lunes', franjas: [], activo: false },
+          { dia: 'martes', franjas: [], activo: false },
+          { dia: 'miercoles', franjas: [], activo: false },
+          { dia: 'jueves', franjas: [], activo: false },
+          { dia: 'viernes', franjas: [], activo: false },
+          { dia: 'sabado', franjas: [], activo: false },
+          { dia: 'domingo', franjas: [], activo: false }
+      ];
 
-      console.log("[UsuarioPage] Payload para updateUsuario:", cleanPayload); // Diagnóstico
+      blocks.forEach((block) => {
+          if (!block.dayOfWeek) {
+              console.warn("[convertBlocksToWeekSchedule] Block is missing dayOfWeek:", block);
+              return; // Saltar este bloque
+          }
+          const dayKey = block.dayOfWeek.toLowerCase() as HorarioDia['dia'];
+          const diaIndex = diasSemana.findIndex(d => d.dia === dayKey);
 
-      const success = await updateUsuario(userId, cleanPayload as Partial<Usuario>) // Castear a Partial para flexibilidad
-      
-      if (success) {
-        toast({
-          title: "Usuario actualizado",
-          description: "El usuario ha sido actualizado correctamente",
-        })
-        // Eliminar la redirección para permanecer en la misma página
-        // router.push(returnTo)
+          if (diaIndex !== -1) {
+              if (block.startTime && block.endTime) {
+                  // CORREGIDO: Usar 'franjas' y 'activo'
+                  diasSemana[diaIndex].activo = true; 
+                  // Crear FranjaHoraria - Asumir que block tiene id o generar uno?
+                  // Por ahora usamos inicio+fin como ID improvisado si block.id no existe
+                  const franja: FranjaHoraria = {
+                      id: block.id || `${block.startTime}-${block.endTime}`, 
+                      inicio: block.startTime, 
+                      fin: block.endTime 
+                  };
+                  diasSemana[diaIndex].franjas.push(franja);
+                  
       } else {
-        throw new Error("No se pudo actualizar el usuario desde el contexto/API") // Mensaje más específico
-      }
-    } catch (error) {
-      console.error("Error al actualizar usuario:", error)
-      const errorMessage = error instanceof Error ? error.message : "No se pudo actualizar el usuario";
-      toast({
-        title: "Error al Guardar",
-        description: errorMessage,
-        variant: "destructive",
-      })
-    }
+                  console.warn(`[convertBlocksToWeekSchedule] Block for ${dayKey} is missing start or end time:`, block);
+              }
+          } else {
+              console.warn(`[convertBlocksToWeekSchedule] Invalid day key encountered: ${dayKey}`);
+          }
+      });
+
+      // Ordenar franjas y asegurar estado 'activo'
+      diasSemana.forEach(dia => {
+          if (dia.franjas.length > 0) {
+              dia.activo = true;
+              dia.franjas.sort((a, b) => a.inicio.localeCompare(b.inicio));
+          } else {
+              dia.activo = false; // Asegurar que sea false si no hay franjas
+          }
+      });
+      
+      // CORREGIDO: Devolver estructura HorarioSemanal
+      return { clinicaId, dias: diasSemana };
   };
 
-  // Estado para horarios
-  const [selectedClinicaHorario, setSelectedClinicaHorario] = useState<string>("");
-  // **COMENTADO TEMPORALMENTE - Requiere API/Modelo**
-  const [horarioSemanal, setHorarioSemanal] = useState<Map<string, HorarioDia[]>>(new Map());
-  const [excepciones, setExcepciones] = useState<ExcepcionHorariaUsuario[]>([]);
-  // CORREGIR TIPO: Definir explícitamente como string
-  const [horarioSubTab, setHorarioSubTab] = useState<string>("semanal");
-  // const [horarioSubTab, setHorarioSubTab] = useState<"semanal" | "excepciones" | "vista">("semanal"); // <- Tipo anterior incorrecto
 
-  // Estado para modal de edición de franjas horarias
-  // **COMENTADO TEMPORALMENTE - Requiere API/Modelo**
-  const [showHorarioModal, setShowHorarioModal] = useState(false);
-  const [editingFranja, setEditingFranja] = useState<{
-    diaId: string;
-    franjaId?: string;  // Si está definido, estamos editando una franja existente
-    inicio: string;
-    fin: string;
-    isExcepcion?: boolean; // Indica si estamos editando una franja de excepción
-    excepcionDiaIndex?: number; // Índice del día en el array de días de la excepción
-  } | null>(null);
+  // Ajustar createDefaultClinicSchedule para que coincida con el tipo HorarioSemanal esperado
+  // CORREGIDO: Función ahora devuelve HorarioSemanal { clinicaId, dias: HorarioDia[] }
+  const createDefaultClinicSchedule = (
+      clinicaId: string, // AÑADIDO clinicId
+      openTime: string, 
+      closeTime: string
+  ): HorarioSemanal => {
+      const defaultFranja: FranjaHoraria = { id: 'default', inicio: openTime, fin: closeTime };
+      // CORREGIDO: Crear array de HorarioDia
+      const diasSemana: HorarioDia[] = [
+          { dia: 'lunes', franjas: [defaultFranja], activo: true },
+          { dia: 'martes', franjas: [defaultFranja], activo: true },
+          { dia: 'miercoles', franjas: [defaultFranja], activo: true },
+          { dia: 'jueves', franjas: [defaultFranja], activo: true },
+          { dia: 'viernes', franjas: [defaultFranja], activo: true },
+          { dia: 'sabado', franjas: [], activo: false },
+          { dia: 'domingo', franjas: [], activo: false },
+      ];
+      // CORREGIDO: Devolver estructura HorarioSemanal
+      return { clinicaId, dias: diasSemana };
+  }
+  // --- Fin Funciones auxiliares ---
 
-  // Memoizar las opciones de clínicas para el selector de horarios
-  // **COMENTADO TEMPORALMENTE - Depende de selectedClinicas**
-  const opcionesClinicasHorario = React.useMemo(() => 
-    selectedClinicas // Usar la variable temporal vacía
-    .map(clinicaId => {
-      const clinica = clinics.find(c => String(c.id) === clinicaId);
-      return {
-        id: clinicaId,
-        label: clinica ? `${clinica.prefix} - ${clinica.name}` : "Clínica desconocida"
-      };
-    }
-  ), [selectedClinicas, clinics]); // Mantener dependencias
+  // Memoizar opciones de clínicas para SelectClinica (si 'clinics' cambia frecuentemente)
+  const opcionesClinicasAsignadas = useMemo(() => {
+     return clinics
+         .filter(c => selectedClinicas.includes(String(c.id))) // Filtrar por las asignadas
+         .map(c => ({ 
+            id: String(c.id), 
+            label: `${c.prefix} - ${c.name}${c.isActive ? '' : ' (Inactiva)'}` 
+         }));
+  }, [clinics, selectedClinicas]);
 
-  // Horarios mock de clínicas (esto vendría de un contexto real)
-  // **PENDIENTE - Mover a contexto/API useClinic**
-  const HORARIOS_CLINICA_MOCK: Record<string, { 
-    horarioGeneral: { apertura: string, cierre: string },
-    excepciones: { dia: string, apertura: string, cierre: string }[]
-  }> = {
-    "1": {
-      horarioGeneral: { apertura: "09:00", cierre: "20:00" },
-      excepciones: [
-        { dia: "lunes", apertura: "10:00", cierre: "19:00" },
-        { dia: "sabado", apertura: "10:00", cierre: "14:00" },
-        { dia: "domingo", apertura: "", cierre: "" } // Cerrado
-      ]
-    },
-    "2": {
-      horarioGeneral: { apertura: "08:30", cierre: "21:00" },
-      excepciones: [
-        { dia: "sabado", apertura: "09:00", cierre: "15:00" },
-        { dia: "domingo", apertura: "", cierre: "" } // Cerrado
-      ]
-    }
-  };
+  // Memoizar opciones para añadir clínica en Permisos
+  const opcionesClinicasParaAnadir = useMemo(() => {
+     return clinics
+         .filter(c => showDisabledClinics ? true : c.isActive) // Filtrar por activas/todas
+         .filter(c => !selectedClinicas.includes(String(c.id))) // Excluir ya asignadas
+         .map(c => ({ 
+            id: String(c.id), 
+            label: `${c.prefix} - ${c.name}${c.isActive ? '' : ' (Inactiva)'}` 
+         }));
+  }, [clinics, selectedClinicas, showDisabledClinics]);
 
-  // Inicialización de horarios cuando se carga el usuario o cambia la clínica seleccionada
-  // **COMENTADO TEMPORALMENTE - Requiere API/Modelo y selectedClinicas**
-  /*
-  useEffect(() => {
-    if (!loading && clinics.length > 0) {
-      // ... (lógica existente comentada)
-    }
-  }, [loading, clinics, selectedClinicas]);
-  */
+  // Memoizar opciones para añadir habilidad (reutiliza asignadas?)
+   const opcionesClinicasHabilidad = useMemo(() => {
+     // Usar las mismas que para horario o todas las disponibles? Por ahora usamos las asignadas.
+     return opcionesClinicasAsignadas; 
+   }, [opcionesClinicasAsignadas]);
 
-  // Función para distribuir proporcionalmente los horarios
-  // **COMENTADO TEMPORALMENTE - Requiere API/Modelo y selectedClinicas**
-  /*
-  const distribuirHorariosMultiplesClinicas = (clinicaIds: string[]) => {
-    // ... (lógica existente comentada)
-  };
-  */
-
-  // Función para verificar si una franja horaria está dentro del horario de la clínica
-  // **COMENTADO TEMPORALMENTE - Depende de HORARIOS_CLINICA_MOCK y lógica interna**
-  /*
-  const esFranjaValida = (clinicaId: string, inicio: string, fin: string, dia: string): boolean => {
-    // ... (lógica existente comentada)
-    return true; // Temporalmente permitir todo
-  };
-  */
-  // Placeholder mientras está comentado
-  const esFranjaValida = (clinicaId: string, inicio: string, fin: string, dia: string): boolean => true;
-
-
-  // Función para añadir franja horaria
-  // **COMENTADO TEMPORALMENTE - Requiere API/Modelo**
-  /*
-  const handleAddFranja = (clinicaId: string, dia: string, inicio: string, fin: string) => {
-    // ... (lógica existente comentada)
-  };
-  */
-
-  // Función para eliminar franja horaria
-  // **COMENTADO TEMPORALMENTE - Requiere API/Modelo**
-  /*
-  const handleRemoveFranja = (clinicaId: string, dia: string, franjaId: string) => {
-    // ... (lógica existente comentada)
-  };
-  */
-
-  // Traducción de días de la semana (Mantener)
-  // ... (código existente)
-
-  // Función para verificar si una franja horaria se superpone con otras existentes
-  // **COMENTADO TEMPORALMENTE - Depende de horarioSemanal**
-  /*
-  const hayFranjasSuperpuestas = (
-    clinicaId: string, 
-    dia: string, 
-    inicio: string, 
-    fin: string, 
-    franjaIdActual?: string
-  ): boolean => {
-    // ... (lógica existente comentada)
-    return false; // Temporalmente no hay superposición
-  };
-  */
-  // Placeholder mientras está comentado
-  const hayFranjasSuperpuestas = (clinicaId: string, dia: string, inicio: string, fin: string, franjaIdActual?: string): boolean => false;
-
-
-  // Función para calcular las horas totales por clínica y por día
-  // **COMENTADO TEMPORALMENTE - Depende de horarioSemanal**
-  /*
-  const calcularHorasTotales = (horarioSemanal: Map<string, HorarioDia[]>) => {
-    // ... (lógica existente comentada)
-    return { totalPorClinica: {}, totalGlobal: 0 }; // Temporal
-  };
-  */
-  // Placeholder mientras está comentado
-  const calcularHorasTotales = (horarioSemanal: Map<string, HorarioDia[]>) => ({ totalPorClinica: {}, totalGlobal: 0 });
-
-  // Convierte un string de hora (HH:MM) a minutos (Mantener)
-  // ... (código existente)
-
-  // Convierte minutos a formato de hora legible (Mantener)
-  // ... (código existente)
 
   if (loading && userId !== 'nuevo') { // Añadir chequeo para 'nuevo'
-    return (
-      <div className="container p-6 mx-auto space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-semibold">Cargando información del usuario...</h1>
-        </div>
-      </div>
-    )
+    // Mostrar el Skeleton mientras carga
+    return <UsuarioPageSkeleton />;
   }
+
+  // --- NUEVA FUNCIÓN DE GUARDADO ---
+  const handleGuardarUsuario = async () => {
+    // --- Validaciones ---
+    if (!firstName.trim()) {
+      toast({ title: "Error", description: "El nombre es obligatorio.", variant: "destructive" });
+      setActiveTab('datos-personales'); 
+      return;
+    }
+    /* // COMENTADO TEMPORALMENTE hasta definir campos obligatorios
+     if (!lastName.trim()) { 
+      toast({ title: "Error", description: "El apellido es obligatorio.", variant: "destructive" });
+      setActiveTab('datos-personales');
+      return;
+    }
+    */
+    if (!email.trim() || !/\S+@\S+\.\S+/.test(email)) { 
+      toast({ title: "Error", description: "El formato del email no es válido.", variant: "destructive" });
+      setActiveTab('datos-personales');
+      return;
+    }
+    if (email !== confirmEmail) {
+      toast({ title: "Error", description: "Los emails no coinciden.", variant: "destructive" });
+      setActiveTab('datos-personales');
+      return;
+    }
+    if (userId === 'nuevo' && !contrasena) {
+      toast({ title: "Error", description: "La contraseña es obligatoria para crear un nuevo usuario.", variant: "destructive" });
+      setActiveTab('datos-personales');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      // --- Payload Base (Común para crear y actualizar, EXCEPTO contraseña) ---
+      const basePayload = {
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        email: email.trim(),
+        phone: telefono.trim() || null,
+        isActive: isActive,
+        dni: dni.trim() || null,
+        // Enviar fecha como null si está vacía, o en formato yyyy-mm-dd
+        fechaNacimiento: fechaNacimiento ? fechaNacimiento : null, 
+        sexo: sexo || null,
+        telefono2: telefono2.trim() || null,
+        idioma: idioma || null,
+        colegio: colegio.trim() || null,
+        numeroColegiado: numeroColegiado.trim() || null,
+        especialidad: especialidad.trim() || null,
+        universidad: universidad.trim() || null,
+        direccion: direccion.trim() || null,
+        provincia: provincia.trim() || null,
+        pais: pais.trim() || null,
+        localidad: localidad.trim() || null,
+        cp: cp.trim() || null,
+        exportCsv: exportCsv === "true", // Convertir string a boolean
+        indiceControl: indiceControl || null,
+        numeroPIN: numeroPIN.trim() || null,
+        notas: notas.trim() || null,
+        // Añadir campos de checkboxes (ajustar nombres si es necesario)
+        mostrarDesplazados: mostrarDesplazados,
+        mostrarCitasPropias: mostrarCitasPropias,
+        restringirIP: restringirIP,
+        deshabilitado: deshabilitado, // ¿Relacionado con isActive? Verificar si API lo usa
+      };
+
+      if (userId === 'nuevo') {
+        // --- Crear Usuario ---
+        const newUserPayload = {
+          ...basePayload,
+          password: contrasena, // Añadir contraseña SOLO al crear
+        };
+        console.log("[handleGuardarUsuario] Creando usuario con payload:", newUserPayload);
+        // ASUNCIÓN: createUsuario espera un objeto compatible con basePayload + password
+        const createdUser = await createUsuario(newUserPayload as any); // Cast si es necesario
+
+        if (createdUser) {
+          toast({ title: "Éxito", description: "Usuario creado correctamente." });
+          router.replace(`/configuracion/usuarios/${createdUser.id}?returnTo=${encodeURIComponent(returnToBase)}`); 
+        } else {
+          console.error("[handleGuardarUsuario] createUsuario retornó null o false.");
+          // El toast de error debería venir del contexto
+        }
+
+      } else {
+        // --- Actualizar Usuario ---
+        
+        // 1. Preparar asignaciones de clínicas/roles (igual que antes)
+        let clinicAssignmentsPayload: { clinicId: string, roleId: string }[] | undefined = undefined;
+        let permisosHanCambiado = false;
+
+        // DEBUG: Log estados antes de comparar
+        console.log("[handleGuardarUsuario] DEBUG: initialPermisosClinicas:", initialPermisosClinicas);
+        console.log("[handleGuardarUsuario] DEBUG: permisosClinicas (actuales):", permisosClinicas);
+
+        if (permisosClinicas.size !== initialPermisosClinicas.size) {
+            permisosHanCambiado = true;
+            console.log("[handleGuardarUsuario] DEBUG: Permisos cambiados (diferente tamaño)");
+        } else {
+            for (const [clinicId, roles] of permisosClinicas) {
+                // DEBUG: Log comparación de roles para cada clínica
+                const initialRoles = initialPermisosClinicas.get(clinicId);
+                console.log(`[handleGuardarUsuario] DEBUG: Comparando roles para clínica ${clinicId}. Actual:`, roles, "Inicial:", initialRoles);
+                if (!initialPermisosClinicas.has(clinicId) || !arraysEqual(roles, initialRoles!)) {
+                    permisosHanCambiado = true;
+                    console.log(`[handleGuardarUsuario] DEBUG: Permisos cambiados (diferencia detectada en clínica ${clinicId})`);
+                    break;
+                }
+            }
+        }
+        console.log("[handleGuardarUsuario] DEBUG: ¿Permisos han cambiado?", permisosHanCambiado);
+
+        if (permisosHanCambiado) {
+            clinicAssignmentsPayload = [];
+            permisosClinicas.forEach((roles, clinicId) => {
+                if (roles && roles.length > 0) { 
+                    // roles[0] ahora debería contener el CUID del rol gracias a la UI actualizada
+                    const roleIdToSend = roles[0]; // <-- CONFIRMADO: esto es el ID (CUID)
+                    clinicAssignmentsPayload?.push({ clinicId, roleId: roleIdToSend });
+                } else {
+                    // Si una clínica se queda sin roles, ¿deberíamos eliminar la asignación?
+                    // La lógica actual de la API PUT (borrar todo y recrear) maneja esto,
+                    // pero si la API cambiara, habría que enviar explícitamente la eliminación.
+                    console.warn(`[handleGuardarUsuario] Clínica ${clinicId} no tiene roles, no se incluirá en payload.`);
+                }
+            });
+            console.log("[handleGuardarUsuario] Permisos modificados. Enviando clinicAssignments:", clinicAssignmentsPayload);
+        } else {
+             console.log("[handleGuardarUsuario] Permisos no modificados. No se enviará clinicAssignments.");
+        }
+
+        // 2. Combinar payload base y asignaciones (si cambiaron)
+        const finalUpdatePayload = { 
+            ...basePayload, 
+            ...(clinicAssignmentsPayload !== undefined && { clinicAssignments: clinicAssignmentsPayload })
+        };
+
+        // 3. Llamar a la API de actualización
+        console.log(`[handleGuardarUsuario] Actualizando usuario ${userId} con payload:`, JSON.stringify(finalUpdatePayload, null, 2)); // Log formateado
+        const updatedUser = await updateUsuario(userId, finalUpdatePayload as Partial<Omit<Usuario, 'id' | 'createdAt' | 'updatedAt' | 'systemId'>>); 
+
+        // DEBUG: Log resultado de la actualización
+        console.log("[handleGuardarUsuario] DEBUG: Resultado de updateUsuario:", updatedUser);
+
+        if (updatedUser) {
+          toast({ title: "Éxito", description: "Cambios guardados correctamente." });
+          // Actualizar estado inicial de permisos
+           if (clinicAssignmentsPayload !== undefined) {
+                setInitialPermisosClinicas(new Map(permisosClinicas));
+           }
+        } else {
+          console.error("[handleGuardarUsuario] updateUsuario retornó null o false.");
+          // El toast de error debería venir del contexto
+        }
+      }
+    } catch (error) {
+      console.error("[handleGuardarUsuario] Error:", error);
+      toast({ title: "Error", description: `Ocurrió un error inesperado: ${error instanceof Error ? error.message : String(error)}`, variant: "destructive" });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+  // --- Fin NUEVA FUNCIÓN DE GUARDADO ---
 
   return (
     <div className="container max-w-5xl p-6 mx-auto space-y-6">
@@ -1185,8 +1132,8 @@ export default function EditarUsuarioPage(props: { params: Promise<{ id: string 
                     id="contrasena" 
                     type="password"
                     placeholder="Dejar en blanco para no cambiar"
-                    value={contrasena}
-                    onChange={(e) => setContrasena(e.target.value)}
+                    value={contrasena} // AÑADIDO value
+                    onChange={(e) => setContrasena(e.target.value)} // AÑADIDO onChange
                     className="h-9"
                   />
                 </div>
@@ -1347,12 +1294,16 @@ export default function EditarUsuarioPage(props: { params: Promise<{ id: string 
               <div className="space-y-3">
                 <div>
                   <Label htmlFor="exportCsv" className="text-sm font-medium">Export CSV</Label>
+                  {/* CORREGIDO: Usar string "true"/"false" para value y onValueChange */}
                   <Select value={exportCsv} onValueChange={setExportCsv}>
                     <SelectTrigger id="exportCsv" className="h-9">
                       <SelectValue placeholder="Seleccione una opción" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value=":">:</SelectItem>
+                      <SelectItem value="true">Sí</SelectItem>
+                      <SelectItem value="false">No</SelectItem>
+                      {/* Mantener opción original si es necesaria */}
+                      {/* <SelectItem value=":">:</SelectItem>  */}
                     </SelectContent>
                   </Select>
                 </div>
@@ -1390,32 +1341,32 @@ export default function EditarUsuarioPage(props: { params: Promise<{ id: string 
                   <div className="flex items-center space-x-2">
                     <Checkbox 
                       id="mostrarDesplazados" 
-                      checked={mostrarDesplazados}
-                      onCheckedChange={(checked) => setMostrarDesplazados(checked === true)}
+                      checked={mostrarDesplazados} // AÑADIDO estado
+                      onCheckedChange={(checked) => setMostrarDesplazados(checked === true)} // AÑADIDO estado
                     />
                     <Label htmlFor="mostrarDesplazados" className="text-sm">No mostrar en desplazados</Label>
                   </div>
                   <div className="flex items-center space-x-2">
                     <Checkbox 
                       id="mostrarCitasPropias"
-                      checked={mostrarCitasPropias}
-                      onCheckedChange={(checked) => setMostrarCitasPropias(checked === true)}
+                      checked={mostrarCitasPropias} // AÑADIDO estado
+                      onCheckedChange={(checked) => setMostrarCitasPropias(checked === true)} // AÑADIDO estado
                     />
                     <Label htmlFor="mostrarCitasPropias" className="text-sm">Mostrar únicamente las citas propias</Label>
                   </div>
                   <div className="flex items-center space-x-2">
                     <Checkbox 
                       id="restringirIP"
-                      checked={restringirIP}
-                      onCheckedChange={(checked) => setRestringirIP(checked === true)}
+                      checked={restringirIP} // AÑADIDO estado
+                      onCheckedChange={(checked) => setRestringirIP(checked === true)} // AÑADIDO estado
                     />
                     <Label htmlFor="restringirIP" className="text-sm">Restringir IP</Label>
                   </div>
                   <div className="flex items-center space-x-2">
                     <Checkbox 
                       id="deshabilitado" 
-                      checked={deshabilitado}
-                      onCheckedChange={(checked) => setDeshabilitado(checked === true)}
+                      checked={deshabilitado} // AÑADIDO estado (conectar con isActive?)
+                      onCheckedChange={(checked) => setDeshabilitado(checked === true)} // AÑADIDO estado
                     />
                     <Label htmlFor="deshabilitado" className="text-sm">Deshabilitado</Label>
                   </div>
@@ -1487,26 +1438,50 @@ export default function EditarUsuarioPage(props: { params: Promise<{ id: string 
                 <SelectClinica 
                   value={nuevaClinicaId}
                   onChange={setNuevaClinicaId}
-                  options={clinicasToShow.filter(c => !selectedClinicas.includes(String(c.id))).map(c => ({ id: String(c.id), label: `${c.prefix} - ${c.name}` }))}
+                  // Modificar opciones para filtrar y mostrar inactivas
+                  options={clinics
+                    .filter(c => showDisabledClinics ? true : c.isActive) // Filtrar por activas/todas
+                    .filter(c => !selectedClinicas.includes(String(c.id))) // Excluir ya asignadas
+                    .map(c => ({ 
+                       id: String(c.id), 
+                       label: `${c.prefix} - ${c.name}${c.isActive ? '' : ' (Inactiva)'}` // Añadir indicador
+                    }))}
                   placeholder="Seleccionar clínica"
                 />
+                {/* Checkbox para mostrar inactivas */}
+                <div className="flex items-center pt-1 space-x-2">
+                  <Checkbox 
+                    id="show-disabled-clinics-perms" 
+                    checked={showDisabledClinics}
+                    onCheckedChange={(checked) => setShowDisabledClinics(checked === true)}
+                  />
+                  <Label htmlFor="show-disabled-clinics-perms" className="text-xs text-gray-600 cursor-pointer">
+                    Mostrar clínicas desactivadas
+                  </Label>
+                </div>
               </div>
               <div className="flex-1 space-y-1">
                 <Label className="text-xs">Seleccionar Perfil</Label>
                 <MemoizedSelect 
-                  value={nuevoPerfilClinica}
-                  onChange={setNuevoPerfilClinica} 
+                  value={nuevoPerfilClinica} // <-- Almacenará el ID del rol
+                  onChange={setNuevoPerfilClinica} // <-- Guarda el ID del rol
                   placeholder="Seleccionar perfil"
+                  disabled={isLoadingRoles} // Deshabilitar si los roles están cargando
                 >
-                   {PERFILES_DISPONIBLES.map(perfil => (
-                    <SelectItem key={perfil} value={perfil}>{perfil}</SelectItem>
+                   {/* Iterar sobre availableRoles obtenidos del contexto */}
+                   {availableRoles.map(role => (
+                    // El value es el ID (CUID), el texto es el nombre
+                    <SelectItem key={role.id} value={role.id}>{role.name}</SelectItem>
                   ))}
+                  {/* Mostrar mensaje si no hay roles o están cargando */} 
+                  {isLoadingRoles && <SelectItem value="loading" disabled>Cargando roles...</SelectItem>}
+                  {!isLoadingRoles && availableRoles.length === 0 && <SelectItem value="no_roles" disabled>No hay roles disponibles</SelectItem>}
                 </MemoizedSelect>
               </div>
               <Button 
                 size="sm" 
-                onClick={() => handleAddClinica(nuevaClinicaId, nuevoPerfilClinica)} // Descomentar llamada
-                disabled={!nuevaClinicaId || !nuevoPerfilClinica} 
+                onClick={() => handleAddClinica(nuevaClinicaId, nuevoPerfilClinica)} // handleAddClinica ahora recibe ID de rol
+                disabled={!nuevaClinicaId || !nuevoPerfilClinica || isLoadingRoles} // Deshabilitar si falta algo o cargando roles
                 className="h-9"
               >
                 Añadir
@@ -1524,7 +1499,7 @@ export default function EditarUsuarioPage(props: { params: Promise<{ id: string 
           {/* >>> INICIO CÓDIGO DESCOMENTADO/RESTAURADO PARA HORARIO <<< */}
           {/* Sección Selección Clínica */}
           <Card className="p-4">
-            <Label className="mb-2 block text-sm font-medium">Seleccionar Clínica para ver/editar horario</Label>
+            <Label className="block mb-2 text-sm font-medium">Seleccionar Clínica para ver/editar horario</Label>
             <SelectClinica
               value={selectedClinicaHorario}
               onChange={(value) => {
@@ -1532,8 +1507,15 @@ export default function EditarUsuarioPage(props: { params: Promise<{ id: string 
                 // Opcional: Resetear sub-pestaña al cambiar de clínica?
                 // setHorarioSubTab('semanal'); 
               }}
-              options={opcionesClinicasHorario} // Usar opciones memoizadas
-              placeholder="Seleccione una clínica"
+              // Modificar opciones para usar solo clínicas asignadas
+              options={clinics
+                 .filter(c => selectedClinicas.includes(String(c.id))) // Filtrar por las asignadas
+                 .map(c => ({ 
+                    id: String(c.id), 
+                    label: `${c.prefix} - ${c.name}${c.isActive ? '' : ' (Inactiva)'}` // Mantener indicador
+                 }))
+              }
+              placeholder="Seleccione una clínica asignada"
               disabled={selectedClinicas.length === 0} // Deshabilitar si no hay clínicas asignadas
             />
             {selectedClinicas.length === 0 && (
@@ -1558,51 +1540,55 @@ export default function EditarUsuarioPage(props: { params: Promise<{ id: string 
                     {/* Botón para aplicar horario de clínica? */}
                   </div>
                   {/* Descomentar renderizado de horario semanal */}
-                  {(horarioSemanal.get(selectedClinicaHorario) || []).map((dia, diaIndex) => (
-                    <div key={dia.dia} className="mb-3 border-b pb-3 last:border-b-0 last:pb-0">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="font-medium capitalize">{traducirDia(dia.dia)}</span>
-                        <Switch
-                          checked={dia.activo}
-                          onCheckedChange={(checked) => {
-                            // handleToggleDia(selectedClinicaHorario, dia.dia, checked) // Descomentar llamada
-                          }}
-                        />
-                      </div>
-                      {dia.activo && (
-                        <div className="space-y-2 pl-4">
-                          {dia.franjas.length === 0 && <p className="text-xs text-gray-500">Día cerrado. Añade una franja horaria.</p>}
-                          {dia.franjas.map((franja, franjaIndex) => (
-                            <div key={franja.id} className="flex items-center gap-2 p-2 text-sm border rounded bg-gray-50/50">
-                              <Input type="time" value={franja.inicio} disabled className="h-8 text-xs w-28"/>
-                              <span>-</span>
-                              <Input type="time" value={franja.fin} disabled className="h-8 text-xs w-28"/>
-                              <div className="ml-auto">
-                                <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-blue-600 hover:bg-blue-100 hover:text-blue-700" onClick={() => { 
-                                  // setEditingFranja({ diaId: dia.dia, franjaId: franja.id, inicio: franja.inicio, fin: franja.fin }); // Descomentar
-                                  // setShowHorarioModal(true); // Descomentar
-                                }}>
-                                  <Pencil className="w-4 h-4" />
-                                </Button>
-                                <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-600 hover:bg-red-100 hover:text-red-700" onClick={() => { 
-                                  // handleRemoveFranja(selectedClinicaHorario, dia.dia, franja.id) // Descomentar
-                                }}>
-                                  <Trash className="w-4 h-4" />
-                                </Button>
+                  { (horarioEditado.get(selectedClinicaHorario)?.dias || []).map((dia) => (
+                      <div key={dia.dia} className="pb-3 mb-3 border-b last:border-b-0 last:pb-0">
+                          <div className="flex items-center justify-between mb-2">
+                              <span className="font-medium capitalize">{traducirDia(dia.dia)}</span>
+                              <Switch
+                                  checked={dia.activo} // CORREGIDO: usar dia.activo
+                                  onCheckedChange={(checked) => {
+                                      handleToggleDia(selectedClinicaHorario, dia.dia, checked) // Usar placeholder
+                                  }}
+                              />
+                          </div>
+                          {dia.activo && ( // CORREGIDO: usar dia.activo
+                              <div className="pl-4 space-y-2">
+                                  {dia.franjas.length === 0 && <p className="text-xs text-gray-500">Día cerrado. Añade una franja horaria.</p>}
+                                  {dia.franjas.map((franja) => ( // CORREGIDO: usar dia.franjas
+                                      <div key={franja.id} className="flex items-center gap-2 p-2 text-sm border rounded bg-gray-50/50">
+                                          {/* CORREGIDO: usar franja.inicio / franja.fin */}
+                                          <Input type="time" value={franja.inicio || ''} disabled className="h-8 text-xs w-28"/>
+                                          <span>-</span>
+                                          <Input type="time" value={franja.fin || ''} disabled className="h-8 text-xs w-28"/>
+                                          <div className="ml-auto">
+                                              <Button variant="ghost" size="sm" className="p-0 text-blue-600 h-7 w-7 hover:bg-blue-100 hover:text-blue-700" onClick={() => { 
+                                                  console.log("Editar franja", dia.dia, franja.id); // Placeholder
+                                                  // setEditingFranja({ diaId: dia.dia, franjaId: franja.id, inicio: franja.inicio, fin: franja.fin }); // Adaptar
+                                                  // setShowHorarioModal(true); 
+                                              }}>
+                                                  <Pencil className="w-4 h-4" />
+                                              </Button>
+                                              <Button variant="ghost" size="sm" className="p-0 text-red-600 h-7 w-7 hover:bg-red-100 hover:text-red-700" onClick={() => { 
+                                                  handleRemoveFranja(selectedClinicaHorario, dia.dia, franja.id) // Usar placeholder
+                                              }}>
+                                                  <Trash className="w-4 h-4" />
+                                              </Button>
+                                          </div>
+                                      </div>
+                                  ))}
+                                  <Button variant="outline" size="sm" className="w-full text-xs h-7" onClick={() => { 
+                                       console.log("Añadir franja", dia.dia); // Placeholder
+                                      // setEditingFranja({ diaId: dia.dia, inicio: '09:00', fin: '17:00' }); // Adaptar
+                                      // setShowHorarioModal(true); 
+                                  }}>
+                                      <PlusCircle className="w-3 h-3 mr-1" />
+                                      Añadir Franja
+                                  </Button>
                               </div>
-                            </div>
-                          ))}
-                          <Button variant="outline" size="sm" className="w-full text-xs h-7" onClick={() => { 
-                            // setEditingFranja({ diaId: dia.dia, inicio: '09:00', fin: '17:00' }); // Descomentar
-                            // setShowHorarioModal(true); // Descomentar
-                          }}>
-                            <PlusCircle className="w-3 h-3 mr-1" />
-                            Añadir Franja
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                          )}
+                      </div>
+                  )) }
+                  {/* FIN Renderizado Horario Semanal */}
                 </Card>
               </TabsContent>
               
@@ -1619,10 +1605,10 @@ export default function EditarUsuarioPage(props: { params: Promise<{ id: string 
                     </Button>
                   </div>
                   {/* Descomentar renderizado de excepciones */}
-                  {excepciones.length === 0 ? (
+                  {excepcionesUsuario.length === 0 ? (
                     <p className="text-sm text-center text-gray-500">No hay excepciones definidas para este usuario.</p>
                   ) : (
-                    excepciones.map(exc => (
+                    excepcionesUsuario.map(exc => (
                       <div key={exc.id} className="p-3 mb-3 border rounded-md">
                         <div className="flex items-center justify-between mb-2">
                           <div>
@@ -1632,13 +1618,13 @@ export default function EditarUsuarioPage(props: { params: Promise<{ id: string 
                              </p>
                           </div>
                           <div>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 hover:bg-blue-100" onClick={() => { 
+                            <Button variant="ghost" size="icon" className="w-8 h-8 text-blue-600 hover:bg-blue-100" onClick={() => { 
                               // setEditingExcepcion(exc); // Descomentar
                               // setShowExcepcionModal(true); // Descomentar
                             }}>
                               <Pencil className="w-4 h-4" />
                             </Button>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 hover:bg-red-100" onClick={() => { 
+                            <Button variant="ghost" size="icon" className="w-8 h-8 text-red-600 hover:bg-red-100" onClick={() => { 
                               // handleRemoveExcepcion(exc.id) // Descomentar
                              }}>
                               <Trash className="w-4 h-4" />
@@ -1654,7 +1640,7 @@ export default function EditarUsuarioPage(props: { params: Promise<{ id: string 
               {/* Sub-Pestaña: Vista Consolidada */}
               <TabsContent value="vista">
                 <Card className="p-4">
-                  <h4 className="text-base font-medium mb-4">Vista Consolidada del Horario</h4>
+                  <h4 className="mb-4 text-base font-medium">Vista Consolidada del Horario</h4>
                   {/* Aquí iría la lógica para mostrar el horario base + excepciones */}
                   <p className="text-sm text-center text-gray-500">Vista consolidada aún no implementada.</p>
                 </Card>
@@ -1667,10 +1653,35 @@ export default function EditarUsuarioPage(props: { params: Promise<{ id: string 
              <Card className="p-4 mb-5 bg-white border rounded-lg shadow-sm">
               <h4 className="mb-3 text-sm font-medium">Resumen de horas configuradas para {clinics.find(c => c.id === selectedClinicaHorario)?.name}</h4>
               {(() => {
-                const { totalPorClinica, totalGlobal } = calcularHorasTotales(horarioSemanal); // Descomentar
-                // const { totalPorClinica, totalGlobal } = { totalPorClinica: {}, totalGlobal: 0 }; // Placeholder
+                // Pasar un Map vacío temporalmente a calcularHorasTotales para evitar error de tipo
+                // La lógica real necesitará adaptar `calcularHorasTotales` o los datos pasados.
+                const { totalPorClinica, totalGlobal } = calcularHorasTotales(new Map<string, HorarioDia[]>()); 
                 const totalHorasRecomendadas = 40;
-                const datosClinica = totalPorClinica[selectedClinicaHorario] || { totalMinutos: 0, diasActivos: 0, porDia: {} };
+                // Usar horarioEditado para obtener datos Clinica (si existe)
+                const horarioActualClinica = horarioEditado.get(selectedClinicaHorario);
+                // Extraer datos para cálculo (aún necesita la lógica real de calcularHorasTotales)
+                const datosClinica = { totalMinutos: 0, diasActivos: 0, porDia: {} as Record<string, number> }; // Placeholder
+                
+                if (horarioActualClinica && horarioActualClinica.dias) { // CORREGIDO: Acceder a .dias
+                    horarioActualClinica.dias.forEach((diaData) => { // CORREGIDO: Iterar sobre .dias
+                       if (diaData.activo) { // CORREGIDO: Usar diaData.activo
+                           datosClinica.diasActivos++;
+                           // Lógica para calcular minutos por día (ejemplo simple)
+                           let minutosDia = 0;
+                           diaData.franjas.forEach(franja => { // CORREGIDO: Usar diaData.franjas
+                               try {
+                                   const [hInicio, mInicio] = (franja.inicio || "00:00").split(':').map(Number); // CORREGIDO: franja.inicio
+                                   const [hFin, mFin] = (franja.fin || "00:00").split(':').map(Number); // CORREGIDO: franja.fin
+                                   minutosDia += (hFin * 60 + mFin) - (hInicio * 60 + mInicio);
+                               } catch { /* Ignorar franja inválida */ }
+                           });
+                           datosClinica.porDia[diaData.dia] = minutosDia; // CORREGIDO: usar diaData.dia como clave
+                           datosClinica.totalMinutos += minutosDia;
+                       } else {
+                            datosClinica.porDia[diaData.dia] = 0; // CORREGIDO: usar diaData.dia como clave
+                       }
+                    });
+                }
                 
                 return (
                   <div className="space-y-3">
@@ -1688,7 +1699,7 @@ export default function EditarUsuarioPage(props: { params: Promise<{ id: string 
                     <div className="pt-2 mt-2 border-t">
                        <h5 className="mb-1 text-xs font-medium text-gray-600">Detalle por día:</h5>
                        <div className="grid grid-cols-3 gap-1 text-xs">
-                         {['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'].map(dia => (
+                         {['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'].map(dia => ( // Usar claves reales
                            <div key={dia} className="flex justify-between px-1 py-0.5 rounded bg-gray-100/50">
                              <span className="capitalize">{traducirDia(dia)}:</span>
                              {/* <span>{minutosAHoraLegible(datosClinica.porDia?.[dia] || 0)}h</span> */} {/* Descomentar si existe */} 
@@ -1698,22 +1709,22 @@ export default function EditarUsuarioPage(props: { params: Promise<{ id: string 
                        </div>
                     </div>
                      {selectedClinicas.length > 1 && (
-                       <Button 
-                         variant="outline" 
-                         size="sm"
-                         className="w-full text-xs h-7 mt-3"
+                                <Button 
+                                  variant="outline" 
+                                  size="sm"
+                         className="w-full mt-3 text-xs h-7"
                          // onClick={() => distribuirHorariosMultiplesClinicas(selectedClinicas)} // Descomentar
-                         onClick={() => { /* Placeholder */ }}
+                      onClick={() => { /* Placeholder */ }}
                          disabled // Deshabilitar temporalmente
-                       >
-                         <PlusCircle className="w-3 h-3 mr-1" />
-                         Equilibrar carga entre clínicas
-                       </Button>
+                                >
+                                  <PlusCircle className="w-3 h-3 mr-1" />
+                                  Equilibrar carga entre clínicas
+                                </Button>
                      )}
-                  </div>
-                );
-              })()}
-            </Card>
+                          </div>
+                            );
+                          })()}
+          </Card>
           )}
           {/* >>> FIN CÓDIGO DESCOMENTADO/RESTAURADO PARA HORARIO <<< */}
         </TabsContent>
@@ -1730,9 +1741,9 @@ export default function EditarUsuarioPage(props: { params: Promise<{ id: string 
                {/* Filtro o búsqueda? */}
                <Input 
                  placeholder="Buscar por clínica, familia o servicio..." 
-                 value={searchHabilidades}
-                 onChange={(e) => setSearchHabilidades(e.target.value)}
-                 className="h-9 max-w-xs"
+                 value={searchHabilidades} // AÑADIDO estado
+                 onChange={(e) => setSearchHabilidades(e.target.value)} // AÑADIDO estado
+                 className="max-w-xs h-9"
                />
              </div>
              
@@ -1789,9 +1800,9 @@ export default function EditarUsuarioPage(props: { params: Promise<{ id: string 
                <div className="flex-1 space-y-1">
                  <Label className="text-xs">Clínica</Label>
                  <SelectClinica 
-                   value={nuevaClinicaHabilidad}
-                   onChange={setNuevaClinicaHabilidad}
-                   options={opcionesClinicasHorario} // Reutilizar opciones de horario?
+                   value={nuevaClinicaHabilidad} // AÑADIDO estado
+                   onChange={setNuevaClinicaHabilidad} // AÑADIDO estado
+                   options={opcionesClinicasHabilidad} // Usar opciones memoizadas
                    placeholder="Seleccionar clínica"
                  />
                </div>
@@ -1806,21 +1817,24 @@ export default function EditarUsuarioPage(props: { params: Promise<{ id: string 
                <div className="flex-1 space-y-1">
                  <Label className="text-xs">{tipoSeleccion === 'familia' ? 'Familia' : 'Servicio'}</Label>
                  <MemoizedSelect 
-                   value={tipoSeleccion === 'familia' ? nuevaFamilia : nuevoServicio}
+                   // CORREGIDO: Usar estados nuevaFamilia/nuevoServicio
+                   value={tipoSeleccion === 'familia' ? nuevaFamilia : nuevoServicio} 
+                   // CORREGIDO: Usar estados setNuevaFamilia/setNuevoServicio
                    onChange={tipoSeleccion === 'familia' ? setNuevaFamilia : setNuevoServicio} 
                    placeholder={tipoSeleccion === 'familia' ? 'Seleccionar familia' : 'Seleccionar servicio'}
-                   disabled={!nuevaClinicaHabilidad} // Deshabilitar si no hay clínica
+                   disabled={!nuevaClinicaHabilidad} // CORREGIDO: Usar estado
                  >
                    {tipoSeleccion === 'familia' 
-                     // CORREGIDO: Usar tipo FamiliaServicio y acceder a 'name'
+                     // CORREGIDO: Usar placeholder FAMILIAS_MOCK
                      ? (FAMILIAS_MOCK.map((familia: FamiliaServicio) => ( 
                          <SelectItem key={String(familia.id)} value={String(familia.id)}> 
                            {familia.name} {/* <-- Usar 'name' */}
                          </SelectItem>
                        )))
-                     : (Object.values(SERVICIOS_MOCK).flat().map(servicio => (
-                         <SelectItem key={servicio.id} value={servicio.id}>{servicio.nombre}</SelectItem>
-                       )))
+                       // CORREGIDO: Usar placeholder SERVICIOS_MOCK y adaptar a su estructura
+                     : (Object.values(SERVICIOS_MOCK).flat().map((servicio: ServicioInterface) => ( 
+                          <SelectItem key={servicio.id} value={String(servicio.id)}>{servicio.name}</SelectItem> // Asumir id y name en ServicioInterface
+                        )))
                    }
                    {/* Mensaje si no hay opciones? */}
                  </MemoizedSelect>
@@ -1829,8 +1843,9 @@ export default function EditarUsuarioPage(props: { params: Promise<{ id: string 
                {/* Botón Añadir */}
                <Button 
                  size="sm" 
-                 onClick={handleAddHabilidad} // Descomentar
-                 disabled={!nuevaClinicaHabilidad || (tipoSeleccion === 'familia' ? !nuevaFamilia : !nuevoServicio)}
+                 onClick={handleAddHabilidad} // CORREGIDO: Usar placeholder
+                 // CORREGIDO: Usar estados
+                 disabled={!nuevaClinicaHabilidad || (tipoSeleccion === 'familia' ? !nuevaFamilia : !nuevoServicio)} 
                  className="h-9"
                >
                  Añadir Habilidad
@@ -1963,28 +1978,13 @@ export default function EditarUsuarioPage(props: { params: Promise<{ id: string 
                     </TableRow>
                   </TableHeader>
                   <TableBody>
+                    {/* Datos de ejemplo - Reemplazar con datos reales */}
                     <TableRow>
-                      <TableCell className="py-2 font-medium">05/09/2023</TableCell>
-                      <TableCell className="py-2">08:30</TableCell>
-                      <TableCell className="py-2">17:30</TableCell>
-                      <TableCell className="py-2">1h</TableCell>
-                      <TableCell className="py-2">8h</TableCell>
-                      <TableCell className="py-2">-</TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell className="py-2 font-medium">04/09/2023</TableCell>
-                      <TableCell className="py-2">08:25</TableCell>
-                      <TableCell className="py-2">17:45</TableCell>
-                      <TableCell className="py-2">1h</TableCell>
-                      <TableCell className="py-2">8h 20m</TableCell>
-                      <TableCell className="py-2">-</TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell className="py-2 font-medium">01/09/2023</TableCell>
-                      <TableCell className="py-2">08:15</TableCell>
-                      <TableCell className="py-2">17:15</TableCell>
-                      <TableCell className="py-2">1h</TableCell>
-                      <TableCell className="py-2">8h</TableCell>
+                      <TableCell className="py-2 font-medium">--/--/----</TableCell>
+                      <TableCell className="py-2">--:--</TableCell>
+                      <TableCell className="py-2">--:--</TableCell>
+                      <TableCell className="py-2">--</TableCell>
+                      <TableCell className="py-2">--</TableCell>
                       <TableCell className="py-2">-</TableCell>
                     </TableRow>
                   </TableBody>
@@ -1994,17 +1994,18 @@ export default function EditarUsuarioPage(props: { params: Promise<{ id: string 
               <div className="p-3 rounded-md bg-gray-50">
                 <h4 className="mb-2 text-sm font-medium">Resumen del mes</h4>
                 <div className="grid grid-cols-3 gap-4 text-sm">
+                   {/* Datos de ejemplo - Reemplazar con datos reales */}
                   <div>
                     <p className="text-gray-500">Días trabajados</p>
-                    <p className="font-medium">15</p>
+                    <p className="font-medium">0</p>
                   </div>
                   <div>
                     <p className="text-gray-500">Total horas</p>
-                    <p className="font-medium">120h 20m</p>
+                    <p className="font-medium">0h 0m</p>
                   </div>
                   <div>
                     <p className="text-gray-500">Media diaria</p>
-                    <p className="font-medium">8h 01m</p>
+                    <p className="font-medium">0h 0m</p>
                   </div>
                 </div>
               </div>
@@ -2013,8 +2014,42 @@ export default function EditarUsuarioPage(props: { params: Promise<{ id: string 
         </TabsContent>
       </Tabs> {/* <- CIERRE CORRECTO DE Tabs PRINCIPAL */}
       
-      {/* Modales comentados y botones flotantes */}
-      {/* ... (contenido existente) ... */}
+      {/* Botones flotantes de acción */}
+      <div className="fixed bottom-0 left-0 right-0 z-10 p-4 bg-white border-t shadow-lg md:sticky md:bottom-auto md:left-auto md:right-auto md:z-auto md:p-0 md:bg-transparent md:border-none md:shadow-none md:mt-6">
+        <div className="container flex justify-end max-w-5xl gap-2 mx-auto">
+          <Button 
+            variant="outline" 
+            onClick={() => router.push(returnTo)} // Usar returnTo calculado
+            disabled={isSaving} // Deshabilitar cancelar mientras guarda? Opcional
+            className="flex items-center gap-1"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Cancelar
+          </Button>
+          <Button 
+             // MODIFICADO: Llamar a handleGuardarUsuario
+             onClick={handleGuardarUsuario} 
+             disabled={isSaving || loading || isLoadingRoles} // Deshabilitar si carga datos iniciales, roles, o está guardando
+             className="flex items-center gap-1"
+          >
+            {isSaving ? (
+                <svg className="w-4 h-4 mr-1 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+             ) : <Save className="w-4 h-4" />}
+             {isSaving ? "Guardando..." : (userId === 'nuevo' ? "Crear Usuario" : "Guardar Cambios")}
+          </Button>
+        </div>
+      </div>
+
+      {/* Modales (Definición y lógica comentada o como placeholders) */}
+      {/* Modal para editar/añadir franja horaria */}
+      {/* {showHorarioModal && ( ... )} */}
+
+      {/* Modal para editar/añadir excepción horaria */}
+      {/* {showExcepcionModal && ( ... )} */}
+
     </div>
   )
 } 

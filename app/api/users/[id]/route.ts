@@ -1,6 +1,26 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
+// Import Zod for validation
+import { z } from 'zod';
+
+// Esquema para la asignación de clínica/rol
+const ClinicAssignmentSchema = z.object({
+  clinicId: z.string().cuid("ID de clínica inválido en asignación."),
+  roleId: z.string().cuid("ID de rol inválido en asignación.")
+});
+
+/**
+ * Esquema para validar los datos de actualización del usuario en el PUT request.
+ */
+const UpdateUserSchema = z.object({
+  firstName: z.string().min(1, "El nombre es obligatorio").optional(),
+  lastName: z.string().optional().nullable(),
+  profileImageUrl: z.string().url("URL de imagen inválida").optional().nullable(),
+  isActive: z.boolean().optional(),
+  // Cambiar a un array de objetos { clinicId, roleId }
+  clinicAssignments: z.array(ClinicAssignmentSchema).optional(),
+}).passthrough();
 
 /**
  * Handler para obtener un usuario específico por su ID.
@@ -32,6 +52,7 @@ export async function GET(request: Request, props: { params: Promise<{ id: strin
 /**
  * Handler para actualizar un usuario existente por su ID.
  * NO permite actualizar la contraseña (se haría en una ruta separada).
+ * Permite actualizar datos básicos y las asignaciones a clínicas (incluyendo rol).
  * @param request La solicitud con los datos de actualización.
  * @param params Objeto con el ID del usuario.
  * @returns NextResponse con el usuario actualizado (sin passwordHash) o un error.
@@ -39,29 +60,115 @@ export async function GET(request: Request, props: { params: Promise<{ id: strin
 export async function PUT(request: Request, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   const userId = params.id;
+
+  let rawBody;
   try {
-    const body = await request.json();
+    rawBody = await request.json();
+    console.log(`[API PUT /users/${userId}] Received raw body:`, JSON.stringify(rawBody, null, 2));
 
-    // Excluir campos sensibles o no modificables aquí (passwordHash, systemId, email?)
-    const { password, passwordHash, systemId, email, ...updateData } = body;
-    
-    if (email) {
-      // Considerar si permitir cambio de email y cómo manejar la verificación
-      console.warn(`Intento de cambiar email para usuario ${userId} ignorado en PUT básico.`);
+    // Validar el body con Zod
+    const validation = UpdateUserSchema.safeParse(rawBody);
+    if (!validation.success) {
+      console.error(`[API PUT /users/${userId}] Zod validation failed:`, validation.error.format());
+      return NextResponse.json({ error: 'Datos de usuario inválidos.', details: validation.error.format() }, { status: 400 });
     }
+    const validatedData = validation.data;
+    console.log(`[API PUT /users/${userId}] Zod validation successful. Validated data:`, validatedData);
 
-    const updatedUser = await prisma.user.update({
-      where: { id: userId },
-      data: updateData,
-      select: { // Excluir hash
-        id: true, email: true, firstName: true, lastName: true, profileImageUrl: true, 
-        isActive: true, createdAt: true, updatedAt: true, systemId: true 
+    // Separar datos base del usuario y las asignaciones de clínicas/roles
+    const { clinicAssignments: requestedAssignments, ...userBaseUpdateData } = validatedData;
+
+    // Usar transacción para asegurar atomicidad
+    const updatedUserResult = await prisma.$transaction(async (tx) => {
+      console.log(`[API PUT /users/${userId}] Starting transaction...`);
+
+      // 1. Actualizar datos base del usuario (firstName, lastName, isActive, etc.)
+      // FILTRAR los datos recibidos para incluir SOLO los campos válidos del modelo User
+      const validUserFields = ['firstName', 'lastName', 'profileImageUrl', 'isActive', 'email']; // Añadir email si se permite actualizar
+      const fieldsToUpdate = Object.keys(userBaseUpdateData)
+        .filter(key => validUserFields.includes(key) && userBaseUpdateData[key] !== undefined) // Filtrar por claves válidas y definidas
+        .reduce((obj, key) => {
+          // Asegurar que los valores nulos se manejan correctamente si el campo es opcional
+          if (key === 'profileImageUrl' && userBaseUpdateData[key] === null) {
+            obj[key] = null; // Permitir establecer a null si es opcional
+          } else if (userBaseUpdateData[key] !== null && userBaseUpdateData[key] !== undefined) {
+            obj[key] = userBaseUpdateData[key]; // Incluir solo si no es null/undefined (excepto profileImageUrl)
+          }
+          // Si un campo opcional como lastName viene como "" y queremos guardarlo así, no lo filtramos aquí.
+          // Si queremos guardar null en lugar de "", la lógica de reducción o el payload inicial deben ajustarse.
+          // Por ahora, guardamos string vacío si viene así.
+          return obj;
+        }, {} as any); // Usar {} as any temporalmente para el objeto acumulador
+        
+      if (Object.keys(fieldsToUpdate).length > 0) {
+          console.log(`[API PUT /users/${userId}] Updating user base data (filtered):`, fieldsToUpdate);
+          await tx.user.update({
+            where: { id: userId },
+            data: fieldsToUpdate, // <-- Usar datos filtrados
+          });
+          console.log(`[API PUT /users/${userId}] User base data updated.`);
+      } else {
+          console.log(`[API PUT /users/${userId}] No base user data fields to update.`);
       }
-    });
-    return NextResponse.json(updatedUser);
+
+      // 2. Gestionar asignaciones de clínicas y roles (SOLO si se proporcionó clinicAssignments)
+      if (requestedAssignments !== undefined) {
+        console.log(`[API PUT /users/${userId}] Managing clinic/role assignments. Received:`, requestedAssignments);
+
+        // --- LÓGICA REVISADA: Eliminar todas las existentes y luego crear/actualizar --- 
+
+        // Eliminar TODAS las asignaciones actuales para este usuario
+        // Esto simplifica la lógica al no tener que calcular diferencias complejas
+        // y asegura que solo queden las asignaciones enviadas en la solicitud.
+        console.log(`[API PUT /users/${userId}] Deleting ALL current assignments for user...`);
+        await tx.userClinicAssignment.deleteMany({
+          where: { userId: userId }
+        });
+        console.log(`[API PUT /users/${userId}] All current assignments deleted.`);
+
+        // Crear las nuevas asignaciones (Upsert no es necesario si siempre borramos primero)
+        if (requestedAssignments.length > 0) {
+          console.log(`[API PUT /users/${userId}] Creating new assignments:`, requestedAssignments);
+          await tx.userClinicAssignment.createMany({
+            data: requestedAssignments.map(assignment => ({
+              userId: userId,
+              clinicId: assignment.clinicId,
+              roleId: assignment.roleId,
+            })),
+          });
+          console.log(`[API PUT /users/${userId}] New assignments created.`);
+        } else {
+           console.log(`[API PUT /users/${userId}] No new assignments requested.`);
+        }
+
+      } else {
+        console.log(`[API PUT /users/${userId}] No 'clinicAssignments' key found in request body. Skipping assignment update.`);
+      }
+
+      // 3. Devolver el usuario actualizado incluyendo las asignaciones con roles
+      console.log(`[API PUT /users/${userId}] Transaction finished. Fetching final user state...`);
+      return await tx.user.findUniqueOrThrow({
+        where: { id: userId },
+        select: {
+          id: true, email: true, firstName: true, lastName: true, profileImageUrl: true,
+          isActive: true, createdAt: true, updatedAt: true, systemId: true,
+          clinicAssignments: { // Incluir asignaciones actualizadas
+            select: {
+              clinicId: true,
+              roleId: true, // Incluir el roleId
+              clinic: { select: { name: true } }, // Incluir nombre de clínica
+              role: { select: { name: true } } // Incluir nombre de rol
+            }
+          }
+        }
+      });
+    }); // Fin de la transacción
+
+    console.log(`[API PUT /users/${userId}] Update successful. Returning updated user data.`);
+    return NextResponse.json(updatedUserResult);
 
   } catch (error) {
-    console.error(`Error updating user ${userId}:`, error);
+    console.error(`[API PUT /users/${userId}] Error during update:`, error);
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
       return NextResponse.json({ message: `Usuario ${userId} no encontrado` }, { status: 404 });
     }

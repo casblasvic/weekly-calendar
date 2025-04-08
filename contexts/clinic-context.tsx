@@ -190,7 +190,8 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     // finally { setIsLoading(false); }
   }, [setError]); // <-- Dependencias estables (setError de useState)
 
-  const createClinica = async (clinicaData: Omit<Clinica, 'id' | 'createdAt' | 'updatedAt' | 'systemId'>): Promise<Clinica | null> => {
+  // ENVUELTO EN useCallback
+  const createClinica = useCallback(async (clinicaData: Omit<Clinica, 'id' | 'createdAt' | 'updatedAt' | 'systemId'>): Promise<Clinica | null> => {
     setIsLoadingClinics(true);
     setError(null);
     try {
@@ -216,9 +217,11 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     } finally {
       setIsLoadingClinics(false);
     }
-  };
+  // Dependencias: setClinics, setIsLoadingClinics, setError, activeClinic, internalSetActiveClinic
+  }, [setClinics, setIsLoadingClinics, setError, activeClinic, internalSetActiveClinic]);
 
-  const updateClinica = async (id: string, clinicaUpdate: Partial<Omit<Clinica, 'id' | 'createdAt' | 'updatedAt' | 'systemId'>>): Promise<Clinica | null> => {
+  // ENVUELTO EN useCallback
+  const updateClinica = useCallback(async (id: string, clinicaUpdate: Partial<Omit<Clinica, 'id' | 'createdAt' | 'updatedAt' | 'systemId'>>): Promise<Clinica | null> => {
     const clinicIdString = String(id); // Asegurar string
     setIsLoadingClinics(true);
     setError(null);
@@ -300,9 +303,11 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     } finally {
       setIsLoadingClinics(false);
     }
-  };
+  // Dependencias: setClinics, setIsLoadingClinics, setError, activeClinic, internalSetActiveClinic
+  }, [setClinics, setIsLoadingClinics, setError, activeClinic, internalSetActiveClinic]);
 
-  const deleteClinica = async (id: string): Promise<boolean> => {
+  // ENVUELTO EN useCallback (Ya estaba, pero revisar dependencias)
+  const deleteClinica = useCallback(async (id: string): Promise<boolean> => {
     const clinicIdString = String(id); // Asegurar string
     setIsLoadingClinics(true);
     setError(null);
@@ -329,12 +334,17 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     } finally {
       setIsLoadingClinics(false);
     }
-  };
+  // Dependencias: clinics, setClinics, setIsLoadingClinics, setError, activeClinic, internalSetActiveClinic
+  }, [clinics, setClinics, setIsLoadingClinics, setError, activeClinic, internalSetActiveClinic]);
 
-  const getActiveClinicas = async (): Promise<Clinica[]> => {
+  // ENVUELTO EN useCallback (Ya estaba, pero revisar dependencias)
+  const getActiveClinicas = useCallback(async (): Promise<Clinica[]> => {
+      // Devolver directamente del estado actual, ya no es async
       return clinics.filter(c => c.isActive);
-  };
+  // Dependencia: clinics
+  }, [clinics]);
 
+  // ENVUELTO EN useCallback (Ya estaba)
   const exposedRefetchClinics = useCallback(async () => {
     await fetchClinics();
   }, [fetchClinics]);
