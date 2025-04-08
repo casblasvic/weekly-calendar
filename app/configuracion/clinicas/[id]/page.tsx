@@ -163,7 +163,7 @@ export default function ClinicaDetailPage() {
   // --- NUEVO ESTADO --- 
   const [useTemplateSchedule, setUseTemplateSchedule] = useState<boolean>(false);
   // --- FIN NUEVO ESTADO ---
-
+  
   const diasSemana = [
     'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'
   ]
@@ -1457,7 +1457,7 @@ export default function ClinicaDetailPage() {
                               // Opcional: Deshabilitar el Select si useTemplateSchedule es true?
                               // disabled={useTemplateSchedule} // <-- Considerar si se debe poder cambiar plantilla mientras está bloqueado
                           >
-                             <SelectTrigger>
+                            <SelectTrigger>
                                 <SelectValue placeholder="Seleccionar una plantilla"> {/* Placeholder si el valor es "" y no hay contenido */} 
                                     {/* CONTENIDO DINÁMICO AQUÍ */} 
                                     {clinicData.linkedScheduleTemplateId 
@@ -1467,22 +1467,22 @@ export default function ClinicaDetailPage() {
                                         : <span className="text-muted-foreground">Horario personalizado</span>
                                     }
                                 </SelectValue>
-                             </SelectTrigger>
-                             <SelectContent>
+                            </SelectTrigger>
+                            <SelectContent>
                                 {/* Opción para desvincular explícitamente? */} 
                                 {/* 
                                 <SelectItem value="__none__" onClick={() => handleUseTemplateToggle(false)}>
                                     -- Usar Horario Personalizado --
                                 </SelectItem> 
                                 */} 
-                                {templates.map((template) => (
-                                    <SelectItem key={String(template.id)} value={String(template.id)}>
+                              {templates.map((template) => (
+                                <SelectItem key={String(template.id)} value={String(template.id)}>
                                         {(template as any)?.description || `ID: ${template.id}`} {/* Usar descripción o ID */} 
-                                    </SelectItem>
-                                ))}
+                            </SelectItem>
+                          ))}
                                 {templates.length === 0 && <SelectItem value="_no_templates_" disabled>No hay plantillas</SelectItem>}
-                             </SelectContent>
-                          </Select>
+                        </SelectContent>
+                      </Select>
                       </div>
                         {/* Checkbox Usar Plantilla (SIN disabled) */}
                         <div className="flex items-center mt-4 mb-4 space-x-2">
@@ -1495,7 +1495,7 @@ export default function ClinicaDetailPage() {
                             <Label htmlFor="use-template-schedule" className="text-sm font-medium">
                                 Usar horario de la plantilla vinculada (Bloquea edición)
                             </Label>
-                        </div>
+                  </div>
                         <Card>
                           <CardContent className="pt-6">
                             <ScheduleConfig

@@ -1,7 +1,9 @@
 "use client"
 
+import React from 'react'
 import { createContext, useContext, useState, type ReactNode, useEffect, useCallback } from "react"
-import { Usuario as UsuarioModel } from "@/services/data/models/interfaces"
+// import { Usuario as UsuarioModel } from "@/services/data/models/interfaces.ts" // <- Comentar ruta con alias
+import { Usuario as UsuarioModel } from "../services/data/models/interfaces.ts"; // <<< Usar ruta relativa
 import { User as PrismaUser } from '@prisma/client';
 
 // Función auxiliar para comparar IDs que pueden ser string o number
@@ -85,12 +87,30 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
   // Obtener usuarios por clínica
   const getUsuariosByClinica = async (clinicaId: string): Promise<Usuario[]> => {
-    console.warn("getUsuariosByClinica no implementado con API (filtrado necesario en backend)")
-    // TODO: Implementar /api/users?clinicId=... o similar en backend
-    // Devolver filtrado local como fallback temporal
-    // Esta lógica asume que `Usuario` tiene `clinicasIds` lo cual no es cierto con PrismaUser
-    // return usuarios.filter(u => u.clinicasIds?.includes(clinicaId)); 
-    return [] // Devolver vacío hasta implementar API
+    // console.warn("getUsuariosByClinica no implementado con API (filtrado necesario en backend)") // Comentado
+    // return [] // Comentado
+    
+    // >>> NUEVA IMPLEMENTACIÓN CON API <<<
+    setIsLoading(true) // Opcional: indicar carga específica para esta llamada
+    setError(null)
+    try {
+      const response = await fetch(`/api/users/byClinic/${clinicaId}`)
+      if (!response.ok) {
+        throw new Error(`Error ${response.status}: ${response.statusText}`)
+      }
+      const usuariosDeClinica: Usuario[] = await response.json()
+      console.log(`UserContext: ${usuariosDeClinica.length} usuarios cargados para clinicId ${clinicaId}`);
+      // Opcional: Podríamos actualizar el estado general `usuarios` también?
+      // Por ahora, solo devolvemos los usuarios específicos de la clínica
+      return usuariosDeClinica;
+    } catch (err) {
+      console.error(`Error al cargar usuarios para clínica ${clinicaId}:`, err)
+      setError(err instanceof Error ? err.message : 'Error desconocido al cargar usuarios de clínica')
+      return []; // Devolver vacío en caso de error
+    } finally {
+      setIsLoading(false) // Opcional: finalizar carga específica
+    }
+    // >>> FIN NUEVA IMPLEMENTACIÓN <<<
   }
 
   // Crear nuevo usuario (requiere contraseña)

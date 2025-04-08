@@ -746,7 +746,7 @@ async function main() {
           clinicId: clinic.id,
           isActive: equipData.isActive !== false,
         },
-        create: {
+      create: {
           name: equipData.name,
           serialNumber: equipData.serialNumber,
           description: equipData.description,
@@ -761,7 +761,7 @@ async function main() {
         },
       });
       console.log(`Ensured equipment "${equipData.name}" for clinic "${clinic.name}".`);
-    } catch (error) {
+  } catch (error) {
       console.error(`Error creating equipment "${equipData.name}":`, error);
       if (error instanceof PrismaClientKnownRequestError) {
         // The .code property can be accessed in a type-safe manner
@@ -909,12 +909,12 @@ async function main() {
   try {
     const clinic1 = await prisma.clinic.upsert({
       where: { Clinic_name_systemId_key: { name: clinic1Name, systemId: system.id } }, 
-      update: {
+              update: {
         city: 'Casablanca',
         tariffId: generalTariffId,
         linkedScheduleTemplateId: template1Id 
-      },
-      create: {
+              },
+              create: {
         prefix: '000001',
         name: clinic1Name, 
         address: '123 Rue Exemple',
@@ -930,8 +930,8 @@ async function main() {
         system: {
           connect: { id: system.id }
         }
-      },
-    });
+              },
+          });
     console.log(`Ensured clinic "${clinic1.name}" with id: ${clinic1.id}`);
   } catch(error) {
       console.error("Error upserting Clinic 1:", error);
@@ -992,7 +992,86 @@ async function main() {
   // ... (lógica de creación de Cabin) ...
 
   // --- Crear Usuarios de Ejemplo --- 
-  // ... (lógica de creación de User) ...
+  console.log('Creating example users...');
+  const usersDataFromMock = initialMockData.usuarios || []; // Renombrar para claridad
+
+  // Corregir el bucle y definir userRole dentro
+  for (const userData of usersDataFromMock) { 
+    // CORREGIDO: Determinar rol usando 'perfil'
+    const userRole = userData.perfil === 'Administrador' || userData.perfil === 'Central' ? adminRole : staffRole;
+    if (!userRole) { // Añadir verificación por si adminRole o staffRole no se encontraron antes
+        console.warn(`Skipping user ${userData.email}: Could not determine role based on perfil="${userData.perfil}". (adminRole or staffRole might be undefined).`);
+        continue;
+    }
+
+    // Verificar si el usuario ya existe por email GLOBALMENTE (Corregido previamente)
+    const existingUser = await prisma.user.findUnique({
+      where: { email: userData.email }, 
+    });
+
+    if (existingUser) {
+      console.log(`User with email ${userData.email} already exists. Skipping creation.`);
+      continue; // Saltar a la siguiente iteración si ya existe
+    }
+
+    try {
+      const createdUser = await prisma.user.create({
+        data: {
+          // CORREGIDO: Usar 'nombre' como 'firstName'
+          firstName: userData.nombre, 
+          // CORREGIDO: Añadir 'lastName' (vacío o derivado si es posible)
+          lastName: "", // Dejar vacío si no hay apellido en mockData
+          email: userData.email,
+          passwordHash: hashedPassword, 
+          isActive: userData.isActive !== false,
+          systemId: system.id,
+          // CORREGIDO: Usar 'create' en la relación de unión 'roles' para conectar al Role
+          roles: { 
+            create: [ // Crear una entrada en la tabla UserRole
+              {
+                role: { // Especificar el Role a conectar dentro de UserRole
+                  connect: {
+                    id: userRole.id // Conectar al Role existente por su ID
+                  }
+                }
+              }
+            ]
+          },
+          // Crear asignaciones de clínicas (Lógica correcta)
+          clinicAssignments: {
+            create: userData.clinicasIds
+              .map((mockClinicId: string) => createdClinicsMap.get(mockClinicId)) 
+              .filter((clinic: any) => clinic) 
+              .map((clinic: any) => ({ 
+                clinicId: clinic.id
+              })),
+          },
+        },
+        // Asegurar que el include está correcto Y anida la información del rol
+        include: { 
+            roles: { // Incluir UserRole
+                include: { // Dentro de UserRole, incluir Role
+                    role: true // Traer el objeto Role completo
+                }
+            }, 
+            clinicAssignments: { 
+                include: { clinic: true } 
+            } 
+        }, 
+      });
+      
+      // Log adaptado para acceder al nombre del rol anidado
+      const assignedClinicNames = createdUser.clinicAssignments.map(ca => ca.clinic.name).join(', ');
+      console.log(`Created user: ${createdUser.email} (ID: ${createdUser.id}) with role ${createdUser.roles[0]?.role?.name}, assigned to clinics: ${assignedClinicNames || 'None'}.`);
+      
+    } catch (error) {
+        console.error(`Error creating user "${userData.email}":`, error);
+         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+             console.log(`Skipping user creation due to unique constraint violation (likely email already exists): ${userData.email}`);
+         }
+    }
+  }
+  console.log('Example users ensured.');
 
   console.log(`Seeding finished.`);
 }

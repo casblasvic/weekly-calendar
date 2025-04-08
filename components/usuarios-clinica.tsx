@@ -88,7 +88,7 @@ export function UsuariosClinica({
   // const [perfil, setPerfil] = useState("")   // <- Eliminar (manejar roles por separado)
   const [password, setPassword] = useState("") // <- Añadir
 
-  const { usuarios, toggleUsuarioStatus, createUsuario, getUsuariosByClinica } = useUser()
+  const { usuarios, /* toggleUsuarioStatus, createUsuario, */ getUsuariosByClinica } = useUser()
   const { clinics, getClinicaById } = useClinic()
   
   const [clinicaUsuarios, setClinicaUsuarios] = useState<Usuario[]>([]) // Usar el tipo Usuario
@@ -101,8 +101,19 @@ export function UsuariosClinica({
   // Cargar datos de la clínica y sus usuarios
   useEffect(() => {
     const loadData = async () => {
+      console.log(`[UsuariosClinica useEffect] Running. clinicId: ${clinicId}`); // Log de entrada
+      // <<< AÑADIR GUARDA PARA clinicId >>>
+      if (!clinicId) {
+          console.log("[UsuariosClinica useEffect] No clinicId yet, skipping load.");
+          setLoading(false); // Detener carga si no hay ID
+          return;
+      }
+      // <<< FIN GUARDA >>>
+      
+      setLoading(true); // Iniciar carga solo si hay ID
       try {
         // Cargar datos de la clínica
+        console.log("[UsuariosClinica useEffect] Fetching clinic data...");
         const clinicaData = await getClinicaById(clinicId)
         if (!clinicaData) {
           toast({
@@ -110,12 +121,16 @@ export function UsuariosClinica({
             description: "No se pudo encontrar la clínica",
             variant: "destructive",
           })
+          setLoading(false); // Detener carga si la clínica no se encuentra
           return
         }
         setClinica(clinicaData)
+        console.log("[UsuariosClinica useEffect] Clinic data loaded.");
         
         // Cargar usuarios de la clínica
+        console.log(`[UsuariosClinica useEffect] Calling getUsuariosByClinica for clinicId: ${clinicId}...`); // Log antes de llamar
         const usuariosData = await getUsuariosByClinica(clinicId)
+        console.log(`[UsuariosClinica useEffect] Received usuariosData:`, usuariosData); // Log después de llamar
         setClinicaUsuarios(usuariosData)
         
         // Verificar excepciones activas para cada usuario
@@ -128,14 +143,16 @@ export function UsuariosClinica({
         }, {} as Record<string, number>);
         
         setUserExceptions(excepciones);
-        setLoading(false)
+        // setLoading(false) // Movido al finally
       } catch (error) {
-        console.error("Error al cargar datos:", error)
+        console.error("[UsuariosClinica useEffect] Error loading data:", error)
         toast({
           title: "Error",
           description: "No se pudieron cargar los datos",
           variant: "destructive",
         })
+      } finally {
+          setLoading(false); // Asegurar que setLoading se llama siempre
       }
     }
     
@@ -209,32 +226,32 @@ export function UsuariosClinica({
     return 0
   })
 
-  // Función para cambiar el estado de activación de un usuario
-  const toggleUserStatus = async (userId: string) => {
-    try {
-      const success = await toggleUsuarioStatus(userId);
-      
-      if (success) {
-        // Actualizar la lista local después de cambiar el estado
-        const updatedUsuarios = await getUsuariosByClinica(clinicId);
-        setClinicaUsuarios(updatedUsuarios);
-        
-        toast({
-          title: "Estado actualizado",
-          description: "El estado del usuario ha sido actualizado correctamente.",
-        });
-      } else {
-        throw new Error("La actualización no fue exitosa");
-      }
-    } catch (error) {
-      console.error("Error al actualizar el estado del usuario:", error);
-      toast({
-        title: "Error",
-        description: "No se pudo actualizar el estado del usuario.",
-        variant: "destructive",
-      });
-    }
-  };
+  // <<< COMENTAR FUNCIÓN TEMPORALMENTE >>>
+  // const toggleUserStatus = async (userId: string) => {
+  //   try {
+  //     const success = await toggleUsuarioStatus(userId);
+  //     
+  //     if (success) {
+  //       // Actualizar la lista local después de cambiar el estado
+  //       const updatedUsuarios = await getUsuariosByClinica(clinicId);
+  //       setClinicaUsuarios(updatedUsuarios);
+  //       
+  //       toast({
+  //         title: "Estado actualizado",
+  //         description: "El estado del usuario ha sido actualizado correctamente.",
+  //       });
+  //     } else {
+  //       throw new Error("La actualización no fue exitosa");
+  //     }
+  //   } catch (error) {
+  //     console.error("Error al actualizar el estado del usuario:", error);
+  //     toast({
+  //       title: "Error",
+  //       description: "No se pudo actualizar el estado del usuario.",
+  //       variant: "destructive",
+  //     });
+  //   }
+  // };
 
   const filteredUsuarios = sortedUsuarios.filter(
     (usuario) => {
@@ -252,113 +269,44 @@ export function UsuariosClinica({
     }
   )
 
-  const handleCreateUser = async () => {
-    // Validaciones
-    if (!firstName.trim()) {
-      toast({
-        title: "Error",
-        description: "El nombre es obligatorio",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (!lastName.trim()) {
-      toast({
-        title: "Error",
-        description: "El apellido es obligatorio",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (!email.trim()) {
-      toast({
-        title: "Error",
-        description: "El email es obligatorio",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (email !== confirmEmail) {
-      toast({
-        title: "Error",
-        description: "Los emails no coinciden",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (!password) {
-      toast({
-        title: "Error",
-        description: "La contraseña es obligatoria",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    try {
-      // Refactorizado: Crear el payload del nuevo usuario
-      // Asegúrate de que los nombres de campo coincidan con el esquema Prisma
-      // y las expectativas de tu API/función `createUsuario`.
-      const newUserPayload = {
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-        email: email.trim().toLowerCase(),
-        phone: telefono.trim() || null, // Usar 'phone', asegurar que sea null si está vacío
-        password: password, // Enviar la contraseña
-        // profileImageUrl: null, // Comentado/Eliminado - No esperado por el tipo Omit
-        isActive: true, // Por defecto activo
-        // roles: [], // Manejar roles por separado si es necesario
-        clinicasIds: [clinicId], // Asignar a la clínica actual por defecto
-        systemId: clinica?.systemId || "" // Asegurar que systemId se incluya
-      };
-
-      // Validar que tenemos systemId
-      if (!newUserPayload.systemId) {
-         toast({ title: "Error", description: "No se pudo determinar el ID del sistema para crear el usuario.", variant: "destructive" });
-         return;
-      }
-
-      // Llamar a la función del contexto para crear el usuario
-      const createdUser = await createUsuario(newUserPayload as any); // Usar 'as any' temporalmente si hay problemas de tipo
-
-      if (createdUser) {
-        toast({
-          title: "Usuario creado",
-          description: "El usuario ha sido creado correctamente",
-        });
-        
-        // Actualizar la lista local de usuarios
-        const updatedUsuarios = await getUsuariosByClinica(clinicId);
-        setClinicaUsuarios(updatedUsuarios);
-        
-        // Limpiar formulario
-        setFirstName("");
-        setLastName("");
-        setEmail("");
-        setConfirmEmail("");
-        setTelefono("");
-        setPassword("");
-        
-        // Cerrar el diálogo de forma controlada
-        if (onCloseNewUserDialog) {
-          onCloseNewUserDialog();
-        } else {
-          setLocalShowNewUserDialog(false);
-        }
-      }
-    } catch (error) {
-      console.error("Error al crear usuario:", error);
-      toast({
-        title: "Error",
-        description: "No se pudo crear el usuario",
-        variant: "destructive",
-      });
-    }
-  };
+  // <<< COMENTAR FUNCIÓN TEMPORALMENTE >>>
+  // const handleCreateUser = async () => {
+  //   // Validaciones
+  //   if (!firstName.trim()) {
+  //     toast({
+  //       title: "Error",
+  //       description: "El nombre es obligatorio",
+  //       variant: "destructive",
+  //     });
+  //     return;
+  //   }
+  //   // ... (más validaciones como email, contraseña) ...
+  
+  //   try {
+  //     const newUser = await createUsuario({
+  //       firstName: firstName.trim(),
+  //       lastName: lastName.trim(),
+  //       email: email.trim(),
+  //       // phone: telefono.trim(), // Añadir si se usa
+  //       password: password,
+  //       // ... otros campos necesarios ...
+  //     });
+  
+  //     if (newUser) {
+  //       toast({
+  //         title: "Usuario Creado",
+  //         description: `El usuario ${newUser.firstName} ${newUser.lastName} ha sido creado.`,
+  //       });
+  //       setLocalShowNewUserDialog(false); // Cerrar diálogo
+  //       // La recarga se maneja en el useEffect
+  //     } else {
+  //       // El contexto ya maneja el error y el toast
+  //     }
+  //   } catch (error) { 
+  //       // Manejo de error ya cubierto por el contexto?
+  //       console.error("Error inesperado en handleCreateUser:", error);
+  //   }
+  // };
 
   // Función para renderizar un badge con el estado de actividad de la clínica
   const renderClinicBadge = (clinicaId: string) => {
@@ -524,36 +472,15 @@ export function UsuariosClinica({
                           variant="ghost"
                           size="icon"
                           className="w-8 h-8 text-purple-600 hover:text-purple-700 hover:bg-purple-100"
-                          onClick={() => toggleUserStatus(String(usuario.id))}
+                          onClick={() => handleShowUserConflicts(usuario.id.toString())}
                         >
-                          <span className={`px-2 py-1 text-xs rounded-full ${usuario.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                            {usuario.isActive ? 'Activo' : 'Inactivo'}
-                          </span>
+                          {numConflictos > 0 ? (
+                            <AlertTriangle className="w-4 h-4" />
+                          ) : (
+                            <CalendarRange className="w-4 h-4" />
+                          )}
+                          <span className="sr-only">Ver detalles</span>
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="w-8 h-8 text-purple-600 hover:text-purple-700 hover:bg-purple-100"
-                          onClick={() => router.push(`/configuracion/usuarios/${usuario.id}?returnTo=/configuracion/clinicas/${clinicId}&tab=usuarios`)}
-                        >
-                          <Edit className="w-4 h-4" />
-                        </Button>
-                        
-                        {tieneIndicadores && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className={`h-8 w-8 ${numConflictos > 0 ? 'text-amber-500' : 'text-blue-500'}`}
-                            onClick={() => handleShowUserConflicts(usuario.id.toString())}
-                          >
-                            {numConflictos > 0 ? (
-                              <AlertTriangle className="w-4 h-4" />
-                            ) : (
-                              <CalendarRange className="w-4 h-4" />
-                            )}
-                            <span className="sr-only">Ver detalles</span>
-                          </Button>
-                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -672,7 +599,7 @@ export function UsuariosClinica({
               Cancelar
             </Button>
             <Button 
-              onClick={handleCreateUser}
+              disabled
               className="px-5 text-white bg-purple-600 hover:bg-purple-700"
             >
               Guardar

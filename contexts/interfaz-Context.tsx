@@ -115,7 +115,7 @@ interface InterfazContextType {
   getEntityDocuments: (entityType: string, entityId: string, category?: string) => Promise<EntityDocument[]>;
   saveEntityDocuments: (entityType: string, entityId: string, documents: EntityDocument[], category?: string) => Promise<boolean>;
   deleteEntityDocuments: (entityType: string, entityId: string, category?: string) => Promise<boolean>;
-
+  
   // Funciones de plantillas de agenda
   getScheduleTemplates: () => Promise<ScheduleTemplate[]>;
   getTemplateById: (id: string) => Promise<ScheduleTemplate | null>;
@@ -158,7 +158,7 @@ export function InterfazProvider({ children }: { children: ReactNode }) {
 
   // Marcar como inicializado inmediatamente
   useEffect(() => {
-    setInitialized(true);
+        setInitialized(true);
   }, []);
 
   // Crear un objeto con todas las funciones del servicio de datos
@@ -262,7 +262,7 @@ export function InterfazProvider({ children }: { children: ReactNode }) {
     getEntityDocuments: (entityType, entityId, category) => getDataService().getEntityDocuments(entityType, entityId, category),
     saveEntityDocuments: (entityType, entityId, documents, category) => getDataService().saveEntityDocuments(entityType, entityId, documents, category),
     deleteEntityDocuments: (entityType, entityId, category) => getDataService().deleteEntityDocuments(entityType, entityId, category),
-
+    
     // Funciones de plantillas de agenda
     getScheduleTemplates: async () => { console.warn("getScheduleTemplates no implementado"); return []; },
     getTemplateById: async (id) => { console.warn(`getTemplateById(${id}) no implementado`); return null; },
@@ -327,7 +327,7 @@ export function InterfazProvider({ children }: { children: ReactNode }) {
 
     // Añadir aquí el resto de funciones delegadas...
   };
-
+  
   return (
     <InterfazContext.Provider value={interfaz}>
       {children}

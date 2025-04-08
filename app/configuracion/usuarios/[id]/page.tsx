@@ -30,7 +30,9 @@ import {
   FranjaHoraria, 
   ExcepcionHoraria, 
   ExcepcionHorariaUsuario, // <-- Añadir esta importación
-  HorarioSemanal
+  HorarioSemanal,
+  FamiliaTarifa, 
+  FamiliaServicio // <-- Añadir FamiliaServicio
 } from "@/services/data/models/interfaces"
 
 // Importar el tipo Usuario directamente desde el contexto si no está ya
@@ -209,12 +211,11 @@ const traducirDia = (dia: string): string => {
   return traducciones[dia.toLowerCase()] || dia;
 }
 
-export default function EditarUsuarioPage(props: { params: Promise<{ id: string }> }) {
-  const params = use(props.params);
-  // Utilizamos React.use para desenvolver params (recomendación de Next.js)
-  // y forzamos el tipo correcto con una doble aserción
-  const paramsUnwrapped = React.use(params as any) as { id: string };
-  const userId = paramsUnwrapped.id;
+// Indicar que params es una Promise y usar React.use para desenvolverla
+export default function EditarUsuarioPage(props: { params: Promise<{ id: string }> }) { 
+  // Desenvolver la promesa con React.use
+  const params = React.use(props.params);
+  const userId = params.id; // Acceder al id del objeto desenvuelto
 
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -249,18 +250,19 @@ export default function EditarUsuarioPage(props: { params: Promise<{ id: string 
   const [isActive, setIsActive] = useState(true)
 
   // Estructura para almacenar permisos más detallados: Map<clinicaId, string[]>
-  // **COMENTADO TEMPORALMENTE - Requiere API y posible refactor de modelo**
-  // const [permisosClinicas, setPermisosClinicas] = useState<Map<string, string[]>>(new Map())
+  // Descomentar useState
+  const [permisosClinicas, setPermisosClinicas] = useState<Map<string, string[]>>(new Map())
 
   // Convertir Map a array usando useMemo para estabilizar la referencia
-  // **COMENTADO TEMPORALMENTE**
-  // const selectedClinicas = React.useMemo(() => 
-  //   Array.from(permisosClinicas.keys()), 
-  //   [permisosClinicas] // Dependencia
-  // );
-  // Usar un array vacío temporalmente para que el código no falle
-  const selectedClinicas: string[] = []
-  const permisosClinicas: Map<string, string[]> = new Map() // Temporalmente vacío
+  // Descomentar useMemo
+  const selectedClinicas = React.useMemo(() => 
+    Array.from(permisosClinicas.keys()), 
+    [permisosClinicas] // Dependencia
+  );
+  // Eliminar array temporal
+  // const selectedClinicas: string[] = []
+  // Eliminar Map temporal
+  // const permisosClinicas: Map<string, string[]> = new Map() // Temporalmente vacío
 
   const [loading, setLoading] = useState(true)
   const [showDisabledClinics, setShowDisabledClinics] = useState(false)
@@ -380,9 +382,10 @@ export default function EditarUsuarioPage(props: { params: Promise<{ id: string 
   const PERFILES_DISPONIBLES = roles.map(r => r.nombre) ?? []; // <- Usar 'nombre' (o el campo correcto)
 
   // Estado para la asignación de habilidades profesionales
-  // **COMENTADO TEMPORALMENTE - Requiere API y posible refactor de modelo**
-  // const [habilidadesProfesionales, setHabilidadesProfesionales] = useState<Map<string, string[]>>(new Map())
-  const habilidadesProfesionales: Map<string, string[]> = new Map() // Temporalmente vacío
+  // Descomentar useState
+  const [habilidadesProfesionales, setHabilidadesProfesionales] = useState<Map<string, string[]>>(new Map())
+  // Eliminar Map temporal
+  // const habilidadesProfesionales: Map<string, string[]> = new Map() // Temporalmente vacío
   const [nuevaClinicaHabilidad, setNuevaClinicaHabilidad] = useState("")
   const [nuevaFamilia, setNuevaFamilia] = useState("")
   const [nuevoServicio, setNuevoServicio] = useState("")
@@ -415,25 +418,68 @@ export default function EditarUsuarioPage(props: { params: Promise<{ id: string 
 
 
   // Obtener todas las habilidades asignadas (para filtrado y visualización)
-  // **COMENTADO TEMPORALMENTE**
+  // Descomentar useMemo
   const todasLasHabilidadesAsignadas = React.useMemo(() => {
-    // ... (lógica existente comentada temporalmente)
-    return []; // Devuelve array vacío temporalmente
-  }, [/* habilidadesProfesionales */]); // Quitar dependencia comentada
+    // Crear un array plano de [clinicaId, habilidad]
+    const result: [string, string][] = [];
+    habilidadesProfesionales.forEach((habilidades, clinicaId) => {
+      habilidades.forEach(habilidad => {
+        result.push([clinicaId, habilidad]);
+      });
+    });
+    return result;
+  }, [habilidadesProfesionales]); // Quitar dependencia comentada
 
   // **COMENTADO TEMPORALMENTE**
-  /*
+  // Descomentar handleAddHabilidad
   const handleAddHabilidad = () => {
-    // ... (código existente)
+    const itemToAdd = tipoSeleccion === 'familia' ? nuevaFamilia : nuevoServicio;
+    const itemLabel = tipoSeleccion === 'familia' 
+      ? FAMILIAS_MOCK.find(f => f.id === itemToAdd)?.nombre 
+      : servicios.find(s => s.id === itemToAdd)?.nombre; // Usar servicios del contexto
+      
+    if (!nuevaClinicaHabilidad || !itemToAdd || !itemLabel) {
+      toast({ title: "Error", description: "Seleccione clínica, tipo y elemento.", variant: "destructive" });
+      return;
+    }
+    
+    setHabilidadesProfesionales(prevMap => {
+      const newMap = new Map(prevMap);
+      const currentHabilidades = (newMap.get(nuevaClinicaHabilidad) as string[] | undefined) || [];
+      // Usar itemLabel para evitar duplicados basados en el nombre mostrado
+      if (!currentHabilidades.includes(itemLabel)) {
+        newMap.set(nuevaClinicaHabilidad, [...currentHabilidades, itemLabel]);
+      }
+      return newMap;
+    });
+    
+    // Limpiar selects
+    // setNuevaClinicaHabilidad(""); // No limpiar clínica necesariamente
+    setNuevaFamilia("");
+    setNuevoServicio("");
+    
+    toast({ title: "Habilidad añadida", description: `Habilidad "${itemLabel}" lista para guardar.` });
   };
-  */
+  
 
   // **COMENTADO TEMPORALMENTE**
-  /*
+  // Descomentar handleRemoveHabilidad
   const handleRemoveHabilidad = (clinicaId: string, itemToRemove: string) => {
-    // ... (código existente)
+    setHabilidadesProfesionales(prevMap => {
+      const newMap = new Map(prevMap);
+      const currentHabilidades = (newMap.get(clinicaId) as string[] | undefined) || [];
+      const updatedHabilidades = currentHabilidades.filter(h => h !== itemToRemove);
+      
+      if (updatedHabilidades.length > 0) {
+        newMap.set(clinicaId, updatedHabilidades);
+      } else {
+        newMap.delete(clinicaId); // Eliminar si no quedan habilidades para esa clínica
+      }
+      return newMap;
+    });
+    toast({ title: "Habilidad eliminada", description: `Habilidad "${itemToRemove}" eliminada localmente.` });
   };
-  */
+  
 
   useEffect(() => {
     // **COMENTADO TEMPORALMENTE - Carga de habilidades mock**
@@ -605,18 +651,54 @@ export default function EditarUsuarioPage(props: { params: Promise<{ id: string 
 
 
   // **COMENTADO TEMPORALMENTE - Lógica de permisos/clínicas**
-  /*
+  // Descomentar handleAddClinica
   const handleAddClinica = (clinicaId: string, perfilClinica: string) => {
-    // ... (código existente)
+    if (!clinicaId || !perfilClinica) return; // Evitar añadir si falta algo
+    
+    // Actualizar el Map de permisosClinicas (estado local)
+    setPermisosClinicas(prevMap => {
+      const newMap = new Map(prevMap);
+      // Asegurar tipo al obtener del Map
+      const currentPerfiles = (newMap.get(clinicaId) as string[] | undefined) || [];
+      // Evitar duplicados (aunque la UI de perfiles podría ser múltiple más adelante)
+      if (!currentPerfiles.includes(perfilClinica)) {
+        newMap.set(clinicaId, [...currentPerfiles, perfilClinica]);
+      }
+      return newMap;
+    });
+    
+    // Limpiar los selects después de añadir
+    setNuevaClinicaId("");
+    setNuevoPerfilClinica("");
+    
+    toast({ title: "Asignación añadida", description: `Clínica y perfil listos para guardar.` });
   }
-  */
+  
 
   // **COMENTADO TEMPORALMENTE - Lógica de permisos/clínicas**
-  /*
+  // Descomentar handleRemoveClinica
   const handleRemoveClinica = (clinicaId: string, perfilToRemove?: string) => {
-    // ... (código existente)
+    setPermisosClinicas(prevMap => {
+      const newMap = new Map(prevMap);
+      if (perfilToRemove) {
+        // Eliminar un perfil específico si se proporciona
+        // Asegurar tipo al obtener del Map
+        const currentPerfiles = (newMap.get(clinicaId) as string[] | undefined) || [];
+        const updatedPerfiles = currentPerfiles.filter(p => p !== perfilToRemove);
+        if (updatedPerfiles.length > 0) {
+          newMap.set(clinicaId, updatedPerfiles);
+        } else {
+          newMap.delete(clinicaId); // Eliminar la clínica si no quedan perfiles
+        }
+      } else {
+        // Eliminar la clínica entera si no se especifica perfil
+        newMap.delete(clinicaId);
+      }
+      return newMap;
+    });
+    toast({ title: "Asignación eliminada", description: "La asignación ha sido eliminada de la lista local." });
   }
-  */
+  
 
   const handleSave = async () => {
     // Validaciones básicas refactorizadas
@@ -791,7 +873,9 @@ export default function EditarUsuarioPage(props: { params: Promise<{ id: string 
   // **COMENTADO TEMPORALMENTE - Requiere API/Modelo**
   const [horarioSemanal, setHorarioSemanal] = useState<Map<string, HorarioDia[]>>(new Map());
   const [excepciones, setExcepciones] = useState<ExcepcionHorariaUsuario[]>([]);
-  const [horarioSubTab, setHorarioSubTab] = useState<"semanal" | "excepciones" | "vista">("semanal");
+  // CORREGIR TIPO: Definir explícitamente como string
+  const [horarioSubTab, setHorarioSubTab] = useState<string>("semanal");
+  // const [horarioSubTab, setHorarioSubTab] = useState<"semanal" | "excepciones" | "vista">("semanal"); // <- Tipo anterior incorrecto
 
   // Estado para modal de edición de franjas horarias
   // **COMENTADO TEMPORALMENTE - Requiere API/Modelo**
@@ -949,10 +1033,10 @@ export default function EditarUsuarioPage(props: { params: Promise<{ id: string 
       >
         <TabsList className="mb-4">
           <TabsTrigger value="datos-personales">Datos personales</TabsTrigger>
-          {/* Deshabilitar temporalmente en lugar de comentar con {/* */}
-          <TabsTrigger value="permisos" disabled>Permisos</TabsTrigger> 
-          <TabsTrigger value="horario" disabled>Horario</TabsTrigger>
-          <TabsTrigger value="habilidades" disabled>Habilidades profesionales</TabsTrigger>
+          {/* Quitar el disabled */}
+          <TabsTrigger value="permisos">Permisos</TabsTrigger>
+          <TabsTrigger value="horario">Horario</TabsTrigger>
+          <TabsTrigger value="habilidades">Habilidades profesionales</TabsTrigger>
           <TabsTrigger value="condiciones">Condiciones laborales</TabsTrigger> {/* Mantener */}
           <TabsTrigger value="fichajes">Control de Presencia</TabsTrigger> {/* Mantener */}
         </TabsList>
@@ -1341,64 +1425,419 @@ export default function EditarUsuarioPage(props: { params: Promise<{ id: string 
           </Card>
         </TabsContent>
         
-        {/* Pestaña de Permisos (CONTENIDO OCULTO - placeholder) */}
+        {/* Pestaña de Permisos */}
         <TabsContent value="permisos" className="space-y-4">
-          <Card className="p-4"><p className="text-center text-gray-500">Gestión de permisos y roles estará disponible aquí.</p></Card>
-        </TabsContent>
-        
-        {/* Pestaña de Horario (CONTENIDO OCULTO - placeholder) */}
-        <TabsContent value="horario" className="space-y-4">
+          {/* Eliminar placeholder y buscar/descomentar código original */}
+          {/* <Card className="p-4"><p className="text-center text-gray-500">Gestión de permisos y roles estará disponible aquí.</p></Card> */}
+          
+          {/* >>> INICIO CÓDIGO DESCOMENTADO/RESTAURADO PARA PERMISOS (SI SE ENCUENTRA) <<< */}
           <Card className="p-4">
-             {/* Placeholder para el contenido del horario */}
-             <p className="text-center text-gray-500">La configuración del horario estará disponible aquí.</p>
-             {/* Comentar llamadas a funciones inexistentes dentro de la lógica JS que se renderiza */}
-                    {(() => {
-                // const { totalPorClinica, totalGlobal } = calcularHorasTotales(horarioSemanal); // Comentado
-                const { totalPorClinica, totalGlobal } = { totalPorClinica: {}, totalGlobal: 0 }; // Placeholder
-                const totalHorasRecomendadas = 40;
-                
-                // ... (resto de la lógica JS con placeholders) ...
-                
-                // En el return JSX:
-                // Reemplazar {minutosAHoraLegible(totalGlobal)} por placeholder
-                // Reemplazar {minutosAHoraLegible(datos.totalMinutos)} por placeholder
-                // Usar datos?.totalMinutos, datos?.diasActivos, datos?.porDia?.[dia]
-                // Comentar llamadas a distribuirHorariosMultiplesClinicas, handleRemoveFranja
-                // Comentar llamadas a setEditingExcepcion, setShowExcepcionModal, crearExcepcionPorDefecto, handleRemoveExcepcion
-                // Comentar llamadas a convertirHoraAMinutos
-                              
-                              return (
-                   <div className="p-4 mb-5 bg-white border rounded-lg shadow-sm">
-                    <h4 className="mb-3 text-sm font-medium">Resumen de horas configuradas (Placeholder)</h4>
-                    {/* ... (JSX simplificado o comentado que usa funciones inexistentes) ... */}
-                    <p className="text-sm text-gray-500">Resumen no disponible temporalmente.</p>
-                    
-                    {/* Ejemplo de como comentar llamadas dentro del JSX */} 
-                    {/* <span className={`...`}>{minutosAHoraLegible(totalGlobal)} / {totalHorasRecomendadas}h</span> */} 
-                    <span className={`text-sm font-bold`}>{`${(totalGlobal / 60).toFixed(1)}h`} / {totalHorasRecomendadas}h</span> 
-                    
-                    {/* ... (más JSX simplificado o comentado) ... */} 
-                                <Button 
-                                  variant="outline" 
-                                  size="sm"
-                                  className="w-full text-xs h-7"
-                      // onClick={() => distribuirHorariosMultiplesClinicas(selectedClinicas)} // Comentado
-                      onClick={() => { /* Placeholder */ }}
-                      disabled
-                                >
-                                  <PlusCircle className="w-3 h-3 mr-1" />
-                                  Equilibrar carga entre clínicas
-                                </Button>
-
-                          </div>
-                            );
-                          })()}
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-medium">Asignación de clínicas y perfiles</h3>
+              {/* Botón para mostrar/ocultar inactivas? */}
+            </div>
+            {/* Tabla de asignaciones existentes */}
+            <div className="mb-4 border rounded-md">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Clínica</TableHead>
+                    <TableHead>Perfil(es)</TableHead>
+                    <TableHead className="text-right">Acciones</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {selectedClinicas.map(clinicaId => {
+                    const clinica = clinics.find(c => String(c.id) === clinicaId);
+                    const perfiles = permisosClinicas.get(clinicaId) || []; // Usar la variable temporal
+                    if (!clinica) return null; // No renderizar si la clínica no se encuentra
+                    return (
+                      <TableRow key={clinicaId}>
+                        <TableCell>{clinica.prefix} - {clinica.name}</TableCell>
+                        <TableCell>
+                          {perfiles.map(perfil => (
+                            <Badge key={perfil} variant="secondary" className="mr-1">{perfil}</Badge>
+                          ))}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            onClick={() => handleRemoveClinica(clinicaId)} // Descomentar llamada
+                          >
+                            <Trash className="w-4 h-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                  {selectedClinicas.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={3} className="text-center text-gray-500">No hay clínicas asignadas</TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+            
+            {/* Sección para añadir nueva asignación */}
+            <div className="flex items-end gap-2 p-3 border rounded-md bg-gray-50">
+              <div className="flex-1 space-y-1">
+                <Label className="text-xs">Añadir Clínica</Label>
+                <SelectClinica 
+                  value={nuevaClinicaId}
+                  onChange={setNuevaClinicaId}
+                  options={clinicasToShow.filter(c => !selectedClinicas.includes(String(c.id))).map(c => ({ id: String(c.id), label: `${c.prefix} - ${c.name}` }))}
+                  placeholder="Seleccionar clínica"
+                />
+              </div>
+              <div className="flex-1 space-y-1">
+                <Label className="text-xs">Seleccionar Perfil</Label>
+                <MemoizedSelect 
+                  value={nuevoPerfilClinica}
+                  onChange={setNuevoPerfilClinica} 
+                  placeholder="Seleccionar perfil"
+                >
+                   {PERFILES_DISPONIBLES.map(perfil => (
+                    <SelectItem key={perfil} value={perfil}>{perfil}</SelectItem>
+                  ))}
+                </MemoizedSelect>
+              </div>
+              <Button 
+                size="sm" 
+                onClick={() => handleAddClinica(nuevaClinicaId, nuevoPerfilClinica)} // Descomentar llamada
+                disabled={!nuevaClinicaId || !nuevoPerfilClinica} 
+                className="h-9"
+              >
+                Añadir
+              </Button>
+            </div>
           </Card>
+          {/* >>> FIN CÓDIGO DESCOMENTADO/RESTAURADO PARA PERMISOS <<< */}
         </TabsContent>
         
-        {/* Pestaña de Habilidades Profesionales (CONTENIDO OCULTO - placeholder) */}
+        {/* Pestaña de Horario */}
+        <TabsContent value="horario" className="space-y-4">
+          {/* Eliminar placeholder */}
+          {/* <Card className="p-4"><p className="text-center text-gray-500">La configuración del horario estará disponible aquí.</p></Card> */}
+          
+          {/* >>> INICIO CÓDIGO DESCOMENTADO/RESTAURADO PARA HORARIO <<< */}
+          {/* Sección Selección Clínica */}
+          <Card className="p-4">
+            <Label className="mb-2 block text-sm font-medium">Seleccionar Clínica para ver/editar horario</Label>
+            <SelectClinica
+              value={selectedClinicaHorario}
+              onChange={(value) => {
+                setSelectedClinicaHorario(value);
+                // Opcional: Resetear sub-pestaña al cambiar de clínica?
+                // setHorarioSubTab('semanal'); 
+              }}
+              options={opcionesClinicasHorario} // Usar opciones memoizadas
+              placeholder="Seleccione una clínica"
+              disabled={selectedClinicas.length === 0} // Deshabilitar si no hay clínicas asignadas
+            />
+            {selectedClinicas.length === 0 && (
+              <p className="mt-2 text-xs text-red-600">Asigne al menos una clínica en la pestaña 'Permisos' para configurar horarios.</p>
+            )}
+          </Card>
+          
+          {/* Sub-pestañas Horario Semanal / Excepciones / Vista Consolidada */}
+          {selectedClinicaHorario && (
+            <Tabs value={horarioSubTab} onValueChange={setHorarioSubTab} className="w-full">
+              <TabsList className="grid w-full grid-cols-3">
+                <TabsTrigger value="semanal">Horario Semanal</TabsTrigger>
+                <TabsTrigger value="excepciones">Excepciones</TabsTrigger>
+                <TabsTrigger value="vista">Vista Consolidada</TabsTrigger>
+              </TabsList>
+              
+              {/* Sub-Pestaña: Horario Semanal */}
+              <TabsContent value="semanal">
+                <Card className="p-4">
+                  <div className="flex items-center justify-between mb-4">
+                    <h4 className="text-base font-medium">Horario Semanal Base</h4>
+                    {/* Botón para aplicar horario de clínica? */}
+                  </div>
+                  {/* Descomentar renderizado de horario semanal */}
+                  {(horarioSemanal.get(selectedClinicaHorario) || []).map((dia, diaIndex) => (
+                    <div key={dia.dia} className="mb-3 border-b pb-3 last:border-b-0 last:pb-0">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="font-medium capitalize">{traducirDia(dia.dia)}</span>
+                        <Switch
+                          checked={dia.activo}
+                          onCheckedChange={(checked) => {
+                            // handleToggleDia(selectedClinicaHorario, dia.dia, checked) // Descomentar llamada
+                          }}
+                        />
+                      </div>
+                      {dia.activo && (
+                        <div className="space-y-2 pl-4">
+                          {dia.franjas.length === 0 && <p className="text-xs text-gray-500">Día cerrado. Añade una franja horaria.</p>}
+                          {dia.franjas.map((franja, franjaIndex) => (
+                            <div key={franja.id} className="flex items-center gap-2 p-2 text-sm border rounded bg-gray-50/50">
+                              <Input type="time" value={franja.inicio} disabled className="h-8 text-xs w-28"/>
+                              <span>-</span>
+                              <Input type="time" value={franja.fin} disabled className="h-8 text-xs w-28"/>
+                              <div className="ml-auto">
+                                <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-blue-600 hover:bg-blue-100 hover:text-blue-700" onClick={() => { 
+                                  // setEditingFranja({ diaId: dia.dia, franjaId: franja.id, inicio: franja.inicio, fin: franja.fin }); // Descomentar
+                                  // setShowHorarioModal(true); // Descomentar
+                                }}>
+                                  <Pencil className="w-4 h-4" />
+                                </Button>
+                                <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-600 hover:bg-red-100 hover:text-red-700" onClick={() => { 
+                                  // handleRemoveFranja(selectedClinicaHorario, dia.dia, franja.id) // Descomentar
+                                }}>
+                                  <Trash className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                          <Button variant="outline" size="sm" className="w-full text-xs h-7" onClick={() => { 
+                            // setEditingFranja({ diaId: dia.dia, inicio: '09:00', fin: '17:00' }); // Descomentar
+                            // setShowHorarioModal(true); // Descomentar
+                          }}>
+                            <PlusCircle className="w-3 h-3 mr-1" />
+                            Añadir Franja
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </Card>
+              </TabsContent>
+              
+              {/* Sub-Pestaña: Excepciones */}
+              <TabsContent value="excepciones">
+                <Card className="p-4">
+                  <div className="flex items-center justify-between mb-4">
+                    <h4 className="text-base font-medium">Excepciones Horarias</h4>
+                    <Button size="sm" onClick={() => { 
+                      // setEditingExcepcion(crearExcepcionPorDefecto()); // Descomentar
+                      // setShowExcepcionModal(true); // Descomentar
+                     }} className="h-9">
+                      <Plus className="w-4 h-4 mr-1" /> Nueva Excepción
+                    </Button>
+                  </div>
+                  {/* Descomentar renderizado de excepciones */}
+                  {excepciones.length === 0 ? (
+                    <p className="text-sm text-center text-gray-500">No hay excepciones definidas para este usuario.</p>
+                  ) : (
+                    excepciones.map(exc => (
+                      <div key={exc.id} className="p-3 mb-3 border rounded-md">
+                        <div className="flex items-center justify-between mb-2">
+                          <div>
+                             <p className="font-medium">{exc.nombre || "Excepción sin nombre"}</p>
+                             <p className="text-xs text-gray-500">
+                               {formatFecha(exc.fechaInicio)} - {formatFecha(exc.fechaFin)}
+                             </p>
+                          </div>
+                          <div>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 hover:bg-blue-100" onClick={() => { 
+                              // setEditingExcepcion(exc); // Descomentar
+                              // setShowExcepcionModal(true); // Descomentar
+                            }}>
+                              <Pencil className="w-4 h-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 hover:bg-red-100" onClick={() => { 
+                              // handleRemoveExcepcion(exc.id) // Descomentar
+                             }}>
+                              <Trash className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </Card>
+              </TabsContent>
+              
+              {/* Sub-Pestaña: Vista Consolidada */}
+              <TabsContent value="vista">
+                <Card className="p-4">
+                  <h4 className="text-base font-medium mb-4">Vista Consolidada del Horario</h4>
+                  {/* Aquí iría la lógica para mostrar el horario base + excepciones */}
+                  <p className="text-sm text-center text-gray-500">Vista consolidada aún no implementada.</p>
+                </Card>
+              </TabsContent>
+            </Tabs>
+          )}
+          
+          {/* Resumen de Horas (Restaurar lógica JS también) */}
+          {selectedClinicaHorario && (
+             <Card className="p-4 mb-5 bg-white border rounded-lg shadow-sm">
+              <h4 className="mb-3 text-sm font-medium">Resumen de horas configuradas para {clinics.find(c => c.id === selectedClinicaHorario)?.name}</h4>
+              {(() => {
+                const { totalPorClinica, totalGlobal } = calcularHorasTotales(horarioSemanal); // Descomentar
+                // const { totalPorClinica, totalGlobal } = { totalPorClinica: {}, totalGlobal: 0 }; // Placeholder
+                const totalHorasRecomendadas = 40;
+                const datosClinica = totalPorClinica[selectedClinicaHorario] || { totalMinutos: 0, diasActivos: 0, porDia: {} };
+                
+                return (
+                  <div className="space-y-3">
+                    <div className="flex justify-between text-sm">
+                      <span>Total semanal calculado:</span>
+                      <span className={`font-bold ${datosClinica.totalMinutos > totalHorasRecomendadas * 60 ? 'text-red-600' : ''}`}>
+                         {/* {minutosAHoraLegible(datosClinica.totalMinutos)}h */} {/* Descomentar si existe */} 
+                         {`${(datosClinica.totalMinutos / 60).toFixed(1)}h`} / {totalHorasRecomendadas}h recomendadas
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-xs text-gray-500">
+                      <span>Días activos:</span>
+                      <span>{datosClinica.diasActivos} / 7</span>
+                    </div>
+                    <div className="pt-2 mt-2 border-t">
+                       <h5 className="mb-1 text-xs font-medium text-gray-600">Detalle por día:</h5>
+                       <div className="grid grid-cols-3 gap-1 text-xs">
+                         {['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'].map(dia => (
+                           <div key={dia} className="flex justify-between px-1 py-0.5 rounded bg-gray-100/50">
+                             <span className="capitalize">{traducirDia(dia)}:</span>
+                             {/* <span>{minutosAHoraLegible(datosClinica.porDia?.[dia] || 0)}h</span> */} {/* Descomentar si existe */} 
+                             <span>{`${((datosClinica.porDia?.[dia] || 0) / 60).toFixed(1)}h`}</span>
+                           </div>
+                         ))}
+                       </div>
+                    </div>
+                     {selectedClinicas.length > 1 && (
+                       <Button 
+                         variant="outline" 
+                         size="sm"
+                         className="w-full text-xs h-7 mt-3"
+                         // onClick={() => distribuirHorariosMultiplesClinicas(selectedClinicas)} // Descomentar
+                         onClick={() => { /* Placeholder */ }}
+                         disabled // Deshabilitar temporalmente
+                       >
+                         <PlusCircle className="w-3 h-3 mr-1" />
+                         Equilibrar carga entre clínicas
+                       </Button>
+                     )}
+                  </div>
+                );
+              })()}
+            </Card>
+          )}
+          {/* >>> FIN CÓDIGO DESCOMENTADO/RESTAURADO PARA HORARIO <<< */}
+        </TabsContent>
+        
+        {/* Pestaña de Habilidades Profesionales */}
         <TabsContent value="habilidades" className="space-y-4">
-          <Card className="p-4"><p className="text-center text-gray-500">Gestión de habilidades profesionales estará disponible aquí.</p></Card>
+           {/* Eliminar placeholder */}
+           {/* <Card className="p-4"><p className="text-center text-gray-500">Gestión de habilidades profesionales estará disponible aquí.</p></Card> */}
+           
+           {/* >>> INICIO CÓDIGO DESCOMENTADO/RESTAURADO PARA HABILIDADES <<< */}
+           <Card className="p-4">
+             <div className="flex items-center justify-between mb-4">
+               <h3 className="text-base font-medium">Habilidades Profesionales Asignadas</h3>
+               {/* Filtro o búsqueda? */}
+               <Input 
+                 placeholder="Buscar por clínica, familia o servicio..." 
+                 value={searchHabilidades}
+                 onChange={(e) => setSearchHabilidades(e.target.value)}
+                 className="h-9 max-w-xs"
+               />
+             </div>
+             
+             {/* Tabla de habilidades existentes */}
+             <div className="mb-4 border rounded-md">
+               <Table>
+                 <TableHeader>
+                   <TableRow>
+                     <TableHead>Clínica</TableHead>
+                     <TableHead>Familia / Servicio</TableHead>
+                     <TableHead className="text-right">Acciones</TableHead>
+                   </TableRow>
+                 </TableHeader>
+                 <TableBody>
+                   {todasLasHabilidadesAsignadas // Usar el array memoizado
+                     .filter(([clinicaId, habilidad]) => { // Filtrar según búsqueda
+                       const clinica = clinics.find(c => String(c.id) === clinicaId);
+                       const searchLower = searchHabilidades.toLowerCase();
+                       return (
+                         clinica?.name.toLowerCase().includes(searchLower) ||
+                         habilidad.toLowerCase().includes(searchLower)
+                       );
+                     })
+                     .map(([clinicaId, habilidad], index) => {
+                       const clinica = clinics.find(c => String(c.id) === clinicaId);
+                       return (
+                         <TableRow key={`${clinicaId}-${habilidad}-${index}`}> {/* Añadir index para key única si habilidad puede repetirse */}
+                           <TableCell>{clinica ? `${clinica.prefix} - ${clinica.name}` : "Clínica Desconocida"}</TableCell>
+                           <TableCell>{habilidad}</TableCell>
+                           <TableCell className="text-right">
+                             <Button 
+                               variant="ghost" 
+                               size="sm" 
+                               onClick={() => handleRemoveHabilidad(clinicaId, habilidad)} // Descomentar
+                             >
+                               <Trash className="w-4 h-4" />
+                             </Button>
+                           </TableCell>
+                         </TableRow>
+                       );
+                   })} 
+                   {todasLasHabilidadesAsignadas.length === 0 && (
+                     <TableRow>
+                       <TableCell colSpan={3} className="text-center text-gray-500">No hay habilidades asignadas</TableCell>
+                     </TableRow>
+                   )}
+                 </TableBody>
+               </Table>
+             </div>
+             
+             {/* Sección para añadir nueva habilidad */}
+             <div className="flex items-end gap-2 p-3 border rounded-md bg-gray-50">
+               {/* Select Clínica */}
+               <div className="flex-1 space-y-1">
+                 <Label className="text-xs">Clínica</Label>
+                 <SelectClinica 
+                   value={nuevaClinicaHabilidad}
+                   onChange={setNuevaClinicaHabilidad}
+                   options={opcionesClinicasHorario} // Reutilizar opciones de horario?
+                   placeholder="Seleccionar clínica"
+                 />
+               </div>
+               
+               {/* Select Tipo (Familia/Servicio) */}
+               <div className="w-40 space-y-1 shrink-0">
+                 <Label className="text-xs">Tipo</Label>
+                 <SelectTipo value={tipoSeleccion} onChange={setTipoSeleccion} />
+               </div>
+               
+               {/* Select Familia o Servicio (Condicional) */}
+               <div className="flex-1 space-y-1">
+                 <Label className="text-xs">{tipoSeleccion === 'familia' ? 'Familia' : 'Servicio'}</Label>
+                 <MemoizedSelect 
+                   value={tipoSeleccion === 'familia' ? nuevaFamilia : nuevoServicio}
+                   onChange={tipoSeleccion === 'familia' ? setNuevaFamilia : setNuevoServicio} 
+                   placeholder={tipoSeleccion === 'familia' ? 'Seleccionar familia' : 'Seleccionar servicio'}
+                   disabled={!nuevaClinicaHabilidad} // Deshabilitar si no hay clínica
+                 >
+                   {tipoSeleccion === 'familia' 
+                     // CORREGIDO: Usar tipo FamiliaServicio y acceder a 'name'
+                     ? (FAMILIAS_MOCK.map((familia: FamiliaServicio) => ( 
+                         <SelectItem key={String(familia.id)} value={String(familia.id)}> 
+                           {familia.name} {/* <-- Usar 'name' */}
+                         </SelectItem>
+                       )))
+                     : (Object.values(SERVICIOS_MOCK).flat().map(servicio => (
+                         <SelectItem key={servicio.id} value={servicio.id}>{servicio.nombre}</SelectItem>
+                       )))
+                   }
+                   {/* Mensaje si no hay opciones? */}
+                 </MemoizedSelect>
+               </div>
+               
+               {/* Botón Añadir */}
+               <Button 
+                 size="sm" 
+                 onClick={handleAddHabilidad} // Descomentar
+                 disabled={!nuevaClinicaHabilidad || (tipoSeleccion === 'familia' ? !nuevaFamilia : !nuevoServicio)}
+                 className="h-9"
+               >
+                 Añadir Habilidad
+               </Button>
+             </div>
+           </Card>
+           {/* >>> FIN CÓDIGO DESCOMENTADO/RESTAURADO PARA HABILIDADES <<< */}
         </TabsContent>
         
         {/* Pestaña de Condiciones Laborales (VISIBLE) */}

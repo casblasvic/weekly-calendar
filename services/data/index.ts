@@ -9,7 +9,7 @@
 // >>> FIN ELIMINAR <<<
 
 // >>> OLD: import { LocalDataService } from './local-data-service.ts';
-import { SupabaseDataService, type SupabaseConnectionConfig } from './supabase-data-service'; // <- Asegurar extensión .ts si es necesaria
+import { SupabaseDataService, type SupabaseConnectionConfig } from './supabase-data-service.ts'; // <<< AÑADIDA EXTENSIÓN .ts
 
 // Configuración AHORA SOLO para Supabase
 export type DataServiceConfig = SupabaseConnectionConfig;
@@ -67,7 +67,7 @@ export type { SupabaseConnectionConfig };
 /**
  * Re-exporta los tipos de modelos para facilitar su uso
  */
-export * from './models/interfaces';
+export * from './models/interfaces.ts';
 
 // Re-exportar el tipo Client también desde data-service
 // Comentar re-exportación
