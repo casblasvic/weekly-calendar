@@ -1555,7 +1555,7 @@ export default function EditarUsuarioPage(props: { params: Promise<{ id: string 
 
        toast({ title: "Éxito", description: "Excepción eliminada correctamente." });
 
-     } catch (error) {
+    } catch (error) {
        console.error("[handleRemoveExcepcion] Error:", error);
        toast({ title: "Error", description: error instanceof Error ? error.message : "Error desconocido", variant: "destructive" });
      }

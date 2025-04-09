@@ -1023,12 +1023,12 @@ async function main() {
           data: {
             firstName: userData.nombre,
             lastName: "",
-            email: userData.email,
-            passwordHash: hashedPassword,
-            isActive: userData.isActive !== false,
-            systemId: system.id,
-          },
-        });
+                  email: userData.email,
+                  passwordHash: hashedPassword,
+                  isActive: userData.isActive !== false, 
+                  systemId: system.id,
+              },
+          });
         console.log(`Created basic user: ${createdUserBasic.email} (ID: ${createdUserBasic.id})`);
         userToProcess = createdUserBasic; // Usar el usuario recién creado
       } catch (error) {
@@ -1047,7 +1047,7 @@ async function main() {
     if (userToProcess) { // Asegurarse de que tenemos un usuario válido
       try {
         // Usar upsert para evitar error si la relación ya existe
-        await prisma.userRole.upsert({
+              await prisma.userRole.upsert({
           where: { userId_roleId: { userId: userToProcess.id, roleId: userRole.id } },
           update: {}, // No hay nada que actualizar si ya existe
           create: {
@@ -1057,17 +1057,17 @@ async function main() {
           }
         });
         console.log(` -> Ensured role assignment: ${userRole.name} for ${userToProcess.email}`);
-      } catch (roleError) {
+          } catch (roleError) {
         console.error(`  -> Error ensuring role ${userRole.name} for ${userToProcess.email}:`, roleError);
-      }
-
+          }
+          
       // --- PASO 3: Crear UserClinicAssignments por separado (usando bucle y upsert) ---
       const clinicAssignmentsData = userData.clinicasIds
-        .map((mockClinicId: string) => createdClinicsMap.get(mockClinicId))
-        .filter((clinic: any) => clinic)
-        .map((clinic: any) => ({
+              .map((mockClinicId: string) => createdClinicsMap.get(mockClinicId)) 
+              .filter((clinic: any) => clinic) 
+              .map((clinic: any) => ({ 
           userId: userToProcess.id, // Usar el ID del usuario procesado
-          clinicId: clinic.id,
+                  clinicId: clinic.id,
           roleId: userRole.id, // Usar el mismo rol que se asignó en UserRole
           // assignedAt se establecerá por defecto (@default(now()))
         }));
@@ -1109,7 +1109,7 @@ async function main() {
   console.log('Example users ensured.');
   // --- FIN BLOQUE RESTAURADO ---
   // console.log('SKIPPING Example users creation due to potential 'assignedAt' issue.'); // Mensaje indicativo
-  
+
   console.log(`Seeding finished.`);
 }
 
