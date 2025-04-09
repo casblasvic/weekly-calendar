@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server';
-import { PrismaClient, Prisma } from '@prisma/client';
+// Importar instancia singleton Y el namespace Prisma
+import { prisma } from '@/lib/db';
+import { Prisma } from '@prisma/client'; // Añadir importación de Prisma
 import { z } from 'zod';
 
-const prisma = new PrismaClient();
+// Eliminar instanciación directa
+// const prisma = new PrismaClient();
 
 // Esquema para validar el ID en los parámetros
 const ParamsSchema = z.object({
@@ -64,25 +67,22 @@ export async function PUT(request: Request, props: { params: Promise<{ id: strin
     return NextResponse.json(updatedCabin);
 
   } catch (error) {
-    // *** LOG ERROR COMPLETO ***
-    console.error(`[API PUT /api/cabins/[id]] Error updating cabin ${cabinId}:`, error);
-    // Loguear detalles específicos si es error de Prisma
+    console.error("[API Cabins PUT] Error:", error);
+    // Verificar si es un error conocido de Prisma
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
-       console.error(`[API PUT /api/cabins/[id]] Prisma Error Code: ${error.code}`);
-       console.error(`[API PUT /api/cabins/[id]] Prisma Meta:`, error.meta);
-    }
-    
-    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      // Error de restricción única (ej: nombre/código duplicado en la misma clínica)
       if (error.code === 'P2002') {
-        // Error de constraint único (probablemente nombre duplicado en la misma clínica)
-        return NextResponse.json({ error: 'A cabin with this name already exists for this clinic' }, { status: 409 });
+        // Obtener los campos que causaron el error desde meta si está disponible
+        const target = (error.meta?.target as string[])?.join(', ') || 'campos';
+        return NextResponse.json({ error: `Conflicto: Ya existe una cabina con los mismos valores en ${target}.` }, { status: 409 });
       }
+      // Error de registro no encontrado para actualizar
       if (error.code === 'P2025') {
-        // Registro no encontrado para actualizar
-        return NextResponse.json({ error: 'Cabin not found' }, { status: 404 });
+           return NextResponse.json({ error: 'Cabina no encontrada para actualizar.' }, { status: 404 });
       }
     }
-    return NextResponse.json({ error: 'Failed to update cabin' }, { status: 500 });
+    // Otros errores
+    return NextResponse.json({ error: 'Error interno del servidor al actualizar la cabina.' }, { status: 500 });
   } finally {
      // await prisma.$disconnect(); // Considerar gestión de conexión
   }
@@ -106,13 +106,16 @@ export async function DELETE(request: Request, props: { params: Promise<{ id: st
     // Devolver éxito sin contenido
     return new NextResponse(null, { status: 204 }); 
 
-  } catch (error: any) {
-    console.error("Error deleting cabin:", error);
-     if (error.code === 'P2025') {
-        return NextResponse.json({ error: 'Cabina no encontrada.' }, { status: 404 });
+  } catch (error) {
+    console.error("[API Cabins DELETE] Error:", error);
+    // Verificar si es un error conocido de Prisma
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      // Error de registro no encontrado para eliminar
+      if (error.code === 'P2025') {
+        return NextResponse.json({ error: 'Cabina no encontrada para eliminar.' }, { status: 404 });
+      }
     }
-    // TODO: Manejar error si la cabina está en uso (ej: citas futuras asociadas?)
-    // Por ahora, asumimos que se puede borrar si existe.
+    // Otros errores
     return NextResponse.json({ error: 'Error interno del servidor al eliminar la cabina.' }, { status: 500 });
   } finally {
     await prisma.$disconnect();

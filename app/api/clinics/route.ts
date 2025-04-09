@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma'; // Importar la instancia de Prisma
+import { prisma } from '@/lib/db'; // Importar la instancia de Prisma
 import { Prisma } from '@prisma/client';
 
 export async function GET(request: Request) {

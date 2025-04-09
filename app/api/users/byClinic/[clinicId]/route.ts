@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
-// import prisma from '@/lib/prisma' // Incorrecto
-import { prisma } from '@/lib/prisma' // Correcto: importar como nombrado
+import { prisma } from '@/lib/db'
 // import { auth } from '@/lib/auth' // Comentado temporalmente hasta implementar auth (Paso 2.2)
 
 export async function GET(request: Request, props: { params: Promise<{ clinicId: string }> }) {

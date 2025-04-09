@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@/lib/db';
 import { Prisma } from '@prisma/client'; // Importar tipos de Prisma si son necesarios para errores
 import { z } from 'zod';
 import { DayOfWeek as PrismaDayOfWeek } from '@prisma/client';

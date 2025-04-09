@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@/lib/db';
 import { Prisma } from '@prisma/client';
+import { z } from 'zod';
 
 /**
  * Handler para obtener todos los servicios.
@@ -10,34 +11,33 @@ import { Prisma } from '@prisma/client';
  */
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const tariffId = searchParams.get('tariffId');
-  const familyId = searchParams.get('tariffFamilyId'); // Usar el nombre correcto del campo FK
-  // TODO: Añadir filtro por systemId
-  
-  try {
-    const whereClause: Prisma.ServiceWhereInput = {};
-    if (tariffId) {
-       // Usar la relación 'tariffFamily' para filtrar por 'tariffId' dentro de ella
-      whereClause.tariffFamily = { tariffId: tariffId }; 
-    }
-    if (familyId) {
-       // Usar el campo FK directamente
-       whereClause.tariffFamilyId = familyId; 
-    }
-     // TODO: añadir whereClause.systemId = ...
+  const clinicId = searchParams.get('clinicId');
+  const isActive = searchParams.get('isActive');
 
+  let whereClause: Prisma.ServiceWhereInput = {};
+
+  if (clinicId) {
+    console.warn("[API Services GET] Filtrado por clinicId no implementado directamente en Service.");
+  }
+  if (isActive !== null) {
+    whereClause.isActive = isActive === 'true';
+  }
+
+  try {
     const services = await prisma.service.findMany({
       where: whereClause,
-      orderBy: { name: 'asc' },
-      include: { vatType: true, tariffFamily: true } // Incluir datos relacionados
+      include: {
+        category: true,
+        vatType: true,
+      },
+      orderBy: {
+        name: 'asc',
+      },
     });
     return NextResponse.json(services);
   } catch (error) {
     console.error("Error fetching services:", error);
-    return NextResponse.json(
-      { message: 'Error interno del servidor al obtener los servicios' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 });
   }
 }
 
@@ -50,50 +50,46 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
 
-    // Validación básica (usar tariffFamilyId y vatTypeId)
-    if (!body.name || !body.durationMinutes || !body.price || !body.tariffFamilyId || !body.vatTypeId) {
-      return NextResponse.json(
-        { message: 'Faltan campos obligatorios: nombre, durationMinutes, price, tariffFamilyId, vatTypeId' },
-        { status: 400 }
-      );
-    }
-    
-    // Verificar existencia y obtener systemId de TariffFamily
-    const tariffFamily = await prisma.tariffFamily.findUnique({
-      where: { id: body.tariffFamilyId },
-      include: { tariff: true } // Incluir tarifa para obtener systemId
+    const createServiceSchema = z.object({
+        name: z.string().min(1),
+        description: z.string().optional(),
+        durationMinutes: z.number().int().positive(),
+        price: z.number().positive().optional(),
+        code: z.string().optional(),
+        colorCode: z.string().optional(),
+        requiresMedicalSignOff: z.boolean().optional(),
+        pointsAwarded: z.number().int().optional(),
+        isActive: z.boolean().optional(),
+        categoryId: z.string().cuid().optional(),
+        vatTypeId: z.string().cuid().optional(),
+        systemId: z.string().cuid(),
     });
-    if (!tariffFamily || !tariffFamily.tariff) {
-         return NextResponse.json({ message: `Familia de tarifa con ID ${body.tariffFamilyId} o su tarifa asociada no encontrada` }, { status: 400 });
-    }
-    const systemId = tariffFamily.tariff.systemId;
-    // TODO: Verificar que el systemId coincide con el del usuario autenticado
-    
-    // Verificar existencia de VATType (opcional, Prisma lo hará, pero mejora mensaje de error)
-    const vatTypeExists = await prisma.vATType.findUnique({ where: { id: body.vatTypeId }});
-     if (!vatTypeExists) {
-         return NextResponse.json({ message: `Tipo de IVA con ID ${body.vatTypeId} no encontrado` }, { status: 400 });
-    }
+    const validatedData = createServiceSchema.parse(body);
 
-    // Crear el nuevo servicio
+    // Separar IDs de relaciones y el resto de datos
+    const { systemId, categoryId, vatTypeId, ...restOfValidatedData } = validatedData;
+
+    // Construir objeto de datos para Prisma asegurando campos obligatorios
+    const dataToCreate: Prisma.ServiceCreateInput = {
+        // Mantener campos obligatorios explícitamente si la desestructuración los hace opcionales
+        name: validatedData.name, // Asegurar que name está presente
+        durationMinutes: validatedData.durationMinutes, // Asegurar que durationMinutes está presente
+        ...restOfValidatedData, // Añadir el resto de campos opcionales
+        system: {
+            connect: { id: systemId }
+        },
+        // Conectar categoría solo si se proporcionó categoryId
+        ...(categoryId && { category: { connect: { id: categoryId } } }),
+        // Conectar tipo de IVA solo si se proporcionó vatTypeId
+        ...(vatTypeId && { vatType: { connect: { id: vatTypeId } } }),
+    };
+
     const newService = await prisma.service.create({
-      data: {
-        name: body.name,
-        description: body.description,
-        durationMinutes: body.durationMinutes,
-        price: body.price,
-        vatTypeId: body.vatTypeId, // Campo correcto para FK de IVA
-        tariffFamilyId: body.tariffFamilyId, // Campo correcto para FK de Familia
-        systemId: systemId, // Asignar systemId obtenido
-        color: body.color,
-        requiredGender: body.requiredGender,
-        onlineBookingEnabled: body.onlineBookingEnabled !== undefined ? body.onlineBookingEnabled : false,
-        depositRequiredOnline: body.depositRequiredOnline !== undefined ? body.depositRequiredOnline : false,
-        depositAmountOnline: body.depositAmountOnline,
-        isActive: body.isActive !== undefined ? body.isActive : true,
-        // TODO: Manejar relaciones M2M (equipos requeridos, clínicas donde está disponible?)
+      data: dataToCreate,
+      include: {
+        category: true,
+        vatType: true,
       },
-       include: { vatType: true, tariffFamily: true } // Devolver datos relacionados
     });
 
     return NextResponse.json(newService, { status: 201 });

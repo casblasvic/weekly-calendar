@@ -1,8 +1,13 @@
 import { NextResponse } from 'next/server';
-import { PrismaClient, Prisma } from '@prisma/client';
+// Eliminar importación directa
+// import { PrismaClient } from '@prisma/client';
+// Importar instancia singleton y Prisma
+import { prisma } from '@/lib/db';
+import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 
-const prisma = new PrismaClient();
+// Eliminar instanciación directa
+// const prisma = new PrismaClient();
 
 // Esquema de validación para el cuerpo de la solicitud
 const ReorderSchema = z.object({
@@ -59,9 +64,13 @@ export async function POST(request: Request) {
 
   } catch (error) {
     console.error("[API POST /api/cabins/reorder] Error processing request:", error);
-    // Manejar errores específicos de Prisma si es necesario (ej. P2025 si un ID no existe)
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
-       return NextResponse.json({ error: 'Error en la transacción: Una o más cabinas no fueron encontradas o no pertenecen a la clínica.' }, { status: 404 });
+    // Verificar si es un error de transacción de Prisma
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        // Puedes añadir manejo específico para códigos de error si es necesario
+        // Por ejemplo, si una de las cabinas no se encontrara durante la transacción
+        if (error.code === 'P2025') {
+             return NextResponse.json({ error: 'Error: Una o más cabinas no fueron encontradas durante la actualización.' }, { status: 404 });
+        }
     }
     
     return NextResponse.json({ error: 'Failed to reorder cabins' }, { status: 500 });

@@ -59,6 +59,7 @@ model System {
   entityDocuments     EntityDocument[]
   categories          Category[]
   cabins              Cabin[]
+  templateAssignments ClinicTemplateAssignment[] // <<< AÑADIR RELACIÓN INVERSA PARA ClinicTemplateAssignment
 
   @@map("systems")
 }
@@ -180,6 +181,7 @@ model Clinic {
   // Relaciones inversas para horarios/excepciones personalizadas de usuarios
   userSchedules         UserClinicSchedule[]
   userScheduleExceptions UserClinicScheduleException[]
+  templateAssignments  ClinicTemplateAssignment[] // <<< AÑADIR NUEVA RELACIÓN INVERSA
 
   @@unique([name, systemId], name: "Clinic_name_systemId_key")
   @@index([systemId])
@@ -672,8 +674,11 @@ model ScheduleTemplate {
   // Bloques de horario específicos de esta plantilla
   blocks ScheduleTemplateBlock[]
 
-  // Clínicas que usan esta plantilla
-  linkedClinics Clinic[] @relation("LinkedClinicTemplate")
+  // Clínicas que usan esta plantilla (Mantener para FK directa actual)
+  linkedClinics Clinic[] @relation("LinkedClinicTemplate") // <<< DESCOMENTAR/RESTAURAR RELACIÓN
+
+  // Asignaciones históricas a clínicas
+  clinicAssignments ClinicTemplateAssignment[] // <<< Relación inversa para la tabla de historial
 
   // Campo obsoleto? Mantener por si acaso en seed?
   // isDefault Boolean? @default(false)
@@ -1521,3 +1526,24 @@ model Cabin {
 // --- FIN NUEVO MODELO CABINA ---
 
 // --- FIN DE LA DEFINICIÓN DE MODELOS PRINCIPALES (FASE 1.1) ---
+
+// <<< INICIO NUEVO MODELO PARA ASIGNACIÓN HISTÓRICA >>>
+model ClinicTemplateAssignment {
+  id          String    @id @default(cuid())
+  clinicId    String
+  clinic      Clinic    @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  templateId  String
+  template    ScheduleTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade) // Usamos Cascade por ahora
+  startDate   DateTime  @db.Date // Fecha de inicio de la asignación
+  endDate     DateTime? @db.Date // Fecha de fin (null si es la asignación activa)
+  systemId    String    // Para consistencia y queries directas
+  system      System    @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([clinicId, startDate])
+  @@index([templateId])
+  @@index([systemId])
+  @@map("clinic_template_assignments") // Nombre de la tabla en la DB
+}
+// <<< FIN NUEVO MODELO >>>

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library'
-import { prisma } from '@/lib/prisma'
+import { prisma } from '@/lib/db'
 // import { auth } from '@/lib/auth' // Comentado temporalmente
 
 // GET /api/equipment - Obtener lista de equipamientos

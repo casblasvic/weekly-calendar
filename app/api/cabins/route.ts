@@ -1,8 +1,13 @@
 import { NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
+// Eliminar importación directa
+// import { PrismaClient, Prisma } from '@prisma/client';
+// Importar instancia singleton y Prisma
+import { prisma } from '@/lib/db';
+import { Prisma } from '@prisma/client'; // <-- Asegurarse que Prisma está importado
 import { z } from 'zod';
 
-const prisma = new PrismaClient();
+// Eliminar instanciación directa
+// const prisma = new PrismaClient();
 
 // Esquema para validar el body de la solicitud POST
 // clinicId y systemId son obligatorios

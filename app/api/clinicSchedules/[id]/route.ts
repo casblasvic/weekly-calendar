@@ -1,101 +1,179 @@
 import { NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/db';
+import { Prisma } from '@prisma/client';
 import { z } from 'zod';
-
-const prisma = new PrismaClient();
+import { subDays, parseISO } from 'date-fns'; // Importar para manejo de fechas
 
 // Esquema para validar el ID en los parámetros
-const ParamsSchema = z.object({
-  id: z.string().cuid({ message: "ID de asignación de horario inválido." }),
+const RouteParamsSchema = z.object({
+  id: z.string().cuid(),
 });
 
-// Esquema para validar el body de la solicitud PUT
-// Permitir actualizar templateId, startDate, endDate
-const UpdateClinicScheduleSchema = z.object({
-  templateId: z.string().cuid({ message: "ID de plantilla inválido." }).optional(),
-  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Formato de fecha de inicio debe ser YYYY-MM-DD").optional(),
-  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Formato de fecha de fin debe ser YYYY-MM-DD").nullable().optional(),
-  // No permitir cambiar clinicId o systemId
-}).refine(data => Object.keys(data).length > 0, {
-    message: "Se requiere al menos un campo para actualizar."
+// Esquema para validar el body de la solicitud PUT (basado en ClinicTemplateAssignment)
+const updateClinicTemplateAssignmentSchema = z.object({
+  templateId: z.string().cuid().optional(), // Hacer opcionales los campos que se pueden actualizar
+  startDate: z.string().refine((date) => !isNaN(parseISO(date).getTime()), {
+      message: "La fecha de inicio debe ser una fecha válida en formato ISO (YYYY-MM-DD)",
+  }).transform(date => parseISO(date)).optional(),
+  endDate: z.string().refine((date) => !isNaN(parseISO(date).getTime()), {
+      message: "La fecha de fin debe ser una fecha válida en formato ISO (YYYY-MM-DD)",
+  }).transform(date => parseISO(date)).nullable().optional(), // Permitir null y opcional
 });
 
-
-export async function PUT(request: Request, props: { params: Promise<{ id: string }> }) {
-  const params = await props.params;
-  // 1. Validar ID de ruta
-  const paramsValidation = ParamsSchema.safeParse(params);
-  if (!paramsValidation.success) {
-    return NextResponse.json({ error: 'ID de asignación inválido.', details: paramsValidation.error.errors }, { status: 400 });
-  }
-  const { id: scheduleId } = paramsValidation.data;
-
-  // 2. Validar Body
-  let validatedData;
+// --- GET --- 
+export async function GET(request: Request, { params }: { params: { id: string } }) {
   try {
-    const body = await request.json();
-    const validation = UpdateClinicScheduleSchema.safeParse(body);
-    if (!validation.success) {
-      return NextResponse.json({ error: 'Datos de asignación inválidos.', details: validation.error.errors }, { status: 400 });
-    }
-    validatedData = validation.data;
-  } catch (error) {
-    return NextResponse.json({ error: 'Error al parsear los datos de la solicitud.' }, { status: 400 });
-  }
+    const { id } = RouteParamsSchema.parse(params);
 
-  // Convertir strings de fecha a objetos Date si existen
-  const dataToUpdate: any = { ...validatedData };
-  if (validatedData.startDate) {
-      dataToUpdate.startDate = new Date(validatedData.startDate + 'T00:00:00Z');
-  }
-  if (validatedData.hasOwnProperty('endDate')) { // Permitir poner endDate a null
-      dataToUpdate.endDate = validatedData.endDate ? new Date(validatedData.endDate + 'T00:00:00Z') : null;
-  }
-
-  // 3. Actualizar en DB
-  try {
-    // Lógica adicional si se está activando esta asignación (endDate pasa a ser null)
-    // Si vamos a activar esta (endDate=null), hay que desactivar las otras activas para la misma clínica
-    if (dataToUpdate.endDate === null) {
-        const scheduleToActivate = await prisma.clinicSchedule.findUnique({ where: { id: scheduleId }});
-        if (!scheduleToActivate) {
-             return NextResponse.json({ error: 'Asignación no encontrada.' }, { status: 404 });
-        }
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        await prisma.clinicSchedule.updateMany({
-            where: {
-                clinicId: scheduleToActivate.clinicId, // Usar clinicId de la asignación encontrada
-                endDate: null, // Buscar activas
-                id: { not: scheduleId } // Excluir la que estamos activando
-            },
-            data: {
-                endDate: yesterday, // Poner fecha fin a las otras activas
-            },
-        });
-    }
-    
-    const updatedSchedule = await prisma.clinicSchedule.update({
-      where: { id: scheduleId },
-      data: dataToUpdate,
-       include: { // Incluir template y bloques para devolver info completa
-          template: { include: { blocks: true } }
-      }
+    // Usar el modelo correcto
+    const assignment = await prisma.clinicTemplateAssignment.findUnique({
+      where: { id },
+      include: { template: true, clinic: true } // Incluir datos relacionados
     });
-    return NextResponse.json(updatedSchedule);
-    
-  } catch (error: any) {
-    console.error("Error updating clinic schedule:", error);
-    if (error.code === 'P2025') {
-        return NextResponse.json({ error: 'Asignación de horario no encontrada.' }, { status: 404 });
+
+    if (!assignment) {
+      return NextResponse.json({ error: 'Asignación no encontrada.' }, { status: 404 });
     }
-     if (error.code === 'P2003') { // Foreign key constraint failed
-         return NextResponse.json({ error: 'La plantilla especificada no existe.' }, { status: 400 });
+    return NextResponse.json(assignment);
+
+  } catch (error) {
+    console.error("[API ClinicSchedules GET /id] Error:", error);
+    if (error instanceof z.ZodError) {
+      return NextResponse.json({ error: 'ID inválido.', details: error.errors }, { status: 400 });
     }
-    return NextResponse.json({ error: 'Error interno del servidor al actualizar la asignación.' }, { status: 500 });
-  } finally {
-    await prisma.$disconnect();
+    return NextResponse.json({ error: 'Error interno del servidor.' }, { status: 500 });
   }
 }
 
-// DELETE podría añadirse si se necesita eliminar asignaciones históricas 
+// --- PUT --- 
+export async function PUT(request: Request, { params }: { params: { id: string } }) {
+  try {
+    const { id: assignmentId } = RouteParamsSchema.parse(params);
+    const body = await request.json();
+    const validatedData = updateClinicTemplateAssignmentSchema.parse(body);
+
+    // Verificar que hay datos para actualizar
+    if (Object.keys(validatedData).length === 0) {
+        return NextResponse.json({ error: 'No se proporcionaron datos para actualizar.' }, { status: 400 });
+    }
+
+    // Iniciar transacción
+    const result = await prisma.$transaction(async (tx) => {
+        // 1. Obtener la asignación actual para conocer su clinicId
+        const currentAssignment = await tx.clinicTemplateAssignment.findUnique({
+            where: { id: assignmentId },
+            select: { clinicId: true, endDate: true } // Solo necesitamos el clinicId y el endDate actual
+        });
+
+        if (!currentAssignment) {
+            throw new Error('P2025'); // Simular error "Registro no encontrado" para el catch
+        }
+
+        const clinicId = currentAssignment.clinicId;
+
+        // 2. Si estamos estableciendo esta asignación como activa (endDate = null)
+        //    y no lo estaba ya, desactivar la activa anterior.
+        const isBecomingActive = validatedData.endDate === null && currentAssignment.endDate !== null;
+        if (isBecomingActive) {
+            // Necesitamos la nueva fecha de inicio para calcular la fecha fin de la anterior
+            const newStartDate = validatedData.startDate || (await tx.clinicTemplateAssignment.findUnique({ where: { id: assignmentId }, select: { startDate: true } }))?.startDate;
+            if (!newStartDate) throw new Error("No se pudo determinar la fecha de inicio para la actualización."); // Error interno
+
+            const previousActiveAssignment = await tx.clinicTemplateAssignment.findFirst({
+                where: {
+                    clinicId: clinicId,
+                    endDate: null,
+                    id: { not: assignmentId } // Excluir la que estamos actualizando
+                }
+            });
+
+            if (previousActiveAssignment) {
+                const newEndDateForPrevious = subDays(newStartDate, 1);
+                 console.log(`[API ClinicSchedules PUT] Desactivando asignación anterior ${previousActiveAssignment.id} con fecha ${newEndDateForPrevious.toISOString().split('T')[0]}`);
+                await tx.clinicTemplateAssignment.update({
+                    where: { id: previousActiveAssignment.id },
+                    data: { endDate: newEndDateForPrevious }
+                });
+            }
+        }
+
+        // 3. Actualizar la asignación solicitada
+         console.log(`[API ClinicSchedules PUT] Actualizando asignación ${assignmentId}`);
+        const updatedAssignment = await tx.clinicTemplateAssignment.update({
+            where: { id: assignmentId },
+            data: validatedData, // Usar los datos validados directamente
+            include: { template: true } // Devolver con la plantilla actualizada
+        });
+
+        // 4. Si la asignación actualizada es la activa, actualizar Clinic.linkedScheduleTemplateId
+        if (updatedAssignment.endDate === null) {
+             console.log(`[API ClinicSchedules PUT] Actualizando linkedScheduleTemplateId en clínica ${clinicId} a ${updatedAssignment.templateId}`);
+             await tx.clinic.update({
+                 where: { id: clinicId },
+                 data: { linkedScheduleTemplateId: updatedAssignment.templateId }
+             });
+         } else {
+             // Si la asignación actualizada YA NO es la activa, ¿qué hacemos con Clinic.linkedScheduleTemplateId?
+             // Podríamos buscar la asignación que AHORA está activa (endDate=null) y poner su ID,
+             // o ponerlo a null si no hay ninguna activa. Por simplicidad, lo dejamos como está.
+             // Idealmente, la UI o un proceso separado debería determinar la plantilla activa actual.
+         }
+
+        return updatedAssignment;
+    }); // Fin de la transacción
+
+    return NextResponse.json(result);
+
+  } catch (error) {
+    console.error("[API ClinicSchedules PUT /id] Error:", error);
+    if (error instanceof z.ZodError) {
+      return NextResponse.json({ error: 'Datos inválidos.', details: error.errors }, { status: 400 });
+    }
+    if (error instanceof Prisma.PrismaClientKnownRequestError || (error instanceof Error && error.message === 'P2025')) {
+        const errorCode = (error instanceof Prisma.PrismaClientKnownRequestError) ? error.code : error.message;
+        if (errorCode === 'P2025') {
+           return NextResponse.json({ error: 'Asignación no encontrada para actualizar.' }, { status: 404 });
+        }
+        if (errorCode === 'P2003') { // Foreign key constraint failed
+           return NextResponse.json({ error: 'ID de plantilla no válido.' }, { status: 400 });
+      }
+    }
+    return NextResponse.json({ error: 'Error interno del servidor al actualizar la asignación.' }, { status: 500 });
+  }
+}
+
+// --- DELETE --- 
+export async function DELETE(request: Request, { params }: { params: { id: string } }) {
+  try {
+    const { id } = RouteParamsSchema.parse(params);
+
+    // Antes de eliminar, podríamos necesitar lógica adicional:
+    // - ¿Qué pasa con Clinic.linkedScheduleTemplateId si eliminamos la asignación activa?
+    // - ¿Deberíamos buscar la asignación anterior y ponerla como activa (endDate=null)?
+    // Por ahora, simplemente eliminamos la asignación.
+    // Considera añadir esta lógica si es necesario.
+
+    console.log(`[API ClinicSchedules DELETE] Eliminando asignación ${id}`);
+    await prisma.clinicTemplateAssignment.delete({
+      where: { id },
+    });
+    
+    // TODO: Considerar actualizar Clinic.linkedScheduleTemplateId aquí.
+    // Se podría buscar la asignación activa más reciente (endDate=null o max(endDate))
+    // y actualizar Clinic.linkedScheduleTemplateId con su templateId, o ponerlo a null.
+
+    return new NextResponse(null, { status: 204 }); // No content
+
+  } catch (error) {
+     console.error("[API ClinicSchedules DELETE /id] Error:", error);
+     if (error instanceof z.ZodError) {
+        return NextResponse.json({ error: 'ID inválido.', details: error.errors }, { status: 400 });
+     }
+     if (error instanceof Prisma.PrismaClientKnownRequestError) {
+         if (error.code === 'P2025') {
+             return NextResponse.json({ error: 'Asignación no encontrada para eliminar.' }, { status: 404 });
+         }
+     }
+    return NextResponse.json({ error: 'Error interno del servidor al eliminar la asignación.' }, { status: 500 });
+  }
+} 
