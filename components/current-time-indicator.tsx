@@ -1,8 +1,8 @@
 "use client"
 
 import type React from "react"
-import { useEffect, useState, useCallback, useRef } from "react"
-import { format, parse, isWithinInterval, addMinutes } from "date-fns"
+import { useEffect, useState, useCallback, useRef, useLayoutEffect } from "react"
+import { format, parse, isWithinInterval, addMinutes, startOfDay, differenceInMinutes } from "date-fns"
 import { cn } from "@/lib/utils"
 
 interface CurrentTimeIndicatorProps {
@@ -13,6 +13,7 @@ interface CurrentTimeIndicatorProps {
   agendaRef: React.RefObject<HTMLDivElement | null> | React.RefObject<HTMLDivElement>
   clinicOpenTime?: string
   clinicCloseTime?: string
+  config: any
 }
 
 export const CurrentTimeIndicator: React.FC<CurrentTimeIndicatorProps> = ({
@@ -23,12 +24,14 @@ export const CurrentTimeIndicator: React.FC<CurrentTimeIndicatorProps> = ({
   agendaRef,
   clinicOpenTime,
   clinicCloseTime,
+  config,
 }) => {
   const [currentTime, setCurrentTime] = useState(new Date())
   const [position, setPosition] = useState<number | null>(null)
   const [nearestSlotTime, setNearestSlotTime] = useState<string | null>(null)
   const [isWithinTimeRange, setIsWithinTimeRange] = useState(false)
   const [isVisible, setIsVisible] = useState(true)
+  const [indicatorWidth, setIndicatorWidth] = useState<number | null>(null)
   const indicatorRef = useRef<HTMLDivElement>(null)
   const updateTimerRef = useRef<NodeJS.Timeout | null>(null)
   
@@ -120,7 +123,7 @@ export const CurrentTimeIndicator: React.FC<CurrentTimeIndicatorProps> = ({
       // Añadir 15 minutos al último slot para incluir la última franja completa
       const startTime = parse(firstSlotTime, "HH:mm", new Date());
       const endTime = parse(lastSlotTime, "HH:mm", new Date());
-      const extendedEndTime = addMinutes(endTime, 15);
+      const extendedEndTime = addMinutes(endTime, config?.slotDuration || 15);
 
       // Verificar si el tiempo actual está dentro del rango extendido
       const isWithinRange = isWithinInterval(currentTime, {
@@ -163,7 +166,7 @@ export const CurrentTimeIndicator: React.FC<CurrentTimeIndicatorProps> = ({
         if (nearestSlotTime && currentTimeString !== nearestSlotTime) {
           const nearestSlotMinutes = parseTime(nearestSlotTime);
           const minutesDifference = currentTimeMinutes - nearestSlotMinutes;
-          const slotDuration = 15; // Asumimos slots de 15 minutos
+          const slotDuration = config?.slotDuration || 15;
           const percentageOfSlot = minutesDifference / slotDuration;
           const offsetPixels = percentageOfSlot * rowHeight;
 
@@ -225,7 +228,7 @@ export const CurrentTimeIndicator: React.FC<CurrentTimeIndicatorProps> = ({
     return () => {
       cancelAnimationFrame(rafId);
     };
-  }, [currentTime, timeSlots, agendaRef, rowHeight, isWithinClinicHours, position, nearestSlotTime, isWithinTimeRange]);
+  }, [currentTime, timeSlots, agendaRef, rowHeight, isWithinClinicHours, config]);
 
   // Efecto para scroll inicial sin causar parpadeos
   useEffect(() => {
@@ -253,7 +256,7 @@ export const CurrentTimeIndicator: React.FC<CurrentTimeIndicatorProps> = ({
     });
     
     // No es necesario limpiar este efecto, ya que el requestAnimationFrame se ejecuta solo una vez
-  }, [position, isWithinTimeRange, agendaRef, isWithinClinicHours]);
+  }, [position, isWithinTimeRange, agendaRef, isWithinClinicHours, rowHeight]);
 
   // Actualizar la posición cuando cambie el tiempo o los slots, de manera optimizada
   useEffect(() => {
@@ -283,7 +286,7 @@ export const CurrentTimeIndicator: React.FC<CurrentTimeIndicatorProps> = ({
     return () => {
       clearInterval(intervalId);
     };
-  }, [timeSlots, updatePosition]);
+  }, [timeSlots, updatePosition, rowHeight]);
 
   // Verificar si mostrar
   const shouldShow = isWithinTimeRange && isVisible && isWithinClinicHours() && position !== null;
@@ -295,72 +298,98 @@ export const CurrentTimeIndicator: React.FC<CurrentTimeIndicatorProps> = ({
     skipRenderRef.current = false;
   }, [position, shouldShow]);
 
-  // Aplicar los cambios de estado y estilo - versión modificada para asegurar la posición correcta
+  // Efecto para aplicar estilos basados en la posición calculada
   useEffect(() => {
-    // Skip si no tenemos posición o no somos visibles
-    if (position === null || !isVisible || !indicatorRef.current) {
-      return;
-    }
+    if (indicatorRef.current && position !== null && isVisible) {
+      indicatorRef.current.style.borderTop = '2px solid red';
+      indicatorRef.current.style.setProperty('--current-time-indicator-border-color', 'red');
 
-    // Aplicar estilo de posición
-    indicatorRef.current.style.top = `${position}px`;
-    
-    // Asegurar que la línea se extienda por todo el contenido, incluso al hacer scroll
-    if (agendaRef.current) {
-      try {
-        // Calculamos el ancho total del contenido, incluyendo la parte no visible
-        const totalWidth = agendaRef.current.scrollWidth;
-        indicatorRef.current.style.width = `${totalWidth}px`;
+      indicatorRef.current.style.transform = `translateY(${position}px)`;
+      indicatorRef.current.style.display = 'block';
+      indicatorRef.current.style.visibility = 'visible';
+      indicatorRef.current.style.opacity = '1';
+
+      const span = indicatorRef.current.querySelector('span');
+      if (span) {
+        (span as HTMLElement).style.backgroundColor = 'red';
+        (span as HTMLElement).style.color = 'white';
+        (span as HTMLElement).style.padding = '2px 6px';
+        (span as HTMLElement).style.borderRadius = '4px';
         
-        // Asegurar que la posición izquierda sea 0 relativa al contenedor
-        indicatorRef.current.style.left = '0';
-        
-        // Forzar visibilidad
-        indicatorRef.current.style.display = 'block';
-        indicatorRef.current.style.visibility = 'visible';
-        indicatorRef.current.style.opacity = '1';
-        
-        // Asegurar un z-index MENOR que las cabeceras pero mayor que las celdas
-        indicatorRef.current.style.zIndex = '120';
-        
-        // Actualizar también la posición de la etiqueta
-        const span = indicatorRef.current.querySelector('span');
-        if (span) {
-          // La etiqueta debe estar dentro de la columna de horas, no fixed
-          (span as HTMLElement).style.position = 'absolute';
-          (span as HTMLElement).style.left = '40px';
-          (span as HTMLElement).style.top = '50%';
-          (span as HTMLElement).style.transform = 'translate(-50%, -50%)';
-          (span as HTMLElement).style.zIndex = '150';
-          (span as HTMLElement).style.visibility = 'visible';
+        (span as HTMLElement).style.position = 'absolute';
+        (span as HTMLElement).style.left = '40px';
+        (span as HTMLElement).style.top = '50%';
+        (span as HTMLElement).style.transform = 'translate(-50%, -50%)';
+        (span as HTMLElement).style.visibility = 'visible';
+      }
+    } else if (indicatorRef.current) {
+      indicatorRef.current.style.display = 'none';
+      indicatorRef.current.style.opacity = '0';
+      indicatorRef.current.style.visibility = 'hidden';
+      indicatorRef.current.style.borderTop = 'none';
+      const span = indicatorRef.current.querySelector('span');
+      if(span) {
+          (span as HTMLElement).style.backgroundColor = 'transparent';
+          (span as HTMLElement).style.visibility = 'hidden';
+      }
+      indicatorRef.current.style.transform = 'translateY(-100px)'; 
+    }
+  }, [position, isVisible]);
+
+  // --- useEffect para escuchar window.resize con lógica scroll/client Width y rAF ---
+  useEffect(() => {
+    const indicatorElement = indicatorRef.current; // Cache ref value
+    let rafId: number | null = null; // Variable para guardar el ID del rAF
+
+    const handleWindowResize = () => {
+      // Cancelar cualquier rAF pendiente para evitar ejecuciones múltiples
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+      }
+
+      // Solicitar un nuevo frame para leer y aplicar dimensiones
+      rafId = requestAnimationFrame(() => {
+        if (agendaRef.current && indicatorElement) {
+          // Leer ambos anchos actualizados DENTRO del rAF
+          const currentScrollWidth = agendaRef.current.scrollWidth;
+          const currentClientWidth = agendaRef.current.clientWidth;
+          
+          // Decidir qué ancho aplicar basado en si hay scroll
+          let widthToApply = 0;
+          if (currentScrollWidth > currentClientWidth) {
+            // Hay scroll horizontal: usar el ancho total del contenido
+            widthToApply = currentScrollWidth;
+          } else {
+            // No hay scroll horizontal (o cabe justo): usar el ancho visible
+            widthToApply = currentClientWidth;
+          }
+
+          // Aplicar el ancho decidido solo si es válido
+          if (widthToApply > 0) { 
+            indicatorElement.style.width = `${widthToApply}px`;
+          }
         }
-      } catch (error) {
-        console.error('Error updating time indicator position:', error);
-      }
-    }
-  }, [position, isVisible, agendaRef]);
+        rafId = null; // Resetear el ID después de ejecutar
+      }); // Fin requestAnimationFrame
+    };
 
-  // Mantener el indicador actualizado cuando cambie el tamaño o scroll del contenedor
-  useEffect(() => {
-    if (!agendaRef.current || !indicatorRef.current) return;
-    
-    const handleResize = () => {
-      if (indicatorRef.current && agendaRef.current) {
-        indicatorRef.current.style.width = `${agendaRef.current.scrollWidth}px`;
-      }
-    };
-    
-    // Ya no necesitamos actualizar la posición de la etiqueta en cada scroll
-    // porque ahora está posicionada de forma relativa a la barra
-    
-    // Actualizar cuando cambie el contenido (scroll)
-    const observer = new ResizeObserver(handleResize);
-    observer.observe(agendaRef.current);
-    
+    // Llamada inicial para establecer el ancho correcto al montar
+    const initialTimeout = setTimeout(handleWindowResize, 50); 
+
+    // Añadir listener
+    window.addEventListener('resize', handleWindowResize);
+
+    // Limpieza al desmontar
     return () => {
-      observer.disconnect();
+      clearTimeout(initialTimeout);
+      // Cancelar rAF si está pendiente al desmontar
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+      }
+      window.removeEventListener('resize', handleWindowResize);
     };
-  }, [agendaRef]);
+  }, [agendaRef]); 
+  // --- FIN: useEffect con window.resize --- 
 
   // Solo renderizar si es visible y está dentro del rango
   if (!shouldShow) {
@@ -372,45 +401,29 @@ export const CurrentTimeIndicator: React.FC<CurrentTimeIndicatorProps> = ({
     <div
       ref={indicatorRef}
       className={cn(
-        "current-time-indicator",
+        "current-time-indicator", // Clase principal de CSS
+        "pointer-events-none", // Evitar que intercepte eventos del ratón
+        "z-10", // Asegurar que esté por encima de las celdas pero debajo de modales
         className
       )}
       style={{
-        // Añadir styles directos para garantizar visibilidad
-        position: 'absolute',
-        top: position ? `${position}px` : '0',
-        left: '0',
-        width: '100%', 
-        minWidth: '100%',
-        height: '2px',
-        backgroundColor: '#ef4444',
-        display: 'block',
-        visibility: 'visible',
-        opacity: 1,
-        zIndex: 120, // Más bajo que las cabeceras (1500, 2000)
-        pointerEvents: 'none'
+        position: 'absolute', // <-- FORZAR Posición Absoluta
+        top: 0, // <-- Establecer top base en 0
+        left: 0, // <-- Establecer left base en 0
+        height: "2px", // Altura de la línea
+        width: indicatorWidth !== null ? `${indicatorWidth}px` : "100%", // Usa el estado o fallback
+        display: 'none', // Oculto por defecto, el useEffect lo mostrará
+        opacity: 0,
+        visibility: 'hidden',
+        // La posición vertical se controla con transform en el useEffect
+        // El border-top se aplica en el useEffect
+        // backgroundColor: 'red', // Quitar, se usa border-top
       }}
-      data-time-indicator="true"
+      aria-hidden="true"
     >
-      <span
-        style={{
-          position: 'absolute',
-          left: '40px',
-          top: '50%',
-          transform: 'translate(-50%, -50%)',
-          backgroundColor: '#ef4444',
-          color: 'white',
-          padding: '2px 6px',
-          borderRadius: '2px',
-          fontSize: '11px',
-          fontWeight: 500,
-          whiteSpace: 'nowrap',
-          zIndex: 150,
-          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.2)',
-          pointerEvents: 'none'
-        }}
-      >
-        {format(currentTime, "HH:mm")}
+      {/* La etiqueta se gestiona en el useEffect */}
+      <span className="current-time-label" style={{ position: 'absolute', visibility: 'hidden' }}>
+         {format(currentTime || new Date(), "HH:mm")}
       </span>
     </div>
   );

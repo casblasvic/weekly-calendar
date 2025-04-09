@@ -800,6 +800,7 @@ function MobileAgendaViewContent({ showMainSidebar = false }: MobileAgendaViewPr
           {/* Indicador de hora actual */}
           {containerRef.current && (
             <CurrentTimeIndicator
+              key="mobile-indicator"
               timeSlots={timeSlots}
               rowHeight={AGENDA_CONFIG.ROW_HEIGHT}
               isMobile={true}

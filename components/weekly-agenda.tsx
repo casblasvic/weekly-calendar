@@ -689,7 +689,6 @@ export default function WeeklyAgenda({
                 <div
                   className="sticky left-0 w-20 p-2 text-sm font-medium text-purple-600 bg-white border-b border-r border-gray-300 hour-column"
                   data-time={time}
-                  style={{ zIndex: 90 }}
                 >
                   {time}
                 </div>
@@ -839,6 +838,7 @@ export default function WeeklyAgenda({
 
           {/* Indicador de tiempo actual RENDERIZADO AQUÍ */}
           <CurrentTimeIndicator
+            key="desktop-week-indicator"
             timeSlots={timeSlots}
             rowHeight={AGENDA_CONFIG.ROW_HEIGHT}
             isMobile={false}

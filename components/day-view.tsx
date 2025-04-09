@@ -684,7 +684,7 @@ export default function DayView({
 
   // Estructura corregida para el renderDayGrid
   const renderDayGrid = () => (
-    <div className="bg-gray-100 relative p-1">
+    <div className="relative p-1 bg-gray-100">
       <div ref={agendaRef} style={{ scrollBehavior: "smooth" }}>
         <div className="min-w-[800px] relative min-h-[400px]">
           <div
@@ -696,7 +696,7 @@ export default function DayView({
           >
             {/* ---- INICIO CABECERA FIJA ---- */}
             {/* Columna de tiempo */}
-            <div className="sticky top-0 z-20 bg-white border-b border-r border-gray-300 p-2 w-20 flex items-center justify-center">
+            <div className="sticky top-0 flex items-center justify-center w-20 p-2 bg-white border-b border-r border-gray-300 hour-header">
               <div className="text-xs font-medium text-gray-600">Hora</div>
             </div>
 
@@ -704,7 +704,7 @@ export default function DayView({
             {effectiveCabins.map((cabin) => (
               <div
                 key={cabin.id}
-                className="sticky top-0 z-20 border-b border-r border-gray-300 last:border-r-0 p-1 text-center"
+                className="sticky top-0 p-1 text-center border-b border-r border-gray-300 last:border-r-0 day-header"
                 style={{ backgroundColor: cabin.color }}
               >
                 <div className="flex flex-col items-center justify-center h-full">
@@ -725,7 +725,7 @@ export default function DayView({
             ))}
              {/* Placeholder si NO hay cabinas */}
              {effectiveCabins.length === 0 && (
-                <div className="sticky top-0 z-20 bg-gray-50 border-b border-r border-gray-300 p-2 text-center text-gray-400 italic col-span-1">
+                <div className="sticky top-0 col-span-1 p-2 italic text-center text-gray-400 border-b border-r border-gray-300 bg-gray-50">
                   (Sin cabinas activas)
                 </div>
              )}
@@ -736,7 +736,7 @@ export default function DayView({
               <React.Fragment key={time}>
                 {/* Columna de Tiempo */}
                 <div
-                  className="sticky left-0 z-10 border-r border-b border-gray-300 px-2 py-1 text-[10px] text-purple-700 bg-purple-50/50 font-medium w-20 flex items-center justify-center"
+                  className="sticky left-0 border-r border-b border-gray-300 px-2 py-1 text-[10px] text-purple-700 bg-purple-50/50 font-medium w-20 flex items-center justify-center hour-column"
                   style={{ height: `${AGENDA_CONFIG.ROW_HEIGHT}px` }}
                   data-time={time}
                 >
@@ -797,7 +797,7 @@ export default function DayView({
                     >
                       {isStartOfBlock && blockForCell && (
                         <div
-                          className="absolute inset-x-0 top-0 flex items-center justify-center p-1 bg-rose-200/80 border border-rose-300 rounded-sm m-px overflow-hidden z-10 pointer-events-none"
+                          className="absolute inset-x-0 top-0 z-10 flex items-center justify-center p-1 m-px overflow-hidden border rounded-sm pointer-events-none bg-rose-200/80 border-rose-300"
                           style={{
                             height: `calc(${blockDurationSlots * AGENDA_CONFIG.ROW_HEIGHT}px - 2px)`,
                             display: 'flex',
@@ -805,7 +805,7 @@ export default function DayView({
                             justifyContent: 'center'
                           }}
                         >
-                          <Lock className="h-3 w-3 text-rose-600 flex-shrink-0" />
+                          <Lock className="flex-shrink-0 w-3 h-3 text-rose-600" />
                         </div>
                       )}
                     </div>
@@ -814,7 +814,7 @@ export default function DayView({
                 {/* Placeholder si NO hay cabinas */}
                 {effectiveCabins.length === 0 && (
                    <div
-                     className="border-b border-r border-gray-200 p-2 text-center text-gray-400 italic flex items-center justify-center"
+                     className="flex items-center justify-center p-2 italic text-center text-gray-400 border-b border-r border-gray-200"
                      style={{ height: `${AGENDA_CONFIG.ROW_HEIGHT}px` }}
                    >
                      -
@@ -837,6 +837,7 @@ export default function DayView({
 
           {/* Indicador de tiempo actual */}
           <CurrentTimeIndicator
+            key="desktop-day-indicator"
             timeSlots={timeSlots}
             rowHeight={AGENDA_CONFIG.ROW_HEIGHT}
             isMobile={false}
