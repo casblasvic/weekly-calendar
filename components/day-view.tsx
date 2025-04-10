@@ -696,7 +696,7 @@ export default function DayView({
           >
             {/* ---- INICIO CABECERA FIJA ---- */}
             {/* Columna de tiempo */}
-            <div className="sticky top-0 flex items-center justify-center w-20 p-2 bg-white border-b border-r border-gray-300 hour-header">
+            <div className="sticky top-0 z-20 flex items-center justify-center w-20 p-2 bg-white border-b border-r border-gray-300 hour-header">
               <div className="text-xs font-medium text-gray-600">Hora</div>
             </div>
 
@@ -704,7 +704,7 @@ export default function DayView({
             {effectiveCabins.map((cabin) => (
               <div
                 key={cabin.id}
-                className="sticky top-0 p-1 text-center border-b border-r border-gray-300 last:border-r-0 day-header"
+                className="sticky top-0 z-20 p-1 text-center border-b border-r border-gray-300 last:border-r-0 day-header"
                 style={{ backgroundColor: cabin.color }}
               >
                 <div className="flex flex-col items-center justify-center h-full">
@@ -841,7 +841,7 @@ export default function DayView({
             timeSlots={timeSlots}
             rowHeight={AGENDA_CONFIG.ROW_HEIGHT}
             isMobile={false}
-            className="current-time-indicator"
+            className="z-10 current-time-indicator"
             agendaRef={agendaRef}
             clinicOpenTime={openTime}
             clinicCloseTime={closeTime}
