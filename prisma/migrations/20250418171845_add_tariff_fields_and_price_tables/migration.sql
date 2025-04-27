@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "tariffs" ALTER COLUMN "validFrom" SET DATA TYPE DATE,
+ALTER COLUMN "validUntil" SET DATA TYPE DATE;

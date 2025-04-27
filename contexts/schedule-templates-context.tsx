@@ -1,23 +1,20 @@
 "use client"
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from "react"
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback, useMemo } from "react"
 import { useInterfaz } from "./interfaz-Context"
 import { WeekSchedule, DEFAULT_SCHEDULE } from "@/types/schedule"
-import { ScheduleTemplate as ScheduleTemplateModel } from "@/services/data/models/interfaces"
-
-// Tipo para la plantilla horaria utilizando el modelo central
-export type ScheduleTemplate = ScheduleTemplateModel;
+import { ScheduleTemplate } from "@prisma/client"
+import { useSession } from "next-auth/react"
 
 // Interfaz del contexto
 interface ScheduleTemplatesContextType {
   templates: ScheduleTemplate[];
   loading: boolean;
   getTemplateById: (id: string) => Promise<ScheduleTemplate | null>;
-  createTemplate: (template: Omit<ScheduleTemplate, 'id' | 'createdAt' | 'updatedAt'>) => Promise<ScheduleTemplate>;
+  createTemplate: (template: Omit<ScheduleTemplate, 'id' | 'createdAt' | 'updatedAt'>) => Promise<ScheduleTemplate | null>;
   updateTemplate: (id: string, template: Partial<ScheduleTemplate>) => Promise<ScheduleTemplate | null>;
   deleteTemplate: (id: string) => Promise<boolean>;
   setDefaultTemplate: (id: string) => Promise<boolean>;
-  getTemplatesByClinic: (clinicId: string | null) => Promise<ScheduleTemplate[]>;
   refreshTemplates: () => Promise<void>;
   exportTemplates: () => string;
   importTemplates: (data: string) => Promise<boolean>;
@@ -29,11 +26,9 @@ const defaultTemplates: ScheduleTemplate[] = [
     id: "template-default",
     name: "Plantilla Estándar",
     description: "Plantilla por defecto inicial",
-    schedule: DEFAULT_SCHEDULE,
     systemId: "system-default-placeholder",
-    clinicId: null,
-    isDefault: true,
-    createdAt: new Date().toISOString(),
+    createdAt: new Date(),
+    updatedAt: new Date(),
     openTime: null,
     closeTime: null,
     slotDuration: 15,
@@ -48,233 +43,213 @@ export function ScheduleTemplatesProvider({ children }: { children: ReactNode })
   const [templates, setTemplates] = useState<ScheduleTemplate[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const interfaz = useInterfaz();
+  const { data: session, status } = useSession();
 
-  // Cargar plantillas al iniciar
-  useEffect(() => {
-    if (interfaz.initialized) {
-      loadTemplates();
+  // Cargar plantillas al iniciar (o al cambiar estado de sesión)
+  const loadTemplates = useCallback(async () => {
+    if (status !== 'authenticated') {
+        console.log("[ScheduleTemplatesProvider] Sesión no autenticada, saltando loadTemplates.");
+        setLoading(false);
+        setTemplates([]);
+        return;
     }
-  }, [interfaz.initialized]);
-
-  const loadTemplates = async () => {
+    
+    setLoading(true);
     try {
-      setLoading(true);
       console.log("[ScheduleTemplatesProvider] Fetching templates from API...");
-      // --- LLAMAR A LA API REAL --- 
-      const response = await fetch('/api/templates'); // <-- Ajustar endpoint si es necesario
+      const response = await fetch('/api/templates'); 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: `HTTP error ${response.status}` }));
-        throw new Error(errorData.message || `Error ${response.status}`);
+        let errorText = response.statusText;
+        try { const errorBody = await response.json(); errorText = errorBody.message || errorText; } catch (e) {}
+        throw new Error(`Error ${response.status}: ${errorText}`);
       }
       const templatesFromApi: ScheduleTemplate[] = await response.json();
       console.log(`[ScheduleTemplatesProvider] Received ${templatesFromApi.length} templates from API.`);
-      
-      // Asegurarse de que los datos recibidos tienen el formato esperado
-      // Podríamos añadir validación Zod aquí si fuera necesario
-      
       setTemplates(templatesFromApi); 
-      // --- FIN LLAMADA API --- 
     } catch (error) {
       console.error("Error al cargar plantillas horarias desde API:", error);
-      setTemplates([]); // Poner array vacío en caso de error de API
+      setTemplates([]); 
     } finally {
       setLoading(false);
     }
-  }
+  }, [status]);
 
-  // Guardar plantillas (DEBERÍA USAR API TAMBIÉN)
+  useEffect(() => {
+    // Cargar solo si la sesión está autenticada Y la interfaz inicializada
+    // (Asumiendo que interfaz.initialized es relevante para algo más)
+    if (status === 'authenticated' && interfaz.initialized) {
+        loadTemplates();
+    } else if (status === 'unauthenticated') {
+        setTemplates([]);
+        setLoading(false);
+    } else {
+        setLoading(true); // Cargando sesión
+    }
+  }, [status, loadTemplates]);
+
+  // Guardar plantillas DEPRECATED - Usar APIs individuales
   const saveTemplates = async (updatedTemplates: ScheduleTemplate[]) => {
-    // ESTA FUNCIÓN DEBERÍA LLAMAR A LAS APIS POST/PUT/DELETE INDIVIDUALES
-    // NO guardar todo el array
-    console.warn("saveTemplates function needs refactoring to use individual API calls (POST/PUT/DELETE)");
-    // Actualizar estado local SÍ es correcto
-    setTemplates(updatedTemplates);
-    // Quitar localStorage
-    // localStorage.setItem('schedule-templates', JSON.stringify(updatedTemplates));
+    console.warn("saveTemplates DEPRECATED. Use individual API calls.");
+    setTemplates(updatedTemplates); // Actualizar estado local es ok
   }
 
-  // Métodos del contexto
-  const getTemplateById = async (id: string): Promise<ScheduleTemplate | null> => {
-    try {
-      // En el futuro: return await interfaz.getTemplateById(id);
-      
-      // Mientras tanto, buscar en el estado local
+  const getTemplateById = useCallback(async (id: string): Promise<ScheduleTemplate | null> => {
+     if (status !== 'authenticated') return null;
+     // Implementación API (GET /api/templates/[id]) - PENDIENTE
+    console.warn(`getTemplateById(${id}) no implementado con API. Buscando en estado local.`);
       const template = templates.find(t => t.id === id);
       return template || null;
-    } catch (error) {
-      console.error(`Error al obtener plantilla ${id}:`, error);
-      return null;
-    }
-  }
+  }, [templates, status]);
 
-  const createTemplate = async (template: Omit<ScheduleTemplate, 'id' | 'createdAt' | 'updatedAt'>): Promise<ScheduleTemplate> => {
+  const createTemplate = useCallback(async (template: Omit<ScheduleTemplate, 'id' | 'createdAt' | 'updatedAt'>): Promise<ScheduleTemplate | null> => {
+     if (status !== 'authenticated') return null;
+    
+    setLoading(true);
     try {
-      // En el futuro: return await interfaz.saveTemplate(template);
-      
-      // Mientras tanto, crear localmente
-      const now = new Date().toISOString();
-      const newTemplate: ScheduleTemplate = {
-        ...template,
-        id: `template-${Date.now()}`,
-        createdAt: now
-      };
-      
-      // Actualizar estado local
-      const updatedTemplates = [...templates, newTemplate];
-      await saveTemplates(updatedTemplates);
+        const response = await fetch('/api/templates', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            // Asegurar que el schedule se envía en el formato correcto esperado por la API
+            body: JSON.stringify(template), 
+        });
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || `Error ${response.status}`);
+        }
+        const newTemplate: ScheduleTemplate = await response.json();
+        setTemplates(prev => [...prev, newTemplate]);
       return newTemplate;
     } catch (error) {
-      console.error("Error al crear plantilla:", error);
-      throw error;
+        console.error("Error al crear plantilla vía API:", error);
+        return null; // Devolver null en error
+    } finally {
+        setLoading(false);
     }
-  }
+  }, [status]);
 
-  const updateTemplate = async (id: string, templateData: Partial<ScheduleTemplate>): Promise<ScheduleTemplate | null> => {
+  const updateTemplate = useCallback(async (id: string, templateData: Partial<ScheduleTemplate>): Promise<ScheduleTemplate | null> => {
+    if (status !== 'authenticated') return null;
+    
     console.log(`[ScheduleTemplatesProvider] Updating template ${id} with data:`, templateData);
+    setLoading(true); // Indicar carga
     try {
-      // --- LLAMADA A LA API PUT --- 
       const response = await fetch(`/api/templates/${id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(templateData), // Enviar solo los datos parciales a actualizar
+        body: JSON.stringify(templateData),
       });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ message: `Error HTTP ${response.status}` }));
         console.error(`[ScheduleTemplatesProvider] API Error updating template ${id}:`, errorData);
-        // Podríamos lanzar el error o devolver null
-        // throw new Error(errorData.message || `Error al actualizar plantilla ${response.status}`);
-        return null; // Devolver null si la API falla
+        return null; 
       }
 
       const updatedTemplateFromApi: ScheduleTemplate = await response.json();
       console.log(`[ScheduleTemplatesProvider] Template ${id} updated successfully via API:`, updatedTemplateFromApi);
 
-      // Actualizar estado local CON la respuesta de la API
       setTemplates(currentTemplates => 
         currentTemplates.map(t => 
           t.id === id ? updatedTemplateFromApi : t
         )
       );
       
-      return updatedTemplateFromApi; // Devolver la plantilla actualizada desde la API
-      // --- FIN LLAMADA API --- 
+      return updatedTemplateFromApi; 
 
     } catch (error: any) {
       console.error(`[ScheduleTemplatesProvider] Unexpected error updating template ${id}:`, error);
-      // throw error; // O devolver null
       return null;
+    } finally {
+        setLoading(false); // Finalizar carga
     }
-  }
+  }, [status]);
 
-  const deleteTemplate = async (id: string): Promise<boolean> => {
+  const deleteTemplate = useCallback(async (id: string): Promise<boolean> => {
+    if (status !== 'authenticated') return false;
+
+    console.warn(`deleteTemplate(${id}) no implementado con API DELETE /api/templates/[id]`);
+    setLoading(true);
     try {
-      // En el futuro: return await interfaz.deleteTemplate(id);
-      
-      // Verificar si existe la plantilla
+        // TODO: Llamar a DELETE /api/templates/[id]
+        // Simulación local por ahora:
       if (!templates.some(t => t.id === id)) return false;
-      
-      // Eliminar localmente
       const filteredTemplates = templates.filter(t => t.id !== id);
-      await saveTemplates(filteredTemplates);
+        setTemplates(filteredTemplates); // Actualizar estado local es ok
       return true;
     } catch (error) {
       console.error(`Error al eliminar plantilla ${id}:`, error);
       return false;
+    } finally {
+        setLoading(false);
     }
-  }
+  }, [status]);
 
-  const setDefaultTemplate = async (id: string): Promise<boolean> => {
+  const setDefaultTemplate = useCallback(async (id: string): Promise<boolean> => {
+     if (status !== 'authenticated') return false;
+
+     console.warn(`setDefaultTemplate(${id}) no implementado con API PATCH /api/templates/[id]/set-default`);
+     setLoading(true);
     try {
-      // En el futuro: return await interfaz.setDefaultTemplate(id);
-      
-      // Verificar si existe la plantilla
+      // TODO: Llamar a API para marcar como default y desmarcar las otras
+      // Simulación local:
       const targetIndex = templates.findIndex(t => t.id === id);
       if (targetIndex === -1) return false;
-      
-      // Actualizar estado
-      const updatedTemplates = templates.map(template => ({
-        ...template,
-        isDefault: template.id === id
-      }));
-      
-      // Guardar cambios
-      await saveTemplates(updatedTemplates);
+      const updatedTemplates = templates.map(template => ({ ...template, isDefault: template.id === id }));
+      setTemplates(updatedTemplates); // Actualizar estado local
       return true;
     } catch (error) {
       console.error(`Error al establecer plantilla predeterminada ${id}:`, error);
       return false;
+    } finally {
+        setLoading(false);
+  }
+  }, [status, loadTemplates]);
+
+  const refreshTemplates = useCallback(async (): Promise<void> => {
+    if (status === 'authenticated') {
+        await loadTemplates();
+    } else {
+        setTemplates([]);
     }
-  }
+  }, [loadTemplates, status]);
 
-  const getTemplatesByClinic = async (clinicId: string | null): Promise<ScheduleTemplate[]> => {
-    try {
-      // En el futuro: return await interfaz.getTemplatesByClinic(clinicId);
-      
-      // Filtrar por clínica
-      return templates.filter(t => {
-        // Plantillas sin clínica (globales) o específicas para esta clínica
-        return (clinicId === null && t.clinicId === null) || t.clinicId === clinicId;
-      });
-    } catch (error) {
-      console.error(`Error al obtener plantillas para clínica ${clinicId}:`, error);
-      return [];
-    }
-  }
-
-  const refreshTemplates = async (): Promise<void> => {
-    // setDataFetched(false); // Esto forzará la recarga en el useEffect
-  }
-
-  const exportTemplates = (): string => {
+  const exportTemplates = useCallback((): string => {
     return JSON.stringify(templates);
-  }
+  }, [templates]);
 
-  const importTemplates = async (data: string): Promise<boolean> => {
+  const importTemplates = useCallback(async (data: string): Promise<boolean> => {
+    if (status !== 'authenticated') return false;
+
+    console.warn(`importTemplates no implementado con API POST /api/templates/import`);
+    setLoading(true);
     try {
-      // En el futuro: return await interfaz.importTemplates(data);
-      
-      // Validar el formato JSON
       let importedTemplates: ScheduleTemplate[];
       try {
         importedTemplates = JSON.parse(data);
         if (!Array.isArray(importedTemplates)) {
           throw new Error("El formato de los datos importados no es válido");
         }
+        // TODO: Validar cada plantilla importada con Zod?
       } catch (error) {
         console.error("Error al parsear datos importados:", error);
         return false;
       }
-      
-      // Validar estructura básica de cada plantilla
-      const validTemplates = importedTemplates.filter(template => {
-        return template && 
-               typeof template === 'object' && 
-               typeof template.id === 'string' && 
-               typeof template.description === 'string' &&
-               typeof template.schedule === 'object' &&
-               typeof template.isDefault === 'boolean';
-      });
-      
-      if (validTemplates.length === 0) {
-        console.error("No se encontraron plantillas válidas para importar");
-        return false;
-      }
-      
-      // Actualizar el estado con las plantillas importadas
-      await saveTemplates(validTemplates);
+      // TODO: Llamar a API para importar/reemplazar
+      // Simulación local:
+      setTemplates(importedTemplates);
       return true;
     } catch (error) {
-      console.error("Error al importar plantillas:", error);
+       console.error("Error importando plantillas:", error);
       return false;
+    } finally {
+        setLoading(false);
     }
-  }
+  }, [status, loadTemplates]);
 
-  return (
-    <ScheduleTemplatesContext.Provider 
-      value={{
+  // Valor del contexto
+  const contextValue = useMemo(() => ({
         templates,
         loading,
         getTemplateById,
@@ -282,21 +257,24 @@ export function ScheduleTemplatesProvider({ children }: { children: ReactNode })
         updateTemplate,
         deleteTemplate,
         setDefaultTemplate,
-        getTemplatesByClinic,
         refreshTemplates,
         exportTemplates,
-        importTemplates
-      }}
-    >
-      {children}
-    </ScheduleTemplatesContext.Provider>
+    importTemplates,
+  }), [
+    templates, loading, getTemplateById, createTemplate, updateTemplate, 
+    deleteTemplate, setDefaultTemplate, refreshTemplates, // Eliminado de dependencias
+    exportTemplates, importTemplates
+  ]);
+
+  return (
+    <ScheduleTemplatesContext.Provider value={contextValue}>{children}</ScheduleTemplatesContext.Provider>
   );
 }
 
 export function useScheduleTemplates() {
   const context = useContext(ScheduleTemplatesContext);
   if (context === undefined) {
-    throw new Error("useScheduleTemplates debe ser usado dentro de un ScheduleTemplatesProvider");
+    throw new Error("useScheduleTemplates debe usarse dentro de un ScheduleTemplatesProvider");
   }
   return context;
 } 

@@ -6,9 +6,9 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Bono } from '@/services/data/models/interfaces';
+import { BonoDefinition } from '@prisma/client';
 import { useDataService } from '@/contexts/data-context';
-import { Eye, Pencil, Trash2, ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
+import { Eye, Pencil, Trash2, ArrowDown, ArrowUp, ArrowUpDown, CheckCircle } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 
 interface BonoListProps {
@@ -16,14 +16,14 @@ interface BonoListProps {
   tarifaId?: string;
 }
 
-type SortField = 'nombre' | 'credito' | 'precioConIVA' | 'caducidad' | 'estado';
+type SortField = 'name' | 'sessions' | 'price' | 'validityDays' | 'isActive';
 type SortDirection = 'asc' | 'desc' | 'none';
 
 export function BonoList({ servicioId, tarifaId }: BonoListProps) {
-  const [bonos, setBonos] = useState<Bono[]>([]);
+  const [bonos, setBonos] = useState<BonoDefinition[]>([]);
   const [loading, setLoading] = useState(true);
   const [showDeshabilitados, setShowDeshabilitados] = useState(false);
-  const [sortField, setSortField] = useState<SortField>('nombre');
+  const [sortField, setSortField] = useState<SortField>('name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
   
   const dataService = useDataService();
@@ -51,47 +51,47 @@ export function BonoList({ servicioId, tarifaId }: BonoListProps) {
     fetchBonos();
   }, [dataService, servicioId, toast]);
 
-  const handleDelete = async (id: string | number) => {
+  const handleDelete = async (id: string) => {
     try {
-      await dataService.deleteBono(id.toString());
+      await dataService.deleteBono(id);
       setBonos((prev) => prev.filter((bono) => bono.id !== id));
       toast({
         title: 'Bono eliminado',
-        description: 'El bono ha sido eliminado correctamente',
+        description: 'La definición del bono ha sido eliminada correctamente',
       });
     } catch (error) {
-      console.error('Error al eliminar el bono:', error);
+      console.error('Error al eliminar la definición del bono:', error);
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'No se pudo eliminar el bono',
+        description: 'No se pudo eliminar la definición del bono',
       });
     }
   };
 
-  const handleToggleStatus = async (id: string | number) => {
+  const handleToggleStatus = async (id: string) => {
     try {
-      await dataService.toggleBonoStatus(id.toString());
+      await dataService.toggleBonoStatus(id);
       setBonos((prev) =>
         prev.map((bono) =>
-          bono.id === id ? { ...bono, deshabilitado: !bono.deshabilitado } : bono
+          bono.id === id ? { ...bono, isActive: !bono.isActive } : bono
         )
       );
       toast({
         title: 'Estado actualizado',
-        description: 'El estado del bono ha sido actualizado',
+        description: 'El estado de la definición del bono ha sido actualizado',
       });
     } catch (error) {
-      console.error('Error al cambiar el estado del bono:', error);
+      console.error('Error al cambiar el estado de la definición del bono:', error);
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'No se pudo actualizar el estado del bono',
+        description: 'No se pudo actualizar el estado de la definición del bono',
       });
     }
   };
 
-  const handleEdit = (id: string | number) => {
+  const handleEdit = (id: string) => {
     if (tarifaId) {
       router.push(`/configuracion/tarifas/${tarifaId}/servicio/${servicioId}/bonos/${id}`);
     } else {
@@ -99,7 +99,7 @@ export function BonoList({ servicioId, tarifaId }: BonoListProps) {
     }
   };
 
-  const handleView = (id: string | number) => {
+  const handleView = (id: string) => {
     if (tarifaId) {
       router.push(`/configuracion/tarifas/${tarifaId}/servicio/${servicioId}/bonos/${id}/view`);
     } else {
@@ -117,13 +117,11 @@ export function BonoList({ servicioId, tarifaId }: BonoListProps) {
   
   const handleSort = (field: SortField) => {
     if (sortField === field) {
-      // Cambiar dirección de ordenación si el campo es el mismo
       setSortDirection(
         sortDirection === 'asc' ? 'desc' : 
         sortDirection === 'desc' ? 'none' : 'asc'
       );
     } else {
-      // Establecer nuevo campo de ordenación
       setSortField(field);
       setSortDirection('asc');
     }
@@ -136,43 +134,33 @@ export function BonoList({ servicioId, tarifaId }: BonoListProps) {
     return <ArrowUpDown className="ml-2 h-4 w-4" />;
   };
   
-  // Filtrar y ordenar los bonos
   const sortedAndFilteredBonos = () => {
-    // Primero filtrar
     const filtered = showDeshabilitados 
       ? bonos 
-      : bonos.filter(bono => !bono.deshabilitado);
+      : bonos.filter(bono => bono.isActive);
     
-    // Si no hay dirección de ordenación o es 'none', devolver sin ordenar
     if (sortDirection === 'none') return filtered;
     
-    // Ordenar según el campo y dirección
     return [...filtered].sort((a, b) => {
       let comparison = 0;
       
       switch (sortField) {
-        case 'nombre':
-          comparison = a.nombre.localeCompare(b.nombre);
+        case 'name':
+          comparison = a.name.localeCompare(b.name);
           break;
-        case 'credito':
-          comparison = a.credito - b.credito;
+        case 'sessions':
+          comparison = a.sessions - b.sessions;
           break;
-        case 'precioConIVA':
-          const priceA = typeof a.precioConIVA === 'string' ? parseFloat(a.precioConIVA) : a.precioConIVA;
-          const priceB = typeof b.precioConIVA === 'string' ? parseFloat(b.precioConIVA) : b.precioConIVA;
-          comparison = priceA - priceB;
+        case 'price':
+          comparison = a.price - b.price;
           break;
-        case 'caducidad':
-          const cadA = a.caducidad.tipo === 'intervalo' 
-            ? `${a.caducidad.intervalo?.valor || 0}`
-            : a.caducidad.fechaFija || '';
-          const cadB = b.caducidad.tipo === 'intervalo'
-            ? `${b.caducidad.intervalo?.valor || 0}`
-            : b.caducidad.fechaFija || '';
-          comparison = cadA.localeCompare(cadB);
+        case 'validityDays':
+          const daysA = a.validityDays ?? Infinity;
+          const daysB = b.validityDays ?? Infinity;
+          comparison = daysA - daysB;
           break;
-        case 'estado':
-          comparison = (a.deshabilitado ? 1 : 0) - (b.deshabilitado ? 1 : 0);
+        case 'isActive':
+          comparison = (a.isActive ? 1 : 0) - (b.isActive ? 1 : 0);
           break;
       }
       
@@ -219,50 +207,50 @@ export function BonoList({ servicioId, tarifaId }: BonoListProps) {
               <TableRow>
                 <TableHead 
                   className="cursor-pointer hover:bg-gray-50"
-                  onClick={() => handleSort('nombre')}
+                  onClick={() => handleSort('name')}
                 >
                   <div className="flex items-center">
                     Bono
-                    {getSortIcon('nombre')}
+                    {getSortIcon('name')}
                   </div>
                 </TableHead>
                 <TableHead 
                   className="text-center cursor-pointer hover:bg-gray-50"
-                  onClick={() => handleSort('credito')}
+                  onClick={() => handleSort('sessions')}
                 >
                   <div className="flex items-center justify-center">
-                    Crédito
-                    {getSortIcon('credito')}
+                    Sesiones
+                    {getSortIcon('sessions')}
                   </div>
                 </TableHead>
                 <TableHead 
                   className="text-center cursor-pointer hover:bg-gray-50"
-                  onClick={() => handleSort('precioConIVA')}
+                  onClick={() => handleSort('price')}
                 >
                   <div className="flex items-center justify-center">
                     Precio
-                    {getSortIcon('precioConIVA')}
+                    {getSortIcon('price')}
                   </div>
                 </TableHead>
                 <TableHead 
                   className="text-center cursor-pointer hover:bg-gray-50"
-                  onClick={() => handleSort('caducidad')}
+                  onClick={() => handleSort('validityDays')}
                 >
                   <div className="flex items-center justify-center">
-                    Caducidad
-                    {getSortIcon('caducidad')}
+                    Validez
+                    {getSortIcon('validityDays')}
                   </div>
                 </TableHead>
                 <TableHead 
-                  className="w-[100px] text-center cursor-pointer hover:bg-gray-50"
-                  onClick={() => handleSort('estado')}
+                  className="text-center cursor-pointer hover:bg-gray-50"
+                  onClick={() => handleSort('isActive')}
                 >
                   <div className="flex items-center justify-center">
                     Estado
-                    {getSortIcon('estado')}
+                    {getSortIcon('isActive')}
                   </div>
                 </TableHead>
-                <TableHead className="w-[150px] text-center">Acciones</TableHead>
+                <TableHead className="text-right">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -275,27 +263,24 @@ export function BonoList({ servicioId, tarifaId }: BonoListProps) {
               ) : (
                 displayedBonos.map((bono) => (
                   <TableRow key={bono.id} className="hover:bg-gray-50">
-                    <TableCell className="font-medium">{bono.nombre}</TableCell>
-                    <TableCell className="text-center">{bono.credito}</TableCell>
-                    <TableCell className="text-center">{bono.precioConIVA}</TableCell>
+                    <TableCell className="font-medium">{bono.name}</TableCell>
+                    <TableCell className="text-center">{bono.sessions}</TableCell>
+                    <TableCell className="text-center">{bono.price.toFixed(2)} €</TableCell>
                     <TableCell className="text-center">
-                      {bono.caducidad.tipo === 'intervalo' 
-                        ? `${bono.caducidad.intervalo?.valor || 0} ${bono.caducidad.intervalo?.tipo || 'meses'}`
-                        : bono.caducidad.fechaFija
-                      }
+                      {bono.validityDays ? `${bono.validityDays} días` : 'Sin caducidad'}
                     </TableCell>
                     <TableCell className="text-center">
-                      <Badge variant={bono.deshabilitado ? 'outline' : 'default'} className="whitespace-nowrap">
-                        {bono.deshabilitado ? 'Inactivo' : 'Activo'}
+                      <Badge variant={bono.isActive ? 'default' : 'outline'}>
+                        {bono.isActive ? 'Activo' : 'Inactivo'}
                       </Badge>
                     </TableCell>
-                    <TableCell>
-                      <div className="flex justify-center space-x-2">
+                    <TableCell className="text-right">
+                      <div className="flex justify-end space-x-1">
                         <Button 
                           variant="ghost" 
                           size="icon" 
                           onClick={() => handleView(bono.id)} 
-                          title="Ver bono"
+                          className="h-7 w-7 text-blue-600 hover:text-blue-800"
                         >
                           <Eye className="h-4 w-4" />
                         </Button>
@@ -303,18 +288,18 @@ export function BonoList({ servicioId, tarifaId }: BonoListProps) {
                           variant="ghost" 
                           size="icon" 
                           onClick={() => handleEdit(bono.id)} 
-                          title="Editar bono"
+                          className="h-7 w-7 text-gray-600 hover:text-gray-800"
                         >
                           <Pencil className="h-4 w-4" />
                         </Button>
                         <Button 
                           variant="ghost" 
                           size="icon" 
-                          onClick={() => handleDelete(bono.id)} 
-                          title="Eliminar bono"
-                          className="text-red-500 hover:text-red-700"
+                          onClick={() => handleToggleStatus(bono.id)} 
+                          className={`h-7 w-7 ${bono.isActive ? 'text-yellow-600 hover:text-yellow-800' : 'text-green-600 hover:text-green-800'}`}
+                          title={bono.isActive ? 'Desactivar' : 'Activar'}
                         >
-                          <Trash2 className="h-4 w-4" />
+                          {bono.isActive ? <Trash2 className="h-4 w-4" /> : <CheckCircle className="h-4 w-4" />}
                         </Button>
                       </div>
                     </TableCell>

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
+import { getServerAuthSession } from "@/lib/auth"; // Importar el helper
 
 /**
  * Handler para obtener todos los servicios.
@@ -10,14 +11,26 @@ import { z } from 'zod';
  * @returns NextResponse con la lista de servicios o un error.
  */
 export async function GET(request: Request) {
+  const session = await getServerAuthSession();
+
+  if (!session || !session.user?.systemId) {
+    console.error("API GET /api/services: Sesión no válida o falta systemId", { session });
+    return NextResponse.json({ error: 'No autorizado o falta configuración del sistema.' }, { status: session ? 500 : 401 });
+  }
+  const systemId = session.user.systemId;
+  console.log("API GET /api/services: Usando systemId de la sesión:", systemId);
+
   const { searchParams } = new URL(request.url);
   const clinicId = searchParams.get('clinicId');
   const isActive = searchParams.get('isActive');
 
-  let whereClause: Prisma.ServiceWhereInput = {};
+  let whereClause: Prisma.ServiceWhereInput = {
+      systemId: systemId, // Usar el systemId de la sesión
+  };
 
   if (clinicId) {
     console.warn("[API Services GET] Filtrado por clinicId no implementado directamente en Service.");
+    // TODO: Si es necesario, añadir lógica para filtrar por clínica (posiblemente a través de Tarifas?)
   }
   if (isActive !== null) {
     whereClause.isActive = isActive === 'true';
@@ -47,9 +60,19 @@ export async function GET(request: Request) {
  * @returns NextResponse con el nuevo servicio y estado 201, o un error.
  */
 export async function POST(request: Request) {
+  const session = await getServerAuthSession();
+
+  if (!session || !session.user?.systemId) {
+    console.error("API POST /api/services: Sesión no válida o falta systemId", { session });
+    return NextResponse.json({ error: 'No autorizado o falta configuración del sistema.' }, { status: session ? 500 : 401 });
+  }
+  const sessionSystemId = session.user.systemId;
+  console.log("API POST /api/services: Usando systemId de la sesión:", sessionSystemId);
+
   try {
     const body = await request.json();
 
+    // Quitar systemId del schema Zod, usar el de la sesión
     const createServiceSchema = z.object({
         name: z.string().min(1),
         description: z.string().optional(),
@@ -62,25 +85,22 @@ export async function POST(request: Request) {
         isActive: z.boolean().optional(),
         categoryId: z.string().cuid().optional(),
         vatTypeId: z.string().cuid().optional(),
-        systemId: z.string().cuid(),
     });
+    
     const validatedData = createServiceSchema.parse(body);
 
-    // Separar IDs de relaciones y el resto de datos
-    const { systemId, categoryId, vatTypeId, ...restOfValidatedData } = validatedData;
+    // Extraer systemId del body
+    const { categoryId, vatTypeId, ...restOfValidatedData } = validatedData;
 
     // Construir objeto de datos para Prisma asegurando campos obligatorios
     const dataToCreate: Prisma.ServiceCreateInput = {
-        // Mantener campos obligatorios explícitamente si la desestructuración los hace opcionales
-        name: validatedData.name, // Asegurar que name está presente
-        durationMinutes: validatedData.durationMinutes, // Asegurar que durationMinutes está presente
-        ...restOfValidatedData, // Añadir el resto de campos opcionales
+        name: validatedData.name, 
+        durationMinutes: validatedData.durationMinutes, 
+        ...restOfValidatedData, 
         system: {
-            connect: { id: systemId }
+            connect: { id: sessionSystemId } // Usar SIEMPRE el systemId de la sesión
         },
-        // Conectar categoría solo si se proporcionó categoryId
         ...(categoryId && { category: { connect: { id: categoryId } } }),
-        // Conectar tipo de IVA solo si se proporcionó vatTypeId
         ...(vatTypeId && { vatType: { connect: { id: vatTypeId } } }),
     };
 
@@ -106,6 +126,10 @@ export async function POST(request: Request) {
       if (error.code === 'P2003') { 
            return NextResponse.json({ message: 'Referencia inválida (ej: familia o tipo de IVA no existe)' }, { status: 400 });
       }
+    }
+    if (error instanceof z.ZodError) {
+      // Error de validación Zod
+      return NextResponse.json({ error: 'Datos de entrada inválidos', details: error.errors }, { status: 400 });
     }
     if (error instanceof SyntaxError) {
        return NextResponse.json({ message: 'JSON inválido' }, { status: 400 });

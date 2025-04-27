@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { MainSidebar } from "@/components/main-sidebar"
 import { Button } from "@/components/ui/button"
 import { Home, Calendar, Users, BarChart2, User, LogOut, Settings, FileText } from "lucide-react"
@@ -191,26 +191,34 @@ export function LayoutWrapper({ children }: LayoutWrapperProps) {
     };
   }, [handleOutsideClick]);
 
+  // Calcular estilos para main ANTES del return
+  const mainStyle = useMemo(() => {
+    const ml = isMobile ? (isSidebarVisible ? "3.5rem" : "0") : (isSidebarCollapsed ? "3.5rem" : "16rem");
+    const w = isMobile ? 
+      (isSidebarVisible ? "calc(100% - 3.5rem)" : "100%") : 
+      `calc(100% - ${isSidebarCollapsed ? "3.5rem" : "16rem"})`;
+      
+    return {
+        marginLeft: ml,
+        width: w,
+        transition: "margin-left 0.3s ease-in-out, width 0.3s ease-in-out",
+        '--main-margin-left': ml, 
+        '--main-width': w,
+    } as React.CSSProperties; // Cast para incluir CSS Variables
+  }, [isMobile, isSidebarVisible, isSidebarCollapsed]);
+
   // Si no estamos montados, mostrar un layout básico
   if (!hasMounted) {
     return <div className="min-h-screen">{children}</div>
   }
 
   return (
-    <div className="flex h-screen bg-gray-50">
-      {/* Sidebar con header integrado */}
+    <div className="flex min-h-screen bg-gray-50"> {/* Cambiado OTRA VEZ a min-h-screen */}
+      {/* Sidebar */}
       <div 
         ref={sidebarRef}
-        className="transition-all duration-300 ease-in-out"
-        style={{
-          position: 'relative',
-          left: 0,
-          top: 0,
-          height: '100%',
-          zIndex: 45,
-          visibility: 'visible',
-          width: 'auto'
-        }}
+        className="transition-all duration-300 ease-in-out flex-shrink-0"
+        style={{ /* ... estilos sidebar ... */ zIndex: 45 }}
       >
         <MainSidebar
           isCollapsed={isMobile ? !isSidebarVisible : isSidebarCollapsed}
@@ -230,17 +238,12 @@ export function LayoutWrapper({ children }: LayoutWrapperProps) {
         <FloatingMenu />
       </div>
 
-      {/* Contenido principal */}
+      {/* Área principal CON overflow-auto y estilos calculados */}
       <main
-        className="flex-1 overflow-auto"
-        style={{
-          marginLeft: isMobile ? (isSidebarVisible ? "3.5rem" : "0") : (isSidebarCollapsed ? "3.5rem" : "16rem"),
-          transition: "margin-left 0.3s ease-in-out",
-          width: isMobile ? 
-            (isSidebarVisible ? "calc(100% - 3.5rem)" : "100%") : 
-            `calc(100% - ${isSidebarCollapsed ? "3.5rem" : "16rem"})`,
-        }}
+        className="flex-1 overflow-auto" 
+        style={mainStyle} // <<< Usar el objeto style calculado
       >
+        {/* Renderizar children directamente */} 
         {children}
       </main>
     </div>

@@ -1,0 +1,5 @@
+{
+   "baseLocale": "es",
+   "outputPath": "./lib/i18n/",
+   "$schema": "https://unpkg.com/typesafe-i18n@5.26.2/schema/typesafe-i18n.json"
+}

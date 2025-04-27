@@ -1,6 +1,6 @@
 "use client"
 
-import { Dialog, DialogContent, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { DatePickerButton } from "./date-picker-button"
@@ -8,11 +8,13 @@ import { useState, useEffect, useCallback, useMemo } from "react"
 import { Label } from "@/components/ui/label"
 import { Loader2, Trash2, AlertTriangle } from "lucide-react"
 import { format, parseISO, addDays, startOfDay, endOfDay, isValid } from "date-fns"
-import { ScheduleBlock, useScheduleBlocks } from "@/contexts/schedule-blocks-context"
+import { useScheduleBlocks } from "@/contexts/schedule-blocks-context"
+import type { CabinScheduleOverride } from '@prisma/client'
 import { useToast } from "@/hooks/use-toast"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useClinic } from "@/contexts/clinic-context"
 import { useInterfaz } from "@/contexts/interfaz-Context"
+import { cn } from "@/lib/utils"
 
 interface Room {
   id: string
@@ -24,14 +26,13 @@ interface BlockScheduleModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   clinicRooms: Room[]
-  blockToEdit?: ScheduleBlock | null
-  clinicId?: string
+  blockToEdit?: CabinScheduleOverride | null
+  clinicId: string
   onBlockSaved?: () => void
   clinicConfig?: {
     openTime?: string
     closeTime?: string
-    weekendOpenTime?: string
-    weekendCloseTime?: string
+    slotDuration?: number
   }
 }
 
@@ -40,61 +41,73 @@ export function BlockScheduleModal({
   onOpenChange,
   clinicRooms,
   blockToEdit = null,
-  clinicId = "",
+  clinicId,
   onBlockSaved,
   clinicConfig = {},
 }: BlockScheduleModalProps) {
   const { toast } = useToast()
-  const { createBlock, updateBlock, deleteBlock } = useScheduleBlocks()
+  const { createCabinOverride, updateCabinOverride, deleteCabinOverride } = useScheduleBlocks()
   const [date, setDate] = useState<Date>(new Date())
   const [isRecurring, setIsRecurring] = useState(false)
   const [selectedRooms, setSelectedRooms] = useState<string[]>([])
   const [selectedDays, setSelectedDays] = useState<number[]>([])
   const [endDate, setEndDate] = useState<Date | null>(null)
+  const [recurrenceEndDate, setRecurrenceEndDate] = useState<Date | null>(null)
   const [startTime, setStartTime] = useState<string>("09:00")
   const [endTime, setEndTime] = useState<string>("10:00")
   const [description, setDescription] = useState<string>("")
   const [isSaving, setIsSaving] = useState<boolean>(false)
-  const [cabins, setCabins] = useState<any[]>(clinicRooms)
-  const [selectedCabins, setSelectedCabins] = useState<string[]>([])
-  const [repeat, setRepeat] = useState<boolean>(false)
-  const [untilDate, setUntilDate] = useState<Date | null>(null)
+  const [cabins, setCabins] = useState<Room[]>(clinicRooms)
 
-  // Inicializar los valores del formulario cuando se abre el modal o cambia blockToEdit
   useEffect(() => {
+    console.log("[BlockScheduleModal] useEffect - Open:", open, "BlockToEdit:", blockToEdit);
     if (open) {
       setCabins(clinicRooms)
 
       if (blockToEdit) {
-        // Si estamos editando un bloque existente
-        setDate(parseISO(blockToEdit.date))
+        console.log("[BlockScheduleModal] Editing block:", blockToEdit);
+        setDate(blockToEdit.startDate)
         setStartTime(blockToEdit.startTime)
         setEndTime(blockToEdit.endTime)
-        setSelectedRooms(blockToEdit.roomIds)
-        setDescription(blockToEdit.description)
-        setIsRecurring(blockToEdit.recurring)
-
-        if (blockToEdit.recurring && blockToEdit.recurrencePattern) {
-          setSelectedDays(blockToEdit.recurrencePattern.daysOfWeek || [])
-          if (blockToEdit.recurrencePattern.endDate) {
-            setEndDate(parseISO(blockToEdit.recurrencePattern.endDate))
-          }
-        }
+        setSelectedRooms(blockToEdit.cabinIds)
+        setDescription(blockToEdit.description || "")
+        setIsRecurring(blockToEdit.isRecurring)
+        setSelectedDays(blockToEdit.daysOfWeek || [])
+        setEndDate(blockToEdit.endDate)
+        setRecurrenceEndDate(blockToEdit.recurrenceEndDate)
       } else {
-        // Valores por defecto para un nuevo bloque
+        console.log("[BlockScheduleModal] Creating new block.");
         setDate(new Date())
         setStartTime("09:00")
         setEndTime("10:00")
         setSelectedRooms([])
-        setSelectedDays([])
-        setEndDate(addDays(new Date(), 30))
         setDescription("")
         setIsRecurring(false)
+        setSelectedDays([])
+        setEndDate(null)
+        setRecurrenceEndDate(addDays(new Date(), 30))
       }
+    } else {
+       console.log("[BlockScheduleModal] Modal closed.");
     }
   }, [open, blockToEdit, clinicRooms])
 
-  const weekDays = ["L", "M", "X", "J", "V", "S", "D"]
+  useEffect(() => {
+    // Ajustar fechas de fin si se vuelven inválidas respecto a la fecha de inicio
+    if (endDate && endDate < date) {
+      console.log(`[BlockScheduleModal] Adjusting endDate (${format(endDate, 'yyyy-MM-dd')}) to match new startDate (${format(date, 'yyyy-MM-dd')})`);
+      setEndDate(date); // Ajustar fecha de fin a la nueva fecha de inicio
+    }
+    if (recurrenceEndDate && recurrenceEndDate < date) {
+      console.log(`[BlockScheduleModal] Adjusting recurrenceEndDate (${format(recurrenceEndDate, 'yyyy-MM-dd')}) to match new startDate (${format(date, 'yyyy-MM-dd')})`);
+      setRecurrenceEndDate(date); // Ajustar fecha de fin de recurrencia a la nueva fecha de inicio
+    }
+  }, [date, endDate, recurrenceEndDate]); // Ejecutar cuando cambien estas fechas
+
+  // <<< Usar índice 0-6 (Dom-Sab) internamente para consistencia con date.getDay() >>>
+  // <<< Y ajustar textos/orden para mostrar L-D >>>
+  const weekDayMap = [{ abbr: "L", index: 1 }, { abbr: "M", index: 2 }, { abbr: "X", index: 3 }, { abbr: "J", index: 4 }, { abbr: "V", index: 5 }, { abbr: "S", index: 6 }, { abbr: "D", index: 0 }]
+  const weekDaysDisplay = ["L", "M", "X", "J", "V", "S", "D"]
 
   const handleRoomToggle = (roomId: string) => {
     setSelectedRooms((prev) => (prev.includes(roomId) ? prev.filter((id) => id !== roomId) : [...prev, roomId]))
@@ -102,13 +115,14 @@ export function BlockScheduleModal({
 
   const handleDayToggle = (dayIndex: number) => {
     setSelectedDays((prev) => (prev.includes(dayIndex) ? prev.filter((d) => d !== dayIndex) : [...prev, dayIndex]))
+    // console.log("Selected days:", selectedDays); // Log para depurar
   }
 
   const handleSelectAllRooms = () => {
-    if (selectedRooms.length === clinicRooms.length) {
+    if (selectedRooms.length === cabins.length) {
       setSelectedRooms([])
     } else {
-      setSelectedRooms(clinicRooms.map((room) => room.id))
+      setSelectedRooms(cabins.map((room) => room.id))
     }
   }
 
@@ -116,52 +130,97 @@ export function BlockScheduleModal({
     if (selectedDays.length === 7) {
       setSelectedDays([])
     } else {
+      // Seleccionar todos los índices de 0 a 6
       setSelectedDays([0, 1, 2, 3, 4, 5, 6])
     }
   }
 
-  // Determinar si la fecha seleccionada es fin de semana
   const isWeekendDay = useCallback((date: Date) => {
     const day = date.getDay()
-    return day === 0 || day === 6 // 0 es domingo, 6 es sábado
+    return day === 0 || day === 6
   }, [])
 
-  // Determinar las horas disponibles según el día
   const availableHours = useMemo(() => {
-    const weekend = isWeekendDay(date)
+    // Usar openTime/closeTime directamente, con fallbacks
+    const startTimeStr = clinicConfig?.openTime || "09:00"; 
+    const endTimeStr = clinicConfig?.closeTime || "20:00";
 
-    const startTimeStr = weekend ? clinicConfig.weekendOpenTime || "09:00" : clinicConfig.openTime || "09:00"
+    // Validación básica del formato HH:MM
+    const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
+    let effectiveStartTime = startTimeStr;
+    let effectiveEndTime = endTimeStr;
 
-    const endTimeStr = weekend ? clinicConfig.weekendCloseTime || "14:00" : clinicConfig.closeTime || "20:00"
-
-    // Convertir a horas enteras para simplificar
-    const startHour = Number.parseInt(startTimeStr.split(":")[0], 10)
-    const endHour = Number.parseInt(endTimeStr.split(":")[0], 10)
-    const startMinute = Number.parseInt(startTimeStr.split(":")[1], 10)
-    const endMinute = Number.parseInt(endTimeStr.split(":")[1], 10)
-
-    const hours = []
-    for (let h = startHour; h <= endHour; h++) {
-      for (let m = 0; m < 60; m += 15) {
-        // Si es la hora de inicio, empezar desde el minuto correspondiente
-        if (h === startHour && m < startMinute) continue
-
-        // Si es la hora de fin, no pasar del minuto correspondiente
-        if (h === endHour && m > endMinute) continue
-
-        const hour = `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`
-        hours.push(hour)
-      }
+    if (!timeRegex.test(effectiveStartTime) || !timeRegex.test(effectiveEndTime)) {
+        console.warn("[BlockScheduleModal] Invalid time format in clinicConfig, using defaults.", { startTimeStr, endTimeStr });
+        effectiveStartTime = "09:00";
+        effectiveEndTime = "20:00";
     }
 
-    return hours
-  }, [date, clinicConfig, isWeekendDay])
+    const [startHour, startMinute] = effectiveStartTime.split(":").map(Number);
+    const [endHour, endMinute] = effectiveEndTime.split(":").map(Number);
+
+    // Usar slotDuration de la config, fallback a 15
+    const interval = clinicConfig?.slotDuration || 15; 
+
+    const hours = [];
+    const startTotalMinutes = startHour * 60 + startMinute;
+    const endTotalMinutes = endHour * 60 + endMinute;
+
+    // Generar slots usando minutos totales y el intervalo
+    for (let totalMinutes = startTotalMinutes; totalMinutes <= endTotalMinutes; totalMinutes += interval) {
+        const h = Math.floor(totalMinutes / 60);
+        const m = totalMinutes % 60;
+        // Asegurarse de que la hora generada no exceda la hora final (por si el intervalo no encaja perfectamente)
+        if (h > endHour || (h === endHour && m > endMinute)) {
+            break; 
+        }
+        const hour = `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
+        hours.push(hour);
+    }
+
+    // Podríamos necesitar añadir la hora de fin exacta si el intervalo no la incluye?
+    // El loop con <= debería incluirla si es un múltiplo exacto del intervalo.
+
+    return hours;
+  }, [clinicConfig]); // Depender solo de clinicConfig
 
   const handleSave = async () => {
     if (!date || !startTime || !endTime || selectedRooms.length === 0) {
       toast({
-        title: "Error",
-        description: "Por favor, complete todos los campos obligatorios",
+        title: "Error de Validación",
+        description: "Fecha, horas y al menos una cabina son requeridos.",
+        variant: "destructive",
+      })
+      return
+    }
+    if (isRecurring && selectedDays.length === 0) {
+      toast({
+        title: "Error de Validación",
+        description: "Seleccione los días de la semana para el bloqueo recurrente.",
+        variant: "destructive",
+      })
+      return
+    }
+    if (isRecurring && !recurrenceEndDate) {
+      toast({
+        title: "Error de Validación",
+        description: "Seleccione una fecha de fin para la recurrencia.",
+        variant: "destructive",
+      })
+      return
+    }
+    if (endTime <= startTime) {
+      toast({
+        title: "Error de Validación",
+        description: "La hora de fin debe ser posterior a la hora de inicio.",
+        variant: "destructive",
+      })
+      return
+    }
+    if (isRecurring && recurrenceEndDate && recurrenceEndDate < date) {
+      toast({
+        title: "Error de Validación",
+        description: "La fecha fin de recurrencia no puede ser anterior a la fecha de inicio.",
         variant: "destructive",
       })
       return
@@ -169,53 +228,56 @@ export function BlockScheduleModal({
 
     setIsSaving(true)
 
+    const normalizedStartDate = date ? startOfDay(date) : undefined
+    let normalizedEndDate: Date | null = null
+    if (isRecurring && endDate) {
+      normalizedEndDate = startOfDay(endDate)
+    }
+    let normalizedRecurrenceEndDate: Date | null = null
+    if (isRecurring && recurrenceEndDate) {
+      normalizedRecurrenceEndDate = startOfDay(recurrenceEndDate)
+    }
+
+    const overrideData = {
+      clinicId: clinicId,
+      cabinIds: selectedRooms,
+      startDate: normalizedStartDate,
+      endDate: normalizedEndDate,
+      startTime: startTime,
+      endTime: endTime,
+      description: description,
+      isRecurring: isRecurring,
+      daysOfWeek: isRecurring ? selectedDays : [], // Guardar 0-6
+      recurrenceEndDate: normalizedRecurrenceEndDate,
+    }
+
+    console.log("[BlockScheduleModal] Saving data:", overrideData)
+
     try {
-      const blockData = {
-        clinicId: String(clinicId),
-        date: format(date, "yyyy-MM-dd"),
-        startTime,
-        endTime,
-        roomIds: selectedRooms,
-        description,
-        recurring: isRecurring,
-        recurrencePattern: isRecurring
-          ? {
-              frequency: "weekly" as const,
-              daysOfWeek: selectedDays,
-              endDate: endDate ? format(endDate, "yyyy-MM-dd") : undefined,
-            }
-          : undefined,
-        createdAt: new Date().toISOString(),
-      }
-
+      let success = false
       if (blockToEdit) {
-        // Actualizar bloque existente
-        await updateBlock(String(blockToEdit.id), blockData)
-        toast({
-          title: "Bloque actualizado",
-          description: "El bloque se ha actualizado correctamente",
-        })
+        console.log(`[BlockScheduleModal] Calling updateCabinOverride for ID: ${blockToEdit.id}`)
+        const result = await updateCabinOverride(blockToEdit.id, overrideData)
+        success = !!result
       } else {
-        // Crear nuevo bloque
-        await createBlock(blockData)
-        toast({
-          title: "Bloque creado",
-          description: "El bloque se ha creado correctamente",
-        })
+        console.log("[BlockScheduleModal] Calling createCabinOverride")
+        const result = await createCabinOverride(overrideData)
+        success = !!result
       }
 
-      // Llamar al callback si existe
-      if (onBlockSaved) {
-        onBlockSaved()
+      if (success) {
+        if (onBlockSaved) {
+          onBlockSaved()
+        }
+        onOpenChange(false)
+      } else {
+        console.error("[BlockScheduleModal] Save operation failed (context reported error).")
       }
-
-      // Cerrar el modal
-      onOpenChange(false)
     } catch (error) {
-      console.error("Error al guardar el bloque:", error)
+      console.error("Error inesperado en handleSave:", error)
       toast({
-        title: "Error",
-        description: "Hubo un problema al guardar el bloque",
+        title: "Error Inesperado",
+        description: "Ocurrió un problema al guardar.",
         variant: "destructive",
       })
     } finally {
@@ -227,28 +289,24 @@ export function BlockScheduleModal({
     if (!blockToEdit) return
 
     setIsSaving(true)
+    console.log(`[BlockScheduleModal] Deleting block ID: ${blockToEdit.id}`)
 
     try {
-      // Eliminar bloque
-      await deleteBlock(String(blockToEdit.id))
-      
-      toast({
-        title: "Bloque eliminado",
-        description: "El bloque se ha eliminado correctamente",
-      })
+      const success = await deleteCabinOverride(blockToEdit.id)
 
-      // Llamar al callback si existe
-      if (onBlockSaved) {
-        onBlockSaved()
+      if (success) {
+        if (onBlockSaved) {
+          onBlockSaved()
+        }
+        onOpenChange(false)
+      } else {
+        console.error("[BlockScheduleModal] Delete operation failed (context reported error).")
       }
-
-      // Cerrar el modal
-      onOpenChange(false)
     } catch (error) {
-      console.error("Error al eliminar el bloque:", error)
+      console.error("Error inesperado en handleDelete:", error)
       toast({
-        title: "Error",
-        description: "Hubo un problema al eliminar el bloque",
+        title: "Error Inesperado",
+        description: "Ocurrió un problema al eliminar.",
         variant: "destructive",
       })
     } finally {
@@ -257,275 +315,184 @@ export function BlockScheduleModal({
   }
 
   const onClose = () => {
-    onOpenChange(false);
+    onOpenChange(false)
   }
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(isOpen) => {
-        // Si se está cerrando el modal, forzar actualización
-        if (!isOpen && onBlockSaved) {
-          onBlockSaved()
-        }
-        onOpenChange(isOpen)
-      }}
-    >
-      <DialogContent className="sm:max-w-[500px] max-h-[85vh] overflow-y-auto">
-        <DialogTitle className="text-2xl font-bold mb-4">
-          {blockToEdit ? "Editar bloqueo" : "Bloquear agenda"}
-        </DialogTitle>
-        <div className="flex flex-col space-y-4 overflow-y-auto pr-1">
-          <div className="grid grid-cols-3 gap-4">
-            <div className="col-span-1">
-              <Label htmlFor="date" className="text-base font-medium">
-                Fecha
-              </Label>
-              <div className="mt-1">
-                <DatePickerButton
-                  currentDate={date}
-                  setCurrentDate={setDate}
-                  buttonMaxWidth={140}
-                  calendarWidth={240}
-                  isDayActive={() => true}
-                  isFormField={true}
-                  buttonClassName="w-full"
-                />
-              </div>
-            </div>
-            <div className="col-span-1">
-              <Label htmlFor="startTime" className="text-base font-medium">
-                Hora Inicio
-              </Label>
-              <div className="mt-1">
-                <Select 
-                  value={startTime} 
-                  onValueChange={(value) => {
-                    if (value !== startTime) {
-                      setStartTime(value);
-                    }
-                  }}
-                  defaultValue={startTime}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Seleccione hora" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableHours.map((hour) => (
-                      <SelectItem key={hour} value={hour}>
-                        {hour}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="col-span-1">
-              <Label htmlFor="endTime" className="text-base font-medium">
-                Hora Fin
-              </Label>
-              <div className="mt-1">
-                <Select 
-                  value={endTime} 
-                  onValueChange={(value) => {
-                    if (value !== endTime) {
-                      setEndTime(value);
-                    }
-                  }}
-                  defaultValue={endTime}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Seleccione hora" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableHours
-                      .filter((hour) => hour > startTime)
-                      .map((hour) => (
-                        <SelectItem key={hour} value={hour}>
-                          {hour}
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </div>
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-[600px] flex flex-col max-h-[90vh]">
+        <DialogHeader className="px-6 py-4 border-b"> 
+          <DialogTitle>{blockToEdit ? "Editar Bloqueo" : "Nuevo Bloqueo"}</DialogTitle>
+          <DialogDescription>
+            {blockToEdit ? "Modifica los detalles del bloqueo." : "Define los detalles para bloquear horarios."}
+          </DialogDescription>
+        </DialogHeader>
 
-          <div className="border rounded-lg p-4">
-            <div className="grid grid-cols-2 gap-x-6 gap-y-3">
-              {cabins.map((cabin) => (
-                <div key={cabin.id} className="flex items-center">
-                  <Checkbox
-                    id={`cabin-${cabin.id}`}
-                    checked={selectedRooms.includes(cabin.id.toString())}
-                    onCheckedChange={(checked) => {
-                      if (checked) {
-                        setSelectedRooms([...selectedRooms, cabin.id.toString()])
-                      } else {
-                        setSelectedRooms(selectedRooms.filter((id) => id !== cabin.id.toString()))
-                      }
-                    }}
-                    className="mr-2 h-4 w-4"
-                  />
-                  <Label htmlFor={`cabin-${cabin.id}`} className="text-sm cursor-pointer">
-                    {cabin.name}
-                  </Label>
+        <div className="flex-1 pl-2 pr-4 -mr-4 overflow-y-auto custom-scrollbar"> 
+          <div className="grid gap-6 px-6 py-4"> 
+            {/* Bloque Fecha y Horas */}
+            <div className="grid items-start grid-cols-3 gap-4"> 
+              {/* Columna 1: Fecha Inicio */}
+              <div> 
+                <Label htmlFor="date" className="block mb-1 text-sm font-medium">Fecha Inicio</Label>
+                <DatePickerButton currentDate={date} setCurrentDate={setDate} isDayActive={() => true} />
+              </div>
+              {/* Columna 2: Hora Inicio */}
+              <div>
+                <Label htmlFor="startTime" className="block mb-1 text-sm font-medium">Hora Inicio</Label>
+                <Select value={startTime} onValueChange={setStartTime}>
+                   <SelectTrigger className="w-full"><SelectValue placeholder="Inicio" /></SelectTrigger>
+                   <SelectContent>
+                     {availableHours.map((hour) => ( 
+                       <SelectItem key={`start-${hour}`} value={hour}>
+                         {hour}
+                       </SelectItem>
+                     ))}
+                   </SelectContent>
+                 </Select>
+              </div>
+              {/* Columna 3: Hora Fin */}
+              <div>
+                <Label htmlFor="endTime" className="block mb-1 text-sm font-medium">Hora Fin</Label>
+                 <Select value={endTime} onValueChange={setEndTime}>
+                   <SelectTrigger className="w-full"><SelectValue placeholder="Fin" /></SelectTrigger>
+                   <SelectContent>
+                     {availableHours.filter(h => h > startTime).map((hour) => ( 
+                       <SelectItem key={`end-${hour}`} value={hour}>
+                         {hour}
+                       </SelectItem>
+                     ))}
+                   </SelectContent>
+                 </Select>
+              </div>
+            </div>
+
+            {/* <<< ORDEN CORRECTO: Selección de Cabinas PRIMERO >>> */}
+            <div>
+              <Label className="block mb-1 text-sm font-medium">Cabinas</Label>
+              <div className="p-4 space-y-3 border rounded-md">
+                <div className="flex justify-end">
+                  <Button variant="link" size="sm" onClick={handleSelectAllRooms} className="h-auto p-0">
+                    {selectedRooms.length === cabins.length ? "Deseleccionar todas" : "Seleccionar todas"}
+                  </Button>
                 </div>
-              ))}
-            </div>
-            <div className="mt-3 pt-3 border-t">
-              <div className="flex items-center">
-                <Checkbox
-                  id="all-cabins"
-                  checked={selectedRooms.length === cabins.length}
-                  onCheckedChange={(checked) => {
-                    if (checked) {
-                      setSelectedRooms(cabins.map((cabin) => cabin.id.toString()))
-                    } else {
-                      setSelectedRooms([])
-                    }
-                  }}
-                  className="mr-2 h-4 w-4"
-                />
-                <Label htmlFor="all-cabins" className="text-sm cursor-pointer">
-                  (Todas las cabinas)
-                </Label>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center space-x-2">
-            <Checkbox
-              id="repeat"
-              checked={isRecurring}
-              onCheckedChange={(checked) => setIsRecurring(checked === true)}
-              className="h-5 w-5"
-            />
-            <Label htmlFor="repeat" className="text-base font-medium cursor-pointer">
-              Repetición
-            </Label>
-          </div>
-
-          {isRecurring && (
-            <div className="border rounded-lg p-4">
-              <div className="grid grid-cols-7 gap-2 mb-4">
-                {["L", "M", "X", "J", "V", "S", "D"].map((day, index) => (
-                  <div key={day} className="flex flex-col items-center">
-                    <span className="text-sm mb-1">{day}</span>
-                    <Checkbox
-                      id={`day-${index}`}
-                      checked={selectedDays.includes(index)}
-                      onCheckedChange={(checked) => {
-                        if (checked) {
-                          setSelectedDays([...selectedDays, index])
-                        } else {
-                          setSelectedDays(selectedDays.filter((d) => d !== index))
-                        }
-                      }}
-                      className="h-4 w-4"
-                    />
-                  </div>
-                ))}
-              </div>
-              <div className="flex items-center pt-3 border-t mb-4">
-                <Checkbox
-                  id="all-days"
-                  checked={selectedDays.length === 7}
-                  onCheckedChange={handleSelectAllDays}
-                  className="mr-2 h-4 w-4"
-                />
-                <Label htmlFor="all-days" className="text-sm cursor-pointer">
-                  (Todos)
-                </Label>
-              </div>
-              <div className="flex items-center pt-3 border-t">
-                <Label htmlFor="until" className="text-sm font-medium mr-4">
-                  Hasta
-                </Label>
-                <div className="flex-1">
-                  <DatePickerButton
-                    currentDate={endDate || addDays(new Date(), 30)}
-                    setCurrentDate={setEndDate}
-                    buttonMaxWidth={160}
-                    calendarWidth={240}
-                    isDayActive={() => true}
-                    isFormField={true}
-                    buttonClassName="w-full"
-                  />
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  {cabins.map((room) => (
+                    <div key={room.id} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={`room-${room.id}`}
+                        checked={selectedRooms.includes(room.id)}
+                        onCheckedChange={() => handleRoomToggle(room.id)}
+                      />
+                      <Label htmlFor={`room-${room.id}`} className="font-normal cursor-pointer">{room.name}</Label>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
-          )}
-
-          <div>
-            <Label htmlFor="description" className="text-base font-medium">
-              Descripción
-            </Label>
-            <div className="mt-1 relative">
-              <style jsx global>{`
-                .custom-textarea {
-                  min-height: 100px;
-                  width: 100%;
-                  resize: none;
-                  border: 2px solid #e9d5ff;
-                  border-radius: 0.375rem;
-                  padding: 0.5rem;
-                  color: #374151;
-                }
-                
-                .custom-textarea::placeholder {
-                  color: #9ca3af;
-                }
-                
-                .custom-textarea:focus {
-                  outline: none;
-                  border-color: #a855f7;
-                  box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.2);
-                }
-              `}</style>
+            
+            {/* <<< ORDEN CORRECTO: Descripción DESPUÉS >>> */}
+            <div>
+              <Label htmlFor="description" className="block mb-1 text-sm font-medium">Descripción</Label>
               <textarea
                 id="description"
-                placeholder="Añade una descripción para este bloqueo..."
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                className="custom-textarea"
+                placeholder="(Opcional)"
+                className="w-full p-2 border rounded min-h-[60px] text-sm"
               />
             </div>
+
+            {/* Recurrencia */}
+            <div className="p-4 space-y-3 border rounded-md">
+              <div className="flex items-center space-x-2">
+                <Checkbox 
+                  id="recurring" 
+                  checked={isRecurring} 
+                  onCheckedChange={(checked) => {
+                    const isChecking = Boolean(checked);
+                    setIsRecurring(isChecking);
+                    // <<< Lógica de preselección >>>
+                    if (isChecking && selectedDays.length === 0) {
+                      const currentDayIndex = date.getDay(); // 0 = Domingo, 1 = Lunes, ..., 6 = Sábado
+                      setSelectedDays([currentDayIndex]);
+                      console.log(`Pre-selecting day ${currentDayIndex} based on start date.`);
+                    }
+                  }}
+                />
+                <label htmlFor="recurring" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                  Este bloqueo se repite semanalmente
+                </label>
+              </div>
+            </div>
+
+            {/* Selección de Días (si es recurrente) */}
+            {isRecurring && (
+              <div className="pt-4 pl-6 ml-3 space-y-3 border-l"> 
+                 <div>
+                   <Label className="block mb-1 text-sm font-medium">Días de Repetición</Label>
+                    <div className="flex justify-end">
+                      <Button variant="link" size="sm" onClick={handleSelectAllDays} className="h-auto p-0">
+                        {selectedDays.length === 7 ? "Deseleccionar todos" : "Seleccionar todos"}
+                      </Button>
+                    </div>
+                   <div className="flex space-x-1">
+                     {weekDayMap.map(({ abbr, index }) => ( // Usar weekDayMap con índices 0-6
+                       <Button
+                         key={abbr}
+                         variant={'outline'}
+                         size="sm"
+                         className={cn(
+                            "flex-1",
+                            selectedDays.includes(index) // <<< Usar índice 0-6
+                              ? "bg-purple-600 hover:bg-purple-700 text-white" 
+                              : "text-gray-700"
+                         )}
+                         onClick={() => handleDayToggle(index)} // <<< Usar índice 0-6
+                       >
+                         {abbr}
+                       </Button>
+                     ))}
+                   </div>
+                 </div>
+                 {/* Fecha Fin Recurrencia */}
+                 <div>
+                    <Label htmlFor="recurrenceEndDate" className="block mb-1 text-sm font-medium">
+                       Fin Recurrencia
+                    </Label>
+                    <DatePickerButton 
+                      currentDate={recurrenceEndDate} 
+                      setCurrentDate={setRecurrenceEndDate} 
+                      isDayActive={() => true}
+                    />
+                 </div>
+               </div>
+            )}
           </div>
         </div>
 
-        <DialogFooter className="flex justify-between w-full">
-          <div>
+        <DialogFooter>
+          <div className="flex justify-between w-full">
             {blockToEdit && (
-              <div className="flex gap-2">
-                <Button variant="destructive" onClick={handleDelete} size="sm">
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Borrar
-                </Button>
-              </div>
+              <Button variant="destructive" onClick={handleDelete} disabled={isSaving} className="flex items-center">
+                {isSaving ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Trash2 className="w-4 h-4 mr-2" />
+                )}
+                Eliminar Bloqueo
+              </Button>
             )}
-          </div>
-          <div className="flex space-x-2">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
-              Cancelar
-            </Button>
-            <Button
-              onClick={handleSave}
-              className="bg-purple-600 hover:bg-purple-700 text-white px-4"
-              disabled={isSaving}
-              type="button"
-            >
-              {isSaving ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Guardando...
-                </>
-              ) : blockToEdit ? (
-                "Actualizar"
-              ) : (
-                "Guardar"
-              )}
-            </Button>
+            {!blockToEdit && <div />}
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={onClose} disabled={isSaving}>
+                Cancelar
+              </Button>
+              <Button onClick={handleSave} disabled={isSaving} className="bg-purple-600 hover:bg-purple-700">
+                {isSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                {blockToEdit ? "Guardar Cambios" : "Guardar Bloqueo"}
+              </Button>
+            </div>
           </div>
         </DialogFooter>
       </DialogContent>

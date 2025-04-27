@@ -56,18 +56,19 @@
   border: 1px solid #e5e7eb;
   height: 40px;
   background-color: white;
-  z-index: var(--z-cells);
+  /* z-index: var(--z-cells); */ /* Comentado temporalmente si usamos Tailwind */
 }
 
 /* Elementos superpuestos como citas o bloques */
 .agenda-event {
   position: absolute;
-  z-index: var(--z-events);
+  /* z-index: var(--z-events); */ /* Comentado temporalmente */
   border-radius: 4px;
   box-shadow: 0 1px 2px rgba(0,0,0,0.1);
 }
 
-/* Columna de horas - sticky horizontal */
+/* --- Sección Sticky Comentada Temporalmente --- */
+/*
 .hour-column,
 .agenda-body .grid-container [class*="sticky"][class*="left-0"],
 div[class*="sticky"][class*="left-0"] {
@@ -78,20 +79,17 @@ div[class*="sticky"][class*="left-0"] {
   box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
 }
 
-/* Cabeceras de días y cabinas */
 .day-header,
 .grid-header-cell,
 div[class*="sticky"][class*="top-0"]:not([class*="left-0"]) {
   position: sticky !important;
   top: 0 !important;
-  /* z-index: 9999 !important; */ /* Usar variable */
   z-index: var(--z-day-headers) !important;
   background-color: white !important;
   border-bottom: 1px solid #e5e7eb !important;
-  transform: translateZ(0); /* Mantener por si acaso */
+  transform: translateZ(0); 
 }
 
-/* Cabecera especial "Hora" - esquina superior izquierda */
 .hour-header,
 div.sticky.left-0.top-0.hour-header,
 div[class*="sticky"][class*="left-0"][class*="top-0"][class*="hour-header"],
@@ -100,12 +98,14 @@ div[class*="sticky"][class*="left-0"][class*="top-0"] {
   position: sticky !important;
   left: 0;
   top: 0;
-  z-index: var(--z-hour-header) !important; /* Usar variable y !important */
+  z-index: var(--z-hour-header) !important; 
   background-color: white;
   box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.15);
 }
+*/
+/* --- Fin Sección Sticky Comentada --- */
 
-/* Indicador de tiempo actual */
+/* Indicador de tiempo actual (mantener por ahora, ajustar z-index si es necesario) */
 .current-time-indicator {
   position: absolute !important;
   left: 0 !important;
@@ -184,9 +184,11 @@ body:has(.current-time-indicator) .current-time-indicator span {
 }
 */
 
-/* Soporte para WebKit */
+/* Comentar también la regla de soporte Webkit */
+/*
 @supports (-webkit-touch-callout: none) {
   .hour-header { position: -webkit-sticky; z-index: var(--z-hour-header) !important; }
   .day-header { position: -webkit-sticky; z-index: var(--z-day-headers) !important; }
   .hour-column { position: -webkit-sticky; z-index: var(--z-hour-column); }
 } 
+*/ 

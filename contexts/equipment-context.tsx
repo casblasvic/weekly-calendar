@@ -1,15 +1,17 @@
 "use client"
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from "react"
+import React, { createContext, useContext, useState, useEffect, ReactNode, useMemo } from "react"
 import { useInterfaz } from "./interfaz-Context"
-import { Equipo as EquipoModel, EntityImage } from "@/services/data/models/interfaces"
+import type { Equipment, EntityImage, Clinic as PrismaClinic } from "@prisma/client"
+import { useClinic } from "./clinic-context"
+import { useSession } from "next-auth/react"
 
 // Definir alias para los tipos usando los tipos del modelo central
-export type Equipo = EquipoModel;
-export type EquipoImage = EntityImage;
+// export type Equipo = EquipoModel;
+// export type EquipoImage = EntityImage;
 
 // Tipo extendido para equipo con imágenes
-export interface EquipoWithImages extends Equipo {
+export interface EquipoWithImages extends Equipment {
   images?: Array<{
     id: string;
     url: string;
@@ -19,31 +21,41 @@ export interface EquipoWithImages extends Equipo {
 }
 
 export interface EquipmentContextType {
-  allEquipos: Equipo[]
-  getClinicEquipos: (clinicId: string) => Equipo[]
-  getEquipoById: (id: string) => Promise<Equipo | null>
-  addEquipo: (equipo: Omit<Equipo, 'id'>) => Promise<Equipo>
-  updateEquipo: (id: string, data: Partial<Equipo>) => Promise<boolean>
+  allEquipos: Equipment[]
+  getClinicEquipos: (clinicId: string) => Equipment[]
+  getEquipoById: (id: string) => Promise<Equipment | null>
+  addEquipo: (equipoData: Partial<Equipment>) => Promise<Equipment | null>
+  updateEquipo: (id: string, data: Partial<Equipment>) => Promise<boolean>
   deleteEquipo: (id: string) => Promise<boolean>
   refreshEquipos: () => Promise<void>
   clinics: Array<{id: string, name: string}>
   saveEquipo: (data: EquipoWithImages) => Promise<boolean>
-  getEquipoImages: (equipoId: string) => Promise<EquipoImage[]>
-  getEquipoPrimaryImage: (equipoId: string) => Promise<EquipoImage | undefined>
-  getEquiposByClinicaId: (clinicId: string) => Promise<Equipo[]>
-  getGlobalEquipos: () => Promise<Equipo[]>
-  createEquipo: (equipo: Omit<Equipo, 'id'>) => Promise<Equipo>
+  getEquipoImages: (equipoId: string) => Promise<EntityImage[]>
+  getEquipoPrimaryImage: (equipoId: string) => Promise<EntityImage | undefined>
+  getGlobalEquipos: () => Promise<Equipment[]>
+  loading: boolean;
 }
 
 const EquipmentContext = createContext<EquipmentContextType | undefined>(undefined)
 
 export const EquipmentProvider: React.FC<{children: ReactNode}> = ({ children }) => {
-  const [allEquipos, setAllEquipos] = useState<Equipo[]>([])
-  const [clinics, setClinics] = useState<Array<{id: string, name: string}>>([])
-  const [dataFetched, setDataFetched] = useState(false)
+  const [allEquipos, setAllEquipos] = useState<Equipment[]>([])
+  const [loadingEquipos, setLoadingEquipos] = useState(true)
   const interfaz = useInterfaz();
+  const { data: session, status: sessionStatus } = useSession();
+  const { 
+    clinics: clinicListFromContext, 
+    isLoading: isLoadingClinics, 
+    activeClinic
+  } = useClinic();
 
-  // Función para disparar eventos de actualización
+  const formattedClinics = useMemo(() => {
+    return (clinicListFromContext || []).map((clinic: PrismaClinic) => ({ 
+      id: String(clinic.id),
+      name: clinic.name
+    }));
+  }, [clinicListFromContext]);
+
   const dispatchUpdateEvent = (equipoId: string = '', action: string) => {
     try {
       window.dispatchEvent(new CustomEvent("equipment-updated", {
@@ -51,81 +63,53 @@ export const EquipmentProvider: React.FC<{children: ReactNode}> = ({ children })
       }));
     } catch (eventError) {
       console.error("Error al disparar evento de actualización de equipamiento:", eventError);
-      // No bloqueamos la operación principal por un error en el evento
     }
   };
 
-  // Cargar todo el equipamiento al inicializar
   const loadAllEquipos = async () => {
-    if (interfaz.initialized && !dataFetched) {
-      try {
-        // Obtener el equipamiento de todas las clínicas
-        const equipos = await interfaz.getAllEquipos();
-        setAllEquipos(equipos || []);
-        setDataFetched(true);
-        console.log("EquipmentContext: Datos cargados correctamente");
-      } catch (error) {
-        console.error("Error al cargar equipamiento:", error);
-        setAllEquipos([]);
-      }
-    }
-  };
-
-  // Cargar clínicas al inicializar
-  const loadClinics = async () => {
-    if (!interfaz.initialized) {
-      return;
-    }
-    
+    setLoadingEquipos(true);
     try {
-      const clinicasData = await interfaz.getActiveClinicas();
-      const formattedClinics = clinicasData.map(clinica => ({
-        id: clinica.id,
-        name: clinica.name
-      }));
-      setClinics(formattedClinics);
-      console.log("EquipmentContext: Clínicas cargadas correctamente");
+      const equipos = await interfaz.getAllEquipos();
+      setAllEquipos((equipos as Equipment[]) || []);
     } catch (error) {
-      console.error("Error al cargar clínicas:", error);
-      setClinics([]);
+      console.error("Error al cargar equipamiento:", error);
+      setAllEquipos([]);
+    } finally {
+      setLoadingEquipos(false);
     }
   };
 
-  // Cargar datos iniciales
   useEffect(() => {
-    const loadData = async () => {
-      if (interfaz.initialized && !dataFetched) {
-        await loadAllEquipos();
-        await loadClinics();
-      }
-    };
-    
-    loadData();
-    
-    // Escuchar eventos de cambio de datos
-    const handleEquipmentUpdate = (e: CustomEvent) => {
-      const { action } = e.detail;
-      if (action) {
+    if (interfaz.initialized && sessionStatus === 'authenticated') {
+       loadAllEquipos();
+    } else if (sessionStatus !== 'loading') {
+       setAllEquipos([]);
+       setLoadingEquipos(false);
+    }
+
+    const handleEquipmentUpdate = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail && detail.action) {
         refreshEquipos();
       }
     };
-    
-    window.addEventListener('equipment-updated' as any, handleEquipmentUpdate);
-    return () => {
-      window.removeEventListener('equipment-updated' as any, handleEquipmentUpdate);
-    };
-  }, [interfaz.initialized, dataFetched]);
 
-  // Filtrar equipamiento por clínica
-  const getClinicEquipos = (clinicId: string) => {
+    window.addEventListener('equipment-updated', handleEquipmentUpdate);
+    return () => {
+      window.removeEventListener('equipment-updated', handleEquipmentUpdate);
+    };
+  }, [interfaz.initialized, sessionStatus]);
+
+  const loading = isLoadingClinics || loadingEquipos;
+
+  const getClinicEquipos = (clinicId: string): Equipment[] => {
     if (!allEquipos || allEquipos.length === 0) {
       return [];
     }
-    return allEquipos.filter(equip => equip.clinicId.toString() === clinicId);
+    return allEquipos.filter(equip => String(equip.clinicId) === String(clinicId));
   };
 
-  // Obtener un equipo por ID
-  const getEquipoById = async (id: string): Promise<Equipo | null> => {
+  const getEquipoById = async (id: string): Promise<Equipment | null> => {
     if (!id) {
       console.warn("Se solicitó un equipo con ID vacío");
       return null;
@@ -134,7 +118,6 @@ export const EquipmentProvider: React.FC<{children: ReactNode}> = ({ children })
     try {
       const equipo = await interfaz.getEquipoById(id);
       
-      // Si no se encuentra en la interfaz pero está en nuestro estado local
       if (!equipo) {
         const equipoLocal = allEquipos.find(e => e.id === id);
         if (equipoLocal) {
@@ -144,11 +127,10 @@ export const EquipmentProvider: React.FC<{children: ReactNode}> = ({ children })
         return null;
       }
       
-      return equipo;
+      return equipo as Equipment;
     } catch (error) {
       console.error(`Error al obtener equipo ${id}:`, error);
       
-      // Intentar recuperar del estado local en caso de error
       const equipoLocal = allEquipos.find(e => e.id === id);
       if (equipoLocal) {
         console.log("Equipo recuperado del estado local tras error:", id);
@@ -159,55 +141,65 @@ export const EquipmentProvider: React.FC<{children: ReactNode}> = ({ children })
     }
   };
 
-  // Añadir nuevo equipo
-  const addEquipo = async (equipoData: Omit<Equipo, 'id'>): Promise<Equipo> => {
+  const addEquipo = async (equipoData: Partial<Equipment>): Promise<Equipment | null> => {
     try {
-      // Validar datos mínimos
-      if (!equipoData.name || !equipoData.code) {
-        throw new Error("Nombre y código son campos obligatorios para crear equipamiento");
+      if (!equipoData.name || !equipoData.deviceId) {
+         throw new Error("Nombre y Device ID son campos obligatorios para crear equipamiento");
       }
+
+      const currentSystemId = activeClinic?.systemId;
+      if (!currentSystemId) {
+         throw new Error("No se pudo obtener el systemId de la clínica activa.");
+      }
+
+      const dataToCreate: Omit<Equipment, 'id' | 'createdAt' | 'updatedAt'> = {
+        name: equipoData.name,
+        deviceId: equipoData.deviceId,
+        clinicId: equipoData.clinicId ?? null,
+        systemId: currentSystemId,
+        description: equipoData.description ?? null,
+        serialNumber: equipoData.serialNumber ?? null,
+        modelNumber: equipoData.modelNumber ?? null,
+        purchaseDate: equipoData.purchaseDate ?? null,
+        warrantyEndDate: equipoData.warrantyEndDate ?? null,
+        location: equipoData.location ?? null,
+        notes: equipoData.notes ?? null,
+        isActive: equipoData.isActive ?? true,
+      };
       
-      // Crear el equipo a través de la interfaz
-      const newEquipo = await interfaz.createEquipo(equipoData);
-      
+      const newEquipo = await interfaz.createEquipo(dataToCreate);
+
       if (!newEquipo || !newEquipo.id) {
         throw new Error("No se pudo crear el equipo. Respuesta incompleta del servidor.");
       }
-      
-      // Actualizar el estado local
-      setAllEquipos(prev => [...prev, newEquipo]);
-      
-      // Notificar cambio
-      dispatchUpdateEvent(newEquipo.id, 'create');
-      
-      return newEquipo;
+
+      setAllEquipos(prev => [...prev, newEquipo as Equipment]);
+      dispatchUpdateEvent(String(newEquipo.id), 'create');
+      return newEquipo as Equipment;
     } catch (error) {
       console.error("Error al añadir equipo:", error);
-      throw error;
+      return null;
     }
   };
 
-  // Actualizar equipo existente
-  const updateEquipo = async (id: string, data: Partial<Equipo>): Promise<boolean> => {
+  const updateEquipo = async (id: string, data: Partial<Equipment>): Promise<boolean> => {
     if (!id) {
       console.warn("Se intentó actualizar un equipo con ID vacío");
       return false;
     }
     
     try {
-      // Actualizar el equipo a través de la interfaz
-      const updated = await interfaz.updateEquipo(id, data);
+      const equipoActualizado = await interfaz.updateEquipo(id, data);
       
-      if (!updated) {
-        throw new Error("No se pudo actualizar el equipo.");
+      if (!equipoActualizado) {
+        console.warn(`Fallo al actualizar equipo ${id} desde la interfaz.`);
+        return false;
       }
       
-      // Actualizar el estado local
       setAllEquipos(prev => 
-        prev.map(item => item.id === id ? { ...item, ...data } : item)
+        prev.map(item => item.id === id ? { ...item, ...data } as Equipment : item)
       );
       
-      // Notificar cambio
       dispatchUpdateEvent(id, 'update');
       
       return true;
@@ -217,7 +209,6 @@ export const EquipmentProvider: React.FC<{children: ReactNode}> = ({ children })
     }
   };
 
-  // Eliminar equipo
   const deleteEquipo = async (id: string): Promise<boolean> => {
     if (!id) {
       console.warn("Se intentó eliminar un equipo con ID vacío");
@@ -225,19 +216,13 @@ export const EquipmentProvider: React.FC<{children: ReactNode}> = ({ children })
     }
     
     try {
-      // Eliminar el equipo a través de la interfaz
       const success = await interfaz.deleteEquipo(id);
-      
       if (!success) {
-        throw new Error("No se pudo eliminar el equipo.");
+        console.error(`Fallo al eliminar equipo ${id} desde la interfaz.`);
+        return false;
       }
-      
-      // Actualizar el estado local
       setAllEquipos(prev => prev.filter(item => item.id !== id));
-      
-      // Notificar cambio
       dispatchUpdateEvent(id, 'delete');
-      
       return true;
     } catch (error) {
       console.error("Error al eliminar equipo:", error);
@@ -245,175 +230,99 @@ export const EquipmentProvider: React.FC<{children: ReactNode}> = ({ children })
     }
   };
 
-  // Actualizar lista de equipos
   const refreshEquipos = async (): Promise<void> => {
-    try {
-      const equipos = await interfaz.getAllEquipos();
-      setAllEquipos(equipos || []);
-      console.log("Lista de equipamiento actualizada");
-    } catch (error) {
-      console.error("Error al actualizar lista de equipamiento:", error);
-    }
+    await loadAllEquipos();
   };
 
-  // Guardar equipo con imágenes
   const saveEquipo = async (data: EquipoWithImages): Promise<boolean> => {
+    const { images, ...equipoData } = data;
+    let success = false;
     try {
-      let equipoId: string;
-      
-      if (data.id) {
-        // Si tiene ID, actualizar equipo existente
-        const { id, ...equipoData } = data;
-        await updateEquipo(id, equipoData);
-        equipoId = id;
+      let idToDispatch: string | undefined = equipoData.id ? String(equipoData.id) : undefined;
+      if (equipoData.id) {
+        const equipoActualizado = await interfaz.updateEquipo(String(equipoData.id), equipoData as any);
+        success = !!equipoActualizado;
       } else {
-        // Si no tiene ID, crear nuevo equipo
-        const newEquipo = await addEquipo(data as Omit<Equipo, 'id'>);
-        equipoId = newEquipo.id;
-      }
-      
-      // Procesar y subir imágenes si existen
-      if (data.images && data.images.length > 0 && equipoId) {
-        try {
-          // Subir cada imagen y crear array de objetos EntityImage
-          const uploadedImages: EquipoImage[] = [];
-          
-          for (let i = 0; i < data.images.length; i++) {
-            const image = data.images[i];
-            
-            // Preparar FormData para subir archivo
-            const formData = new FormData();
-            formData.append('file', image.file);
-            formData.append('entityType', 'equipment');
-            formData.append('entityId', equipoId);
-            
-            // Hacer petición para subir el archivo
-            const response = await fetch('/api/upload', {
-              method: 'POST',
-              body: formData
-            });
-            
-            if (!response.ok) {
-              console.error(`Error al subir imagen ${i}: ${response.statusText}`);
-              continue;
-            }
-            
-            const result = await response.json();
-            
-            // Crear objeto EntityImage con la respuesta
-            const imageData: EquipoImage = {
-              id: result.id || `temp-${Date.now()}-${i}`,
-              url: result.url,
-              isPrimary: i === 0, // La primera imagen será la principal
-              path: result.path || ''
-            };
-            
-            uploadedImages.push(imageData);
-          }
-          
-          // Guardar referencias de imágenes
-          if (uploadedImages.length > 0) {
-            await interfaz.saveEntityImages('equipment', equipoId, uploadedImages);
-            dispatchUpdateEvent(equipoId, 'update-images');
-          }
-        } catch (imageError) {
-          console.error("Error al procesar imágenes:", imageError);
-          // Continuar aunque haya error con las imágenes
+        const newEquipo = await interfaz.createEquipo(equipoData as any);
+        if (newEquipo && newEquipo.id) {
+          equipoData.id = String(newEquipo.id);
+          idToDispatch = equipoData.id;
+          success = true;
         }
       }
-      
+
+      if (!success || !equipoData.id) {
+        throw new Error("Error al guardar los datos base del equipo");
+      }
+
+      if (images && images.length > 0) {
+        console.log("Procesando imágenes para equipo:", equipoData.id);
+        await interfaz.saveEntityImages('Equipment', String(equipoData.id), images as any);
+        console.log("Imágenes procesadas.");
+      }
+
+      await refreshEquipos(); 
+      if (idToDispatch) {
+        dispatchUpdateEvent(idToDispatch, data.id ? 'update' : 'create');
+      }
       return true;
+
     } catch (error) {
-      console.error("Error al guardar equipo:", error);
+      console.error("Error guardando equipo (saveEquipo):", error);
       return false;
     }
   };
 
-  // Obtener imágenes de un equipo
-  const getEquipoImages = async (equipoId: string): Promise<EquipoImage[]> => {
-    if (!equipoId) {
-      console.warn("Se solicitaron imágenes con ID de equipo vacío");
-      return [];
-    }
-    
+  const getEquipoImages = async (equipoId: string): Promise<EntityImage[]> => {
     try {
-      const imagenes = await interfaz.getEntityImages('equipment', equipoId);
-      return imagenes || [];
+      const images = await interfaz.getEntityImages('Equipment', equipoId);
+      return images as any || [];
     } catch (error) {
-      console.error(`Error al obtener imágenes del equipo ${equipoId}:`, error);
+      console.error("Error al obtener imágenes del equipo:", error);
       return [];
     }
   };
 
-  // Obtener imagen principal de un equipo
-  const getEquipoPrimaryImage = async (equipoId: string): Promise<EquipoImage | undefined> => {
-    if (!equipoId) {
-      console.warn("Se solicitó imagen principal con ID de equipo vacío");
-      return undefined;
-    }
-    
+  const getEquipoPrimaryImage = async (equipoId: string): Promise<EntityImage | undefined> => {
     try {
-      const images = await getEquipoImages(equipoId);
-      return images.find(img => img.isPrimary);
+      const images = await interfaz.getEntityImages('Equipment', equipoId);
+      const primary = (images as any[])?.find((img: any) => img.isPrimary);
+      return primary || undefined;
     } catch (error) {
-      console.error(`Error al obtener imagen principal del equipo ${equipoId}:`, error);
+      console.error("Error al obtener imagen principal del equipo:", error);
       return undefined;
     }
   };
 
-  // Obtener todos los equipos (ya no hay concepto de "equipos globales")
-  const getGlobalEquipos = async (): Promise<Equipo[]> => {
+  const getGlobalEquipos = async (): Promise<Equipment[]> => {
     try {
-      if (!interfaz.initialized) {
-        console.warn("La interfaz no está inicializada para obtener equipamiento global");
-        return [];
+      const allCurrentEquipos = allEquipos.length > 0 ? allEquipos : (await interfaz.getAllEquipos() as any[] || []);
+      if (allEquipos.length === 0 && allCurrentEquipos.length > 0) {
+         setAllEquipos(allCurrentEquipos as Equipment[]);
       }
-      
-      // Devolver todos los equipos de todas las clínicas
-      return allEquipos;
+      return allCurrentEquipos.filter(eq => !(eq as any).clinicId);
     } catch (error) {
-      console.error("Error al obtener equipamiento global:", error);
+      console.error("Error al obtener equipos globales:", error);
       return [];
     }
-  };
-  
-  // Obtener equipos específicos de una clínica
-  const getEquiposByClinicaId = async (clinicId: string): Promise<Equipo[]> => {
-    try {
-      // Obtener equipos específicos para esta clínica
-      const equipos = await interfaz.getEquiposByClinicaId(clinicId);
-      return equipos;
-    } catch (error) {
-      console.error("Error al obtener equipos por clínica:", error);
-      return [];
-    }
-  };
-
-  // Crear nuevo equipo - alias para mantener convención de nombres
-  const createEquipo = async (equipo: Omit<Equipo, 'id'>): Promise<Equipo> => {
-    // Simplemente llamar a nuestro método addEquipo
-    return await addEquipo(equipo);
   };
 
   return (
-    <EquipmentContext.Provider
-      value={{
-        allEquipos,
-        getClinicEquipos,
-        getEquipoById,
-        addEquipo,
-        updateEquipo,
-        deleteEquipo,
-        refreshEquipos,
-        clinics,
-        saveEquipo,
-        getEquipoImages,
-        getEquipoPrimaryImage,
-        getEquiposByClinicaId,
-        getGlobalEquipos,
-        createEquipo
-      }}
-    >
+    <EquipmentContext.Provider value={{
+      allEquipos,
+      getClinicEquipos,
+      getEquipoById,
+      addEquipo,
+      updateEquipo,
+      deleteEquipo,
+      refreshEquipos,
+      clinics: formattedClinics,
+      saveEquipo,
+      getEquipoImages,
+      getEquipoPrimaryImage,
+      getGlobalEquipos,
+      loading
+    }}>
       {children}
     </EquipmentContext.Provider>
   );

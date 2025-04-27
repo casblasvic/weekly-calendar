@@ -63,46 +63,50 @@ export interface EntityDocument extends BaseEntity {
 
 // Interfaces de entidades principales
 
-/** Interfaz para Clínica */
+/** 
+ * Interfaz para Clínica 
+ * @deprecated Muchas propiedades aquí pueden estar obsoletas o diferir del schema de Prisma. 
+ *             Usar tipos derivados de Prisma/API como fuente de verdad.
+ */
 export interface Clinica extends BaseEntity, Activable {
-  prefix: string;
+  prefix?: string | null;
   name: string;
-  city: string | null;
-  direccion?: string;
-  telefono?: string;
+  city?: string | null;
+  // direccion?: string; // Probablemente obsoleto, usar 'address'
+  // telefono?: string; // Probablemente obsoleto, usar 'phone'/'phone2'
   email?: string | null;
-  openTime?: string | null;
-  closeTime?: string | null;
+  // openTime?: string | null; // Obsoleto: Usar bloques de horario
+  // closeTime?: string | null; // Obsoleto: Usar bloques de horario
   isActive: boolean;
-  address: string | null;
-  postalCode: string | null;
-  province: string | null;
-  countryCode: string | null;
-  timezone: string | null;
-  currency: string;
-  phone: string | null;
+  address?: string | null;
+  postalCode?: string | null;
+  province?: string | null;
+  countryCode?: string | null;
+  timezone?: string | null;
+  currency?: string | null;
+  phone?: string | null;
   systemId: string;
   linkedScheduleTemplateId?: string | null;
-  scheduleJson?: any | null;
+  // scheduleJson?: any | null; // Obsoleto: Usar bloques de horario
   linkedScheduleTemplate?: (PrismaScheduleTemplate & { blocks?: PrismaScheduleTemplateBlock[] }) | null;
   independentScheduleBlocks?: PrismaClinicScheduleBlock[] | null;
-  commercialName: string | null;
-  businessName: string | null;
-  cif: string | null;
-  country: string | null;
-  phone2: string | null;
-  initialCash: number | null;
-  ticketSize: string | null;
-  ip: string | null;
-  blockSignArea: boolean | null;
-  blockPersonalData: boolean | null;
-  delayedPayments: boolean | null;
-  affectsStats: boolean | null;
-  appearsInApp: boolean | null;
-  scheduleControl: boolean | null;
-  professionalSkills: boolean | null;
-  notes: string | null;
-  slotDuration: number | null;
+  commercialName?: string | null;
+  businessName?: string | null;
+  cif?: string | null;
+  country?: string | null;
+  phone2?: string | null;
+  initialCash?: number | null;
+  ticketSize?: string | null;
+  ip?: string | null;
+  blockSignArea?: boolean | null;
+  blockPersonalData?: boolean | null;
+  delayedPayments?: boolean | null;
+  affectsStats?: boolean | null;
+  appearsInApp?: boolean | null;
+  scheduleControl?: boolean | null;
+  professionalSkills?: boolean | null;
+  notes?: string | null;
+  // slotDuration?: number | null; // Obsoleto: Definido en plantilla o configuración independiente
   tariffId?: string | null;
   tariff?: PrismaTariff | null;
 }

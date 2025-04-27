@@ -3,20 +3,16 @@
 import { createContext, useContext, useState, type ReactNode, useEffect } from "react"
 import { useClinic } from "@/contexts/clinic-context"
 // Importar tipos directamente desde la fuente original
-import type { Clinica, ExcepcionHoraria } from "@/services/data/models/interfaces"
+// import type { Clinica } from "@/services/data/models/interfaces" // Eliminado
 import {
-  findActiveExceptions,
   isBusinessDay,
   isTimeSlotAvailable,
   getBusinessHours,
-  getDayOfWeek
 } from "@/services/clinic-schedule-service"
 import { format } from "date-fns"
 
 interface ClinicScheduleContextType {
   isWithinClinicHours: (date: Date, time: string, clinicId?: string) => boolean;
-  getActiveException: (date: Date, clinicId?: string) => ExcepcionHoraria | null;
-  isExceptionDayActive: (date: Date, clinicId?: string) => boolean;
   getAvailableHours: (date: Date, clinicId?: string) => { open: string, close: string } | null;
 }
 
@@ -25,15 +21,19 @@ const ClinicScheduleContext = createContext<ClinicScheduleContextType | undefine
 export function ClinicScheduleProvider({ children }: { children: ReactNode }) {
   const { clinics, activeClinic } = useClinic()
 
-  // Verificar si un horario está dentro de las horas de la clínica
+  // Verificar si un horario está dentro de las horas BASE de la clínica ACTIVA
   const isWithinClinicHours = (date: Date, time: string, clinicId?: string): boolean => {
     try {
-      // Usar la clínica activa por defecto o buscar por ID
-      const targetClinic = clinicId ? clinics.find(c => String(c.id) === clinicId) : activeClinic;
-      if (!targetClinic) return false; // Clínica no encontrada
+      // Si se especificó un ID, debe coincidir con la clínica activa
+      if (clinicId && clinicId !== activeClinic?.id) {
+        console.warn(`[ClinicScheduleContext] Solicitud para clinicId (${clinicId}) diferente al activo (${activeClinic?.id}). No se puede determinar el horario.`);
+        return false; 
+      }
+      // Si no hay clínica activa, no se puede determinar
+      if (!activeClinic) return false;
 
-      // Usar la función del servicio que ya considera excepciones
-      return isTimeSlotAvailable(date, time, targetClinic);
+      // Usar la clínica activa (que sí tiene los detalles del horario)
+      return isTimeSlotAvailable(date, time, activeClinic);
       
     } catch (error) {
       console.error("Error al validar horario con isTimeSlotAvailable:", error);
@@ -41,35 +41,20 @@ export function ClinicScheduleProvider({ children }: { children: ReactNode }) {
     }
   };
   
-  // Obtener excepción activa para una clínica y fecha
-  const getActiveException = (date: Date, clinicId?: string): ExcepcionHoraria | null => {
-    const targetClinic = clinicId ? clinics.find(c => String(c.id) === clinicId) : activeClinic;
-    if (!targetClinic) return null;
-    
-    // La función findActiveExceptions ya existe en el servicio
-    return findActiveExceptions(date, targetClinic);
-  };
-  
-  // Verificar si un día está activo según las excepciones
-  const isExceptionDayActive = (date: Date, clinicId?: string): boolean => {
-    const targetClinic = clinicId ? clinics.find(c => String(c.id) === clinicId) : activeClinic;
-    if (!targetClinic) return false;
-    
-    // Usar la función isBusinessDay del servicio que ya maneja excepciones
-    return isBusinessDay(date, targetClinic);
-  };
-  
-  // Obtener horarios disponibles para una fecha
+  // Obtener horarios disponibles BASE para una fecha de la clínica ACTIVA
   const getAvailableHours = (date: Date, clinicId?: string): { open: string, close: string } | null => {
-    const targetClinic = clinicId ? clinics.find(c => String(c.id) === clinicId) : activeClinic;
-    if (!targetClinic) return null;
+    // Si se especificó un ID, debe coincidir con la clínica activa
+    if (clinicId && clinicId !== activeClinic?.id) {
+      console.warn(`[ClinicScheduleContext] Solicitud para clinicId (${clinicId}) diferente al activo (${activeClinic?.id}). No se pueden obtener horas.`);
+      return null; 
+    }
+    // Si no hay clínica activa, no se puede determinar
+    if (!activeClinic) return null;
     
-    // Usar la función de utilidad que ya maneja excepciones
-    const businessHours = getBusinessHours(date, targetClinic);
+    // Usar la clínica activa
+    const businessHours = getBusinessHours(date, activeClinic);
     
     if (businessHours) {
-      // Log opcional para depuración
-      // console.log(`Horario para ${format(date, 'yyyy-MM-dd')} (clínica ${targetClinic.id}):`, businessHours);
       return businessHours;
     }
     
@@ -79,8 +64,6 @@ export function ClinicScheduleProvider({ children }: { children: ReactNode }) {
   return (
     <ClinicScheduleContext.Provider value={{
       isWithinClinicHours,
-      getActiveException,
-      isExceptionDayActive,
       getAvailableHours
     }}>
       {children}
@@ -96,4 +79,6 @@ export function useClinicSchedule() {
   }
   
   return context
-} 
+}
+
+export { ClinicScheduleContext }; 

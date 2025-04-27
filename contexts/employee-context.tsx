@@ -1,14 +1,14 @@
 "use client"
 
 import { createContext, useContext, useState, useEffect, ReactNode } from "react"
-import { Usuario } from "@/services/data/models/interfaces"
+import { User } from "@prisma/client"
 
 interface EmployeeContextProps {
-  empleados: Usuario[];
+  empleados: User[];
   loading: boolean;
   error: string | null;
   reloadEmployees: () => Promise<void>;
-  getEmployeeById: (id: string) => Usuario | undefined;
+  getEmployeeById: (id: string) => User | undefined;
 }
 
 const EmployeeContext = createContext<EmployeeContextProps>({
@@ -22,7 +22,7 @@ const EmployeeContext = createContext<EmployeeContextProps>({
 export const useEmployees = () => useContext(EmployeeContext)
 
 export function EmployeeProvider({ children }: { children: ReactNode }) {
-  const [empleados, setEmpleados] = useState<Usuario[]>([])
+  const [empleados, setEmpleados] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -34,33 +34,63 @@ export function EmployeeProvider({ children }: { children: ReactNode }) {
       
       // En un entorno real, aquí se cargarían los empleados desde la API
       // Por ahora, usamos datos de ejemplo
-      const mockEmpleados: Usuario[] = [
+      const mockEmpleados: User[] = [
         {
           id: "1",
-          nombre: "Juan Pérez",
+          firstName: "Juan",
+          lastName: "Pérez",
           email: "juan@ejemplo.com",
-          perfil: "médico",
-          clinicasIds: ["1", "2"],
           isActive: true,
-          telefono: "123456789"
+          phone: "123456789",
+          passwordHash: "mockHash",
+          systemId: "mockSystem",
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          login: "juanperez",
+          profileImageUrl: null,
+          phone2: null,
+          countryIsoCode: null,
+          languageIsoCode: null,
+          phone1CountryIsoCode: null,
+          phone2CountryIsoCode: null,
         },
         {
           id: "2",
-          nombre: "Ana García",
+          firstName: "Ana",
+          lastName: "García",
           email: "ana@ejemplo.com",
-          perfil: "asistente",
-          clinicasIds: ["1"],
           isActive: true,
-          telefono: "987654321"
+          phone: "987654321",
+          passwordHash: "mockHash2",
+          systemId: "mockSystem",
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          login: "anagarcia",
+          profileImageUrl: null,
+          phone2: null,
+          countryIsoCode: null,
+          languageIsoCode: null,
+          phone1CountryIsoCode: null,
+          phone2CountryIsoCode: null,
         },
         {
           id: "3",
-          nombre: "Carlos Rodríguez",
+          firstName: "Carlos",
+          lastName: "Rodríguez",
           email: "carlos@ejemplo.com",
-          perfil: "médico",
-          clinicasIds: ["2"],
           isActive: true,
-          telefono: "456789123"
+          phone: "456789123",
+          passwordHash: "mockHash3",
+          systemId: "mockSystem",
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          login: "carlosrodriguez",
+          profileImageUrl: null,
+          phone2: null,
+          countryIsoCode: null,
+          languageIsoCode: null,
+          phone1CountryIsoCode: null,
+          phone2CountryIsoCode: null,
         }
       ]
       

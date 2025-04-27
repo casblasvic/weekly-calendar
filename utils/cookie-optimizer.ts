@@ -1,67 +1,55 @@
-import { Clinica } from "@/services/data/models/interfaces"
-
-// Definir las interfaces necesarias localmente para no depender de mockData
-interface Cabin {
-  id: number
-  code: string
-  name: string
-  color: string
-  isActive: boolean
-  order: number
-}
+import { Clinic, Cabin } from "@prisma/client"; // Importar tipos de Prisma
 
 // Interfaces optimizadas para reducir el tamaño de las cookies
 export interface OptimizedClinic {
-  id: number
-  prefix: string
+  id: string
+  prefix: string | null
   name: string
-  city: string
+  city: string | null
   config: OptimizedClinicConfig
 }
 
 export interface OptimizedClinicConfig {
   openTime: string
   closeTime: string
-  weekendOpenTime: string
-  weekendCloseTime: string
-  saturdayOpen: boolean
-  sundayOpen: boolean
   slotDuration: number
   activeCabins: OptimizedCabin[]
 }
 
 export interface OptimizedCabin {
-  id: number
-  code: string
+  id: string
+  code: string | null
   name: string
-  color: string
+  color: string | null
 }
 
 /**
  * Optimiza los datos de una clínica para almacenarlos en cookies
  */
-export function optimizeClinicForCookie(clinic: Clinica & { cabins?: Cabin[] }): OptimizedClinic {
-  // Filtrar solo las cabinas activas
-  const activeCabins = (clinic.cabins || [])
-    .filter((cabin) => cabin.isActive)
-    .map((cabin) => optimizeCabinForCookie(cabin));
+export function optimizeClinicForCookie(clinic: Clinic & { cabins?: Cabin[] }): OptimizedClinicConfig {
+  const getScheduleValue = <K extends keyof Clinic['independentSchedule'] & keyof Clinic['linkedScheduleTemplate']>(
+    key: K,
+    defaultValue: NonNullable<Clinic['independentSchedule'][K]> | NonNullable<Clinic['linkedScheduleTemplate'][K]>
+  ): NonNullable<Clinic['independentSchedule'][K]> | NonNullable<Clinic['linkedScheduleTemplate'][K]> => {
+    const independentValue = (clinic as any).independentSchedule?.[key];
+    if (independentValue !== undefined && independentValue !== null) return independentValue;
+    const templateValue = (clinic as any).linkedScheduleTemplate?.[key];
+    if (templateValue !== undefined && templateValue !== null) return templateValue;
+    return defaultValue;
+  };
+
+  const openTime = getScheduleValue('openTime', "09:00");
+  const closeTime = getScheduleValue('closeTime', "20:00");
+  const slotDuration = Number(getScheduleValue('slotDuration', 15));
 
   return {
-    id: Number(clinic.id),
-    prefix: clinic.prefix || "",
-    name: clinic.name || "",
-    city: clinic.city || "",
-    config: {
-      openTime: clinic.openTime || "09:00",
-      closeTime: clinic.closeTime || "20:00",
-      weekendOpenTime: clinic.weekendOpenTime || "09:00",
-      weekendCloseTime: clinic.weekendCloseTime || "14:00",
-      saturdayOpen: clinic.saturdayOpen || false,
-      sundayOpen: clinic.sundayOpen || false,
-      slotDuration: 15, // Valor por defecto
-      activeCabins,
-    },
-  }
+    openTime: openTime,
+    closeTime: closeTime,
+    slotDuration: slotDuration,
+    activeCabins: (clinic.cabins || [])
+      .filter(cabin => cabin.isActive)
+      .map(cabin => ({ id: cabin.id, name: cabin.name, color: cabin.color, code: cabin.code }))
+  };
 }
 
 /**

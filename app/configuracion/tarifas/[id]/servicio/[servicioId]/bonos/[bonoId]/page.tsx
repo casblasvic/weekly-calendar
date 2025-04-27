@@ -7,7 +7,7 @@ export default async function EditarBonoPage({ params }: { params: Promise<{ id:
   const { id, servicioId, bonoId } = await params;
   
   return (
-    <div className="container mx-auto py-6">
+    <div className="container py-6 mx-auto">
       <Card>
         <CardContent className="p-6">
           <BonoForm 

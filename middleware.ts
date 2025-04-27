@@ -1,23 +1,29 @@
-import { NextResponse } from "next/server"
-import type { NextRequest } from "next/server"
+export { default } from "next-auth/middleware"
 
-// Rutas que requieren autenticación
-const PROTECTED_ROUTES = ["/dashboard", "/settings", "/appointments", "/clients"]
+// No necesitamos NextResponse ni NextRequest directamente si usamos el middleware de next-auth
+// import { NextResponse } from "next/server"
+// import type { NextRequest } from "next/server"
 
-// Rutas públicas (no requieren autenticación)
-const PUBLIC_ROUTES = ["/login", "/register", "/forgot-password", "/reset-password"]
+// Las rutas definidas aquí ya no son necesarias con la configuración del matcher
+// const PROTECTED_ROUTES = ["/dashboard", "/settings", "/appointments", "/clients"]
+// const PUBLIC_ROUTES = ["/login", "/register", "/forgot-password", "/reset-password"]
 
-// Esta función se ejecuta antes de cada petición
-export function middleware(request: NextRequest) {
-  // Simplemente pasamos la petición sin modificarla
-  return NextResponse.next();
-}
+// La función middleware explícita ya no es necesaria si usamos el export default
+// export function middleware(request: NextRequest) {
+//   return NextResponse.next();
+// }
 
-// Configurar para que se ejecute en todas las rutas excepto las de API y las estáticas
+// Configurar para que se ejecute en todas las rutas excepto las públicas y las de sistema
 export const config = {
   matcher: [
-    // Excluyendo rutas de API, archivos estáticos e imágenes
-    '/((?!api|_next/static|_next/image|favicon.ico|.*\\.png$).*)'
-  ]
+    // Aplicar a todas las rutas excepto:
+    // - /api/...
+    // - /_next/static/...
+    // - /_next/image/...
+    // - Archivos de imagen (png, jpg, etc.)
+    // - favicon.ico
+    // - /login, /register, etc. (Rutas públicas)
+    '/((?!api|_next/static|_next/image|.*\\.(?:png|jpg|jpeg|gif|webp|svg)$|favicon.ico|login|register|forgot-password|reset-password).*)',
+  ],
 };
 

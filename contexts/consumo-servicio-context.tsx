@@ -3,29 +3,46 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react"
 import { useServicio } from "./servicios-context"
 import { useInterfaz } from "./interfaz-Context"
-import { Consumo as ConsumoModel } from "@/services/data/models/interfaces"
+import type { ServiceConsumption } from "@prisma/client";
 
-// Utilizamos el tipo del modelo central
-export type Consumo = ConsumoModel;
+// Use Prisma type
+export type Consumo = ServiceConsumption;
 
-// Añadimos propiedades adicionales necesarias para nuestra aplicación
+// Ensure fields match Prisma ServiceConsumption
 export interface ConsumoExtendido extends Consumo {
-  productoNombre: string;
-  orden: number;
-  alternativas?: Array<{
+  productoNombre: string; // Added field
+  // order: number; // Already in ServiceConsumption
+  alternativas?: Array<{ // Added field
     productoId: string
     productoNombre: string
-    cantidad: number
+    cantidad: number // This is likely a UI/local concept, Prisma uses `quantity` (Float)
   }>;
+  // Ensure all fields from ServiceConsumption are potentially present or correctly omitted/mapped
+}
+
+// Define input type for adding a new consumption item
+interface AddConsumoInput {
+  productId: string; // Ensure string type
+  quantity: number; // Matches Prisma Float
+  order?: number | null;
+  notes?: string | null;
+  // Extended fields required for local state
+  productoNombre: string;
+  alternativas?: Array<{ 
+    productoId: string;
+    productoNombre: string
+    cantidad: number 
+  }> | null;
 }
 
 interface ConsumoServicioContextType {
   consumos: ConsumoExtendido[];
   loading: boolean;
-  agregarConsumo: (consumo: Omit<ConsumoExtendido, "servicioId">) => Promise<string>;
+  // Use specific input type for agregarConsumo
+  agregarConsumo: (consumoData: AddConsumoInput) => Promise<string>; 
   actualizarConsumo: (consumo: ConsumoExtendido) => Promise<void>;
   eliminarConsumo: (id: string) => Promise<void>;
-  getConsumosByServicioId: (servicioId: string) => Promise<ConsumoExtendido[]>;
+  getConsumosByServicioId: (serviceId: string) => Promise<ConsumoExtendido[]>;
   reordenarConsumos: (id: string, direccion: 'arriba' | 'abajo') => Promise<void>;
   refreshConsumos: () => Promise<void>;
 }
@@ -36,7 +53,7 @@ export const ConsumoServicioProvider = ({ children }: { children: ReactNode }) =
   const [consumos, setConsumos] = useState<ConsumoExtendido[]>([]);
   const [loading, setLoading] = useState(true);
   const [dataFetched, setDataFetched] = useState(false);
-  const { servicioActual } = useServicio();
+  const { servicioActual } = useServicio(); 
   const interfaz = useInterfaz();
 
   // Cargar datos iniciales utilizando la interfaz
@@ -77,19 +94,44 @@ export const ConsumoServicioProvider = ({ children }: { children: ReactNode }) =
     }
   }, [consumos]);
 
-  // Agregar nuevo consumo
-  const agregarConsumo = async (consumo: Omit<ConsumoExtendido, "servicioId">): Promise<string> => {
+  // Agregar nuevo consumo using specific input type
+  const agregarConsumo = async (consumoData: AddConsumoInput): Promise<string> => {
     try {
       if (!servicioActual) {
         throw new Error("No hay un servicio activo para asociar el consumo");
       }
       
-      // En el futuro: const nuevoConsumo = await interfaz.createConsumo({...consumo, servicioId: servicioActual.id});
+      // Prepare data for Prisma ServiceConsumption using AddConsumoInput
+      const consumoParaInterfaz: Omit<Consumo, 'id' | 'createdAt' | 'updatedAt' | 'serviceId'> = {
+        // serviceId is added by the backend or wrapper usually, but needed if interfaz expects it
+        // serviceId: servicioActual.id, // Assuming servicioActual.id provides the correct serviceId
+        productId: consumoData.productId, // Directly use string from AddConsumoInput
+        quantity: consumoData.quantity, 
+        order: consumoData.order ?? null, // Handle optional
+        notes: consumoData.notes ?? null // Handle optional
+      };
+
+      console.warn("ConsumoServicioContext: interfaz.createConsumo needs implementation for Prisma.");
+      // En el futuro: const nuevoConsumoDB = await interfaz.createConsumo({ ...consumoParaInterfaz, serviceId: servicioActual.id });
       
-      // Mientras tanto, crear consumo localmente
-      const nuevoConsumo = { ...consumo, servicioId: servicioActual.id } as ConsumoExtendido;
-      setConsumos([...consumos, nuevoConsumo]);
-      return consumo.id;
+      // Mock creation
+      const generatedId = `cons-${Date.now()}`;
+      const now = new Date();
+      // Construct the full ConsumoExtendido for local state
+      const nuevoConsumoExtendido: ConsumoExtendido = {
+        id: generatedId,
+        serviceId: servicioActual.id, // Use correct field name
+        productId: consumoData.productId, 
+        quantity: consumoData.quantity,
+        order: consumoData.order ?? 0, // Use a default order if needed for local state
+        notes: consumoData.notes ?? null,
+        createdAt: now,
+        updatedAt: now,
+        productoNombre: consumoData.productoNombre, 
+        alternativas: consumoData.alternativas ?? undefined,
+      };
+      setConsumos(prev => [...prev, nuevoConsumoExtendido]);
+      return generatedId;
     } catch (error) {
       console.error("Error al agregar consumo:", error);
       throw error;
@@ -99,9 +141,18 @@ export const ConsumoServicioProvider = ({ children }: { children: ReactNode }) =
   // Actualizar consumo existente
   const actualizarConsumo = async (consumoActualizado: ConsumoExtendido) => {
     try {
-      // En el futuro: await interfaz.updateConsumo(consumoActualizado.id, consumoActualizado);
+       console.warn("ConsumoServicioContext: interfaz.updateConsumo needs implementation for Prisma.");
+       // Prepare payload for potential DB update, omitting extended fields
+       const updatePayload: Partial<Omit<ServiceConsumption, 'id' | 'createdAt' | 'updatedAt' | 'serviceId'>> = {};
+       // Only include fields that might change and are part of ServiceConsumption
+       if (consumoActualizado.productId !== undefined) updatePayload.productId = String(consumoActualizado.productId); // Ensure string
+       if (consumoActualizado.quantity !== undefined) updatePayload.quantity = consumoActualizado.quantity;
+       if (consumoActualizado.order !== undefined) updatePayload.order = consumoActualizado.order;
+       if (consumoActualizado.notes !== undefined) updatePayload.notes = consumoActualizado.notes;
+       
+      // En el futuro: await interfaz.updateConsumo(consumoActualizado.id, updatePayload);
       
-      // Mientras tanto, actualizar localmente
+      // Update local state optimistically
       setConsumos(prevConsumos => 
         prevConsumos.map(consumo => 
           consumo.id === consumoActualizado.id ? consumoActualizado : consumo
@@ -116,9 +167,9 @@ export const ConsumoServicioProvider = ({ children }: { children: ReactNode }) =
   // Eliminar consumo
   const eliminarConsumo = async (id: string) => {
     try {
+      console.warn("ConsumoServicioContext: interfaz.deleteConsumo needs implementation for Prisma.");
       // En el futuro: await interfaz.deleteConsumo(id);
       
-      // Mientras tanto, eliminar localmente
       setConsumos(prevConsumos => prevConsumos.filter(consumo => consumo.id !== id));
     } catch (error) {
       console.error("Error al eliminar consumo:", error);
@@ -127,59 +178,52 @@ export const ConsumoServicioProvider = ({ children }: { children: ReactNode }) =
   };
 
   // Obtener consumos por servicio ID
-  const getConsumosByServicioId = async (servicioId: string) => {
+  const getConsumosByServicioId = async (serviceId: string): Promise<ConsumoExtendido[]> => { // Use serviceId
     try {
-      // En el futuro: return await interfaz.getConsumosByServicioId(servicioId);
-      
-      // Mientras tanto, filtrar localmente
-      return consumos.filter(consumo => consumo.servicioId === servicioId);
+       console.warn("ConsumoServicioContext: interfaz.getConsumosByServicioId needs implementation for Prisma.");
+       // Filter local state using serviceId
+       return consumos.filter(consumo => consumo.serviceId === serviceId);
     } catch (error) {
-      console.error("Error al obtener consumos por servicio:", error);
-      return [];
+       console.error("Error al obtener consumos por servicio:", error);
+       return [];
     }
   };
 
-  // Reordenar consumos (mover arriba o abajo)
+  // Reordenar consumos
   const reordenarConsumos = async (id: string, direccion: 'arriba' | 'abajo') => {
     try {
       if (!servicioActual) return;
-      
-      // Obtener consumos del servicio actual
-      const consumosServicio = consumos.filter(c => c.servicioId === servicioActual.id);
-      
+      // Filter using serviceId
+      const consumosServicio = consumos.filter(c => c.serviceId === servicioActual.id);
       const index = consumosServicio.findIndex(c => c.id === id);
       if (index < 0) return;
       
-      const nuevosConsumos = [...consumos];
-      const consumosOrdenados = [...consumosServicio];
+      const consumosOrdenados = [...consumosServicio]; 
       
+      let swapIndex = -1;
       if (direccion === 'arriba' && index > 0) {
-        // Intercambiar con el elemento anterior
-        const temp = consumosOrdenados[index - 1].orden;
-        consumosOrdenados[index - 1].orden = consumosOrdenados[index].orden;
-        consumosOrdenados[index].orden = temp;
+         swapIndex = index - 1;
       } else if (direccion === 'abajo' && index < consumosOrdenados.length - 1) {
-        // Intercambiar con el elemento siguiente
-        const temp = consumosOrdenados[index + 1].orden;
-        consumosOrdenados[index + 1].orden = consumosOrdenados[index].orden;
-        consumosOrdenados[index].orden = temp;
-      } else {
-        return; // No hay nada que hacer
+         swapIndex = index + 1;
       }
-      
-      // Ordenar por orden
-      consumosOrdenados.sort((a, b) => a.orden - b.orden);
-      
-      // Actualizar los consumos globales con los reordenados
-      setConsumos(
-        nuevosConsumos.map(c => {
-          const consumoActualizado = consumosOrdenados.find(co => co.id === c.id);
-          return consumoActualizado || c;
-        })
-      );
-      
-      // En el futuro, podríamos sincronizar este orden con la interfaz:
-      // await Promise.all(consumosOrdenados.map(c => interfaz.updateConsumo(c.id, { orden: c.orden })));
+
+      if (swapIndex !== -1) {
+          // Swap the 'order' property (handle nullish values)
+          const orderA = consumosOrdenados[index].order ?? 0;
+          const orderB = consumosOrdenados[swapIndex].order ?? 0;
+          consumosOrdenados[index].order = orderB;
+          consumosOrdenados[swapIndex].order = orderA;
+          
+          // Update the main state array preserving identity and order
+          setConsumos(prevConsumos => 
+              prevConsumos.map(c => consumosOrdenados.find(co => co.id === c.id) || c)
+                          .sort((a,b) => (a.order ?? 0) - (b.order ?? 0)) // Ensure sorted after update
+          );
+
+          console.warn("ConsumoServicioContext: Need to persist reordered consumptions via interfaz.updateConsumo.");
+          // En el futuro: await Promise.all(consumosOrdenados.map(c => interfaz.updateConsumo(c.id, { order: c.order })));
+      } 
+
     } catch (error) {
       console.error("Error al reordenar consumos:", error);
       throw error;
@@ -190,14 +234,15 @@ export const ConsumoServicioProvider = ({ children }: { children: ReactNode }) =
     setDataFetched(false); // Esto forzará la recarga en el useEffect
   };
 
-  // Solo devolvemos los consumos del servicio actual en el value
+  // Filter consumos for the current service using serviceId
   const consumosServicioActual = servicioActual 
-    ? consumos.filter(c => c.servicioId === servicioActual.id)
+    ? consumos.filter(c => c.serviceId === servicioActual.id)
     : [];
 
+  // Provide sorted consumos in context value
   return (
     <ConsumoServicioContext.Provider value={{
-      consumos: consumosServicioActual,
+      consumos: consumosServicioActual.sort((a, b) => (a.order ?? 0) - (b.order ?? 0)), 
       loading,
       agregarConsumo,
       actualizarConsumo,

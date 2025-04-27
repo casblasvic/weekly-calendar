@@ -15,7 +15,38 @@ export async function GET(request: Request, props: { params: Promise<{ id: strin
     // TODO: Autorización, filtro systemId?
     const tariff = await prisma.tariff.findUniqueOrThrow({
       where: { id: tariffId },
-      // TODO: Incluir relaciones? Familias, servicios, clínicas...
+      include: {
+        clinics: { // Mantener inclusión de clínicas
+          select: { 
+            id: true,
+            name: true,
+            prefix: true
+          }
+        },
+        vatType: true, // Cambiado de defaultVatType a vatType
+        // --- INCLUIR PRECIOS ESPECÍFICOS ---
+        servicePrices: {
+          where: { isActive: true }, // Opcional: Traer solo los activos en esta tarifa
+          orderBy: { service: { name: 'asc' } }, // Ordenar por nombre de servicio
+          include: {
+            service: { // Incluir datos del servicio base y su categoría
+              include: { category: true }
+            },
+            vatType: true  // Incluir datos del IVA específico aplicado
+          }
+        },
+        productPrices: {
+          where: { isActive: true }, // Opcional: Traer solo los activos
+          orderBy: { product: { name: 'asc' } }, // Ordenar por nombre de producto
+          include: {
+            product: { // Incluir datos del producto base y su categoría
+              include: { category: true }
+            },
+            vatType: true  // Incluir datos del IVA específico aplicado
+          }
+        }
+        // --- FIN INCLUSIÓN PRECIOS ---
+      }
     });
     return NextResponse.json(tariff);
   } catch (error) {
@@ -23,6 +54,7 @@ export async function GET(request: Request, props: { params: Promise<{ id: strin
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
       return NextResponse.json({ message: `Tarifa ${tariffId} no encontrada` }, { status: 404 });
     }
+    console.error('Full error object:', JSON.stringify(error, null, 2));
     return NextResponse.json({ message: 'Error interno del servidor' }, { status: 500 });
   }
 }

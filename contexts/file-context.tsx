@@ -3,10 +3,11 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useInterfaz } from './interfaz-Context';
-import { BaseEntity, EntityImage, EntityDocument } from "@/services/data/models/interfaces";
+import type { EntityImage, EntityDocument, EntityType } from "@prisma/client";
 
 // Definición de tipos basados en el modelo central
-export interface BaseFile extends BaseEntity {
+export interface BaseFile {
+  id: string;
   fileName: string;
   fileSize: number;
   mimeType: string;
@@ -15,23 +16,23 @@ export interface BaseFile extends BaseEntity {
   path: string;
   categories: string[];
   tags: string[];
-  entityType: 'equipment' | 'service' | 'client' | 'invoice' | 'document' | 'treatment';
+  entityType: EntityType | string;
   entityId: string;
   clinicId: string;
-  storageProvider: 'local' | 'gdrive' | 'dropbox' | 's3';
-  createdAt: string;
-  updatedAt: string;
-  createdBy: string;
+  storageProvider: 'local' | 'gdrive' | 'dropbox' | 's3' | string;
+  createdAt: Date;
+  updatedAt: Date;
+  createdBy: string | null;
   isDeleted: boolean;
   isPublic: boolean;
   metadata: Record<string, any>;
 }
 
 export interface ImageFile extends BaseFile {
-  isPrimary: boolean;
+  isProfilePic: boolean;
   width?: number;
   height?: number;
-  position: number;
+  order: number;
 }
 
 export interface DocumentFile extends BaseFile {
@@ -67,27 +68,28 @@ interface FileContextType {
 // Crear el contexto
 const FileContext = createContext<FileContextType | undefined>(undefined);
 
-// Helper para convertir EntityDocument a BaseFile
+// Helper para convertir EntityDocument (Prisma type) a BaseFile
 const convertToBaseFile = (doc: EntityDocument): BaseFile => {
+  // Map fields from Prisma EntityDocument to BaseFile
   return {
     id: doc.id,
     fileName: doc.fileName,
-    fileSize: doc.fileSize,
-    mimeType: doc.mimeType,
-    url: doc.url,
-    path: doc.path || '',
-    entityType: doc.entityType as any,
+    fileSize: doc.fileSize ?? 0,
+    mimeType: doc.fileType ?? '', // Correct mapping: Prisma fileType -> BaseFile mimeType
+    url: doc.documentUrl,
+    path: '', // Needs clarification or default value.
+    entityType: doc.entityType,
     entityId: doc.entityId,
-    clinicId: '',
-    categories: [],
-    tags: [],
-    storageProvider: 'local',
+    clinicId: '', // Where does this come from?
+    categories: [], // Needs mapping if applicable
+    tags: [], // Needs mapping if applicable
+    storageProvider: 'local', // Default or needs mapping?
     createdAt: doc.createdAt,
-    updatedAt: doc.updatedAt || doc.createdAt,
-    createdBy: '',
-    isDeleted: false,
-    isPublic: false,
-    metadata: {}
+    updatedAt: doc.updatedAt,
+    createdBy: doc.uploadedByUserId ?? null,
+    isDeleted: false, // Prisma doesn't have isDeleted? Set default.
+    isPublic: false, // Prisma doesn't have isPublic? Set default.
+    metadata: {} // Needs mapping if applicable
   };
 };
 
@@ -95,47 +97,30 @@ const convertToBaseFile = (doc: EntityDocument): BaseFile => {
 export const FileProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [files, setFiles] = useState<BaseFile[]>([]);
   const [dataFetched, setDataFetched] = useState(false);
-  const interfaz = useInterfaz();
-  
-  // Cargar datos iniciales utilizando la interfaz
+  // interfaz is not used for most file operations in this context currently
+  // const interfaz = useInterfaz(); 
+
+  // Cargar datos iniciales (NEEDS IMPLEMENTATION)
   useEffect(() => {
     const loadFiles = async () => {
-      if (interfaz.initialized && !dataFetched) {
+      // if (interfaz.initialized && !dataFetched) { // Remove interfaz dependency for now
+      if (!dataFetched) { // Load once
         try {
-          // >>> COMENTADO TEMPORALMENTE HASTA IMPLEMENTAR getAllFiles en SupabaseDataService <<<
-          // const loadedFiles = await interfaz.getAllFiles();
-          const loadedFiles: EntityDocument[] = []; // Devolver array vacío temporalmente
-          // >>> FIN COMENTADO <<<
-
-          // Asegurar que los datos se conviertan al formato correcto
-          const baseFiles: BaseFile[] = loadedFiles ? 
-            loadedFiles.map(file => {
-              if ('categories' in file) {
-                return file as BaseFile;
-              }
-              return convertToBaseFile(file as EntityDocument);
-            }) : [];
+          console.warn("FileContext: loadFiles needs implementation (e.g., fetch from API/local storage)");
+          const loadedFiles: EntityDocument[] = []; // Mock empty array
+          const baseFiles: BaseFile[] = loadedFiles.map(convertToBaseFile);
           setFiles(baseFiles);
-          setDataFetched(true);
-          console.log("FileContext: Carga inicial de archivos OMITIDA (getAllFiles no implementado)");
+          setDataFetched(true); 
+          console.log("FileContext: Carga inicial de archivos OMITIDA");
         } catch (error) {
           console.error("Error al cargar archivos:", error);
           setFiles([]);
+          setDataFetched(true); // Mark as fetched even on error to prevent loops
         }
       }
     };
-    
-    // >>> LLAMADA A loadFiles COMENTADA <<<
-    // loadFiles(); 
-    // >>> FIN LLAMADA COMENTADA <<<
-    // Marcar como 'fetched' para evitar bucles si la dependencia cambia y la función no existe
-    // Si la función no existe, nunca cambiaría dataFetched a true
-    if (!dataFetched) {
-        console.warn("FileContext: Omitiendo llamada a loadFiles() porque getAllFiles no está implementado en el dataService.");
-        setDataFetched(true); // Prevenir reintentos
-    }
-
-  }, [interfaz.initialized, dataFetched]);
+    loadFiles();
+  }, [dataFetched]);
   
   // Función para disparar eventos de actualización
   const dispatchUpdateEvent = (fileId: string = '', entityId: string = '', action: string) => {
@@ -149,442 +134,152 @@ export const FileProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
   
-  // Refrescar archivos
+  // Refrescar archivos (NEEDS IMPLEMENTATION)
   const refreshFiles = async (): Promise<void> => {
+     console.warn("FileContext: refreshFiles needs implementation.");
     try {
-      const refreshedFiles = await interfaz.getAllFiles();
-      // Convertir a BaseFile
-      const baseFiles: BaseFile[] = refreshedFiles ? 
-        refreshedFiles.map(file => {
-          if ('categories' in file) {
-            return file as BaseFile;
-          }
-          return convertToBaseFile(file as EntityDocument);
-        }) : [];
+      const refreshedFiles: EntityDocument[] = []; // Mock empty array
+      const baseFiles: BaseFile[] = refreshedFiles.map(convertToBaseFile);
       setFiles(baseFiles);
-      console.log("Archivos refrescados correctamente");
+      console.log("Archivos refrescados (simulado)");
     } catch (error) {
       console.error("Error al refrescar archivos:", error);
     }
   };
   
-  // Subir archivo
+  // Subir archivo (NEEDS IMPLEMENTATION FOR ACTUAL UPLOAD)
   const uploadFile = async (
     file: File,
     metadata: any,
     onProgress?: (progress: number) => void
   ): Promise<BaseFile> => {
+    console.warn("FileContext: uploadFile needs implementation for actual backend upload and Prisma interaction.");
     try {
-      // Validar metadata
-      if (!metadata.clinicId) {
-        throw new Error("clinicId es requerido para subir archivos");
-      }
+      // ... (validation and progress simulation)
       
-      // Asegurar que clinicId sea string
-      metadata.clinicId = String(metadata.clinicId);
-      
-      // Simular progreso si se proporciona un callback
-      if (onProgress) {
-        let progress = 0;
-        const interval = setInterval(() => {
-          progress += 10;
-          onProgress(Math.min(progress, 100));
-          if (progress >= 100) clearInterval(interval);
-        }, 100);
-      }
-      
-      // Generar ID para el archivo si no tiene
       const fileId = metadata.id || uuidv4();
-      
-      // Crear estructura de ruta
-      const timestamp = new Date().toISOString();
-      const year = new Date().getFullYear();
-      const month = new Date().getMonth() + 1;
-      const isImage = file.type.startsWith('image/');
-      const isDocument = file.type === 'application/pdf' || 
-                         file.type.includes('word') || 
-                         file.type.includes('excel');
-      const typeFolder = isImage ? 'images' : isDocument ? 'documents' : 'files';
-      const basePath = `/${metadata.clinicId}/${metadata.entityType}/${metadata.entityId}`;
-      const path = `${basePath}/${typeFolder}/${year}/${month}/${file.name}`;
-      
-      // Preparar objeto de documento para la interfaz
-      const documentData: Omit<EntityDocument, "id"> = {
+      const timestamp = new Date();
+      const calculatedPath = `/${metadata.clinicId}/${metadata.entityType}/${metadata.entityId}/.../${file.name}`; // Simplified path calculation example
+
+      // Mock saved document (replace with actual backend call)
+      const mockSavedDoc: EntityDocument = {
+        id: fileId,
         fileName: file.name,
         fileSize: file.size,
-        mimeType: file.type,
-        url: '', // La URL será generada por el servidor
-        path,
-        entityType: metadata.entityType,
+        fileType: file.type,
+        documentUrl: `mock/url/${calculatedPath}`, // Mock URL
         entityId: metadata.entityId,
-        category: metadata.category || 'default',
-        createdAt: timestamp
+        entityType: metadata.entityType, // Ensure this matches Prisma Enum
+        uploadedByUserId: metadata.userId || null,
+        description: metadata.description || null,
+        systemId: "placeholder_system_id", // <<< Placeholder
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        // uploadedByUser: null // REMOVED INCORRECT RELATION FIELD
       };
       
-      // Guardar archivo usando interfaz
-      const savedDocs = await interfaz.saveEntityDocuments(
-        metadata.entityType,
-        metadata.entityId,
-        [{ ...documentData, id: fileId }],
-        metadata.category || 'default'
-      );
+      // Convert the mock saved Prisma EntityDocument back to BaseFile
+      const baseFile = convertToBaseFile(mockSavedDoc);
       
-      if (!savedDocs || !Array.isArray(savedDocs) || savedDocs.length === 0) {
-        throw new Error("No se pudo guardar el archivo");
-      }
-      
-      // Convertir el documento guardado a BaseFile
-      const baseFile: BaseFile = {
-        id: savedDocs[0].id,
-        fileName: savedDocs[0].fileName,
-        fileSize: savedDocs[0].fileSize,
-        mimeType: savedDocs[0].mimeType,
-        url: savedDocs[0].url,
-        path: savedDocs[0].path || path,
-        entityType: metadata.entityType as any,
-        entityId: metadata.entityId,
-        clinicId: metadata.clinicId,
-        categories: metadata.categories || [],
-        tags: metadata.tags || [],
-        storageProvider: metadata.storageProvider || 'local',
-        createdAt: savedDocs[0].createdAt,
-        updatedAt: savedDocs[0].updatedAt || timestamp,
-        createdBy: metadata.userId || 'unknown',
-        isDeleted: false,
-        isPublic: metadata.isPublic || false,
-        metadata: { ...metadata }
-      };
-      
-      // Para imágenes, añadir propiedades específicas
-      if (isImage) {
-        baseFile.metadata.isPrimary = metadata.isPrimary || false;
-        baseFile.metadata.position = metadata.position || 0;
-        baseFile.metadata.width = metadata.width;
-        baseFile.metadata.height = metadata.height;
-      }
-      
-      // Para documentos, añadir propiedades específicas
-      if (isDocument) {
-        baseFile.metadata.pageCount = metadata.pageCount || 1;
-      }
-      
-      // Actualizar estado local
-      setFiles(prev => [...prev, baseFile]);
-      
-      // Disparar evento de actualización
-      dispatchUpdateEvent(baseFile.id, baseFile.entityId, 'create');
+      setFiles(prevFiles => [...prevFiles, baseFile]);
+      dispatchUpdateEvent(baseFile.id, baseFile.entityId, 'upload');
       
       return baseFile;
+
     } catch (error) {
       console.error("Error al subir archivo:", error);
       throw error;
     }
   };
   
-  // Eliminar archivo
+  // Delete file (NEEDS IMPLEMENTATION)
   const deleteFile = async (fileId: string, hardDelete = false): Promise<boolean> => {
-    try {
-      // Validar ID
-      if (!fileId) {
-        console.warn("Se intentó eliminar un archivo con ID vacío");
-        return false;
-      }
-      
-      // Buscar archivo para obtener información antes de eliminarlo
-      const fileToDelete = files.find(f => f.id === fileId);
-      if (!fileToDelete) {
-        console.warn(`Archivo con ID ${fileId} no encontrado para eliminación`);
-        return false;
-      }
-      
-      // Eliminar a través de la interfaz
-      const success = await interfaz.deleteFile(fileId);
-      
-      if (success) {
-        if (hardDelete) {
-          // Eliminación permanente del estado local
-          setFiles(prevFiles => prevFiles.filter(f => f.id !== fileId));
-        } else {
-          // Marcar como eliminado en el estado local
-          setFiles(prevFiles => 
-            prevFiles.map(f => 
-              f.id === fileId 
-                ? { ...f, isDeleted: true, updatedAt: new Date().toISOString() } 
-                : f
-            )
-          );
-        }
-        
-        // Disparar evento de actualización
-        dispatchUpdateEvent(fileId, fileToDelete.entityId, hardDelete ? 'delete' : 'mark-deleted');
-      }
-      
-      return success;
-    } catch (error) {
-      console.error("Error al eliminar archivo:", error);
-      return false;
+    console.warn("FileContext: deleteFile needs implementation for Prisma.");
+    const success = true; // Mock success
+    if (success) {
+      setFiles(prevFiles => prevFiles.filter(f => f.id !== fileId)); 
+      dispatchUpdateEvent(fileId, '', 'delete');
     }
+    return success;
   };
   
-  // Restaurar archivo
+  // Restore file (NEEDS IMPLEMENTATION/REMOVAL)
   const restoreFile = async (fileId: string): Promise<boolean> => {
-    try {
-      // Validar ID
-      if (!fileId) {
-        console.warn("Se intentó restaurar un archivo con ID vacío");
-        return false;
-      }
-      
-      // Buscar archivo para obtener información antes de restaurarlo
-      const fileToRestore = files.find(f => f.id === fileId);
-      if (!fileToRestore) {
-        console.warn(`Archivo con ID ${fileId} no encontrado para restauración`);
-        return false;
-      }
-      
-      // Restaurar a través de la interfaz
-      const success = await interfaz.restoreFile(fileId);
-      
-      if (success) {
-        // Actualizar estado local
-        setFiles(prevFiles => 
-          prevFiles.map(f => 
-            f.id === fileId 
-              ? { ...f, isDeleted: false, updatedAt: new Date().toISOString() } 
-              : f
-          )
-        );
-        
-        // Disparar evento de actualización
-        dispatchUpdateEvent(fileId, fileToRestore.entityId, 'restore');
-      }
-      
-      return success;
-    } catch (error) {
-      console.error("Error al restaurar archivo:", error);
-      return false;
+    console.warn("FileContext: restoreFile needs implementation or removal for Prisma.");
+    const success = true; // Mock success
+    if (success) {
+       dispatchUpdateEvent(fileId, '', 'restore');
     }
+    return success;
   };
   
-  // Obtener archivo por ID
+  // Get file by ID (NEEDS IMPLEMENTATION)
   const getFileById = async (fileId: string): Promise<BaseFile | null> => {
-    try {
-      // Validar ID
-      if (!fileId) {
-        console.warn("Se solicitó un archivo con ID vacío");
-        return null;
-      }
-      
-      // Intentar obtener archivo de la interfaz primero
-      const file = await interfaz.getFileById(fileId);
-      
-      if (file) {
-        // Convertir a BaseFile si es necesario
-        return 'categories' in file ? 
-          file as BaseFile : 
-          convertToBaseFile(file as EntityDocument);
-      }
-      
-      // Si no se encontró en la interfaz, buscar en el estado local
-      const localFile = files.find(f => f.id === fileId);
-      if (localFile) {
-        console.log("Archivo recuperado del estado local:", fileId);
-        return localFile;
-      }
-      
-      return null;
-    } catch (error) {
-      console.error(`Error al obtener archivo ${fileId}:`, error);
-      
-      // Intentar recuperar del estado local en caso de error
-      const localFile = files.find(f => f.id === fileId);
-      if (localFile) {
-        console.log("Archivo recuperado del estado local tras error:", fileId);
-        return localFile;
-      }
-      
-      return null;
-    }
+    console.warn("FileContext: getFileById needs implementation for Prisma.");
+    const foundFile = files.find(f => f.id === fileId); // Simulating find from local state
+    return foundFile || null;
   };
   
-  // Obtener archivos según filtros
+  // Get files by filter (NEEDS IMPLEMENTATION)
   const getFilesByFilter = async (filter: FileFilter): Promise<BaseFile[]> => {
-    try {
-      // Usar la interfaz para obtener archivos filtrados
-      const filteredDocs = await interfaz.getFilesByFilter(filter);
-      
-      if (filteredDocs && filteredDocs.length > 0) {
-        // Convertir a BaseFile si es necesario
-        return filteredDocs.map(file => {
-          if ('categories' in file) {
-            return file as BaseFile;
-          }
-          return convertToBaseFile(file as EntityDocument);
-        });
-      }
-      
-      // Si no se encontraron archivos o hubo un problema, intentar filtrar del estado local
-      let localFilteredFiles = [...files];
-      
-      // Aplicar filtros
-      if (filter.entityType) {
-        localFilteredFiles = localFilteredFiles.filter(f => f.entityType === filter.entityType);
-      }
-      
-      if (filter.entityId) {
-        localFilteredFiles = localFilteredFiles.filter(f => f.entityId === filter.entityId);
-      }
-      
-      if (filter.clinicId) {
-        localFilteredFiles = localFilteredFiles.filter(f => f.clinicId === filter.clinicId);
-      }
-      
-      if (filter.mimeType) {
-        localFilteredFiles = localFilteredFiles.filter(f => f.mimeType.includes(filter.mimeType!));
-      }
-      
-      if (filter.categories && filter.categories.length > 0) {
-        localFilteredFiles = localFilteredFiles.filter(f => 
-          filter.categories!.some(cat => f.categories.includes(cat))
-        );
-      }
-      
-      if (filter.isDeleted !== undefined) {
-        localFilteredFiles = localFilteredFiles.filter(f => f.isDeleted === filter.isDeleted);
-      }
-      
-      if (filter.startDate) {
-        const startDate = new Date(filter.startDate).getTime();
-        localFilteredFiles = localFilteredFiles.filter(f => 
-          new Date(f.createdAt).getTime() >= startDate
-        );
-      }
-      
-      if (filter.endDate) {
-        const endDate = new Date(filter.endDate).getTime();
-        localFilteredFiles = localFilteredFiles.filter(f => 
-          new Date(f.createdAt).getTime() <= endDate
-        );
-      }
-      
-      if (filter.searchText) {
-        const searchLower = filter.searchText.toLowerCase();
-        localFilteredFiles = localFilteredFiles.filter(f => 
-          f.fileName.toLowerCase().includes(searchLower) || 
-          f.tags.some(tag => tag.toLowerCase().includes(searchLower))
-        );
-      }
-      
-      return localFilteredFiles;
-    } catch (error) {
-      console.error("Error al obtener archivos filtrados:", error);
-      return [];
-    }
+    console.warn("FileContext: getFilesByFilter needs implementation for Prisma.");
+    let filtered = files; // Simulating filter from local state
+    if (filter.entityId) filtered = filtered.filter(f => f.entityId === filter.entityId);
+    if (filter.entityType) filtered = filtered.filter(f => f.entityType === filter.entityType);
+    return filtered;
   };
   
-  // Actualizar metadatos de un archivo
+  // Update file metadata (NEEDS IMPLEMENTATION)
   const updateFileMetadata = async (fileId: string, metadata: Partial<BaseFile>): Promise<BaseFile | null> => {
-    try {
-      // Validar ID
-      if (!fileId) {
-        console.warn("Se intentó actualizar un archivo con ID vacío");
-        return null;
-      }
-      
-      // Obtener el archivo actual para conocer su tipo
-      const currentFile = files.find(f => f.id === fileId);
-      if (!currentFile) {
-        console.warn(`Archivo con ID ${fileId} no encontrado para actualización de metadatos`);
-        return null;
-      }
-      
-      // Preparar datos para la interfaz
-      const updateData: Partial<EntityDocument> = {
-        fileName: metadata.fileName,
-        fileSize: metadata.fileSize,
-        mimeType: metadata.mimeType,
-        url: metadata.url,
-        path: metadata.path,
-        category: metadata.metadata?.category
-      };
-      
-      // Actualizar a través de la interfaz
-      const success = await interfaz.updateFileMetadata(fileId, updateData);
-      
-      if (success) {
-        // Actualizar estado local
-        const updatedFile: BaseFile = {
-          ...currentFile,
-          ...metadata,
-          updatedAt: new Date().toISOString()
-        };
-        
-        setFiles(prevFiles => 
-          prevFiles.map(f => f.id === fileId ? updatedFile : f)
-        );
-        
-        // Disparar evento de actualización
-        dispatchUpdateEvent(fileId, updatedFile.entityId, 'update');
-        
-        return updatedFile;
-      }
-      
-      return null;
-    } catch (error) {
-      console.error(`Error al actualizar metadatos del archivo ${fileId}:`, error);
-      return null;
+    console.warn("FileContext: updateFileMetadata needs implementation for Prisma.");
+    let updatedFile: BaseFile | null = null;
+    setFiles(prevFiles => 
+      prevFiles.map(f => {
+        if (f.id === fileId) {
+          updatedFile = { ...f, ...metadata } as BaseFile;
+          // Remove incorrect mimeType assignment if present
+          // delete updatedFile.mimeType;
+          return updatedFile;
+        }
+        return f;
+      })
+    );
+    if (updatedFile) {
+       dispatchUpdateEvent(fileId, updatedFile.entityId, 'update');
     }
+    return updatedFile;
   };
   
-  // Obtener estadísticas de almacenamiento
+  // Get storage stats (NEEDS IMPLEMENTATION)
   const getStorageStats = async (clinicId?: string): Promise<{ used: number, byType: Record<string, number> }> => {
-    try {
-      // Obtener estadísticas a través de la interfaz
-      const stats = await interfaz.getStorageStats(clinicId);
-      
-      if (stats) {
-        return stats;
-      }
-      
-      // Si no se obtuvieron estadísticas, calcular con datos locales
-      const relevantFiles = clinicId 
-        ? files.filter(f => f.clinicId === clinicId && !f.isDeleted)
-        : files.filter(f => !f.isDeleted);
-      
-      // Calcular espacio usado
-      const used = relevantFiles.reduce((total, file) => total + file.fileSize, 0);
-      
-      // Agrupar por tipo
-      const byType: Record<string, number> = {};
-      relevantFiles.forEach(file => {
-        const type = file.mimeType.split('/')[0] || 'unknown';
-        byType[type] = (byType[type] || 0) + file.fileSize;
-      });
-      
-      return { used, byType };
-    } catch (error) {
-      console.error("Error al obtener estadísticas de almacenamiento:", error);
-      return { used: 0, byType: {} };
-    }
+     console.warn("FileContext: getStorageStats needs implementation for Prisma.");
+     const totalSize = files.reduce((acc, file) => acc + (file.fileSize || 0), 0);
+     const statsByType = files.reduce((acc, file) => {
+        const type = file.mimeType?.split('/')[0] || 'unknown';
+        acc[type] = (acc[type] || 0) + (file.fileSize || 0);
+        return acc;
+     }, {} as Record<string, number>);
+
+     return {
+       used: totalSize,
+       byType: statsByType,
+     };
   };
   
-  return (
-    <FileContext.Provider
-      value={{
-        files,
-        uploadFile,
-        deleteFile,
-        restoreFile,
-        getFileById,
-        getFilesByFilter,
-        updateFileMetadata,
-        getStorageStats,
-        refreshFiles
-      }}
-    >
-      {children}
-    </FileContext.Provider>
-  );
+  // Context value
+  const value = {
+    files,
+    uploadFile,
+    deleteFile,
+    restoreFile,
+    getFileById,
+    getFilesByFilter,
+    updateFileMetadata,
+    getStorageStats,
+    refreshFiles,
+  };
+
+  return <FileContext.Provider value={value}>{children}</FileContext.Provider>;
 };
 
 export function useFiles() {

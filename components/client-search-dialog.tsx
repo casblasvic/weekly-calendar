@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { useLastClient } from "@/contexts/last-client-context"
 import { useState } from "react"
@@ -78,7 +78,12 @@ export function ClientSearchDialog({ isOpen, onClose, onClientSelect, selectedTi
     <>
       <Dialog open={isOpen} onOpenChange={onClose}>
         <DialogContent className="sm:max-w-[700px] md:max-w-[900px] p-0 bg-white overflow-hidden">
-          <DialogTitle className="p-6 pb-0">Buscar cliente</DialogTitle>
+          <DialogHeader>
+            <DialogTitle>Buscar Cliente</DialogTitle>
+            <DialogDescription>
+              Busca un cliente existente por nombre o teléfono para asignarlo a la cita.
+            </DialogDescription>
+          </DialogHeader>
           <div className="p-6 space-y-6">
             <div className="flex flex-col h-full">
               <h2 className="text-xl font-semibold mb-4">Buscador de clientes</h2>

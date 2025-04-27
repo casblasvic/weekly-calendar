@@ -12,13 +12,13 @@ import { useTemplates } from "@/hooks/use-templates"
 import { Input } from "@/components/ui/input"
 import { useState, useEffect } from "react"
 // Importar tipos necesarios del schema Prisma
-import type { ScheduleTemplateBlock, ClinicScheduleBlock, DayOfWeek as PrismaDayOfWeek } from '@prisma/client'
+import type { ScheduleTemplateBlock, ClinicScheduleBlock, DayOfWeek as PrismaDayOfWeek, Clinic } from '@prisma/client'
 // Importar Clinica si no está ya importada
-import type { Clinica } from '@/services/data/models/interfaces'; 
+// import type { Clinica } from '@/services/data/models/interfaces'; // Eliminado
 
 export interface ScheduleConfigProps {
-  clinic: Clinica | null;
-  onChange: (updates: { schedule: WeekSchedule } | Record<string, any>) => void;
+  clinic: Clinic | null;
+  onChange: (newSchedule: WeekSchedule) => void;
   showTemplateSelector?: boolean;
   isReadOnly?: boolean;
 }
@@ -107,12 +107,14 @@ export function ScheduleConfig({ clinic, onChange, showTemplateSelector = false,
 
       console.log("[ScheduleConfig] Clinic prop updated, deriving schedule...");
       let derivedSchedule: WeekSchedule;
-      const defaultOpen = clinic.openTime || "00:00";
-      const defaultClose = clinic.closeTime || "23:59";
+      // Usar aserciones de tipo para acceder a campos potencialmente no incluidos
+      const defaultOpen = (clinic as any)?.openTime || "00:00"; 
+      const defaultClose = (clinic as any)?.closeTime || "23:59";
 
       // --- Leer bloques desde la PROP clinic --- 
-      const templateBlocks = clinic.linkedScheduleTemplate?.blocks; 
-      const independentBlocks = clinic.independentScheduleBlocks;
+      // Usar aserciones de tipo para acceder a relaciones potencialmente no incluidas
+      const templateBlocks = (clinic as any)?.linkedScheduleTemplate?.blocks; 
+      const independentBlocks = (clinic as any)?.independentScheduleBlocks;
       
       console.log(`[ScheduleConfig useEffect] Found templateBlocks: ${templateBlocks ? templateBlocks.length : 'null or empty'}`);
       console.log(`[ScheduleConfig useEffect] Found independentBlocks: ${independentBlocks ? independentBlocks.length : 'null or empty'}`);
@@ -124,8 +126,12 @@ export function ScheduleConfig({ clinic, onChange, showTemplateSelector = false,
           console.log("[ScheduleConfig] Using INDEPENDENT blocks (from prop).");
           derivedSchedule = convertBlocksToWeekSchedule(independentBlocks, defaultOpen, defaultClose);
       } else {
-          console.log(`[ScheduleConfig] No blocks found in prop, using default schedule based on open/close times: ${defaultOpen} - ${defaultClose}`);
-           derivedSchedule = convertBlocksToWeekSchedule(null, defaultOpen, defaultClose); 
+          console.log(`[ScheduleConfig] No blocks found in prop, using default CLOSED schedule.`);
+           // <<< MODIFICACIÓN: Llamar a convertBlocksToWeekSchedule con null y DEFAULTS FIJOS >>>
+           // Esto devolverá un horario completamente cerrado.
+           derivedSchedule = convertBlocksToWeekSchedule(null, "09:00", "17:00"); 
+           // <<< ELIMINAR BUCLE QUE FORZABA L-V ABIERTO CON TIEMPOS POTENCIALMENTE INVÁLIDOS >>>
+           /*
            Object.keys(derivedSchedule).forEach(dayKey => {
                 if (dayKey !== 'saturday' && dayKey !== 'sunday') {
                     derivedSchedule[dayKey as keyof WeekSchedule] = {
@@ -134,6 +140,7 @@ export function ScheduleConfig({ clinic, onChange, showTemplateSelector = false,
                     };
                 }
             });
+           */
       }
 
       console.log("[ScheduleConfig] Derived schedule being set (from prop):", JSON.stringify(derivedSchedule, null, 2)); 
@@ -145,7 +152,7 @@ export function ScheduleConfig({ clinic, onChange, showTemplateSelector = false,
           .map(([dayKey]) => dayKey);
       setExpandedDays(openDays);
 
-  }, [clinic?.id, clinic?.linkedScheduleTemplateId, JSON.stringify(clinic?.scheduleJson)]); // <<-- CAMBIADO: Depender de id, plantilla vinculada y scheduleJson 
+  }, [clinic?.id, clinic?.linkedScheduleTemplateId]); 
 
   const toggleDay = (day: string) => {
     setExpandedDays((current) => (current.includes(day) ? current.filter((d) => d !== day) : [...current, day]))
@@ -170,7 +177,8 @@ export function ScheduleConfig({ clinic, onChange, showTemplateSelector = false,
     // --- BEGIN LOGS ---
     console.log("[ScheduleConfig updateDaySchedule] State potentially updated. Calling PARENT onChange...");
     // --- END LOGS ---
-    onChange({ schedule: updatedSchedule }); // <<-- CAMBIADO: Enviar objeto con clave 'schedule'
+    onChange(updatedSchedule); 
+    // --- FIN CAMBIO ---
 
     // Notificar a la agenda que la configuración ha cambiado
     if (typeof window !== "undefined" && (window as any).notifyClinicConfigUpdated) {
@@ -185,22 +193,24 @@ export function ScheduleConfig({ clinic, onChange, showTemplateSelector = false,
         [toDay]: { ...scheduleToCopy }
     }
     setCurrentSchedule(updatedSchedule); // Actualizar estado interno
-    onChange({ schedule: updatedSchedule }); // Notificar al padre
+    onChange(updatedSchedule); // Notificar al padre
   }
 
   const handleTemplateChange = (templateId: string) => {
     const template = templates.find((t) => t.id === templateId)
+    // <<< COMENTAR LÓGICA OBSOLETA: Las plantillas no tienen .schedule directamente >>>
+    /*
     if (template && template.schedule) { // Asumiendo que la plantilla tiene un campo 'schedule' con formato WeekSchedule
         // O si la plantilla tiene .blocks, convertirla
         // const scheduleFromTemplate = convertBlocksToWeekSchedule(template.blocks, activeClinic?.openTime ?? "00:00", activeClinic?.closeTime ?? "23:59");
         // setCurrentSchedule(scheduleFromTemplate);
         // onChange(scheduleFromTemplate);
-        
-        // --- Si template.schedule ya tiene formato WeekSchedule --- 
-        setCurrentSchedule(template.schedule); 
-        onChange({ schedule: template.schedule }); 
-        // --- FIN --- 
     }
+    */
+    // Si se habilita showTemplateSelector, aquí debería ir la lógica para 
+    // convertir template.blocks y llamar a onChange.
+    // Por ahora, esta función no hará nada si se llama desde el selector interno (si existiera).
+    console.warn("[ScheduleConfig] handleTemplateChange called, but internal logic is commented out/incomplete.");
   }
 
   const updateTimeRange = (day: keyof WeekSchedule, index: number, field: "start" | "end", newValue: string) => {
@@ -311,7 +321,7 @@ export function ScheduleConfig({ clinic, onChange, showTemplateSelector = false,
         </div>
       )}
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         {Object.entries(DAYS).map(([dayKey, dayName]) => {
           const daySchedule = currentSchedule[dayKey as keyof WeekSchedule];
           const isExpanded = expandedDays.includes(dayKey);
@@ -342,7 +352,7 @@ export function ScheduleConfig({ clinic, onChange, showTemplateSelector = false,
                     {dayName}
                   </Label>
                 </div>
-                <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                <div className="flex flex-wrap items-center w-full gap-2 sm:w-auto">
                   <Button variant="ghost" size="sm" className="flex-shrink-0" disabled={isReadOnly}>
                     {isExpanded ? "Ocultar" : "Mostrar"}
                   </Button>

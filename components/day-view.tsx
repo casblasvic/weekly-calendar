@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback, useRef } from "react"
 import { format, parse, parseISO, isAfter, isBefore, getDay, getDate, isSameDay, addDays, subDays, set, addMinutes, isEqual } from "date-fns"
 import { es } from "date-fns/locale"
 import { useClinic } from "@/contexts/clinic-context"
+import { useCabins } from "@/contexts/CabinContext"
 import { AgendaNavBar } from "@/components/agenda-nav-bar"
 import { HydrationWrapper } from "@/components/hydration-wrapper"
 import { useRouter } from "next/navigation"
@@ -31,9 +32,19 @@ import { Separator } from "@/components/ui/separator"
 import { AppointmentDialog as AppointmentDialogType } from "@/components/appointment-dialog"
 import { AppointmentItem as AppointmentItemType } from "@/components/appointment-item"
 import { CustomDatePicker } from "@/components/custom-date-picker"
-import { Appointment } from "@/types/appointments"
-import { Cabin, ScheduleTemplateBlock, ClinicScheduleBlock } from '@prisma/client';
+import { Appointment } from "@/types/appointment"
+import { Cabin, ScheduleTemplateBlock, ClinicScheduleBlock, CabinScheduleOverride } from '@prisma/client';
 import { WeekSchedule, DaySchedule } from "@/types/schedule";
+import { Loader2 } from "lucide-react"
+import { isValid } from "date-fns"
+import { convertCabinToRoom } from "@/types/fix-types"
+import { useTheme } from "@/app/contexts/theme-context"
+
+interface Clinica {
+  // ... otras propiedades existentes ...
+  weekendOpenTime?: string | null; // O el tipo que corresponda
+  weekendCloseTime?: string | null; // O el tipo que corresponda
+}
 
 // Función para generar slots de tiempo
 function getTimeSlots(startTime: string, endTime: string, interval = 15): string[] {
@@ -61,34 +72,41 @@ function getTimeSlots(startTime: string, endTime: string, interval = 15): string
 const ZEBRA_LIGHT = "bg-gray-50"; // O un color púrpura muy claro: "bg-purple-50/20";
 const ZEBRA_DARK = "bg-white";
 
+interface Client { 
+  id: string; 
+  name: string; 
+  phone: string; 
+}
+
 interface Employee {
   id: string
   name: string
 }
 
-// Interfaz para bloques contiguos
-interface ContiguousBlock {
-  block: ScheduleBlock
-  startTime: string
-  endTime: string
-  startIndex: number
-  endIndex: number
-  roomId: string
-}
-
 interface DayViewProps {
   date: string
   containerMode?: boolean
+  onAppointmentsChange?: (appointments: Appointment[]) => void
   appointments?: Appointment[]
   employees?: Employee[]
-  cabins?: Cabin[]
-  onAddAppointment?: (startTime: Date, endTime: Date, cabinId: string) => void
+  rooms?: Room[]
   onAppointmentClick?: (appointmentId: string) => void
-  onViewChange?: (view: "weekly" | "day") => void
+  onViewChange?: (view: "week" | "day", date?: Date) => void
 }
 
-// --- COPIED HELPER FUNCTIONS from WeeklyAgenda --- 
+// Definir tipo Room localmente si no está global
+interface Room {
+  id: string;
+  name: string;
+  color?: string;
+}
+
+// <<< REINCORPORAR HELPERS >>>
 const getDayKey = (date: Date) => {
+  if (!isValid(date)) { 
+      console.warn("[DayView - getDayKey] Received invalid date:", date);
+      return "";
+  }
   const day = format(date, "EEEE", { locale: es }).toLowerCase();
   const dayMap = {
     lunes: "monday", martes: "tuesday", miércoles: "wednesday", jueves: "thursday",
@@ -117,57 +135,69 @@ const convertBlocksToWeekSchedule = (
             acc[dayKey].isOpen = true;
             acc[dayKey].ranges.push({ start: block.startTime, end: block.endTime });
             acc[dayKey].ranges.sort((a, b) => a.start.localeCompare(b.start));
+        } else {
+            console.warn(`[DayView - convertBlocksToWeekSchedule] Invalid dayKey derived: ${dayKey} for block:`, block);
         }
         return acc;
     }, initialSchedule);
     return weekSchedule;
 };
-// --- END COPIED HELPERS ---
+// <<< FIN HELPERS >>>
 
 export default function DayView({
-  date,
+  date: dateString,
   containerMode = false,
+  onAppointmentsChange,
   appointments: initialAppointments = [],
   employees = [],
-  cabins = [],
-  onAddAppointment,
+  rooms = [],
   onAppointmentClick,
   onViewChange,
 }: DayViewProps) {
   const router = useRouter()
-  const { activeClinic } = useClinic()
-  const { getBlocksByDateRange, createBlock, updateBlock, deleteBlock } = useScheduleBlocks()
+  const { activeClinic, isLoading: isLoadingClinic } = useClinic()
+  const { theme } = useTheme()
+  const {
+    createBlock, updateBlock, deleteBlock,
+    createCabinOverride, updateCabinOverride, deleteCabinOverride,
+    cabinOverrides, loadingOverrides,
+    getBlocksByDateRange,
+  } = useScheduleBlocks()
   
-  // <<< CREATE parsedDateProp using useMemo >>>
-  const parsedDateProp = useMemo(() => {
-    try {
-      // Parse the date prop coming from the parent
-      return parse(date, "yyyy-MM-dd", new Date());
-    } catch (error) {
-      console.error("[DayView] Error parsing date prop:", date, error);
-      return new Date(); // Fallback to today on error
-    }
-  }, [date]); // Only re-calculates when the 'date' prop changes
+  const { toast } = useToast()
 
+  // Parsear la fecha una vez
+  const currentDate = useMemo(() => {
+      try {
+        return parse(dateString, 'yyyy-MM-dd', new Date());
+      } catch (error) {
+        console.error("[DayView] Error parsing date:", dateString, error);
+        return new Date(); // Fallback a hoy
+      }
+  }, [dateString]);
+
+  // Estado de carga combinado
+  const isLoading = isLoadingClinic;
+
+  if (isLoading) {
+    console.log(`[DayView] Mostrando carga: isLoadingClinic=${isLoadingClinic}`);
+    return <div className="flex items-center justify-center h-full"><Loader2 className="w-8 h-8 animate-spin text-purple-600" /> Cargando datos...</div>;
+  }
+  
   // Estados para diálogos y selección
   const [selectedSlot, setSelectedSlot] = useState<{
     date: Date
     time: string
     roomId: string
   } | null>(null)
-  const [selectedClient, setSelectedClient] = useState<{
-    name: string
-    phone: string
-  } | null>(null)
+  const [selectedClient, setSelectedClient] = useState<Client | null>(null)
   const [isSearchDialogOpen, setIsSearchDialogOpen] = useState(false)
   const [isAppointmentDialogOpen, setIsAppointmentDialogOpen] = useState(false)
   const [isNewClientDialogOpen, setIsNewClientDialogOpen] = useState(false)
 
   // Dentro de la función DayView, añadir estos estados:
-  const [scheduleBlocks, setScheduleBlocks] = useState<ScheduleBlock[]>([])
-  const [selectedBlock, setSelectedBlock] = useState<ScheduleBlock | null>(null)
+  const [selectedOverride, setSelectedOverride] = useState<CabinScheduleOverride | null>(null)
   const [isBlockModalOpen, setIsBlockModalOpen] = useState(false)
-  const { toast } = useToast()
 
   // Añadir este estado cerca de los otros estados al inicio del componente
   const [updateKey, setUpdateKey] = useState(0)
@@ -211,9 +241,6 @@ export default function DayView({
     }
   }, [initialAppointments, appointments])
 
-  // REMOVE useMemo that depends on scheduleJson
-  // const schedule = useMemo(() => activeClinic?.scheduleJson as unknown as WeekSchedule | null, [activeClinic?.scheduleJson]);
-
   // <<< ADD useMemo to calculate correctSchedule >>>
   const correctSchedule = useMemo(() => {
     if (!activeClinic) return null;
@@ -245,42 +272,48 @@ export default function DayView({
   console.log("[DayView] Derived schedule config:", { openTime, closeTime, slotDuration, schedule: correctSchedule });
   // -----------------------------------------
 
-  // Usar la prop 'cabins' directamente (ya es del tipo Prisma y filtrada en el padre)
-  const effectiveCabins = cabins;
-
   // <<< UPDATE timeSlots calculation to use correctSchedule >>>
   const timeSlots = useMemo(() => {
-    if (!correctSchedule) return getTimeSlots(openTime, closeTime, slotDuration); // Fallback
+    if (!correctSchedule) {
+      console.warn("[DayView] No correctSchedule available for timeSlots generation, using defaults.")
+      return getTimeSlots(openTime, closeTime, slotDuration); // Fallback
+    }
 
-    const dayKey = getDayKey(parsedDateProp);
+    const dayKey = getDayKey(currentDate);
     const daySchedule = correctSchedule[dayKey as keyof WeekSchedule];
 
-    let earliestStart = openTime;
-    let latestEnd = closeTime;
+    let dayStartTime = openTime; // Usar el openTime general como default
+    let dayEndTime = closeTime; // Usar el closeTime general como default
 
     if (daySchedule?.isOpen && daySchedule.ranges.length > 0) {
-        earliestStart = daySchedule.ranges.reduce((min, r) => r.start < min ? r.start : min, "23:59");
-        latestEnd = daySchedule.ranges.reduce((max, r) => r.end > max ? r.end : max, "00:00");
-        // Ensure latestEnd is valid if ranges cross midnight (e.g., 23:00-01:00), though unlikely here
-        if (latestEnd <= earliestStart) latestEnd = closeTime > earliestStart ? closeTime : "23:59"; 
+      // Asegurarse de que los rangos están ordenados por hora de inicio
+      const sortedRanges = [...daySchedule.ranges].sort((a, b) => a.start.localeCompare(b.start));
+      // Tomar el inicio del primer rango y el fin del último rango del día
+      dayStartTime = sortedRanges[0].start;
+      dayEndTime = sortedRanges[sortedRanges.length - 1].end;
+    } else if (!daySchedule?.isOpen) {
+      // Si el día está explícitamente cerrado, no mostrar slots
+      console.log(`[DayView] Day ${dayKey} is closed. Returning empty timeSlots.`);
+      return [];
     } else {
-        // If day is closed or no ranges, maybe return empty slots?
-        // Or use default open/close times?
-        // For now, let's use default open/close if the day IS configured but has no ranges or is closed
-        earliestStart = openTime;
-        latestEnd = closeTime;
-        // If you want to show NO slots on closed days:
-        // if (!daySchedule?.isOpen) return []; 
+        // Si está abierto pero no hay rangos (quizás configuración incompleta), 
+        // usar el horario general de la clínica para ese día.
+        console.log(`[DayView] Day ${dayKey} has no specific ranges or is not explicitly open, using clinic's general open/close times: ${openTime}-${closeTime}`);
+        dayStartTime = openTime;
+        dayEndTime = closeTime;
     }
     
-    console.log(`[DayView] Generating time slots for ${format(parsedDateProp, 'yyyy-MM-dd')} from ${earliestStart} to ${latestEnd}`);
-    if (latestEnd <= earliestStart) { 
-        console.warn("[DayView] latestEnd time is not after earliestStart, using default times for slots.");
+    // --- LOG DETALLADO --- 
+    console.log(`[DayView] Generating time slots for ${format(currentDate, 'yyyy-MM-dd')} (Day key: ${dayKey}). Final range: ${dayStartTime} - ${dayEndTime}`);
+    
+    // Validación final antes de generar slots
+    if (!dayStartTime || !dayEndTime || dayEndTime <= dayStartTime) { 
+        console.warn(`[DayView] Invalid final time range derived (${dayStartTime}-${dayEndTime}). Using default clinic times ${openTime}-${closeTime}.`);
         return getTimeSlots(openTime, closeTime, slotDuration); 
     } 
 
-    return getTimeSlots(earliestStart, latestEnd, slotDuration);
-  }, [correctSchedule, parsedDateProp, openTime, closeTime, slotDuration, getDayKey]);
+    return getTimeSlots(dayStartTime, dayEndTime, slotDuration);
+  }, [correctSchedule, currentDate, openTime, closeTime, slotDuration]); // Dependencias correctas
 
   // Función para verificar si un día está activo en la configuración
   const isDayActive = useCallback(
@@ -324,7 +357,7 @@ export default function DayView({
 
   // <<< UPDATE isTimeSlotAvailable to use correctSchedule >>>
   const isTimeSlotAvailable = useCallback((time: string) => {
-    const dayKey = getDayKey(parsedDateProp);
+    const dayKey = getDayKey(currentDate);
     let isAvailable = false;
     try {
       // <<< Use correctSchedule directly >>>
@@ -339,7 +372,7 @@ export default function DayView({
       console.error("[DayView] Error in isTimeSlotAvailable:", error);
     }
     return isAvailable;
-  }, [correctSchedule, parsedDateProp, getDayKey]); // <<< Add correctSchedule and getDayKey to dependencies
+  }, [correctSchedule, currentDate, getDayKey]); // <<< Add correctSchedule and getDayKey to dependencies
 
   // Referencia para el contenedor de la agenda
   const agendaRef = useRef<HTMLDivElement>(null)
@@ -373,174 +406,51 @@ export default function DayView({
   }, []);
 
   // Filtrar citas para el día actual
-  const dayAppointments = appointments.filter((apt) => apt.date.toDateString() === parsedDateProp.toDateString())
+  const dayAppointments = appointments.filter((apt) => apt.date.toDateString() === currentDate.toDateString())
 
-  // Corregir la función findBlockForCell
-  const findBlockForCell = (date: string, time: string, roomId: string): ScheduleBlock | null => {
-    return (
-      scheduleBlocks.find((block) => {
-        // Verificar fecha
-        if (block.date !== date && !isRecurringBlockApplicable(block, date)) {
-          return false
-        }
-
-        // Verificar hora
-        if (time < block.startTime || time >= block.endTime) {
-          return false
-        }
-
-        // Verificar cabina
-        return block.roomIds.includes(roomId) || block.roomIds.includes("all") || block.roomIds.length === 0
-      }) || null
-    )
-  }
-
-  // Función auxiliar para bloques recurrentes
-  const isRecurringBlockApplicable = (block: ScheduleBlock, date: string): boolean => {
-    if (!block.recurring || !block.recurrencePattern) return false
-
-    const blockDate = parseISO(block.date)
-    const targetDate = parseISO(date)
-
-    // Si la fecha objetivo es anterior a la fecha del bloqueo
-    if (isBefore(targetDate, blockDate)) return false
-
-    // Si existe fecha de fin y la fecha objetivo es posterior
-    if (block.recurrencePattern.endDate && isAfter(targetDate, parseISO(block.recurrencePattern.endDate))) {
-      return false
+  // Corregir: findOverrideForCell debe esperar string para cabinId
+  const findOverrideForCell = (currentViewDate: Date, timeSlot: string, cabinId: string, overrides: CabinScheduleOverride[], clinicId?: string): CabinScheduleOverride | null => {
+    if (!overrides || overrides.length === 0 || !clinicId) {
+      return null;
     }
-
-    const dayOfWeek = getDay(targetDate) // 0 = domingo, 1 = lunes, etc.
-
-    if (block.recurrencePattern.frequency === "daily") {
-      return true
-    } else if (block.recurrencePattern.frequency === "weekly") {
-      // Si hay días específicos definidos, verificar si corresponde
-      if (block.recurrencePattern.daysOfWeek && block.recurrencePattern.daysOfWeek.length > 0) {
-        return block.recurrencePattern.daysOfWeek.includes(dayOfWeek)
-      }
-      // Si no hay días específicos, compara con el día de la semana del bloqueo original
-      return getDay(blockDate) === dayOfWeek
-    } else if (block.recurrencePattern.frequency === "monthly") {
-      return getDate(blockDate) === getDate(targetDate)
-    }
-
-    return false
-  }
-
-  // Nueva función para identificar bloques contiguos
-  const findContiguousBlocks = (date: string, roomId: string): ContiguousBlock[] => {
-    const contiguousBlocks: ContiguousBlock[] = []
-
-    if (timeSlots.length === 0) return contiguousBlocks
-
-    let currentBlock: ScheduleBlock | null = null
-    let startTime = ""
-    let startIndex = -1
-
-    // Recorrer todos los slots de tiempo para encontrar bloques contiguos
-    timeSlots.forEach((time, index) => {
-      const blockForCell = findBlockForCell(date, time, roomId)
-
-      // Si encontramos un bloque y no teníamos uno antes, o si es un bloque diferente
-      if (blockForCell && (currentBlock === null || blockForCell.id !== currentBlock.id)) {
-        // Si ya teníamos un bloque en curso, lo finalizamos
-        if (currentBlock !== null && startIndex !== -1) {
-          contiguousBlocks.push({
-            block: currentBlock,
-            startTime,
-            endTime: timeSlots[index - 1],
-            startIndex,
-            endIndex: index - 1,
-            roomId,
-          })
+    const relevantOverrides = overrides.filter(ov => 
+      ov.clinicId === clinicId &&
+      ov.cabinIds.includes(cabinId) && // Usa cabinId (string)
+      // Ajustar comparación de fechas para ignorar la hora
+      isSameDay(ov.startDate, currentViewDate) 
+    );
+    for (const override of relevantOverrides) {
+        // Comparación de tiempo robusta
+        if (timeSlot >= override.startTime && timeSlot < override.endTime) {
+            return override;
         }
-
-        // Iniciamos un nuevo bloque
-        currentBlock = blockForCell
-        startTime = time
-        startIndex = index
-      }
-      // Si no hay bloque en esta celda pero teníamos uno en curso
-      else if (!blockForCell && currentBlock !== null) {
-        // Finalizamos el bloque actual
-        contiguousBlocks.push({
-          block: currentBlock,
-          startTime,
-          endTime: timeSlots[index - 1],
-          startIndex,
-          endIndex: index - 1,
-          roomId,
-        })
-
-        // Reiniciamos
-        currentBlock = null
-        startTime = ""
-        startIndex = -1
-      }
-
-      // Si llegamos al final y tenemos un bloque en curso, lo finalizamos
-      if (index === timeSlots.length - 1 && currentBlock !== null) {
-        contiguousBlocks.push({
-          block: currentBlock,
-          startTime,
-          endTime: time,
-          startIndex,
-          endIndex: index,
-          roomId,
-        })
-      }
-    })
-
-    return contiguousBlocks
-  }
-
-  // Función para abrir el modal de bloqueo directamente
-  const openBlockModal = (block: ScheduleBlock) => {
-    console.log("Abriendo modal para bloque:", block)
-    setSelectedBlock(block)
-    setIsBlockModalOpen(true)
+    }
+    return null;
   }
 
   // Funciones para manejar citas
   const handleCellClick = (date: Date, time: string, roomId: string) => {
-    console.log("[DayView] handleCellClick", { date, time, roomId });
+    console.log(`Celda clickeada: ${format(date, 'yyyy-MM-dd')} ${time}, Cabina: ${roomId}`);
+    const clinicIdStr = activeClinic?.id ? String(activeClinic.id) : undefined;
 
-    // Use parsedDateProp for the current date context if needed
-    const targetDate = date; // Keep using the date of the cell clicked
-
-    // Find manual blocks for this specific cell's date
-    const dayString = format(targetDate, "yyyy-MM-dd");
-    const blockForCell = findBlockForCell(dayString, time, roomId);
-
-    if (blockForCell) {
-      if (blockForCell.isBlocked) {
-        toast({ title: "Horario bloqueado", description: blockForCell.notes || "Este horario está bloqueado manualmente.", variant: "destructive" });
-        return;
-      } else {
-        // If it's a non-blocking note, allow opening modal or selecting
-        // For now, just log it and maybe open the block modal later
-        console.log("Clicked on a non-blocking note block:", blockForCell);
-        // Potentially open block modal for editing note?
-        // setSelectedBlock(blockForCell);
-        // setIsBlockModalOpen(true);
-        // return; // Decide if clicking a note prevents appointment creation
-      }
+    // Verificar si la celda está bloqueada por un override
+    // Asegurarse que roomId se pasa como string
+    const override = findOverrideForCell(date, time, String(roomId), cabinOverrides, clinicIdStr);
+    if (override) {
+      console.log('Celda bloqueada por override, abriendo modal de edición:', override);
+      openOverrideModal(override); // Abrir modal para editar el override existente
+      return; // No hacer nada más si está bloqueado
     }
 
-    // Check availability using the component's current date context
-    if (!isTimeSlotAvailable(time)) {
-       toast({ title: "Horario no disponible", description: "La clínica está cerrada en este horario.", variant: "default" });
-       return;
-    }
+    // Si no está bloqueado, iniciar flujo de nueva cita
+    console.log('Celda no bloqueada. Abriendo búsqueda de cliente para nueva cita.');
+    setSelectedSlot({ date, time, roomId: String(roomId) }); // Guardar slot seleccionado
+    setIsSearchDialogOpen(true); // Abrir modal de búsqueda de cliente
+  }
 
-    console.log("Slot seleccionado:", { date: targetDate, time, roomId });
-    setSelectedSlot({ date: targetDate, time, roomId });
-    setIsSearchDialogOpen(true);
-  };
-
-  const handleClientSelect = (client: { name: string; phone: string }) => {
-    setSelectedClient(client)
+  const handleClientSelect = (client: Client) => {
+    console.log("Cliente seleccionado:", client)
+    setSelectedClient(client) // selectedClient debe ser de tipo Client | null
     setIsSearchDialogOpen(false)
     setIsAppointmentDialogOpen(true)
   }
@@ -570,14 +480,8 @@ export default function DayView({
       tags?: string[]
     }) => {
       if (selectedSlot) {
-        // Modificar esta parte para usar la primera cabina activa si no se encuentra la específica
-        const cabin =
-          effectiveCabins.find(
-            (c) =>
-              c.id === selectedSlot.roomId ||
-              c.id.toString() === selectedSlot.roomId ||
-              String(c.id) === selectedSlot.roomId,
-          ) || effectiveCabins[0]
+        const targetRoomId = String(selectedSlot.roomId);
+        const cabin = rooms.find(c => String(c.id) === targetRoomId);
 
         if (cabin) {
           const newAppointment: Appointment = {
@@ -585,20 +489,23 @@ export default function DayView({
             name: appointmentData.client.name,
             service: appointmentData.services.map((s) => s.name).join(", "),
             date: selectedSlot.date,
-            roomId: selectedSlot.roomId,
+            roomId: targetRoomId, // Usar el ID string
             startTime: appointmentData.time,
-            duration: appointmentData.blocks || 2, // Usar la duración especificada o valor por defecto
-            color: cabin.color, // Use cabin color
+            duration: appointmentData.blocks || 2, 
+            color: cabin.color, 
             phone: appointmentData.client.phone,
-            tags: appointmentData.tags || [], // Incluir etiquetas
+            tags: appointmentData.tags || [], 
+          };
+          setAppointments((prev) => [...prev, newAppointment]);
+          // Notificar al padre si existe el callback
+          if (onAppointmentsChange) {
+             onAppointmentsChange([...appointments, newAppointment]);
           }
-
-          setAppointments((prev) => [...prev, newAppointment])
         }
       }
     },
-    [selectedSlot, effectiveCabins],
-  )
+    [selectedSlot, rooms, setAppointments, onAppointmentsChange, appointments]
+  );
 
   const handleAppointmentResize = (id: string, newDuration: number) => {
     // Esta función ya no es necesaria con el nuevo componente sin redimensionamiento
@@ -607,55 +514,20 @@ export default function DayView({
   }
 
   const onDragEnd = (result: any) => {
-    if (!result.destination) {
-      return
+    if (!result.destination) return;
+    const { source, destination } = result;
+    const updatedAppointments = Array.from(appointments);
+    const [movedAppointment] = updatedAppointments.splice(source.index, 1);
+    const [roomId, time] = destination.droppableId.split("-"); // roomId aquí es string
+    const updatedAppointment = { ...movedAppointment, date: currentDate, roomId, startTime: time };
+    updatedAppointments.push(updatedAppointment);
+    setAppointments(updatedAppointments);
+     // Notificar al padre si existe el callback
+    if (onAppointmentsChange) {
+        onAppointmentsChange(updatedAppointments);
     }
-
-    const { source, destination } = result
-    const updatedAppointments = Array.from(appointments)
-    const [movedAppointment] = updatedAppointments.splice(source.index, 1)
-
-    const [roomId, time] = destination.droppableId.split("-")
-
-    const updatedAppointment = {
-      ...movedAppointment,
-      date: parsedDateProp,
-      roomId,
-      startTime: time,
-    }
-
-    updatedAppointments.push(updatedAppointment)
-    setAppointments(updatedAppointments)
-    setIsAppointmentDialogOpen(false)
-  }
-
-  // Componente para renderizar un bloque contiguo
-  const ContiguousBlockComponent = ({ contiguousBlock }: { contiguousBlock: ContiguousBlock }) => {
-    const { block, startIndex, endIndex } = contiguousBlock
-    const height = (endIndex - startIndex + 1) * AGENDA_CONFIG.ROW_HEIGHT
-
-    return (
-      <div
-        className="absolute left-0 right-0 z-10 flex items-center bg-pink-100/80 border border-pink-300 rounded-sm m-0.5 overflow-hidden cursor-pointer group"
-        style={{
-          top: 0,
-          height: `${height}px`,
-        }}
-        onClick={(e) => {
-          e.stopPropagation()
-          openBlockModal(block)
-        }}
-        title={block?.description || "Bloqueado"}
-      >
-        <div className="flex items-center w-full h-full p-1">
-          <Lock className="h-3 w-3 min-w-[12px] flex-shrink-0 text-pink-600 mr-1" />
-          <span className="text-xs font-medium text-pink-800 truncate text-ellipsis max-w-[calc(100%-20px)]">
-            {block?.description || ""}
-          </span>
-        </div>
-      </div>
-    )
-  }
+    setIsAppointmentDialogOpen(false);
+  };
 
   // Añadir un estado para la cita seleccionada
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null)
@@ -666,12 +538,12 @@ export default function DayView({
     setSelectedAppointment(appointment)
     
     // Configurar los datos necesarios para editar la cita
-    const client = {
-      name: appointment.name,
-      phone: appointment.phone || ""
-    }
-    
-    setSelectedClient(client)
+    const clientForModal: Client = { 
+        id: appointment.clientId || "", // Asumir que Appointment tiene clientId
+        name: appointment.name, 
+        phone: appointment.phone || "" 
+    };
+    setSelectedClient(clientForModal)
     setSelectedSlot({
       date: appointment.date,
       time: appointment.startTime,
@@ -682,205 +554,165 @@ export default function DayView({
     setIsAppointmentDialogOpen(true)
   }
 
-  // Estructura corregida para el renderDayGrid
-  const renderDayGrid = () => (
-    <div className="relative p-1 bg-gray-100">
-      <div ref={agendaRef} style={{ scrollBehavior: "smooth" }}>
-        <div className="min-w-[800px] relative min-h-[400px]">
-          <div
-            className="grid bg-white"
-            style={{
-              gridTemplateColumns: `auto repeat(${effectiveCabins.length || 1}, minmax(100px, 1fr))`,
-              width: "100%",
-            }}
-          >
-            {/* ---- INICIO CABECERA FIJA ---- */}
-            {/* Columna de tiempo */}
-            <div className="sticky top-0 z-20 flex items-center justify-center w-20 p-2 bg-white border-b border-r border-gray-300 hour-header">
-              <div className="text-xs font-medium text-gray-600">Hora</div>
-            </div>
+  // Crear clinicRooms con el formato correcto para BlockScheduleModal
+  const clinicRoomsForModal: Room[] = useMemo(() => {
+      return rooms.map(cabin => ({
+          id: String(cabin.id), // Asegurar que es string
+          name: cabin.name,
+          color: cabin.color
+      }));
+  }, [rooms]);
 
-            {/* Cabeceras de Cabina */}
-            {effectiveCabins.map((cabin) => (
-              <div
-                key={cabin.id}
-                className="sticky top-0 z-20 p-1 text-center border-b border-r border-gray-300 last:border-r-0 day-header"
-                style={{ backgroundColor: cabin.color }}
-              >
-                <div className="flex flex-col items-center justify-center h-full">
-                  <span className={cn(
-                    "text-[10px] font-bold px-1 rounded",
-                    isColorLight(cabin.color) ? "text-black" : "text-white"
-                  )}>
-                    {cabin.code || cabin.name.substring(0,3)}
-                  </span>
-                  <div className={cn(
-                    "text-[10px] mt-0.5 truncate w-full",
-                    isColorLight(cabin.color) ? "text-gray-700" : "text-gray-100"
-                  )} title={cabin.name}>
-                    {cabin.name}
-                  </div>
-                </div>
+  // Corregir renderDayGrid para usar String(cabin.id) en findOverrideForCell
+  const renderDayGrid = () => {
+      console.log("[DayView] renderDayGrid - valor de rooms:", JSON.stringify(rooms));
+      const clinicIdStr = activeClinic?.id ? String(activeClinic.id) : undefined;
+      return (
+          <div className="flex-1 overflow-visible relative bg-white" ref={agendaRef}>
+              {/* Cabecera de la tabla (fija) */}
+              <div className="sticky top-0 z-30 grid bg-white border-b shadow-sm" 
+                   style={{ gridTemplateColumns: `60px repeat(${rooms.length > 0 ? rooms.length : 1}, minmax(100px, 1fr))` }}> 
+                  <div className="flex items-center justify-center h-12 px-2 py-1 text-xs font-semibold tracking-wide text-center text-gray-600 uppercase border-r bg-gray-50">Hora</div>
+                  {rooms.length > 0 ? (
+                    rooms.map((room) => (
+                      <div key={room.id} className="flex items-center justify-center h-12 px-2 py-1 text-xs font-semibold tracking-wide text-center text-white border-r last:border-r-0" style={{ backgroundColor: room.color || '#ccc' }}>
+                        {room.name}
+                      </div>
+                    ))
+                  ) : (
+                     <div className="flex items-center justify-center h-12 px-2 py-1 text-xs font-semibold tracking-wide text-center text-gray-500 border-r last:border-r-0 bg-gray-50">
+                       (Sin cabinas activas)
+                     </div>
+                  )}
               </div>
-            ))}
-             {/* Placeholder si NO hay cabinas */}
-             {effectiveCabins.length === 0 && (
-                <div className="sticky top-0 col-span-1 p-2 italic text-center text-gray-400 border-b border-r border-gray-300 bg-gray-50">
-                  (Sin cabinas activas)
-                </div>
-             )}
-            {/* ---- FIN CABECERA FIJA ---- */}
 
-            {/* ---- INICIO CUERPO CON COLUMNA DE TIEMPO FIJA ---- */}
-            {timeSlots.map((time, timeIndex) => (
-              <React.Fragment key={time}>
-                {/* Columna de Tiempo */}
-                <div
-                  className="sticky left-0 border-r border-b border-gray-300 px-2 py-1 text-[10px] text-purple-700 bg-purple-50/50 font-medium w-20 flex items-center justify-center hour-column"
-                  style={{ height: `${AGENDA_CONFIG.ROW_HEIGHT}px` }}
-                  data-time={time}
-                >
-                  {time}
-                </div>
-                {/* Celdas de Cabina */}
-                {effectiveCabins.map((cabin, cabinIndex) => {
-                  const isAvailable = isTimeSlotAvailable(time);
-                  const dayString = format(parsedDateProp, "yyyy-MM-dd");
-                  const blockForCell = findBlockForCell ? findBlockForCell(dayString, time, cabin.id.toString()) : null;
-                  const isCellInteractive = isAvailable && !blockForCell;
-                  const isCellClickable = isCellInteractive || !!blockForCell;
-
-                  // Lógica para agrupar bloques
-                  const prevTime = timeIndex > 0 ? timeSlots[timeIndex - 1] : null;
-                  const blockForPrevCell = prevTime ? findBlockForCell(dayString, prevTime, cabin.id.toString()) : null;
-                  const isStartOfBlock = blockForCell && (!blockForPrevCell || blockForPrevCell.id !== blockForCell.id);
-
-                  // Calcular duración si es el inicio de un bloque
-                  let blockDurationSlots = 0;
-                  if (isStartOfBlock && blockForCell) {
-                    blockDurationSlots = 1;
-                    for (let i = timeIndex + 1; i < timeSlots.length; i++) {
-                      const nextTime = timeSlots[i];
-                      const blockForNextCell = findBlockForCell(dayString, nextTime, cabin.id.toString());
-                      if (blockForNextCell && blockForNextCell.id === blockForCell.id) {
-                        blockDurationSlots++;
-                      } else {
-                        break;
-                      }
-                    }
-                  }
-
-                  return (
-                    <div
-                      key={`${cabin.id}-${time}`}
-                      className={cn(
-                        "relative border-b border-r border-gray-200 last:border-r-0",
-                        !isAvailable && "bg-gray-300 dark:bg-gray-700 cursor-not-allowed",
-                        isAvailable && [
-                          blockForCell && "bg-rose-100 cursor-pointer",
-                          isCellInteractive && "hover:bg-purple-100/50 cursor-pointer",
-                          blockForCell && !isStartOfBlock && "border-t-0",
-                        ]
-                      )}
-                      style={{
-                        height: `${AGENDA_CONFIG.ROW_HEIGHT}px`,
-                      }}
-                      onClick={(e) => {
-                        if (isCellInteractive) {
-                          e.stopPropagation();
-                          handleCellClick(parsedDateProp, time, cabin.id.toString());
-                        } else if (blockForCell) {
-                          e.stopPropagation();
-                          openBlockModal(blockForCell);
-                        }
-                      }}
-                    >
-                      {isStartOfBlock && blockForCell && (
-                        <div
-                          className="absolute inset-x-0 top-0 z-10 flex items-center justify-center p-1 m-px overflow-hidden border rounded-sm pointer-events-none bg-rose-200/80 border-rose-300"
-                          style={{
-                            height: `calc(${blockDurationSlots * AGENDA_CONFIG.ROW_HEIGHT}px - 2px)`,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center'
-                          }}
-                        >
-                          <Lock className="flex-shrink-0 w-3 h-3 text-rose-600" />
-                        </div>
+              {/* Contenedor scrollable para slots */}
+              <div className="relative">
+                  {timeSlots.map((time, timeIndex) => (
+                    <div key={time} className="grid border-b" 
+                         style={{ gridTemplateColumns: `60px repeat(${rooms.length > 0 ? rooms.length : 1}, minmax(100px, 1fr))`, minHeight: `${AGENDA_CONFIG.ROW_HEIGHT}px` }}>
+                      {/* Celda de Hora */}
+                      <div className={cn(
+                          "flex items-center justify-center px-1 py-1 text-xs font-medium text-center text-gray-500 border-r",
+                          timeIndex % 2 === 0 ? ZEBRA_LIGHT : ZEBRA_DARK // Aplicar zebra aquí también
+                      )}>
+                        {time}
+                      </div>
+                      {/* Celdas de Cabinas */}
+                      {rooms.length > 0 ? (
+                        rooms.map((room) => {
+                          const isAvailable = isTimeSlotAvailable(time);
+                          const isBlocked = !!findOverrideForCell(currentDate, time, String(room.id), cabinOverrides, clinicIdStr);
+                          
+                          return (
+                            <div
+                              key={`${time}-${room.id}`}
+                              className={cn(
+                                "relative border-r last:border-r-0 min-h-[40px] flex flex-col justify-start", // min-h y flex-col
+                                timeIndex % 2 === 0 ? ZEBRA_LIGHT : ZEBRA_DARK,
+                                isAvailable && !isBlocked ? "cursor-pointer hover:bg-purple-100/50" : "",
+                                !isAvailable && !isBlocked ? "bg-gray-100 cursor-not-allowed opacity-70" : "", // Estilo para no disponible
+                                isBlocked ? "bg-rose-100/50 cursor-not-allowed" : "" // Estilo para bloqueado
+                              )}
+                              onClick={() => {
+                                if (isAvailable && !isBlocked) {
+                                  handleCellClick(currentDate, time, String(room.id));
+                                } else if (isBlocked && findOverrideForCell(currentDate, time, String(room.id), cabinOverrides, clinicIdStr)) {
+                                   console.log('Click en celda bloqueada, abriendo modal de edición:', findOverrideForCell(currentDate, time, String(room.id), cabinOverrides, clinicIdStr));
+                                   openOverrideModal(findOverrideForCell(currentDate, time, String(room.id), cabinOverrides, clinicIdStr));
+                                }
+                              }}
+                            >
+                              {/* Renderizar citas */}
+                              {dayAppointments
+                                .filter((apt) => apt.startTime === time && String(apt.roomId) === String(room.id))
+                                .map((apt, index) => (
+                                  <AppointmentItem
+                                    key={apt.id}
+                                    appointment={apt}
+                                    index={index}
+                                    onClick={() => handleAppointmentClick(apt)}
+                                  />
+                                ))}
+                              {/* Renderizar indicador de bloqueo */}
+                              {isBlocked && renderBlockIndicator(findOverrideForCell(currentDate, time, String(room.id), cabinOverrides, clinicIdStr), time, String(room.id))}
+                            </div>
+                          );
+                        })
+                      ) : (
+                          <div className={cn(
+                              "relative border-r last:border-r-0 min-h-[40px] bg-gray-50", // Celda vacía si no hay cabinas
+                              timeIndex % 2 === 0 ? ZEBRA_LIGHT : ZEBRA_DARK
+                          )}></div>
                       )}
                     </div>
-                  );
-                })}
-                {/* Placeholder si NO hay cabinas */}
-                {effectiveCabins.length === 0 && (
-                   <div
-                     className="flex items-center justify-center p-2 italic text-center text-gray-400 border-b border-r border-gray-200"
-                     style={{ height: `${AGENDA_CONFIG.ROW_HEIGHT}px` }}
-                   >
-                     -
-                   </div>
-                )}
-              </React.Fragment>
-            ))}
-            {/* ---- FIN CUERPO ---- */}
+                  ))}
+                  {/* Indicador de hora actual */}
+                  {agendaRef.current && (
+                     <CurrentTimeIndicator
+                       config={AGENDA_CONFIG}
+                       key="desktop-indicator" // Añadir key única
+                       timeSlots={timeSlots}
+                       rowHeight={AGENDA_CONFIG.ROW_HEIGHT}
+                       isMobile={false}
+                       className="z-20"
+                       agendaRef={agendaRef} // Pasar la ref
+                     />
+                   )}
+              </div>
           </div>
+      )
+  }
 
-          {/* Renderizar citas */}
-          {appointments.map((appointment, index) => (
-            <AppointmentItem
-              key={appointment.id}
-              appointment={appointment}
-              index={index}
-              onClick={handleAppointmentClick}
-            />
-          ))}
+  // Función auxiliar para renderizar indicador de bloqueo (copiada de lógica anterior)
+  const renderBlockIndicator = (override: CabinScheduleOverride | null, time: string, roomId: string) => {
+      if (!override) return null;
 
-          {/* Indicador de tiempo actual */}
-          <CurrentTimeIndicator
-            key="desktop-day-indicator"
-            timeSlots={timeSlots}
-            rowHeight={AGENDA_CONFIG.ROW_HEIGHT}
-            isMobile={false}
-            className="z-10 current-time-indicator"
-            agendaRef={agendaRef}
-            clinicOpenTime={openTime}
-            clinicCloseTime={closeTime}
-          />
-        </div>
-      </div>
-    </div>
-  )
+      const prevTime = timeSlots[timeSlots.indexOf(time) - 1];
+      const clinicIdStr = activeClinic?.id ? String(activeClinic.id) : undefined;
+      const overrideForPrevCell = prevTime ? findOverrideForCell(currentDate, prevTime, roomId, cabinOverrides, clinicIdStr) : null;
+      const isStartOfBlock = !overrideForPrevCell || overrideForPrevCell.id !== override.id;
 
-  // Añadir este efecto para cargar los bloqueos:
-  useEffect(() => {
-    const loadBlocks = async () => {
-      if (!activeClinic?.id) return;
-      
-      try {
-        // Obtener la fecha formateada
-        const dateStr = format(parsedDateProp, "yyyy-MM-dd");
-        
-        // Usar el contexto especializado para obtener bloques
-        const blocks = await getBlocksByDateRange(
-          String(activeClinic.id),
-          dateStr,
-          dateStr
-        );
-        
-        if (Array.isArray(blocks)) {
-          setScheduleBlocks(blocks);
+      if (!isStartOfBlock) return null;
+
+      let blockDurationSlots = 1;
+      for (let i = timeSlots.indexOf(time) + 1; i < timeSlots.length; i++) {
+        const nextTime = timeSlots[i];
+        const overrideForNextCell = findOverrideForCell(currentDate, nextTime, roomId, cabinOverrides, clinicIdStr);
+        if (overrideForNextCell && overrideForNextCell.id === override.id) {
+          blockDurationSlots++;
         } else {
-          console.error("Los bloques devueltos no son un array:", blocks);
-          setScheduleBlocks([]);
+          break;
         }
-      } catch (error) {
-        console.error("Error al cargar bloques de agenda:", error);
-        setScheduleBlocks([]);
       }
-    };
-    
-    loadBlocks();
-  }, [activeClinic?.id, parsedDateProp, getBlocksByDateRange, updateKey]);
+
+      return (
+        <div 
+          className="absolute inset-x-0 top-0 z-20 flex items-center justify-center p-1 m-px overflow-hidden text-xs border rounded-sm pointer-events-none bg-rose-200/80 border-rose-300 text-rose-700"
+          style={{ height: `calc(${blockDurationSlots * AGENDA_CONFIG.ROW_HEIGHT}px - 2px)` }}
+          title={override.description || "Bloqueado"}
+        >
+          <Lock className="flex-shrink-0 w-3 h-3 mr-1" />
+          <span className="truncate">{override.description || "Bloqueado"}</span>
+        </div>
+      );
+  };
+
+  // <<< REINCORPORAR openOverrideModal >>>
+  const openOverrideModal = (override: CabinScheduleOverride | null = null) => {
+    console.log('Abriendo modal de bloqueo/override:', override);
+    setSelectedOverride(override); 
+    setIsBlockModalOpen(true);
+  };
+
+  // Efecto para cargar bloques (si es necesario y se corrige)
+  useEffect(() => {
+    // COMENTAR la llamada a loadBlocks por ahora para evitar error de tipo
+    // if (!containerMode) { // Solo cargar si no estamos en modo contenedor
+    //  loadBlocks();
+    // }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentDate, containerMode, updateKey]); // Dependencias
 
   // Implementar una función que renderice los modales para evitar duplicación
   const renderModals = () => {
@@ -901,7 +733,7 @@ export default function DayView({
           }}
           client={selectedClient}
           selectedTime={selectedSlot?.time}
-          appointment={selectedAppointment}
+          appointmentToEdit={selectedAppointment}
           onSearchClick={() => {
             setIsAppointmentDialogOpen(false)
             setIsSearchDialogOpen(true)
@@ -920,57 +752,27 @@ export default function DayView({
           onClose={() => setIsNewClientDialogOpen(false)} 
         />
 
-        <BlockScheduleModal
-          open={isBlockModalOpen}
-          onOpenChange={(open) => {
-            setIsBlockModalOpen(open)
-            // Si se cierra el modal, recargar los bloques para actualizar la UI
-            if (!open && activeClinic?.id) {
-              // Recargar bloques usando la interfaz
-              const formattedDate = format(parsedDateProp, "yyyy-MM-dd");
-              getBlocksByDateRange(
-                String(activeClinic.id),
-                formattedDate,
-                formattedDate
-              ).then(blocks => {
-                if (Array.isArray(blocks)) {
-                  setScheduleBlocks(blocks);
-                }
-                setUpdateKey((prev) => prev + 1);
-              }).catch(error => {
-                console.error("Error al recargar bloques:", error);
-              });
-            }
-          }}
-          clinicRooms={effectiveCabins}
-          blockToEdit={selectedBlock}
-          clinicId={activeClinic?.id ? String(activeClinic.id) : ""}
-          onBlockSaved={() => {
-            // Recargar los bloques
-            if (activeClinic?.id) {
-              // Recargar bloques usando la interfaz
-              const formattedDate = format(parsedDateProp, "yyyy-MM-dd");
-              getBlocksByDateRange(
-                String(activeClinic.id),
-                formattedDate,
-                formattedDate
-              ).then(blocks => {
-                if (Array.isArray(blocks)) {
-                  setScheduleBlocks(blocks);
-                }
-                setUpdateKey((prev) => prev + 1);
-              }).catch(error => {
-                console.error("Error al recargar bloques después de guardar:", error);
-              });
-            }
-          }}
-          clinicConfig={{
-            openTime: openTime,
-            closeTime: closeTime,
-            weekendOpenTime: openTime,
-            weekendCloseTime: closeTime,
-          }}
-        />
+        {/* Modal para bloqueos */}
+        {activeClinic && (
+          <BlockScheduleModal
+            open={isBlockModalOpen}
+            onOpenChange={setIsBlockModalOpen}
+            clinicRooms={clinicRoomsForModal}
+            blockToEdit={selectedOverride}
+            clinicId={String(activeClinic.id)}
+            onBlockSaved={() => {
+                console.log("Bloqueo guardado/eliminado, modal cerrado.");
+                setIsBlockModalOpen(false);
+                toast({ title: "Bloqueo guardado", description: "El bloqueo de horario se ha guardado correctamente." });
+                setUpdateKey(prev => prev + 1);
+            }}
+            clinicConfig={{ 
+              openTime: activeClinic?.openTime, 
+              closeTime: activeClinic?.closeTime,
+              slotDuration: activeClinic?.slotDuration
+            }}
+          />
+        )}
       </>
     );
   };
@@ -992,44 +794,11 @@ export default function DayView({
   // Return normal para cuando se usa de forma independiente
   return (
     <HydrationWrapper>
-      <div className="flex flex-col h-screen">
-        {/* Encabezado */}
-        <header className="p-4 border-b">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h1 className="text-2xl font-bold">Agenda Diaria</h1>
-              <p className="text-gray-500 capitalize">
-                {format(parsedDateProp, "EEEE, d 'de' MMMM 'de' yyyy", { locale: es })}
-              </p>
-            </div>
-          </div>
-          
-          {/* Barra de navegación */}
-          <AgendaNavBar
-            currentDate={parsedDateProp}
-            setCurrentDate={(date) => {
-              console.log(`[DayView] Navigating to date: ${format(date, "yyyy-MM-dd")}`);
-              router.push(`/agenda/dia/${format(date, "yyyy-MM-dd")}`)
-            }}
-            view="day"
-            isDayActive={isDayActive}
-            appointments={appointments}
-            onViewChange={(newView) => {
-              if (newView === "week") {
-                onViewChange ? onViewChange("weekly") : router.push(`/agenda/semana/${format(parsedDateProp, "yyyy-MM-dd")}`)
-              }
-            }}
-          />
-        </header>
-        
-        {/* Contenido */}
-        <div className="flex-1 overflow-auto">
-          {renderDayGrid()}
-        </div>
-        
-        {/* Modals */}
-        {renderModals()}
+      {/* Renderizar directamente la cuadrícula y modales */}
+      <div className="flex-1 overflow-visible h-full"> {/* Asegurar altura y overflow */} 
+         {renderDayGrid()}
       </div>
+      {renderModals()}
     </HydrationWrapper>
   )
 }

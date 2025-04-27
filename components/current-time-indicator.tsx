@@ -109,11 +109,11 @@ export const CurrentTimeIndicator: React.FC<CurrentTimeIndicatorProps> = ({
     const getCurrentTimePosition = () => {
       const currentTimeString = format(currentTime, "HH:mm");
 
-      // Obtener todos los elementos con data-time
-      const slots = agendaRef.current?.querySelectorAll("[data-time]") || [];
+      // <<< VOLVER A USAR data-time >>>
+      const slots = agendaRef.current?.querySelectorAll("div[data-time]") || [];
 
       if (slots.length === 0) {
-        return { position: null, slotTime: null, isWithinRange: false };
+          return { position: null, slotTime: null, isWithinRange: false };
       }
 
       // Determinar el rango de tiempo
@@ -132,54 +132,49 @@ export const CurrentTimeIndicator: React.FC<CurrentTimeIndicatorProps> = ({
       });
 
       // Convertir el tiempo actual a minutos desde medianoche
-      const currentTimeMinutes = parseTime(currentTimeString);
+      const currentTimeMinutes = differenceInMinutes(currentTime, startOfDay(currentTime));
 
       // Encontrar el slot más cercano
-      let nearestSlot: Element | null = null;
+      let nearestSlotElement: HTMLElement | null = null;
       let nearestSlotTime: string | null = null;
       let minTimeDifference = Number.POSITIVE_INFINITY;
 
+      // <<< BUSCAR ELEMENTO CON data-time MÁS CERCANO >>>
       slots.forEach((slot) => {
-        const slotTime = slot.getAttribute("data-time");
-        if (slotTime) {
-          const slotTimeMinutes = parseTime(slotTime);
-          const timeDifference = Math.abs(slotTimeMinutes - currentTimeMinutes);
-
-          if (timeDifference < minTimeDifference) {
-            minTimeDifference = timeDifference;
-            nearestSlot = slot;
-            nearestSlotTime = slotTime;
+          const slotTime = slot.getAttribute("data-time");
+          if (slotTime) {
+              const slotMinutes = parseTime(slotTime);
+              const timeDifference = Math.abs(slotMinutes - currentTimeMinutes);
+              if (timeDifference < minTimeDifference) {
+                  minTimeDifference = timeDifference;
+                  nearestSlotElement = slot as HTMLElement; // Guardar el elemento
+                  nearestSlotTime = slotTime;
+              }
           }
-        }
       });
 
-      if (nearestSlot && nearestSlotTime) {
-        // Intentar obtener la posición del atributo data-position
-        let position = Number.parseInt(nearestSlot.getAttribute("data-position") || "0", 10);
+      // Calcular la posición usando offsetTop del slot más cercano
+      if (nearestSlotElement && nearestSlotTime) {
+          // <<< USAR offsetTop DEL ELEMENTO ENCONTRADO >>>
+          let position = nearestSlotElement.offsetTop;
 
-        // Si la posición es 0 o parece incorrecta, calcularla manualmente
-        if (position === 0 || isNaN(position)) {
-          position = (nearestSlot as HTMLElement).offsetTop;
-        }
-
-        // Ajustar la posición basada en la diferencia de tiempo
-        if (nearestSlotTime && currentTimeString !== nearestSlotTime) {
+          // Ajustar la posición basada en la diferencia exacta de minutos dentro del slot
           const nearestSlotMinutes = parseTime(nearestSlotTime);
           const minutesDifference = currentTimeMinutes - nearestSlotMinutes;
           const slotDuration = config?.slotDuration || 15;
-          const percentageOfSlot = minutesDifference / slotDuration;
+          const percentageOfSlot = slotDuration > 0 ? minutesDifference / slotDuration : 0;
           const offsetPixels = percentageOfSlot * rowHeight;
 
           position += offsetPixels;
-        }
 
-        return {
-          position,
-          slotTime: nearestSlotTime,
-          isWithinRange,
-        };
+          return {
+              position,
+              slotTime: nearestSlotTime,
+              isWithinRange,
+          };
       }
 
+      // Si no se encontró un slot DOM, devolver null
       return { position: null, slotTime: null, isWithinRange: false };
     };
 

@@ -4,6 +4,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, Rea
 // QUITAR: import { useInterfaz } from "./interfaz-Context"
 // QUITAR: import { Client as ClientModel } from "@/services/data/data-service" // Usaremos Prisma.Client
 import { Client as PrismaClient } from '@prisma/client';
+import { useSession } from "next-auth/react";
 
 // Usar tipo de Prisma directamente
 export type Client = PrismaClient;
@@ -29,17 +30,29 @@ export function ClientProvider({ children }: { children: ReactNode }) {
   const [clients, setClients] = useState<Client[]>([])
   const [isLoading, setIsLoading] = useState<boolean>(true)
   const [error, setError] = useState<string | null>(null);
+  const { data: session, status } = useSession();
   // QUITAR: const interfaz = useInterfaz()
   // QUITAR: dataFetched
 
   // Función para cargar/recargar clientes desde la API
   const fetchClients = useCallback(async () => {
+    if (status !== 'authenticated') {
+        console.log("[ClientContext] Sesión no autenticada, saltando fetchClients.");
+        setIsLoading(false);
+        setClients([]);
+        return;
+    }
+
     setIsLoading(true);
     setError(null);
     try {
       const response = await fetch('/api/clients');
       if (!response.ok) {
-        throw new Error(`Error ${response.status}: ${response.statusText}`);
+        let errorText = response.statusText;
+        if (response.status === 401) {
+             try { const errorBody = await response.json(); errorText = errorBody.message || errorText; } catch (e) {}
+        }
+        throw new Error(`Error ${response.status}: ${errorText}`);
       }
       const clientsList: Client[] = await response.json();
       setClients(clientsList);
@@ -51,17 +64,26 @@ export function ClientProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [status]);
 
   // Cargar clientes al iniciar
   useEffect(() => {
-    fetchClients();
-  }, [fetchClients]);
+    if (status === 'authenticated') {
+        fetchClients();
+    } else if (status === 'unauthenticated') {
+        setClients([]); 
+        setIsLoading(false);
+        setError(null);
+    } else {
+         setIsLoading(true);
+    }
+  }, [fetchClients, status]);
 
   // Métodos del contexto usando API
 
-  const getClientById = async (id: string): Promise<Client | null> => {
-    // Intentar desde estado local primero
+  const getClientById = useCallback(async (id: string): Promise<Client | null> => {
+    if (status !== 'authenticated') return null;
+    
     const localClient = clients.find(c => c.id === id);
     if (localClient) return localClient;
 
@@ -71,7 +93,6 @@ export function ClientProvider({ children }: { children: ReactNode }) {
       if (response.status === 404) return null;
       if (!response.ok) throw new Error(`Error ${response.status}: ${response.statusText}`);
       const client: Client = await response.json();
-      // Opcional: actualizar estado local
       setClients(prev => prev.map(c => c.id === id ? client : c));
       return client;
     } catch (err) {
@@ -81,9 +102,11 @@ export function ClientProvider({ children }: { children: ReactNode }) {
     } finally {
         setIsLoading(false);
     }
-  };
+  }, [clients, status]);
 
-  const createClient = async (clientData: Omit<Client, 'id' | 'createdAt' | 'updatedAt' | 'systemId'>): Promise<Client | null> => {
+  const createClient = useCallback(async (clientData: Omit<Client, 'id' | 'createdAt' | 'updatedAt' | 'systemId'>): Promise<Client | null> => {
+    if (status !== 'authenticated') return null;
+    
     setIsLoading(true);
     setError(null);
     try {
@@ -106,9 +129,11 @@ export function ClientProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [status]);
 
-  const updateClient = async (id: string, clientUpdate: Partial<Omit<Client, 'id' | 'createdAt' | 'updatedAt' | 'systemId'>>): Promise<Client | null> => {
+  const updateClient = useCallback(async (id: string, clientUpdate: Partial<Omit<Client, 'id' | 'createdAt' | 'updatedAt' | 'systemId'>>): Promise<Client | null> => {
+    if (status !== 'authenticated') return null;
+
     setIsLoading(true);
     setError(null);
     try {
@@ -133,9 +158,11 @@ export function ClientProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [status]);
 
-  const deleteClient = async (id: string): Promise<boolean> => {
+  const deleteClient = useCallback(async (id: string): Promise<boolean> => {
+    if (status !== 'authenticated') return false;
+
     setIsLoading(true);
     setError(null);
     try {
@@ -155,14 +182,14 @@ export function ClientProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [status]);
 
-  const getClientsByClinicId = async (clinicId: string): Promise<Client[]> => {
-      console.warn("getClientsByClinicId no implementado con API (filtrado backend necesario)");
-      // TODO: Implementar API route /api/clients?clinicId=...
-      // Devolver filtrado local como fallback temporal? No, porque el estado local puede no tener todos.
-      return [];
-  };
+  const getClientsByClinicId = useCallback(async (clinicId: string): Promise<Client[]> => {
+    if (status !== 'authenticated') return [];
+    console.warn("getClientsByClinicId no implementado con API (filtrado backend necesario)");
+    // TODO: Implementar API route /api/clients?clinicId=...
+    return [];
+  }, [status]);
 
   const contextValue: ClientContextType = {
       clients,

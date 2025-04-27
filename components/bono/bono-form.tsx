@@ -13,53 +13,19 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/components/ui/use-toast';
 import { useDataService } from '@/contexts/data-context';
-import { Bono, Servicio, FamiliaTarifa, TipoIVA } from '@/services/data/models/interfaces';
+import { BonoDefinition, Service, Category, VATType } from '@prisma/client';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 
-// Definir el esquema de validación (Ajustar tipos numéricos si es necesario con .coerce)
+// Schema Zod Refinado (sin categoryId)
 const bonoSchema = z.object({
-  nombre: z.string().min(1, 'El nombre es requerido'),
-  familiaId: z.string().min(1, 'La familia es requerida'),
-  tipoComision: z.string().min(1, 'El tipo de comisión es requerido'),
-  // Usar coerce para asegurar que aunque venga de un input type=number (string), se valide como número
-  comision: z.coerce.number().min(0, 'La comisión no puede ser negativa').transform(String), // Validar como número, pero guardar como string si es necesario por la interfaz Bono
-  credito: z.coerce.number().min(1, 'El crédito debe ser al menos 1'),
-  precioConIVA: z.coerce.number().min(0, 'El precio no puede ser negativo').transform(String), // Validar como número, guardar como string
-  ivaId: z.string().min(1, 'El IVA es requerido'),
-  caducidadTipo: z.enum(['intervalo', 'fechaFija']),
-  intervaloTipo: z.enum(['dias', 'semanas', 'meses']).optional(),
-  intervaloValor: z.coerce.number().min(1, 'El intervalo debe ser al menos 1').optional(),
-  fechaFija: z.string().optional(),
-  apareceEnApp: z.boolean().default(false),
-  soloParaPagoDeCitas: z.boolean().default(false),
-  descuentosAutomaticos: z.boolean().default(false),
-  descuentosManuales: z.boolean().default(true),
-  aceptaPromociones: z.boolean().default(true),
-  aceptaEdicionPVP: z.boolean().default(false),
-  formaConPaquetesAutomaticamente: z.boolean().default(false),
-  afectaEstadisticas: z.boolean().default(true),
-  deshabilitado: z.boolean().default(false),
-  validoParaTodosPlanaTarifa: z.boolean().default(true),
-  precioCoste: z.coerce.number().min(0, 'El precio de coste no puede ser negativo').transform(String), // Validar como número, guardar como string
-  archivoAyuda: z.string().nullable().optional()
-}).refine(data => {
-  // Validación condicional para intervalo si caducidadTipo es 'intervalo'
-  if (data.caducidadTipo === 'intervalo') {
-    return data.intervaloTipo !== undefined && data.intervaloValor !== undefined;
-  }
-  return true;
-}, {
-  message: "Debe especificar el tipo y valor del intervalo",
-  path: ["intervaloValor"], // O path general
-}).refine(data => {
-  // Validación condicional para fechaFija si caducidadTipo es 'fechaFija'
-  if (data.caducidadTipo === 'fechaFija') {
-    return data.fechaFija !== undefined && data.fechaFija !== '';
-  }
-  return true;
-}, {
-  message: "Debe especificar la fecha de caducidad",
-  path: ["fechaFija"],
+  name: z.string().min(1, 'El nombre es requerido'), 
+  sessions: z.coerce.number().int('Debe ser un número entero').min(1, 'Las sesiones deben ser al menos 1'), 
+  price: z.coerce.number().min(0, 'El precio no puede ser negativo'), 
+  validityDays: z.coerce.number().int('Debe ser un número entero').min(0, 'Los días de validez no pueden ser negativos').optional().nullable(), 
+  isActive: z.boolean().default(true), 
+  description: z.string().optional().nullable(),
+  pointsAwarded: z.coerce.number().int().min(0).default(0).optional().nullable(),
+  serviceId: z.string().optional().nullable(), // Mantener para integridad, aunque se obtiene de props
 });
 
 type BonoFormValues = z.infer<typeof bonoSchema>;
@@ -91,107 +57,63 @@ const numberInputStyles = `
 
 export function BonoForm({ servicioId, tarifaId, bonoId, isReadOnly = false }: BonoFormProps) {
   const [isLoading, setIsLoading] = useState(false);
-  const [familias, setFamilias] = useState<FamiliaTarifa[]>([]);
-  const [tiposIVA, setTiposIVA] = useState<TipoIVA[]>([]);
-  const [servicio, setServicio] = useState<Servicio | null>(null);
+  const [categorias, setCategorias] = useState<Category[]>([]);
+  const [tiposIVA, setTiposIVA] = useState<VATType[]>([]);
+  const [servicio, setServicio] = useState<Service | null>(null);
   const dataService = useDataService();
   const router = useRouter();
   const { toast } = useToast();
 
-  const { control, handleSubmit, formState: { errors }, getValues, setValue, reset, watch } = useForm<BonoFormValues>({
+  const { control, handleSubmit, formState: { errors }, setValue, reset, watch } = useForm<BonoFormValues>({
     resolver: zodResolver(bonoSchema),
     defaultValues: {
-      nombre: '',
-      familiaId: '',
-      tipoComision: 'Global',
-      comision: '0',
-      credito: 1,
-      precioConIVA: '0',
-      ivaId: '',
-      caducidadTipo: 'intervalo',
-      intervaloTipo: 'meses',
-      intervaloValor: 12,
-      fechaFija: '',
-      apareceEnApp: false,
-      soloParaPagoDeCitas: false,
-      descuentosAutomaticos: false,
-      descuentosManuales: true,
-      aceptaPromociones: true,
-      aceptaEdicionPVP: false,
-      formaConPaquetesAutomaticamente: false,
-      afectaEstadisticas: true,
-      deshabilitado: false,
-      validoParaTodosPlanaTarifa: true,
-      precioCoste: '0',
-      archivoAyuda: null
+      name: '',
+      sessions: 1,
+      price: 0,
+      validityDays: null,
+      isActive: true,
+      description: null,
+      pointsAwarded: 0,
+      serviceId: servicioId,
     }
   });
-
-  const caducidadTipo = watch('caducidadTipo');
-  const currentFamiliaId = getValues('familiaId');
-  const currentIvaId = getValues('ivaId');
 
   // Obtener los datos necesarios al cargar
   useEffect(() => {
     const fetchData = async () => {
       try {
         setIsLoading(true);
-
-        // Obtener el servicio
+        // Usar nombres de método existentes en dataService
         const servicioData = await dataService.getServicioById(servicioId);
         if (servicioData) {
           setServicio(servicioData);
-
-          // Usar tarifaId que viene como prop o obtenerlo del servicio
-          const efectiveTarifaId = tarifaId || servicioData.tarifaId;
-
-          // Obtener familias de la tarifa asociada al servicio
-          const familiasData = await dataService.getFamiliasByTarifaId(efectiveTarifaId);
-          console.log('[BonoForm] Familias obtenidas para tarifa', efectiveTarifaId, ':', familiasData);
-          setFamilias(familiasData);
-
-          // Obtener tipos de IVA de la tarifa
+          // Obtener categorías usando método antiguo (¿asociado a tarifa?)
+          // Nota: La fuente de categorías/familias podría necesitar revisión global
+          const efectiveTarifaId = tarifaId || (servicioData as any).tarifaId; // Usar any si tarifaId no existe en Service
+          const categoriasData = await dataService.getFamiliasByTarifaId(efectiveTarifaId);
+          setCategorias(categoriasData as Category[]); // Castear a Category[] temporalmente
+          // Obtener tipos IVA usando método antiguo
           const tiposIVAData = await dataService.getTiposIVAByTarifaId(efectiveTarifaId);
-          setTiposIVA(tiposIVAData);
+          setTiposIVA(tiposIVAData as VATType[]); // Castear a VATType[] temporalmente
 
-          // Si estamos creando un nuevo bono, establecer la familia del servicio como valor por defecto
-          if (!bonoId && servicioData.familiaId) {
-            setValue('familiaId', servicioData.familiaId);
-
-            // También establecer el mismo IVA que el servicio si está disponible
-            if (servicioData.ivaId) {
-              setValue('ivaId', servicioData.ivaId);
-            }
-          }
-
-          // Si estamos editando, cargar los datos del bono
+          // Cargar datos del bono si estamos editando
           if (bonoId) {
+            // Usar método antiguo getBonoById
             const bonoData = await dataService.getBonoById(bonoId);
             if (bonoData) {
+              // Mapear campos de la estructura ANTIGUA (bonoData) a la NUEVA (BonoFormValues)
               reset({
-                nombre: bonoData.nombre,
-                familiaId: bonoData.familiaId,
-                tipoComision: bonoData.tipoComision,
-                comision: bonoData.comision.toString(),
-                credito: Number(bonoData.credito),
-                precioConIVA: bonoData.precioConIVA.toString(),
-                ivaId: bonoData.ivaId,
-                caducidadTipo: bonoData.caducidad.tipo,
-                intervaloTipo: bonoData.caducidad.intervalo?.tipo,
-                intervaloValor: Number(bonoData.caducidad.intervalo?.valor),
-                fechaFija: bonoData.caducidad.fechaFija,
-                apareceEnApp: bonoData.apareceEnApp,
-                soloParaPagoDeCitas: bonoData.soloParaPagoDeCitas,
-                descuentosAutomaticos: bonoData.descuentosAutomaticos,
-                descuentosManuales: bonoData.descuentosManuales,
-                aceptaPromociones: bonoData.aceptaPromociones,
-                aceptaEdicionPVP: bonoData.aceptaEdicionPVP,
-                formaConPaquetesAutomaticamente: bonoData.formaConPaquetesAutomaticamente,
-                afectaEstadisticas: bonoData.afectaEstadisticas,
-                deshabilitado: bonoData.deshabilitado,
-                validoParaTodosPlanaTarifa: bonoData.validoParaTodosPlanaTarifa,
-                precioCoste: bonoData.precioCoste?.toString() || '0',
-                archivoAyuda: bonoData.archivoAyuda
+                name: bonoData.nombre, // nombre -> name
+                sessions: Number(bonoData.credito), // credito -> sessions
+                price: Number(bonoData.precioConIVA), // precioConIVA -> price
+                // Mapear caducidad compleja a validityDays (si es intervalo y días)
+                validityDays: bonoData.caducidad?.tipo === 'intervalo' && bonoData.caducidad.intervalo?.tipo === 'dias' 
+                              ? Number(bonoData.caducidad.intervalo.valor) 
+                              : null, // TODO: Manejar otros intervalos o fecha fija?
+                isActive: !bonoData.deshabilitado, // deshabilitado -> isActive (invertido)
+                description: bonoData.descripcion || null, // Asumiendo que descripción existe o es null
+                pointsAwarded: Number(bonoData.pointsAwarded) || 0, // Asumiendo que existe o es 0
+                serviceId: bonoData.servicioId, // servicioId existe
               });
             }
           }
@@ -207,9 +129,8 @@ export function BonoForm({ servicioId, tarifaId, bonoId, isReadOnly = false }: B
         setIsLoading(false);
       }
     };
-
     fetchData();
-  }, [dataService, servicioId, tarifaId, bonoId, reset, setValue, toast]);
+  }, [dataService, servicioId, bonoId, tarifaId, reset, setValue, toast]); // Añadido tarifaId a deps por si acaso
 
   // useEffect para asignar ID al formulario (MOVIDO AQUÍ DENTRO)
   useEffect(() => {
@@ -229,76 +150,44 @@ export function BonoForm({ servicioId, tarifaId, bonoId, isReadOnly = false }: B
   const onSubmit = async (values: BonoFormValues) => {
     try {
       setIsLoading(true);
-      console.log("Valores validados por Zod:", values);
+      console.log("Valores del formulario validados por Zod:", values);
 
-      const bonoData: Omit<Bono, 'id'> = {
-        nombre: values.nombre,
-        familiaId: values.familiaId,
-        servicioId: servicioId,
-        tipoComision: values.tipoComision,
-        comision: values.comision,
-        credito: values.credito,
-        precioConIVA: values.precioConIVA,
-        ivaId: values.ivaId,
-        caducidad: {
-          tipo: values.caducidadTipo,
-          ...(values.caducidadTipo === 'intervalo' ? {
-            intervalo: {
-              tipo: values.intervaloTipo!,
-              valor: values.intervaloValor!
-            }
-          } : {
-            fechaFija: values.fechaFija
-          })
-        },
-        apareceEnApp: values.apareceEnApp,
-        soloParaPagoDeCitas: values.soloParaPagoDeCitas,
-        descuentosAutomaticos: values.descuentosAutomaticos,
-        descuentosManuales: values.descuentosManuales,
-        aceptaPromociones: values.aceptaPromociones,
-        aceptaEdicionPVP: values.aceptaEdicionPVP,
-        formaConPaquetesAutomaticamente: values.formaConPaquetesAutomaticamente,
-        afectaEstadisticas: values.afectaEstadisticas,
-        deshabilitado: values.deshabilitado,
-        validoParaTodosPlanaTarifa: values.validoParaTodosPlanaTarifa,
-        precioCoste: values.precioCoste,
-        archivoAyuda: values.archivoAyuda,
-        isActive: true
+      // Construir objeto con datos para API (usando campos de BonoDefinition)
+      // Omitimos campos como id, createdAt, updatedAt, systemId (se gestionan en backend o se añaden aquí)
+      const bonoApiData = {
+        name: values.name,
+        sessions: values.sessions,
+        price: values.price,
+        validityDays: values.validityDays, // Zod asegura number | null
+        isActive: values.isActive,
+        description: values.description, // Zod asegura string | null
+        pointsAwarded: values.pointsAwarded, // Zod asegura number | null
+        serviceId: values.serviceId, // Incluido en el schema y defaultValues
+        // systemId: '...', // TODO: Obtener systemId de forma fiable (contexto, servicio.systemId, etc.)
       };
 
-      console.log("Datos del bono a enviar:", bonoData);
+      console.log("Datos preparados para enviar a la API:", bonoApiData);
 
       if (bonoId) {
-        await dataService.updateBono(bonoId, bonoData);
-        toast({
-          title: 'Bono actualizado',
-          description: 'El bono ha sido actualizado correctamente',
-        });
+        // Actualizar BonoDefinition existente
+        // Usar nombre antiguo del dataService por ahora
+        await dataService.updateBono(bonoId, bonoApiData);
+        toast({ title: 'Bono actualizado', description: 'La definición del bono se actualizó correctamente.' });
       } else {
-        await dataService.createBono(bonoData);
-        toast({
-          title: 'Bono creado',
-          description: 'El bono ha sido creado correctamente',
-        });
+        // Crear nuevo BonoDefinition
+        // Usar nombre antiguo del dataService por ahora
+        await dataService.createBono(bonoApiData);
+        toast({ title: 'Bono creado', description: 'La definición del bono se creó correctamente.' });
       }
 
-      // Construir la URL de regreso según los props disponibles
-      let redirectUrl = '';
-      if (tarifaId) {
-        redirectUrl = `/configuracion/tarifas/${tarifaId}/servicio/${servicioId}/bonos`;
-      } else {
-        redirectUrl = `/servicios/${servicioId}/bonos`;
-      }
+      // Redirigir o limpiar formulario?
+      // Construir la ruta de vuelta
+      const basePath = tarifaId ? `/configuracion/tarifas/${tarifaId}/servicio/${servicioId}` : `/servicios/${servicioId}`;
+      router.push(`${basePath}/bonos`); 
 
-      // Redirigir a la lista de bonos
-      router.push(redirectUrl);
     } catch (error) {
       console.error('Error al guardar el bono:', error);
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'No se pudo guardar el bono',
-      });
+      toast({ variant: 'destructive', title: 'Error', description: 'No se pudo guardar la definición del bono.' });
     } finally {
       setIsLoading(false);
     }
@@ -317,7 +206,7 @@ export function BonoForm({ servicioId, tarifaId, bonoId, isReadOnly = false }: B
     router.push(redirectUrl);
   };
 
-  console.log('[BonoForm] Estado de familias antes de renderizar:', familias);
+  console.log('[BonoForm] Estado de familias antes de renderizar:', categorias);
 
   if (isLoading) {
     return (
@@ -337,336 +226,177 @@ export function BonoForm({ servicioId, tarifaId, bonoId, isReadOnly = false }: B
   }
 
   return (
-    <div className="relative pb-20">
-      {/* Injectar estilos para inputs numéricos */} 
-      <style>{numberInputStyles}</style>
-      <Card>
-        <CardHeader>
-          <CardTitle>
-            {isReadOnly
-              ? 'Detalles del Bono'
-              : bonoId
-                ? 'Editar Bono'
-                : 'Nuevo Bono'}
-          </CardTitle>
-          <CardDescription>
-            {isReadOnly
-              ? `Viendo detalles del bono para el servicio: ${servicio?.nombre || '...'}`
-              : bonoId
-                ? `Editando bono para el servicio: ${servicio?.nombre || '...'}`
-                : `Creando un nuevo bono para el servicio: ${servicio?.nombre || '...'}`}
-          </CardDescription>
-        </CardHeader>
-        <form id="bono-form-id" onSubmit={handleSubmit(onSubmit)}>
-          <CardContent className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
-              {/* --- Columna 1 --- */}
-              <div className="space-y-4">
-                {/* Nombre */}
-                <div className="space-y-2">
-                  <Label htmlFor="nombre">Nombre</Label>
-                  <Controller
-                    name="nombre"
-                    control={control}
-                    render={({ field }) => (
-                      <Input id="nombre" {...field} disabled={isReadOnly} placeholder="Nombre del bono" />
-                    )}
-                  />
-                  {errors.nombre && <p className="text-sm text-red-500">{errors.nombre.message}</p>}
-                </div>
-
-                {/* Familia */}
-                <div className="space-y-2">
-                  <Label htmlFor="familiaId">Familia</Label>
-                  <Controller
-                    name="familiaId"
-                    control={control}
-                    render={({ field }) => (
-                      <Select disabled={isReadOnly} onValueChange={field.onChange} value={field.value}>
-                        <SelectTrigger><SelectValue placeholder="Seleccionar familia" /></SelectTrigger>
-                        <SelectContent>
-                          {familias.length === 0 ? <SelectItem value="" disabled>No hay familias</SelectItem> 
-                            : familias.map((f) => <SelectItem key={f.id} value={f.id.toString()}>{f.nombre || f.name || ""}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    )}
-                  />
-                  {errors.familiaId && <p className="text-sm text-red-500">{errors.familiaId.message}</p>}
-                  <p className="text-xs text-muted-foreground">
-                    Las familias mostradas corresponden a la tarifa asociada al servicio.
-                    {servicio?.familiaId && !currentFamiliaId && (
-                      " Por defecto se usa la misma familia que el servicio."
-                    )}
-                  </p>
-                </div>
-
-                 {/* Crédito */}
-                 <div className="space-y-2">
-                  <Label htmlFor="credito">Crédito (Sesiones)</Label>
-                  <Controller
-                    name="credito"
-                    control={control}
-                    render={({ field }) => (
-                      <Input id="credito" type="number" min="1" {...field} 
-                             onChange={e => field.onChange(parseInt(e.target.value) || 0)}
-                             disabled={isReadOnly} className="appearance-textfield" />
-                    )}
-                  />
-                  {errors.credito && <p className="text-sm text-red-500">{errors.credito.message}</p>}
-                </div>
-              </div>
-
-              {/* --- Columna 2 --- */}
-              <div className="space-y-4">
-                {/* Precio con IVA */}
-                <div className="space-y-2">
-                  <Label htmlFor="precioConIVA">Precio con IVA</Label>
-                  <Controller
-                    name="precioConIVA"
-                    control={control}
-                    render={({ field }) => (
-                      <Input id="precioConIVA" type="number" step="0.01" min="0" {...field} 
-                             onChange={e => field.onChange(e.target.value)}
-                             disabled={isReadOnly} className="appearance-textfield" />
-                    )}
-                  />
-                  {errors.precioConIVA && <p className="text-sm text-red-500">{errors.precioConIVA.message}</p>}
-                </div>
-
-                {/* IVA */}
-                <div className="space-y-2">
-                  <Label htmlFor="ivaId">IVA</Label>
-                  <Controller
-                    name="ivaId"
-                    control={control}
-                    render={({ field }) => (
-                      <Select disabled={isReadOnly} onValueChange={field.onChange} value={field.value}>
-                        <SelectTrigger><SelectValue placeholder="Seleccionar IVA" /></SelectTrigger>
-                        <SelectContent>
-                          {tiposIVA.length === 0 ? <SelectItem value="" disabled>No hay tipos</SelectItem> 
-                            : tiposIVA.map((iva) => <SelectItem key={iva.id} value={iva.id.toString()}>{iva.descripcion} ({iva.porcentaje}%)</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    )}
-                  />
-                  {errors.ivaId && <p className="text-sm text-red-500">{errors.ivaId.message}</p>}
-                   <p className="text-xs text-muted-foreground">
-                    Los tipos de IVA corresponden a la tarifa asociada al servicio.
-                    {servicio?.ivaId && !currentIvaId && (
-                      " Por defecto se usa el mismo IVA que el servicio."
-                    )}
-                  </p>
-                </div>
-
-                 {/* Precio de coste */}
-                <div className="space-y-2">
-                  <Label htmlFor="precioCoste">Precio de coste</Label>
-                  <Controller
-                    name="precioCoste"
-                    control={control}
-                    render={({ field }) => (
-                      <Input id="precioCoste" type="number" step="0.01" min="0" {...field} 
-                             onChange={e => field.onChange(e.target.value)}
-                             disabled={isReadOnly} className="appearance-textfield" />
-                    )}
-                  />
-                  {errors.precioCoste && <p className="text-sm text-red-500">{errors.precioCoste.message}</p>}
-                </div>
-              </div>
-
-               {/* --- Columna 3 --- */}
-               <div className="space-y-4">
-                 {/* Tipo de comisión */}
-                  <div className="space-y-2">
-                    <Label>Tipo de comisión</Label>
-                    <Controller
-                      name="tipoComision"
-                      control={control}
-                      render={({ field }) => (
-                        <Select disabled={isReadOnly} onValueChange={field.onChange} value={field.value}>
-                          <SelectTrigger><SelectValue placeholder="Seleccionar tipo" /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Global">Global</SelectItem>
-                            <SelectItem value="Porcentaje">Porcentaje</SelectItem>
-                            <SelectItem value="Importe">Importe</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      )}
-                    />
-                    {errors.tipoComision && <p className="text-sm text-red-500">{errors.tipoComision.message}</p>}
-                  </div>
-
-                  {/* Comisión */}
-                  <div className="space-y-2">
-                    <Label htmlFor="comision">Comisión</Label>
-                    <Controller
-                      name="comision"
-                      control={control}
-                      render={({ field }) => (
-                        <Input id="comision" type="number" step="0.01" min="0" {...field} 
-                               onChange={e => field.onChange(e.target.value)}
-                               disabled={isReadOnly} className="appearance-textfield" />
-                      )}
-                    />
-                    {errors.comision && <p className="text-sm text-red-500">{errors.comision.message}</p>}
-                  </div>
-               </div>
-            </div>
-
-            {/* --- Caducidad (Ocupa más espacio) --- */}
-            <div className="space-y-4 border p-4 rounded-md md:col-span-3"> {/* Ajustado para ocupar todo el ancho en md */}
-              <Label className="text-base font-medium">Caducidad</Label>
-              <Controller
-                  name="caducidadTipo"
+    <Card>
+      <CardHeader>
+        <CardTitle>{isReadOnly ? 'Detalles del Bono' : (bonoId ? 'Editar Bono' : 'Nuevo Bono')}</CardTitle>
+        <CardDescription>
+          {isReadOnly
+            ? `Viendo detalles de la definición del bono para el servicio: ${servicio?.name || '...'}`
+            : bonoId
+              ? `Editando definición de bono para el servicio: ${servicio?.name || '...'}`
+              : `Creando una nueva definición de bono para el servicio: ${servicio?.name || '...'}`}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-6" id="bono-form-content">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="name">Nombre</Label>
+                <Controller
+                  name="name"
                   control={control}
                   render={({ field }) => (
-                    <RadioGroup disabled={isReadOnly} value={field.value} onValueChange={field.onChange} className="flex flex-col sm:flex-row sm:space-x-8 space-y-2 sm:space-y-0">
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="intervalo" id="intervalo" />
-                        <Label htmlFor="intervalo">Intervalo de tiempo</Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="fechaFija" id="fechaFija" />
-                        <Label htmlFor="fechaFija">Fecha fija</Label>
-                      </div>
-                    </RadioGroup>
+                    <Input id="name" {...field} value={field.value ?? ''} disabled={isReadOnly} placeholder="Nombre del bono" />
                   )}
                 />
+                {errors.name && <p className="text-sm text-red-500">{errors.name.message}</p>}
+              </div>
 
-                {errors.caducidadTipo && <p className="text-sm text-red-500">{errors.caducidadTipo.message}</p>}
+              <div className="space-y-2">
+                <Label>Categoría del Servicio</Label>
+                <Input 
+                  value={categorias.find(c => c.id === servicio?.categoryId)?.name || '-'}
+                  disabled 
+                  className="bg-gray-100"
+                />
+              </div>
 
-                {caducidadTipo === 'intervalo' && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="intervaloValor">Tiempo</Label>
-                      <Controller
-                        name="intervaloValor"
-                        control={control}
-                        render={({ field }) => (
-                          <Input id="intervaloValor" type="number" min="1" {...field} 
-                                onChange={e => field.onChange(parseInt(e.target.value) || 0)} 
-                                disabled={isReadOnly} className="appearance-textfield" />
-                        )}
-                      />
-                      {errors.intervaloValor && <p className="text-sm text-red-500">{errors.intervaloValor.message}</p>}
-                    </div>
-                     <div className="space-y-2">
-                      <Label htmlFor="intervaloTipo">Unidad</Label>
-                      <Controller
-                        name="intervaloTipo"
-                        control={control}
-                        render={({ field }) => (
-                          <Select disabled={isReadOnly} onValueChange={field.onChange} value={field.value}>
-                            <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="dias">Días</SelectItem>
-                              <SelectItem value="semanas">Semanas</SelectItem>
-                              <SelectItem value="meses">Meses</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        )}
-                      />
-                      {errors.intervaloTipo && <p className="text-sm text-red-500">{errors.intervaloTipo.message}</p>}
-                    </div>
-                  </div>
-                )}
-
-                {caducidadTipo === 'fechaFija' && (
-                  <div className="space-y-2 pt-2">
-                    <Label htmlFor="fechaFija">Fecha de caducidad</Label>
-                    <Controller
-                        name="fechaFija"
-                        control={control}
-                        render={({ field }) => (
-                          <Input id="fechaFija" type="date" {...field} disabled={isReadOnly} />
-                        )}
-                      />
-                     {errors.fechaFija && <p className="text-sm text-red-500">{errors.fechaFija.message}</p>}
-                  </div>
-                )}
-            </div>
-
-            {/* --- Opciones (Checkboxes) --- */}
-            <div className="space-y-4 border p-4 rounded-md md:col-span-3"> {/* Ajustado para ocupar todo el ancho en md */}
-               <Label className="text-base font-medium">Opciones Adicionales</Label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"> {/* Rejilla más densa */}
-                <div className="flex items-center space-x-2">
-                  <Controller
-                    name="apareceEnApp"
-                    control={control}
-                    render={({ field }) => (
-                       <Checkbox id="apareceEnApp" checked={field.value} onCheckedChange={field.onChange} disabled={isReadOnly} />
-                    )}
-                  />
-                  <Label htmlFor="apareceEnApp">Aparece en App / Self</Label>
-                </div>
-
-                <div className="flex items-center space-x-2">
-                  <Controller name="soloParaPagoDeCitas" control={control} render={({ field }) => (<Checkbox id="soloParaPagoDeCitas" checked={field.value} onCheckedChange={field.onChange} disabled={isReadOnly} />)} />
-                  <Label htmlFor="soloParaPagoDeCitas">Solo para pago de citas</Label>
-                </div>
-
-                <div className="flex items-center space-x-2">
-                  <Controller name="descuentosAutomaticos" control={control} render={({ field }) => (<Checkbox id="descuentosAutomaticos" checked={field.value} onCheckedChange={field.onChange} disabled={isReadOnly} />)} />
-                  <Label htmlFor="descuentosAutomaticos">Descuentos automáticos</Label>
-                </div>
-
-                <div className="flex items-center space-x-2">
-                  <Controller name="descuentosManuales" control={control} render={({ field }) => (<Checkbox id="descuentosManuales" checked={field.value} onCheckedChange={field.onChange} disabled={isReadOnly} />)} />
-                  <Label htmlFor="descuentosManuales">Descuentos manuales</Label>
-                </div>
-
-                <div className="flex items-center space-x-2">
-                  <Controller name="aceptaPromociones" control={control} render={({ field }) => (<Checkbox id="aceptaPromociones" checked={field.value} onCheckedChange={field.onChange} disabled={isReadOnly} />)} />
-                  <Label htmlFor="aceptaPromociones">Acepta promociones</Label>
-                </div>
-
-                <div className="flex items-center space-x-2">
-                  <Controller name="aceptaEdicionPVP" control={control} render={({ field }) => (<Checkbox id="aceptaEdicionPVP" checked={field.value} onCheckedChange={field.onChange} disabled={isReadOnly} />)} />
-                  <Label htmlFor="aceptaEdicionPVP">Acepta edición PVP</Label>
-                </div>
-
-                <div className="flex items-center space-x-2">
-                  <Controller name="formaConPaquetesAutomaticamente" control={control} render={({ field }) => (<Checkbox id="formaConPaquetesAutomaticamente" checked={field.value} onCheckedChange={field.onChange} disabled={isReadOnly} />)} />
-                  <Label htmlFor="formaConPaquetesAutomaticamente">Forma paquetes automát.</Label>
-                </div>
-
-                <div className="flex items-center space-x-2">
-                  <Controller name="afectaEstadisticas" control={control} render={({ field }) => (<Checkbox id="afectaEstadisticas" checked={field.value} onCheckedChange={field.onChange} disabled={isReadOnly} />)} />
-                  <Label htmlFor="afectaEstadisticas">Afecta estadísticas</Label>
-                </div>
-
-                <div className="flex items-center space-x-2">
-                  <Controller name="deshabilitado" control={control} render={({ field }) => (<Checkbox id="deshabilitado" checked={field.value} onCheckedChange={field.onChange} disabled={isReadOnly} />)} />
-                  <Label htmlFor="deshabilitado">Deshabilitado</Label>
-                </div>
-
-                <div className="flex items-center space-x-2">
-                  <Controller name="validoParaTodosPlanaTarifa" control={control} render={({ field }) => (<Checkbox id="validoParaTodosPlanaTarifa" checked={field.value} onCheckedChange={field.onChange} disabled={isReadOnly} />)} />
-                  <Label htmlFor="validoParaTodosPlanaTarifa">Válido tarifa plana</Label>
-                </div>
+              <div className="space-y-2">
+                <Label htmlFor="sessions">Sesiones</Label>
+                <Controller
+                  name="sessions"
+                  control={control}
+                  render={({ field }) => (
+                    <Input 
+                      id="sessions" 
+                      type="number" 
+                      min="1" 
+                      {...field} 
+                      value={field.value ?? 1}
+                      onChange={e => field.onChange(parseInt(e.target.value, 10) || 1)}
+                      disabled={isReadOnly} 
+                      className="appearance-textfield" 
+                    />
+                  )}
+                />
+                {errors.sessions && <p className="text-sm text-red-500">{errors.sessions.message}</p>}
               </div>
             </div>
-          </CardContent>
-        </form>
-      </Card>
-      <div className="fixed bottom-6 right-6 flex space-x-2 z-10">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={handleBack}
-          disabled={isLoading}
-        >
-          Volver
-        </Button>
 
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="price">Precio</Label>
+                <Controller
+                  name="price"
+                  control={control}
+                  render={({ field }) => (
+                    <Input 
+                      id="price" 
+                      type="number" 
+                      step="0.01" 
+                      min="0" 
+                      {...field} 
+                      value={field.value ?? 0}
+                      onChange={e => field.onChange(parseFloat(e.target.value) || 0)}
+                      disabled={isReadOnly} 
+                      className="appearance-textfield" 
+                    />
+                  )}
+                />
+                {errors.price && <p className="text-sm text-red-500">{errors.price.message}</p>}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="validityDays">Días de validez (0 o vacío = sin caducidad)</Label>
+                <Controller
+                  name="validityDays"
+                  control={control}
+                  render={({ field }) => (
+                    <Input 
+                      id="validityDays" 
+                      type="number" 
+                      min="0" 
+                      {...field} 
+                      value={field.value === null || field.value === undefined ? '' : field.value}
+                      onChange={e => {
+                        const value = e.target.value;
+                        field.onChange(value === '' ? null : parseInt(value, 10) || 0);
+                      }}
+                      disabled={isReadOnly} 
+                      className="appearance-textfield" 
+                      placeholder="Ej: 365"
+                    />
+                  )}
+                />
+                {errors.validityDays && <p className="text-sm text-red-500">{errors.validityDays.message}</p>}
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="description">Descripción</Label>
+                <Controller
+                  name="description"
+                  control={control}
+                  render={({ field }) => (
+                    <Input id="description" {...field} value={field.value ?? ''} disabled={isReadOnly} placeholder="Descripción del bono" />
+                  )}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="pointsAwarded">Puntos otorgados</Label>
+                <Controller
+                  name="pointsAwarded"
+                  control={control}
+                  render={({ field }) => (
+                    <Input 
+                      id="pointsAwarded" 
+                      type="number" 
+                      min="0" 
+                      {...field} 
+                      value={field.value === null || field.value === undefined ? 0 : field.value}
+                      onChange={e => {
+                          const value = e.target.value;
+                          field.onChange(value === '' ? 0 : parseInt(value, 10) || 0); 
+                      }}
+                      disabled={isReadOnly} 
+                      className="appearance-textfield" 
+                    />
+                  )}
+                />
+                {errors.pointsAwarded && <p className="text-sm text-red-500">{errors.pointsAwarded.message}</p>}
+              </div>
+
+              <div className="flex items-center space-x-2 pt-4">
+                <Controller
+                  name="isActive"
+                  control={control}
+                  render={({ field }) => (
+                    <Checkbox id="isActive" checked={field.value} onCheckedChange={field.onChange} disabled={isReadOnly} />
+                  )}
+                />
+                <Label htmlFor="isActive">Activo</Label>
+              </div>
+            </div>
+          </div>
+        </div>
+      </CardContent>
+      <CardFooter className="flex justify-end space-x-2">
+        <Button variant="outline" onClick={handleBack}>Volver</Button>
         {!isReadOnly && (
-          <Button type="submit" disabled={isLoading} form="bono-form-id">
-            {isLoading ? 'Guardando...' : bonoId ? 'Actualizar Bono' : 'Crear Bono'}
+          <Button 
+            type="submit"
+            form="bono-form-id"
+            disabled={isLoading} 
+            onClick={handleSubmit(onSubmit)}
+          >
+            {isLoading ? 'Guardando...' : (bonoId ? 'Actualizar Bono' : 'Crear Bono')}
           </Button>
         )}
-      </div>
-    </div>
+      </CardFooter>
+    </Card>
   );
 }
 

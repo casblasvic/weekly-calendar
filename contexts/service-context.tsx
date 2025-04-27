@@ -2,75 +2,71 @@
 
 import { createContext, useContext, useState, type ReactNode, useEffect } from "react"
 import { useInterfaz } from "@/contexts/interfaz-Context"
-import { FamiliaServicio, Servicio as ServicioCompleto } from "@/services/data/models/interfaces"
+import type { Category as PrismaFamily, Service as PrismaService } from '@prisma/client'
 
-// Interfaz simplificada de Servicio para nuestro caso de uso
-interface ServicioBase {
-  id: string;
-  nombre: string;
-  codigo: string;
-  familiaId: string;
-  duracion: number;
-  colorAgenda: string;
-  precioConIVA: string;
+// Define a new type that extends PrismaFamily and includes services
+interface CategoryWithServices extends PrismaFamily {
+  servicios?: PrismaService[]; // Optional array of services
 }
 
-// Tipo que usaremos en toda la aplicación 
-// En desarrollo usamos la versión base, en producción la versión completa
-export type Servicio = ServicioBase;
-
-// Mock data para familias y servicios
-const FAMILIAS_MOCK: FamiliaServicio[] = [
-  { id: "fam1", nombre: "Tratamientos faciales", isActive: true },
-  { id: "fam2", nombre: "Tratamientos corporales", isActive: true },
-  { id: "fam3", nombre: "Depilación", isActive: true },
-  { id: "fam4", nombre: "Masajes", isActive: true },
-  { id: "fam5", nombre: "Manicura y pedicura", isActive: true },
-  { id: "fam6", nombre: "Tratamientos capilares", isActive: true },
+// Mock data para familias (Category)
+const FAMILIAS_MOCK: PrismaFamily[] = [
+  { id: "fam1", name: "Tratamientos faciales", description: null, systemId: "sys1", parentId: null, createdAt: new Date(), updatedAt: new Date() },
+  { id: "fam2", name: "Tratamientos corporales", description: null, systemId: "sys1", parentId: null, createdAt: new Date(), updatedAt: new Date() },
+  { id: "fam3", name: "Depilación", description: null, systemId: "sys1", parentId: null, createdAt: new Date(), updatedAt: new Date() },
+  { id: "fam4", name: "Masajes", description: null, systemId: "sys1", parentId: null, createdAt: new Date(), updatedAt: new Date() },
+  { id: "fam5", name: "Manicura y pedicura", description: null, systemId: "sys1", parentId: null, createdAt: new Date(), updatedAt: new Date() },
+  { id: "fam6", name: "Tratamientos capilares", description: null, systemId: "sys1", parentId: null, createdAt: new Date(), updatedAt: new Date() },
 ];
 
-const SERVICIOS_MOCK: Servicio[] = [
-  { id: "serv1", nombre: "Limpieza facial", codigo: "LF", familiaId: "fam1", duracion: 60, colorAgenda: "#f0f8ff", precioConIVA: "45" },
-  { id: "serv2", nombre: "Tratamiento anti-edad", codigo: "TAE", familiaId: "fam1", duracion: 90, colorAgenda: "#f0f8ff", precioConIVA: "75" },
-  { id: "serv3", nombre: "Hidratación profunda", codigo: "HP", familiaId: "fam1", duracion: 45, colorAgenda: "#f0f8ff", precioConIVA: "55" },
-  { id: "serv4", nombre: "Exfoliación corporal", codigo: "EC", familiaId: "fam2", duracion: 60, colorAgenda: "#fff0f5", precioConIVA: "65" },
-  { id: "serv5", nombre: "Tratamiento reafirmante", codigo: "TR", familiaId: "fam2", duracion: 90, colorAgenda: "#fff0f5", precioConIVA: "85" },
-  { id: "serv6", nombre: "Masaje anticelulítico", codigo: "MA", familiaId: "fam2", duracion: 60, colorAgenda: "#fff0f5", precioConIVA: "70" },
-  { id: "serv7", nombre: "Depilación láser", codigo: "DL", familiaId: "fam3", duracion: 30, colorAgenda: "#ffe4e1", precioConIVA: "40" },
-  { id: "serv8", nombre: "Depilación con cera", codigo: "DC", familiaId: "fam3", duracion: 45, colorAgenda: "#ffe4e1", precioConIVA: "35" },
-  { id: "serv9", nombre: "Masaje relajante", codigo: "MR", familiaId: "fam4", duracion: 60, colorAgenda: "#e6e6fa", precioConIVA: "55" },
-  { id: "serv10", nombre: "Masaje descontracturante", codigo: "MD", familiaId: "fam4", duracion: 60, colorAgenda: "#e6e6fa", precioConIVA: "60" },
-  { id: "serv11", nombre: "Masaje deportivo", codigo: "MDep", familiaId: "fam4", duracion: 90, colorAgenda: "#e6e6fa", precioConIVA: "75" },
-  { id: "serv12", nombre: "Manicura simple", codigo: "MS", familiaId: "fam5", duracion: 30, colorAgenda: "#ffb6c1", precioConIVA: "25" },
-  { id: "serv13", nombre: "Pedicura completa", codigo: "PC", familiaId: "fam5", duracion: 45, colorAgenda: "#ffb6c1", precioConIVA: "35" },
-  { id: "serv14", nombre: "Esmaltado permanente", codigo: "EP", familiaId: "fam5", duracion: 60, colorAgenda: "#ffb6c1", precioConIVA: "40" },
-  { id: "serv15", nombre: "Corte de pelo", codigo: "CP", familiaId: "fam6", duracion: 30, colorAgenda: "#98fb98", precioConIVA: "25" },
-  { id: "serv16", nombre: "Tinte", codigo: "TI", familiaId: "fam6", duracion: 90, colorAgenda: "#98fb98", precioConIVA: "60" },
-  { id: "serv17", nombre: "Tratamiento hidratante", codigo: "TH", familiaId: "fam6", duracion: 45, colorAgenda: "#98fb98", precioConIVA: "45" },
+// Mock data para servicios (Service)
+const SERVICIOS_MOCK: PrismaService[] = [
+  { id: "serv1", name: "Limpieza facial", code: "LF", categoryId: "fam1", durationMinutes: 60, colorCode: "#f0f8ff", price: 45, description: null, systemId: "sys1", requiresMedicalSignOff: false, pointsAwarded: 0, isActive: true, vatTypeId: "vat1", createdAt: new Date(), updatedAt: new Date() },
+  { id: "serv2", name: "Tratamiento anti-edad", code: "TAE", categoryId: "fam1", durationMinutes: 90, colorCode: "#f0f8ff", price: 75, description: null, systemId: "sys1", requiresMedicalSignOff: false, pointsAwarded: 0, isActive: true, vatTypeId: "vat1", createdAt: new Date(), updatedAt: new Date() },
+  { id: "serv3", name: "Hidratación profunda", code: "HP", categoryId: "fam1", durationMinutes: 45, colorCode: "#f0f8ff", price: 55, description: null, systemId: "sys1", requiresMedicalSignOff: false, pointsAwarded: 0, isActive: true, vatTypeId: "vat1", createdAt: new Date(), updatedAt: new Date() },
+  { id: "serv4", name: "Exfoliación corporal", code: "EC", categoryId: "fam2", durationMinutes: 60, colorCode: "#fff0f5", price: 65, description: null, systemId: "sys1", requiresMedicalSignOff: false, pointsAwarded: 0, isActive: true, vatTypeId: "vat1", createdAt: new Date(), updatedAt: new Date() },
+  { id: "serv5", name: "Tratamiento reafirmante", code: "TR", categoryId: "fam2", durationMinutes: 90, colorCode: "#fff0f5", price: 85, description: null, systemId: "sys1", requiresMedicalSignOff: false, pointsAwarded: 0, isActive: true, vatTypeId: "vat1", createdAt: new Date(), updatedAt: new Date() },
+  { id: "serv6", name: "Masaje anticelulítico", code: "MA", categoryId: "fam2", durationMinutes: 60, colorCode: "#fff0f5", price: 70, description: null, systemId: "sys1", requiresMedicalSignOff: false, pointsAwarded: 0, isActive: true, vatTypeId: "vat1", createdAt: new Date(), updatedAt: new Date() },
+  { id: "serv7", name: "Depilación láser", code: "DL", categoryId: "fam3", durationMinutes: 30, colorCode: "#ffe4e1", price: 40, description: null, systemId: "sys1", requiresMedicalSignOff: true, pointsAwarded: 0, isActive: true, vatTypeId: "vat1", createdAt: new Date(), updatedAt: new Date() },
+  { id: "serv8", name: "Depilación con cera", code: "DC", categoryId: "fam3", durationMinutes: 45, colorCode: "#ffe4e1", price: 35, description: null, systemId: "sys1", requiresMedicalSignOff: false, pointsAwarded: 0, isActive: true, vatTypeId: "vat1", createdAt: new Date(), updatedAt: new Date() },
+  { id: "serv9", name: "Masaje relajante", code: "MR", categoryId: "fam4", durationMinutes: 60, colorCode: "#e6e6fa", price: 55, description: null, systemId: "sys1", requiresMedicalSignOff: false, pointsAwarded: 0, isActive: true, vatTypeId: "vat1", createdAt: new Date(), updatedAt: new Date() },
+  { id: "serv10", name: "Masaje descontracturante", code: "MD", categoryId: "fam4", durationMinutes: 60, colorCode: "#e6e6fa", price: 60, description: null, systemId: "sys1", requiresMedicalSignOff: false, pointsAwarded: 0, isActive: true, vatTypeId: "vat1", createdAt: new Date(), updatedAt: new Date() },
+  { id: "serv11", name: "Masaje deportivo", code: "MDep", categoryId: "fam4", durationMinutes: 90, colorCode: "#e6e6fa", price: 75, description: null, systemId: "sys1", requiresMedicalSignOff: false, pointsAwarded: 0, isActive: true, vatTypeId: "vat1", createdAt: new Date(), updatedAt: new Date() },
+  { id: "serv12", name: "Manicura simple", code: "MS", categoryId: "fam5", durationMinutes: 30, colorCode: "#ffb6c1", price: 25, description: null, systemId: "sys1", requiresMedicalSignOff: false, pointsAwarded: 0, isActive: true, vatTypeId: "vat1", createdAt: new Date(), updatedAt: new Date() },
+  { id: "serv13", name: "Pedicura completa", code: "PC", categoryId: "fam5", durationMinutes: 45, colorCode: "#ffb6c1", price: 35, description: null, systemId: "sys1", requiresMedicalSignOff: false, pointsAwarded: 0, isActive: true, vatTypeId: "vat1", createdAt: new Date(), updatedAt: new Date() },
+  { id: "serv14", name: "Esmaltado permanente", code: "EP", categoryId: "fam5", durationMinutes: 60, colorCode: "#ffb6c1", price: 40, description: null, systemId: "sys1", requiresMedicalSignOff: false, pointsAwarded: 0, isActive: true, vatTypeId: "vat1", createdAt: new Date(), updatedAt: new Date() },
+  { id: "serv15", name: "Corte de pelo", code: "CP", categoryId: "fam6", durationMinutes: 30, colorCode: "#98fb98", price: 25, description: null, systemId: "sys1", requiresMedicalSignOff: false, pointsAwarded: 0, isActive: true, vatTypeId: "vat1", createdAt: new Date(), updatedAt: new Date() },
+  { id: "serv16", name: "Tinte", code: "TI", categoryId: "fam6", durationMinutes: 90, colorCode: "#98fb98", price: 60, description: null, systemId: "sys1", requiresMedicalSignOff: false, pointsAwarded: 0, isActive: true, vatTypeId: "vat1", createdAt: new Date(), updatedAt: new Date() },
+  { id: "serv17", name: "Tratamiento hidratante", code: "TH", categoryId: "fam6", durationMinutes: 45, colorCode: "#98fb98", price: 45, description: null, systemId: "sys1", requiresMedicalSignOff: false, pointsAwarded: 0, isActive: true, vatTypeId: "vat1", createdAt: new Date(), updatedAt: new Date() },
 ];
 
 // Funciones auxiliares
-function findServicesByFamilyId(familyId: string): Servicio[] {
-  return SERVICIOS_MOCK.filter(service => service.familiaId === familyId);
+function findServicesByCategoryId(categoryId: string): PrismaService[] {
+  return SERVICIOS_MOCK.filter(service => service.categoryId === categoryId);
 }
 
 interface ServiceContextType {
-  familias: FamiliaServicio[];
-  servicios: Servicio[];
-  getAllFamilias: () => Promise<FamiliaServicio[]>;
-  getFamiliaById: (id: string) => Promise<FamiliaServicio | null>;
-  getServicioById: (id: string) => Promise<Servicio | null>;
-  getServiciosByFamiliaId: (familiaId: string) => Promise<Servicio[]>;
-  getAllServicios: () => Promise<Servicio[]>;
+  familias: PrismaFamily[];
+  servicios: PrismaService[];
+  selectedService: PrismaService | null;
+  getFamiliaById: (id: string) => Promise<CategoryWithServices | null>;
+  getServiceById: (id: string) => Promise<PrismaService | null>;
+  setSelectedServiceById: (id: string | null) => void;
+  loading: boolean;
+  getAllFamilias: () => Promise<PrismaFamily[]>;
+  getServiciosByCategoryId: (categoryId: string) => Promise<PrismaService[]>;
+  getAllServicios: () => Promise<PrismaService[]>;
 }
 
 const ServiceContext = createContext<ServiceContextType | undefined>(undefined);
 
 export function ServiceProvider({ children }: { children: ReactNode }) {
-  const [familias, setFamilias] = useState<FamiliaServicio[]>([]);
-  const [servicios, setServicios] = useState<Servicio[]>([]);
+  const [familias, setFamilias] = useState<PrismaFamily[]>([]);
+  const [servicios, setServicios] = useState<PrismaService[]>([]);
   const [initialized, setInitialized] = useState(false);
   const interfaz = useInterfaz();
+  const [selectedService, setSelectedService] = useState<PrismaService | null>(null);
+  const [loading, setLoading] = useState(false);
 
   // Inicializar datos
   useEffect(() => {
@@ -93,7 +89,7 @@ export function ServiceProvider({ children }: { children: ReactNode }) {
   }, [interfaz.initialized, initialized]);
 
   // Obtener todas las familias
-  const getAllFamilias = async (): Promise<FamiliaServicio[]> => {
+  const getAllFamilias = async (): Promise<PrismaFamily[]> => {
     try {
       // En producción, esto sería una llamada a la API
       return [...familias]; // Devolver copia para evitar mutaciones
@@ -104,27 +100,33 @@ export function ServiceProvider({ children }: { children: ReactNode }) {
   };
 
   // Obtener familia por ID
-  const getFamiliaById = async (id: string): Promise<FamiliaServicio | null> => {
+  const getFamiliaById = async (id: string): Promise<CategoryWithServices | null> => {
     try {
+      setLoading(true);
       // En producción, esto sería una llamada a la API
       const familia = familias.find(f => String(f.id) === String(id));
       if (familia) {
-        // Cargar servicios asociados a esta familia
-        const serviciosFamilia = servicios.filter(s => String(s.familiaId) === String(id));
-        return {
+        // Cargar servicios asociados a esta categoría (familia)
+        const serviciosCategoria = servicios.filter(s => String(s.categoryId) === String(id));
+        // Construct the object with the new type
+        const familiaConServicios: CategoryWithServices = {
           ...familia,
-          servicios: serviciosFamilia
+          servicios: serviciosCategoria
         };
+        return familiaConServicios;
+      } else {
+        return null;
       }
-      return null;
     } catch (error) {
       console.error(`Error al obtener familia con ID ${id}:`, error);
       return null;
+    } finally {
+      setLoading(false);
     }
   };
 
   // Obtener servicio por ID
-  const getServicioById = async (id: string): Promise<Servicio | null> => {
+  const getServiceById = async (id: string): Promise<PrismaService | null> => {
     try {
       // En producción, esto sería una llamada a la API
       const servicio = servicios.find(s => String(s.id) === String(id));
@@ -135,20 +137,20 @@ export function ServiceProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // Obtener servicios por familia
-  const getServiciosByFamiliaId = async (familiaId: string): Promise<Servicio[]> => {
+  // Obtener servicios por categoría (familia)
+  const getServiciosByCategoryId = async (categoryId: string): Promise<PrismaService[]> => {
     try {
       // En producción, esto sería una llamada a la API
-      const serviciosFiltrados = servicios.filter(s => String(s.familiaId) === String(familiaId));
+      const serviciosFiltrados = servicios.filter(s => String(s.categoryId) === String(categoryId));
       return serviciosFiltrados;
     } catch (error) {
-      console.error(`Error al obtener servicios para la familia ${familiaId}:`, error);
+      console.error(`Error al obtener servicios para la categoría ${categoryId}:`, error);
       return [];
     }
   };
 
   // Obtener todos los servicios
-  const getAllServicios = async (): Promise<Servicio[]> => {
+  const getAllServicios = async (): Promise<PrismaService[]> => {
     try {
       // En producción, esto sería una llamada a la API
       return [...servicios]; // Devolver copia para evitar mutaciones
@@ -158,13 +160,28 @@ export function ServiceProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const setSelectedServiceById = (id: string | null) => {
+    if (id === null) {
+      setSelectedService(null);
+    } else {
+      getServiceById(id).then(service => {
+        if (service) {
+          setSelectedService(service);
+        }
+      });
+    }
+  };
+
   const value = {
     familias,
     servicios,
-    getAllFamilias,
+    selectedService,
     getFamiliaById,
-    getServicioById,
-    getServiciosByFamiliaId,
+    getServiceById,
+    setSelectedServiceById,
+    loading,
+    getAllFamilias,
+    getServiciosByCategoryId,
     getAllServicios
   };
 

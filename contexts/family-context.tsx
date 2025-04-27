@@ -3,27 +3,27 @@
 import type React from "react"
 import { createContext, useContext, useState, useEffect } from "react"
 import { useInterfaz } from "./interfaz-Context"
-import { FamiliaTarifa as FamiliaTarifaModel } from "@/services/data/models/interfaces"
+import type { Category } from "@prisma/client"
 
 // Alias para tipos específicos usando tipos del modelo central
-export type FamiliaTarifa = FamiliaTarifaModel;
-export type Family = FamiliaTarifa;
+// export type FamiliaTarifa = FamiliaTarifaModel;
+// export type Family = FamiliaTarifa;
 
-interface FamilyContextType {
-  families: Family[]
-  addFamily: (family: Omit<Family, "id">) => Promise<void>
-  updateFamily: (id: string, family: Partial<Family>) => Promise<void>
-  toggleFamilyStatus: (id: string) => Promise<void>
-  getFamilyById: (id: string) => Promise<Family | undefined>
-  getSubfamilies: (parentId: string) => Promise<Family[]>
-  getRootFamilies: (tarifaId?: string) => Promise<Family[]>
-  getFamiliesByTarifaId: (tarifaId: string) => Promise<Family[]>
+export interface FamilyContextType {
+  familias: Category[];
+  getFamiliaById: (id: string) => Promise<Category | null>;
+  addFamilia: (familia: Omit<Category, "id" | "systemId" | "createdAt" | "updatedAt" | "parentId"> & { parentId?: string | null }) => Promise<Category>;
+  updateFamilia: (id: string, familia: Partial<Omit<Category, "id" | "systemId" | "createdAt" | "updatedAt">>) => Promise<Category | null>;
+  deleteFamilia: (id: string) => Promise<void>;
+  getFamilias: () => Promise<void>;
 }
 
-const FamilyContext = createContext<FamilyContextType | undefined>(undefined)
+export const FamilyContext = createContext<FamilyContextType | undefined>(
+  undefined
+);
 
 export const FamilyProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [families, setFamilies] = useState<Family[]>([])
+  const [families, setFamilies] = useState<Category[]>([])
   const interfaz = useInterfaz()
 
   // Cargar datos iniciales utilizando la interfaz
@@ -32,9 +32,10 @@ export const FamilyProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       if (interfaz.initialized) {
         try {
           const data = await interfaz.getAllFamiliasTarifa();
-          setFamilies(data);
+          setFamilies(data as any || []);
         } catch (error) {
           console.error("Error al cargar familias:", error);
+          setFamilies([]);
         }
       }
     };
@@ -42,61 +43,66 @@ export const FamilyProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     fetchFamilies();
   }, [interfaz.initialized]);
 
-  const addFamily = async (family: Omit<Family, "id">) => {
+  const addFamilia = async (familia: Omit<Category, "id" | "systemId" | "createdAt" | "updatedAt" | "parentId"> & { parentId?: string | null }): Promise<Category> => {
     try {
-      const newFamily = await interfaz.createFamiliaTarifa(family);
-      setFamilies(prev => [...prev, newFamily]);
+      const newFamily = await interfaz.createFamiliaTarifa(familia as any);
+      setFamilies(prev => [...prev, newFamily as any]);
+      return newFamily as Category;
     } catch (error) {
       console.error("Error al añadir familia:", error);
       throw error;
     }
   };
 
-  const updateFamily = async (id: string, updatedFamily: Partial<Family>) => {
+  const updateFamilia = async (id: string, familia: Partial<Omit<Category, "id" | "systemId" | "createdAt" | "updatedAt">>): Promise<Category | null> => {
     try {
-      const updated = await interfaz.updateFamiliaTarifa(id, updatedFamily);
+      const updated = await interfaz.updateFamiliaTarifa(id, familia as any);
       if (updated) {
-        setFamilies(prev => prev.map(family => family.id === id ? { ...family, ...updatedFamily } : family));
-        
+        const updatedCategory = { ...families.find(f => f.id === id), ...familia } as Category;
+        setFamilies(prev => prev.map(family => family.id === id ? updatedCategory : family));
+
         try {
-          const tarifaId = updatedFamily.tarifaId || families.find(f => f.id === id)?.tarifaId || '';
-          window.dispatchEvent(new CustomEvent("familia-actualizada", { 
-            detail: { id, tarifaId } 
+          const tarifaId = (familia as any).tarifaId || (families.find(f => f.id === id) as any)?.tarifaId || '';
+          window.dispatchEvent(new CustomEvent("familia-actualizada", {
+            detail: { id, tarifaId }
           }));
         } catch (eventError) {
           console.error("Error al disparar evento:", eventError);
         }
+        return updatedCategory;
       }
+      return null;
     } catch (error) {
       console.error("Error al actualizar familia:", error);
       throw error;
     }
   };
 
-  const toggleFamilyStatus = async (id: string) => {
+  const deleteFamilia = async (id: string): Promise<void> => {
     try {
       const success = await interfaz.toggleFamiliaStatus(id);
       if (success) {
-        setFamilies(prev => prev.map(family => 
-          family.id === id ? { ...family, isActive: !family.isActive } : family
+        setFamilies(prev => prev.map(family =>
+          family.id === id ? { ...family, isActive: !(family as any).isActive } as any : family
         ));
       }
     } catch (error) {
-      console.error("Error al cambiar estado de familia:", error);
+      console.error("Error al cambiar estado/eliminar familia:", error);
       throw error;
     }
   };
 
-  const getFamilyById = async (id: string) => {
+  const getFamiliaById = async (id: string): Promise<Category | null> => {
     try {
-      return await interfaz.getFamiliaTarifaById(id);
+      const familia = await interfaz.getFamiliaTarifaById(id) as any;
+      return familia || null;
     } catch (error) {
       console.error("Error al obtener familia por ID:", error);
-      return undefined;
+      return null;
     }
   };
 
-  const getSubfamilies = async (parentId: string) => {
+  const getSubfamilies = async (parentId: string): Promise<Category[]> => {
     if (!parentId) {
       console.warn("Se solicitaron subfamilias con parentId vacío");
       return [];
@@ -104,39 +110,26 @@ export const FamilyProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     
     try {
       const subfamilias = await interfaz.getSubfamilias(parentId);
-      return subfamilias || [];
+      return (subfamilias as any) || [];
     } catch (error) {
       console.error("Error al obtener subfamilias:", error);
       
-      // Intentar recuperar del estado local en caso de error
       const subfamiliasLocales = families.filter(f => f.parentId === parentId);
       return subfamiliasLocales;
     }
   };
 
-  const getRootFamilies = async (tarifaId?: string) => {
+  const getFamilias = async (): Promise<void> => {
     try {
-      if (tarifaId) {
-        const familias = await interfaz.getRootFamilias(tarifaId);
-        return familias || [];
-      } else {
-        // Obtener todas las familias raíz (sin parentId)
-        const todasFamilias = await interfaz.getAllFamiliasTarifa();
-        return todasFamilias.filter(f => !f.parentId) || [];
-      }
+      const todasFamilias = await interfaz.getAllFamiliasTarifa();
+      setFamilies((todasFamilias as any[]).filter(f => !f.parentId) as Category[] || []);
     } catch (error) {
       console.error("Error al obtener familias raíz:", error);
-      
-      // Recuperar del estado local como fallback
-      const familiasRaiz = tarifaId 
-        ? families.filter(f => f.tarifaId === tarifaId && !f.parentId)
-        : families.filter(f => !f.parentId);
-      
-      return familiasRaiz;
+      setFamilies(families.filter(f => !f.parentId));
     }
   };
   
-  const getFamiliesByTarifaId = async (tarifaId: string) => {
+  const getFamiliesByTarifaId = async (tarifaId: string): Promise<Category[]> => {
     if (!tarifaId) {
       console.warn("Se solicitaron familias con tarifaId vacío");
       return [];
@@ -144,12 +137,11 @@ export const FamilyProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     
     try {
       const familias = await interfaz.getFamiliasByTarifaId(tarifaId);
-      return familias || [];
+      return (familias as any) || [];
     } catch (error) {
       console.error("Error al obtener familias por tarifaId:", error);
       
-      // Intentar recuperar del estado local en caso de error
-      const familiasLocales = families.filter(f => f.tarifaId === tarifaId);
+      const familiasLocales = families.filter(f => (f as any).tarifaId === tarifaId);
       if (familiasLocales.length > 0) {
         console.log("Familias recuperadas del estado local tras error:", tarifaId);
         return familiasLocales;
@@ -161,14 +153,12 @@ export const FamilyProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   return (
     <FamilyContext.Provider value={{
-      families,
-      addFamily,
-      updateFamily,
-      toggleFamilyStatus,
-      getFamilyById,
-      getSubfamilies,
-      getRootFamilies,
-      getFamiliesByTarifaId
+      familias: families,
+      getFamiliaById: getFamiliaById,
+      addFamilia: addFamilia,
+      updateFamilia: updateFamilia,
+      deleteFamilia: deleteFamilia,
+      getFamilias: getFamilias,
     }}>
       {children}
     </FamilyContext.Provider>

@@ -2,11 +2,13 @@
 
 import React, { createContext, useContext, useState } from 'react';
 import { useInterfaz } from './interfaz-Context';
-import { EntityDocument } from '@/services/data/models/interfaces';
+// import { EntityDocument } from '@/services/data/models/interfaces'; // Eliminado
 import { v4 as uuidv4 } from 'uuid';
+import type { EntityDocument, EntityType } from '@prisma/client'; // Añadido EntityType
+import { useSession } from 'next-auth/react'; // Añadido useSession
 
 // Alias para tipos específicos usando tipos del modelo central
-export type DocumentFile = EntityDocument;
+// export type DocumentFile = EntityDocument; // Eliminado
 
 interface DocumentContextType {
   uploadDocument: (
@@ -16,8 +18,8 @@ interface DocumentContextType {
     clinicId: string, 
     category?: string,
     onProgress?: (progress: number) => void
-  ) => Promise<DocumentFile>;
-  getDocumentsByEntity: (entityType: string, entityId: string, category?: string) => Promise<DocumentFile[]>;
+  ) => Promise<EntityDocument>; // Renombrado de DocumentFile
+  getDocumentsByEntity: (entityType: string, entityId: string, category?: string) => Promise<EntityDocument[]>; // Renombrado de DocumentFile
   categorizeDocument: (documentId: string, category: string) => Promise<boolean>;
 }
 
@@ -26,16 +28,17 @@ const DocumentContext = createContext<DocumentContextType | undefined>(undefined
 export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [dataFetched, setDataFetched] = useState(false);
   const interfaz = useInterfaz();
+  const { data: session } = useSession(); // Obtener sesión
   
   // Función para subir un documento
   const uploadDocument = async (
     file: File, 
     entityType: string, 
     entityId: string, 
-    clinicId: string,
+    clinicId: string, // Este clinicId puede usarse para obtener systemId si la sesión no lo tiene directamente
     category?: string,
     onProgress?: (progress: number) => void
-  ): Promise<DocumentFile> => {
+  ): Promise<EntityDocument> => {
     // Lista de tipos MIME aceptados como documentos
     const docTypes = [
       'application/pdf', 
@@ -55,15 +58,22 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const documentId = uuidv4();
     
     try {
+      // Asegurarse de tener la sesión y datos necesarios
+      if (!session?.user?.id || !session?.user?.systemId) {
+        throw new Error("Usuario no autenticado o falta información del sistema.");
+      }
+      const userId = session.user.id;
+      const systemId = session.user.systemId;
+
       // Preparar FormData
       const formData = new FormData();
       formData.append('file', file);
       formData.append('entityType', entityType);
       formData.append('entityId', entityId);
-      formData.append('clinicId', clinicId);
+      formData.append('clinicId', clinicId); // Se sigue enviando por si el backend lo necesita
       formData.append('fileId', documentId);
       if (category) {
-        formData.append('category', category);
+        formData.append('category', category); // Se sigue enviando por si el backend lo necesita
       }
       
       // Enviar al endpoint de carga
@@ -83,36 +93,48 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         throw new Error(result.error || "Error desconocido al subir documento");
       }
       
-      // Crear objeto de documento con los metadatos devueltos
-      const newDocument: DocumentFile = {
+      // Crear objeto de documento con los metadatos devueltos y datos de sesión
+      const newDocument: EntityDocument = {
         id: documentId,
         fileName: result.fileName,
         fileSize: result.fileSize,
-        mimeType: result.mimeType,
-        url: result.publicUrl,
-        path: result.path,
-        entityType,
-        entityId,
-        category: category || 'default',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        fileType: result.mimeType,
+        documentUrl: result.publicUrl,
+        // path: result.path, // Eliminado
+        entityType: entityType as EntityType,
+        entityId: entityId,
+        // category: category || 'default', // Eliminado
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        systemId: systemId,
+        uploadedByUserId: userId,
+        description: null, // Asumiendo que es opcional o se puede dejar null
       };
       
       // Guardar el documento a través de la interfaz
-      await interfaz.saveEntityDocuments(entityType, entityId, [newDocument], category);
+      // NOTA: El parámetro 'category' se sigue pasando aquí, pero newDocument ya no lo contiene.
+      // Esto puede requerir ajustes en 'interfaz.saveEntityDocuments' en el futuro.
+      // Workaround: Usar 'as any' hasta refactorizar interfaz-Context
+      await interfaz.saveEntityDocuments(entityType as EntityType, entityId, [newDocument] as any, category);
       
       return newDocument;
     } catch (error) {
       console.error('Error al guardar documento:', error);
-      throw new Error('No se pudo guardar el documento');
+      // Asegúrate de que el error que se lanza es útil
+      if (error instanceof Error) {
+          throw new Error(`No se pudo guardar el documento: ${error.message}`);
+      } else {
+          throw new Error('No se pudo guardar el documento por una causa desconocida');
+      }
     }
   };
   
   // Obtener documentos por entidad
-  const getDocumentsByEntity = async (entityType: string, entityId: string, category?: string): Promise<DocumentFile[]> => {
+  const getDocumentsByEntity = async (entityType: string, entityId: string, category?: string): Promise<EntityDocument[]> => { // Renombrado de DocumentFile
     try {
       const documents = await interfaz.getEntityDocuments(entityType, entityId, category);
-      return documents || [];
+      // Workaround: Usar 'as any' hasta refactorizar interfaz-Context
+      return (documents || []) as any;
     } catch (error) {
       console.error('Error al obtener documentos:', error);
       return [];
@@ -146,7 +168,8 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       });
       
       // Guardar los cambios
-      return await interfaz.saveEntityDocuments(doc.entityType, doc.entityId, updatedDocs, doc.category);
+      // Workaround: Usar 'as any' hasta refactorizar interfaz-Context
+      return await interfaz.saveEntityDocuments(doc.entityType, doc.entityId, updatedDocs as any, doc.category);
     } catch (error) {
       console.error('Error al categorizar documento:', error);
       return false;

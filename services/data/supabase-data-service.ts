@@ -3,6 +3,18 @@
  * Esta implementación permite conectar con una base de datos PostgreSQL en Supabase
  */
 
+// TODO: REFACTORIZACIÓN FUTURA Y ELIMINACIÓN
+// Este archivo actualmente es necesario porque `services/data/index.ts` crea una instancia
+// directa de `SupabaseDataService` que es usada por `InterfazContext` a través de `getDataService()`.
+// Sin embargo, la mayoría de las funciones aquí están obsoletas, comentadas o no implementadas.
+// La estrategia a largo plazo es refactorizar COMPLETAMENTE `InterfazContext` para que TODAS
+// sus funciones usen llamadas `fetch` a las APIs correspondientes (ej: /api/clinics, /api/equipment, etc.).
+// Una vez que `InterfazContext` no dependa más de `getDataService()` para obtener datos,
+// este archivo (`supabase-data-service.ts`) podrá ser eliminado junto con la lógica de 
+// instanciación directa en `services/data/index.ts`.
+// (Última revisión: Durante refactor de equipamiento - Se refactorizaron funciones de Equipo en InterfazContext).
+// FIN TODO
+
 // Comentar importaciones problemáticas
 // import type { DataService, Client } from './data-service.ts'; 
 // import type {

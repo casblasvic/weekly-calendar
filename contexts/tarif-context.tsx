@@ -4,10 +4,12 @@ import { createContext, useContext, useState, useEffect, useCallback, ReactNode,
 // QUITAR: import { useRouter } from "next/navigation"
 // QUITAR: import { useInterfaz } from "./interfaz-Context"
 // QUITAR: import { Tarifa as TarifaModel, FamiliaTarifa as FamiliaTarifaModel, EntityImage } from "@/services/data/models/interfaces"
-import { Tariff as PrismaTariff } from '@prisma/client'; // Usar tipos Prisma
+import { Tariff as PrismaTariff, Clinic as PrismaClinic } from '@prisma/client'; // Usar tipos Prisma
 
 // Definir alias para los tipos usando los tipos de Prisma
-export type Tarifa = PrismaTariff;
+export type Tarifa = PrismaTariff & {
+  clinics?: Pick<PrismaClinic, 'id' | 'name' | 'prefix'>[]; // clínicas asociadas (opcional)
+};
 // export type FamiliaTarifa = PrismaTariffFamily;
 // export type TarifaImage = EntityImage; // PENDIENTE
 

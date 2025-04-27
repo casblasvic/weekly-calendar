@@ -5,34 +5,39 @@
  * Redirige todas las llamadas a los antiguos métodos de mockData a los nuevos
  * métodos de los contextos respectivos.
  */
+// Importamos TODO el paquete como 'pkg'
+import pkg from '@prisma/client';
+const { PrismaClient, Prisma } = pkg; // Obtener constructor y namespace Prisma
 
+// --- Importación de Tipos Específicos de Prisma con alias --- 
 import type {
-  Clinica,
-  Tarifa,
-  FamiliaTarifa,
-  Servicio,
-  TipoIVA,
-  Equipo,
-  ScheduleBlock,
-  EntityImage,
-  EntityDocument,
-  ClinicConfig
-} from "./contexts/interfaz-Context.tsx";
+  Clinic as PrismaClinic,
+  Tariff as PrismaTariff,
+  Category as PrismaCategory, // Assuming FamiliaTarifa maps to Category
+  Service as PrismaService,  // Assuming Servicio maps to Service
+  VATType as PrismaVATType,  // Assuming TipoIVA maps to VATType
+  Equipment as PrismaEquipment, // Assuming Equipo maps to Equipment
+  EntityImage as PrismaEntityImage,
+  EntityDocument as PrismaEntityDocument,
+  // ScheduleBlock, // No direct Prisma equivalent? Maybe ClinicScheduleBlock or ScheduleTemplateBlock?
+  // ClinicConfig // No direct Prisma equivalent
+} from '@prisma/client';
+// --- FIN Importación Tipos Prisma ---
+
+// Importar SOLO la función necesaria del servicio de datos
 import { getDataService } from "./services/data/index.ts";
 
-// Re-exportamos los tipos para mantener compatibilidad
-export type {
-  Clinica,
-  Tarifa,
-  FamiliaTarifa,
-  Servicio,
-  TipoIVA,
-  Equipo,
-  ScheduleBlock,
-  EntityImage,
-  EntityDocument,
-  ClinicConfig
-};
+// Definir alias para compatibilidad usando los tipos importados con alias
+export type Clinica = PrismaClinic;
+export type Tarifa = PrismaTariff;
+export type FamiliaTarifa = PrismaCategory;
+export type Servicio = PrismaService;
+export type TipoIVA = PrismaVATType;
+export type Equipo = PrismaEquipment;
+export type EntityImage = PrismaEntityImage; // Exportar directamente si el alias es igual
+export type EntityDocument = PrismaEntityDocument; // Exportar directamente si el alias es igual
+export type ScheduleBlock = any; // Placeholder type - needs review
+export type ClinicConfig = any; // Placeholder type - needs review
 
 // --- INICIO: Definición de Datos Iniciales (Mock) ---
 // Esta es ahora la fuente central de datos para LocalDataService
@@ -256,6 +261,14 @@ export const initialMockData = {
       nombre: "Yasmine Tachfine",
       email: "yasmine@multilaser.ma",
       perfil: "Personal",
+      clinicasIds: ["clinic-1"],
+      isActive: true
+    },
+    {
+      id: "8",
+      nombre: "Administrador Sistema",
+      email: "casblasvic@gmail.com",
+      perfil: "Administrador",
       clinicasIds: ["clinic-1"],
       isActive: true
     }

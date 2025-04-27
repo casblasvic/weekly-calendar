@@ -5,6 +5,7 @@ import { createContext, useContext, useState, type ReactNode, useEffect, useCall
 // import { useInterfaz } from "@/contexts/interfaz-Context" // No parece necesario aquí
 // import { PerfilEmpleado } from "@/services/data/models/interfaces" // Usaremos el tipo Role de Prisma
 import { Role as PrismaRole } from '@prisma/client'; // Importar tipo Role de Prisma
+import { useSession } from "next-auth/react"; // <<< Importar useSession
 
 // Ya no necesitamos PERFILES_MOCK
 /*
@@ -38,11 +39,20 @@ export function RoleProvider({ children }: { children: ReactNode }) {
   // const [initialized, setInitialized] = useState(false); // Ya no necesario con isLoading
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { data: session, status } = useSession(); // <<< Obtener estado de la sesión
   // const interfaz = useInterfaz(); // No parece necesario
 
   // Función para cargar roles desde la API
   const fetchRoles = useCallback(async () => {
     // console.log("[RoleContext] fetchRoles llamado"); // DEBUG
+    // <<< Asegurarnos de que solo se ejecuta si está autenticado >>>
+    if (status !== 'authenticated') {
+        console.log("[RoleContext] Sesión no autenticada, saltando fetchRoles.");
+        setIsLoading(false); // Indicar que ya no estamos cargando (porque no hay nada que cargar)
+        setRoles([]); // Asegurar que los roles están vacíos si no hay sesión
+        return; 
+    }
+
     setIsLoading(true);
     setError(null);
     try {
@@ -50,7 +60,15 @@ export function RoleProvider({ children }: { children: ReactNode }) {
       const response = await fetch('/api/roles');
       // console.log("[RoleContext] Respuesta recibida:", response.status, response.ok); // DEBUG
       if (!response.ok) {
-        throw new Error(`Error ${response.status}: ${response.statusText}`);
+        // Capturar el texto del error 401 si es posible
+        let errorText = response.statusText;
+        if (response.status === 401) {
+            try {
+                 const errorBody = await response.json();
+                 errorText = errorBody.message || errorText;
+            } catch (e) {}
+        }
+        throw new Error(`Error ${response.status}: ${errorText}`);
       }
       const loadedRoles: PrismaRole[] = await response.json();
       // console.log("[RoleContext] Roles cargados desde API:", loadedRoles); // DEBUG
@@ -63,13 +81,27 @@ export function RoleProvider({ children }: { children: ReactNode }) {
       setIsLoading(false);
       // console.log("[RoleContext] fetchRoles finalizado. isLoading:", false); // DEBUG
     }
-  }, []); // Sin dependencias externas
+    // <<< Añadir status como dependencia para reaccionar a cambios de sesión >>>
+  }, [status]);
 
-  // Cargar roles iniciales al montar el provider
+  // Cargar roles iniciales SOLO si la sesión está autenticada
   useEffect(() => {
-    // console.log("[RoleContext] useEffect inicial ejecutado"); // DEBUG
-    fetchRoles();
-  }, [fetchRoles]); // Dependencia correcta
+    // console.log("[RoleContext] useEffect inicial ejecutado, status:", status);
+    if (status === 'authenticated') {
+        // console.log("[RoleContext] Sesión autenticada, llamando a fetchRoles.");
+        fetchRoles();
+    } else if (status === 'unauthenticated') {
+        // console.log("[RoleContext] Sesión no autenticada, limpiando roles y carga.");
+        setRoles([]); // Limpiar roles si el usuario cierra sesión
+        setIsLoading(false); // Indicar que ya no se está cargando
+        setError(null);
+    } else {
+       // status === 'loading' - No hacer nada, esperar a que se resuelva
+       // console.log("[RoleContext] Sesión en estado de carga...");
+       setIsLoading(true); // Mantener cargando mientras la sesión se verifica
+    }
+    // <<< Añadir fetchRoles y status como dependencias >>>
+  }, [fetchRoles, status]);
 
   // --- Implementación de funciones (Mayormente operan sobre estado local por ahora) ---
 

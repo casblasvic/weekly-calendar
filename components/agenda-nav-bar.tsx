@@ -39,18 +39,18 @@ export function AgendaNavBar({
 }: AgendaNavBarProps) {
   const router = useRouter()
   const [isBlockModalOpen, setIsBlockModalOpen] = useState(false)
-  const { activeClinic } = useClinic()
+  const { activeClinic, activeClinicCabins, isLoadingCabinsContext } = useClinic()
   const [clinicRooms, setClinicRooms] = useState<Room[]>([])
-  const currentClinic = activeClinic // Declared currentClinic
+  const currentClinic = activeClinic
   const { toast } = useToast()
   const [filterView, setFilterView] = useState("todos")
   const isUpdatingRef = useRef(false)
 
   // Efecto para obtener las cabinas de la clínica activa
   useEffect(() => {
-    if (activeClinic?.config?.cabins) {
+    if (activeClinicCabins) {
       // Filtrar y ordenar las cabinas activas
-      const rooms = activeClinic.config.cabins
+      const rooms = activeClinicCabins
         .filter((cabin) => cabin.isActive)
         .sort((a, b) => a.order - b.order)
         .map((cabin) => ({
@@ -59,12 +59,12 @@ export function AgendaNavBar({
         }))
 
       setClinicRooms(rooms)
-      console.log("AgendaNavBar - Cabinas activas cargadas:", rooms)
+      console.log("AgendaNavBar - Cabinas activas actualizadas desde contexto:", rooms)
     } else {
       setClinicRooms([])
-      console.log("AgendaNavBar - No hay cabinas configuradas para esta clínica")
+      console.log("AgendaNavBar - No hay cabinas activas en el contexto o están cargando.")
     }
-  }, [activeClinic])
+  }, [activeClinicCabins])
 
   // Actualizar URL sin recargar la página - versión simplificada
   const updatePathSilently = useCallback((path: string) => {
@@ -383,17 +383,17 @@ export function AgendaNavBar({
           size="icon"
           className="text-purple-600"
           onClick={() => {
-            if (!currentClinic || !currentClinic.config?.cabins || currentClinic.config.cabins.length === 0) {
+            if (!currentClinic || isLoadingCabinsContext || !activeClinicCabins || activeClinicCabins.length === 0) {
               toast({
                 title: "Error",
-                description: "No hay cabinas configuradas para esta clínica",
-                variant: "destructive",
+                description: isLoadingCabinsContext ? "Cargando cabinas..." : "No hay cabinas activas configuradas para esta clínica",
+                variant: isLoadingCabinsContext ? "default" : "destructive",
               })
               return
             }
             setIsBlockModalOpen(true)
           }}
-          disabled={!currentClinic || !currentClinic.config?.cabins || currentClinic.config.cabins.length === 0}
+          disabled={!currentClinic || isLoadingCabinsContext || !activeClinicCabins || activeClinicCabins.length === 0}
         >
           <Lock className="w-4 h-4" />
         </Button>
@@ -414,7 +414,7 @@ export function AgendaNavBar({
         <BlockScheduleModal
           open={isBlockModalOpen}
           onOpenChange={setIsBlockModalOpen}
-          clinicRooms={activeClinic?.config?.cabins?.map(cabin => convertCabinToRoom(cabin)) || []}
+          clinicRooms={activeClinicCabins?.filter(c => c.isActive).sort((a,b) => a.order - b.order).map(cabin => convertCabinToRoom(cabin)) || []}
           clinicId={activeClinic?.id ? String(activeClinic.id) : ""}
           onBlockSaved={() => {
             if (onBlocksChanged) {

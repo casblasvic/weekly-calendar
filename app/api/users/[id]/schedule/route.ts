@@ -3,7 +3,26 @@ import { prisma } from '@/lib/db';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 import type { WeekSchedule } from '@/types/schedule'; // Importar tipo WeekSchedule
-import type { HorarioSemanal, HorarioDia, FranjaHoraria } from '@/services/data/models/interfaces'; // <-- Importar tipos necesarios
+
+// <<< INICIO: Definiciones de tipos locales >>>
+// (Basadas en la estructura usada y devuelta por la API)
+type FranjaHoraria = {
+  id: string; // Opcional, o generar en conversión
+  inicio: string;
+  fin: string;
+};
+
+type HorarioDia = {
+  dia: 'lunes' | 'martes' | 'miercoles' | 'jueves' | 'viernes' | 'sabado' | 'domingo';
+  activo: boolean;
+  franjas: FranjaHoraria[];
+};
+
+type HorarioSemanal = {
+  clinicaId: string;
+  dias: HorarioDia[];
+};
+// <<< FIN: Definiciones de tipos locales >>>
 
 // Esquema para validar los parámetros de la ruta y query
 const ParamsSchema = z.object({
@@ -126,8 +145,9 @@ export async function GET(request: Request, props: { params: Promise<{ id: strin
     });
 
     if (!userScheduleData || !userScheduleData.scheduleJson) {
-      console.log(`[API GET /users/${userId}/schedule] No custom schedule found or scheduleJson is empty for clinic ${clinicId}.`);
-      return NextResponse.json({ message: `No se encontró horario personalizado para el usuario ${userId} en la clínica ${clinicId}` }, { status: 404 });
+      console.log(`[API GET /users/${userId}/schedule] No custom schedule found or scheduleJson is empty for clinic ${clinicId}. Returning 200 OK with null body.`);
+      // Devolver 200 OK con null como cuerpo para indicar que no se encontró horario
+      return NextResponse.json(null, { status: 200 }); 
     }
 
     console.log(`[API GET /users/${userId}/schedule] Custom schedule found (raw JSON) for clinic ${clinicId}. Validating and converting...`);

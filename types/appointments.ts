@@ -13,6 +13,7 @@ export interface Appointment {
   completed?: boolean
   phone?: string
   tags?: string[]
+  comment?: string
 }
 
 /**

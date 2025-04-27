@@ -1,35 +1,46 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, NextRequest } from 'next/server'
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library'
 import { prisma } from '@/lib/db'
-// import { auth } from '@/lib/auth' // Comentado temporalmente
+import { Prisma } from '@prisma/client'
+import { getServerAuthSession } from "@/lib/auth"
+import { z } from 'zod'
 
 // GET /api/equipment - Obtener lista de equipamientos
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   try {
-    // const session = await auth()
-    // if (!session?.user?.systemId) { // Asegurarse que el usuario tiene systemId
-    //   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    // }
+    const session = await getServerAuthSession()
+    if (!session?.user?.systemId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    const systemId = session.user.systemId
 
-    // Obtener parámetros de búsqueda (ej: clinicId)
-    const { searchParams } = new URL(request.url)
+    const { searchParams } = request.nextUrl
     const clinicId = searchParams.get('clinicId')
-    // const systemId = session.user.systemId; // Usar systemId del usuario autenticado
-    const systemId = "cm93h9jrt0000y2mc0tx1z3p5"; // TEMPORAL: Usar ID del sistema de ejemplo hasta tener auth
 
-    const whereClause: any = {
-      systemId: systemId, // Filtrar siempre por sistema
+    const whereClause: Prisma.EquipmentWhereInput = {
+      systemId: systemId,
     }
 
     if (clinicId) {
+      const clinic = await prisma.clinic.findFirst({
+        where: { id: clinicId, systemId: systemId },
+        select: { id: true }
+      })
+      if (!clinic) {
+        return NextResponse.json({ message: 'Clínica no encontrada o no pertenece a tu sistema.' }, { status: 404 })
+      }
       whereClause.clinicId = clinicId
     }
 
     const equipment = await prisma.equipment.findMany({
       where: whereClause,
       include: {
-        clinic: true, // Incluir info de la clínica si se desea
-        // device: true, // Incluir info del dispositivo asociado si se desea
+        clinic: {
+          select: {
+            id: true,
+            name: true,
+          }
+        },
       },
       orderBy: {
         name: 'asc',
@@ -44,58 +55,69 @@ export async function GET(request: Request) {
   }
 }
 
+// Esquema Zod para la creación de Equipment
+const createEquipmentSchema = z.object({
+  name: z.string().min(1, "El nombre es obligatorio."),
+  description: z.string().optional().nullable(),
+  serialNumber: z.string().optional().nullable(),
+  modelNumber: z.string().optional().nullable(),
+  purchaseDate: z.string().optional().nullable().refine(val => !val || !isNaN(Date.parse(val)), {
+    message: "Formato de fecha de compra inválido.",
+  }).transform(val => val ? new Date(val) : null),
+  warrantyEndDate: z.string().optional().nullable().refine(val => !val || !isNaN(Date.parse(val)), {
+    message: "Formato de fecha de fin de garantía inválido.",
+  }).transform(val => val ? new Date(val) : null),
+  location: z.string().optional().nullable(),
+  notes: z.string().optional().nullable(),
+  clinicId: z.string().cuid({ message: "ID de clínica inválido" }).optional().nullable(),
+  deviceId: z.string().cuid({ message: "ID de dispositivo inválido" }).optional().nullable(),
+  isActive: z.boolean().optional().default(true),
+})
+
 // POST /api/equipment - Crear nuevo equipamiento
 export async function POST(request: Request) {
   try {
-    // const session = await auth()
-    // if (!session?.user?.systemId) {
-    //   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    // }
-    // // Añadir comprobación de permisos
-    // // if (!hasPermission(session.user.roles, 'create', 'equipment')) { 
-    // //   return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    // // }
-
-    const body = await request.json()
-    const { 
-      name,
-      description,
-      serialNumber,
-      modelNumber,
-      purchaseDate,
-      warrantyEndDate,
-      location,
-      notes,
-      clinicId, // ID de la clínica a la que pertenece
-      deviceId, // ID del dispositivo inteligente asociado (opcional)
-      isActive = true 
-    } = body
-
-    // const systemId = session.user.systemId;
-    const systemId = "cm93h9jrt0000y2mc0tx1z3p5"; // TEMPORAL: Usar ID del sistema de ejemplo
-
-    if (!name || !systemId) {
-      return NextResponse.json({ error: 'Name and systemId are required' }, { status: 400 })
+    const session = await getServerAuthSession()
+    if (!session?.user?.systemId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    const systemId = session.user.systemId
+    
+    const body = await request.json()
+    
+    // Validar con Zod
+    const validation = createEquipmentSchema.safeParse(body)
+    if (!validation.success) {
+      return NextResponse.json({ error: 'Datos inválidos.', details: validation.error.format() }, { status: 400 })
+    }
+    const validatedData = validation.data
 
-    // Validar fechas si vienen
-    const purchaseDateObj = purchaseDate ? new Date(purchaseDate) : null;
-    const warrantyEndDateObj = warrantyEndDate ? new Date(warrantyEndDate) : null;
+    // Validar clinicId si se proporciona
+    if (validatedData.clinicId) {
+      const clinic = await prisma.clinic.findFirst({
+        where: { id: validatedData.clinicId, systemId: systemId },
+        select: { id: true }
+      })
+      if (!clinic) {
+        return NextResponse.json({ message: 'Clínica especificada no encontrada o no pertenece a tu sistema.' }, { status: 400 })
+      }
+    }
+    // TODO: Validar deviceId si se proporciona (¿pertenece al systemId?)
 
     const newEquipment = await prisma.equipment.create({
       data: {
-        name,
-        description,
-        serialNumber,
-        modelNumber,
-        purchaseDate: purchaseDateObj,
-        warrantyEndDate: warrantyEndDateObj,
-        location,
-        notes,
-        isActive,
-        systemId,
-        clinicId, // Puede ser null si no se asigna a una clínica al crear
-        deviceId, // Puede ser null
+        name: validatedData.name,
+        description: validatedData.description,
+        serialNumber: validatedData.serialNumber,
+        modelNumber: validatedData.modelNumber,
+        purchaseDate: validatedData.purchaseDate,
+        warrantyEndDate: validatedData.warrantyEndDate,
+        location: validatedData.location,
+        notes: validatedData.notes,
+        isActive: validatedData.isActive,
+        clinicId: validatedData.clinicId,
+        deviceId: validatedData.deviceId,
+        systemId: systemId,
       },
     })
 
@@ -103,17 +125,21 @@ export async function POST(request: Request) {
 
   } catch (error) {
     console.error("[API_EQUIPMENT_POST]", error)
-    // Manejar errores específicos de Prisma (ej: violación de unicidad)
     if (error instanceof PrismaClientKnownRequestError) { 
-        if (error.code === 'P2002') { // Unique constraint violation
-            // Construir mensaje de error más específico si es posible
-            let errorMessage = "A unique constraint violation occurred.";
-            if (error.meta?.target) {
-                const targetFields = Array.isArray(error.meta.target) ? error.meta.target.join(', ') : error.meta.target;
-                errorMessage = `Equipment with this ${targetFields} already exists.`
-            }
-            return NextResponse.json({ error: errorMessage }, { status: 409 });
+      if (error.code === 'P2002') {
+        let errorMessage = "A unique constraint violation occurred."
+        if (error.meta?.target) {
+          const targetFields = Array.isArray(error.meta.target) ? error.meta.target.join(', ') : error.meta.target
+          errorMessage = `Equipment with this ${targetFields} already exists.`
         }
+        return NextResponse.json({ error: errorMessage }, { status: 409 })
+      }
+    }
+    if (error instanceof z.ZodError) {
+      return NextResponse.json({ error: 'Datos inválidos', details: error.errors }, { status: 400 })
+    }
+    if (error instanceof SyntaxError) {
+      return NextResponse.json({ message: 'JSON inválido' }, { status: 400 })
     }
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }

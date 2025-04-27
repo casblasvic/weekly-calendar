@@ -1,0 +1,1 @@
+export default function SuscripcionesServicioPage() { return <div>Suscripciones del Servicio (Pendiente)</div>; } 

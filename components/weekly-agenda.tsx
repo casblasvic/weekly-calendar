@@ -2,7 +2,7 @@
 
 import React, { useMemo, useEffect, useState, useCallback, useRef } from "react"
 
-import { format, parse, addDays, startOfWeek, isSameDay, differenceInDays, isToday, addWeeks, subWeeks, isSameMonth, parseISO, isBefore, isAfter } from "date-fns"
+import { format, parse, addDays, startOfWeek, isSameDay, differenceInDays, isToday, addWeeks, subWeeks, isSameMonth, parseISO, isBefore, isAfter, startOfDay, endOfDay, getDay, isWithinInterval } from "date-fns"
 import { es } from "date-fns/locale"
 import { useClinic } from "@/contexts/clinic-context"
 import { AgendaNavBar } from "./agenda-nav-bar"
@@ -16,9 +16,9 @@ import { AppointmentDialog } from "@/components/appointment-dialog"
 import { NewClientDialog } from "@/components/new-client-dialog"
 import { AppointmentItem } from "./appointment-item"
 import { DragDropContext, Droppable } from "react-beautiful-dnd"
-import { ScheduleBlock, useScheduleBlocks } from "@/contexts/schedule-blocks-context"
-import { Lock, AlertTriangle } from "lucide-react"
-import { getDay, getDate } from "date-fns"
+import { useScheduleBlocks } from "@/contexts/schedule-blocks-context"
+import { Lock, AlertTriangle, Calendar as CalendarIcon, Loader2 } from "lucide-react"
+import { getDate } from "date-fns"
 import { useToast } from "@/hooks/use-toast"
 import { BlockScheduleModal } from "./block-schedule-modal"
 import { WeekSchedule, DaySchedule, TimeRange } from "@/types/schedule"
@@ -29,12 +29,11 @@ import { Button } from "@/components/ui/button"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import { ClinicConfigAlert } from "@/components/clinic-config-alert"
 import { 
-  isBusinessDay, 
-  findActiveExceptions,
-  applyScheduleExceptions
+  isBusinessDay as isBusinessDayBase, 
+  getBusinessHours as getBusinessHoursBase,
 } from "@/services/clinic-schedule-service"
-import { Clinica } from "@/services/data/models/interfaces"
-import { Cabin, ScheduleTemplateBlock, ClinicScheduleBlock } from '@prisma/client'
+import { Clinic, Cabin, ScheduleTemplateBlock, ClinicScheduleBlock } from '@prisma/client'
+import type { CabinScheduleOverride } from '@prisma/client'
 
 // Función para generar slots de tiempo
 function getTimeSlots(startTime: string, endTime: string, interval = 15): string[] {
@@ -66,24 +65,28 @@ interface WeeklyAgendaProps {
   initialDate?: string
   containerMode?: boolean
   onAppointmentsChange?: (appointments: Appointment[]) => void
-  cabins: Cabin[]
-  isLoadingCabins?: boolean
   appointments?: Appointment[]
   onAppointmentClick?: (appointmentId: string) => void
+}
+
+// Asegurar que el tipo Client incluye id
+interface Client { 
+  id: string; 
+  name: string; 
+  phone: string; 
 }
 
 export default function WeeklyAgenda({
   initialDate = format(new Date(), "yyyy-MM-dd"),
   containerMode = false,
   onAppointmentsChange,
-  cabins,
-  isLoadingCabins = false,
   appointments: initialAppointments = [],
   onAppointmentClick,
 }: WeeklyAgendaProps) {
+  console.log(`[WeeklyAgenda] Component Mounted/Rendered. Initial Date: ${initialDate}`);
   const router = useRouter()
-  const { activeClinic } = useClinic()
-  const { getBlocksByDateRange } = useScheduleBlocks()
+  const { activeClinic, activeClinicCabins, isLoading: isLoadingClinic, isLoadingCabinsContext } = useClinic()
+  const { cabinOverrides, loadingOverrides, fetchOverridesByDateRange } = useScheduleBlocks()
   
   // --- LOG: Clínica activa recibida del contexto ---
   console.log("[WeeklyAgenda] activeClinic from context:", activeClinic);
@@ -141,13 +144,15 @@ export default function WeeklyAgenda({
     time: string
     roomId: string
   } | null>(null)
-  const [selectedClient, setSelectedClient] = useState<{
-    name: string
-    phone: string
-  } | null>(null)
+  const [selectedClient, setSelectedClient] = useState<Client | null>(null)
   const [isSearchDialogOpen, setIsSearchDialogOpen] = useState(false)
   const [isAppointmentDialogOpen, setIsAppointmentDialogOpen] = useState(false)
   const [isNewClientDialogOpen, setIsNewClientDialogOpen] = useState(false)
+
+  // Nueva función para manejar el click de nuevo cliente
+  const handleNewClientClick = useCallback(() => {
+    setIsNewClientDialogOpen(true);
+  }, []);
 
   // Estado para almacenar las citas
   const [appointments, setAppointments] = useState<Appointment[]>(() => {
@@ -179,6 +184,11 @@ export default function WeeklyAgenda({
     return []
   })
 
+  // NUEVO: Estado para CabinScheduleOverride seleccionado
+  const [selectedOverride, setSelectedOverride] = useState<CabinScheduleOverride | null>(null);
+  // NUEVO: Estado para controlar la visibilidad del modal de bloqueo/override
+  const [isOverrideModalOpen, setIsOverrideModalOpen] = useState(false);
+
   // Efecto para guardar las citas en sessionStorage cuando cambian
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -199,8 +209,6 @@ export default function WeeklyAgenda({
       
       const templateBlocks = activeClinic.linkedScheduleTemplate?.blocks;
       const independentBlocks = activeClinic.independentScheduleBlocks;
-      const defaultOpen = activeClinic.openTime || "00:00";
-      const defaultClose = activeClinic.closeTime || "23:59";
       
       let blocksToUse: (ScheduleTemplateBlock | ClinicScheduleBlock)[] | undefined | null = null;
       
@@ -211,84 +219,120 @@ export default function WeeklyAgenda({
           console.log("[WeeklyAgenda useMemo] Using independent blocks.");
           blocksToUse = independentBlocks;
       } else {
-          console.log("[WeeklyAgenda useMemo] No blocks found, will use default logic inside converter if needed.");
-          // Return a schedule based purely on open/close for L-V? Or let converter handle empty?
-          // Let's return the converted empty schedule for now, checker functions handle isOpen=false
-          return convertBlocksToWeekSchedule(null, defaultOpen, defaultClose);
+          console.log("[WeeklyAgenda useMemo] No blocks found, returning empty schedule.");
+          // No need for defaultOpen/Close here, converter handles null blocks
+          return convertBlocksToWeekSchedule(null); // Pass only blocks
       }
       
-      return convertBlocksToWeekSchedule(blocksToUse, defaultOpen, defaultClose);
+      return convertBlocksToWeekSchedule(blocksToUse); // Pass only blocks
       
   }, [activeClinic]); // Depend on the whole activeClinic object
 
   // REMOVE const schedule = useMemo(() => activeClinic?.scheduleJson as unknown as WeekSchedule | null, [activeClinic?.scheduleJson]);
   
-  // Get general open/close/slot, but grid generation might need adjustment
-  const openTime = useMemo(() => activeClinic?.openTime ?? "09:00", [activeClinic?.openTime]);
-  const closeTime = useMemo(() => activeClinic?.closeTime ?? "20:00", [activeClinic?.closeTime]);
-  const slotDuration = useMemo(() => activeClinic?.slotDuration ?? 15, [activeClinic?.slotDuration]);
+  // Obtener slotDuration de la plantilla o horario independiente, con fallback
+  const slotDuration = useMemo(() => {
+    if (!activeClinic) return 15; // Default si no hay clínica
+    // Intentar obtener de la plantilla vinculada
+    const templateDuration = (activeClinic as any).linkedScheduleTemplate?.slotDuration;
+    if (templateDuration !== undefined && templateDuration !== null) {
+      return Number(templateDuration);
+    }
+    // Intentar obtener del horario independiente
+    const independentDuration = (activeClinic as any).independentSchedule?.slotDuration;
+    if (independentDuration !== undefined && independentDuration !== null) {
+      return Number(independentDuration);
+    }
+    // Fallback
+    return 15;
+  }, [activeClinic]); // Depender de activeClinic completo
   
-  console.log("[WeeklyAgenda] General derived config:", { openTime, closeTime, slotDuration });
+  // REMOVED useMemo for openTime and closeTime as they are derived dynamically for timeSlots
+  
+  // Adjust console log
   console.log("[WeeklyAgenda] Correct derived schedule:", correctSchedule);
+  console.log("[WeeklyAgenda] Using slot duration:", slotDuration);
 
   // --- Time Slot Generation using useMemo (adjust loop) --- 
   const timeSlots = useMemo(() => {
-      if (!activeClinic) return []; // Usar activeClinic como fuente principal
+      if (!activeClinic || !correctSchedule) {
+          console.log("[WeeklyAgenda timeSlots] No active clinic or no derived schedule, returning empty slots.");
+          return []; 
+      }
 
-      // Usar horarios generales como punto de partida
-      let overallEarliestStart = activeClinic.openTime ?? "09:00";
-      let overallLatestEnd = activeClinic.closeTime ?? "20:00";
-      console.log(`[WeeklyAgenda timeSlots] Initial general times: ${overallEarliestStart} - ${overallLatestEnd}`);
+      // Inicializar con valores extremos para asegurar que el primer rango válido los reemplace
+      let overallEarliestStart = "23:59"; 
+      let overallLatestEnd = "00:00";
+      let hasAnyRange = false;
+      console.log(`[WeeklyAgenda timeSlots] Initial extreme times: ${overallEarliestStart} - ${overallLatestEnd}`);
 
       // Usar el horario derivado (puede ser de plantilla o independiente)
       const scheduleToUse = correctSchedule; // Ya calculado en useMemo anterior
-      let hasAnyRange = false;
-
-      if (scheduleToUse) {
-          console.log("[WeeklyAgenda timeSlots] Checking ranges in schedule:", JSON.stringify(scheduleToUse, null, 2));
-          Object.values(scheduleToUse).forEach(day => {
-              const daySchedule = day as DaySchedule; 
-              if (daySchedule.isOpen && daySchedule.ranges.length > 0) {
-                  hasAnyRange = true;
-                  daySchedule.ranges.forEach(range => {
-                      // Comparar con los generales Y con los encontrados hasta ahora
-                      if (range.start && range.start < overallEarliestStart) {
+      
+      console.log("[WeeklyAgenda timeSlots] Checking ranges in schedule:", JSON.stringify(scheduleToUse, null, 2));
+      Object.values(scheduleToUse).forEach(day => {
+          const daySchedule = day as DaySchedule; 
+          if (daySchedule.isOpen && daySchedule.ranges.length > 0) {
+              daySchedule.ranges.forEach(range => {
+                  // Solo procesar rangos válidos
+                  if (range.start && range.end && range.start < range.end) {
+                      hasAnyRange = true; // Marcar que encontramos al menos un rango válido
+                      // Comparar con los encontrados hasta ahora
+                      if (range.start < overallEarliestStart) {
                           console.log(`[WeeklyAgenda timeSlots] Found earlier start range: ${range.start} < ${overallEarliestStart}`);
                           overallEarliestStart = range.start;
                       }
-                      if (range.end && range.end > overallLatestEnd) {
+                      if (range.end > overallLatestEnd) {
                           console.log(`[WeeklyAgenda timeSlots] Found later end range: ${range.end} > ${overallLatestEnd}`);
                           overallLatestEnd = range.end;
                       }
-                  });
-              }
-          });
-      } else {
-          console.log("[WeeklyAgenda timeSlots] No derived schedule found, using only general times.");
-      }
+                  }
+              });
+          }
+      });
       
-      // Si no se encontraron rangos, los overallEarliest/Latest serán los generales iniciales.
-      // Si se encontraron rangos, ya se habrán ajustado para incluirlos.
+      // Si NO se encontraron rangos VÁLIDOS después de revisar el schedule, retornar vacío
+      if (!hasAnyRange) {
+           console.warn("[WeeklyAgenda timeSlots] No valid time ranges found in the schedule. Returning empty slots.");
+           return [];
+      }
 
       console.log(`[WeeklyAgenda timeSlots] Final calculated range for slots: ${overallEarliestStart} to ${overallLatestEnd}`);
       
-      // Asegurar que latestEnd es realmente más tarde que earliestStart
+      // Asegurar que latestEnd es realmente más tarde que earliestStart (esto debería ser cierto si hasAnyRange es true)
       if (overallLatestEnd <= overallEarliestStart) {
-          console.warn(`[WeeklyAgenda timeSlots] latestEnd (${overallLatestEnd}) is not after earliestStart (${overallEarliestStart}), using default fallback times.`);
-           // Podríamos usar los open/close originales de activeClinic como mejor fallback
-           const fallbackOpen = activeClinic.openTime ?? "09:00";
-           const fallbackClose = activeClinic.closeTime ?? "20:00";
-           return getTimeSlots(fallbackOpen, fallbackClose > fallbackOpen ? fallbackClose : "23:59", slotDuration);
+          console.error(`[WeeklyAgenda timeSlots] Inconsistent range: latestEnd (${overallLatestEnd}) <= earliestStart (${overallEarliestStart}). Returning empty slots.`);
+          // Esto indica un problema lógico o datos inconsistentes en el schedule
+           return [];
       }
 
-      // Generar slots con el rango calculado final
-      return getTimeSlots(overallEarliestStart, overallLatestEnd, slotDuration);
+      // Obtener slotDuration del activeClinic si existe, o usar el default
+      const currentSlotDuration = slotDuration;
 
-  }, [correctSchedule, activeClinic?.openTime, activeClinic?.closeTime, slotDuration]); // Depender de open/close generales también
+      // Generar slots con el rango calculado final y la duración correcta
+      return getTimeSlots(overallEarliestStart, overallLatestEnd, currentSlotDuration);
+
+  }, [correctSchedule, slotDuration]); // Depender solo de correctSchedule y slotDuration
   // --- End Time Slot Generation Adjustment ---
 
-  // Obtener cabinas activas
-  const activeCabins = cabins;
+  // Obtener cabinas activas directamente de activeClinicCabins del contexto useClinic
+  const activeCabins = useMemo(() => {
+    // Asegurar que activeClinicCabins no sea null/undefined
+    console.log("[WeeklyAgenda] useMemo - Recalculando activeCabins. Valor de activeClinicCabins:", JSON.stringify(activeClinicCabins));
+    return activeClinicCabins?.filter(cabin => cabin.isActive).sort((a, b) => a.order - b.order) ?? []; 
+  }, [activeClinicCabins]);
+
+  // Considerar el estado de carga de la clínica Y de las cabinas del contexto
+  if (isLoadingClinic || isLoadingCabinsContext) { 
+      console.log(`[WeeklyAgenda] Mostrando carga: isLoadingClinic=${isLoadingClinic}, isLoadingCabinsContext=${isLoadingCabinsContext}`);
+      return <div className="flex items-center justify-center h-full"><Loader2 className="w-8 h-8 text-purple-600 animate-spin" /> Cargando datos de clínica/cabinas...</div>;
+  }
+  
+  // Añadir una comprobación explícita por si activeClinicCabins es null/undefined después de la carga (error inesperado)
+  if (!activeClinicCabins) {
+      console.error("[WeeklyAgenda] Error: activeClinicCabins es null/undefined después de la carga.");
+      return <div className="flex items-center justify-center h-full text-red-600">Error al cargar la configuración de cabinas.</div>;
+  }
 
   // Función para verificar si un día está activo en la configuración
   const getDayKey = useCallback((date: Date) => {
@@ -358,9 +402,6 @@ export default function WeeklyAgenda({
     return addDays(monday, i)
   })
 
-  const [scheduleBlocks, setScheduleBlocks] = useState<ScheduleBlock[]>([])
-  const [selectedBlock, setSelectedBlock] = useState<ScheduleBlock | null>(null)
-  const [isBlockModalOpen, setIsBlockModalOpen] = useState(false)
   const { toast } = useToast()
 
   // Añadir este estado cerca de los otros estados al inicio del componente
@@ -375,9 +416,8 @@ export default function WeeklyAgenda({
       console.log("[WeeklyAgenda] Limpiando recursos para clínica:", effectiveClinic?.id);
       
       // Limpiar todos los estados con datos específicos de la clínica
-      setScheduleBlocks([]);
-      setSelectedBlock(null);
-      setIsBlockModalOpen(false);
+      setSelectedOverride(null);
+      setIsOverrideModalOpen(false);
       setSelectedSlot(null);
       setSelectedClient(null);
       setIsSearchDialogOpen(false);
@@ -400,116 +440,36 @@ export default function WeeklyAgenda({
     };
   }, [effectiveClinic?.id]);
 
-  // Efecto adicional de limpieza
+  // --- NUEVO useEffect para cargar overrides --- 
   useEffect(() => {
-    // Función para limpiar
-    const cleanupResources = () => {
-      // Código de limpieza (si es necesario)
-      console.log("[WeeklyAgenda] Limpiando recursos");
-    };
-    
-    // Devolver función de limpieza para ejecutar al desmontar
-    return () => {
-      cleanupResources();
-    };
-  }, []);
-
-  // En el efecto donde se obtienen los bloques de horario
-  // Asegurar que solo se actualizan cuando hay cambios reales
-  useEffect(() => {
-    const fetchBlocks = async () => {
-      try {
-        if (!effectiveClinic?.id) return;
-        
-        const monday = startOfWeek(currentDate, { weekStartsOn: 1 });
-        const sunday = addDays(monday, 6);
-        const startDate = format(monday, "yyyy-MM-dd");
-        const endDate = format(sunday, "yyyy-MM-dd");
-        const clinicId = String(effectiveClinic.id);
-        
-        const blocks = await getBlocksByDateRange(clinicId, startDate, endDate);
-        
-        const currentBlockIds = scheduleBlocks.map(block => block.id).sort().join(',');
-        const newBlockIds = blocks.map(block => block.id).sort().join(',');
-        
-        if (currentBlockIds !== newBlockIds) {
-          setScheduleBlocks(blocks);
-          setUpdateKey(prev => prev + 1);
-        }
-      } catch (error) {
-        console.error("Error al obtener bloques de horario:", error);
-      }
-    };
-    fetchBlocks();
-  }, [effectiveClinic?.id, currentDate, getBlocksByDateRange, scheduleBlocks]);
-
-  // Corregir la función findBlockForCell
-  const findBlockForCell = (date: string, time: string, roomId: string): ScheduleBlock | null => {
-    return (
-      scheduleBlocks.find((block) => {
-        // Verificar fecha
-        if (block.date !== date && !isRecurringBlockApplicable(block, date)) {
-          return false
-        }
-
-        // Verificar hora
-        if (time < block.startTime || time > block.endTime) {
-          return false
-        }
-
-        // Verificar cabina
-        return block.roomIds.includes(roomId) || block.roomIds.includes("all") || block.roomIds.length === 0
-      }) || null
-    )
-  }
-
-  // Función auxiliar para bloques recurrentes
-  const isRecurringBlockApplicable = (block: ScheduleBlock, date: string): boolean => {
-    if (!block.recurring || !block.recurrencePattern) return false
-
-    const blockDate = parseISO(block.date)
-    const targetDate = parseISO(date)
-
-    // Si la fecha objetivo es anterior a la fecha del bloqueo
-    if (isBefore(targetDate, blockDate)) return false
-
-    // Si existe fecha de fin y la fecha objetivo es posterior
-    if (block.recurrencePattern.endDate && isAfter(targetDate, parseISO(block.recurrencePattern.endDate))) {
-      return false
+    if (effectiveClinic?.id) {
+      console.log("[WeeklyAgenda] useEffect - Fetching overrides for week starting:", format(startOfWeek(currentDate, { weekStartsOn: 1 }), "yyyy-MM-dd"));
+      const monday = startOfWeek(currentDate, { weekStartsOn: 1 });
+      const sunday = addDays(monday, 6);
+      const startDate = format(monday, "yyyy-MM-dd");
+      const endDate = format(sunday, "yyyy-MM-dd");
+      fetchOverridesByDateRange(String(effectiveClinic.id), startDate, endDate);
+    } else {
+      console.log("[WeeklyAgenda] useEffect - Cannot fetch overrides, no effectiveClinic.id");
     }
-
-    const dayOfWeek = getDay(targetDate) // 0 = domingo, 1 = lunes, etc.
-
-    if (block.recurrencePattern.frequency === "daily") {
-      return true
-    } else if (block.recurrencePattern.frequency === "weekly") {
-      // Si hay días específicos definidos, verificar si corresponde
-      if (block.recurrencePattern.daysOfWeek && block.recurrencePattern.daysOfWeek.length > 0) {
-        return block.recurrencePattern.daysOfWeek.includes(dayOfWeek)
-      }
-      // Si no hay días específicos, compara con el día de la semana del bloqueo original
-      return getDay(blockDate) === dayOfWeek
-    } else if (block.recurrencePattern.frequency === "monthly") {
-      return getDate(blockDate) === getDate(targetDate)
-    }
-
-    return false
-  }
+    // Depender de currentDate y effectiveClinic.id para recargar al cambiar semana o clínica
+  }, [currentDate, effectiveClinic?.id, fetchOverridesByDateRange]);
+  // --- FIN NUEVO useEffect ---
 
   // Funciones para manejar citas
   const handleCellClick = (day: Date, time: string, roomId: string) => {
-    // Verificar si la celda está bloqueada
+    // Verificar si la celda está bloqueada por un override
     const dayString = format(day, "yyyy-MM-dd")
-    const blockForCell = findBlockForCell(dayString, time, roomId)
+    const overrideForCell = findOverrideForCell(day, time, roomId); // Usar la nueva función
 
-    if (blockForCell) {
+    if (overrideForCell) { // Check if the clicked cell itself is blocked
       // Si está bloqueada, abrimos el modal de bloqueo con los datos
-      setSelectedBlock(blockForCell)
-      setIsBlockModalOpen(true)
-      return
+      setSelectedOverride(overrideForCell); // Pass the actual override data
+      setIsOverrideModalOpen(true); // Open the correct modal for overrides
+      return // No continuar con la lógica de creación de cita
     }
 
-    // Código original para abrir el modal de cita
+    // Código original para abrir el modal de cita (solo si no está bloqueada y es disponible)
     if (!isTimeSlotAvailable(day, time)) return
 
     const cabin = activeCabins.find((c) => {
@@ -524,12 +484,13 @@ export default function WeeklyAgenda({
     }
   }
 
-  // Modificar la función handleClientSelect para añadir logs
-  const handleClientSelect = (client: { name: string; phone: string }) => {
-    setSelectedClient(client)
-    setIsSearchDialogOpen(false)
-    setIsAppointmentDialogOpen(true)
-  }
+  // --- Modificar handleClientSelect para aceptar tipo Client --- 
+  const handleClientSelect = (client: Client) => { 
+    console.log("[WeeklyAgenda] Client selected:", client);
+    setSelectedClient(client);
+    setIsSearchDialogOpen(false);
+    setIsAppointmentDialogOpen(true); 
+  };
 
   const handleDeleteAppointment = useCallback(() => {
     if (selectedSlot) {
@@ -611,246 +572,294 @@ export default function WeeklyAgenda({
   }
 
   // Estructura corregida para el renderWeeklyGrid
-  const renderWeeklyGrid = () => (
-    <DragDropContext onDragEnd={onDragEnd}>
-      <div ref={agendaRef} className="relative z-0" style={{ scrollBehavior: "smooth" }}>
-        <div className="min-w-[1200px] relative">
-          <div
-            className="grid"
-            style={{
-              gridTemplateColumns: `auto repeat(7, 1fr)`,
-              width: "100%",
-            }}
-          >
-            {/* Columna de tiempo - Fija - z-30 */}
-            <div className="sticky top-0 left-0 w-20 p-4 bg-white border-b border-r border-gray-300 hour-header" style={{ zIndex: 999 }}>
-              <div className="text-sm text-gray-500">Hora</div>
-            </div>
+  const renderWeeklyGrid = () => {
+    // --- DEBUG LOG --- 
+    // Verificar el valor justo antes de usarlo en el JSX
+    console.log("[WeeklyAgenda] renderWeeklyGrid - valor de activeCabins:", JSON.stringify(activeCabins));
+    // --- FIN DEBUG LOG ---
 
-            {/* Cabeceras de días - Fijas - z-30 */}
-            {weekDays.map((day, index) => {
-              const today = isToday(day);
-              const active = isDayActive(day);
-              return (
-                <div key={index} className={cn(
-                  "sticky top-0 bg-white border-b border-gray-300 day-header",
-                  today ? "border-l-2 border-r-2 border-purple-300" : "border-l border-r border-gray-300",
-                  !active && "bg-gray-100"
-                )} style={{ zIndex: 20 }}>
-                  <div
-                    className={cn(
-                      "p-4 border-b border-gray-300",
-                      active ? "cursor-pointer hover:bg-gray-50" : "cursor-not-allowed opacity-70",
-                      today && "bg-purple-50/10",
-                    )}
-                    onClick={() => active && handleDayClick(day)}
-                    title={active ? "Ir a vista diaria" : "Día no activo"}
-                  >
-                    <div className="flex items-center justify-start gap-2">
-                      <div>
-                        <div className="text-base font-medium capitalize">{format(day, "EEEE", { locale: es })}</div>
-                        <div className={cn("text-sm", today ? "text-purple-600 font-bold" : "text-gray-500")}>
-                          {format(day, "d/M/yyyy")}
+    return (
+      <DragDropContext onDragEnd={onDragEnd}>
+        <div ref={agendaRef} className="relative z-0" style={{ scrollBehavior: "smooth" }}>
+          <div className="min-w-[1200px] relative">
+            <div
+              className="grid"
+              style={{
+                gridTemplateColumns: `auto repeat(7, 1fr)`,
+                width: "100%",
+              }}
+            >
+              {/* Columna de tiempo - Fija - z-30 */}
+              <div className="sticky top-0 left-0 w-20 p-4 bg-white border-b border-r border-gray-300 hour-header" style={{ zIndex: 999 }}>
+                <div className="text-sm text-gray-500">Hora</div>
+              </div>
+
+              {/* Cabeceras de días - Fijas - z-30 */}
+              {weekDays.map((day, index) => {
+                const today = isToday(day);
+                const active = isDayActive(day);
+                return (
+                  <div key={index} className={cn(
+                    "sticky top-0 bg-white border-b border-gray-300 day-header",
+                    today ? "border-l-2 border-r-2 border-purple-300" : "border-l border-r border-gray-300",
+                    !active && "bg-gray-100"
+                  )} style={{ zIndex: 20 }}>
+                    <div
+                      className={cn(
+                        "p-4 border-b border-gray-300",
+                        active ? "cursor-pointer hover:bg-gray-50" : "cursor-not-allowed opacity-70",
+                        today && "bg-purple-50/10",
+                      )}
+                      onClick={() => active && handleDayClick(day)}
+                      title={active ? "Ir a vista diaria" : "Día no activo"}
+                    >
+                      <div className="flex items-center justify-start gap-2">
+                        <div>
+                          <div className="text-base font-medium capitalize">{format(day, "EEEE", { locale: es })}</div>
+                          <div className={cn("text-sm", today ? "text-purple-600 font-bold" : "text-gray-500")}>
+                            {format(day, "d/M/yyyy")}
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                  <div
-                    className="grid"
-                    style={{ gridTemplateColumns: `repeat(${activeCabins.length || 1}, 1fr)` }}
-                  >
-                    {activeCabins.map((cabin) => (
-                      <div
-                        key={cabin.id}
-                        className={cn(
-                          "text-white text-xs py-1 px-1 text-center font-medium border-r border-gray-300 last:border-r-0",
-                          !active && "opacity-70"
-                        )}
-                        style={{ backgroundColor: cabin.color }}
-                        title={cabin.name}
-                      >
-                        {cabin.code || cabin.name}
-                      </div>
-                    ))}
-                    {activeCabins.length === 0 && (
-                      <div className="px-1 py-1 text-xs italic text-center text-gray-400">
-                        Sin cabinas
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-
-            {/* Filas de Slots de Tiempo */}
-            {timeSlots.map((time) => (
-              <React.Fragment key={time}>
-                {/* Celda de Hora */}
-                <div
-                  className="sticky left-0 w-20 p-2 text-sm font-medium text-purple-600 bg-white border-b border-r border-gray-300 hour-column"
-                  data-time={time}
-                >
-                  {time}
-                </div>
-                {/* Celdas de Día/Cabina */}
-                {weekDays.map((day, dayIndex) => {
-                  const today = isToday(day);
-                  const active = isDayActive(day);
-                  return (
                     <div
-                      key={`${dayIndex}-${time}`}
-                      className={cn(
-                        "border-b border-gray-200 relative",
-                        today ? "border-l-2 border-r-2 border-purple-300" : "border-l border-r border-gray-300",
-                        today && "bg-purple-50/10",
-                        !active && !today && "bg-gray-100"
-                      )}
-                      data-time={time}
-                      style={{ minWidth: `${activeCabins.length * 80}px` }}
+                      className="grid"
+                      style={{ gridTemplateColumns: `repeat(${activeCabins.length || 1}, 1fr)` }}
                     >
+                      {activeCabins.map((cabin) => (
+                        <div
+                          key={cabin.id}
+                          className={cn(
+                            "text-white text-xs py-1 px-1 text-center font-medium border-r border-gray-300 last:border-r-0",
+                            !active && "opacity-70"
+                          )}
+                          style={{ backgroundColor: cabin.color }}
+                          title={cabin.name}
+                        >
+                          {cabin.code || cabin.name}
+                        </div>
+                      ))}
+                      {activeCabins.length === 0 && (
+                        <div className="px-1 py-1 text-xs italic text-center text-gray-400">
+                          Sin cabinas
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Filas de Slots de Tiempo */}
+              {timeSlots.map((time) => (
+                <React.Fragment key={time}>
+                  {/* Celda de Hora - CORREGIDO: Añadido z-index */}
+                  <div
+                    className="sticky left-0 z-10 w-20 p-2 text-sm font-medium text-purple-600 bg-white border-b border-r border-gray-300 hour-column"
+                    data-time={time}
+                  >
+                    {time}
+                  </div>
+                  {/* Celdas de Día/Cabina */}
+                  {weekDays.map((day, dayIndex) => {
+                    const today = isToday(day);
+                    const active = isDayActive(day);
+                    return (
                       <div
-                        className="grid h-full"
-                        style={{ gridTemplateColumns: `repeat(${activeCabins.length || 1}, 1fr)` }}
+                        key={`${dayIndex}-${time}`}
+                        className={cn(
+                          "border-b border-gray-200 relative",
+                          today ? "border-l-2 border-r-2 border-purple-300" : "border-l border-r border-gray-300",
+                          today && "bg-purple-50/10",
+                          !active && !today && "bg-gray-100"
+                        )}
+                        data-time={time}
+                        style={{ minWidth: `${activeCabins.length * 80}px` }}
                       >
-                        {activeCabins.length > 0 ? activeCabins.map((cabin, cabinIndex) => {
-                          const isAvailable = isTimeSlotAvailable(day, time);
-                          const dayString = format(day, "yyyy-MM-dd");
-                          const blockForCell = findBlockForCell(dayString, time, cabin.id.toString());
-                          const isCellInteractive = active && isAvailable && !blockForCell;
-                          const isCellClickable = isCellInteractive || (blockForCell && active);
+                        <div
+                          className="grid h-full"
+                          style={{ gridTemplateColumns: `repeat(${activeCabins.length || 1}, 1fr)` }}
+                        >
+                          {activeCabins.length > 0 ? activeCabins.map((cabin, cabinIndex) => {
+                            // ***** INTEGRACIÓN EN REND *****
+                            const isAvailable = isTimeSlotAvailable(day, time);
+                            const dayString = format(day, "yyyy-MM-dd");
+                            // Usar la nueva función para encontrar override
+                            const overrideForCell = findOverrideForCell(day, time, cabin.id.toString());
+                            // blockForCell ya no es necesario, usamos overrideForCell
 
-                          const timeIndex = timeSlots.indexOf(time);
-                          const prevTime = timeIndex > 0 ? timeSlots[timeIndex - 1] : null;
-                          const blockForPrevCell = prevTime ? findBlockForCell(dayString, prevTime, cabin.id.toString()) : null;
-                          const isStartOfBlock = blockForCell && (!blockForPrevCell || blockForPrevCell.id !== blockForCell.id);
+                            // La celda es interactiva si está activa, disponible Y *NO* está bloqueada
+                            const isCellInteractive = active && isAvailable && !overrideForCell;
+                            // La celda es clickeable si es interactiva O si está bloqueada (para abrir modal de bloqueo)
+                            const isCellClickable = isCellInteractive || (overrideForCell && active);
 
-                          let blockDurationSlots = 0;
-                          if (isStartOfBlock && blockForCell) {
-                            blockDurationSlots = 1;
-                            for (let i = timeIndex + 1; i < timeSlots.length; i++) {
-                              const nextTime = timeSlots[i];
-                              const blockForNextCell = findBlockForCell(dayString, nextTime, cabin.id.toString());
-                              if (blockForNextCell && blockForNextCell.id === blockForCell.id) {
-                                blockDurationSlots++;
-                              } else {
-                                break;
+                            const timeIndex = timeSlots.indexOf(time);
+                            const prevTime = timeIndex > 0 ? timeSlots[timeIndex - 1] : null;
+                            // Encontrar override para la celda anterior
+                            const overrideForPrevCell = prevTime ? findOverrideForCell(day, prevTime, cabin.id.toString()) : null;
+                            // blockForPrevCell ya no es necesario
+
+                            // Determinar si esta celda es el inicio de un bloque visual
+                            const isStartOfBlock = overrideForCell && (!overrideForPrevCell || overrideForPrevCell.id !== overrideForCell.id);
+
+                            // Calcular cuántos slots ocupa el bloque visualmente
+                            let blockDurationSlots = 0;
+                            if (isStartOfBlock && overrideForCell) {
+                              blockDurationSlots = 1; // Empieza con 1 (la celda actual)
+                              // Buscar hacia adelante en los timeSlots del mismo día/cabina
+                              for (let i = timeIndex + 1; i < timeSlots.length; i++) {
+                                const nextTime = timeSlots[i];
+                                const overrideForNextCell = findOverrideForCell(day, nextTime, cabin.id.toString());
+                                // Si la siguiente celda pertenece al *mismo* override, incrementar duración
+                                if (overrideForNextCell && overrideForNextCell.id === overrideForCell.id) {
+                                  blockDurationSlots++;
+                                } else {
+                                  break; // Termina el bloque (o no hay más slots)
+                                }
                               }
                             }
-                          }
+                            // ***** FIN CÁLCULO DURACIÓN BLOQUE *****
 
-                          return (
-                            <Droppable
-                              droppableId={`${dayIndex}-${cabin.id}-${time}`}
-                              key={`${cabin.id}-${time}`}
-                              type="appointment"
-                              isDropDisabled={!isCellInteractive}
-                              isCombineEnabled={false}
-                              ignoreContainerClipping={false}
-                            >
-                              {(provided, snapshot) => (
-                                <div
-                                  ref={provided.innerRef}
-                                  {...provided.droppableProps}
-                                  className={cn(
-                                    "relative h-full", // Base
+                            return (
+                              <Droppable
+                                droppableId={`${dayIndex}-${cabin.id}-${time}`}
+                                key={`${cabin.id}-${time}`}
+                                type="appointment"
+                                // Deshabilitar drop si la celda no es interactiva O si está bloqueada
+                                isDropDisabled={!isCellInteractive || !!overrideForCell}
+                                isCombineEnabled={false}
+                                ignoreContainerClipping={false}
+                              >
+                                {(provided, snapshot) => (
+                                  <div
+                                    ref={provided.innerRef}
+                                    {...provided.droppableProps}
+                                    // ***** AJUSTE DE CLASES CSS *****
+                                    className={cn(
+                                      "relative h-full", // Base
 
-                                    // --- Prioridad 1: Día Inactivo ---
-                                    !active && "opacity-70 bg-gray-100 cursor-not-allowed border border-gray-200",
+                                      // --- Prioridad 1: Día Inactivo ---
+                                      !active && "opacity-70 bg-gray-100 cursor-not-allowed border border-gray-200",
 
-                                    // --- Prioridad 2: Slot Inactivo (dentro de un día activo) ---
-                                    active && !isAvailable && [
-                                      "bg-gray-300 dark:bg-gray-700 cursor-not-allowed",
-                                      // Cambiado: Bordes blancos para mejor contraste sobre gris
-                                      "border border-white/50 dark:border-white/30",
-                                    ],
-
-                                    // --- Prioridad 3: Celda Activa y Disponible ---
-                                    active && isAvailable && [
-                                      // Aplicar borde derecho por defecto (excepto el último)
-                                      "border-r border-gray-200 last:border-r-0",
-                                      // Aplicar borde superior solo si NO es una celda de continuación de bloque
-                                      !(blockForCell && !isStartOfBlock) && "border-t border-gray-200",
-                                      // Estilos si está bloqueada (el fondo)
-                                      blockForCell && "bg-rose-100 cursor-pointer",
-                                      // Estilos si es interactiva (hover, zebra)
-                                      isCellInteractive && [
-                                        "hover:bg-purple-100/50 cursor-pointer",
-                                        !today && (cabinIndex % 2 === 0 ? ZEBRA_LIGHT : ZEBRA_DARK), // Zebra
+                                      // --- Prioridad 2: Slot Inactivo (dentro de día activo, SIN override) ---
+                                      active && !isAvailable && !overrideForCell && [
+                                        "bg-gray-300 dark:bg-gray-700 cursor-not-allowed",
+                                        "border border-white/50 dark:border-white/30",
                                       ],
-                                    ]
-                                  )}
-                                  style={{
-                                    height: `${AGENDA_CONFIG.ROW_HEIGHT}px`,
-                                    backgroundColor: snapshot.isDraggingOver && isCellInteractive
-                                      ? "rgba(167, 139, 250, 0.2)"
-                                      : undefined,
-                                  }}
-                                  onClick={(e) => {
-                                    if (isCellInteractive) {
-                                      e.stopPropagation();
-                                      handleCellClick(day, time, cabin.id.toString());
-                                    } else if (blockForCell && active) {
-                                      e.stopPropagation();
-                                      openBlockModal(blockForCell);
-                                    }
-                                  }}
-                                >
-                                  {isStartOfBlock && active && blockForCell && (
-                                    <div
-                                      className="absolute inset-x-0 top-0 z-10 flex items-center justify-center p-1 m-px overflow-hidden border rounded-sm pointer-events-none bg-rose-200/80 border-rose-300"
-                                      style={{
-                                        height: `calc(${blockDurationSlots * AGENDA_CONFIG.ROW_HEIGHT}px - 2px)`,
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center'
-                                      }}
-                                    >
-                                      <Lock className="flex-shrink-0 w-3 h-3 text-rose-600" />
-                                    </div>
-                                  )}
-                                  {!(blockForCell && !isStartOfBlock) && provided.placeholder}
-                                </div>
-                              )}
-                            </Droppable>
-                          );
-                        }) : (
-                          <div className="flex items-center justify-center h-full p-1 text-xs italic text-gray-400 border-t border-r border-gray-200 last:border-r-0" style={{ height: `${AGENDA_CONFIG.ROW_HEIGHT}px` }}>
-                            Sin cabinas activas
-                          </div>
-                        )}
+                                      
+                                      // --- Prioridad 3: Slot Bloqueado/Override (dentro de día activo) ---
+                                      active && overrideForCell && [
+                                         "bg-rose-100 dark:bg-rose-900/30", // Fondo distintivo
+                                         "cursor-pointer", // Clickeable para ver/editar
+                                         // Bordes condicionales para visualización del bloque
+                                         "border-r border-gray-200 dark:border-gray-700 last:border-r-0", // Borde derecho siempre (excepto último)
+                                         !isStartOfBlock && "border-t-0", // Sin borde superior si es continuación
+                                         isStartOfBlock && "border-t border-gray-200 dark:border-gray-700", // Borde superior si es inicio
+                                      ],
+
+                                      // --- Prioridad 4: Celda Activa y Disponible (SIN override) ---
+                                      active && isAvailable && !overrideForCell && [
+                                        "border-r border-gray-200 dark:border-gray-700 last:border-r-0",
+                                        "border-t border-gray-200 dark:border-gray-700", // Bordes estándar
+                                        // Estilos Hover y Zebra
+                                        "hover:bg-purple-100/50 dark:hover:bg-purple-900/30 cursor-pointer",
+                                        !today && (cabinIndex % 2 === 0 ? ZEBRA_LIGHT : ZEBRA_DARK), // Zebra (ajustar colores dark si es necesario)
+                                      ]
+                                    )}
+                                    // ***** FIN AJUSTE CLASES CSS *****
+                                    style={{
+                                      height: `${AGENDA_CONFIG.ROW_HEIGHT}px`,
+                                      // Estilo visual para drop (si es posible)
+                                      backgroundColor: snapshot.isDraggingOver && isCellInteractive && !overrideForCell
+                                        ? "rgba(167, 139, 250, 0.2)" // Color Púrpura semi-transparente
+                                        : undefined, // Usa el fondo definido en className
+                                    }}
+                                    // ***** AJUSTE onClick *****
+                                    onClick={(e) => {
+                                      // Si está bloqueada (y día activo), abrir modal de bloqueo
+                                      if (overrideForCell && active) {
+                                        e.stopPropagation();
+                                        setSelectedOverride(overrideForCell); // Guardar el override seleccionado
+                                        setIsOverrideModalOpen(true); // Abrir el modal
+                                      } 
+                                      // Si es interactiva (activa, disponible, no bloqueada), iniciar flujo de cita
+                                      else if (isCellInteractive) { 
+                                        e.stopPropagation();
+                                        handleCellClick(day, time, cabin.id.toString());
+                                      }
+                                      // No hacer nada si el día está inactivo o el slot no está disponible (y no es un override)
+                                    }}
+                                    // ***** FIN AJUSTE onClick *****
+                                  >
+                                    {/* ***** VISUALIZACIÓN DEL BLOQUE ***** */}
+                                    {isStartOfBlock && active && overrideForCell && (
+                                      <div
+                                        className="absolute inset-x-0 top-0 z-10 flex items-center justify-center p-1 m-px overflow-hidden text-xs rounded-sm pointer-events-none bg-rose-200/80 border-rose-300 text-rose-700 dark:bg-rose-800/50 dark:border-rose-600 dark:text-rose-200"
+                                        style={{
+                                          height: `calc(${blockDurationSlots * AGENDA_CONFIG.ROW_HEIGHT}px - 2px)`, // Ocupa altura calculada
+                                        }}
+                                        title={overrideForCell.description || "Bloqueado"} // Tooltip con el motivo (CORREGIDO: usar description)
+                                      >
+                                         {/* Contenido del bloque: Icono y motivo si cabe */}
+                                         <div className="flex flex-col items-center justify-center w-full h-full text-center">
+                                           <Lock className="flex-shrink-0 w-3 h-3 mb-1 text-rose-600 dark:text-rose-300" />
+                                           {/* Mostrar motivo solo si el bloque es suficientemente alto */}
+                                           {blockDurationSlots * AGENDA_CONFIG.ROW_HEIGHT > 30 && ( 
+                                             <span className="leading-tight break-words line-clamp-2">
+                                               {overrideForCell.description || "Bloqueado"} {/* (CORREGIDO: usar description) */}
+                                             </span>
+                                           )}
+                                         </div>
+                                      </div>
+                                    )}
+                                    {/* Placeholder para react-beautiful-dnd, solo si no es continuación de bloque */}
+                                    {!(overrideForCell && !isStartOfBlock) && provided.placeholder}
+                                    {/* ***** FIN VISUALIZACIÓN DEL BLOQUE ***** */}
+                                  </div>
+                                )}
+                              </Droppable>
+                            );
+                            // ***** FIN INTEGRACIÓN EN REND *****
+                          }) : (
+                            <div className="flex items-center justify-center h-full p-1 text-xs italic text-gray-400 border-t border-r border-gray-200 last:border-r-0" style={{ height: `${AGENDA_CONFIG.ROW_HEIGHT}px` }}>
+                              Sin cabinas activas
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </React.Fragment>
+                    );
+                  })}
+                </React.Fragment>
+              ))}
+            </div>
+
+            {/* Renderizar citas */}
+            {appointments.map((appointment, index) => (
+              <AppointmentItem
+                key={appointment.id}
+                appointment={appointment}
+                index={index}
+                onClick={undefined}
+              />
             ))}
-          </div>
 
-          {/* Renderizar citas */}
-          {appointments.map((appointment, index) => (
-            <AppointmentItem
-              key={appointment.id}
-              appointment={appointment}
-              index={index}
-              onClick={undefined}
+            {/* Indicador de tiempo actual RENDERIZADO AQUÍ */}
+            <CurrentTimeIndicator
+              key="desktop-week-indicator"
+              timeSlots={timeSlots}
+              rowHeight={AGENDA_CONFIG.ROW_HEIGHT}
+              isMobile={false}
+              className="current-time-indicator"
+              agendaRef={agendaRef}
+              // Pass calculated earliest/latest times if available, otherwise defaults
+              clinicOpenTime={timeSlots.length > 0 ? timeSlots[0] : "09:00"} 
+              clinicCloseTime={timeSlots.length > 0 ? timeSlots[timeSlots.length - 1] : "20:00"}
+              config={{ slotDuration: slotDuration }}
             />
-          ))}
-
-          {/* Indicador de tiempo actual RENDERIZADO AQUÍ */}
-          <CurrentTimeIndicator
-            key="desktop-week-indicator"
-            timeSlots={timeSlots}
-            rowHeight={AGENDA_CONFIG.ROW_HEIGHT}
-            isMobile={false}
-            className="current-time-indicator"
-            agendaRef={agendaRef}
-            clinicOpenTime={openTime}
-            clinicCloseTime={closeTime}
-          />
+          </div>
         </div>
-      </div>
-    </DragDropContext>
-  )
+      </DragDropContext>
+    )
+  }
 
   // Modificar la función handleAppointmentAdd para ser más eficiente
   const handleAppointmentAdd = useCallback((appointment: Appointment) => {
@@ -956,28 +965,171 @@ export default function WeeklyAgenda({
     };
   }, [isTransitioning]); // Solo depender de isTransitioning para evitar múltiples ejecuciones
 
-  // Asegúrate que la función openBlockModal esté definida en este componente si la usas en onClick
-  const openBlockModal = (block: ScheduleBlock) => {
-    setSelectedBlock(block);
-    setIsBlockModalOpen(true);
-  };
+  // ***** NUEVA FUNCIÓN HELPER *****
+  // Añadir esta función dentro del componente WeeklyAgenda
+  const findOverrideForCell = useCallback(
+    (day: Date, timeSlot: string, roomId: string): CabinScheduleOverride | null => {
+      if (!cabinOverrides || cabinOverrides.length === 0) {
+        return null;
+      }
 
-  // Agregar al componente WeeklyAgenda
-  const activeExceptions = useMemo(() => {
-    if (!effectiveClinic) return [];
-    
-    // Comprobar excepciones activas para cada día de la semana actual
-    return weekDays.map(date => {
-      const exception = findActiveExceptions(date, effectiveClinic as Clinica);
-      return {
-        date,
-        exception
-      };
-    }).filter(item => item.exception);
-  }, [effectiveClinic, weekDays]);
+      // Iterar sobre cada override para ver si aplica a la celda actual
+      for (const override of cabinOverrides) {
+        // Comprobación de cabina (ya corregida)
+        const appliesToAllCabins = !override.cabinIds || override.cabinIds.length === 0;
+        if (!appliesToAllCabins && !override.cabinIds.includes(roomId)) {
+          continue;
+        }
 
-  // Verificar si hay alguna excepción activa esta semana
-  const hasActiveExceptions = activeExceptions.length > 0;
+        try {
+            // Parsear fechas y horas necesarias del override y la celda
+            // CORREGIDO: Manejar tanto string como Date para las fechas
+            const overrideStartDate = typeof override.startDate === 'string' 
+                ? parseISO(override.startDate) 
+                : override.startDate;
+            const overrideEndDate = typeof override.endDate === 'string' 
+                ? parseISO(override.endDate) 
+                : override.endDate;
+
+            const overrideStartTime = override.startTime; // HH:mm
+            const overrideEndTime = override.endTime;     // HH:mm
+            const isRecurring = override.isRecurring;
+            const daysOfWeek = override.daysOfWeek; // number[] [0-6]
+            
+            // Parsear recurrenceEndDate opcional, manejando string/Date
+            let recurrenceEndDate: Date | null = null;
+            if (override.recurrenceEndDate) {
+                recurrenceEndDate = typeof override.recurrenceEndDate === 'string'
+                    ? parseISO(override.recurrenceEndDate)
+                    : override.recurrenceEndDate;
+            }
+
+             // Verificar si las fechas son válidas después del parseo/asignación
+             /* OLD CHECK:
+             if (isNaN(overrideStartDate?.getTime()) || isNaN(overrideEndDate?.getTime()) || (recurrenceEndDate && isNaN(recurrenceEndDate.getTime()))) {
+                 console.warn("Skipping override due to invalid date objects:", override);
+                 continue; 
+             }
+             */
+
+             // --- Date Validation --- 
+             let isValid = !isNaN(overrideStartDate?.getTime()); // Start date MUST be valid
+
+             if (isRecurring) {
+                 // For recurring, we need EITHER a valid recurrenceEndDate OR a valid endDate
+                 const isRecurrenceEndDateValid = recurrenceEndDate && !isNaN(recurrenceEndDate.getTime());
+                 const isEndDateValid = overrideEndDate && !isNaN(overrideEndDate.getTime());
+                 
+                 // If recurrenceEndDate exists, it MUST be valid.
+                 if (recurrenceEndDate) {
+                      isValid = isValid && isRecurrenceEndDateValid;
+                 } 
+                 // If recurrenceEndDate does NOT exist, then the regular endDate MUST be valid.
+                 else {
+                      isValid = isValid && isEndDateValid; 
+                 }
+
+             } else {
+                 // For non-recurring, endDate might be null. 
+                 // We only need startDate for the logic.
+                 // We only invalidate if endDate exists AND is invalid.
+                 if (overrideEndDate && isNaN(overrideEndDate.getTime())) {
+                      isValid = false; 
+                 }
+                 // If overrideEndDate is null, isValid remains based on overrideStartDate validity.
+             }
+
+             if (!isValid) {
+                 // Log more details including potentially parsed/converted dates
+                 console.warn("Skipping override due to invalid date objects:", {
+                     ...override, // Spread original data
+                     _parsedStartDate: overrideStartDate, 
+                     _parsedEndDate: overrideEndDate, 
+                     _parsedRecurrenceEndDate: recurrenceEndDate
+                 }); 
+                 continue;
+             }
+             // --- End Date Validation ---
+
+            const cellDate = day; // La fecha de la celda actual
+            const cellTime = timeSlot; // La hora de la celda actual HH:mm
+            const cellDayOfWeek = getDay(cellDate); // 0 = Domingo, 1 = Lunes,...
+
+            // Combinar fecha y hora de la celda para comparación precisa
+            let cellDateTime: Date;
+            try {
+                 const dateTimeString = `${format(cellDate, "yyyy-MM-dd")}T${cellTime}:00`;
+                 cellDateTime = parseISO(dateTimeString);
+                 if (isNaN(cellDateTime.getTime())) {
+                     // Fallback por si parseISO falla con solo HH:mm
+                     cellDateTime = parse(dateTimeString.substring(0, 16), "yyyy-MM-dd'T'HH:mm", new Date());
+                 }
+                 if (isNaN(cellDateTime.getTime())) continue; // Saltar si la hora de la celda no es válida
+            } catch (e) { continue; }
+
+            // Combinar la FECHA de la celda con las HORAS del override para definir límites
+             let overrideStartDateTimeOnCellDay: Date;
+             let overrideEndDateTimeOnCellDay: Date;
+             try {
+                overrideStartDateTimeOnCellDay = parse(`${format(cellDate, "yyyy-MM-dd")}T${overrideStartTime}`, "yyyy-MM-dd'T'HH:mm", new Date());
+                overrideEndDateTimeOnCellDay = parse(`${format(cellDate, "yyyy-MM-dd")}T${overrideEndTime}`, "yyyy-MM-dd'T'HH:mm", new Date());
+                if (isNaN(overrideStartDateTimeOnCellDay.getTime()) || isNaN(overrideEndDateTimeOnCellDay.getTime())) continue; // Saltar si las horas del override son inválidas
+             } catch(e) { continue; }
+
+
+            // --- Comprobación Principal --- 
+
+            // 1. ¿La HORA de la celda cae dentro del rango de horas del override?
+            const isTimeMatch = !isBefore(cellDateTime, overrideStartDateTimeOnCellDay) &&
+                                isBefore(cellDateTime, overrideEndDateTimeOnCellDay);
+            
+            if (!isTimeMatch) {
+                continue; // Si la hora no coincide, no puede ser este bloqueo
+            }
+
+            // 2. La HORA coincide, ahora comprobar FECHAS y RECURRENCIA
+
+            const cellDateStart = startOfDay(cellDate); // Normalizar a inicio del día para comparaciones
+
+            if (isRecurring) {
+                // --- Lógica Recurrente ---
+                const effectiveEndDate = recurrenceEndDate ? endOfDay(recurrenceEndDate) : endOfDay(overrideEndDate);
+                const overrideStartDateStart = startOfDay(overrideStartDate);
+
+                // ¿Está la fecha de la celda DENTRO del rango de fechas de la recurrencia?
+                const isWithinDateRange = isWithinInterval(cellDateStart, { start: overrideStartDateStart, end: effectiveEndDate });
+
+                // ¿Coincide el DÍA DE LA SEMANA?
+                const isDayOfWeekMatch = daysOfWeek && daysOfWeek.includes(cellDayOfWeek);
+
+                if (isWithinDateRange && isDayOfWeekMatch) {
+                    return override; // ¡Coincidencia de bloqueo recurrente!
+                }
+                // --- Fin Lógica Recurrente ---
+
+            } else {
+                // --- Lógica No Recurrente (Un solo día) ---
+                const overrideStartDateStart = startOfDay(overrideStartDate);
+
+                // ¿Es la fecha de la celda EXACTAMENTE la fecha de inicio del bloqueo?
+                if (isSameDay(cellDateStart, overrideStartDateStart)) {
+                    return override; // ¡Coincidencia de bloqueo de un solo día!
+                }
+                // --- Fin Lógica No Recurrente ---
+            }
+
+        } catch (error) {
+            console.error("Error processing override:", override, error);
+            continue; // Saltar este override si hay un error inesperado
+        }
+      }
+
+      // Si el bucle termina sin encontrar coincidencia
+      return null;
+    },
+    [cabinOverrides, loadingOverrides] // Añadir loadingOverrides a las dependencias
+  );
+  // ***** FIN NUEVA FUNCIÓN HELPER *****
 
   if (containerMode) {
     return (
@@ -994,27 +1146,27 @@ export default function WeeklyAgenda({
                 isOpen={isSearchDialogOpen}
                 onClose={() => setIsSearchDialogOpen(false)}
                 onClientSelect={handleClientSelect}
-                selectedTime={selectedSlot?.time}
               />
             )}
 
             {isAppointmentDialogOpen && selectedSlot && (
               <AppointmentDialog
                 isOpen={isAppointmentDialogOpen}
-                onClose={() => setIsAppointmentDialogOpen(false)}
+                onClose={() => {
+                  setIsAppointmentDialogOpen(false);
+                  setSelectedClient(null); // Limpiar cliente al cerrar
+                  setSelectedSlot(null);
+                }}
                 client={selectedClient}
-                selectedTime={selectedSlot?.time}
-                onSearchClick={() => {
-                  setIsAppointmentDialogOpen(false)
-                  setIsSearchDialogOpen(true)
+                selectedTime={selectedSlot.time}
+                onSearchClick={() => { 
+                  setIsAppointmentDialogOpen(false); 
+                  setIsSearchDialogOpen(true); 
                 }}
-                onNewClientClick={() => {
-                  setIsAppointmentDialogOpen(false)
-                  setIsNewClientDialogOpen(true)
-                }}
-                onDelete={handleDeleteAppointment}
+                onNewClientClick={handleNewClientClick}
                 onSave={handleSaveAppointment}
-                isEditing={!!selectedSlot}
+                onDelete={handleDeleteAppointment}
+                isEditing={false}
               />
             )}
 
@@ -1025,42 +1177,20 @@ export default function WeeklyAgenda({
               />
             )}
 
-            {isBlockModalOpen && selectedBlock && (
+            {isOverrideModalOpen && (
               <BlockScheduleModal
-                open={isBlockModalOpen}
-                onOpenChange={setIsBlockModalOpen}
+                open={isOverrideModalOpen}
+                onOpenChange={(isOpen) => setIsOverrideModalOpen(isOpen)}
                 clinicRooms={activeCabins.map(cabin => ({
                   name: cabin.name,
                   id: cabin.id.toString()
                 }))}
-                blockToEdit={selectedBlock}
-                clinicId={effectiveClinic?.id ? String(effectiveClinic.id) : ""}
-                onBlockSaved={() => {
-                  // Recargar los bloques
-                  if (effectiveClinic?.id) {
-                    // Usar el contexto especializado para obtener bloques
-                    const startDate = format(weekDays[0], "yyyy-MM-dd");
-                    const endDate = format(weekDays[6], "yyyy-MM-dd");
-                    
-                    getBlocksByDateRange(
-                      String(effectiveClinic.id),
-                      startDate,
-                      endDate
-                    ).then(blocks => {
-                      if (Array.isArray(blocks)) {
-                        setScheduleBlocks(blocks);
-                      }
-                      setUpdateKey((prev) => prev + 1);
-                    }).catch(error => {
-                      console.error("Error al cargar bloques:", error);
-                    });
-                  }
-                }}
+                blockToEdit={selectedOverride}
+                clinicId={String(effectiveClinic?.id)}
                 clinicConfig={{
-                  openTime: openTime,
-                  closeTime: closeTime,
-                  weekendOpenTime: "09:00",
-                  weekendCloseTime: "14:00",
+                  // Pass calculated times if available, otherwise safe defaults
+                  openTime: timeSlots.length > 0 ? timeSlots[0] : "09:00", 
+                  closeTime: timeSlots.length > 0 ? timeSlots[timeSlots.length - 1] : "20:00",
                 }}
               />
             )}
@@ -1089,27 +1219,27 @@ export default function WeeklyAgenda({
             isOpen={isSearchDialogOpen}
             onClose={() => setIsSearchDialogOpen(false)}
             onClientSelect={handleClientSelect}
-            selectedTime={selectedSlot?.time}
           />
         )}
 
         {isAppointmentDialogOpen && selectedSlot && (
           <AppointmentDialog
             isOpen={isAppointmentDialogOpen}
-            onClose={() => setIsAppointmentDialogOpen(false)}
+            onClose={() => {
+              setIsAppointmentDialogOpen(false);
+              setSelectedClient(null); // Limpiar cliente al cerrar
+              setSelectedSlot(null);
+            }}
             client={selectedClient}
-            selectedTime={selectedSlot?.time}
-            onSearchClick={() => {
-              setIsAppointmentDialogOpen(false)
-              setIsSearchDialogOpen(true)
+            selectedTime={selectedSlot.time}
+            onSearchClick={() => { 
+              setIsAppointmentDialogOpen(false); 
+              setIsSearchDialogOpen(true); 
             }}
-            onNewClientClick={() => {
-              setIsAppointmentDialogOpen(false)
-              setIsNewClientDialogOpen(true)
-            }}
-            onDelete={handleDeleteAppointment}
+            onNewClientClick={handleNewClientClick}
             onSave={handleSaveAppointment}
-            isEditing={!!selectedSlot}
+            onDelete={handleDeleteAppointment}
+            isEditing={false}
           />
         )}
 
@@ -1121,74 +1251,29 @@ export default function WeeklyAgenda({
         )}
       </div>
       
-      {/* BlockScheduleModal puede quedar fuera del contenedor flex principal */}
+      {/* MODAL DE BLOQUEO/OVERRIDE (fuera del contenedor flex principal) */} 
       <BlockScheduleModal
-        open={isBlockModalOpen}
-        onOpenChange={(open) => {
-          setIsBlockModalOpen(open)
-          // Si se cierra el modal, recargar los bloques para actualizar la UI
-          if (!open && effectiveClinic?.id) {
-            // Usar el contexto especializado para obtener bloques
-            const startDate = format(weekDays[0], "yyyy-MM-dd");
-            const endDate = format(weekDays[6], "yyyy-MM-dd");
-            
-            getBlocksByDateRange(
-              String(effectiveClinic.id),
-              startDate,
-              endDate
-            ).then(blocks => {
-              if (Array.isArray(blocks)) {
-                setScheduleBlocks(blocks);
-              }
-              setUpdateKey((prev) => prev + 1);
-            }).catch(error => {
-              console.error("Error al cargar bloques:", error);
-            });
-          }
-        }}
+        open={isOverrideModalOpen}
+        onOpenChange={(isOpen) => setIsOverrideModalOpen(isOpen)}
         clinicRooms={activeCabins.map(cabin => ({
           ...cabin,
           id: cabin.id.toString()
         }))}
-        blockToEdit={selectedBlock}
-        clinicId={effectiveClinic?.id ? String(effectiveClinic.id) : ""}
-        onBlockSaved={() => {
-          // Recargar los bloques
-          if (effectiveClinic?.id) {
-            // Usar el contexto especializado para obtener bloques
-            const startDate = format(weekDays[0], "yyyy-MM-dd");
-            const endDate = format(weekDays[6], "yyyy-MM-dd");
-            
-            getBlocksByDateRange(
-              String(effectiveClinic.id),
-              startDate,
-              endDate
-            ).then(blocks => {
-              if (Array.isArray(blocks)) {
-                setScheduleBlocks(blocks);
-              }
-              setUpdateKey((prev) => prev + 1);
-            }).catch(error => {
-              console.error("Error al cargar bloques:", error);
-            });
-          }
-        }}
+        blockToEdit={selectedOverride}
+        clinicId={String(effectiveClinic?.id)}
         clinicConfig={{
-          openTime: openTime,
-          closeTime: closeTime,
-          weekendOpenTime: "09:00",
-          weekendCloseTime: "14:00",
+          // Pass calculated times if available, otherwise safe defaults
+          openTime: timeSlots.length > 0 ? timeSlots[0] : "09:00", 
+          closeTime: timeSlots.length > 0 ? timeSlots[timeSlots.length - 1] : "20:00",
         }}
       />
     </HydrationWrapper>
   )
 }
 
-// --- Helper function defined locally (Ensure it's present) ---
+// <<< RESTAURAR FUNCIÓN HELPER >>>
 const convertBlocksToWeekSchedule = (
-    blocks: (ScheduleTemplateBlock | ClinicScheduleBlock)[] | undefined | null,
-    defaultOpenTime: string,
-    defaultCloseTime: string
+    blocks: (ScheduleTemplateBlock | ClinicScheduleBlock)[] | undefined | null
 ): WeekSchedule => {
     const initialSchedule: WeekSchedule = {
         monday: { isOpen: false, ranges: [] }, tuesday: { isOpen: false, ranges: [] },
@@ -1197,9 +1282,6 @@ const convertBlocksToWeekSchedule = (
         sunday: { isOpen: false, ranges: [] },
     };
     if (!blocks || blocks.length === 0) { 
-        // Optionally fill default Mon-Fri based on open/close times here if needed
-        // Example:
-        // Object.keys(initialSchedule).forEach(dayKey => { ... });
         return initialSchedule; 
     }
     const weekSchedule = blocks.reduce((acc, block) => {
@@ -1214,4 +1296,3 @@ const convertBlocksToWeekSchedule = (
     return weekSchedule;
 };
 // -------------------------------------
-

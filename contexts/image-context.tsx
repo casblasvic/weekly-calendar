@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useInterfaz } from './interfaz-Context';
-import { EntityImage } from '@/services/data/models/interfaces';
+import { EntityImage, EntityType } from '@prisma/client';
 import { generateId } from '@/lib/utils';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -11,26 +11,26 @@ export type ImageFile = EntityImage;
 
 // Extendemos el tipo ImageFile para incluir las propiedades que necesitamos
 export interface ExtendedImageFile extends ImageFile {
-  entityType?: string;
-  entityId?: string;
+  entityType: EntityType;
+  entityId: string;
 }
 
 interface ImageContextType {
   uploadImage: (
     file: File, 
-    entityType: string, 
+    entityType: EntityType, 
     entityId: string, 
     clinicId: string, 
-    options?: { isPrimary?: boolean; position?: number; }, 
+    options?: { isProfilePic?: boolean; position?: number; },
     onProgress?: (progress: number) => void
   ) => Promise<ImageFile>;
-  getImagesByEntity: (entityType: string, entityId: string) => Promise<ImageFile[]>;
-  setPrimaryImage: (imageId: string) => Promise<boolean>;
-  reorderImages: (entityType: string, entityId: string, orderedIds: string[]) => Promise<boolean>;
-  getEntityPrimaryImage: (entityType: string, entityId: string) => Promise<ImageFile | undefined>;
+  getImagesByEntity: (entityType: EntityType, entityId: string) => Promise<ImageFile[]>;
+  setProfilePic: (imageId: string, entityType: EntityType, entityId: string) => Promise<boolean>;
+  reorderImages: (entityType: EntityType, entityId: string, orderedIds: string[]) => Promise<boolean>;
+  getEntityProfilePic: (entityType: EntityType, entityId: string) => Promise<ImageFile | undefined>;
   // Métodos alias para compatibilidad
-  getEntityImages: (entityType: string, entityId: string) => Promise<ImageFile[]>;
-  saveEntityImages: (entityType: string, entityId: string, images: ImageFile[]) => Promise<boolean>;
+  getEntityImages: (entityType: EntityType, entityId: string) => Promise<ImageFile[]>;
+  saveEntityImages: (entityType: EntityType, entityId: string, images: ImageFile[]) => Promise<boolean>;
 }
 
 const ImageContext = createContext<ImageContextType | undefined>(undefined);
@@ -43,10 +43,10 @@ export const ImageProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // Función para subir una imagen
   const uploadImage = async (
     file: File, 
-    entityType: string, 
+    entityType: EntityType, 
     entityId: string, 
     clinicId: string,
-    options: { isPrimary?: boolean; position?: number; } = {}, 
+    options: { isProfilePic?: boolean; position?: number; } = {}, 
     onProgress?: (progress: number) => void
   ): Promise<ImageFile> => {
     // Verificar que el archivo sea una imagen
@@ -73,7 +73,7 @@ export const ImageProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       formData.append('entityId', entityId);
       formData.append('clinicId', clinicId);
       formData.append('fileId', imageId);
-      formData.append('isPrimary', options.isPrimary ? 'true' : 'false');
+      formData.append('isProfilePic', options.isProfilePic ? 'true' : 'false');
       formData.append('position', options.position?.toString() || '0');
       
       // Enviar al endpoint de carga
@@ -96,9 +96,17 @@ export const ImageProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       // Crear objeto de imagen con los metadatos devueltos
       const newImage: ImageFile = {
         id: imageId,
-        url: result.publicUrl,
-        isPrimary: options.isPrimary || false,
-        path: result.path
+        imageUrl: result.publicUrl, 
+        isProfilePic: options.isProfilePic || false, 
+        entityId: entityId,
+        entityType: entityType, 
+        altText: '',
+        caption: '',
+        order: options.position !== undefined ? options.position : 0,
+        uploadedByUserId: '',
+        systemId: '',
+        createdAt: new Date(), 
+        updatedAt: new Date()
       };
       
       // Usar la interfaz para guardar los metadatos de la imagen
@@ -112,7 +120,7 @@ export const ImageProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
   
   // Obtener imágenes por entidad a través de la interfaz
-  const getImagesByEntity = async (entityType: string, entityId: string): Promise<ImageFile[]> => {
+  const getImagesByEntity = async (entityType: EntityType, entityId: string): Promise<ImageFile[]> => {
     try {
       const images = await interfaz.getEntityImages(entityType, entityId);
       return images || [];
@@ -123,7 +131,7 @@ export const ImageProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
   
   // Guardar imágenes de una entidad (alias para compatibilidad)
-  const saveEntityImages = async (entityType: string, entityId: string, images: ImageFile[]): Promise<boolean> => {
+  const saveEntityImages = async (entityType: EntityType, entityId: string, images: ImageFile[]): Promise<boolean> => {
     try {
       return await interfaz.saveEntityImages(entityType, entityId, images);
     } catch (error) {
@@ -132,36 +140,36 @@ export const ImageProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
   
-  // Establecer una imagen como principal usando la interfaz
-  const setPrimaryImage = async (imageId: string): Promise<boolean> => {
+  // Establecer una imagen como de perfil usando la interfaz
+  const setProfilePic = async (imageId: string, entityType: EntityType, entityId: string): Promise<boolean> => {
     try {
-      // Primero obtenemos la imagen para saber a qué entidad pertenece
-      const allImages = await getImagesByEntity('*', '*'); // Esto no funciona así realmente, se necesitaría implementar en la interfaz
-      const image = allImages.find(img => img.id === imageId) as ExtendedImageFile;
+      // Ya no necesitamos buscar la imagen primero, tenemos entityType y entityId
       
-      if (!image) {
-        throw new Error(`Imagen con id ${imageId} no encontrada`);
+      // Obtenemos todas las imágenes de esta entidad usando los parámetros
+      const entityImages = await getImagesByEntity(entityType, entityId);
+      
+      // Verificar si la imagen a marcar como perfil existe en la lista
+      const imageExists = entityImages.some(img => img.id === imageId);
+      if (!imageExists) {
+          throw new Error(`Imagen con id ${imageId} no encontrada para la entidad ${entityType}:${entityId}`);
       }
-      
-      // Obtenemos todas las imágenes de esta entidad
-      const entityImages = await getImagesByEntity(image.entityType || '', image.entityId || '');
-      
-      // Marcar la imagen seleccionada como primaria y las demás como no primarias
+
+      // Marcar la imagen seleccionada como de perfil y las demás como no
       const updatedImages = entityImages.map(img => ({
         ...img,
-        isPrimary: img.id === imageId
+        isProfilePic: img.id === imageId 
       }));
       
-      // Guardar los cambios a través de la interfaz
-      return await interfaz.saveEntityImages(image.entityType || '', image.entityId || '', updatedImages);
+      // Guardar los cambios a través de la interfaz usando los parámetros
+      return await interfaz.saveEntityImages(entityType, entityId, updatedImages);
     } catch (error) {
-      console.error('Error al establecer imagen primaria:', error);
+      console.error('Error al establecer imagen de perfil:', error); 
       return false;
     }
   };
   
   // Reordenar imágenes usando la interfaz
-  const reorderImages = async (entityType: string, entityId: string, orderedIds: string[]): Promise<boolean> => {
+  const reorderImages = async (entityType: EntityType, entityId: string, orderedIds: string[]): Promise<boolean> => {
     try {
       // Obtener todas las imágenes de esta entidad
       const entityImages = await getImagesByEntity(entityType, entityId);
@@ -191,11 +199,11 @@ export const ImageProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
   
-  // Obtener la imagen principal de una entidad
-  const getEntityPrimaryImage = async (entityType: string, entityId: string): Promise<ImageFile | undefined> => {
+  // Obtener la imagen de perfil de una entidad
+  const getEntityProfilePic = async (entityType: EntityType, entityId: string): Promise<ImageFile | undefined> => {
     try {
       const images = await getImagesByEntity(entityType, entityId);
-      return images.find(img => img.isPrimary);
+      return images.find(img => img.isProfilePic);
     } catch (error) {
       console.error('Error al obtener imagen principal:', error);
       return undefined;
@@ -206,9 +214,9 @@ export const ImageProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     <ImageContext.Provider value={{
       uploadImage,
       getImagesByEntity,
-      setPrimaryImage,
+      setProfilePic,
       reorderImages,
-      getEntityPrimaryImage,
+      getEntityProfilePic,
       // Alias para compatibilidad
       getEntityImages: getImagesByEntity,
       saveEntityImages

@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useFiles } from './file-context';
 import { v4 as uuidv4 } from 'uuid';
-import { EntityDocument, EntityImage, Clinica } from '@/services/data/models/interfaces';
+import { EntityDocument, EntityImage, Clinic } from '@prisma/client';
 
 interface StorageQuota {
   id: string;
@@ -129,22 +129,22 @@ export const StorageProvider: React.FC<{ children: React.ReactNode }> = ({ child
     try {
       if (clinicId) {
         // Obtener archivos para esta clínica específica
-        relevantFiles = await fileContext.getFilesByFilter({ clinicId, isDeleted: false });
+        relevantFiles = await fileContext.getFilesByFilter({ clinicId, isDeleted: false }) as any;
         targetQuota = quotas.find(q => q.entityType === 'clinic' && q.entityId === clinicId) || 
                       quotas.find(q => q.entityType === 'global') || targetQuota;
       } else {
         // Obtener todos los archivos (si no hay clinicId)
-        relevantFiles = await fileContext.getFilesByFilter({ isDeleted: false });
+        relevantFiles = await fileContext.getFilesByFilter({ isDeleted: false }) as any;
         targetQuota = quotas.find(q => q.entityType === 'global') || targetQuota;
       }
 
       // Calcular uso y estadísticas de tipos
       relevantFiles.forEach(file => {
-        const fileSize = file.fileSize || 0; 
+        const fileSize = (file as any).fileSize || 0;
         used += fileSize;
-        const fileMimeType = file.mimeType?.split('/')[0] || 'unknown';
+        const fileMimeType = file.fileType?.split('/')[0] || 'unknown';
         byType[fileMimeType] = (byType[fileMimeType] || 0) + fileSize;
-        byEntityType[file.entityType] = (byEntityType[file.entityType] || 0) + fileSize;
+        byEntityType[(file as any).entityType] = (byEntityType[(file as any).entityType] || 0) + fileSize;
       });
 
       // Calcular porcentaje
@@ -157,7 +157,7 @@ export const StorageProvider: React.FC<{ children: React.ReactNode }> = ({ child
               if (!response.ok) {
                   console.error("Error fetching clinics for global quota calculation");
               } else {
-                  const allClinics: Clinica[] = await response.json();
+                  const allClinics: Clinic[] = await response.json();
                   // Filtrar clínicas que usan cuota global (no tienen cuota específica)
                   const clinicsUsingGlobal = allClinics.filter(c => 
                       !quotas.some(q => q.entityType === 'clinic' && q.entityId === String(c.id))
@@ -256,7 +256,7 @@ export const StorageProvider: React.FC<{ children: React.ReactNode }> = ({ child
            // Actualizar todas las cuotas individuales existentes
            const response = await fetch('/api/clinics'); // Necesitamos la lista de clínicas
            if (!response.ok) return false;
-           const allClinics: Clinica[] = await response.json();
+           const allClinics: Clinic[] = await response.json();
            const newQuotas = [...quotas];
            allClinics.forEach(clinic => {
                const clinicId = String(clinic.id);
@@ -294,7 +294,8 @@ export const StorageProvider: React.FC<{ children: React.ReactNode }> = ({ child
       console.warn("getConnectedProviders no implementado"); return [];
   };
   const registerFileForClinic = async (clinicId: string, fileData: EntityDocument): Promise<void> => {
-      console.warn("registerFileForClinic no implementado");
+    // TODO: Implementar lógica real, incluyendo validación de cuota para clinicId
+    console.warn("registerFileForClinic no implementado");
   };
    const updateStorageStats = async (clinicId?: string): Promise<void> => {
       console.warn("updateStorageStats no implementado (obsoleto?)");

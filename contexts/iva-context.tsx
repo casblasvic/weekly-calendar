@@ -2,22 +2,20 @@
 
 import { createContext, useContext, useState, useEffect, ReactNode } from "react"
 import { useInterfaz } from "./interfaz-Context"
-import { TipoIVA as TipoIVAModel } from "@/services/data/models/interfaces"
-
-export type TipoIVA = TipoIVAModel;
+import type { VATType } from "@prisma/client"
 
 interface IVAContextType {
-  tiposIVA: TipoIVA[];
-  addTipoIVA: (tipoIVA: Omit<TipoIVA, "id">) => Promise<string>;
-  updateTipoIVA: (id: string, tipoIVA: Partial<TipoIVA>) => Promise<void>;
+  tiposIVA: VATType[];
+  addTipoIVA: (tipoIVA: Omit<VATType, "id" | "systemId" | "createdAt" | "updatedAt">) => Promise<string>;
+  updateTipoIVA: (id: string, tipoIVA: Partial<VATType>) => Promise<void>;
   deleteTipoIVA: (id: string) => Promise<void>;
-  getTiposIVAByTarifaId: (tarifaId: string) => Promise<TipoIVA[]>;
+  getTiposIVAByTarifaId: (tarifaId: string) => Promise<VATType[]>;
 }
 
 const IVAContext = createContext<IVAContextType | undefined>(undefined);
 
 export const IVAProvider = ({ children }: { children: ReactNode }) => {
-  const [tiposIVA, setTiposIVA] = useState<TipoIVA[]>([]);
+  const [tiposIVA, setTiposIVA] = useState<VATType[]>([]);
   const [dataFetched, setDataFetched] = useState(false);
   const interfaz = useInterfaz();
 
@@ -27,10 +25,11 @@ export const IVAProvider = ({ children }: { children: ReactNode }) => {
       if (interfaz.initialized && !dataFetched) {
         try {
           const data = await interfaz.getAllTiposIVA();
-          setTiposIVA(data);
+          setTiposIVA(data as any || []);
           setDataFetched(true);
         } catch (error) {
           console.error("Error al cargar tipos de IVA:", error);
+          setTiposIVA([]);
         }
       }
     };
@@ -39,12 +38,12 @@ export const IVAProvider = ({ children }: { children: ReactNode }) => {
   }, [interfaz.initialized, dataFetched]);
 
   // Funciones para gestionar tipos de IVA
-  const addTipoIVA = async (tipoIVA: Omit<TipoIVA, "id">) => {
+  const addTipoIVA = async (tipoIVA: Omit<VATType, "id" | "systemId" | "createdAt" | "updatedAt">) => {
     try {
-      const nuevoTipoIVA = await interfaz.createTipoIVA(tipoIVA);
+      const nuevoTipoIVA = await interfaz.createTipoIVA(tipoIVA as any);
       if (nuevoTipoIVA && nuevoTipoIVA.id) {
-        setTiposIVA(prev => [...prev, nuevoTipoIVA]);
-        return nuevoTipoIVA.id;
+        setTiposIVA(prev => [...prev, nuevoTipoIVA as any]);
+        return String(nuevoTipoIVA.id);
       } else {
         throw new Error("No se pudo crear el tipo de IVA");
       }
@@ -54,11 +53,11 @@ export const IVAProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  const updateTipoIVA = async (id: string, tipoIVAActualizado: Partial<TipoIVA>) => {
+  const updateTipoIVA = async (id: string, tipoIVAActualizado: Partial<VATType>) => {
     try {
-      const updated = await interfaz.updateTipoIVA(id, tipoIVAActualizado);
+      const updated = await interfaz.updateTipoIVA(id, tipoIVAActualizado as any);
       if (updated) {
-        setTiposIVA(prev => prev.map(iva => iva.id === id ? { ...iva, ...tipoIVAActualizado } : iva));
+        setTiposIVA(prev => prev.map(iva => iva.id === id ? { ...iva, ...(tipoIVAActualizado as any) } : iva));
       }
     } catch (error) {
       console.error("Error al actualizar tipo de IVA:", error);
@@ -80,10 +79,10 @@ export const IVAProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  const getTiposIVAByTarifaId = async (tarifaId: string): Promise<TipoIVA[]> => {
+  const getTiposIVAByTarifaId = async (tarifaId: string): Promise<VATType[]> => {
     try {
       const tiposIVA = await interfaz.getTiposIVAByTarifaId(tarifaId);
-      return tiposIVA || [];
+      return (tiposIVA as any) || [];
     } catch (error) {
       console.error("Error al obtener tipos de IVA por tarifa:", error);
       return [];

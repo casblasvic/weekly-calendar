@@ -19,7 +19,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { AlertTriangle, Clock, Filter, User, Calendar, CheckCircle, AlertCircle } from "lucide-react"
 import { Separator } from "@/components/ui/separator"
 import { Progress } from "@/components/ui/progress"
-import { Usuario } from "@/services/data/models/interfaces"
 import { useEmployees } from "@/contexts/employee-context"
 import { traducirDia } from "@/utils/format-utils"
 
@@ -86,8 +85,8 @@ export function ConflictResolution({ conflicts, onResolveConflict, onResolveAll 
 
   // Obtener nombres de usuario a partir de IDs
   const getUserName = (userId: string): string => {
-    const user = empleados.find(u => u.id.toString() === userId)
-    return user ? user.nombre : `Usuario #${userId}`
+    const empleado = empleados.find(e => e.id === userId);
+    return empleado ? `${empleado.firstName} ${empleado.lastName}` : `Usuario #${userId}`;
   }
 
   // Obtener color de tipo de conflicto
@@ -281,15 +280,18 @@ export function ConflictResolution({ conflicts, onResolveConflict, onResolveAll 
                   </SelectItem>
                 ))}
                 
-                {empleados.length > 0 && (
+                {empleados.length > 0 && statistics?.porUsuario && Object.keys(statistics.porUsuario).length > 0 && (
                   <>
                     <Separator className="my-1" />
                     <Label className="px-2 py-1 text-xs text-slate-500">Por usuario</Label>
-                    {empleados.map(user => (
-                      <SelectItem key={user.id} value={`usuario-${user.id}`}>
-                        {user.nombre}
-                      </SelectItem>
-                    ))}
+                    {Object.entries(statistics.porUsuario)
+                      .filter(([_, count]) => count > 0)
+                      .sort(([userIdA], [userIdB]) => getUserName(userIdA).localeCompare(getUserName(userIdB)))
+                      .map(([userId, count]) => (
+                        <SelectItem key={userId} value={`usuario-${userId}`}>
+                          {getUserName(userId)} ({count})
+                        </SelectItem>
+                      ))}
                   </>
                 )}
               </SelectContent>

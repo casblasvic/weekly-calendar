@@ -1,0 +1,1 @@
+export default function BonosServicioPage() { return <div>Definiciones de Bonos del Servicio (Pendiente)</div>; } 

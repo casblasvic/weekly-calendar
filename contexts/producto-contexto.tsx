@@ -2,20 +2,19 @@
 
 import React, { createContext, useState, useContext, useEffect, ReactNode } from "react"
 import { useInterfaz } from "./interfaz-Context"
-import { Producto as ProductoModel } from "@/services/data/models/interfaces"
+import type { Product } from "@prisma/client"
 
 // Utilizamos el tipo del modelo central
-export type Producto = ProductoModel;
 
 interface ProductoContextType {
-  productos: Producto[];
+  productos: Product[];
   loading: boolean;
-  addProducto: (producto: Omit<Producto, "id" | "fechaCreacion">) => Promise<string>;
-  updateProducto: (id: string, productoActualizado: Partial<Producto>) => Promise<void>;
+  addProducto: (producto: Omit<Product, "id" | "createdAt" | "updatedAt" | "systemId" | "categoryId" | "vatTypeId">) => Promise<string>;
+  updateProducto: (id: string, productoActualizado: Partial<Product>) => Promise<void>;
   deleteProducto: (id: string) => Promise<void>;
-  getProductoById: (id: string) => Promise<Producto | undefined>;
-  getProductosByTarifaId: (tarifaId: string) => Promise<Producto[]>;
-  getProductosByFamilia: (familia: string) => Promise<Producto[]>;
+  getProductoById: (id: string) => Promise<Product | undefined>;
+  getProductosByTarifaId: (tarifaId: string) => Promise<Product[]>;
+  getProductosByFamilia: (familia: string) => Promise<Product[]>;
   toggleProductoStatus: (id: string) => Promise<void>;
   refreshProductos: () => Promise<void>;
 }
@@ -25,7 +24,7 @@ const ProductoContext = createContext<ProductoContextType | undefined>(undefined
 
 // Proveedor del contexto
 export const ProductoProvider = ({ children }: { children: ReactNode }) => {
-  const [productos, setProductos] = useState<Producto[]>([]);
+  const [productos, setProductos] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [dataFetched, setDataFetched] = useState(false);
   const interfaz = useInterfaz();
@@ -44,23 +43,24 @@ export const ProductoProvider = ({ children }: { children: ReactNode }) => {
       
       // Cargar desde la interfaz centralizada
       const data = await interfaz.getAllProductos();
-      setProductos(data);
+      setProductos(data as any || []);
       
       setDataFetched(true);
     } catch (error) {
       console.error("Error al cargar productos:", error);
+      setProductos([]);
     } finally {
       setLoading(false);
     }
   };
 
   // Funciones para gestionar productos
-  const addProducto = async (producto: Omit<Producto, "id" | "fechaCreacion">) => {
+  const addProducto = async (producto: Omit<Product, "id" | "createdAt" | "updatedAt" | "systemId" | "categoryId" | "vatTypeId">) => {
     try {
-      const nuevoProducto = await interfaz.createProducto(producto);
+      const nuevoProducto = await interfaz.createProducto(producto as any);
       if (nuevoProducto && nuevoProducto.id) {
-        setProductos(prev => [...prev, nuevoProducto]);
-        return nuevoProducto.id;
+        setProductos(prev => [...prev, nuevoProducto as any]);
+        return String(nuevoProducto.id);
       } else {
         throw new Error("No se pudo crear el producto");
       }
@@ -70,13 +70,13 @@ export const ProductoProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  const updateProducto = async (id: string, productoActualizado: Partial<Producto>) => {
+  const updateProducto = async (id: string, productoActualizado: Partial<Product>) => {
     try {
-      const updated = await interfaz.updateProducto(id, productoActualizado);
+      const updated = await interfaz.updateProducto(id, productoActualizado as any);
       if (updated) {
         setProductos(prev => 
           prev.map(producto => 
-            producto.id === id ? { ...producto, ...productoActualizado } : producto
+            producto.id === id ? { ...producto, ...(productoActualizado as any) } : producto
           )
         );
       }
@@ -100,30 +100,30 @@ export const ProductoProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  const getProductoById = async (id: string) => {
+  const getProductoById = async (id: string): Promise<Product | undefined> => {
     try {
       const producto = await interfaz.getProductoById(id);
-      return producto || undefined;
+      return producto as any || undefined;
     } catch (error) {
       console.error("Error al obtener producto por ID:", error);
       return undefined;
     }
   };
 
-  const getProductosByTarifaId = async (tarifaId: string) => {
+  const getProductosByTarifaId = async (tarifaId: string): Promise<Product[]> => {
     try {
       const productos = await interfaz.getProductosByTarifaId(tarifaId);
-      return productos || [];
+      return (productos as any) || [];
     } catch (error) {
       console.error("Error al obtener productos por tarifa:", error);
       return [];
     }
   };
 
-  const getProductosByFamilia = async (familia: string) => {
+  const getProductosByFamilia = async (familia: string): Promise<Product[]> => {
     try {
       const productos = await interfaz.getProductosByFamilia(familia);
-      return productos || [];
+      return (productos as any) || [];
     } catch (error) {
       console.error("Error al obtener productos por familia:", error);
       return [];
@@ -132,17 +132,13 @@ export const ProductoProvider = ({ children }: { children: ReactNode }) => {
 
   const toggleProductoStatus = async (id: string) => {
     try {
-      // Buscar producto primero
       const producto = await interfaz.getProductoById(id);
-      if (!producto) return;
+      if (!producto || typeof (producto as any).activo !== 'boolean') return;
       
-      // Cambiar estado
-      const activo = !producto.activo;
+      const activo = !(producto as any).activo;
       
-      // Actualizar producto a través de la interfaz
-      await interfaz.updateProducto(id, { activo });
+      await interfaz.updateProducto(id, { activo } as any);
       
-      // Actualizar estado local si la actualización tuvo éxito
       setProductos(prev => 
         prev.map(p => 
           p.id === id ? { ...p, activo } : p
@@ -155,7 +151,7 @@ export const ProductoProvider = ({ children }: { children: ReactNode }) => {
   };
   
   const refreshProductos = async () => {
-    setDataFetched(false); // Esto forzará la recarga en el useEffect
+    setDataFetched(false);
   };
 
   return (

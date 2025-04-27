@@ -5,6 +5,7 @@ import { createContext, useContext, useState, type ReactNode, useEffect, useCall
 // import { Usuario as UsuarioModel } from "@/services/data/models/interfaces.ts" // <- Comentar ruta con alias
 import { Usuario as UsuarioModel } from "../services/data/models/interfaces.ts"; // <<< Usar ruta relativa
 import { User as PrismaUser } from '@prisma/client';
+import { useSession } from "next-auth/react"; // <<< Importar useSession
 
 // Función auxiliar para comparar IDs que pueden ser string o number
 const isSameId = (id1: string | number | undefined | null, id2: string | number | undefined | null): boolean => {
@@ -26,7 +27,8 @@ export type UsuarioUpdatePayload =
     // Añadir otros campos si se gestionan aquí (ej: contraseña al crear)
   };
 
-interface UserContextType {
+// Añadir export a la interfaz
+export interface UserContextType {
   usuarios: Usuario[];
   isLoading: boolean;
   error: string | null;
@@ -45,15 +47,26 @@ export function UserProvider({ children }: { children: ReactNode }) {
   const [usuarios, setUsuarios] = useState<Usuario[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const { data: session, status } = useSession(); // <<< Obtener estado de sesión
 
-  // Función para cargar/recargar usuarios desde la API
   const fetchUsuarios = useCallback(async () => {
+     if (status !== 'authenticated') {
+        console.log("[UserContext] Sesión no autenticada, saltando fetchUsuarios.");
+        setIsLoading(false);
+        setUsuarios([]);
+        return;
+    }
+
     setIsLoading(true)
     setError(null)
     try {
       const response = await fetch('/api/users')
       if (!response.ok) {
-        throw new Error(`Error ${response.status}: ${response.statusText}`)
+         let errorText = response.statusText;
+         if (response.status === 401) {
+             try { const errorBody = await response.json(); errorText = errorBody.message || errorText; } catch (e) {}
+         }
+         throw new Error(`Error ${response.status}: ${errorText}`)
       }
       const loadedUsuarios: Usuario[] = await response.json()
       setUsuarios(loadedUsuarios)
@@ -65,42 +78,42 @@ export function UserProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false)
     }
-  }, [])
+  }, [status])
 
-  // Cargar datos iniciales al montar
   useEffect(() => {
-    fetchUsuarios()
-  }, [fetchUsuarios])
+    if (status === 'authenticated') {
+        fetchUsuarios()
+    } else if (status === 'unauthenticated') {
+        setUsuarios([])
+        setIsLoading(false)
+        setError(null)
+    } else {
+        setIsLoading(true)
+    }
+  }, [fetchUsuarios, status])
 
-  // Obtener usuario por ID
   const getUsuarioById = useCallback(async (id: string): Promise<Usuario | null> => {
-    // Siempre buscar en API para obtener datos completos
+    if (status !== 'authenticated') return null;
+    
     console.log(`[UserContext] getUsuarioById(${id}) - Buscando en API...`);
-    // setIsLoading(true) // Considerar si este isLoading debe afectar a toda la lista o ser específico
     try {
       const response = await fetch(`/api/users/${id}`)
       if (response.status === 404) return null
       if (!response.ok) throw new Error(`Error ${response.status}: ${response.statusText}`)
       const usuario: Usuario = await response.json()
-      // Opcional: Actualizar estado local
       setUsuarios(prev => prev.map(u => isSameId(u.id, id) ? usuario : u))
       return usuario
     } catch (err) {
       console.error(`Error fetching user ${id} from API:`, err)
       setError(err instanceof Error ? err.message : 'Error desconocido')
       return null
-    } finally {
-      // setIsLoading(false)
     }
-  }, [setUsuarios])
+  }, [setUsuarios, status])
 
-  // Obtener usuarios por clínica
   const getUsuariosByClinica = useCallback(async (clinicaId: string): Promise<Usuario[]> => {
-    // console.warn("getUsuariosByClinica no implementado con API (filtrado necesario en backend)") // Comentado
-    // return [] // Comentado
-    
-    // >>> NUEVA IMPLEMENTACIÓN CON API <<<
-    setIsLoading(true) // Opcional: indicar carga específica para esta llamada
+    if (status !== 'authenticated') return [];
+
+    setIsLoading(true) 
     setError(null)
     try {
       const response = await fetch(`/api/users/byClinic/${clinicaId}`)
@@ -109,23 +122,20 @@ export function UserProvider({ children }: { children: ReactNode }) {
       }
       const usuariosDeClinica: Usuario[] = await response.json()
       console.log(`UserContext: ${usuariosDeClinica.length} usuarios cargados para clinicId ${clinicaId}`);
-      // Opcional: Podríamos actualizar el estado general `usuarios` también?
-      // Por ahora, solo devolvemos los usuarios específicos de la clínica
       return usuariosDeClinica;
     } catch (err) {
       console.error(`Error al cargar usuarios para clínica ${clinicaId}:`, err)
       setError(err instanceof Error ? err.message : 'Error desconocido al cargar usuarios de clínica')
-      return []; // Devolver vacío en caso de error
+      return [];
     } finally {
-      setIsLoading(false) // Opcional: finalizar carga específica
+      setIsLoading(false)
     }
-    // >>> FIN NUEVA IMPLEMENTACIÓN <<<
-  }, [])
+  }, [status])
 
-  // Crear nuevo usuario (requiere contraseña)
   const createUsuario = useCallback(async (usuarioData: Omit<Usuario, 'id' | 'createdAt' | 'updatedAt' | 'systemId'> & { password?: string }): Promise<Usuario | null> => {
+    if (status !== 'authenticated') return null;
+
     if (!usuarioData.password) {
-      // setError("La contraseña es obligatoria para crear un usuario.") // Usar toast?
       console.error("createUsuario: La contraseña es obligatoria.");
       return null
     }
@@ -135,7 +145,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
       const response = await fetch('/api/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(usuarioData), // La API espera la contraseña aquí
+        body: JSON.stringify(usuarioData),
       })
       if (!response.ok) {
         const errorData = await response.json()
@@ -151,29 +161,28 @@ export function UserProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false)
     }
-  }, [setUsuarios])
+  }, [setUsuarios, status])
 
-  // Actualizar usuario (sin contraseña)
   const updateUsuario = useCallback(async (id: string, usuarioUpdate: UsuarioUpdatePayload): Promise<Usuario | null> => {
+    if (status !== 'authenticated') return null;
+
     setIsLoading(true)
     setError(null)
     const usuarioId = String(id)
     try {
-      console.log(`[UserContext] updateUsuario(${usuarioId}) - Payload:`, JSON.stringify(usuarioUpdate, null, 2)); // Log para depurar
+      console.log(`[UserContext] updateUsuario(${usuarioId}) - Payload:`, JSON.stringify(usuarioUpdate, null, 2));
       const response = await fetch(`/api/users/${usuarioId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(usuarioUpdate), // Enviar el payload completo
+        body: JSON.stringify(usuarioUpdate),
       })
       if (!response.ok) {
         const errorData = await response.json()
-        // Log detallado del error de la API
         console.error(`[UserContext] updateUsuario(${usuarioId}) - API Error ${response.status}:`, errorData);
         throw new Error(errorData.message || `Error ${response.status}`)
       }
       const updatedUser: Usuario = await response.json()
       console.log(`[UserContext] updateUsuario(${usuarioId}) - Success. API Response:`, updatedUser);
-      // Actualizar estado local (crucial que updatedUser incluya las asignaciones actualizadas)
       setUsuarios(prev => 
         prev.map(u => isSameId(u.id, usuarioId) ? updatedUser : u)
       )
@@ -185,10 +194,11 @@ export function UserProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false)
     }
-  }, [setUsuarios])
+  }, [setUsuarios, status])
 
-  // Eliminar usuario
   const deleteUsuario = useCallback(async (id: string): Promise<boolean> => {
+    if (status !== 'authenticated') return false;
+
     setIsLoading(true)
     setError(null)
     const stringId = String(id)
@@ -209,48 +219,50 @@ export function UserProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false)
     }
-  }, [setUsuarios])
+  }, [setUsuarios, status])
 
-  // Cambiar estado activo/inactivo
   const toggleUsuarioStatus = useCallback(async (id: string): Promise<boolean> => {
-    // Lógica API (Descomentada y activada)
+    if (status !== 'authenticated') return false;
+    
     setError(null);
     const stringId = String(id);
     try {
-        // Asegurarse que la ruta y método son correctos (PATCH es común para toggle)
         const response = await fetch(`/api/users/${stringId}/toggle-status`, { method: 'PATCH' });
         if (!response.ok) {
             const errorData = await response.json();
             throw new Error(errorData.message || `Error ${response.status}`);
         }
-        // La API debe devolver el usuario actualizado para reflejar el cambio
-        // const updatedUser: Usuario = await response.json(); // Ya no es necesario si no actualizamos estado global
-        // --- MODIFICADO: Eliminar actualización de estado global aquí ---\n        // setUsuarios(prev => prev.map(u => isSameId(u.id, stringId) ? updatedUser : u)); \n        return true; // Éxito\n    } catch (err) {\n        console.error(`Error toggling status for user ${stringId}:`, err);\n        setError(err instanceof Error ? err.message : 'Error desconocido al cambiar estado');
-        return true; // Éxito
+        return true;
     } catch (err) {
         console.error(`Error toggling status for user ${stringId}:`, err);
         setError(err instanceof Error ? err.message : 'Error desconocido al cambiar estado');
-        // MODIFICADO: Devolver false en caso de error
         return false; // Fallo
     }
-  }, [setError])
+  }, [setError, status])
 
-  // Las dependencias de useMemo son los valores que contiene
-  // y las funciones memoizadas (envueltas en useCallback)
   const contextValue = useMemo(() => ({
     usuarios,
     isLoading,
     error,
-    refetchUsuarios: fetchUsuarios, // fetchUsuarios ya está en useCallback
+    refetchUsuarios: fetchUsuarios,
     getUsuarioById,
     getUsuariosByClinica,
     createUsuario,
     updateUsuario,
     deleteUsuario,
     toggleUsuarioStatus,
-  // Las dependencias de useMemo son los valores que contiene
-  // y las funciones memoizadas
-  }), [usuarios, isLoading, error, fetchUsuarios, getUsuarioById, getUsuariosByClinica, createUsuario, updateUsuario, deleteUsuario, toggleUsuarioStatus]);
+  }), [
+      usuarios, 
+      isLoading, 
+      error, 
+      fetchUsuarios, 
+      getUsuarioById, 
+      getUsuariosByClinica, 
+      createUsuario, 
+      updateUsuario, 
+      deleteUsuario, 
+      toggleUsuarioStatus
+    ]);
 
   return <UserContext.Provider value={contextValue}>{children}</UserContext.Provider>
 }
@@ -258,7 +270,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
 export function useUser() {
   const context = useContext(UserContext)
   if (context === undefined) {
-    throw new Error("useUser debe usarse dentro de un UserProvider")
+    throw new Error("useUser must be used within a UserProvider")
   }
   return context
 } 

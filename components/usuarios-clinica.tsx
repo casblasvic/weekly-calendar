@@ -3,9 +3,8 @@
 import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Search, ChevronUp, ChevronDown, Edit, AlertTriangle, CalendarRange } from "lucide-react"
+import { Search, Edit, AlertTriangle, CalendarRange, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useRouter } from "next/navigation"
 import { useUser } from "@/contexts/user-context"
@@ -18,13 +17,12 @@ import { Badge } from "@/components/ui/badge"
 import { ConflictoHorario } from "@/services/exceptions-conflict-service"
 import { tieneExcepcionesActivas, contarExcepcionesActivas } from "@/services/exceptions-user-service"
 import { Skeleton } from "@/components/ui/skeleton"
+import { DataTable } from "@/components/ui/data-table"
+import type { ColumnDef } from "@tanstack/react-table"
+import { DataTableColumnHeader } from "@/components/ui/data-table-column-header"
 
 // Importar el tipo Usuario para usarlo directamente
 import type { Usuario } from "@/contexts/user-context";
-
-// Actualizar SortField para usar los nuevos campos
-type SortField = "lastName" | "firstName" | "email" // Quitar "nombre" y "perfil"
-type SortDirection = "asc" | "desc"
 
 interface UserRowIndicatorsProps {
   conflictos?: number;
@@ -70,49 +68,37 @@ export function UsuariosClinica({
   userConflicts = {} // Valor por defecto vacío
 }: UsuariosClinicaProps) {
   const router = useRouter()
-  const [searchTerm, setSearchTerm] = useState("")
   const [showDisabled, setShowDisabled] = useState(false)
-  const [sortField, setSortField] = useState<SortField>("lastName") // Default a lastName
-  const [sortDirection, setSortDirection] = useState<SortDirection>("asc")
   const [localShowNewUserDialog, setLocalShowNewUserDialog] = useState(false)
   const [userExceptions, setUserExceptions] = useState<Record<string, number>>({})
   
-  // Form fields for new user - Refactorizado
-  // const [nombre, setNombre] = useState("") // <- Eliminar
-  const [firstName, setFirstName] = useState("") // <- Añadir
-  const [lastName, setLastName] = useState("")   // <- Añadir
+  const [firstName, setFirstName] = useState("")
+  const [lastName, setLastName] = useState("")
   const [email, setEmail] = useState("")
   const [confirmEmail, setConfirmEmail] = useState("")
-  // const [prefijo, setPrefijo] = useState("") // <- Eliminar si no está en payload
-  const [telefono, setTelefono] = useState("") // <- Usar 'phone'
-  // const [perfil, setPerfil] = useState("")   // <- Eliminar (manejar roles por separado)
-  const [password, setPassword] = useState("") // <- Añadir
+  const [telefono, setTelefono] = useState("")
+  const [password, setPassword] = useState("")
 
-  const { usuarios, /* toggleUsuarioStatus, createUsuario, */ getUsuariosByClinica } = useUser()
+  const { usuarios, getUsuariosByClinica, toggleUsuarioStatus, deleteUsuario } = useUser()
   const { clinics, getClinicaById } = useClinic()
   
-  const [clinicaUsuarios, setClinicaUsuarios] = useState<Usuario[]>([]) // Usar el tipo Usuario
+  const [clinicaUsuarios, setClinicaUsuarios] = useState<Usuario[]>([])
   const [clinica, setClinica] = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
-  // Ref para rastrear el estado previo del diálogo
   const prevDialogStateRef = useRef(showNewUserDialog || localShowNewUserDialog);
 
-  // Cargar datos de la clínica y sus usuarios
   useEffect(() => {
     const loadData = async () => {
-      console.log(`[UsuariosClinica useEffect] Running. clinicId: ${clinicId}`); // Log de entrada
-      // <<< AÑADIR GUARDA PARA clinicId >>>
+      console.log(`[UsuariosClinica useEffect] Running. clinicId: ${clinicId}`);
       if (!clinicId) {
           console.log("[UsuariosClinica useEffect] No clinicId yet, skipping load.");
-          setLoading(false); // Detener carga si no hay ID
+          setLoading(false);
           return;
       }
-      // <<< FIN GUARDA >>>
       
-      setLoading(true); // Iniciar carga solo si hay ID
+      setLoading(true);
       try {
-        // Cargar datos de la clínica
         console.log("[UsuariosClinica useEffect] Fetching clinic data...");
         const clinicaData = await getClinicaById(clinicId)
         if (!clinicaData) {
@@ -121,19 +107,17 @@ export function UsuariosClinica({
             description: "No se pudo encontrar la clínica",
             variant: "destructive",
           })
-          setLoading(false); // Detener carga si la clínica no se encuentra
+          setLoading(false);
           return
         }
         setClinica(clinicaData)
         console.log("[UsuariosClinica useEffect] Clinic data loaded.");
         
-        // Cargar usuarios de la clínica
-        console.log(`[UsuariosClinica useEffect] Calling getUsuariosByClinica for clinicId: ${clinicId}...`); // Log antes de llamar
+        console.log(`[UsuariosClinica useEffect] Calling getUsuariosByClinica for clinicId: ${clinicId}...`);
         const usuariosData = await getUsuariosByClinica(clinicId)
-        console.log(`[UsuariosClinica useEffect] Received usuariosData:`, usuariosData); // Log después de llamar
+        console.log(`[UsuariosClinica useEffect] Received usuariosData:`, usuariosData);
         setClinicaUsuarios(usuariosData)
         
-        // Verificar excepciones activas para cada usuario
         const excepciones = usuariosData.reduce((acc, usuario) => {
           const numExcepciones = contarExcepcionesActivas(usuario as any);
           if (numExcepciones > 0) {
@@ -143,7 +127,6 @@ export function UsuariosClinica({
         }, {} as Record<string, number>);
         
         setUserExceptions(excepciones);
-        // setLoading(false) // Movido al finally
       } catch (error) {
         console.error("[UsuariosClinica useEffect] Error loading data:", error)
         toast({
@@ -152,26 +135,22 @@ export function UsuariosClinica({
           variant: "destructive",
         })
       } finally {
-          setLoading(false); // Asegurar que setLoading se llama siempre
+          setLoading(false);
       }
     }
     
     loadData()
   }, [clinicId, getClinicaById, getUsuariosByClinica])
   
-  // Refactorizado: useEffect para recargar usuarios SOLO al cerrar el diálogo
   useEffect(() => {
     const isDialogOpen = showNewUserDialog || localShowNewUserDialog;
-    // Comprobar si el diálogo acaba de cerrarse (estado previo era true, actual es false)
     if (prevDialogStateRef.current && !isDialogOpen) {
       console.log("[UsuariosClinica] Dialog closed, reloading users...");
       const reloadUsers = async () => {
         try {
-          // Usar la función del contexto directamente aquí
           const usuariosData = await getUsuariosByClinica(clinicId) 
           setClinicaUsuarios(usuariosData)
           
-          // Actualizar las excepciones activas
           const excepciones = usuariosData.reduce((acc, usuario) => {
             const numExcepciones = contarExcepcionesActivas(usuario as any);
             if (numExcepciones > 0) {
@@ -188,198 +167,43 @@ export function UsuariosClinica({
       
       reloadUsers();
     }
-    // Actualizar la referencia con el estado actual para la próxima comprobación
     prevDialogStateRef.current = isDialogOpen;
+  }, [showNewUserDialog, localShowNewUserDialog, clinicId, getUsuariosByClinica]);
 
-  // Dependencias: Solo necesitamos re-evaluar cuando el estado del diálogo cambie
-  }, [showNewUserDialog, localShowNewUserDialog, clinicId, getUsuariosByClinica]); // Mantenemos getUsuariosByClinica por si acaso cambia, pero el if interno controla la ejecución
-
-  const handleSort = (field: SortField) => {
-    if (sortField === field) {
-      setSortDirection(sortDirection === "asc" ? "desc" : "asc")
-    } else {
-      setSortField(field)
-      setSortDirection("asc")
-    }
-  }
-
-  const getSortIcon = (field: SortField) => {
-    if (sortField !== field) return null
-    return sortDirection === "asc" ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />
-  }
-
-  const sortedUsuarios = [...clinicaUsuarios].sort((a, b) => {
-    const modifier = sortDirection === "asc" ? 1 : -1
-
-    // Manejar campos potencialmente nulos o undefined
-    const valA = a[sortField] ?? '';
-    const valB = b[sortField] ?? '';
-
-    if (typeof valA === 'string' && typeof valB === 'string') {
-      return valA.localeCompare(valB) * modifier;
-    }
-
-    // Fallback para otros tipos (aunque aquí deberían ser string)
-    if (valA < valB) return -1 * modifier
-    if (valA > valB) return 1 * modifier
-
-    return 0
-  })
-
-  // <<< COMENTAR FUNCIÓN TEMPORALMENTE >>>
-  // const toggleUserStatus = async (userId: string) => {
-  //   try {
-  //     const success = await toggleUsuarioStatus(userId);
-  //     
-  //     if (success) {
-  //       // Actualizar la lista local después de cambiar el estado
-  //       const updatedUsuarios = await getUsuariosByClinica(clinicId);
-  //       setClinicaUsuarios(updatedUsuarios);
-  //       
-  //       toast({
-  //         title: "Estado actualizado",
-  //         description: "El estado del usuario ha sido actualizado correctamente.",
-  //       });
-  //     } else {
-  //       throw new Error("La actualización no fue exitosa");
-  //     }
-  //   } catch (error) {
-  //     console.error("Error al actualizar el estado del usuario:", error);
-  //     toast({
-  //       title: "Error",
-  //       description: "No se pudo actualizar el estado del usuario.",
-  //       variant: "destructive",
-  //     });
-  //   }
-  // };
-
-  const filteredUsuarios = sortedUsuarios.filter(
+  const filteredUsuarios = clinicaUsuarios.filter(
     (usuario) => {
-      // Primero filtramos por término de búsqueda
-      const searchLower = searchTerm.toLowerCase();
-      const matchesSearch = 
-        (usuario.firstName ?? '').toLowerCase().includes(searchLower) ||
-        (usuario.lastName ?? '').toLowerCase().includes(searchLower) ||
-        (usuario.email ?? '').toLowerCase().includes(searchLower);
-      
-      // Luego filtramos por estado (activo/inactivo)
-      const matchesStatus = showDisabled ? true : (usuario.isActive ?? true); // Default a true si isActive es null/undefined
-      
-      return matchesSearch && matchesStatus;
+      const matchesStatus = showDisabled ? true : (usuario.isActive ?? true);
+      return matchesStatus;
     }
   )
 
-  // <<< COMENTAR FUNCIÓN TEMPORALMENTE >>>
-  // const handleCreateUser = async () => {
-  //   // Validaciones
-  //   if (!firstName.trim()) {
-  //     toast({
-  //       title: "Error",
-  //       description: "El nombre es obligatorio",
-  //       variant: "destructive",
-  //     });
-  //     return;
-  //   }
-  //   // ... (más validaciones como email, contraseña) ...
-  
-  //   try {
-  //     const newUser = await createUsuario({
-  //       firstName: firstName.trim(),
-  //       lastName: lastName.trim(),
-  //       email: email.trim(),
-  //       // phone: telefono.trim(), // Añadir si se usa
-  //       password: password,
-  //       // ... otros campos necesarios ...
-  //     });
-  
-  //     if (newUser) {
-  //       toast({
-  //         title: "Usuario Creado",
-  //         description: `El usuario ${newUser.firstName} ${newUser.lastName} ha sido creado.`,
-  //       });
-  //       setLocalShowNewUserDialog(false); // Cerrar diálogo
-  //       // La recarga se maneja en el useEffect
-  //     } else {
-  //       // El contexto ya maneja el error y el toast
-  //     }
-  //   } catch (error) { 
-  //       // Manejo de error ya cubierto por el contexto?
-  //       console.error("Error inesperado en handleCreateUser:", error);
-  //   }
-  // };
-
-  // Función para renderizar un badge con el estado de actividad de la clínica
-  const renderClinicBadge = (clinicaId: string) => {
-    const clinica = clinics.find(c => String(c.id) === String(clinicaId));
-    if (!clinica) return null;
-    
-    return (
-      <Badge 
-        key={clinicaId} 
-        variant="outline"
-        className={`text-xs ${!clinica.isActive ? 'bg-red-50 border-red-200' : ''}`}
-      >
-        {clinica.prefix}
-        {!clinica.isActive && (
-          <span className="ml-1 text-xs text-red-500">•</span>
-        )}
-      </Badge>
-    );
-  };
-
-  // --- Skeleton para la tabla de usuarios ---
   const renderUserTableSkeleton = () => (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-4">
         <Skeleton className="h-10 w-2/3" /> 
         <Skeleton className="h-6 w-40" /> 
       </div>
-      <div className="border rounded-md">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-[50px]"><Skeleton className="w-5 h-5" /></TableHead>
-              <TableHead><Skeleton className="h-5 w-24" /></TableHead>
-              <TableHead><Skeleton className="h-5 w-32" /></TableHead>
-              <TableHead className="text-right"><Skeleton className="h-5 w-20" /></TableHead>
-              <TableHead className="text-center"><Skeleton className="h-5 w-16" /></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {Array.from({ length: 5 }).map((_, index) => (
-              <TableRow key={`skeleton-${index}`}>
-                <TableCell><Skeleton className="w-5 h-5" /></TableCell>
-                <TableCell><Skeleton className="h-5 w-full" /></TableCell>
-                <TableCell><Skeleton className="h-5 w-full" /></TableCell>
-                <TableCell className="text-right"><Skeleton className="h-5 w-20" /></TableCell>
-                <TableCell className="text-center">
-                  <div className="flex justify-center space-x-1">
-                     <Skeleton className="w-8 h-8 rounded-md" />
-                     <Skeleton className="w-8 h-8 rounded-md" />
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+      <div className="border rounded-md p-4">
+        <Skeleton className="h-8 w-full mb-4" />
+        <Skeleton className="h-10 w-full mb-2" />
+        <Skeleton className="h-10 w-full mb-2" />
+        <Skeleton className="h-10 w-full mb-2" />
+      </div>
+      <div className="flex justify-end">
+        <Skeleton className="h-9 w-40" />
       </div>
     </div>
   );
-  // --- Fin Skeleton ---
 
   if (loading) {
     return renderUserTableSkeleton();
   }
 
-  // Usar el diálogo controlado externamente o el local
   const isDialogOpen = showNewUserDialog || localShowNewUserDialog;
 
-  // Función para mostrar conflictos de usuario
   const handleShowUserConflicts = (userId: string) => {
     console.log(`Ver conflictos/excepciones del usuario: ${userId}`);
     
-    // Aquí mostraríamos un diálogo con los detalles de conflictos y excepciones
-    // Por ahora solo imprimimos en consola para depuración
     const numConflictos = userConflicts[userId] || 0;
     const numExcepciones = userExceptions[userId] || 0;
     
@@ -391,9 +215,114 @@ export function UsuariosClinica({
     });
   };
 
+  const handleToggleStatus = async (userId: string, isActive: boolean) => {
+    try {
+      const success = await toggleUsuarioStatus(userId, isActive);
+      
+      if (success) {
+        const updatedUsuarios = await getUsuariosByClinica(clinicId);
+        setClinicaUsuarios(updatedUsuarios);
+        
+        toast({
+          title: "Estado actualizado",
+          description: "El estado del usuario ha sido actualizado correctamente.",
+        });
+      } else {
+        throw new Error("La actualización no fue exitosa");
+      }
+    } catch (error) {
+      console.error("Error al actualizar el estado del usuario:", error);
+      toast({
+        title: "Error",
+        description: "No se pudo actualizar el estado del usuario.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const openDeleteDialog = (usuario: Usuario) => {
+    console.log("Eliminar usuario:", usuario);
+    toast({
+        title: "Acción no implementada",
+        description: `La eliminación del usuario ${usuario.firstName} aún no está conectada.`,
+        variant: "default"
+    })
+  };
+
+  const columns: ColumnDef<Usuario>[] = [
+      {
+          accessorKey: "firstName",
+          header: ({ column }) => (
+             <DataTableColumnHeader column={column} title="Nombre Completo" />
+          ),
+          cell: ({ row }) => {
+              const usuario = row.original;
+              const numConflictos = userConflicts[usuario.id] || 0;
+              const numExcepciones = userExceptions[usuario.id] || 0;
+              
+              return (
+                  <div className="flex items-center font-medium">
+                      {`${usuario.firstName ?? ''} ${usuario.lastName ?? ''}`.trim() || 'Usuario sin nombre'}
+                      <UserRowIndicators 
+                          conflictos={numConflictos} 
+                          excepciones={numExcepciones}
+                      />
+                  </div>
+              );
+          },
+      },
+      {
+          accessorKey: "email",
+          header: ({ column }) => (
+              <DataTableColumnHeader column={column} title="Login (Email)" />
+          ),
+      },
+      {
+          accessorKey: "isActive",
+          header: () => <div className="text-center">Activo</div>,
+          cell: ({ row }) => (
+              <div className="text-center">
+                  <Checkbox
+                      checked={row.original.isActive}
+                      onCheckedChange={(checked) => handleToggleStatus(row.original.id, checked as boolean)}
+                      aria-label="Activo"
+                  />
+              </div>
+          ),
+      },
+      {
+          id: "actions",
+          header: () => <div className="text-right">Acciones</div>,
+          cell: ({ row }) => (
+              <div className="text-right space-x-1">
+                  <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="w-8 h-8 text-blue-600 hover:text-blue-800"
+                      onClick={() => router.push(`/configuracion/usuarios/${row.original.id}`)}
+                      title="Ver/Editar Usuario"
+                  >
+                      <Search className="w-4 h-4" />
+                      <span className="sr-only">Ver/Editar Usuario</span>
+                  </Button>
+                  
+                  <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="w-8 h-8 text-destructive hover:text-red-700"
+                      onClick={() => openDeleteDialog(row.original)}
+                      title="Eliminar Usuario"
+                  >
+                      <Trash2 className="w-4 h-4" /> 
+                      <span className="sr-only">Eliminar Usuario</span>
+                  </Button>
+              </div>
+          ),
+      },
+  ];
+
   return (
     <div>
-      {/* Add filter above search bar */}
       <div className="flex justify-end mb-4">
         <div className="flex items-center space-x-2">
           <Checkbox 
@@ -405,93 +334,12 @@ export function UsuariosClinica({
         </div>
       </div>
 
-      <div className="relative mb-6">
-        <Search className="absolute w-4 h-4 text-gray-500 -translate-y-1/2 left-3 top-1/2" />
-        <Input
-          placeholder="Buscador"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="pl-10"
-        />
-      </div>
+      <DataTable 
+          columns={columns} 
+          data={filteredUsuarios} 
+          searchKey="email"
+      />
 
-      <div className="border rounded-md">
-        <Table>
-          <TableHeader>
-            <TableRow className="hover:bg-transparent">
-              <TableHead className="cursor-pointer" onClick={() => handleSort("firstName")}>
-                <div className="flex items-center gap-2">
-                  Nombre de usuario
-                  {getSortIcon("firstName")}
-                </div>
-              </TableHead>
-              <TableHead className="cursor-pointer" onClick={() => handleSort("lastName")}>
-                <div className="flex items-center gap-2">
-                  Apellidos
-                  {getSortIcon("lastName")}
-                </div>
-              </TableHead>
-              <TableHead className="cursor-pointer" onClick={() => handleSort("email")}>
-                <div className="flex items-center gap-2">
-                  Login
-                  {getSortIcon("email")}
-                </div>
-              </TableHead>
-              <TableHead className="w-[100px] text-right">Acciones</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredUsuarios.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={4} className="py-4 text-center text-gray-500">
-                  No hay usuarios asignados a esta clínica
-                </TableCell>
-              </TableRow>
-            ) : (
-              filteredUsuarios.map((usuario, index) => {
-                const numConflictos = userConflicts[usuario.id] || 0;
-                const numExcepciones = userExceptions[usuario.id] || 0;
-                const tieneIndicadores = numConflictos > 0 || numExcepciones > 0;
-                
-                return (
-                  <TableRow 
-                    key={usuario.id}
-                    className={tieneIndicadores ? "bg-amber-50/30" : ""}
-                  >
-                    <TableCell className="flex items-center font-medium">
-                      {`${usuario.firstName ?? ''} ${usuario.lastName ?? ''}`.trim() || 'Usuario sin nombre'}
-                      <UserRowIndicators 
-                        conflictos={numConflictos} 
-                        excepciones={numExcepciones}
-                      />
-                    </TableCell>
-                    <TableCell>{usuario.email}</TableCell>
-                    <TableCell className="space-x-1 text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="w-8 h-8 text-purple-600 hover:text-purple-700 hover:bg-purple-100"
-                          onClick={() => handleShowUserConflicts(usuario.id.toString())}
-                        >
-                          {numConflictos > 0 ? (
-                            <AlertTriangle className="w-4 h-4" />
-                          ) : (
-                            <CalendarRange className="w-4 h-4" />
-                          )}
-                          <span className="sr-only">Ver detalles</span>
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })
-            )}
-          </TableBody>
-        </Table>
-      </div>
-
-      {/* Modal para crear nuevo usuario */}
       <Dialog 
         open={isDialogOpen} 
         onOpenChange={(open) => {
@@ -510,7 +358,6 @@ export function UsuariosClinica({
           </DialogHeader>
 
           <div className="py-6 space-y-5">
-            {/* Mostrar clínica preseleccionada */}
             <div className="space-y-2">
               <Label className="font-medium">Clínica</Label>
               <div className="flex items-center p-3 border rounded-md bg-gray-50">
