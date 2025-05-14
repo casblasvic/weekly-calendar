@@ -1,6 +1,12 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { Prisma } from '@prisma/client';
+import { getServerAuthSession } from '@/lib/auth';
+import { z } from 'zod';
+
+const ParamsSchema = z.object({
+  id: z.string().cuid({ message: "El ID del cliente debe ser un CUID válido." }),
+});
 
 /**
  * Handler para obtener un cliente específico por su ID.
@@ -8,23 +14,82 @@ import { Prisma } from '@prisma/client';
  * @param params Objeto con el ID del cliente.
  * @returns NextResponse con el cliente encontrado o un error.
  */
-export async function GET(request: Request, props: { params: Promise<{ id: string }> }) {
-  const params = await props.params;
-  const clientId = params.id;
+export async function GET(request: NextRequest, { params: paramsPromise }: { params: Promise<{ id: string }> }) {
   try {
-    // TODO: Añadir lógica de autorización - ¿Puede este usuario ver este cliente?
-    // TODO: Filtrar también por systemId?
-    const client = await prisma.client.findUniqueOrThrow({
-      where: { id: clientId },
-      // TODO: Incluir relaciones necesarias (ej: citas, clínica principal?)
-    });
-    return NextResponse.json(client);
-  } catch (error) {
-    console.error(`Error fetching client ${clientId}:`, error);
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
-      return NextResponse.json({ message: `Cliente ${clientId} no encontrado` }, { status: 404 });
+    const params = await paramsPromise;
+    const { id: clientId } = params;
+
+    const session = await getServerAuthSession();
+    if (!session?.user?.id || !session.user.systemId) {
+      return NextResponse.json(
+        { error: "Usuario no autenticado o falta systemId." },
+        { status: 401 }
+      );
     }
-    return NextResponse.json({ message: 'Error interno del servidor' }, { status: 500 });
+    const systemId = session.user.systemId;
+
+    const paramsValidation = ParamsSchema.safeParse({ id: clientId });
+    if (!paramsValidation.success) {
+      return NextResponse.json(
+        { error: "Parámetro ID inválido", details: paramsValidation.error.flatten() },
+        { status: 400 }
+      );
+    }
+
+    const validatedClientId = paramsValidation.data.id;
+
+    const client = await prisma.client.findUnique({
+      where: {
+        id: validatedClientId,
+        systemId: systemId,
+      },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        phone: true,
+        phoneCountryIsoCode: true,
+        taxId: true,
+        fiscalName: true,
+        address: true,
+        city: true,
+        postalCode: true,
+        country: {
+          select: {
+            name: true,
+            isoCode: true,
+          },
+        },
+        company: {
+          select: {
+            id: true,
+            fiscalName: true,
+          },
+        },
+      },
+    });
+
+    if (!client) {
+      return NextResponse.json({ error: "Cliente no encontrado o no pertenece al sistema." }, { status: 404 });
+    }
+
+    return NextResponse.json(client);
+
+  } catch (error) {
+    let routeId = 'unknown';
+    try {
+      const resolvedParams = await paramsPromise;
+      routeId = resolvedParams.id;
+    } catch (e) {
+      // No hacer nada si paramsPromise también falla, ya tenemos el error original.
+    }
+    console.error(`[API_CLIENTS_ID_GET] Error fetching client by ID (clientId: ${routeId}):`, error);
+    let errorMessage = "Error interno del servidor al obtener el cliente.";
+    if (error instanceof z.ZodError) {
+      errorMessage = "Error de validación.";
+    }
+    return NextResponse.json({ error: errorMessage, details: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
 }
 

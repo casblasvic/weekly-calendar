@@ -1,1 +1,49 @@
-{} 
+{
+  "common": {},
+  "clinics": {
+    "edit": {
+      "promotions": {
+        "description": "Gérez les promotions globales et celles spécifiques à cette clinique.",
+        "add": "Ajouter Promotion"
+      }
+    }
+  },
+  "promotions": {
+    "form": {
+      "apply_to_all_clinics": "Appliquer à toutes les cliniques",
+      "targetTariffId": {
+        "label": "Tarif Spécifique",
+        "placeholder": "Sélectionnez un tarif...",
+        "searchPlaceholder": "Rechercher un tarif...",
+        "emptyPlaceholder": "Aucun tarif trouvé.",
+        "preselectedDesc": "S'appliquera au tarif \"{{tariffName}}\" assigné à la clinique actuelle."
+      },
+      "targetBonoDefinitionId": {
+        "label": "Définition de Bonus Spécifique",
+        "description": "Limite du nombre de fois qu'un même client peut utiliser la promotion.",
+        "placeholder": "Ex : 1"
+      }
+    },
+    "columns": {
+        "name": "Nom",
+        "code": "Code",
+        "type": "Type",
+        "targetScope": "Cible",
+        "accumulationCompatibilities": "Cumul",
+        "applicableClinics": "Cliniques Applicables",
+        "isActive": "Active",
+        "startDate": "Date Début",
+        "endDate": "Date Fin",
+        "accumulationMode": "Mode Cumul"
+    },
+    "table": {
+        "filter_name_placeholder": "Filtrer par nom...",
+        "no_results": "Aucune promotion trouvée."
+    }
+  },
+  "config_clinics": {
+      "tabs": {
+          "promotions": "Promotions"
+      }
+  }
+} 

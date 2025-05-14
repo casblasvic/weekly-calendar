@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import { Printer, X, Search, HelpCircle } from "lucide-react"
-import { BackButton } from "@/components/ui/button"
 
 interface DeferredPayment {
   clinic: string
@@ -108,7 +107,7 @@ export default function AplazadoPage() {
 
       {/* Fixed buttons - Footer style */}
       <div className="fixed bottom-0 md:bottom-8 right-0 md:right-8 flex items-center gap-1 z-40 w-full md:w-auto justify-end px-4 py-2 bg-white/80 backdrop-blur-md border-t border-gray-200 md:border-0 md:bg-transparent md:backdrop-blur-0 md:py-0">
-        <BackButton size="sm" className="h-8 px-2 rounded-md text-xs">Volver</BackButton>
+        <Button variant="outline" size="sm" className="h-8 px-2 rounded-md text-xs">Volver</Button>
         <Button variant="outline" size="sm" className="h-8 w-8 p-0 rounded-full bg-black text-white hover:bg-gray-800">
           <HelpCircle className="h-4 w-4" />
         </Button>

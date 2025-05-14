@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { PromotionForm } from '@/components/promotions/promotion-form';
@@ -14,7 +14,10 @@ type PromotionFormData = z.infer<typeof PromotionSchema>;
 export default function CrearPromocionPage() {
   const { t } = useTranslation();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [isLoading, setIsLoading] = useState(false);
+
+  const redirectBackTo = searchParams.get('redirectBackTo');
 
   const handleSubmit = async (data: PromotionFormData) => {
     console.log('CrearPromocionPage: handleSubmit called with data:', data);
@@ -44,7 +47,8 @@ export default function CrearPromocionPage() {
       }
 
       toast.success(t('promotions.create_success'));
-      router.push('/configuracion/promociones'); // Redirigir a la lista
+      const targetUrl = redirectBackTo || '/configuracion/promociones';
+      router.push(targetUrl);
       router.refresh(); // Refrescar datos en la página de lista
 
     } catch (error) {
@@ -57,7 +61,11 @@ export default function CrearPromocionPage() {
   };
 
   const handleCancel = () => {
-    router.back(); // Volver a la página anterior
+    if (redirectBackTo) {
+        router.push(redirectBackTo);
+    } else {
+        router.back(); // O router.push('/configuracion/promociones');
+    }
   };
 
   return (

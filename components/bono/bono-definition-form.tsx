@@ -17,13 +17,13 @@ import { useToast } from '@/components/ui/use-toast';
 import type { BonoDefinition, Service, Product, VATType } from '@prisma/client';
 import type { BonoDefinitionWithRelations } from '@/app/(main)/configuracion/bonos/page'; // Ajusta la ruta si es necesario
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { ArrowLeft } from 'lucide-react';
 
 // Esquema Zod GLOBAL (basado en BonoDefinitionCreateSchema/UpdateSchema de API)
 // NOTA: Ajustar según los campos finales y obligatoriedad
 const BonoDefinitionFormSchema = z.object({
   name: z.string().min(1, 'El nombre es requerido'), 
   description: z.string().optional().nullable(),
-  code: z.string().optional().nullable(),
   // Tipo de Asociación (Radio)
   associationType: z.enum(['service', 'product'], { required_error: "Debe seleccionar un tipo de asociación"}),
   // IDs (ComboBox)
@@ -45,12 +45,6 @@ const BonoDefinitionFormSchema = z.object({
   autoAddToInvoice: z.boolean().default(false),
   // Otros campos
   pointsAwarded: z.coerce.number().int().min(0).default(0).optional().nullable(),
-  formattedDescription: z.string().optional().nullable(),
-  // Permitir string vacío o URL válida
-  imageUrl: z.string().url("Debe ser una URL válida").or(z.literal('')).optional().nullable(),
-  termsAndConditions: z.string().optional().nullable(),
-  // Relajar validación de color
-  colorCode: z.string().optional().nullable(),
 })
 // Validación cruzada: Si associationType es service, serviceId debe tener valor. Si es product, productId debe tener valor.
 .refine(data => {
@@ -95,7 +89,6 @@ export function BonoDefinitionForm({ initialData, preselectedServiceId, preselec
       // Priorizar IDs preseleccionados si existen y no estamos editando
       name: initialData?.name ?? '',
       description: initialData?.description ?? '', 
-      code: initialData?.code ?? '',
       associationType: isContextualCreate
                        ? (preselectedServiceId ? 'service' : 'product')
                        : (initialData?.serviceId ? 'service' : (initialData?.productId ? 'product' : undefined)),
@@ -103,19 +96,15 @@ export function BonoDefinitionForm({ initialData, preselectedServiceId, preselec
       productId: isContextualCreate ? preselectedProductId : (initialData?.productId ?? null),
       quantity: initialData?.quantity ?? 1,
       price: initialData?.price ?? 0,
-      costPrice: initialData?.costPrice ?? null,
-      validityDays: initialData?.validityDays ?? null,
+      costPrice: initialData?.settings?.costPrice ?? null,
+      validityDays: initialData?.settings?.validityDays ?? null,
       vatTypeId: initialData?.vatTypeId ?? null,
-      commissionType: initialData?.commissionType ?? '',
-      commissionValue: initialData?.commissionValue ?? null,
-      isActive: initialData?.isActive ?? true,
-      appearsInApp: initialData?.appearsInApp ?? true,
-      autoAddToInvoice: initialData?.autoAddToInvoice ?? false,
-      pointsAwarded: initialData?.pointsAwarded ?? 0,
-      formattedDescription: initialData?.formattedDescription ?? '',
-      imageUrl: initialData?.imageUrl ?? '',
-      termsAndConditions: initialData?.termsAndConditions ?? '',
-      colorCode: initialData?.colorCode ?? '',
+      commissionType: initialData?.settings?.commissionType ?? null,
+      commissionValue: initialData?.settings?.commissionValue ?? null,
+      isActive: initialData?.settings?.isActive ?? true,
+      appearsInApp: initialData?.settings?.appearsInApp ?? true,
+      autoAddToInvoice: initialData?.settings?.autoAddToInvoice ?? false,
+      pointsAwarded: initialData?.settings?.pointsAwarded ?? 0,
     }
   });
 
@@ -223,19 +212,15 @@ export function BonoDefinitionForm({ initialData, preselectedServiceId, preselec
   // --- Renderizado del Formulario --- 
   // (Similar al bono-form.tsx original, pero con todos los campos nuevos y lógica de asociación)
   return (
-    <Card>
+    <Card className="relative pb-20">
       {/* <CardHeader> se maneja en la página padre (nuevo/page.tsx o [id]/page.tsx) */}
       <CardContent className="pt-6"> {/* Añadir padding top si se quita CardHeader */}
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
+        <form id="bono-definition-form" onSubmit={handleSubmit(onSubmit)} className="space-y-8">
           
           {/* --- Sección Datos Generales --- */}
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
             {/* Nombre */}
             <FormField name="name" label="Nombre del Bono" error={errors.name} control={control} render={(field) => <Input {...field} placeholder="Ej: Bono 5 Masajes" disabled={isLoading} />} />
-            {/* Código */}
-            <FormField name="code" label="Código (Opcional)" error={errors.code} control={control} render={(field) => <Input {...field} placeholder="Ej: BONO-MAS5" disabled={isLoading} />} />
-            {/* Color */}
-             <FormField name="colorCode" label="Color (Hex)" error={errors.colorCode} control={control} render={(field) => <Input type="color" {...field} disabled={isLoading} className="h-10" />} />
           </div>
 
           {/* --- Sección Asociación (Servicio o Producto) --- */}
@@ -384,30 +369,39 @@ export function BonoDefinitionForm({ initialData, preselectedServiceId, preselec
           {/* --- Sección Descripciones y T&C --- */}
            <div className="space-y-4">
                 <FormField name="description" label="Descripción Corta" error={errors.description} control={control} render={(field) => <Textarea {...field} placeholder="Descripción breve para listas..." rows={3} disabled={isLoading} />} />
-                <FormField name="formattedDescription" label="Descripción Formateada (Opcional)" error={errors.formattedDescription} control={control} render={(field) => <Textarea {...field} placeholder="Descripción detallada para vista del bono (soporta formato?)..." rows={5} disabled={isLoading} />} />
-                <FormField name="termsAndConditions" label="Términos y Condiciones (Opcional)" error={errors.termsAndConditions} control={control} render={(field) => <Textarea {...field} placeholder="Condiciones de uso, restricciones..." rows={5} disabled={isLoading} />} />
            </div>
 
           {/* --- Sección Opciones Adicionales --- */}
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-             <FormField name="imageUrl" label="URL Imagen Principal (Opcional)" error={errors.imageUrl} control={control} render={(field) => <Input {...field} placeholder="https://..." disabled={isLoading} />} />
              <FormFieldCheckbox name="isActive" label="Activo" control={control} disabled={isLoading} />
              <FormFieldCheckbox name="appearsInApp" label="Aparece en App Cliente" control={control} disabled={isLoading} />
              <FormFieldCheckbox name="autoAddToInvoice" label="Añadir Auto a Factura" control={control} disabled={isLoading} />
           </div>
 
-          {/* --- Botones de Acción --- */}
-          <div className="flex justify-end space-x-4">
-             <Button type="button" variant="outline" onClick={handleBack} disabled={isLoading}>
-                Volver 
-             </Button>
-             <Button type="submit" disabled={isLoading}>
-                {isLoading ? (isEditing ? 'Guardando...' : 'Creando...') : (isEditing ? 'Guardar Cambios' : 'Crear Bono')}
-             </Button>
-          </div>
-
         </form>
       </CardContent>
+
+      {/* --- Footer Fijo con Botones Flotantes --- */}
+      <footer 
+        className="fixed bottom-4 right-4 z-40 flex items-center justify-end gap-2 transition-all duration-300 ease-in-out"
+        style={{ 
+            left: 'var(--main-margin-left)', // Mantener ajuste por sidebar
+            width: 'var(--main-width)',    // Mantener ajuste por sidebar
+        }}
+      >
+        <Button variant="outline" onClick={handleBack} disabled={isLoading}>
+            <ArrowLeft className="w-4 h-4 mr-2" /> Volver 
+        </Button>
+        <Button 
+            type="button" 
+            onClick={() => {
+              (document.getElementById('bono-definition-form') as HTMLFormElement | null)?.requestSubmit();
+            }}
+            disabled={isLoading} 
+        >
+          {isLoading ? 'Guardando...' : (isEditing ? 'Guardar Cambios' : 'Crear Bono')} 
+        </Button>
+      </footer>
     </Card>
   );
 }

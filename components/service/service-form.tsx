@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea"; // Añadir Textarea si se usa
-import { Minus, Plus, AlertCircle, AlertTriangle, Save, XCircle, Check, ChevronsUpDown } from "lucide-react";
+import { Minus, Plus, AlertCircle, AlertTriangle, Save, XCircle, Check, ChevronsUpDown, FileText, Image as ImageIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Category, VATType, Equipment } from '@prisma/client'; // Asumiendo estos tipos
 import { toast } from "sonner"; // Usar sonner
@@ -264,69 +264,62 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
         }
     };
 
+    // Función auxiliar para renderizar campos de checkbox
+    const renderCheckboxField = (id: keyof ServiceFormData, label: string) => (
+        <div className="flex items-center space-x-2">
+            <Checkbox
+                id={id}
+                checked={formData[id] as boolean | undefined}
+                onCheckedChange={(checked) => handleCheckboxChange(id, !!checked)} // Asegurar boolean
+                disabled={isSaving}
+            />
+            <Label htmlFor={id} className="text-sm font-normal cursor-pointer">
+                {label}
+            </Label>
+        </div>
+    );
+
     return (
-        <form id={formId} onSubmit={handleSubmit}>
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Columna Izquierda (Formulario principal) */}
+        <form id={formId} onSubmit={handleSubmit} className="space-y-6">
+            {/* --- MODIFICACIÓN: Volver a layout de 2 columnas --- */}
+            {/* Contenedor principal vuelve a ser grid lg:grid-cols-3 */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+                {/* Columna Izquierda (lg:col-span-2) */}
                 <div className="lg:col-span-2 space-y-6">
-                    {/* Card Información Básica */}
-                    <Card className="mb-6">
-                        <CardContent className="p-6 space-y-4">
-                            <h2 className="text-lg font-semibold mb-4 text-purple-700">Información Básica</h2>
+                    {/* Card: Datos Generales */}
+                    <Card className="shadow-sm transition-all duration-300 overflow-hidden">
+                        <CardHeader className="pb-4">
+                            <CardTitle className="text-xl">Datos Generales</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <Label htmlFor="name">Nombre del Servicio *</Label>
-                                    <Input id="name" name="name" value={formData.name} onChange={handleInputChange} required className={inputHoverClass} />
+                                <div className="space-y-1.5">
+                                    <Label htmlFor="name">Nombre Servicio <span className="text-red-500">*</span></Label>
+                                    <Input id="name" name="name" placeholder="Ej: Masaje Relajante Espalda" value={formData.name} onChange={handleInputChange} className={cn(inputHoverClass)} disabled={isSaving} maxLength={100} />
                                 </div>
-                                <div>
-                                    <Label htmlFor="code">Código *</Label>
-                                    <Input id="code" name="code" value={formData.code} onChange={handleInputChange} required className={inputHoverClass} />
+                                <div className="space-y-1.5">
+                                    <Label htmlFor="code">Código <span className="text-red-500">*</span></Label>
+                                    <Input id="code" name="code" placeholder="Ej: MAS-REL-01" value={formData.code} onChange={handleInputChange} className={cn(inputHoverClass)} disabled={isSaving} maxLength={20} />
                                 </div>
                             </div>
-                            <div>
-                                <Label htmlFor="categoryId">Familia *</Label>
+                            <div className="space-y-1.5">
+                                <Label>Familia <span className="text-red-500">*</span></Label>
                                 <Popover open={familiaPopoverOpen} onOpenChange={setFamiliaPopoverOpen}>
                                     <PopoverTrigger asChild>
-                                        <Button
-                                            variant="outline"
-                                            role="combobox"
-                                            aria-expanded={familiaPopoverOpen}
-                                            className={cn("w-full justify-between font-normal", inputHoverClass)}
-                                        >
-                                            {formData.categoryId
-                                                ? categories.find((cat) => cat.id === formData.categoryId)?.name
-                                                : "Selecciona una familia..."}
+                                        <Button variant="outline" role="combobox" aria-expanded={familiaPopoverOpen} className={cn("w-full justify-between", inputHoverClass, !formData.categoryId && "text-muted-foreground")} disabled={isSaving}>
+                                            {formData.categoryId ? categories.find((cat) => cat.id === formData.categoryId)?.name : "Seleccionar familia..."}
                                             <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                                         </Button>
                                     </PopoverTrigger>
-                                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
-                                        <Command 
-                                            filter={(value, search) => { 
-                                                // value es cat.id, search es lo escrito
-                                                // Buscamos la categoría por ID y comparamos su nombre
-                                                const categoryName = categories.find(c => c.id === value)?.name || "";
-                                                return categoryName.toLowerCase().includes(search.toLowerCase()) ? 1 : 0;
-                                            }}
-                                        >
+                                    <PopoverContent className="w-[--radix-popover-trigger-width] max-h-[--radix-popover-content-available-height] p-0">
+                                        <Command>
                                             <CommandInput placeholder="Buscar familia..." />
                                             <CommandList>
-                                                <CommandEmpty>No se encontraron familias.</CommandEmpty>
+                                                <CommandEmpty>No se encontró ninguna familia.</CommandEmpty>
                                                 <CommandGroup>
                                                     {categories.map((cat) => (
-                                                        <CommandItem
-                                                            key={cat.id}
-                                                            value={cat.id}
-                                                            onSelect={(currentValue) => {
-                                                                handleSelectChange('categoryId', currentValue === formData.categoryId ? null : currentValue);
-                                                                setFamiliaPopoverOpen(false);
-                                                            }}
-                                                        >
-                                                            <Check
-                                                                className={cn(
-                                                                    "mr-2 h-4 w-4",
-                                                                    formData.categoryId === cat.id ? "opacity-100" : "opacity-0"
-                                                                )}
-                                                            />
+                                                        <CommandItem key={cat.id} value={cat.name} onSelect={(currentValue) => { const selectedCat = categories.find(c => c.name.toLowerCase() === currentValue); handleSelectChange("categoryId", selectedCat ? selectedCat.id : null); setFamiliaPopoverOpen(false); }}>
+                                                            <Check className={cn("mr-2 h-4 w-4", formData.categoryId === cat.id ? "opacity-100" : "opacity-0")} />
                                                             {cat.name}
                                                         </CommandItem>
                                                     ))}
@@ -336,176 +329,80 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
                                     </PopoverContent>
                                 </Popover>
                             </div>
-                            <div>
-                                <Label htmlFor="defaultVatId">Tipo de IVA *</Label>
-                                <Popover open={ivaPopoverOpen} onOpenChange={setIvaPopoverOpen}>
-                                    <PopoverTrigger asChild>
-                                        <Button
-                                            variant="outline"
-                                            role="combobox"
-                                            aria-expanded={ivaPopoverOpen}
-                                            className={cn("w-full justify-between font-normal", inputHoverClass)}
-                                        >
-                                            {formData.defaultVatId
-                                                ? vatTypes.find((vat) => vat.id === formData.defaultVatId)?.name + ` (${vatTypes.find((vat) => vat.id === formData.defaultVatId)?.rate}%)`
-                                                : "Selecciona un tipo de IVA..."}
-                                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                                        </Button>
-                                    </PopoverTrigger>
-                                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
-                                        <Command 
-                                            filter={(value, search) => {
-                                                // value es vat.id o 'none'
-                                                if (value === 'none') return "sin iva".includes(search.toLowerCase()) ? 1 : 0;
-                                                const vatName = vatTypes.find(v => v.id === value)?.name || "";
-                                                const vatRate = vatTypes.find(v => v.id === value)?.rate || "";
-                                                const textToSearch = `${vatName} ${vatRate}%`.toLowerCase();
-                                                return textToSearch.includes(search.toLowerCase()) ? 1 : 0;
-                                            }}
-                                        >
-                                            <CommandInput placeholder="Buscar IVA..." />
-                                            <CommandList>
-                                                <CommandEmpty>No se encontraron tipos de IVA.</CommandEmpty>
-                                                <CommandGroup>
-                                                    <CommandItem
-                                                        key="none"
-                                                        value="none"
-                                                        onSelect={() => {
-                                                            handleSelectChange('defaultVatId', null);
-                                                            setIvaPopoverOpen(false);
-                                                        }}
-                                                    >
-                                                         <Check
-                                                            className={cn(
-                                                                "mr-2 h-4 w-4",
-                                                                formData.defaultVatId === null ? "opacity-100" : "opacity-0"
-                                                            )}
-                                                        />
-                                                        Sin IVA
-                                                    </CommandItem>
-                                                    {vatTypes.map((vat) => (
-                                                        <CommandItem
-                                                            key={vat.id}
-                                                            value={vat.id}
-                                                            onSelect={(currentValue) => {
-                                                                handleSelectChange('defaultVatId', currentValue === formData.defaultVatId ? null : currentValue);
-                                                                setIvaPopoverOpen(false);
-                                                            }}
-                                                        >
-                                                             <Check
-                                                                className={cn(
-                                                                    "mr-2 h-4 w-4",
-                                                                    formData.defaultVatId === vat.id ? "opacity-100" : "opacity-0"
-                                                                )}
-                                                            />
-                                                            {vat.name} ({vat.rate}%)
-                                                        </CommandItem>
-                                                    ))}
-                                                </CommandGroup>
-                                            </CommandList>
-                                        </Command>
-                                    </PopoverContent>
-                                </Popover>
-                            </div>
                         </CardContent>
                     </Card>
 
-                    {/* Card Configuración y Precios */}
-                    <Card className="mb-6">
-                        <CardContent className="p-6 space-y-4">
-                            <h2 className="text-lg font-semibold mb-4 text-purple-700">Configuración y Precios</h2>
+                    {/* Card: Precios, IVA y Duración */}
+                    <Card className="shadow-sm transition-all duration-300 overflow-hidden">
+                         <CardHeader className="pb-4">
+                            <CardTitle className="text-xl">Precios, IVA y Duración</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
-                                <div className="sm:col-span-1">
-                                    <Label htmlFor="duration">Duración (minutos) *</Label>
-                                    <div className="flex items-center mt-1">
-                                        <Button type="button" variant="outline" size="icon" onClick={() => handleDurationChange(-1)} className="rounded-r-none h-10 w-10">
+                                <div className="space-y-1.5">
+                                    <Label htmlFor="basePrice">Precio Venta (€)</Label>
+                                    <Input id="basePrice" name="basePrice" type="text" inputMode="decimal" placeholder="0,00" value={formData.basePrice === null ? '' : String(formData.basePrice).replace('.', ',')} onChange={handleNumericInputChange} onBlur={handleNumericInputBlur} className={cn("text-right", inputHoverClass)} disabled={isSaving} />
+                                </div>
+                                <div className="space-y-1.5 sm:col-span-2">
+                                    <Label>Tipo de IVA <span className={cn(typeof formData.basePrice === 'number' && formData.basePrice > 0 ? "text-red-500" : "text-gray-500")}>*</span></Label>
+                                    <Popover open={ivaPopoverOpen} onOpenChange={setIvaPopoverOpen}>
+                                        <PopoverTrigger asChild>
+                                            <Button variant="outline" role="combobox" aria-expanded={ivaPopoverOpen} className={cn("w-full justify-between", inputHoverClass, !formData.defaultVatId && "text-muted-foreground")} disabled={isSaving}>
+                                                {formData.defaultVatId ? vatTypes.find((vat) => vat.id === formData.defaultVatId)?.name : "Seleccionar tipo IVA..."}
+                                                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                            </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent className="w-[--radix-popover-trigger-width] max-h-[--radix-popover-content-available-height] p-0">
+                                            <Command>
+                                                <CommandInput placeholder="Buscar tipo IVA..." />
+                                                <CommandList>
+                                                    <CommandEmpty>No se encontró ningún tipo de IVA.</CommandEmpty>
+                                                    <CommandGroup>
+                                                        <CommandItem key="no-vat" value="Sin IVA" onSelect={() => { handleSelectChange("defaultVatId", null); setIvaPopoverOpen(false); }}>
+                                                            <Check className={cn("mr-2 h-4 w-4", formData.defaultVatId === null ? "opacity-100" : "opacity-0")} /> Sin IVA
+                                                        </CommandItem>
+                                                        {vatTypes.map((vat) => (
+                                                            <CommandItem key={vat.id} value={vat.name} onSelect={(currentValue) => { const selectedVat = vatTypes.find(v => v.name.toLowerCase() === currentValue); handleSelectChange("defaultVatId", selectedVat ? selectedVat.id : null); setIvaPopoverOpen(false); }}>
+                                                                <Check className={cn("mr-2 h-4 w-4", formData.defaultVatId === vat.id ? "opacity-100" : "opacity-0")} />
+                                                                {vat.name} ({vat.rate.toFixed(2)}%)
+                                                            </CommandItem>
+                                                        ))}
+                                                    </CommandGroup>
+                                                </CommandList>
+                                            </Command>
+                                        </PopoverContent>
+                                    </Popover>
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+                                <div className="space-y-1.5">
+                                    <Label htmlFor="duration">Duración (minutos) <span className="text-red-500">*</span></Label>
+                                    <div className="flex items-center gap-2">
+                                        <Button type="button" variant="outline" size="icon" className="h-9 w-9" onClick={() => handleDurationChange(-5)} disabled={isSaving || (formData.duration ?? 0) <= 1} aria-label="Disminuir duración">
                                             <Minus className="h-4 w-4" />
                                         </Button>
-                                        <Input
-                                            id="duration"
-                                            name="duration"
-                                            type="number"
-                                            value={formData.duration || ''}
-                                            onChange={handleInputChange} // Usar normal y validar en submit/blur
-                                            min="1"
-                                            step="1"
-                                            required
-                                            className={cn("w-20 text-center rounded-none h-10 hide-number-arrows", inputHoverClass)}
-                                        />
-                                        <Button type="button" variant="outline" size="icon" onClick={() => handleDurationChange(1)} className="rounded-l-none h-10 w-10">
+                                        <Input id="duration" name="duration" type="text" inputMode="numeric" value={formData.duration ?? ''} onChange={handleNumericInputChange} onBlur={handleNumericInputBlur} className={cn("text-center w-16", inputHoverClass)} disabled={isSaving} min={1} step={1} />
+                                        <Button type="button" variant="outline" size="icon" className="h-9 w-9" onClick={() => handleDurationChange(5)} disabled={isSaving} aria-label="Aumentar duración">
                                             <Plus className="h-4 w-4" />
                                         </Button>
                                     </div>
                                 </div>
-                                <div className="sm:col-span-2">
-                                    <Label htmlFor="color">Color Agenda</Label>
+                                <div className="space-y-1.5">
+                                    <Label>Color Agenda</Label>
                                     <Popover open={colorPopoverOpen} onOpenChange={setColorPopoverOpen}>
                                         <PopoverTrigger asChild>
-                                            <Button
-                                                variant="outline"
-                                                role="combobox"
-                                                aria-expanded={colorPopoverOpen}
-                                                className={cn("w-full justify-between font-normal", inputHoverClass)}
-                                            >
-                                                {formData.color ? (
-                                                    <div className="flex items-center">
-                                                        <span className={`w-4 h-4 rounded-full mr-2 ${coloresAgenda.find(c => c.id === formData.color)?.clase}`}></span>
-                                                        {coloresAgenda.find(c => c.id === formData.color)?.nombre}
-                                                    </div>
-                                                ) : "Selecciona un color..."}
-                                                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                            <Button variant="outline" role="combobox" aria-expanded={colorPopoverOpen} className={cn("w-full justify-start", inputHoverClass)} disabled={isSaving}>
+                                                {formData.color ? (<div className="flex items-center gap-2"><div className={cn("w-4 h-4 rounded-full", coloresAgenda.find(c => c.id === formData.color)?.clase || 'bg-gray-300')}></div>{coloresAgenda.find(c => c.id === formData.color)?.nombre}</div>) : ("Seleccionar color...")}
+                                                <ChevronsUpDown className="ml-auto h-4 w-4 shrink-0 opacity-50" />
                                             </Button>
                                         </PopoverTrigger>
                                         <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
-                                            <Command
-                                                filter={(value, search) => {
-                                                    // value es color.id o ''
-                                                    if (value === '') return "sin color".includes(search.toLowerCase()) ? 1 : 0;
-                                                    const colorName = coloresAgenda.find(c => c.id === value)?.nombre || "";
-                                                    return colorName.toLowerCase().includes(search.toLowerCase()) ? 1 : 0;
-                                                }}
-                                            >
-                                                <CommandInput placeholder="Buscar color..." />
+                                            <Command>
                                                 <CommandList>
-                                                    <CommandEmpty>No se encontraron colores.</CommandEmpty>
+                                                    <CommandEmpty>No se encontró ningún color.</CommandEmpty>
                                                     <CommandGroup>
-                                                        <CommandItem
-                                                            key="placeholder"
-                                                            value=""
-                                                            onSelect={() => {
-                                                                handleSelectChange('color', null);
-                                                                setColorPopoverOpen(false);
-                                                            }}
-                                                        >
-                                                            <Check
-                                                                className={cn(
-                                                                    "mr-2 h-4 w-4",
-                                                                    formData.color === null ? "opacity-100" : "opacity-0"
-                                                                )}
-                                                            />
-                                                            Sin color específico
-                                                        </CommandItem>
-                                                        {coloresAgenda.map((color) => (
-                                                            <CommandItem
-                                                                key={color.id}
-                                                                value={color.id}
-                                                                onSelect={(currentValue) => {
-                                                                    handleSelectChange('color', currentValue === formData.color ? null : currentValue);
-                                                                    setColorPopoverOpen(false);
-                                                                }}
-                                                            >
-                                                                <Check
-                                                                    className={cn(
-                                                                        "mr-2 h-4 w-4",
-                                                                        formData.color === color.id ? "opacity-100" : "opacity-0"
-                                                                    )}
-                                                                />
-                                                                <div className="flex items-center">
-                                                                    <span className={`w-4 h-4 rounded-full mr-2 ${color.clase}`}></span>
-                                                                    {color.nombre}
-                                                                </div>
-                                                            </CommandItem>
-                                                        ))}
+                                                        <CommandItem key="no-color" value="Sin Color" onSelect={() => { handleSelectChange("color", null); setColorPopoverOpen(false); }}><Check className={cn("mr-2 h-4 w-4", formData.color === null ? "opacity-100" : "opacity-0")} />Sin Color</CommandItem>
+                                                        {coloresAgenda.map((color) => (<CommandItem key={color.id} value={color.nombre} onSelect={() => { handleSelectChange("color", color.id); setColorPopoverOpen(false); }}><Check className={cn("mr-2 h-4 w-4", formData.color === color.id ? "opacity-100" : "opacity-0")} /><div className="flex items-center gap-2"><div className={cn("w-4 h-4 rounded-full", color.clase)}></div>{color.nombre}</div></CommandItem>))}
                                                     </CommandGroup>
                                                 </CommandList>
                                             </Command>
@@ -513,260 +410,130 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
                                     </Popover>
                                 </div>
                             </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <Label htmlFor="basePrice">Precio Base (Sin IVA) *</Label>
-                                    <Input
-                                        id="basePrice"
-                                        name="basePrice"
-                                        type="text" // Usar text para manejo manual
-                                        inputMode='decimal'
-                                        value={formData.basePrice === null ? '' : String(formData.basePrice).replace('.', ',')} // Mostrar con coma
-                                        onChange={handleNumericInputChange}
-                                        onBlur={handleNumericInputBlur}
-                                        placeholder="0,00"
-                                        className={inputHoverClass}
-                                        />
-                                </div>
-                                <div>
-                                    <Label htmlFor="equipmentId">Equipo</Label>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+                                <div className="space-y-1.5">
+                                    <Label>Equipo Requerido</Label>
                                     <Popover open={equipoPopoverOpen} onOpenChange={setEquipoPopoverOpen}>
                                         <PopoverTrigger asChild>
-                                            <Button
-                                                variant="outline"
-                                                role="combobox"
-                                                aria-expanded={equipoPopoverOpen}
-                                                className={cn("w-full justify-between font-normal", inputHoverClass)}
-                                            >
-                                                {formData.equipmentId
-                                                    ? equipments.find((eq) => eq.id === formData.equipmentId)?.name
-                                                    : "Selecciona un equipo (opcional)..."}
+                                            <Button variant="outline" role="combobox" aria-expanded={equipoPopoverOpen} className={cn("w-full justify-between", inputHoverClass, !formData.equipmentId && "text-muted-foreground")} disabled={isSaving || equipments.length === 0}>
+                                                {formData.equipmentId ? equipments.find((eq) => eq.id === formData.equipmentId)?.name : equipments.length === 0 ? "No hay equipos disponibles" : "Seleccionar equipo..."}
                                                 <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                                             </Button>
                                         </PopoverTrigger>
-                                        <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
-                                            <Command
-                                                filter={(value, search) => {
-                                                    // value es eq.id o ''
-                                                    if (value === '') return "sin equipo".includes(search.toLowerCase()) ? 1 : 0;
-                                                    const equipmentName = equipments.find(e => e.id === value)?.name || "";
-                                                    const equipmentSerial = equipments.find(e => e.id === value)?.serialNumber || "";
-                                                    const textToSearch = `${equipmentName} ${equipmentSerial}`.toLowerCase();
-                                                    return textToSearch.includes(search.toLowerCase()) ? 1 : 0;
-                                                }}
-                                            >
+                                        <PopoverContent className="w-[--radix-popover-trigger-width] max-h-[--radix-popover-content-available-height] p-0">
+                                            <Command>
                                                 <CommandInput placeholder="Buscar equipo..." />
                                                 <CommandList>
-                                                    <CommandEmpty>No se encontraron equipos.</CommandEmpty>
+                                                    <CommandEmpty>No se encontró ningún equipo.</CommandEmpty>
                                                     <CommandGroup>
-                                                        <CommandItem
-                                                            key="placeholder"
-                                                            value=""
-                                                            onSelect={() => {
-                                                                handleSelectChange('equipmentId', null);
-                                                                setEquipoPopoverOpen(false);
-                                                            }}
-                                                        >
-                                                            <Check
-                                                                className={cn(
-                                                                    "mr-2 h-4 w-4",
-                                                                    formData.equipmentId === null ? "opacity-100" : "opacity-0"
-                                                                )}
-                                                            />
-                                                            Sin equipo específico
-                                                        </CommandItem>
-                                                        {equipments.map((eq) => (
-                                                            <CommandItem
-                                                                key={eq.id}
-                                                                value={eq.id}
-                                                                onSelect={(currentValue) => {
-                                                                    handleSelectChange('equipmentId', currentValue === formData.equipmentId ? null : currentValue);
-                                                                    setEquipoPopoverOpen(false);
-                                                                }}
-                                                            >
-                                                                 <Check
-                                                                    className={cn(
-                                                                        "mr-2 h-4 w-4",
-                                                                        formData.equipmentId === eq.id ? "opacity-100" : "opacity-0"
-                                                                    )}
-                                                                />
-                                                                 {eq.name}{eq.serialNumber ? ` (${eq.serialNumber})` : ''}
-                                                            </CommandItem>
-                                                        ))}
+                                                        <CommandItem key="no-equipment" value="Ninguno" onSelect={() => { handleSelectChange("equipmentId", null); setEquipoPopoverOpen(false); }}><Check className={cn("mr-2 h-4 w-4", formData.equipmentId === null ? "opacity-100" : "opacity-0")} />Ninguno</CommandItem>
+                                                        {equipments.map((eq) => (<CommandItem key={eq.id} value={eq.name} onSelect={(currentValue) => { const selectedEq = equipments.find(e => e.name.toLowerCase() === currentValue); handleSelectChange("equipmentId", selectedEq ? selectedEq.id : null); setEquipoPopoverOpen(false); }}><Check className={cn("mr-2 h-4 w-4", formData.equipmentId === eq.id ? "opacity-100" : "opacity-0")} />{eq.name}</CommandItem>))}
                                                     </CommandGroup>
                                                 </CommandList>
                                             </Command>
                                         </PopoverContent>
                                     </Popover>
                                 </div>
-                            </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <Label htmlFor="commissionType">Tipo Comisión</Label>
-                                    <Popover open={comisionPopoverOpen} onOpenChange={setComisionPopoverOpen}>
-                                        <PopoverTrigger asChild>
-                                            <Button
-                                                variant="outline"
-                                                role="combobox"
-                                                aria-expanded={comisionPopoverOpen}
-                                                className={cn("w-full justify-between font-normal", inputHoverClass)}
-                                            >
-                                                {formData.commissionType
-                                                    ? tiposComision.find((t) => t.id === formData.commissionType)?.nombre
-                                                    : "Selecciona tipo comisión..."}
-                                                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                                            </Button>
-                                        </PopoverTrigger>
-                                        <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
-                                            <Command
-                                                filter={(value, search) => {
-                                                    // value es tipo.id o ''
-                                                    if (value === '') return "sin comision".includes(search.toLowerCase()) ? 1 : 0;
-                                                    const commissionName = tiposComision.find(t => t.id === value)?.nombre || "";
-                                                    return commissionName.toLowerCase().includes(search.toLowerCase()) ? 1 : 0;
-                                                }}
-                                            >
-                                                <CommandInput placeholder="Buscar tipo..." />
-                                                <CommandList>
-                                                    <CommandEmpty>No se encontraron tipos.</CommandEmpty>
-                                                    <CommandGroup>
-                                                        <CommandItem
-                                                            key="placeholder"
-                                                            value=""
-                                                            onSelect={() => {
-                                                                handleSelectChange('commissionType', null);
-                                                                setComisionPopoverOpen(false);
-                                                            }}
-                                                        >
-                                                            <Check
-                                                                className={cn(
-                                                                    "mr-2 h-4 w-4",
-                                                                    formData.commissionType === null ? "opacity-100" : "opacity-0"
-                                                                )}
-                                                            />
-                                                            Sin comisión
-                                                        </CommandItem>
-                                                        {tiposComision.map((tipo) => (
-                                                            <CommandItem
-                                                                key={tipo.id}
-                                                                value={tipo.id}
-                                                                onSelect={(currentValue) => {
-                                                                    handleSelectChange('commissionType', currentValue === formData.commissionType ? null : currentValue);
-                                                                    setComisionPopoverOpen(false);
-                                                                }}
-                                                            >
-                                                                <Check
-                                                                    className={cn(
-                                                                        "mr-2 h-4 w-4",
-                                                                        formData.commissionType === tipo.id ? "opacity-100" : "opacity-0"
-                                                                    )}
-                                                                />
-                                                                {tipo.nombre}
-                                                            </CommandItem>
-                                                        ))}
-                                                    </CommandGroup>
-                                                </CommandList>
-                                            </Command>
-                                        </PopoverContent>
-                                    </Popover>
-                                </div>
-                                <div>
-                                    <Label htmlFor="commissionValue">Comisión</Label>
-                                    <Input
-                                         id="commissionValue"
-                                         name="commissionValue"
-                                         type="text"
-                                         inputMode='decimal'
-                                         value={formData.commissionValue === null ? '' : String(formData.commissionValue).replace('.', ',')}
-                                         onChange={handleNumericInputChange}
-                                         onBlur={handleNumericInputBlur}
-                                         placeholder="0,00"
-                                         className={inputHoverClass}
-                                         disabled={!formData.commissionType} // Deshabilitar si no hay tipo
-                                     />
+                                <div className="space-y-1.5">
+                                    <Label>Comisión Base</Label>
+                                    <div className="flex gap-2">
+                                        <Popover open={comisionPopoverOpen} onOpenChange={setComisionPopoverOpen}>
+                                            <PopoverTrigger asChild>
+                                                <Button variant="outline" role="combobox" aria-expanded={comisionPopoverOpen} className={cn("flex-1 justify-between", inputHoverClass, !formData.commissionType && "text-muted-foreground")} disabled={isSaving}>{formData.commissionType ? tiposComision.find((tc) => tc.id === formData.commissionType)?.nombre : "Tipo..."}<ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" /></Button>
+                                            </PopoverTrigger>
+                                            <PopoverContent className="w-auto p-0">
+                                                <Command>
+                                                    <CommandList>
+                                                        <CommandEmpty>No se encontró.</CommandEmpty>
+                                                        <CommandGroup>
+                                                            <CommandItem key="no-commission" value="Sin Comisión" onSelect={() => { handleSelectChange("commissionType", null); handleSelectChange("commissionValue", null); setComisionPopoverOpen(false); }}><Check className={cn("mr-2 h-4 w-4", formData.commissionType === null ? "opacity-100" : "opacity-0")} />Sin Comisión</CommandItem>
+                                                            {tiposComision.map((tc) => (<CommandItem key={tc.id} value={tc.nombre} onSelect={() => { handleSelectChange("commissionType", tc.id); setComisionPopoverOpen(false); }}><Check className={cn("mr-2 h-4 w-4", formData.commissionType === tc.id ? "opacity-100" : "opacity-0")} />{tc.nombre}</CommandItem>))}
+                                                        </CommandGroup>
+                                                    </CommandList>
+                                                </Command>
+                                            </PopoverContent>
+                                        </Popover>
+                                        <Input type="text" inputMode="decimal" name="commissionValue" placeholder="Valor" value={formData.commissionValue === null ? '' : String(formData.commissionValue).replace('.', ',')} onChange={handleNumericInputChange} onBlur={handleNumericInputBlur} className={cn("w-24 text-right", inputHoverClass)} disabled={isSaving || !formData.commissionType} />
+                                    </div>
                                 </div>
                             </div>
                         </CardContent>
                     </Card>
                 </div>
 
-                {/* Columna Derecha (Opciones avanzadas, Fotos, Documentos) */}
+                {/* Columna Derecha (lg:col-span-1) */}
                 <div className="lg:col-span-1 space-y-6">
-                    {/* Sección Fotos (Placeholder - Restaurado) */}
-                    <Card className="mb-6">
-                        <CardHeader>
-                            <CardTitle>Fotos</CardTitle>
+                    {/* Card: Opciones */}
+                    <Card className="shadow-sm transition-all duration-300 overflow-hidden">
+                        <CardHeader className="pb-4">
+                            <CardTitle className="text-lg">Opciones</CardTitle>
                         </CardHeader>
-                        <CardContent>
-                            <div className="border-2 border-dashed border-muted-foreground/50 rounded-md p-6 text-center mb-4 cursor-not-allowed hover:border-primary/50">
-                                <p className="text-sm text-muted-foreground">Arrastra fotos aquí o haz clic para subir.</p>
-                                <p className="text-xs text-muted-foreground mt-1">La primera foto será la principal.</p>
-                                {!isEditMode && <p className="text-xs text-amber-600 mt-2">(Guarda primero el servicio)</p>}
-                            </div>
-                            <div className="flex flex-wrap gap-2 mt-2 min-h-[20px]">
-                                {/* Aquí aparecerían las píldoras de fotos */} 
-                            </div>
-                            <p className="text-xs text-muted-foreground mt-3">Gestión de fotos pendiente de implementación.</p>
+                        <CardContent className="space-y-3">
+                             {/* Ya no usamos grid aquí, los checkboxes se apilan */}
+                             {/* <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-3"> */}
+                            {renderCheckboxField("showInApp", "Mostrar en App de Reservas")}
+                            {renderCheckboxField("isActive", "Servicio Activo")}
+                            {renderCheckboxField("requiresParams", "Requiere Parámetros")}
+                            {renderCheckboxField("isValuationVisit", "Visita de Valoración")}
+                            {renderCheckboxField("allowAutomaticDiscounts", "Permitir Desc. Automáticos")}
+                            {renderCheckboxField("allowManualDiscounts", "Permitir Desc. Manuales")}
+                            {renderCheckboxField("acceptsPromotions", "Acepta Promociones")}
+                            {renderCheckboxField("allowPvpEditing", "Permitir editar PVP en Venta")}
+                            {renderCheckboxField("affectsStatistics", "Afecta a Estadísticas")}
+                            {/* </div> */}
                         </CardContent>
                     </Card>
 
-                    {/* Sección Documentos (Placeholder - Restaurado) */}
-                    <Card className="mb-6">
+                    {/* Card: Imágenes (Placeholder) */}
+                    <Card className="shadow-sm transition-all duration-300 overflow-hidden">
                         <CardHeader>
-                            <CardTitle>Documentos</CardTitle>
+                            <CardTitle className="text-lg flex items-center">
+                                <ImageIcon className="w-5 h-5 mr-2 text-blue-600" /> Imágenes
+                            </CardTitle>
                         </CardHeader>
                         <CardContent>
-                             <div className="border-2 border-dashed border-muted-foreground/50 rounded-md p-4 text-center mb-4 cursor-not-allowed hover:border-primary/50">
-                                <p className="text-sm text-muted-foreground">Arrastra documentos aquí o haz clic para subir.</p>
-                                {!isEditMode && <p className="text-xs text-amber-600 mt-2">(Guarda primero el servicio)</p>}
-                            </div>
-                            <div className="flex flex-wrap gap-2 mt-2 min-h-[20px]">
-                                {/* Aquí aparecerían las píldoras de documentos */} 
-                            </div>
-                            <p className="text-xs text-muted-foreground mt-3">Gestión de documentos pendiente de implementación.</p>
+                            <p className="text-sm italic text-gray-500">Gestión de imágenes pendiente.</p>
+                            {/* <Button variant="outline" disabled className="mt-2">Añadir Imágenes</Button> */}
                         </CardContent>
                     </Card>
 
-                    {/* Card Opciones Avanzadas - EXISTENTE */}
-                    <Card className="mb-6">
-                        <CardContent className="p-6 space-y-4">
-                            <h2 className="text-lg font-semibold mb-4 text-purple-700">Opciones Avanzadas</h2>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                {/* Mapear checkboxes */}
-                                {
-                                    [ // Array de configuración para checkboxes
-                                        { id: 'requiresParams', label: 'Requiere Parámetros', field: 'requiresParams' },
-                                        { id: 'isValuationVisit', label: 'Visita de Valoración', field: 'isValuationVisit' },
-                                        { id: 'showInApp', label: 'Aparece en APP/WEB', field: 'showInApp' },
-                                        { id: 'allowAutomaticDiscounts', label: 'Permite Desc. Automáticos', field: 'allowAutomaticDiscounts' },
-                                        { id: 'allowManualDiscounts', label: 'Permite Desc. Manuales', field: 'allowManualDiscounts' },
-                                        { id: 'acceptsPromotions', label: 'Acepta Promociones', field: 'acceptsPromotions' },
-                                        { id: 'allowPvpEditing', label: 'Permite Editar PVP', field: 'allowPvpEditing' },
-                                        { id: 'affectsStatistics', label: 'Afecta Estadísticas', field: 'affectsStatistics' },
-                                        { id: 'isActive', label: 'Servicio Activo', field: 'isActive', isPrimary: true },
-                                    ].map(cb => (
-                                        <div key={cb.id} className="flex items-center space-x-2">
-                                            <Checkbox 
-                                                id={cb.id} 
-                                                checked={!!formData[cb.field as keyof ServiceFormData]} 
-                                                onCheckedChange={(checked) => handleCheckboxChange(cb.field as keyof ServiceFormData, !!checked)} 
-                                            />
-                                            <Label htmlFor={cb.id} className={cn("text-sm font-medium", cb.field === 'isActive' && !formData.isActive ? 'text-red-600' : '')}>
-                                                {cb.label}
-                                            </Label>
-                                        </div>
-                                    ))
-                                }
-                            </div>
+                    {/* Card: Documentos (Placeholder) */}
+                    <Card className="shadow-sm transition-all duration-300 overflow-hidden">
+                        <CardHeader>
+                            <CardTitle className="text-lg flex items-center">
+                                <FileText className="w-5 h-5 mr-2 text-blue-600" /> Documentos
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <p className="text-sm italic text-gray-500">Gestión de documentos pendiente.</p>
+                            {/* <Button variant="outline" disabled className="mt-2">Añadir Documentos</Button> */}
                         </CardContent>
                     </Card>
                 </div>
+                {/* --- FIN MODIFICACIÓN --- */}
             </div>
-            {/* Botón de submit oculto para que funcione el formId externo */} 
-            <button type="submit" hidden disabled={isSaving || !isDirty}>Submit</button>
 
             {/* --- Modales --- */}
-             {/* Modal Campos Obligatorios */} 
+            <Dialog open={showPriceConfirmationModal} onOpenChange={setShowPriceConfirmationModal}>
+                <DialogContent className="sm:max-w-md border">
+                     <DialogHeader className="border-b pb-3">
+                         <DialogTitle className="flex items-center">
+                             <AlertTriangle className="text-yellow-500 mr-2" />
+                             Confirmar Guardado
+                         </DialogTitle>
+                     </DialogHeader>
+                     <DialogDescription className="py-4 text-center">
+                          El servicio se guardará sin precio indicado. ¿Deseas continuar?
+                     </DialogDescription>
+                     <DialogFooter className="sm:justify-end gap-2 pt-4">
+                         <Button variant="outline" onClick={() => setShowPriceConfirmationModal(false)}>Cancelar</Button>
+                         <Button onClick={proceedToSave} disabled={isSaving}>
+                             {isSaving ? 'Guardando...' : 'Confirmar y Guardar'}
+                         </Button>
+                     </DialogFooter>
+                 </DialogContent>
+            </Dialog>
+
             <Dialog open={showMandatoryFieldsModal} onOpenChange={setShowMandatoryFieldsModal}>
                 <DialogContent className="sm:max-w-md border">
                     <DialogHeader className="border-b pb-3">
@@ -789,26 +556,8 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
                 </DialogContent>
             </Dialog>
 
-            {/* Modal Confirmación Guardar sin Precio/IVA */}
-            <Dialog open={showPriceConfirmationModal} onOpenChange={setShowPriceConfirmationModal}>
-                <DialogContent className="sm:max-w-md border">
-                    <DialogHeader className="border-b pb-3">
-                        <DialogTitle className="flex items-center">
-                            <AlertTriangle className="text-yellow-500 mr-2" />
-                            Confirmar Guardado
-                        </DialogTitle>
-                    </DialogHeader>
-                    <DialogDescription className="py-4 text-center">
-                         El servicio se guardará sin precio indicado. ¿Deseas continuar?
-                    </DialogDescription>
-                    <DialogFooter className="sm:justify-end gap-2 pt-4">
-                        <Button variant="outline" onClick={() => setShowPriceConfirmationModal(false)}>Cancelar</Button>
-                        <Button onClick={proceedToSave} disabled={isSaving}>
-                            {isSaving ? 'Guardando...' : 'Confirmar y Guardar'}
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
+             {/* Botón de guardado interno oculto */}
+            <button type="submit" style={{ display: 'none' }} aria-hidden="true"></button>
         </form>
     );
 }; 

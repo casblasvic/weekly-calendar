@@ -131,8 +131,6 @@ export async function POST(request: Request) {
         phone2CountryIsoCode: clinicData.phone2 ? phone2CountryIsoCode : null,
     };
     
-    console.log("[API POST /clinics] Data to create:", dataToCreate);
-
     const newClinic = await prisma.clinic.create({
       data: dataToCreate,
       select: {

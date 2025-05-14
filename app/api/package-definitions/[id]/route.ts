@@ -3,35 +3,12 @@ import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { getServerAuthSession } from '@/lib/auth';
 import { Prisma } from '@prisma/client';
+import { ApiPackageDefinitionPayloadSchema } from '@/lib/schemas/package-definition';
 
 // Esquema para validar el ID en los parámetros
 const ParamsSchema = z.object({
   id: z.string().cuid({ message: "ID de paquete inválido." }),
 });
-
-// Reutilizar el schema de Item que definimos en la ruta base
-const PackageItemSchema = z.object({
-  itemType: z.enum(['SERVICE', 'PRODUCT']),
-  itemId: z.string().cuid({ message: "ID de item inválido." }),
-  quantity: z.number().positive({ message: 'La cantidad debe ser positiva.' }),
-  price: z.coerce.number().min(0, "El precio no puede ser negativo.").optional(),
-}).refine(data => (data.itemType === 'SERVICE' || data.itemType === 'PRODUCT'), {
-  message: 'Tipo de item inválido o falta ID.',
-  path: ['itemType', 'itemId'],
-});
-
-
-// Esquema para validar la actualización de PackageDefinition
-const UpdatePackageDefinitionSchema = z.object({
-  name: z.string().min(1, { message: 'El nombre es obligatorio.' }).optional(),
-  description: z.string().optional().nullable(),
-  price: z.number().nonnegative({ message: 'El precio no puede ser negativo.' }).optional(),
-  isActive: z.boolean().optional(),
-  pointsAwarded: z.number().int().nonnegative().optional(),
-  // Items: Enviar la lista COMPLETA de items deseados para el paquete
-  items: z.array(PackageItemSchema).min(1, { message: 'El paquete debe contener al menos un item.' }).optional(),
-});
-
 
 // Función auxiliar para extraer ID de la URL (Podría refactorizarse a un helper)
 function extractIdFromUrl(url: string): string | null {
@@ -55,7 +32,7 @@ export async function GET(request: Request) {
    if (!session?.user?.systemId) {
        return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
    }
-   // const systemId = session.user.systemId; // No necesitamos systemId para buscar por ID único global
+   const systemId = session.user.systemId;
 
   const id = extractIdFromUrl(request.url);
   if (!id) {
@@ -70,35 +47,30 @@ export async function GET(request: Request) {
 
   try {
     const packageDefinition = await prisma.packageDefinition.findUnique({
-      where: { id: packageDefinitionId },
+      where: { id: packageDefinitionId, systemId: systemId },
       include: {
-        items: { // Incluir siempre los items y sus detalles
+        settings: true,
+        items: { 
             include: {
-                service: true,
-                product: true
+                service: { select: { id: true, name: true } },
+                product: { select: { id: true, name: true } }
             },
-            orderBy: { // Opcional: ordenar items
-               createdAt: 'asc'
-            }
+            orderBy: { createdAt: 'asc' }
         }
-        // Podríamos incluir tariffPrices si fuera necesario aquí
-        // tariffPrices: { include: { tariff: true } }
       },
     });
 
     if (!packageDefinition) {
       return NextResponse.json({ message: `Paquete ${packageDefinitionId} no encontrado.` }, { status: 404 });
-    }
-
-    // Validar si el paquete pertenece al systemId del usuario (si aplica la lógica multi-tenant aquí)
-     if (packageDefinition.systemId !== session.user.systemId) {
-         return NextResponse.json({ error: 'Acceso denegado al paquete.' }, { status: 403 });
      }
 
     return NextResponse.json(packageDefinition);
 
   } catch (error) {
     console.error(`Error fetching package definition ${packageDefinitionId}:`, error);
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+        return NextResponse.json({ message: `Paquete ${packageDefinitionId} no encontrado.` }, { status: 404 });
+    }
     return NextResponse.json({ error: 'Error interno del servidor.' }, { status: 500 });
   }
 }
@@ -109,7 +81,7 @@ export async function PUT(request: Request) {
    if (!session?.user?.systemId) {
        return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
    }
-   const systemId = session.user.systemId; // Necesario para verificar pertenencia
+   const systemId = session.user.systemId;
 
   const id = extractIdFromUrl(request.url);
   if (!id) {
@@ -129,68 +101,74 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: 'JSON inválido' }, { status: 400 });
   }
 
-  const validation = UpdatePackageDefinitionSchema.safeParse(body);
+  const validation = ApiPackageDefinitionPayloadSchema.safeParse(body);
   if (!validation.success) {
+    console.error("Error de validación Zod (PUT Package):");
     return NextResponse.json({ error: 'Datos inválidos.', details: validation.error.format() }, { status: 400 });
   }
 
-  const { items, ...packageUpdateData } = validation.data;
+  const { items, settings, vatTypeId, ...packageUpdateData } = validation.data;
 
-   if (Object.keys(packageUpdateData).length === 0 && items === undefined) {
+   if (Object.keys(packageUpdateData).length === 0 && items === undefined && vatTypeId === undefined && settings === undefined) {
        return NextResponse.json({ error: 'No se proporcionaron datos para actualizar.' }, { status: 400 });
    }
 
   try {
-      const updatedPackageDefinition = await prisma.$transaction(async (tx) => {
-          // 1. Verificar que el paquete existe y pertenece al sistema del usuario
-          const existingPackage = await tx.packageDefinition.findUnique({
-              where: { id: packageDefinitionId },
-          });
-          if (!existingPackage) {
-              throw new Prisma.PrismaClientKnownRequestError(`Paquete ${packageDefinitionId} no encontrado.`, { code: 'P2025', clientVersion: '' });
-          }
-          if (existingPackage.systemId !== systemId) {
-               throw new Error('Forbidden'); // Lanzar error para capturar abajo
-          }
+      const existingPackageCheck = await prisma.packageDefinition.findUnique({
+          where: { id: packageDefinitionId, systemId: systemId }
+      });
+      if (!existingPackageCheck) {
+          return NextResponse.json({ error: `Paquete ${packageDefinitionId} no encontrado.` }, { status: 404 });
+      }
 
-          // 2. Actualizar datos básicos del paquete (si se proporcionaron)
+      const updatedPackageDefinition = await prisma.$transaction(async (tx) => {
           if (Object.keys(packageUpdateData).length > 0) {
               await tx.packageDefinition.update({
-                  where: { id: packageDefinitionId },
+                  where: { id: packageDefinitionId, systemId: systemId },
                   data: packageUpdateData,
               });
           }
 
-          // 3. Actualizar items (si se proporcionó la lista de items)
+          if (settings !== undefined || vatTypeId !== undefined) {
+              await tx.packageDefinitionSetting.upsert({
+                  where: { packageDefinitionId: packageDefinitionId },
+                  create: {
+                      ...(settings ?? {}), 
+                      packageDefinition: { connect: { id: packageDefinitionId } },
+                      ...(vatTypeId && { vatTypeId: vatTypeId }),
+                  },
+                  update: {
+                      ...(settings ?? {}),
+                      vatTypeId: vatTypeId === null ? null : (vatTypeId ?? undefined),
+                  },
+              });
+          }
+
           if (items !== undefined) {
-              // Borrar items existentes
               await tx.packageItem.deleteMany({
                   where: { packageDefinitionId: packageDefinitionId },
               });
 
-              // Crear los nuevos items
+              if (items.length > 0) {
               const itemsToCreate = items.map(item => ({
                   packageDefinitionId: packageDefinitionId,
-                  itemType: item.itemType,
-                  serviceId: item.itemType === 'SERVICE' ? item.itemId : null,
-                  productId: item.itemType === 'PRODUCT' ? item.itemId : null,
+                      itemType: item.serviceId ? 'SERVICE' : 'PRODUCT',
+                      serviceId: item.serviceId,
+                      productId: item.productId,
                   quantity: item.quantity,
-                  price: item.price,
               }));
-
-              await tx.packageItem.createMany({
-                  data: itemsToCreate,
-              });
+                  await tx.packageItem.createMany({ data: itemsToCreate });
+          }
           }
 
-          // 4. Devolver el paquete actualizado con sus items finales
           return tx.packageDefinition.findUniqueOrThrow({
               where: { id: packageDefinitionId },
               include: {
+                  settings: true,
                   items: {
                       include: { 
-                          service: { select: { id: true, name: true, price: true } }, 
-                          product: { select: { id: true, name: true, price: true } }
+                          service: { select: { id: true, name: true } }, 
+                          product: { select: { id: true, name: true } }
                       },
                        orderBy: { createdAt: 'asc' }
                   }
@@ -202,19 +180,20 @@ export async function PUT(request: Request) {
 
   } catch (error) {
        console.error(`Error updating package definition ${packageDefinitionId}:`, error);
+       if (error instanceof z.ZodError) {
+          console.error("Error de validación Zod (PUT Package Catch):");
+          return NextResponse.json({ error: 'Datos inválidos.', details: error.format() }, { status: 400 });
+       }
        if (error instanceof Prisma.PrismaClientKnownRequestError) {
-           if (error.code === 'P2025') { // No encontrado (lanzado desde nuestra verificación)
+           if (error.code === 'P2025') { 
                return NextResponse.json({ error: `Paquete ${packageDefinitionId} no encontrado o referencia inválida.` }, { status: 404 });
            }
-           if (error.code === 'P2002') { // Unicidad nombre
+           if (error.code === 'P2002') { 
                return NextResponse.json({ error: 'Ya existe un paquete con este nombre.' }, { status: 409 });
            }
-            if (error.code === 'P2003') { // FK inválida en items
-               return NextResponse.json({ error: 'Referencia inválida (Servicio o Producto en items no existe).' }, { status: 400 });
+            if (error.code === 'P2003') { 
+               return NextResponse.json({ error: 'Referencia inválida (Servicio, Producto o Tipo IVA en items no existe).' }, { status: 400 });
            }
-       }
-        if (error instanceof Error && error.message === 'Forbidden') {
-           return NextResponse.json({ error: 'Acceso denegado' }, { status: 403 });
        }
        return NextResponse.json({ error: 'Error interno del servidor al actualizar el paquete.' }, { status: 500 });
   }
@@ -227,7 +206,7 @@ export async function DELETE(request: Request) {
    if (!session?.user?.systemId) {
        return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
    }
-   const systemId = session.user.systemId; // Necesario para verificar pertenencia
+   const systemId = session.user.systemId;
 
   const id = extractIdFromUrl(request.url);
   if (!id) {
@@ -242,36 +221,34 @@ export async function DELETE(request: Request) {
 
   try {
        await prisma.$transaction(async (tx) => {
-           // 1. Verificar que el paquete existe y pertenece al sistema del usuario
             const existingPackage = await tx.packageDefinition.findUnique({
-                where: { id: packageDefinitionId },
+                where: { id: packageDefinitionId, systemId: systemId },
             });
             if (!existingPackage) {
-                throw new Prisma.PrismaClientKnownRequestError(`Paquete ${packageDefinitionId} no encontrado.`, { code: 'P2025', clientVersion: '' });
-            }
-            if (existingPackage.systemId !== systemId) {
-                 throw new Error('Forbidden');
+                throw new Prisma.PrismaClientKnownRequestError(`Paquete ${packageDefinitionId} no encontrado.`, { code: 'P2025', clientVersion: 'tx' });
             }
 
-           // 2. Eliminar (onDelete: Cascade en PackageItem y TariffPackagePrice se encargará de los dependientes)
-           // ¡CUIDADO! Si hay otras relaciones futuras, revisar reglas onDelete.
            await tx.packageDefinition.delete({
-               where: { id: packageDefinitionId },
+                where: { id: packageDefinitionId, systemId: systemId },
            });
        });
 
-    return NextResponse.json({ message: `Paquete ${packageDefinitionId} eliminado.` });
+    return NextResponse.json({ message: `Paquete ${packageDefinitionId} eliminado correctamente.` }, { status: 200 });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error(`Error deleting package definition ${packageDefinitionId}:`, error);
+       
+       if (error.message?.startsWith('Conflicto:')) {
+         return NextResponse.json({ error: error.message }, { status: 409 });
+       }
+
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
-        if (error.code === 'P2025') { // No encontrado
+           if (error.code === 'P2025') {
             return NextResponse.json({ error: `Paquete ${packageDefinitionId} no encontrado.` }, { status: 404 });
         }
-         // P2003 podría ocurrir si alguna restricción futura impide borrar
+            if (error.code === 'P2003'){
+                 return NextResponse.json({ error: "No se puede eliminar: El paquete está en uso por instancias existentes." }, { status: 409 });
     }
-     if (error instanceof Error && error.message === 'Forbidden') {
-        return NextResponse.json({ error: 'Acceso denegado al paquete.' }, { status: 403 });
     }
     return NextResponse.json({ error: 'Error interno del servidor al eliminar el paquete.' }, { status: 500 });
   }

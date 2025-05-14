@@ -11,8 +11,7 @@ import { cn } from "@/lib/utils"
 import { ChevronLeft, ChevronRight, Lock } from "lucide-react"
 import { BlockScheduleModal } from "./block-schedule-modal"
 import { NewClientModal } from "./new-client-modal"
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { useToast } from "@/components/ui/use-toast"
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card"
 import { useRouter } from "next/navigation"
 import dynamic from "next/dynamic"
 import { useMobileDetection } from "@/hooks/use-mobile-detection"
@@ -81,7 +80,6 @@ export function WeeklyAgenda({
     time: string
     roomId: string
   } | null>(null)
-  const { toast } = useToast()
   const router = useRouter()
   const { isMobile } = useMobileDetection()
 
@@ -241,46 +239,44 @@ export function WeeklyAgenda({
       }
 
       return (
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger className="w-full h-full">
-              <div className={cellStyle} onClick={() => handleBlockClick(block)}>
-                {/* Mostrar el candado y descripción solo en la primera celda o celda única */}
-                {!isPrevCellSameBlock && (
-                  <div className="flex items-center justify-center p-1 h-full">
-                    <Lock className="h-3 w-3 text-gray-500 mr-1" />
-                    <span className="text-xs truncate">{block.description}</span>
-                  </div>
-                )}
-              </div>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>{block.description}</p>
-              <p>
-                {block.startTime} - {block.endTime}
-              </p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        <HoverCard openDelay={100} closeDelay={50}>
+          <HoverCardTrigger className="w-full h-full">
+            <div className={cellStyle} onClick={() => handleBlockClick(block)}>
+              {/* Mostrar el candado y descripción solo en la primera celda o celda única */}
+              {!isPrevCellSameBlock && (
+                <div className="flex items-center justify-center h-full p-1">
+                  <Lock className="w-3 h-3 mr-1 text-gray-500" />
+                  <span className="text-xs truncate">{block.description}</span>
+                </div>
+              )}
+            </div>
+          </HoverCardTrigger>
+          <HoverCardContent>
+            <p>{block.description}</p>
+            <p>
+              {block.startTime} - {block.endTime}
+            </p>
+          </HoverCardContent>
+        </HoverCard>
       )
     }
 
     return (
       <div
-        className="border border-gray-200 h-6 cursor-pointer hover:bg-gray-100 transition-colors"
+        className="h-6 transition-colors border border-gray-200 cursor-pointer hover:bg-gray-100"
         onClick={() => handleCellClick(formattedDate, time, roomId)}
       />
     )
   }
 
   return (
-    <div className="container mx-auto p-4">
+    <div className="container p-4 mx-auto">
       {!isMobile && (
         <>
-          <div className="flex justify-between items-center mb-4">
+          <div className="flex items-center justify-between mb-4">
             <div className="flex items-center space-x-2">
               <Button variant="outline" size="icon" onClick={handlePrevWeek} aria-label="Semana anterior">
-                <ChevronLeft className="h-4 w-4" />
+                <ChevronLeft className="w-4 h-4" />
               </Button>
               <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
                 <PopoverTrigger asChild>
@@ -291,7 +287,7 @@ export function WeeklyAgenda({
                       !selectedDate && "text-muted-foreground",
                     )}
                   >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    <CalendarIcon className="w-4 h-4 mr-2" />
                     {selectedDate ? format(selectedDate, "PPP", { locale: es }) : <span>Seleccionar fecha</span>}
                   </Button>
                 </PopoverTrigger>
@@ -300,7 +296,7 @@ export function WeeklyAgenda({
                 </PopoverContent>
               </Popover>
               <Button variant="outline" size="icon" onClick={handleNextWeek} aria-label="Semana siguiente">
-                <ChevronRight className="h-4 w-4" />
+                <ChevronRight className="w-4 h-4" />
               </Button>
             </div>
           </div>
@@ -309,12 +305,12 @@ export function WeeklyAgenda({
             <table className="min-w-full border-collapse">
               <thead>
                 <tr>
-                  <th className="border border-gray-300 p-2 bg-gray-100 w-20"></th>
+                  <th className="w-20 p-2 bg-gray-100 border border-gray-300"></th>
                   {weekDays.map((day) => (
-                    <th key={day.toString()} className="border border-gray-300 p-2 bg-gray-100">
+                    <th key={day.toString()} className="p-2 bg-gray-100 border border-gray-300">
                       <div className="flex flex-col items-center">
                         <span className="font-medium">{format(day, "EEE", { locale: es })}</span>
-                        <Button variant="link" className="p-0 h-auto" onClick={() => handleViewDayClick(day)}>
+                        <Button variant="link" className="h-auto p-0" onClick={() => handleViewDayClick(day)}>
                           {format(day, "d/M")}
                         </Button>
                       </div>
@@ -322,9 +318,9 @@ export function WeeklyAgenda({
                   ))}
                 </tr>
                 <tr>
-                  <th className="border border-gray-300 p-2 bg-gray-100"></th>
+                  <th className="p-2 bg-gray-100 border border-gray-300"></th>
                   {weekDays.map((day, dayIndex) => (
-                    <th key={`header-${dayIndex}`} className="border border-gray-300 p-1 bg-gray-100">
+                    <th key={`header-${dayIndex}`} className="p-1 bg-gray-100 border border-gray-300">
                       <div className="flex justify-around">
                         {rooms.map((room) => (
                           <div
@@ -342,9 +338,9 @@ export function WeeklyAgenda({
               <tbody>
                 {timeSlots.map((time, timeIndex) => (
                   <tr key={time}>
-                    <td className="border border-gray-300 p-1 text-center text-sm">{time}</td>
+                    <td className="p-1 text-sm text-center border border-gray-300">{time}</td>
                     {weekDays.map((day, dayIndex) => (
-                      <td key={`${dayIndex}-${time}`} className="border border-gray-300 p-0">
+                      <td key={`${dayIndex}-${time}`} className="p-0 border border-gray-300">
                         <div className="flex justify-around">
                           {rooms.map((room) => (
                             <div key={`${dayIndex}-${time}-${room.id}`} className="w-16">

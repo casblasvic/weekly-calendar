@@ -47,10 +47,33 @@ export const posTerminalSchema = z.object({
 
 export type PosTerminalFormValues = z.infer<typeof posTerminalSchema>;
 
-// Obtener todos los terminales POS
-export async function getPosTerminals(): Promise<PosTerminal[]> {
+// <<< NUEVO: Definir tipo para las opciones de getPosTerminals >>>
+interface GetPosTerminalsOptions {
+  isActive?: boolean;
+  includeBankAccount?: boolean;
+  // Añadir otros filtros si son necesarios en el futuro
+}
+
+// <<< MODIFICAR getPosTerminals para aceptar opciones >>>
+export async function getPosTerminals(
+  options?: GetPosTerminalsOptions
+): Promise<PosTerminal[]> {
   try {
-    const response = await axios.get("/api/pos-terminals");
+    // Construir parámetros de consulta
+    const params = new URLSearchParams();
+    if (options?.isActive !== undefined) {
+      params.append('isActive', String(options.isActive));
+    }
+    if (options?.includeBankAccount !== undefined) {
+      params.append('includeBankAccount', String(options.includeBankAccount));
+    }
+    
+    const queryString = params.toString();
+    const apiUrl = `/api/pos-terminals${queryString ? `?${queryString}` : ''}`;
+    
+    console.log(`[getPosTerminals] Fetching from: ${apiUrl}`); // Log para depuración
+    
+    const response = await axios.get(apiUrl);
     return response.data;
   } catch (error) {
     console.error("Error al obtener terminales POS:", error);

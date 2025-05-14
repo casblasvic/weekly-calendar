@@ -25,15 +25,10 @@ import { DebugStorage } from "@/components/debug-storage"
 import { useEquipment } from "@/contexts/equipment-context"
 import { useTarif } from "@/contexts/tarif-context"
 import { UsuariosClinica } from "@/components/usuarios-clinica"
-import {
-  // findActiveExceptions,
-  // createExampleException,
-  // applyExampleException
-} from "@/services/clinic-schedule-service"
 import { Prisma, DayOfWeek } from '@prisma/client'
 import type { Cabin, Clinic as PrismaClinic } from '@prisma/client'
 import { Skeleton } from "@/components/ui/skeleton"
-import type { Tariff as PrismaTariff } from '@prisma/client'; // Importar Tariff y mantener temporalmente los otros si se usan más abajo
+import type { Tariff as PrismaTariff } from '@prisma/client';
 import { SearchInput } from "@/components/SearchInput"
 import { ScheduleConfig } from "@/components/schedule-config"
 import { DEFAULT_SCHEDULE } from "@/types/schedule"
@@ -42,59 +37,44 @@ import { toast } from "@/components/ui/use-toast"
 import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
 import {
-  Building2,
-  Bed,
-  Cog,
-  Users,
-  CreditCard,
-  Link,
-  Percent,
-  MessageSquare,
-  Mail,
-  Phone,
-  Globe,
-  ArrowLeft,
-  HelpCircle,
-  Save,
-  MapPin,
-  BarChart2,
-  Search,
-  Plus,
-  ChevronUp,
-  ChevronDown,
-  Trash2,
-  Clock,
-  Database,
-  FolderOpen,
-  Tag,
-  Settings2,
-  LayoutGrid,
-  Wrench,
-  HardDrive,
-  X,
-  Calendar,
-  AlertCircle,
-  AlertTriangle,
-  PlusCircle,
-  Loader2,
+  Building2, Bed, Cog, Users, CreditCard, 
+  LinkIcon as LucideLinkIcon, Percent, MessageSquare, Mail, Phone, Globe, 
+  ArrowLeft, HelpCircle, Save, MapPin, BarChart2, Search, Plus, 
+  ChevronUp, ChevronDown, Trash2, Clock, Database, FolderOpen, Tag, 
+  Settings2, LayoutGrid, Wrench, HardDrive, X, Calendar, AlertCircle, 
+  AlertTriangle, PlusCircle, Loader2
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { convertBlocksToWeekSchedule, createDefaultSchedule } from "@/utils/scheduleUtils"
 import { debounce } from 'lodash';
-import type { Equipment } from "@prisma/client"; // Añadido tipo Prisma
+import type { Equipment } from "@prisma/client";
 import type { ClinicaApiOutput } from "@/lib/types/api-outputs";
-import { CountryInfo } from "@prisma/client"; // <<< AÑADIR CountryInfo
-import { ActionButtons } from '@/app/components/ui/action-buttons'; // <<< AÑADIR IMPORTACIÓN
+import { CountryInfo } from "@prisma/client";
+import { ActionButtons } from '@/app/components/ui/action-buttons';
 import { DataTable } from "@/components/ui/data-table"
 import type { ColumnDef } from "@tanstack/react-table"
 import { DataTableColumnHeader } from "@/components/ui/data-table-column-header"
-
-// <<< AÑADIR IMPORTACIÓN NECESARIA >>>
 import type { ScheduleTemplateBlock as PrismaScheduleTemplateBlock, ClinicScheduleBlock as PrismaClinicScheduleBlock } from '@prisma/client';
-// <<< IMPORTAR ScheduleTemplate >>>
 import type { ScheduleTemplate } from '@prisma/client'; 
-// <<< AÑADIR IMPORTACIÓN useTranslation >>>
 import { useTranslation } from 'react-i18next';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import Link from 'next/link';
+import { BankDataTable } from '@/app/(main)/configuracion/bancos/components/data-table';
+import { type Bank } from '@/app/(main)/configuracion/bancos/components/columns';
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+// <<< AÑADIR IMPORTACIONES FALTANTES >>>
+import React from 'react'; // Importar React explícitamente
+import { getClinicPaymentSettings } from "@/lib/api/clinicPaymentSettings";
+import { getClinicPaymentSettingColumns } from "./components/clinic-payment-settings/columns";
+import { ClinicPromotionsTabContent } from "@/app/(main)/configuracion/clinicas/[id]/components/clinic-promotions-tab" // <<< RUTA ABSOLUTA @/
+// <<< ELIMINAR import de ClinicPaymentSettingsTable >>>
+// import { ClinicPaymentSettingsTable } from "./components/clinic-payment-settings/data-table";
+// <<< AÑADIR import de DataTable genérico >>>
+//import { DataTable } from "@/components/ui/data-table";
+import type { ClinicPaymentSettingWithRelations } from "@/lib/api/clinicPaymentSettings";
+// <<< AÑADIR import del diálogo de edición (si existe) >>>
+// import { ClinicPaymentSettingEditDialog } from "./components/clinic-payment-settings/edit-dialog"; 
+// --- FIN IMPORTACIONES FALTANTES ---
 
 // --- Tipos locales temporales para modal de excepciones (Refactorizar en el futuro) ---
 interface FranjaHorariaLocal {
@@ -139,7 +119,7 @@ const menuItems = [
   { id: "tarifa", label: "Tarifa", icon: Tag },
   { id: "entidades", label: "Entidades bancarias", icon: CreditCard },
   { id: "pagos", label: "Metodos de Pago", icon: CreditCard },
-  { id: "integraciones", label: "Integraciones", icon: Link },
+  { id: "integraciones", label: "Integraciones", icon: LucideLinkIcon }, // <<< USAR EL ALIAS
   { id: "descuentos", label: "Descuentos", icon: Percent },
   { id: "sms", label: "SMS/Push", icon: MessageSquare },
   { id: "email", label: "Notificaciones e-mail", icon: Mail },
@@ -169,6 +149,185 @@ const COUNTRIES_MOCK = [
   { isoCode: 'IT', name: 'Italia', phoneCode: '+39' },
 ];
 // <<< FIN DATOS MOCK PAÍSES >>>
+
+// --- COPIAR/ADAPTAR fetchBanks ---
+// (Podríamos mover esto a lib/api o un hook personalizado más adelante)
+async function fetchBanks(clinicId?: string): Promise<Bank[]> {
+  let apiUrl = '/api/banks';
+  if (clinicId) {
+    apiUrl += `?clinicId=${encodeURIComponent(clinicId)}`;
+  }
+  const response = await fetch(apiUrl);
+  if (!response.ok) {
+    let errorMsg = `Error ${response.status}: ${response.statusText}`;
+    try {
+      const errorBody = await response.json();
+      errorMsg = errorBody.message || errorMsg;
+    } catch (e) { /* Ignorar */ }
+    throw new Error(errorMsg);
+  }
+  return response.json() as Promise<Bank[]>;
+}
+// --- FIN fetchBanks ---
+
+// --- NUEVO COMPONENTE PARA EL CONTENIDO DE LA PESTAÑA DE BANCOS ---
+interface ClinicBanksTabContentProps {
+  clinicId: string;
+}
+
+function ClinicBanksTabContent({ clinicId }: ClinicBanksTabContentProps) {
+  const { t } = useTranslation();
+  
+  const { 
+    data: banksData = [], 
+    isLoading, 
+    isError, 
+    error 
+  } = useQuery<Bank[], Error>({
+    queryKey: ['banks', clinicId], 
+    queryFn: () => fetchBanks(clinicId),
+  });
+
+  if (isError) {
+    return (
+      <Alert variant="destructive" className="mt-4">
+        {/* Usar AlertCircle directamente */}
+        <AlertCircle className="w-4 h-4" /> 
+        <AlertTitle>{t('common.errors.loadingTitle')}</AlertTitle>
+        <AlertDescription>
+          {error?.message || t('common.errors.loadingDesc')}
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  return (
+    <div className="mt-4 space-y-4">
+       <div className="flex items-center justify-between mb-4">
+         {/* <h3 className="text-lg font-semibold">{t('config_clinics.banks.title')}</h3> */}
+         <p className="text-sm text-muted-foreground">{t('config_clinics.banks.description')}</p>
+         {/* Botón Añadir Banco */}
+         {/* <<< MODIFICAR Link: quitar legacyBehavior, passHref y añadir asChild >>> */}
+         {/* <<< QUITAR asChild para evitar error consola >>> */}
+         <Link href="/configuracion/bancos/nuevo">
+           <Button variant="default" size="sm" className="bg-purple-600 hover:bg-purple-700">
+              {/* El contenido se queda igual, sin span extra */}
+              <PlusCircle className="w-4 h-4 mr-2" />
+              {t('config_clinics.banks.add_button')}
+           </Button>
+         </Link>
+       </div>
+      <BankDataTable data={banksData} isLoading={isLoading} showSelectionStatus={false} />
+    </div>
+  );
+}
+// --- FIN NUEVO COMPONENTE ---
+
+// --- NUEVO COMPONENTE PARA PESTAÑA MÉTODOS DE PAGO ---
+interface ClinicPaymentsTabContentProps {
+  clinicId: string;
+}
+
+function ClinicPaymentsTabContent({ clinicId }: ClinicPaymentsTabContentProps) {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient(); // Obtener instancia de QueryClient
+  const router = useRouter(); // Hook para navegación
+  // <<< ELIMINAR queryClient y estados del diálogo >>>
+  // const queryClient = useQueryClient(); 
+  // const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  // const [editingSetting, setEditingSetting] = useState<ClinicPaymentSettingWithRelations | null>(null);
+
+  const {
+    data: paymentSettings = [],
+    isLoading,
+    isError,
+    error
+  } = useQuery<ClinicPaymentSettingWithRelations[], Error>({
+    queryKey: ['clinicPaymentSettings', clinicId],
+    queryFn: () => getClinicPaymentSettings({ clinicId }),
+    enabled: !!clinicId,
+  });
+
+  // <<< FUNCIÓN PARA MANEJAR LA EDICIÓN (Navegación) >>>
+  const handleEdit = (setting: ClinicPaymentSettingWithRelations) => {
+    // Navegar a la página de edición del MÉTODO DE PAGO, pasando el ID de la clínica
+    // para que esa página filtre sus datos internos.
+    const paymentMethodDefinitionId = setting.paymentMethodDefinitionId;
+    if (!paymentMethodDefinitionId) {
+        console.error("No paymentMethodDefinitionId found in setting:", setting);
+        // Mostrar un toast de error?
+        return;
+    }
+    // <<< CONSTRUIR Y CODIFICAR LA URL DE RETORNO >>>
+    const returnUrl = encodeURIComponent(`/configuracion/clinicas/${clinicId}?tab=pagos`);
+    // <<< AÑADIR returnTo A LA URL >>>
+    router.push(`/configuracion/metodos-pago/${paymentMethodDefinitionId}?filterClinicId=${clinicId}&returnTo=${returnUrl}`);
+  };
+
+  // <<< ELIMINAR handleCloseEditDialog >>>
+  // const handleCloseEditDialog = ...
+
+  // <<< PASAR handleEdit (la nueva versión) a getClinicPaymentSettingColumns >>>
+  const columns = React.useMemo(() => getClinicPaymentSettingColumns(t, handleEdit), [t, clinicId]); // Añadir clinicId como dependencia si se usa en handleEdit
+
+  const redirectToUrl = useMemo(() => {
+    if (!clinicId || typeof clinicId !== 'string') {
+        console.warn('[ClinicPaymentsTabContent] clinicId no está disponible para crear redirectToUrl');
+        return '/configuracion/metodos-pago';
+    }
+    return encodeURIComponent(`/configuracion/clinicas/${clinicId}?tab=pagos`);
+  }, [clinicId]);
+
+  if (isError) {
+    return (
+      <Alert variant="destructive" className="mt-4">
+        <AlertCircle className="w-4 h-4" />
+        <AlertTitle>{t('common.errors.loadingTitle')}</AlertTitle>
+        <AlertDescription>
+          {error?.message || t('common.errors.loadingDesc')}
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  return (
+    // El div exterior ya tiene overflow-x-auto
+    <div className="mt-4 space-y-4 overflow-x-auto">
+      <div className="flex items-center justify-between mb-4">
+         <p className="text-sm text-muted-foreground">{t('config_clinics.payments.description')}</p>
+         <Button
+             variant="outline"
+             size="sm"
+             onClick={() => router.push(`/configuracion/metodos-pago/nuevo?redirectBackTo=${redirectToUrl}`)}
+          >
+              <PlusCircle className="w-4 h-4 mr-2" />
+              {t('config_clinics.payments.add_button')}
+          </Button>
+      </div>
+
+      {/* <<< Contenedor con overflow >>> */}
+      <div className="overflow-x-auto">
+        {isLoading ? (
+          <div className="w-full p-4 space-y-2">
+            <Skeleton className="w-full h-10" />
+            <Skeleton className="w-full h-10" />
+            <Skeleton className="w-full h-10" />
+          </div>
+        ) : (
+          <DataTable
+              columns={columns}
+              data={paymentSettings}
+          />
+        )}
+       </div>
+      {/* <<< FIN Contenedor con overflow >>> */}
+
+      {/* <<< ELIMINAR RENDERIZADO DEL DIÁLOGO >>> */}
+      {/* {editingSetting && ...} */}
+    </div>
+  );
+}
+// --- FIN COMPONENTE PESTAÑA MÉTODOS DE PAGO ---
 
 export default function ClinicaDetailPage() {
   const clinicContext = useClinic()
@@ -1330,8 +1489,8 @@ export default function ClinicaDetailPage() {
     { id: "tarifa", label: t('config_clinics.tabs.tarifa'), icon: Tag },
     { id: "entidades", label: t('config_clinics.tabs.entidades'), icon: CreditCard },
     { id: "pagos", label: t('config_clinics.tabs.pagos'), icon: CreditCard },
-    { id: "integraciones", label: t('config_clinics.tabs.integraciones'), icon: Link },
-    { id: "descuentos", label: t('config_clinics.tabs.descuentos'), icon: Percent },
+    { id: "integraciones", label: t('config_clinics.tabs.integraciones'), icon: LucideLinkIcon }, // <<< USAR EL ALIAS
+    { id: "descuentos", label: t('config_clinics.tabs.promotions', 'Promociones'), icon: Percent }, // Usar clave de promociones
     { id: "sms", label: t('config_clinics.tabs.sms'), icon: MessageSquare },
     { id: "email", label: t('config_clinics.tabs.email'), icon: Mail },
     { id: "whatsapp", label: t('config_clinics.tabs.whatsapp'), icon: Phone },
@@ -2306,20 +2465,34 @@ export default function ClinicaDetailPage() {
 
               {activeTab === "entidades" && (
                 <Card className="p-6">
-                  <h3>Entidades bancarias</h3>
+                  <CardHeader>
+                    <CardTitle className="flex items-center">
+                      <CreditCard className="w-5 h-5 mr-2 text-purple-600" />
+                      {t('config_clinics.tabs.entidades')} 
+                    </CardTitle>
+                    {/* CardDescription eliminada */}
+                  </CardHeader>
+                  <CardContent>
+                    {/* Renderizar el nuevo componente pasándole el clinicId */}
+                    <ClinicBanksTabContent clinicId={clinicId} />
+                  </CardContent>
                 </Card>
               )}
               
               {activeTab === "pagos" && (
                 <Card className="p-6">
                   <CardHeader>
-                    <CardTitle>Metodos de Pago</CardTitle>
+                    <CardTitle className="flex items-center">
+                      <CreditCard className="w-5 h-5 mr-2 text-orange-600" /> {/* Color opcional */}
+                      {t('config_clinics.tabs.pagos')} 
+                    </CardTitle>
                     <CardDescription>
-                      Configura aquí los métodos de pago específicos para esta clínica.
+                      {t('config_clinic_payment_settings.description')} {/* Añadir key traducción */}
                     </CardDescription>
                   </CardHeader>
-                  <CardContent className="space-y-4">
-                    <p>(Contenido de la sección de métodos de pago irá aquí...)</p>
+                  <CardContent>
+                    {/* <<< RENDERIZAR EL NUEVO COMPONENTE >>> */}
+                    <ClinicPaymentsTabContent clinicId={clinicId} />
                   </CardContent>
                 </Card>
               )}
@@ -2332,13 +2505,21 @@ export default function ClinicaDetailPage() {
               
               {activeTab === "descuentos" && (
                 <Card className="p-6">
-                  <h3>Descuentos</h3>
+                  {/* <<< REEMPLAZAR CONTENIDO INTERNO >>> */}
+                  {clinicId ? (
+                      <ClinicPromotionsTabContent clinicId={clinicId} />
+                   ) : (
+                      <p>{t('common.loading', 'Cargando...')}</p> // O Skeleton
+                   )}
+                   {/* Antes probablemente había algo como <SectionTitle.../> y contenido de descuentos */}
                 </Card>
               )}
-              
+              {/* <<< FIN MODIFICACIÓN >>> */}
+
               {activeTab === "sms" && (
                 <Card className="p-6">
-                  <h3>SMS/Push</h3>
+                  <SectionTitle icon={MessageSquare} title={t('config_clinics.tabs.sms')} color="text-blue-600 border-blue-600" />
+                  {/* ... existing code ... */}
                 </Card>
               )}
               
@@ -2385,12 +2566,6 @@ export default function ClinicaDetailPage() {
                      <p className="text-gray-500">Inicializando...</p>
                   )}
                 </Card>
-              )}
-
-              {activeTab === "debug" && (
-                <div className="space-y-4">
-                  <DebugStorage clinicId={clinicData.id.toString()} />
-                </div>
               )}
             </div>
           )}

@@ -1,72 +1,88 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-// import { auth } from '@/lib/auth' // Comentado temporalmente hasta implementar auth (Paso 2.2)
+import { getServerAuthSession } from '@/lib/auth'
+import { z } from 'zod'
 
-export async function GET(request: Request, props: { params: Promise<{ clinicId: string }> }) {
-  const params = await props.params;
+const ParamsSchema = z.object({
+  clinicId: z.string().cuid({ message: 'El ID de la clínica debe ser un CUID válido.' })
+})
+
+export async function GET(request: NextRequest, { params: paramsPromise }: { params: Promise<{ clinicId: string }> }) {
   try {
-    // const session = await auth() // Descomentar cuando la autenticación esté lista
-    // if (!session?.user) {
-    //   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    // }
+    const params = await paramsPromise
+    const { clinicId: clinicIdFromParams } = params
 
-    const clinicId = params.clinicId
+    const session = await getServerAuthSession()
+    if (!session?.user?.id || !session.user.systemId) {
+      return NextResponse.json(
+        { error: 'Usuario no autenticado o falta systemId.' },
+        { status: 401 }
+      )
+    }
+    const systemId = session.user.systemId
 
-    if (!clinicId) {
-      return NextResponse.json({ error: 'Clinic ID is required' }, { status: 400 })
+    console.log("[API_USERS_BY_CLINIC_GET] Received clinicIdFromParams:", clinicIdFromParams);
+
+    // Validar el clinicId extraído
+    const paramsValidation = ParamsSchema.safeParse({ clinicId: clinicIdFromParams })
+    if (!paramsValidation.success) {
+      console.error("[API_USERS_BY_CLINIC_GET] Zod validation failed:", paramsValidation.error.flatten());
+      return NextResponse.json(
+        { error: 'Parámetro clinicId inválido', details: paramsValidation.error.flatten() },
+        { status: 400 }
+      )
     }
 
-    // Asegurarse de que clinicId sea un número si el ID en la base de datos es numérico
-    // const numericClinicId = parseInt(clinicId, 10);
-    // if (isNaN(numericClinicId)) {
-    //   return NextResponse.json({ error: 'Invalid Clinic ID format' }, { status: 400 });
-    // }
-    // Si el ID es string (UUID o similar), usar clinicId directamente
+    const validatedClinicId = paramsValidation.data.clinicId;
+    console.log("[API_USERS_BY_CLINIC_GET] Validated clinicId:", validatedClinicId);
+
+    const clinic = await prisma.clinic.findFirst({
+      where: {
+        id: validatedClinicId,
+        systemId: systemId,
+      },
+      select: { id: true } // Solo necesitamos verificar que existe
+    })
+
+    if (!clinic) {
+      return NextResponse.json(
+        { error: 'Clínica no encontrada o no pertenece al sistema del usuario.' },
+        { status: 404 }
+      )
+    }
 
     const users = await prisma.user.findMany({
       where: {
-        // La condición depende de cómo esté modelada la relación Usuario-Clínica
-        // Opción 1: Relación Many-to-Many a través de una tabla intermedia (ej: UserClinic)
-        // clinicas: {
-        //   some: {
-        //     clinicId: clinicId, // o numericClinicId
-        //   },
-        // },
-        // Opción 2: Si User tiene un campo directo clinicId (menos común para multi-clínica)
-        // clinicId: clinicId, // o numericClinicId
-        // Opción 3: Usar la relación inversa de la tabla de asignación explícita
-        clinicAssignments: { // <- Asegurarse que este es el nombre correcto
-           some: {
-             clinicId: clinicId, 
-           },
-         },
-      },
-      include: {
-        // Incluir roles para obtener la información del perfil
-        roles: {
-          include: {
-            role: true // Asumiendo un modelo Role en UserRole
+        systemId: systemId,
+        isActive: true,
+        clinicAssignments: { // Usar UserClinicAssignment para la relación
+          some: {
+            clinicId: validatedClinicId,
+            // Aquí podríamos filtrar por roles si fuera necesario. Por ejemplo:
+            // role: { name: "Vendedor" } // Asumiendo que UserClinicAssignment tiene una relación a Role
           }
         }
-        // Incluir otros datos relevantes si es necesario
       },
-      orderBy: {
-        lastName: 'asc' // Ordenar por apellido por defecto
-      }
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+      },
+      orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
     })
 
-    // Podrías querer transformar los datos antes de enviarlos
-    // Por ejemplo, simplificar la estructura de roles
-    const formattedUsers = users.map(user => ({
-      ...user,
-      // roles: user.roles.map(ur => ur.role.name) // Ejemplo de formato
-    }));
-
-    // return NextResponse.json(users) // O devolver usuarios formateados
-    return NextResponse.json(formattedUsers)
+    console.log("[API_USERS_BY_CLINIC_GET] Found users:", users.length);
+    return NextResponse.json(users)
 
   } catch (error) {
-    console.error("[API_USERS_BY_CLINIC_GET]", error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    console.error('[API_USERS_BY_CLINIC_GET] Error fetching users by clinic:', error)
+    let errorMessage = 'Error al obtener los usuarios de la clínica.'
+    if (error instanceof z.ZodError) {
+      errorMessage = 'Error de validación.'
+    } else if (error instanceof Error) {
+      // Puedes personalizar más mensajes si es necesario
+    }
+    return NextResponse.json({ error: errorMessage, details: error instanceof Error ? error.message : null }, { status: 500 })
   }
 } 

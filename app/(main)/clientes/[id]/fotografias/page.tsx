@@ -1,13 +1,15 @@
 "use client"
 
 import { useState, useCallback } from "react"
-import { Button, BackButton } from "@/components/ui/button"
-import { Card } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useDropzone } from "react-dropzone"
 import { CustomDatePicker } from "@/components/custom-date-picker"
+import { Upload, Camera, RotateCcw, Trash2, Download, Eye, CheckCircle, HelpCircle, Pencil } from "lucide-react"
+import Image from "next/image"
 
 interface FileWithPreview extends File {
   preview?: string
@@ -151,7 +153,6 @@ export default function FotografiasPage() {
 
       {/* Action Buttons */}
       <div className="fixed bottom-4 right-4 flex items-center gap-2">
-        <BackButton>Volver</BackButton>
         <Button className="bg-purple-600 hover:bg-purple-700" onClick={handleSubmit}>
           Guardar
         </Button>

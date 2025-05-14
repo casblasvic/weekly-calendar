@@ -1,29 +1,28 @@
-export { default } from "next-auth/middleware"
+import NextAuth from "next-auth";
+// Importamos SOLO la config base (Edge compatible)
+import { authConfig } from "@/lib/auth.config";
+// Ya no necesitamos NextResponse o NextRequest aquí si usamos el callback 'authorized'
+// import { NextResponse } from 'next/server';
+// import type { NextRequest } from 'next/server';
 
-// No necesitamos NextResponse ni NextRequest directamente si usamos el middleware de next-auth
-// import { NextResponse } from "next/server"
-// import type { NextRequest } from "next/server"
+// Usamos la config base para inicializar el middleware
+export const { auth: middleware } = NextAuth(authConfig);
 
-// Las rutas definidas aquí ya no son necesarias con la configuración del matcher
-// const PROTECTED_ROUTES = ["/dashboard", "/settings", "/appointments", "/clients"]
-// const PUBLIC_ROUTES = ["/login", "/register", "/forgot-password", "/reset-password"]
+// La lógica de protección de rutas y redirección ahora debería manejarse
+// principalmente a través del callback 'authorized' en authConfig (si se activa)
+// y la configuración 'pages' en authConfig.
 
-// La función middleware explícita ya no es necesaria si usamos el export default
-// export function middleware(request: NextRequest) {
-//   return NextResponse.next();
-// }
+// Código anterior comentado (ya estaba comentado)
+/*
+export default auth((req) => {
+...
+});
+*/
 
-// Configurar para que se ejecute en todas las rutas excepto las públicas y las de sistema
+// La configuración del matcher sigue siendo la misma
 export const config = {
   matcher: [
-    // Aplicar a todas las rutas excepto:
-    // - /api/...
-    // - /_next/static/...
-    // - /_next/image/...
-    // - Archivos de imagen (png, jpg, etc.)
-    // - favicon.ico
-    // - /login, /register, etc. (Rutas públicas)
-    '/((?!api|_next/static|_next/image|.*\\.(?:png|jpg|jpeg|gif|webp|svg)$|favicon.ico|login|register|forgot-password|reset-password).*)',
+    '/((?!api|_next/static|_next/image|favicon.ico|login|register|images|manifest.json|sw.js|workbox-.*.js).*)'
   ],
 };
 

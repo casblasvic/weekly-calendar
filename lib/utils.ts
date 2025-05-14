@@ -32,15 +32,24 @@ export function formatDate(date: Date): string {
 }
 
 /**
- * Formatea un número como moneda (EUR)
- * @param amount Cantidad a formatear
- * @returns string Cantidad formateada como moneda
+ * Formatea un número como moneda.
+ * @param amount Cantidad a formatear.
+ * @param currencyCode Código de moneda ISO 4217 (ej. 'USD', 'EUR'). Por defecto 'EUR'.
+ * @returns string Cantidad formateada como moneda.
  */
-export function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('es-ES', {
-    style: 'currency',
-    currency: 'EUR'
-  }).format(amount);
+export function formatCurrency(amount: number, currencyCode: string = 'EUR'): string {
+  try {
+    return new Intl.NumberFormat('es-ES', { // Se podría hacer 'es-ES' dinámico si hay más locales
+      style: 'currency',
+      currency: currencyCode, // Usar el código de moneda proporcionado
+      // minimumFractionDigits: 2, // Asegurar dos decimales
+      // maximumFractionDigits: 2, // Asegurar dos decimales
+    }).format(amount);
+  } catch (error) {
+    console.warn(`Error formateando moneda con código "${currencyCode}". Usando fallback a ${amount} ${currencyCode}.`, error);
+    // Fallback simple si el código de moneda no es válido o hay otro error
+    return `${amount.toFixed(2)} ${currencyCode}`;
+  }
 }
 
 /**

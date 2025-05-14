@@ -6,10 +6,9 @@ import { useRouter } from "next/navigation"
 import { useStorage } from "@/contexts/storage-context"
 import { toast } from "sonner"
 import StorageQuotaSettings from "@/components/storage/storage-quota-settings"
-import { BackButton } from "@/components/ui/button"
+import { Button } from "@/components/ui/button"
 import { ActionButtons } from "@/app/components/ui/action-buttons"
 import { Briefcase } from "lucide-react"
-import { Button } from "@/components/ui/button"
 import { useClinic } from "@/contexts/clinic-context"
 
 // Definir una constante para el almacenamiento total del sistema (en bytes)
@@ -209,7 +208,7 @@ export default function ConfiguracionAlmacenamientoPage() {
           <h1 className="text-2xl font-bold">Configuración de almacenamiento</h1>
           <p className="text-gray-500">Gestiona el espacio de almacenamiento para cada clínica</p>
         </div>
-        <BackButton href="/configuracion/almacenamiento">Volver</BackButton>
+        <Button href="/configuracion/almacenamiento">Volver</Button>
       </div>
       
       {!dataLoaded ? (

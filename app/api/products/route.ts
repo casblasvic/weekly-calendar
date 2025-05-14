@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'; // Asumiendo que esta ruta es correcta
 import { Prisma } from '@prisma/client';
 import { z } from 'zod'; // Añadir Zod
 import { getServerAuthSession } from "@/lib/auth"; // Importar helper de sesión
+import { ApiProductPayloadSchema, ProductFormValues } from '@/lib/schemas/product'; // <<< Importar nuevo schema
 // import { getCurrentUserSystemId } from '@/lib/auth'; // TODO: Ajustar ruta de importación
 
 export async function GET(request: Request) {
@@ -14,14 +15,45 @@ export async function GET(request: Request) {
     const systemId = session.user.systemId;
     console.log("API GET /api/products: Usando systemId de la sesión:", systemId);
 
-    // TODO: Añadir lógica de filtros desde searchParams si es necesario (isActive, categoryId, etc.)
+    const { searchParams } = new URL(request.url);
+    const isActiveParam = searchParams.get('isActive');
+    const categoryIdParam = searchParams.get('categoryId');
+
+    let whereClause: Prisma.ProductWhereInput = {
+        systemId: systemId,
+    };
+
+    // Filtro por isActive (usando settings)
+    if (isActiveParam !== null) {
+      const isActiveValue = isActiveParam === 'true';
+      whereClause.settings = {
+        isActive: isActiveValue
+      };
+    }
+    
+    // Filtro por categoryId
+    if (categoryIdParam) {
+      whereClause.categoryId = categoryIdParam;
+    }
 
     try {
         const products = await prisma.product.findMany({
-            where: { systemId }, // Filtrar por systemId
+            where: whereClause, 
             include: {
                 category: true,
                 vatType: true, 
+                settings: true, // <<< Incluir settings
+                productPrices: { // Corregido de tariffPrices a productPrices (según schema)
+                    where: { isActive: true }, // Solo mostrar tarifas donde el producto esté activo
+                    select: {
+                        tariff: {
+                            select: {
+                                id: true,
+                                name: true,
+                            },
+                        },
+                    },
+                },
             },
             orderBy: {
                 name: 'asc',
@@ -34,23 +66,8 @@ export async function GET(request: Request) {
     }
 }
 
-// Schema Zod para creación y actualización
-const productSchema = z.object({
-    name: z.string().min(1, "El nombre es obligatorio."),
-    description: z.string().nullish(),
-    sku: z.string().nullish(),
-    barcode: z.string().nullish(),
-    price: z.number().nonnegative("El precio base debe ser >= 0").optional(), // Opcional en PUT, requerido en POST?
-    costPrice: z.number().nonnegative("El precio coste debe ser >= 0").nullish(),
-    // currentStock: z.number().int().optional(), // Stock se maneja por StockLedger
-    minStockThreshold: z.number().int().positive().nullish(),
-    isForSale: z.boolean().optional(),
-    isInternalUse: z.boolean().optional(),
-    isActive: z.boolean().optional(),
-    pointsAwarded: z.number().int().nonnegative().optional(), // Campo añadido
-    categoryId: z.string().cuid().nullish(),
-    vatTypeId: z.string().cuid().nullish(),
-});
+// Eliminar schema Zod local
+// const productSchema = z.object({ ... });
 
 export async function POST(request: Request) {
     const session = await getServerAuthSession();
@@ -61,75 +78,92 @@ export async function POST(request: Request) {
     const systemId = session.user.systemId;
     console.log("API POST /api/products: Usando systemId de la sesión:", systemId);
 
-    let skuValue: string | null | undefined = undefined; // Para usar en catch
-
     try {
         const body = await request.json();
         
-        // Validar body con Zod (requiere price para POST)
-        const validatedData = productSchema.extend({
-            price: z.number().nonnegative("El precio base es obligatorio y debe ser >= 0"),
-        }).parse(body);
+        // Validar body con el schema importado
+        const validatedData = ApiProductPayloadSchema.parse(body);
 
-        skuValue = validatedData.sku;
+        const { categoryId, vatTypeId, settings, ...productBaseData } = validatedData;
+        const skuValue = productBaseData.sku; // Guardar SKU para chequeo
 
-        // Validar unicidad de SKU si se proporciona
+        const newProductWithSettings = await prisma.$transaction(async (tx) => {
+            // 1. Validar unicidad de SKU si se proporciona (dentro de la tx)
         if (skuValue) {
-             const existingSku = await prisma.product.findFirst({
+                const existingSku = await tx.product.findFirst({
                  where: { sku: skuValue, systemId: systemId }
              });
             if (existingSku) {
-                 return NextResponse.json({ message: `El SKU '${skuValue}' ya está en uso en este sistema.` }, { status: 409 });
+                    // Lanzar error específico para que la tx falle
+                    throw new Prisma.PrismaClientKnownRequestError(
+                        `El SKU '${skuValue}' ya está en uso.`, 
+                        { code: 'P2002', clientVersion: 'tx', meta: { target: ['sku'] } }
+                    );
             }
         }
 
-        // Crear producto
-        const { categoryId, vatTypeId, ...productData } = validatedData; // Separar IDs de relación
-        
-        const dataToCreate: Prisma.ProductCreateInput = {
+            // 2. Crear el Producto base
+            const newProduct = await tx.product.create({
+                data: {
             // Campos obligatorios explícitos
-            name: productData.name,
-            price: productData.price,
-            // ... otros campos obligatorios si los hubiera ...
-            
-            // Resto de datos validados
-            ...productData,
-            sku: skuValue, // Usar SKU procesado
-            // Forzar valores por defecto si no vienen
-            isForSale: productData.isForSale ?? true,
-            isInternalUse: productData.isInternalUse ?? false,
-            isActive: productData.isActive ?? true,
-            pointsAwarded: productData.pointsAwarded ?? 0,
-            system: { // Conectar con el systemId de la sesión
-                connect: { id: systemId } 
-            },
-            // Conectar relaciones opcionales
+                    name: productBaseData.name, 
+                    // Resto de datos base validados
+                    ...productBaseData,
+                    system: { connect: { id: systemId } },
             ...(categoryId && { category: { connect: { id: categoryId } } }),
             ...(vatTypeId && { vatType: { connect: { id: vatTypeId } } }),
-        };
+                }
+            });
 
-        const newProduct = await prisma.product.create({
-            data: dataToCreate, // Usar el objeto construido explícitamente
-            include: { category: true, vatType: true },
+            // 3. Crear los Settings asociados
+            const newSettings = await tx.productSetting.create({
+                data: {
+                    ...settings, // Usar los datos validados del objeto settings
+                    product: { connect: { id: newProduct.id } }
+                }
+            });
+
+            // 4. Devolver producto base y settings creados
+            return { ...newProduct, settings: newSettings };
+        });
+        
+        // Recuperar datos completos fuera de la tx si es necesario
+        const finalProductResponse = await prisma.product.findUnique({
+            where: { id: newProductWithSettings.id },
+            include: { 
+                settings: true,
+                category: true, 
+                vatType: true 
+            },
         });
 
-        return NextResponse.json(newProduct, { status: 201 });
+        return NextResponse.json(finalProductResponse, { status: 201 });
 
     } catch (error) {
         console.error("Error al crear producto:", error);
-        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-             // ... (manejo error P2002 similar, usando skuValue) ...
-             const target = (error.meta?.target as string[])?.join(', ');
-             if (target?.includes('sku')) {
-                 return NextResponse.json({ message: `Conflicto: El SKU '${skuValue || ''}' ya existe.` }, { status: 409 });
+        
+        if (error instanceof Prisma.PrismaClientKnownRequestError) {
+             if (error.code === 'P2002') {
+                 const target = (error.meta?.target as string[])?.join(', ') || 'desconocido';
+                 console.error(`Error de unicidad en campos: ${target}`);
+                 // Usar el mensaje del error si viene de la validación de SKU dentro de la TX
+                 const message = error.message.includes('ya está en uso') ? error.message : `Conflicto: El valor proporcionado para '${target}' ya existe.`;
+                 return NextResponse.json({ message }, { status: 409 });
              }
-             return NextResponse.json({ message: `Conflicto de datos: El valor proporcionado para '${target || 'campo único'}' ya existe.` }, { status: 409 });
-
+             if (error.code === 'P2003') {
+                 const fieldName = (error.meta?.field_name as string) || 'desconocido';
+                 return NextResponse.json({ message: `Referencia inválida: La categoría o tipo de IVA no existe (campo: ${fieldName}).` }, { status: 400 });
+             }
+             if (error.code === 'P2025') { 
+                 return NextResponse.json({ message: `Error al crear: ${error.message}` }, { status: 400 });
+             }
         }
         if (error instanceof z.ZodError) {
+            console.error("Error de validación Zod:", error.errors);
             return NextResponse.json({ error: 'Datos de entrada inválidos', details: error.errors }, { status: 400 });
         }
         if (error instanceof SyntaxError) {
+           console.error("Error de sintaxis JSON:", error.message);
            return NextResponse.json({ message: 'JSON inválido' }, { status: 400 });
         }
         return NextResponse.json({ message: 'Error interno del servidor al crear el producto' }, { status: 500 });

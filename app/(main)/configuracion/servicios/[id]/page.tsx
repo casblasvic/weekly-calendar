@@ -5,12 +5,13 @@ import { useRouter, useParams } from 'next/navigation';
 import { Save, HelpCircle, ArrowLeft, Image as ImageIcon, FileText, BarChart, Star, SlidersHorizontal, Settings, Cpu, Briefcase, Ticket, Package as PackageIcon, PlusCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ServiceForm, ServiceFormData } from '@/components/service/service-form';
-import { Category, VATType, Equipment, Service } from '@prisma/client';
+import { Category, VATType, Equipment, Prisma } from '@prisma/client';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PackagesUsingItemTable } from '@/components/package/packages-using-item-table';
 import { useTranslation } from 'react-i18next';
+import { ServiceActionFooter } from '@/components/service/service-action-footer';
 
 interface SimplePackageDefinition {
     id: string;
@@ -18,11 +19,22 @@ interface SimplePackageDefinition {
     price: number;
 }
 
+// --- Definir tipo para Service con relaciones --- 
+type ServiceWithDetails = Prisma.ServiceGetPayload<{
+    include: {
+        category: true;
+        vatType: true;
+        settings: true;
+    }
+}>
+// --- Fin definición tipo ---
+
 export default function EditarServicioPage() {
     const router = useRouter();
     const params = useParams();
     const serviceId = params.id as string;
     const { t } = useTranslation();
+    const formId = "edit-service-form";
 
     const [initialData, setInitialData] = useState<ServiceFormData | null>(null);
     const [categories, setCategories] = useState<Category[]>([]);
@@ -67,7 +79,7 @@ export default function EditarServicioPage() {
             const catData = await catRes.json();
             const vatData = await vatRes.json();
             const equipData = await equipRes.json();
-            const serviceData: Service = await serviceRes.json();
+            const serviceData: ServiceWithDetails = await serviceRes.json();
             let packagesData: { packageDefinitions: SimplePackageDefinition[] } = { packageDefinitions: [] };
              if (packagesRes.ok) {
                  try {
@@ -82,6 +94,8 @@ export default function EditarServicioPage() {
             setVatTypes(vatData);
             setEquipments(equipData);
             setRelatedPackages(packagesData.packageDefinitions || []);
+
+            const serviceIsActive = serviceData.settings?.isActive ?? true;
 
             const formattedInitialData: ServiceFormData = {
                 id: serviceData.id,
@@ -104,7 +118,7 @@ export default function EditarServicioPage() {
                 acceptsPromotions: true,
                 allowPvpEditing: false,
                 affectsStatistics: true,
-                isActive: serviceData.isActive === undefined ? true : !!serviceData.isActive,
+                isActive: serviceIsActive,
             };
             setInitialData(formattedInitialData);
 
@@ -170,6 +184,10 @@ export default function EditarServicioPage() {
         }
     };
 
+    const triggerFormSubmit = () => {
+        (document.getElementById(formId) as HTMLFormElement | null)?.requestSubmit();
+    };
+
     const renderFormSkeleton = () => (
          <div className="space-y-6">
              <Skeleton className="w-1/4 h-10 mb-4" />
@@ -198,7 +216,7 @@ export default function EditarServicioPage() {
 
     return (
         <>
-            <div className="max-w-4xl p-4 pb-24 mx-auto md:p-6 lg:p-8">
+            <div className="max-w-4xl p-4 pb-20 mx-auto md:p-6">
                 <h1 className="mb-6 text-2xl font-semibold">
                     {isLoading ? t('common.loading') : (initialData ? t('services.edit.title', { serviceName: initialData.name }) : t('services.edit.loadError'))}
                 </h1>
@@ -208,8 +226,6 @@ export default function EditarServicioPage() {
                      ) : error ? (
                          <div className="text-center text-red-600">{t('common.error')}: {error}</div>
                      ) : initialData ? (
-                         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-                            <div className="space-y-6 lg:col-span-2">
                                 <ServiceForm 
                                     initialData={initialData}
                                     categories={categories}
@@ -217,78 +233,23 @@ export default function EditarServicioPage() {
                                     equipments={equipments}
                                     onSubmit={handleFormSubmit}
                                     isSaving={isSaving}
-                                    formId="edit-service-form"
-                                />
-                            </div>
-                            <div className="space-y-6 lg:col-span-1">
-                                <Card>
-                                    <CardHeader>
-                                        <CardTitle className="flex items-center">
-                                            <ImageIcon className="w-5 h-5 mr-2 text-purple-700"/> Imágenes
-                                        </CardTitle>
-                                    </CardHeader>
-                                    <CardContent>
-                                        <p className="text-sm italic text-gray-500">Gestión de imágenes pendiente.</p>
-                                        <Button variant="outline" size="sm" className="mt-2" disabled>Añadir Imágenes</Button>
-                                    </CardContent>
-                                </Card>
-
-                                         <Card>
-                                            <CardHeader>
-                                                <CardTitle className="flex items-center">
-                                                    <FileText className="w-5 h-5 mr-2 text-blue-700"/> Documentos
-                                                </CardTitle>
-                                            </CardHeader>
-                                            <CardContent>
-                                                 <p className="text-sm italic text-gray-500">Gestión de documentos pendiente.</p>
-                                                 <Button variant="outline" size="sm" className="mt-2" disabled>Añadir Documentos</Button>
-                                            </CardContent>
-                                        </Card>
-                                    </div>
-                                </div>
+                            formId={formId}
+                        />
                              ) : (
                                  <div className="text-center">{t('services.edit.loadDataError')}</div>
                              )}
             </div>
 
-            {/* Footer fixed usando CSS Variables para left/width */}
-            <footer 
-                className="fixed bottom-0 z-10 px-4 py-3 border-t bg-background md:px-6 lg:px-8" 
-                style={{
-                    left: 'var(--main-margin-left)', 
-                    width: 'var(--main-width)',
-                    transition: 'left 0.3s ease-in-out, width 0.3s ease-in-out' // Sincronizar transición
-                } as React.CSSProperties}
-            >
-                 <div className="flex items-center justify-start max-w-4xl mx-auto space-x-2">
-                    <Button variant="outline" size="sm" onClick={() => handleSubSectionNavigation('consumos')} className="whitespace-nowrap">
-                         <Briefcase className="w-3.5 h-3.5 mr-1.5"/> Consumos
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => handleSubSectionNavigation('puntos')} className="whitespace-nowrap">
-                         <Star className="w-3.5 h-3.5 mr-1.5"/> Puntos
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => handleSubSectionNavigation('bonos')} className="whitespace-nowrap">
-                         <Ticket className="w-3.5 h-3.5 mr-1.5"/> Bonos
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => handleSubSectionNavigation('paquetes')} className="whitespace-nowrap">
-                         <PackageIcon className="w-3.5 h-3.5 mr-1.5"/> {t('sidebar.packages')}
-                    </Button>
-                     <Button variant="outline" size="sm" onClick={() => handleSubSectionNavigation('recursos')} className="whitespace-nowrap">
-                         <Cpu className="w-3.5 h-3.5 mr-1.5"/> Recursos
-                    </Button>
-                     <Button variant="outline" onClick={() => router.back()} disabled={isSaving}>
-                        {t('common.back')}
-                    </Button>
-                    <Button type="submit" form="edit-service-form" disabled={isSaving || isLoading || !initialData}>
-                        <Save className="w-4 h-4 mr-2" />
-                        {isSaving ? t('common.saving') : t('common.saveChanges')}
-                    </Button>
-                    <Button variant="outline" size="icon" disabled>
-                        <HelpCircle className="w-4 h-4" />
-                        <span className="sr-only">Ayuda</span>
-                    </Button>
-                </div>
-             </footer>
+            <ServiceActionFooter 
+                serviceId={serviceId}
+                isSaving={isSaving}
+                isLoading={isLoading} 
+                formId={formId} 
+                hasInitialData={!!initialData}
+                onBack={() => router.back()}
+                onNavigate={handleSubSectionNavigation} 
+                onSubmitTrigger={triggerFormSubmit} 
+            />
         </>
     );
 } 

@@ -62,6 +62,7 @@ import { MultiSelectCombobox } from "@/components/ui/multi-select-combobox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useQuery } from '@tanstack/react-query';
 import { Label } from "@/components/ui/label";
+import { useSearchParams } from 'next/navigation';
 
 // Definir el tipo para los datos del formulario basados en el schema Zod
 export type PromotionFormValues = z.infer<typeof PromotionSchema>;
@@ -131,6 +132,15 @@ export function PromotionForm({
   errorMessage,
 }: PromotionFormProps) {
   const { t } = useTranslation();
+  const searchParams = useSearchParams();
+
+  const preselectedClinicId = searchParams.get('preselectedClinicId');
+  const redirectBackTo = searchParams.get('redirectBackTo');
+
+  useEffect(() => {
+    console.log("[PromotionForm] preselectedClinicId:", preselectedClinicId);
+    console.log("[PromotionForm] redirectBackTo:", redirectBackTo);
+  }, [preselectedClinicId, redirectBackTo]);
 
   // Estados para las listas de opciones de los Selects/Combobox
   const [services, setServices] = useState<Service[]>([]);
@@ -144,16 +154,26 @@ export function PromotionForm({
 
   // <<< NUEVO: Estado para controlar "Aplicar a Todas" >>>
   // Inicializar basado en si initialData tiene clínicas o no
-  const [applyToAllClinics, setApplyToAllClinics] = useState(
-    !initialData || !initialData.applicableClinicIds || initialData.applicableClinicIds.length === 0
-  );
+  const [applyToAllClinics, setApplyToAllClinics] = useState(() => {
+    // Modo edición: Basado en los datos iniciales
+    if (initialData) {
+      return !initialData.applicableClinicIds || initialData.applicableClinicIds.length === 0;
+    }
+    // Modo creación: Inverso a si hay clínica preseleccionada
+    return !preselectedClinicId;
+  });
 
   // Convertir fechas string a objetos Date si existen en initialData
-  const formattedInitialData = initialData ? {
-      ...initialData,
-      startDate: initialData.startDate ? new Date(initialData.startDate) : undefined,
-      endDate: initialData.endDate ? new Date(initialData.endDate) : undefined,
-  } : {};
+  let processedInitialData: Partial<PromotionFormValues> & { applicableClinicIds?: string[] } = {};
+  if (initialData) {
+      processedInitialData = {
+          ...initialData,
+          startDate: initialData.startDate ? new Date(initialData.startDate) : undefined,
+          endDate: initialData.endDate ? new Date(initialData.endDate) : undefined,
+          // Asegurarse de que applicableClinicIds sea un array
+          applicableClinicIds: Array.isArray(initialData.applicableClinicIds) ? initialData.applicableClinicIds : [],
+      };
+  }
 
   // Valores predeterminados combinados con datos iniciales formateados
   const defaultValues: Partial<PromotionFormValues> = {
@@ -163,9 +183,13 @@ export function PromotionForm({
       isActive: true,
       type: PromotionType.PERCENTAGE_DISCOUNT,
       targetScope: PromotionTargetScope.SPECIFIC_SERVICE,
-      applicableClinicIds: [],
+      applicableClinicIds: preselectedClinicId && !initialData
+                           ? [preselectedClinicId]
+                           : processedInitialData.applicableClinicIds || [],
+      accumulationMode: PromotionAccumulationMode.EXCLUSIVE,
+      compatiblePromotionIds: [],
       // Los demás campos numéricos y de ID serán undefined por defecto
-      ...formattedInitialData,
+      ...processedInitialData,
   };
   const form = useForm<PromotionFormValues>({
     // Se realiza una aserción de tipo explícita (type assertion) para intentar resolver
@@ -286,6 +310,33 @@ export function PromotionForm({
   const accumulationMode = form.watch("accumulationMode");
   const isBogo = promotionType === PromotionType.BUY_X_GET_Y_SERVICE || promotionType === PromotionType.BUY_X_GET_Y_PRODUCT;
 
+  // --- Calcular tarifa de la clínica preseleccionada --- 
+  const clinicTariffData = React.useMemo(() => {
+    if (preselectedClinicId && clinics.length > 0 && tariffs.length > 0) {
+      const clinic = clinics.find(c => c.id === preselectedClinicId);
+      if (clinic && clinic.tariffId) {
+        const tariff = tariffs.find(t => t.id === clinic.tariffId);
+        return {
+          id: clinic.tariffId,
+          name: tariff?.name || t('common.unknown'),
+        };
+      }
+    }
+    return null;
+  }, [preselectedClinicId, clinics, tariffs, t]);
+
+  // --- Efecto para auto-seleccionar la tarifa si aplica --- 
+  useEffect(() => {
+    if (targetScope === PromotionTargetScope.TARIFF && clinicTariffData) {
+      form.setValue('targetTariffId', clinicTariffData.id, { shouldValidate: true });
+    } 
+    // Opcional: Limpiar si el scope cambia o no hay clínica preseleccionada con tarifa
+    // else if (form.getValues('targetTariffId') && targetScope !== PromotionTargetScope.TARIFF) {
+    //   form.setValue('targetTariffId', null);
+    // } 
+    // Nota: La limpieza general por cambio de scope ya se maneja en otro useEffect
+  }, [targetScope, clinicTariffData, form]);
+
   // --- Efecto para limpiar campos de ID específicos cuando cambia targetScope ---
   useEffect(() => {
       // Lista de todos los posibles campos de ID de objetivo
@@ -331,25 +382,27 @@ export function PromotionForm({
   }, [promotionType, form]); // Ejecutar cuando promotionType cambie
   // --- Fin efecto limpieza BOGO ---
 
-  // Efecto para sincronizar el estado si initialData cambia (modo edición)
+  // Efecto para sincronizar el estado SOLO si initialData cambia (modo edición)
   useEffect(() => {
-    setApplyToAllClinics(
-      !initialData || !initialData.applicableClinicIds || initialData.applicableClinicIds.length === 0
-    );
+    if (initialData) {
+        setApplyToAllClinics(
+            !initialData.applicableClinicIds || initialData.applicableClinicIds.length === 0
+        );
+    }
   }, [initialData?.applicableClinicIds]);
 
   // --- Handler para el Checkbox "Aplicar a Todas" --- 
   const handleApplyToAllChange = (checked: boolean) => {
-    setApplyToAllClinics(checked);
-    if (checked) {
-      // Si se marca "Aplicar a Todas", limpiar la selección específica
-      form.setValue('applicableClinicIds', []);
-    } else {
-      // Si se desmarca, el usuario deberá seleccionar manualmente.
-      // Podríamos intentar restaurar una selección previa si la guardamos,
-      // pero por simplicidad, lo dejamos vacío para nueva selección.
-       form.setValue('applicableClinicIds', []); // Opcional: ¿Dejar vacío o restaurar?
+    console.log("[handleApplyToAllChange] Checked:", checked);
+    if (preselectedClinicId && checked) {
+        toast({
+            title: t('promotions.form.cannot_apply_all_when_preselected_title'),
+            description: t('promotions.form.cannot_apply_all_when_preselected_desc'),
+            variant: 'default',
+        });
+        return;
     }
+    setApplyToAllClinics(checked);
   };
 
   // Función interna para manejar el submit
@@ -412,7 +465,7 @@ export function PromotionForm({
                                       "w-full justify-between",
                                       !field.value && "text-muted-foreground"
                                   )}
-                                  disabled={isLoading || isSubmitting || isLoadingOptions}
+                                  disabled={isLoading || isSubmitting || isLoadingOptions || applyToAllClinics || !!preselectedClinicId}
                               >
                                   {field.value
                                       ? options.find(
@@ -653,30 +706,49 @@ export function PromotionForm({
             </CardContent>
           </Card>
 
-          {/* SECCIÓN: Objetivo */}
+          {/* SECCIÓN: Objetivo (MODIFICADA) */}
           <Card>
             <CardHeader>
               <CardTitle>{t("promotions.form.sections.target")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* Selector de Alcance del Objetivo */}
+              {/* Selector de Alcance del Objetivo (MODIFICADO para filtrar opción TARIFA) */} 
               <FormField
                 control={form.control}
                 name="targetScope"
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>{t("promotions.form.targetScope.label")}</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value} disabled={isLoading || isSubmitting || isLoadingOptions}>
+                    <Select 
+                        onValueChange={field.onChange} 
+                        defaultValue={field.value} 
+                        disabled={isLoading || isSubmitting || isLoadingOptions}
+                    >
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder={t("promotions.form.targetScope.placeholder")} />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {Object.values(PromotionTargetScope).map((scopeValue) => (
-                          <SelectItem key={scopeValue} value={scopeValue}>
-                            {t(`enums.PromotionTargetScope.${scopeValue}`)}
-                          </SelectItem>
+                        {Object.values(PromotionTargetScope)
+                          .filter(scopeValue => {
+                            // Condición para OCULTAR la opción TARIFA:
+                            // 1. Estamos creando desde una clínica específica (preselectedClinicId existe)
+                            // 2. La clínica NO tiene tarifa asociada (clinicTariffData es null)
+                            // 3. El valor que estamos evaluando es TARIFF
+                            if (
+                                scopeValue === PromotionTargetScope.TARIFF &&
+                                preselectedClinicId && 
+                                !clinicTariffData 
+                            ) {
+                                return false; // Ocultar la opción TARIFA
+                            }
+                            return true; // Mostrar las demás opciones
+                          })
+                          .map((scopeValue) => (
+                            <SelectItem key={scopeValue} value={scopeValue}>
+                              {t(`enums.PromotionTargetScope.${scopeValue}`)}
+                            </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -723,13 +795,78 @@ export function PromotionForm({
                 'common.noResults'
               )}
 
-              {!isLoadingOptions && targetScope === PromotionTargetScope.TARIFF && renderComboboxField(
-                'targetTariffId',
-                tariffs.map(t => ({ value: t.id, label: t.name })),
-                'promotions.form.targetTariffId.label',
-                'promotions.form.targetTariffId.placeholder',
-                'promotions.form.targetTariffId.searchPlaceholder',
-                'common.noResults'
+              {!isLoadingOptions && targetScope === PromotionTargetScope.TARIFF && (
+                <FormField
+                  control={form.control}
+                  name="targetTariffId"
+                  render={({ field }) => {
+                    const isDisabled = !!clinicTariffData; // Deshabilitar si hay tarifa de clínica preseleccionada
+                    const displayValue = isDisabled ? clinicTariffData?.name : tariffs.find(t => t.id === field.value)?.name;
+                    const placeholderText = t('promotions.form.targetTariffId.placeholder');
+
+                    return (
+                      <FormItem className="flex flex-col">
+                        <FormLabel>{t('promotions.form.targetTariffId.label')}</FormLabel>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <FormControl>
+                              <Button
+                                variant="outline"
+                                role="combobox"
+                                disabled={isDisabled || isLoading || isSubmitting || isLoadingOptions} // Añadir isDisabled
+                                className={cn(
+                                  "w-full justify-between",
+                                  !field.value && !isDisabled && "text-muted-foreground"
+                                )}
+                              >
+                                {displayValue || placeholderText}
+                                {!isDisabled && <ChevronsUpDown className="w-4 h-4 ml-2 opacity-50 shrink-0" />} 
+                              </Button>
+                            </FormControl>
+                          </PopoverTrigger>
+                          {!isDisabled && (
+                            <PopoverContent className="w-[--radix-popover-trigger-width] max-h-[--radix-popover-content-available-height] p-0">
+                              <Command>
+                                <CommandInput placeholder={t('promotions.form.targetTariffId.searchPlaceholder')} />
+                                <CommandList>
+                                  <CommandEmpty>{t('common.noResults')}</CommandEmpty>
+                                  <CommandGroup>
+                                    {tariffs.map((option) => (
+                                      <CommandItem
+                                        value={option.name}
+                                        key={option.id}
+                                        onSelect={() => {
+                                          form.setValue('targetTariffId', option.id);
+                                        }}
+                                      >
+                                        <Check
+                                          className={cn(
+                                            "mr-2 h-4 w-4",
+                                            option.id === field.value
+                                              ? "opacity-100"
+                                              : "opacity-0"
+                                          )}
+                                        />
+                                        {option.name}
+                                      </CommandItem>
+                                    ))}
+                                  </CommandGroup>
+                                </CommandList>
+                              </Command>
+                            </PopoverContent>
+                          )}
+                        </Popover>
+                        {/* Mostrar descripción si está deshabilitado */} 
+                        {isDisabled && (
+                            <FormDescription>
+                                {t('promotions.form.targetTariffId.preselectedDesc', { tariffName: clinicTariffData?.name })}
+                            </FormDescription>
+                        )}
+                        <FormMessage />
+                      </FormItem>
+                    );
+                  }}
+                />
               )}
 
               {!isLoadingOptions && targetScope === PromotionTargetScope.SPECIFIC_BONO && renderComboboxField(
@@ -761,13 +898,13 @@ export function PromotionForm({
               {/* --- Checkbox Aplicar a Todas --- */} 
               <div className="flex items-center space-x-2">
                 <Checkbox
-                  id="apply-to-all-clinics"
+                  id="apply-to-all"
                   checked={applyToAllClinics}
                   onCheckedChange={handleApplyToAllChange}
-                  disabled={isLoading || isLoadingOptions || isSubmitting}
+                  disabled={!!preselectedClinicId}
                 />
-                <Label htmlFor="apply-to-all-clinics" className="cursor-pointer">
-                  {t('promotions.form.applicableClinics.applyToAllLabel')} 
+                <Label htmlFor="apply-to-all" className="text-sm font-medium">
+                  {t('promotions.form.apply_to_all_clinics', 'Aplicar a todas (FALLBACK)')}
                 </Label>
               </div>
               <FormDescription>
@@ -789,8 +926,7 @@ export function PromotionForm({
                         placeholder={t('promotions.form.applicableClinics.placeholder')}
                         searchPlaceholder={t('promotions.form.applicableClinics.searchPlaceholder')}
                         emptyPlaceholder={t('common.noResults')}
-                        // <<< CAMBIO: Deshabilitar si applyToAllClinics es true >>>
-                        disabled={isLoading || isLoadingOptions || isSubmitting || applyToAllClinics}
+                        disabled={isLoading || isLoadingOptions || isSubmitting || applyToAllClinics || !!preselectedClinicId}
                       />
                     </FormControl>
                     <FormDescription>

@@ -106,7 +106,7 @@ export function DataTable<TData, TValue>({
         </DropdownMenu>
       </div>
       {/* Tabla */}
-      <div className="rounded-md border">
+      <div className="border rounded-md">
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
@@ -151,7 +151,7 @@ export function DataTable<TData, TValue>({
         </Table>
       </div>
       {/* Paginación */}
-      <div className="flex items-center justify-end space-x-2 py-4">
+      <div className="flex items-center justify-end py-4 space-x-2">
         {/* Info de selección (opcional) */}
         {/* <div className="flex-1 text-sm text-muted-foreground">
           {table.getFilteredSelectedRowModel().rows.length} of{" "}

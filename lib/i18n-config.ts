@@ -27,6 +27,9 @@ if (!i18n.isInitialized) {
         es: {
           translation: esTranslations,
         },
+        'es-ES': {
+          translation: esTranslations,
+        },
         en: {
           translation: enTranslations,
         },

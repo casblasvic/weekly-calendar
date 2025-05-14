@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import { useRouter, useParams } from "next/navigation"
-import { ChevronDown, Pencil, Trash2, ShoppingCart, Package, User, ChevronUp, ArrowUpDown, ChevronsLeft, ChevronLeft, ChevronRight, ChevronsRight, Wrench, SmilePlus, Plus, Edit3, Building2, AlertCircle, X, Star, CheckCircle, CircleDollarSign, Search, Tag, XCircle } from "lucide-react"
+import { ChevronDown, Pencil, Trash2, ShoppingCart, Package, User, ChevronUp, ArrowUpDown, ChevronsLeft, ChevronLeft, ChevronRight, ChevronsRight, Wrench, SmilePlus, Plus, Edit3, Building2, AlertCircle, X, Star, CheckCircle, CircleDollarSign, Search, Tag, XCircle, Smile, Box, AlertTriangle, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -19,6 +19,12 @@ import type { CheckedState } from '@radix-ui/react-checkbox'
 import { PaginationControls } from '@/components/pagination-controls'
 import { Label } from "@/components/ui/label"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu"
+import { usePathname } from 'next/navigation'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useTariffDetailQuery, useUpdateTariffMutation, useUpdateTariffClinicsMutation, useDeleteTariffItemMutation } from "@/lib/hooks/use-tariff-query"
+import { useVatTypesQuery } from "@/lib/hooks/use-vat-query"
+import { useCategoriesQuery } from "@/lib/hooks/use-category-query"
+import { useClinicsQuery } from "@/lib/hooks/use-clinic-query"
 
 // Incluir las relaciones que esperamos de la API en el tipo
 type TariffServicePriceWithIncludes = Prisma.TariffServicePriceGetPayload<{
@@ -27,31 +33,46 @@ type TariffServicePriceWithIncludes = Prisma.TariffServicePriceGetPayload<{
 type TariffProductPriceWithIncludes = Prisma.TariffProductPriceGetPayload<{
   include: { product: { include: { category: true }}, vatType: true }
 }>
+type TariffBonoPriceWithIncludes = Prisma.TariffBonoPriceGetPayload<{
+  include: { 
+    bonoDefinition: { include: { service: true, product: true } },
+    vatType: true 
+  }
+}>
+type TariffPackagePriceWithIncludes = Prisma.TariffPackagePriceGetPayload<{
+  include: { 
+    packageDefinition: { include: { items: { include: { service: true, product: true }}}},
+    vatType: true 
+  }
+}>
 
 type TarifaCompleta = Tariff & {
   clinics: Clinic[];
   defaultVatType: VATType | null;
-  servicePrices?: TariffServicePriceWithIncludes[]; // Usar optional chaining si el tipo base no se actualiza
-  productPrices?: TariffProductPriceWithIncludes[]; // Usar optional chaining
+  servicePrices?: TariffServicePriceWithIncludes[];
+  productPrices?: TariffProductPriceWithIncludes[];
+  bonoPrices?: TariffBonoPriceWithIncludes[];
+  packagePrices?: TariffPackagePriceWithIncludes[];
   isGeneral: boolean;
   applyToAllClinics: boolean;
 }
 
 // Interfaz unificada para la tabla
 interface TarifaItem { 
-  id: string; // ID del Servicio o Producto
-  type: 'Servicio' | 'Producto' | 'Paquete';
-  code?: string | null;
-  name: string;
-  familyName?: string | null; 
+  id: string; // ID de la ASOCIACIÓN Tariff*Price (para acciones)
+  type: 'Servicio' | 'Producto' | 'Bono' | 'Paquete'; // <<< AÑADIDO Bono y Paquete
+  code?: string | null; // Código/SKU del item base (si existe)
+  name: string; // Nombre del item base (Servicio, Producto, Bono Def, Paquete Def)
+  familyName?: string | null; // Categoría (para Servicio/Producto)
   price: number; // Precio específico de la tarifa
-  vatName?: string | null; // Nombre del IVA específico
-  isActive: boolean; // Si está activo en la tarifa
-  // Añadir los IDs originales de la asociación para acciones
-  tariffId?: string; 
-  originalId: string; // ID del Servicio o Producto
-  categoryId: string | null;
-  vatTypeId: string | null;
+  vatName?: string | null; // Nombre del IVA específico (si existe en Tariff*Price)
+  isActive: boolean; // Si está activo en la tarifa (campo de Tariff*Price)
+  // IDs originales para referencia y acciones
+  tariffId: string; // ID de la tarifa (implícito, pero útil)
+  originalItemId: string; // ID del Servicio, Producto, BonoDefinition o PackageDefinition
+  baseItemType: 'SERVICE' | 'PRODUCT' | 'BONO_DEFINITION' | 'PACKAGE_DEFINITION'; // Para saber qué endpoint DELETE llamar
+  categoryId?: string | null; // ID categoría (para Servicio/Producto)
+  vatTypeId?: string | null; // ID del IVA específico (si existe en Tariff*Price)
 }
 
 // Interfaz para el estado del formulario de la tarifa
@@ -127,11 +148,9 @@ export default function ConfiguracionTarifa() {
   const router = useRouter()
   const params = useParams()
   const tarifaId = params.id as string
+  const queryClient = useQueryClient()
   
-  const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [tarifaEditada, setTarifaEditada] = useState<TarifaCompleta | null>(null)
-  const [isDirty, setIsDirty] = useState(false)
   const [editingTarifa, setEditingTarifa] = useState(false)
   const [formData, setFormData] = useState<TariffFormData>({
     name: "",
@@ -142,6 +161,8 @@ export default function ConfiguracionTarifa() {
     isActive: true,
   })
   const [initialFormData, setInitialFormData] = useState<TariffFormData | null>(null)
+  const [isDirty, setIsDirty] = useState(false)
+  
   const [tarifaItems, setTarifaItems] = useState<TarifaItem[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [tipoFiltro, setTipoFiltro] = useState('all')
@@ -150,54 +171,99 @@ export default function ConfiguracionTarifa() {
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(10)
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'ascending' | 'descending' } | null>(null)
+  
   const [isClinicasModalOpen, setIsClinicasModalOpen] = useState(false)
-  const [allClinics, setAllClinics] = useState<Clinic[]>([])
   const [selectedClinics, setSelectedClinics] = useState<Set<string>>(new Set())
-  const [vatTypes, setVatTypes] = useState<VATType[]>([])
-  const [categories, setCategories] = useState<Category[]>([])
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const [isSaving, setIsSaving] = useState(false)
+  
   const [itemToDelete, setItemToDelete] = useState<TarifaItem | null>(null)
   const [confirmEliminarOpen, setConfirmEliminarOpen] = useState(false)
   const [nombreItemEliminar, setNombreItemEliminar] = useState("")
+  const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set())
+  const [isConfirmDeleteBulkOpen, setIsConfirmDeleteBulkOpen] = useState(false)
+  const [itemsToDeleteInfo, setItemsToDeleteInfo] = useState<TarifaItem[]>([])
+  const [isDeletingBulk, setIsDeletingBulk] = useState(false)
 
-  const loadTarifaCompleta = useCallback(async () => {
-    if (!tarifaId) {
-      setError("ID de tarifa no encontrado.")
-      setIsLoading(false)
-      return
+  const {
+    data: vatTypes = [],
+    isLoading: isLoadingVatTypes
+  } = useVatTypesQuery();
+
+  const {
+    data: categories = [],
+    isLoading: isLoadingCategories
+  } = useCategoriesQuery();
+
+  const {
+    data: allClinics = [],
+    isLoading: isLoadingClinics
+  } = useClinicsQuery();
+
+  const {
+    data: tarifaData,
+    isLoading: isLoadingTarifa,
+    error: tarifaError
+  } = useTariffDetailQuery(tarifaId);
+
+  const isLoading = isLoadingTarifa || isLoadingVatTypes || isLoadingCategories || isLoadingClinics;
+
+  // +++ RESTAURAR FUNCIONES DE ORDENACIÓN +++
+  const requestSort = (key: keyof TarifaItem | string) => { // Permitir string por si viene de getNestedValue
+    let direction: "ascending" | "descending" = "ascending";
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === "ascending") {
+      direction = "descending";
     }
-    setError(null)
-    try {
-      const response = await fetch(`/api/tariffs/${tarifaId}`)
-      if (!response.ok) {
-        if (response.status === 404) throw new Error("Tarifa no encontrada")
-        throw new Error(`Error ${response.status} al cargar la tarifa`)
-      }
-      const data: TarifaCompleta = await response.json()
-      setTarifaEditada(data)
-      const initialData: TariffFormData = {
-        name: data.name || "",
-        description: data.description || "",
-        isGeneral: data.isGeneral || false,
-        applyToAllClinics: data.applyToAllClinics || false,
-        defaultVatTypeId: data.defaultVatTypeId || null,
-        isActive: data.isActive === undefined ? true : data.isActive,
-      }
-      setFormData(initialData)
-      setInitialFormData(initialData)
-      setSelectedClinics(new Set(data.clinics.map(c => c.id)))
-      setIsDirty(false)
-      setEditingTarifa(false)
+    setSortConfig({ key: key as string, direction }); // castear a string ya que getNested usa string path
+    setCurrentPage(1); // Resetear a página 1 al ordenar
+  };
 
-      // Combinar y mapear servicePrices y productPrices a TarifaItem
-      const combinedItems: TarifaItem[] = []
-      if (data.servicePrices) {
-        data.servicePrices.forEach(sp => {
+  const getSortIcon = (key: keyof TarifaItem | string) => {
+    if (!sortConfig || sortConfig.key !== key) {
+      return <ArrowUpDown size={14} className="ml-1 text-muted-foreground" />;
+    }
+    return sortConfig.direction === "ascending" ? (
+      <ChevronUp size={14} className="ml-1" />
+    ) : (
+      <ChevronDown size={14} className="ml-1" />
+    );
+  };
+  // +++ FIN RESTAURAR FUNCIONES +++
+
+  // Procesar los datos de la tarifa cuando se cargan
+  useEffect(() => {
+    if (tarifaData) {
+      // Establecer los datos del formulario
+      const initialData: TariffFormData = {
+        name: tarifaData.name || "",
+        description: tarifaData.description || "",
+        isGeneral: tarifaData.isGeneral || false,
+        applyToAllClinics: tarifaData.applyToAllClinics || false,
+        defaultVatTypeId: tarifaData.defaultVatType?.id || null,
+        isActive: tarifaData.isActive === undefined ? true : tarifaData.isActive,
+      };
+      setFormData(initialData);
+      setInitialFormData(initialData);
+      
+      // Establecer clínicas seleccionadas
+      if (tarifaData.clinics) {
+        setSelectedClinics(new Set(tarifaData.clinics.map(c => c.id)));
+      }
+      
+      // Resetear estados de edición
+      setIsDirty(false);
+      setEditingTarifa(false);
+
+      // Transformar los datos relacionados a formato de tabla
+      const combinedItems: TarifaItem[] = [];
+      
+      // Procesar servicios
+      if (tarifaData.servicePrices) {
+        tarifaData.servicePrices.forEach(sp => {
           if (sp.service) {
             combinedItems.push({
-              id: sp.service.id,
+              id: sp.tariffId + '-' + sp.serviceId,
               type: 'Servicio',
               code: sp.service.code,
               name: sp.service.name,
@@ -206,18 +272,21 @@ export default function ConfiguracionTarifa() {
               vatName: sp.vatType?.name,
               isActive: sp.isActive,
               tariffId: sp.tariffId,
-              originalId: sp.serviceId,
+              originalItemId: sp.serviceId,
+              baseItemType: 'SERVICE',
               categoryId: sp.service.categoryId,
               vatTypeId: sp.vatTypeId,
-            })
+            });
           }
-        })
+        });
       }
-      if (data.productPrices) {
-        data.productPrices.forEach(pp => {
+      
+      // Procesar productos
+      if (tarifaData.productPrices) {
+        tarifaData.productPrices.forEach(pp => {
           if (pp.product) {
             combinedItems.push({
-              id: pp.product.id,
+              id: pp.tariffId + '-' + pp.productId,
               type: 'Producto',
               code: pp.product.sku,
               name: pp.product.name,
@@ -226,134 +295,135 @@ export default function ConfiguracionTarifa() {
               vatName: pp.vatType?.name,
               isActive: pp.isActive,
               tariffId: pp.tariffId,
-              originalId: pp.productId,
+              originalItemId: pp.productId,
+              baseItemType: 'PRODUCT',
               categoryId: pp.product.categoryId,
               vatTypeId: pp.vatTypeId,
-            })
+            });
           }
-        })
+        });
       }
-      // TODO: Mapear paquetes cuando existan
+      
+      // Procesar bonos
+      if (tarifaData.bonoPrices) {
+        tarifaData.bonoPrices.forEach(bp => {
+          if (bp.bonoDefinition) {
+            combinedItems.push({
+              id: bp.tariffId + '-' + bp.bonoDefinitionId,
+              type: 'Bono',
+              code: null,
+              name: bp.bonoDefinition.name,
+              familyName: bp.bonoDefinition.service?.name ?? bp.bonoDefinition.product?.name ?? 'N/A',
+              price: bp.price,
+              vatName: bp.vatType?.name,
+              isActive: bp.isActive,
+              tariffId: bp.tariffId,
+              originalItemId: bp.bonoDefinitionId,
+              baseItemType: 'BONO_DEFINITION',
+              categoryId: null,
+              vatTypeId: bp.vatTypeId,
+            });
+          }
+        });
+      }
+      
+      // Procesar paquetes
+      if (tarifaData.packagePrices) {
+        tarifaData.packagePrices.forEach(pp => {
+          if (pp.packageDefinition) {
+            combinedItems.push({
+              id: pp.tariffId + '-' + pp.packageDefinitionId,
+              type: 'Paquete',
+              code: null,
+              name: pp.packageDefinition.name,
+              familyName: pp.packageDefinition.items?.length > 0 
+                ? `${pp.packageDefinition.items.length} items` 
+                : 'Vacío',
+              price: pp.price,
+              vatName: pp.vatType?.name,
+              isActive: pp.isActive,
+              tariffId: pp.tariffId,
+              originalItemId: pp.packageDefinitionId,
+              baseItemType: 'PACKAGE_DEFINITION',
+              categoryId: null,
+              vatTypeId: pp.vatTypeId,
+            });
+          }
+        });
+      }
 
+      // Ordenar items por tipo y nombre
       combinedItems.sort((a, b) => {
-        if (a.type !== b.type) return a.type.localeCompare(b.type)
-        return (a.name || '').localeCompare(b.name || '')
-      })
-      setTarifaItems(combinedItems)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error desconocido al cargar datos.")
-      setTarifaEditada(null)
-      setTarifaItems([])
+        if (a.type !== b.type) return a.type.localeCompare(b.type);
+        return (a.name || '').localeCompare(b.name || '');
+      });
+      
+      setTarifaItems(combinedItems);
+      setSelectedItemIds(new Set());
     }
-  }, [tarifaId])
+  }, [tarifaData]);
 
-  useEffect(() => {
-    const fetchInitialData = async () => {
-        setIsLoading(true);
-        setError(null);
-        try {
-            const [vatRes, catRes, clinicsRes] = await Promise.all([
-                fetch('/api/vat-types'),
-                fetch('/api/categories'),
-                fetch('/api/clinics') 
-            ]);
-
-            if (!vatRes.ok) throw new Error('Error fetching VAT types');
-            if (!catRes.ok) throw new Error('Error fetching categories');
-            if (!clinicsRes.ok) throw new Error('Error fetching clinics');
-
-            const vatData = await vatRes.json();
-            const catData = await catRes.json();
-            const clinicsData = await clinicsRes.json();
-
-            setVatTypes(vatData);
-            setCategories(catData);
-            setAllClinics(clinicsData);
-
-            // Llamar a loadTarifaCompleta DESPUÉS de tener los datos básicos
-            await loadTarifaCompleta();
-
-        } catch (error: any) {
-            console.error("Failed to load initial data or tariff:", error);
-            setError(error.message || "Error al cargar datos.");
-            // Asegurarse de limpiar estados si falla la carga inicial
-            setTarifaEditada(null);
-            setTarifaItems([]);
-        } finally {
-            setIsLoading(false); // Finalizar carga aquí
-        }
-    };
-    fetchInitialData();
-  }, [tarifaId]); 
-
-  const { filteredItems, sortedItems, paginatedItems, totalPages } = useMemo(() => {
-    const filtered = tarifaItems.filter(item => {
-      const searchTermLower = searchTerm.toLowerCase()
-      const searchTermMatch = !searchTerm || 
-        item.name.toLowerCase().includes(searchTermLower) || 
-        item.code?.toLowerCase().includes(searchTermLower) ||
-        item.familyName?.toLowerCase().includes(searchTermLower)
-      const typeMatch = !tipoFiltro || tipoFiltro === 'all' || item.type.toLowerCase() === tipoFiltro
-      const familyMatch = !familiaFiltro || familiaFiltro === 'all' || item.familyName === familiaFiltro
-      const activeMatch = showDisabled || item.isActive
-      return searchTermMatch && typeMatch && familyMatch && activeMatch
-    })
-
-    let sorted = [...filtered]
-    if (sortConfig) {
-      sorted.sort((a, b) => {
-        const itemA = a as TarifaItem
-        const itemB = b as TarifaItem
-        let valA = sortConfig.key === 'price' ? itemA.price : getNestedValue(itemA, sortConfig.key)
-        let valB = sortConfig.key === 'price' ? itemB.price : getNestedValue(itemB, sortConfig.key)
-        if (typeof valA === 'string') valA = valA.toLowerCase()
-        if (typeof valB === 'string') valB = valB.toLowerCase()
-        if (valA == null && valB != null) return 1
-        if (valA != null && valB == null) return -1
-        if (valA == null && valB == null) return 0
-        if (valA < valB) return sortConfig.direction === 'ascending' ? -1 : 1
-        if (valA > valB) return sortConfig.direction === 'ascending' ? 1 : -1
-        return 0
-      })
+  const filteredItems = useMemo(() => {
+    let items = tarifaItems;
+    if (searchTerm) {
+      items = items.filter(item => 
+        item.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+        item.code?.toLowerCase().includes(searchTerm.toLowerCase())
+      );
     }
-
-    const newTotalPages = Math.ceil(sorted.length / itemsPerPage) || 1
-    const effectiveCurrentPage = Math.max(1, Math.min(currentPage, newTotalPages))
-    const startIndex = (effectiveCurrentPage - 1) * itemsPerPage
-    const paginated = sorted.slice(startIndex, startIndex + itemsPerPage)
-
-    return { 
-      filteredItems: filtered, 
-      sortedItems: sorted,
-      paginatedItems: paginated, 
-      totalPages: newTotalPages 
+    if (tipoFiltro !== 'all') {
+      items = items.filter(item => item.type === tipoFiltro);
     }
-  }, [tarifaItems, searchTerm, tipoFiltro, familiaFiltro, showDisabled, sortConfig, currentPage, itemsPerPage])
-
-  useEffect(() => {
-    if (currentPage > totalPages) {
-      setCurrentPage(totalPages)
+    if (!showDisabled) {
+      items = items.filter(item => item.isActive);
     }
-  }, [totalPages, currentPage])
+    return items;
+  }, [tarifaItems, searchTerm, tipoFiltro, showDisabled]);
 
-  const requestSort = (key: keyof TarifaItem) => {
-    let direction: "ascending" | "descending" = "ascending"
-    if (sortConfig && sortConfig.key === key && sortConfig.direction === "ascending") {
-      direction = "descending"
+  const sortedItems = useMemo(() => {
+    let items = [...filteredItems];
+    if (sortConfig !== null) {
+      items.sort((a, b) => {
+        const aValue = getNestedValue(a, sortConfig.key);
+        const bValue = getNestedValue(b, sortConfig.key);
+        if (aValue < bValue) return sortConfig.direction === 'ascending' ? -1 : 1;
+        if (aValue > bValue) return sortConfig.direction === 'ascending' ? 1 : -1;
+        return 0;
+      });
     }
-    setSortConfig({ key, direction })
-  }
+    return items;
+  }, [filteredItems, sortConfig]);
 
-  const getSortIcon = (key: keyof TarifaItem) => {
-    if (!sortConfig || sortConfig.key !== key) {
-      return <ArrowUpDown size={14} className="ml-1" />
+  const paginatedItems = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return sortedItems.slice(startIndex, startIndex + itemsPerPage);
+  }, [sortedItems, currentPage, itemsPerPage]);
+
+  const totalPages = Math.ceil(sortedItems.length / itemsPerPage);
+
+  const handleSelectAll = (checked: CheckedState) => {
+    if (checked === true) {
+      setSelectedItemIds(new Set(sortedItems.map(item => item.id)));
+    } else {
+      setSelectedItemIds(new Set());
     }
-    return sortConfig.direction === "ascending" ? (
-      <ChevronUp size={14} className="ml-1" />
-    ) : (
-      <ChevronDown size={14} className="ml-1" />
-    )
-  }
+  };
+
+  const handleSelectItem = (itemId: string, checked: CheckedState) => {
+    setSelectedItemIds(prev => {
+      const next = new Set(prev);
+      if (checked === true) {
+        next.add(itemId);
+      } else {
+        next.delete(itemId);
+      }
+      return next;
+    });
+  };
+
+  const isAllFilteredSelected = sortedItems.length > 0 && selectedItemIds.size === sortedItems.length;
+  const isSomeFilteredSelected = selectedItemIds.size > 0 && selectedItemIds.size < sortedItems.length;
+  const selectAllCheckedState: CheckedState = isAllFilteredSelected ? true : isSomeFilteredSelected ? 'indeterminate' : false;
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -382,42 +452,12 @@ export default function ConfiguracionTarifa() {
     setEditingTarifa(false);
     setIsDirty(false);
   }
-  const handleGuardarTarifa = async () => {
-    if (!tarifaEditada) return;
-    
-    const dataToSave: Partial<TariffFormData> = { ...formData };
-    
-    try {
-      const response = await fetch(`/api/tariffs/${tarifaId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(dataToSave),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || `Error ${response.status}`);
-      }
-      const updatedTariff: TarifaCompleta = await response.json();
-      
-      const updatedFormData: TariffFormData = {
-          name: updatedTariff.name || "",
-          description: updatedTariff.description || null,
-          isGeneral: updatedTariff.isGeneral || false,
-          applyToAllClinics: updatedTariff.applyToAllClinics || false,
-          defaultVatTypeId: updatedTariff.defaultVatTypeId || null,
-          isActive: updatedTariff.isActive === undefined ? true : updatedTariff.isActive,
-      };
-      
-      setFormData(updatedFormData);
-      setInitialFormData(updatedFormData);
-      setEditingTarifa(false);
-      setIsDirty(false);
-      sonnerToast.success("Detalles de la tarifa actualizados.");
-    } catch (error) {
-      console.error("Error saving tariff details:", error);
-      sonnerToast.error(`Error al guardar: ${error instanceof Error ? error.message : 'Error desconocido'}`);
-    }
+  const handleGuardarTarifa = () => {
+    if (!tarifaData) return;
+    updateTariffMutation.mutate({ 
+      id: tarifaId, 
+      data: { ...formData } 
+    });
   };
 
   const handleClinicasModalOpen = () => { setIsClinicasModalOpen(true); };
@@ -432,34 +472,19 @@ export default function ConfiguracionTarifa() {
           return newSet;
       });
       // Marcar como dirty si la selección cambia respecto a la inicial
-      const initialClinicIds = new Set(tarifaEditada?.clinics.map(c => c.id) || []);
+      const initialClinicIds = new Set(tarifaData?.clinics.map(c => c.id) || []);
       setIsDirty(JSON.stringify(Array.from(initialClinicIds).sort()) !== JSON.stringify(Array.from(selectedClinics).sort()));
   };
-  const handleSaveClinicas = async () => {
-    if (!tarifaEditada) return;
+  const handleSaveClinicas = () => {
+    if (!tarifaData) return;
     setIsSaving(true);
-    try {
-      const response = await fetch(`/api/tariffs/${tarifaId}/clinics`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clinicIds: Array.from(selectedClinics) }),
-      });
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Error al guardar clínicas');
-      }
-      sonnerToast.success('Clínicas asociadas actualizadas.');
-      setIsClinicasModalOpen(false);
-      await loadTarifaCompleta(); // Recargar datos
-    } catch (error: any) {
-      console.error("Error saving clinics:", error);
-      sonnerToast.error(`Error: ${error.message}`);
-    } finally {
-      setIsSaving(false);
-    }
+    updateClinicsMutation.mutate({
+      tariffId: tarifaId,
+      clinicIds: Array.from(selectedClinics)
+    });
   };
 
-  const handleAddItemModalOpen = () => { router.push(`/configuracion/servicios`) }
+  const handleAddItemModalOpen = () => router.push(`/configuracion/servicios`)
   const handleEditItem = (item: TarifaItem) => {
       console.log("Editar item (precio/IVA tarifa):", item)
       sonnerToast.info(`Editar asociación de ${item.type} "${item.name}" pendiente.`)
@@ -467,13 +492,12 @@ export default function ConfiguracionTarifa() {
   const handleDeleteItem = async (item: TarifaItem) => {
     if (!window.confirm(`¿Desvincular ${item.type.toLowerCase()} "${item.name}" de esta tarifa?`)) return
     const apiUrl = item.type === 'Servicio' 
-      ? `/api/tariffs/${item.tariffId}/services/${item.originalId}`
-      : `/api/tariffs/${item.tariffId}/products/${item.originalId}`
+      ? `/api/tariffs/${item.tariffId}/services/${item.originalItemId}`
+      : `/api/tariffs/${item.tariffId}/products/${item.originalItemId}`
     try {
       const response = await fetch(apiUrl, { method: 'DELETE' })
       if (!response.ok) { /* ... manejo error ... */ }
       sonnerToast.success(`${item.type} "${item.name}" desvinculado.`)
-      loadTarifaCompleta()
     } catch (error) { /* ... manejo error ... */ }
   }
 
@@ -483,9 +507,8 @@ export default function ConfiguracionTarifa() {
   const handleNuevoBono = () => router.push(`/configuracion/bonos/nuevo`);
   const navegarATiposIVA = () => router.push(`/configuracion/iva`);
   const navegarATarifasPlanas = () => {
-    router.push(`/configuracion/bonos`);
-    sonnerToast.info("Navegando a gestión de Bonos/Tarifas planas.");
-  }
+    console.log("Navegar a tarifas planas (placeholder)")
+  };
 
   const handleDeleteItemClick = (item: TarifaItem) => {
       setItemToDelete(item);
@@ -493,56 +516,219 @@ export default function ConfiguracionTarifa() {
     setConfirmEliminarOpen(true);
   };
   
-  const confirmDeleteItem = async () => {
+  const confirmDeleteItem = () => {
     if (!itemToDelete) return;
-    const { type, id: itemId } = itemToDelete;
-    const tariffId = params.id as string;
-    let endpoint = '';
-
-    if (type === 'Servicio') {
-      endpoint = `/api/tariffs/${tariffId}/services/${itemId}`;
-    } else if (type === 'Producto') {
-      endpoint = `/api/tariffs/${tariffId}/products/${itemId}`;
-    } else if (type === 'Paquete') {
-      // TODO: endpoint = `/api/tariffs/${tariffId}/packages/${itemId}`;
-      sonnerToast.warning("La eliminación de paquetes aún no está implementada.");
-      return;
-    } else {
-        sonnerToast.error("Tipo de item desconocido.");
-        return;
-    }
-
-    setIsSaving(true); // Podrías usar un estado de carga específico para la eliminación
-    try {
-        const response = await fetch(endpoint, { method: 'DELETE' });
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({})); // Intenta obtener detalles del error
-            throw new Error(errorData.message || `Error ${response.status} al eliminar el item.`);
-        }
-        sonnerToast.success(`"${nombreItemEliminar}" eliminado de la tarifa.`);
-        // Recargar los datos completos o solo filtrar localmente
-        await loadTarifaCompleta(); // Recargar para asegurar consistencia
-
-    } catch (error: any) {
-        console.error("Error deleting item:", error);
-        sonnerToast.error(`Error al eliminar: ${error.message}`);
-    } finally {
-        setIsSaving(false);
-        setItemToDelete(null);
-      setConfirmEliminarOpen(false);
-    }
+    setIsSaving(true);
+    deleteItemMutation.mutate({
+      tariffId: tarifaId,
+      type: itemToDelete.baseItemType,
+      itemId: itemToDelete.originalItemId
+    });
   };
 
+  // Función que se llamará al seleccionar "Añadir servicio"
+  const handleAddServiceClick = () => {
+    if (tarifaId) {
+      // Navegar a la página de servicios pasando el ID de la tarifa actual
+      router.push(`/configuracion/servicios?selectForTariff=${tarifaId}`);
+    } else {
+      // Manejar caso donde tarifaId no esté disponible (poco probable)
+      sonnerToast.error("No se pudo determinar la tarifa actual para añadir servicios.");
+    }
+    setMenuOpen(false); // Cerrar el menú desplegable
+  };
+
+  const handleAddBonoClick = () => {
+    if (!tarifaId) return;
+    // Navega a la lista de BONOS en modo selección
+    router.push(`/configuracion/bonos?selectForTariff=${tarifaId}`);
+  };
+
+  const handleAddPackageClick = () => {
+    if (!tarifaId) return;
+    // Navega a la lista de PAQUETES en modo selección
+    router.push(`/configuracion/paquetes?selectForTariff=${tarifaId}`);
+  };
+
+  // === Handlers para Borrado en Bloque ===
+  const handleOpenConfirmDeleteDialog = () => {
+      const items = sortedItems.filter(item => selectedItemIds.has(item.id));
+      if (items.length === 0) {
+          sonnerToast.info("No hay ítems seleccionados para quitar.");
+          return;
+      }
+      setItemsToDeleteInfo(items);
+      setIsConfirmDeleteBulkOpen(true);
+  };
+
+  // Mutación para eliminar items (se podría hacer más sofisticada con Promise.allSettled)
+  const deleteItemsMutation = useMutation({
+      mutationFn: async (itemsInfo: TarifaItem[]) => {
+          setIsDeletingBulk(true);
+          const promises = itemsInfo.map(item => {
+              // Construir la URL correcta basada en el tipo de item base
+              let endpointType = '';
+              switch (item.baseItemType) {
+                  case 'SERVICE': endpointType = 'services'; break;
+                  case 'PRODUCT': endpointType = 'products'; break;
+                  case 'BONO_DEFINITION': endpointType = 'bonos'; break;
+                  case 'PACKAGE_DEFINITION': endpointType = 'packages'; break;
+                  default: return Promise.reject(`Tipo de item desconocido: ${item.baseItemType}`);
+              }
+              const url = `/api/tariffs/${item.tariffId}/${endpointType}/${item.originalItemId}`;
+              return fetch(url, { method: 'DELETE' });
+          });
+
+          const results = await Promise.allSettled(promises);
+          
+          const successes: TarifaItem[] = [];
+          const failures: { item: TarifaItem; reason: string }[] = [];
+
+          results.forEach((result, index) => {
+              const item = itemsInfo[index];
+              if (result.status === 'fulfilled' && result.value.ok) {
+                  successes.push(item);
+              } else {
+                  let reason = 'Error desconocido';
+                  if (result.status === 'rejected') {
+                      reason = result.reason?.message || String(result.reason);
+                  } else if (!result.value.ok) {
+                      reason = `Error ${result.value.status}`;
+                      // Podríamos intentar leer el body del error aquí si fuera necesario
+                  }
+                  failures.push({ item, reason });
+              }
+          });
+
+          return { successes, failures };
+      },
+      onSuccess: (data) => {
+          if (data.successes.length > 0) {
+              sonnerToast.success(`${data.successes.length} ítem(s) quitado(s) de la tarifa.`);
+              // Actualizar estado local o recargar
+              setTarifaItems(prev => prev.filter(item => 
+                  !data.successes.some(deleted => deleted.id === item.id)
+              ));
+              setSelectedItemIds(new Set()); // Limpiar selección
+          }
+          if (data.failures.length > 0) {
+              sonnerToast.error(`No se pudieron quitar ${data.failures.length} ítem(s).`, {
+                  description: (
+                      <ul>
+                          {data.failures.slice(0, 5).map(f => <li key={f.item.id}>• {f.item.name}: {f.reason}</li>)} 
+                          {data.failures.length > 5 && <li>... y {data.failures.length - 5} más</li>}
+                      </ul>
+                  )
+              });
+              // Mantener seleccionados los que fallaron?
+              setSelectedItemIds(prev => {
+                    const next = new Set(prev);
+                    data.successes.forEach(s => next.delete(s.id)); // Quitar los exitosos
+                    return next;
+              });
+          }
+      },
+      onError: (error: any) => {
+          sonnerToast.error("Error inesperado al quitar ítems: " + error.message);
+      },
+      onSettled: () => {
+          setIsConfirmDeleteBulkOpen(false);
+          setIsDeletingBulk(false);
+          setItemsToDeleteInfo([]);
+      }
+  });
+
+  const handleConfirmDeleteBulk = () => {
+      deleteItemsMutation.mutate(itemsToDeleteInfo);
+  };
+  // === Fin Handlers Borrado en Bloque ===
+
+  // Reemplazar la definición manual de la mutación por el uso de los hooks especializados
+  const updateTariffMutation = useUpdateTariffMutation();
+  const updateClinicsMutation = useUpdateTariffClinicsMutation();
+  const deleteItemMutation = useDeleteTariffItemMutation();
+
+  // Añadir manejadores de onSuccess y onError para las mutaciones
+  // Para updateTariffMutation
+  useEffect(() => {
+    if (updateTariffMutation.isSuccess && updateTariffMutation.data) {
+      const data = updateTariffMutation.data as any; // Cast a any para acceder a las propiedades sin errores de tipo
+      const updatedFormData: TariffFormData = {
+        name: data.name || "",
+        description: data.description || null,
+        isGeneral: data.isGeneral || false,
+        applyToAllClinics: data.applyToAllClinics || false,
+        defaultVatTypeId: data.defaultVatType?.id || null,
+        isActive: data.isActive === undefined ? true : data.isActive,
+      };
+      
+      setFormData(updatedFormData);
+      setInitialFormData(updatedFormData);
+      setEditingTarifa(false);
+      setIsDirty(false);
+      sonnerToast.success("Detalles de la tarifa actualizados.");
+    }
+    
+    if (updateTariffMutation.isError) {
+      console.error("Error saving tariff details:", updateTariffMutation.error);
+      sonnerToast.error(`Error al guardar: ${typeof updateTariffMutation.error === 'object' && updateTariffMutation.error !== null 
+        ? String((updateTariffMutation.error as any).message || 'Error desconocido') 
+        : 'Error desconocido'}`);
+    }
+  }, [updateTariffMutation.isSuccess, updateTariffMutation.isError, updateTariffMutation.data, updateTariffMutation.error]);
+
+  // Para updateClinicsMutation
+  useEffect(() => {
+    if (updateClinicsMutation.isSuccess) {
+      sonnerToast.success('Clínicas asociadas actualizadas.');
+      setIsClinicasModalOpen(false);
+      setIsSaving(false);
+    }
+    
+    if (updateClinicsMutation.isError) {
+      console.error("Error saving clinics:", updateClinicsMutation.error);
+      sonnerToast.error(`Error: ${typeof updateClinicsMutation.error === 'object' && updateClinicsMutation.error !== null 
+        ? String((updateClinicsMutation.error as any).message || 'Error desconocido')
+        : 'Error desconocido'}`);
+      setIsSaving(false);
+    }
+  }, [updateClinicsMutation.isSuccess, updateClinicsMutation.isError, updateClinicsMutation.error]);
+
+  // Para deleteItemMutation
+  useEffect(() => {
+    if (deleteItemMutation.isSuccess) {
+      sonnerToast.success(`"${nombreItemEliminar}" desvinculado de la tarifa.`);
+      setTarifaItems(prev => prev.filter(item => 
+        !(item.originalItemId === itemToDelete?.originalItemId && item.baseItemType === itemToDelete?.baseItemType)
+      ));
+      setIsSaving(false);
+      setItemToDelete(null);
+      setConfirmEliminarOpen(false);
+    }
+    
+    if (deleteItemMutation.isError) {
+      console.error("Error deleting item:", deleteItemMutation.error);
+      sonnerToast.error(`Error al desvincular: ${typeof deleteItemMutation.error === 'object' && deleteItemMutation.error !== null 
+        ? String((deleteItemMutation.error as any).message || 'Error desconocido')
+        : 'Error desconocido'}`);
+      setIsSaving(false);
+      setItemToDelete(null);
+      setConfirmEliminarOpen(false);
+    }
+  }, [deleteItemMutation.isSuccess, deleteItemMutation.isError, deleteItemMutation.error, nombreItemEliminar, itemToDelete]);
+
   if (isLoading) {
-    // Devolver la tabla completa del skeleton
-    return renderTarifEditSkeleton(8); // Pasar número de columnas (incluyendo Acciones)
+    return renderTarifEditSkeleton(9);
   }
 
-  if (error) {
-    return <div className="p-6 text-red-600">Error al cargar la tarifa: {error}</div>;
+  if (tarifaError) {
+    const errorMessage = typeof tarifaError === 'object' && tarifaError !== null 
+                        ? String((tarifaError as any).message || 'Error desconocido') 
+                        : 'Error desconocido';
+    return <div className="p-6 text-red-600">Error al cargar la tarifa: {errorMessage}</div>;
   }
 
-  if (!tarifaEditada && !isLoading) {
+  if (!tarifaData) {
     return <div className="p-6">No se encontró la tarifa o hubo un error al cargarla.</div>;
   }
 
@@ -550,8 +736,8 @@ export default function ConfiguracionTarifa() {
     <div className="flex flex-col p-4 py-8">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center space-x-4">
-          <h1 className="text-2xl font-semibold">{editingTarifa ? formData.name : (tarifaEditada?.name || 'Cargando Tarifa...')}</h1>
-          {!editingTarifa && tarifaEditada && (
+          <h1 className="text-2xl font-semibold">{editingTarifa ? formData.name : (tarifaData?.name || 'Cargando Tarifa...')}</h1>
+          {!editingTarifa && tarifaData && (
             <Button variant="ghost" size="icon" onClick={handleEditarTarifa} className="text-gray-500 hover:text-purple-600">
               <Edit3 className="w-5 h-5" />
             </Button>
@@ -578,14 +764,16 @@ export default function ConfiguracionTarifa() {
                  </div>
                  <div>
                      <Label htmlFor="defaultVatTypeId">IVA por Defecto</Label>
-                     <Select name="defaultVatTypeId"
-                             value={formData.defaultVatTypeId || 'none'}
-                             onValueChange={(v) => handleSelectChange(v, 'defaultVatTypeId')}
-                             disabled={!editingTarifa}>
-                         <SelectTrigger><SelectValue placeholder="Seleccionar IVA..." /></SelectTrigger>
+                     <Select
+                       name="defaultVatTypeId"
+                       value={formData.defaultVatTypeId ?? ""}
+                       onValueChange={(value) => handleSelectChange(value, 'defaultVatTypeId')}
+                     >
+                       <SelectTrigger>
+                         <SelectValue placeholder="Seleccionar IVA" />
+                       </SelectTrigger>
                          <SelectContent>
-                              <SelectItem value="none">Sin IVA por defecto</SelectItem>
-                              {vatTypes.map((vat) => (
+                         {vatTypes.map(vat => (
                                   <SelectItem key={vat.id} value={vat.id}>{vat.name} ({vat.rate}%)</SelectItem>
                               ))}
                          </SelectContent>
@@ -612,14 +800,14 @@ export default function ConfiguracionTarifa() {
                   id="searchTerm"
                   placeholder="Nombre, código..."
                   value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
                   className="w-full"
                 />
               </div>
 
               <div>
                 <Label htmlFor="tipoFiltro">Tipo</Label>
-                <Select value={tipoFiltro} onValueChange={(v: "all" | "Servicio" | "Producto" | "Paquete") => setTipoFiltro(v)}>
+                <Select value={tipoFiltro} onValueChange={(v: "all" | "Servicio" | "Producto" | "Bono" | "Paquete") => { setTipoFiltro(v); setCurrentPage(1); }}>
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="(Todos)" />
                   </SelectTrigger>
@@ -627,6 +815,8 @@ export default function ConfiguracionTarifa() {
                     <SelectItem value="all">(Todos)</SelectItem>
                     <SelectItem value="Servicio">Servicios</SelectItem>
                     <SelectItem value="Producto">Productos</SelectItem>
+                    <SelectItem value="Bono">Bonos</SelectItem>
+                    <SelectItem value="Paquete">Paquetes</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -658,52 +848,55 @@ export default function ConfiguracionTarifa() {
             <div className="space-y-4 md:col-span-1">
               <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
                 <DropdownMenuTrigger asChild>
-                <Button 
-                  variant="default" 
-                  className="w-full bg-purple-700 hover:bg-purple-800"
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                    Añadir/Nuevo Item
+                  <Button>
+                    <Plus className="mr-2 h-4 w-4" /> Añadir Nuevo Ítem <ChevronDown className="ml-2 h-4 w-4" />
                 </Button>
                 </DropdownMenuTrigger>
-                 <DropdownMenuContent className="w-56">
-                    <DropdownMenuItem onClick={handleNuevoServicio}>
-                      <SmilePlus className="w-4 h-4 mr-2" /> Nuevo Servicio Global
+                <DropdownMenuContent align="end" ref={menuRef}>
+                  <DropdownMenuItem
+                    onSelect={(e) => {
+                      e.preventDefault();
+                      handleAddServiceClick(); // Llamar a la función de navegación
+                    }}
+                    className="cursor-pointer"
+                  >
+                    <Smile className="mr-2 h-4 w-4 text-blue-500" />
+                    <span>Añadir servicio</span>
                     </DropdownMenuItem>
-                     <DropdownMenuItem onClick={handleNuevoProducto}>
-                      <ShoppingCart className="w-4 h-4 mr-2" /> Nuevo Producto Global
+
+                  <DropdownMenuItem
+                    onSelect={() => router.push(`/configuracion/productos?selectForTariff=${tarifaId}`)}
+                    className="cursor-pointer"
+                  >
+                    <ShoppingCart className="mr-2 h-4 w-4 text-green-500" />
+                    <span>Añadir producto</span>
                     </DropdownMenuItem>
-                     <DropdownMenuItem onClick={handleNuevoPaquete} disabled>
-                      <Package className="w-4 h-4 mr-2" /> Nuevo Paquete Global
+
+                  <DropdownMenuItem
+                    onSelect={(e) => {
+                      e.preventDefault();
+                      handleAddBonoClick();
+                    }}
+                     className="cursor-pointer"
+                  >
+                    <Tag className="mr-2 h-4 w-4 text-purple-500" />
+                    <span>Añadir bono</span>
                     </DropdownMenuItem>
-                     <DropdownMenuItem onClick={handleNuevoBono} disabled>
-                      <Tag className="w-4 h-4 mr-2" /> Nuevo Bono Global
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem disabled>
-                      <Plus className="w-4 h-4 mr-2" /> Añadir Servicio Existente...
-                    </DropdownMenuItem>
-                     <DropdownMenuItem disabled>
-                      <Plus className="w-4 h-4 mr-2" /> Añadir Producto Existente...
-                    </DropdownMenuItem>
-                     <DropdownMenuItem disabled>
-                      <Package className="w-4 h-4 mr-2" /> Añadir Paquete Existente...
-                    </DropdownMenuItem>
-                     <DropdownMenuItem disabled>
-                      <Tag className="w-4 h-4 mr-2" /> Añadir Bono Existente...
+
+                  <DropdownMenuItem
+                    onSelect={(e) => {
+                      e.preventDefault();
+                      handleAddPackageClick();
+                    }}
+                     className="cursor-pointer"
+                  >
+                    <Box className="mr-2 h-4 w-4 text-orange-500" />
+                    <span>Añadir paquete</span>
                     </DropdownMenuItem>
                   </DropdownMenuContent>
               </DropdownMenu>
 
               <div className="grid grid-cols-1 gap-3 mt-4">
-                <Button
-                  variant="outline"
-                  className="justify-start w-full text-pink-600 border-pink-600 hover:bg-pink-50"
-                  onClick={navegarATiposIVA}
-                >
-                  <Wrench className="w-5 h-5 mr-2" />
-                  <span>Tipos de IVA (Global)</span>
-                </Button>
                 <Button
                   variant="outline"
                   className="justify-start w-full text-purple-600 border-purple-600 hover:bg-purple-50"
@@ -722,11 +915,11 @@ export default function ConfiguracionTarifa() {
                 </Button>
               </div>
               
-              {tarifaEditada?.clinics && tarifaEditada.clinics.length > 0 && (
+              {tarifaData?.clinics && tarifaData.clinics.length > 0 && (
                 <div className="mt-6 space-y-2">
-                  <Label>Clínicas Asociadas ({tarifaEditada.clinics.length})</Label>
+                  <Label>Clínicas Asociadas ({tarifaData.clinics.length})</Label>
                   <div className="flex flex-wrap gap-2 pt-1">
-                    {tarifaEditada.clinics.map((clinic) => (
+                    {tarifaData.clinics.map((clinic) => (
                       <Badge key={clinic.id} variant={clinic.isActive ? "secondary" : "outline"} className="whitespace-nowrap">
                          {clinic.name}
                          {!clinic.isActive && <XCircle className="w-3 h-3 ml-1.5 text-red-500"/>}
@@ -755,24 +948,73 @@ export default function ConfiguracionTarifa() {
         <h2 className="text-lg font-semibold">Items Incluidos ({filteredItems.length})</h2>
       </div>
 
-      <div className="flex items-center justify-end mb-4 space-x-2">
-        <span className="text-sm text-gray-600">Mostrar</span>
-        <Select value={itemsPerPage.toString()} onValueChange={(value) => { setItemsPerPage(Number(value)); setCurrentPage(1); }}>
-          <SelectTrigger className="w-20"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="10">10</SelectItem>
-            <SelectItem value="25">25</SelectItem>
-            <SelectItem value="50">50</SelectItem>
-            <SelectItem value="100">100</SelectItem>
-          </SelectContent>
-        </Select>
-        <span className="text-sm text-gray-600">elementos</span>
-      </div>
+      <div className="flex flex-col md:flex-row gap-4 mb-4 items-center justify-between">
+         {/* Parte Izquierda: Filtros */}
+         <div className="flex flex-col sm:flex-row gap-4 items-center flex-wrap">
+              <Input 
+                  placeholder="Buscar por nombre o código..."
+                  value={searchTerm}
+                  onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+                  className="max-w-xs"
+              />
+              <Select value={tipoFiltro} onValueChange={(v) => { setTipoFiltro(v); setCurrentPage(1); }}>
+                  {/* ... Select tipo ... */}
+              </Select>
+              <div className="flex items-center space-x-2">
+                    <Checkbox 
+                        id="show-disabled-items"
+                        checked={showDisabled}
+                        onCheckedChange={(checked) => setShowDisabled(checked as boolean)}
+                    />
+                    <Label htmlFor="show-disabled-items" className="text-sm font-medium">
+                        Mostrar inactivos
+                    </Label>
+               </div>
+         </div>
+          {/* Parte Derecha: Acciones */}
+          <div className="flex items-center gap-2 flex-wrap">
+               {/* <<< Botón Quitar Seleccionados >>> */}
+               <Button
+                    variant="destructive"
+                    size="sm"
+                    disabled={selectedItemIds.size === 0 || isDeletingBulk}
+                    onClick={handleOpenConfirmDeleteDialog}
+                >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Quitar {selectedItemIds.size > 0 ? `(${selectedItemIds.size}) ` : ''}de Tarifa
+                </Button>
+               {/* <<< Selector de Items por Página (MOVIDO AQUÍ) >>> */}
+               <div className="flex items-center space-x-1.5 text-sm text-gray-600">
+                   <span>Mostrar</span>
+                   <Select value={itemsPerPage.toString()} onValueChange={(value) => { setItemsPerPage(Number(value)); setCurrentPage(1); }}>
+                     <SelectTrigger className="w-20 h-9 text-xs"><SelectValue /></SelectTrigger> {/* Ajustar tamaño */} 
+                     <SelectContent>
+                       <SelectItem value="10">10</SelectItem>
+                       <SelectItem value="25">25</SelectItem>
+                       <SelectItem value="50">50</SelectItem>
+                       <SelectItem value="100">100</SelectItem>
+                     </SelectContent>
+                   </Select>
+                   <span>elementos</span>
+               </div>
+                {/* Menú Añadir Nuevo Item */}
+               <DropdownMenu>
+                  {/* ... Dropdown Añadir Item ... */}
+               </DropdownMenu>
+           </div>
+       </div>
 
       <div className="overflow-x-auto bg-white rounded-lg shadow border">
         <Table>
           <TableHeader>
             <TableRow>
+               <TableHead className="w-[50px]">
+                   <Checkbox 
+                       checked={selectAllCheckedState}
+                       onCheckedChange={handleSelectAll}
+                       aria-label="Seleccionar todos los items visibles"
+                   />
+               </TableHead>
                <TableHead className="px-6 py-3 text-xs font-medium tracking-wider text-left uppercase cursor-pointer" onClick={() => requestSort('type')}>
                  <div className="flex items-center">Tipo {getSortIcon('type')}</div>
                </TableHead>
@@ -800,23 +1042,31 @@ export default function ConfiguracionTarifa() {
           <TableBody>
             {paginatedItems && paginatedItems.length > 0 ? (
                paginatedItems.map((item) => {
-                  const categoryName = categories.find(c => c.id === item.categoryId)?.name || item.categoryId || '(Sin Cat.)';
+                  const category = categories.find(c => c.id === item.categoryId);
+                  const displayCategoryName = category?.name || '-';
                   const vat = vatTypes.find(v => v.id === item.vatTypeId);
                   const displayVat = vat ? `${vat.name} (${vat.rate}%)` : (item.vatTypeId ? '(IVA Desc.)' : '(Sin IVA)');
                   const displayName = item.name || '(Sin Nombre)';
 
                   return (
-                 <TableRow key={`${item.type}-${item.id}`} className={`${!item.isActive ? 'opacity-50' : ''}`}>
+                 <TableRow key={item.id} data-state={selectedItemIds.has(item.id) ? 'selected' : undefined}>
+                    <TableCell className="px-6 py-4 whitespace-nowrap">
+                        <Checkbox 
+                            checked={selectedItemIds.has(item.id)}
+                            onCheckedChange={(checked) => handleSelectItem(item.id, checked)}
+                            aria-label={`Seleccionar item ${displayName}`}
+                        />
+                    </TableCell>
                    <TableCell className="px-6 py-4 whitespace-nowrap">
                      <div className="flex items-center">
-                       {item.type === 'Servicio' ? <SmilePlus size={18} className="text-purple-600" />
-                        : item.type === 'Producto' ? <ShoppingCart size={18} className="text-blue-600" />
-                        : item.type === 'Paquete' ? <Package size={18} className="text-green-600" />
-                        : <SmilePlus size={18} className="text-gray-400" />} 
+                       {item.type === 'Servicio' ? <Smile size={18} className="text-blue-500" />
+                        : item.type === 'Producto' ? <ShoppingCart size={18} className="text-green-500" />
+                        : item.type === 'Bono' ? <Tag size={18} className="text-purple-500" /> 
+                        : <Box size={18} className="text-orange-500" />} 
                        <span className="ml-2 text-xs font-medium text-gray-500 uppercase">{item.type}</span>
                      </div>
                    </TableCell>
-                   <TableCell className="px-6 py-4 text-sm text-gray-900 whitespace-nowrap">{categoryName}</TableCell>
+                   <TableCell className="px-6 py-4 text-sm text-gray-900 whitespace-nowrap">{displayCategoryName}</TableCell>
                    <TableCell className="px-6 py-4 text-sm text-gray-900 whitespace-nowrap">{displayName}</TableCell>
                    <TableCell className="px-6 py-4 text-sm text-gray-900 whitespace-nowrap">{item.code || '-'}</TableCell>
                    <TableCell className="px-6 py-4 text-sm text-right text-gray-900 whitespace-nowrap">
@@ -837,8 +1087,8 @@ export default function ConfiguracionTarifa() {
                })
              ) : (
                <TableRow>
-                 <TableCell colSpan={8} className="px-6 py-4 text-center text-gray-500 h-24">
-                    {tarifaItems.length > 0 ? "No hay items que coincidan con los filtros en esta página." : "No hay servicios, productos o paquetes asociados a esta tarifa."}
+                 <TableCell colSpan={9} className="px-6 py-4 text-center text-gray-500 h-24">
+                    {tarifaItems.length > 0 ? "No hay items que coincidan con los filtros en esta página." : "No hay servicios, productos, bonos o paquetes asociados a esta tarifa."}
                  </TableCell>
                </TableRow>
              )}
@@ -846,19 +1096,17 @@ export default function ConfiguracionTarifa() {
         </Table>
       </div>
 
-      <div className="flex items-center justify-between mt-4">
-        <div className="text-sm text-gray-600">
-          Mostrando {filteredItems.length > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0} a {Math.min(currentPage * itemsPerPage, filteredItems.length)} de {filteredItems.length} items
+      <div className="flex items-center justify-between mt-4 flex-wrap gap-2">
+        <div className="text-sm text-muted-foreground">
+            {selectedItemIds.size} de {sortedItems.length} ítems filtrados seleccionados.
         </div>
         {totalPages > 1 && (
-           <div className="flex space-x-1">
-             <Button variant="outline" size="sm" onClick={() => setCurrentPage(1)} disabled={currentPage === 1}><ChevronsLeft size={16} /></Button>
-             <Button variant="outline" size="sm" onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))} disabled={currentPage === 1}><ChevronLeft size={16} /></Button>
-             <span className="px-4 py-1.5 text-sm">Página {currentPage} / {totalPages}</span>
-             <Button variant="outline" size="sm" onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))} disabled={currentPage === totalPages}><ChevronRight size={16} /></Button>
-             <Button variant="outline" size="sm" onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages}><ChevronsRight size={16} /></Button>
-           </div>
-        )}
+             <PaginationControls 
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={setCurrentPage}
+             />
+         )}
       </div>
 
       <Dialog open={confirmEliminarOpen} onOpenChange={setConfirmEliminarOpen}>
@@ -881,7 +1129,7 @@ export default function ConfiguracionTarifa() {
       <Dialog open={isClinicasModalOpen} onOpenChange={setIsClinicasModalOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Editar Clínicas Asociadas a "{tarifaEditada?.name}"</DialogTitle>
+            <DialogTitle>Editar Clínicas Asociadas a "{tarifaData?.name}"</DialogTitle>
             <DialogDescription>
               Selecciona las clínicas donde esta tarifa estará disponible.
             </DialogDescription>
@@ -910,9 +1158,43 @@ export default function ConfiguracionTarifa() {
           </div>
           
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setIsClinicasModalOpen(false); loadTarifaCompleta(); }}>Cancelar</Button>
+            <Button variant="outline" onClick={() => { setIsClinicasModalOpen(false); }}>Cancelar</Button>
             <Button onClick={handleSaveClinicas} disabled={isSaving || !isDirty}> 
                {isSaving ? 'Guardando...' : 'Guardar Cambios Clínicas'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isConfirmDeleteBulkOpen} onOpenChange={setIsConfirmDeleteBulkOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader className="flex flex-col items-center text-center">
+            <AlertTriangle className="h-12 w-12 text-red-500 mb-3" />
+            <DialogTitle className="text-xl">Confirmar Eliminación Múltiple</DialogTitle>
+            <DialogDescription className="pt-2 text-muted-foreground">
+              ¿Estás seguro de que quieres quitar los <span className="font-semibold text-foreground">{itemsToDeleteInfo.length}</span> ítems seleccionados de esta tarifa?
+              <br />
+              Esta acción eliminará su precio específico en esta tarifa. 
+            </DialogDescription>
+          </DialogHeader>
+          {itemsToDeleteInfo.length > 0 && itemsToDeleteInfo.length <= 7 && (
+            <div className="max-h-40 overflow-y-auto px-4 py-2 border rounded-md my-4">
+              <p className="text-sm font-medium mb-2">Ítems a quitar:</p>
+              <ul className="list-disc pl-5 text-sm space-y-1 text-muted-foreground">
+                {itemsToDeleteInfo.map(it => <li key={it.id}>{it.name} ({it.type})</li>)}
+              </ul>
+            </div>
+          )}
+          <DialogFooter className="sm:justify-center gap-2 pt-4">
+            <Button variant="outline" onClick={() => setIsConfirmDeleteBulkOpen(false)} disabled={isDeletingBulk}>
+              Cancelar
+            </Button>
+            <Button variant="destructive" onClick={handleConfirmDeleteBulk} disabled={isDeletingBulk}>
+              {isDeletingBulk ? (
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Quitando...</>
+              ) : (
+                'Sí, quitar ítems'
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

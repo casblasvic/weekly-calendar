@@ -1,7 +1,9 @@
-import NextAuth from "next-auth";
-import { authOptions } from "@/lib/auth"; // Importa las opciones configuradas
+// import NextAuth from "next-auth"; // Ya no es necesario aquí
+// import { authOptions } from "@/lib/auth"; // No es necesario aquí
 
-// La configuración es mínima aquí, toda la lógica está en authOptions
-const handler = NextAuth(authOptions);
+// Importamos y re-exportamos directamente los handlers GET y POST
+export { GET, POST } from "@/lib/auth";
 
-export { handler as GET, handler as POST }; 
+// Código anterior comentado:
+// const handler = NextAuth(authOptions);
+// export { handler as GET, handler as POST }; 

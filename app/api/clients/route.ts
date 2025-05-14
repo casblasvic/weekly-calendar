@@ -1,8 +1,14 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, type NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { Prisma } from '@prisma/client';
 import { getServerAuthSession } from "@/lib/auth"; // Importar helper de sesión
 import { z } from 'zod'; // Importar Zod para validación
+
+const GetClientsSchema = z.object({
+  search: z.string().optional(),
+  // page: z.string().optional().default("1"),
+  // pageSize: z.string().optional().default("50"),
+});
 
 /**
  * Handler para obtener todos los clientes DEL SISTEMA ACTUAL.
@@ -11,28 +17,96 @@ import { z } from 'zod'; // Importar Zod para validación
  * @param request La solicitud entrante.
  * @returns NextResponse con la lista de clientes o un error.
  */
-export async function GET(request: Request) {
-  const session = await getServerAuthSession();
-  if (!session || !session.user?.systemId) {
-      return NextResponse.json({ message: 'No autorizado o falta systemId' }, { status: 401 });
-  }
-  const systemId = session.user.systemId;
-
+export async function GET(request: NextRequest) {
   try {
-    // TODO: Añadir lógica de autorización -> Hecho: filtrado por systemId
+    const session = await getServerAuthSession();
+    if (!session?.user?.id || !session.user.systemId) {
+      return NextResponse.json(
+        { error: 'Usuario no autenticado o falta systemId.' },
+        { status: 401 }
+      );
+    }
+    const systemId = session.user.systemId;
+
+    const { searchParams } = new URL(request.url);
+    const queryParams = GetClientsSchema.safeParse(Object.fromEntries(searchParams));
+
+    if (!queryParams.success) {
+      return NextResponse.json(
+        { error: 'Parámetros de búsqueda inválidos', details: queryParams.error.flatten() },
+        { status: 400 }
+      );
+    }
+
+    const { search } = queryParams.data;
+    // const page = parseInt(queryParams.data.page as string, 10);
+    // const pageSize = parseInt(queryParams.data.pageSize as string, 10);
+
+    const whereClause: any = {
+      systemId,
+      isActive: true, // Solo clientes activos
+    };
+
+    if (search) {
+      whereClause.OR = [
+        { firstName: { contains: search, mode: 'insensitive' } },
+        { lastName: { contains: search, mode: 'insensitive' } },
+        { email: { contains: search, mode: 'insensitive' } },
+        { taxId: { contains: search, mode: 'insensitive' } },
+        { fiscalName: { contains: search, mode: 'insensitive' } },
+        { company: { fiscalName: { contains: search, mode: 'insensitive' } } },
+        { phone: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
     const clients = await prisma.client.findMany({
-      where: { systemId: systemId }, // <<< Filtrar por systemId de la sesión
-      orderBy: [
-        { lastName: 'asc' },
-        { firstName: 'asc' }
-      ],
-      // TODO: Filtrar por systemId del usuario/organización autenticada -> Hecho
+      where: whereClause,
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        phone: true,
+        phoneCountryIsoCode: true,
+        taxId: true,
+        fiscalName: true,
+        address: true, 
+        city: true,    
+        postalCode: true,
+        country: {
+          select: {
+            name: true,
+            isoCode: true,
+          }
+        },
+        company: {
+          select: {
+            id: true,
+            fiscalName: true,
+          }
+        }
+      },
+      // skip: (page - 1) * pageSize,
+      // take: pageSize,
+      orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+      take: 50, 
     });
+
+    // const totalClients = await prisma.client.count({ where: whereClause });
+
     return NextResponse.json(clients);
+    // return NextResponse.json({
+    //   data: clients,
+    //   totalCount: totalClients,
+    //   page,
+    //   pageSize,
+    //   totalPages: Math.ceil(totalClients / pageSize),
+    // });
+
   } catch (error) {
-    console.error("Error fetching clients:", error);
+    console.error("[API_CLIENTS_GET] Error fetching clients:", error);
     return NextResponse.json(
-      { message: 'Error interno del servidor al obtener los clientes' },
+      { error: "Error interno del servidor al obtener clientes." },
       { status: 500 }
     );
   }

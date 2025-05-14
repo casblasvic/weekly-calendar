@@ -8,7 +8,9 @@ export type ClinicPaymentSettingWithRelations = ClinicPaymentSetting & {
   clinic: Pick<Clinic, 'id' | 'name'>;
   paymentMethodDefinition: Pick<PaymentMethodDefinition, 'id' | 'name'> & { type: PaymentMethodType }; // Ajustar según el include real
   receivingBankAccount?: Pick<BankAccount, 'id' | 'accountName' | 'iban'> | null;
-  posTerminal?: Pick<PosTerminal, 'id' | 'name'> | null;
+  posTerminal?: (Pick<PosTerminal, 'id' | 'name'> & { 
+    bankAccount?: Pick<BankAccount, 'id' | 'accountName' | 'iban'> | null 
+  }) | null;
 };
 
 // --- GET /api/clinic-payment-settings --- 

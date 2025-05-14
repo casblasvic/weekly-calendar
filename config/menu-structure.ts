@@ -39,6 +39,11 @@ import {
   Wallet,
   SquareTerminal,
   Landmark,
+  ClipboardList,
+  Archive,
+  Gift,
+  ArrowRightLeft,
+  Bell,
 } from "lucide-react"
 
 export interface MenuItem {
@@ -127,7 +132,75 @@ export const menuItems: MenuItem[] = [
     label: "Facturación",
     icon: FileText,
     href: "/facturacion",
-    badge: 3,
+    submenu: [
+      {
+        id: "listado-tickets",
+        label: "Listado de tickets",
+        icon: Receipt,
+        href: "/facturacion/tickets",
+        badge: 5,
+      },
+      {
+        id: "busqueda-facturacion",
+        label: "Búsqueda",
+        icon: Search,
+        href: "/facturacion/busqueda",
+      },
+      {
+        id: "pagos-aplazados",
+        label: "Pagos aplazados",
+        icon: Wallet,
+        href: "/facturacion/pagos-aplazados",
+      },
+      {
+        id: "anticipos",
+        label: "Anticipos",
+        icon: CircleDollarSign,
+        href: "/facturacion/anticipos",
+      },
+      {
+        id: "cheques-regalo",
+        label: "Cheques regalo",
+        icon: Gift,
+        href: "/facturacion/cheques-regalo",
+      },
+      {
+        id: "pagos-financiados",
+        label: "Pagos financiados",
+        icon: Landmark,
+        href: "/facturacion/pagos-financiados",
+      },
+      {
+        id: "flujo-caja",
+        label: "Flujo de caja",
+        icon: BarChart2,
+        href: "/facturacion/flujo-caja",
+      },
+      {
+        id: "recibos-pendientes",
+        label: "Recibos pendientes",
+        icon: Bell,
+        href: "/facturacion/recibos-pendientes",
+      },
+      {
+        id: "remesas",
+        label: "Remesas",
+        icon: ArrowRightLeft,
+        href: "/facturacion/remesas",
+      },
+      {
+        id: "presupuestos",
+        label: "Presupuestos",
+        icon: ClipboardList,
+        href: "/facturacion/presupuestos",
+      },
+      {
+        id: "cajas-dia",
+        label: "Cajas del día",
+        icon: Archive,
+        href: "/facturacion/cajas-dia",
+      },
+    ],
   },
   {
     id: "marketing",

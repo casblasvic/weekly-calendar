@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useForm, useFieldArray, SubmitHandler, FormProvider } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -37,12 +37,23 @@ const packageItemSchema = z.object({
     itemType: z.enum(['SERVICE', 'PRODUCT']),
     itemId: z.string().min(1, "Debes seleccionar un servicio o producto."),
     quantity: z.coerce.number().min(1, "La cantidad debe ser al menos 1."),
-    price: z.coerce.number().min(0, "El precio no puede ser negativo.").optional(),
+    price: z.string().trim().optional().nullable().transform((val, ctx) => {
+        if (val === undefined || val === "" || val === null) return undefined;
+        const num = Number(val);
+        if (isNaN(num)) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: "El precio debe ser un número válido o estar vacío.",
+            });
+            return z.NEVER;
+        }
+        return num;
+    }),
 });
 
 const packageDefinitionFormSchema = z.object({
     name: z.string().min(3, "El nombre debe tener al menos 3 caracteres."),
-    description: z.string().optional(),
+    description: z.string().nullish(),
     price: z.coerce.number().min(0, "El precio no puede ser negativo."),
     isActive: z.boolean().default(true),
     pointsAwarded: z.coerce.number().min(0, "Los puntos no pueden ser negativos.").default(0),
@@ -55,29 +66,33 @@ type PackageDefinitionFormData = z.infer<typeof packageDefinitionFormSchema>;
 // --- Props del Componente ---
 interface PackageDefinitionFormProps {
     onSubmit: (data: PackageDefinitionFormData) => Promise<void>;
-    onCancel: () => void;
     initialData?: PackageDefinitionFormData | null;
-    isLoading?: boolean;
+    formId: string;
 }
 
 export function PackageDefinitionForm({
     onSubmit,
-    onCancel,
     initialData = null,
-    isLoading = false,
+    formId,
 }: PackageDefinitionFormProps) {
 
     const { t } = useTranslation();
 
     const form = useForm<PackageDefinitionFormData>({
         resolver: zodResolver(packageDefinitionFormSchema),
-        defaultValues: initialData || {
+        defaultValues: initialData ? {
+            ...initialData,
+            items: initialData.items.map(item => ({
+                ...item,
+                price: item.price !== undefined && item.price !== null ? String(item.price) : undefined,
+            }))
+        } : {
             name: '',
-            description: '',
+            description: '', 
             price: 0,
             isActive: true,
             pointsAwarded: 0,
-            items: [],
+            items: [], 
         },
         mode: "onChange",
     });
@@ -91,7 +106,7 @@ export function PackageDefinitionForm({
     const [itemTypeToAdd, setItemTypeToAdd] = useState<'SERVICE' | 'PRODUCT'>('SERVICE');
     const [selectedItemToAdd, setSelectedItemToAdd] = useState<{ value: string; label: string; basePrice?: number | null } | null>(null);
     const [quantityToAdd, setQuantityToAdd] = useState<number>(1);
-    const [priceToAdd, setPriceToAdd] = useState<string>("");
+    const [priceToAdd, setPriceToAdd] = useState<string>(""); // User input for price is string
     const [services, setServices] = useState<Service[]>([]);
     const [products, setProducts] = useState<Product[]>([]);
     const [loadingItems, setLoadingItems] = useState(false);
@@ -103,24 +118,20 @@ export function PackageDefinitionForm({
             setLoadingItems(true);
             try {
                 const [servicesRes, productsRes] = await Promise.all([
-                    fetch('/api/services?limit=1000'), // Ajustar límite según necesidad
-                    fetch('/api/products?limit=1000') // Ajustar límite según necesidad
+                    fetch('/api/services?limit=1000'),
+                    fetch('/api/products?limit=1000')
                 ]);
                 if (!servicesRes.ok || !productsRes.ok) {
                     throw new Error(t('packages.form.toasts.loadItemsError'));
                 }
-                const servicesData = await servicesRes.json(); // servicesData es el array
-                const productsData = await productsRes.json(); // productsData es el array
-                
-                // <<< CORRECCIÓN: Asignar directamente el array, con verificación >>>
+                const servicesData = await servicesRes.json();
+                const productsData = await productsRes.json();
                 setServices(Array.isArray(servicesData) ? servicesData : []);
                 setProducts(Array.isArray(productsData) ? productsData : []);
-
             } catch (error: any) {
-                toast.error(t('common.errors.loadingTitle'), { 
-                    description: t('packages.form.toasts.loadItemsError') + (error.message ? `: ${error.message}` : '') 
+                toast.error(t('common.errors.loadingTitle'), {
+                    description: t('packages.form.toasts.loadItemsError') + (error.message ? `: ${error.message}` : '')
                 });
-                // Asegurarse de limpiar los estados en caso de error
                 setServices([]); 
                 setProducts([]);
             } finally {
@@ -130,41 +141,35 @@ export function PackageDefinitionForm({
         fetchItems();
     }, [t]);
 
-    const itemsOptions = (itemTypeToAdd === 'SERVICE' ? services : products).map(item => ({
-        value: item.id,
-        label: item.name,
-        basePrice: item.price
-    }));
+    const itemsOptions = useMemo(() => {
+      return (itemTypeToAdd === 'SERVICE' ? services : products).map(item => ({
+          value: item.id,
+          label: item.name,
+          basePrice: item.price
+      }));
+    }, [itemTypeToAdd, services, products]);
 
     const handleAddItem = () => {
         if (!selectedItemToAdd || quantityToAdd <= 0) {
-            toast.warning(t('packages.form.toasts.invalidSelectionTitle'), { 
-                description: t('packages.form.toasts.invalidSelectionDesc') 
+            toast.warning(t('packages.form.toasts.invalidSelectionTitle'), {
+                description: t('packages.form.toasts.invalidSelectionDesc')
             });
             return;
         }
         const exists = fields.some(field => field.itemType === itemTypeToAdd && field.itemId === selectedItemToAdd.value);
         if (exists) {
-            toast.warning(t('packages.form.toasts.duplicateItemTitle'), { 
-                description: t('packages.form.toasts.duplicateItemDesc') 
+            toast.warning(t('packages.form.toasts.duplicateItemTitle'), {
+                description: t('packages.form.toasts.duplicateItemDesc')
             });
             return;
         }
         
-        const numericPrice = priceToAdd.trim() !== "" ? parseFloat(priceToAdd) : undefined;
-        if (numericPrice !== undefined && isNaN(numericPrice)) {
-             toast.error(t('packages.form.toasts.invalidPriceTitle'), { 
-                 description: t('packages.form.toasts.invalidPriceDesc') 
-             });
-             return;
-        }
-
-        append({ 
-            itemType: itemTypeToAdd, 
-            itemId: selectedItemToAdd.value, 
-            quantity: quantityToAdd, 
-            price: numericPrice,
-        });
+        append({
+            itemType: itemTypeToAdd,
+            itemId: selectedItemToAdd.value,
+            quantity: quantityToAdd,
+            price: priceToAdd, 
+        } as any); 
         setSelectedItemToAdd(null);
         setQuantityToAdd(1);
         setPriceToAdd("");
@@ -176,217 +181,288 @@ export function PackageDefinitionForm({
         return list.find(item => item.id === itemId)?.name || t('common.unknown');
     };
 
-    const processSubmit: SubmitHandler<PackageDefinitionFormData> = async (data) => {
-        // console.log("Intentando enviar datos:", data);
-        try {
-            await onSubmit(data);
-        } catch (error) {
-            console.error("Error dentro de processSubmit al llamar a onSubmit:", error);
-            toast.error(t('common.errors.unexpectedTitle'), { 
-                description: t('common.errors.formProcessingDesc') + (error instanceof Error ? `: ${error.message}` : '')
-            });
-        }
+    const processSubmit = async (data: PackageDefinitionFormData) => {
+        console.log("Datos del formulario ANTES de transformar items:", data);
+
+        // Transformar items para asegurar serviceId/productId mutuamente excluyentes y nulos
+        const transformedItems = data.items.map(item => {
+            if (item.itemType === 'SERVICE') {
+                return {
+                    ...item,
+                    serviceId: item.itemId,
+                    productId: null, // Asegurar que productId sea null
+                };
+            } else if (item.itemType === 'PRODUCT') {
+                return {
+                    ...item,
+                    productId: item.itemId,
+                    serviceId: null, // Asegurar que serviceId sea null
+                };
+            }
+            return item; // No debería ocurrir si itemType está validado
+        });
+
+        const payload = {
+            ...data,
+            items: transformedItems,
+        };
+
+        console.log("Datos del formulario DESPUÉS de transformar items (payload para onSubmit prop):", payload);
+        await onSubmit(payload); // Llamar a la prop onSubmit con los datos transformados
     };
 
-    const calculatedLinesSum = fields.reduce((sum, item) => {
-        const price = item.price ?? 0;
-        const quantity = item.quantity || 0;
-        return sum + (price * quantity);
-    }, 0);
+    const calculatedLinesSum = useMemo(() => {
+        return fields.reduce((sum, item, index) => {
+            const currentItemPrice = form.watch(`items.${index}.price`);
+            let priceToUse: number | undefined = currentItemPrice;
+
+            if (priceToUse === undefined) {
+                const list = item.itemType === 'SERVICE' ? services : products;
+                const baseItem = list.find(i => i.id === item.itemId);
+                priceToUse = baseItem?.price ?? undefined;
+            }
+            
+            const quantity = item.quantity || 0;
+            return sum + ((priceToUse ?? 0) * quantity);
+        }, 0);
+    }, [fields, services, products, form.watch]);
 
     return (
-        <FormProvider {...form}>
-            <Form form={form} onSubmit={processSubmit}>
-                <div className="space-y-8">
-                    {/* Campos Principales */}
-                    <div className="grid grid-cols-1 gap-6 mb-8 md:grid-cols-2">
-                        <div className="space-y-2">
-                            <Label htmlFor="packageName">{t('packages.form.labels.name')}</Label>
-                            <Input
-                                id="packageName"
-                                placeholder={t('packages.form.placeholders.name')}
-                                {...form.register("name")}
-                                disabled={isLoading}
+        <Form {...form}>
+            <form onSubmit={form.handleSubmit(processSubmit)} className="p-6 space-y-8" id={formId}>
+                
+                {/* Section 1: Basic Info (Grid Layout) */}
+                <Card>
+                    <CardHeader>
+                        <CardTitle>{t('packages.form.basicInfo')}</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                            <FormField
+                                control={form.control}
+                                name="name"
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>{t('packages.form.labels.name')}</FormLabel>
+                                        <FormControl>
+                                            <Input placeholder={t('packages.form.placeholders.name')} {...field} />
+                                        </FormControl>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
                             />
-                            {form.formState.errors.name && (
-                                <p className="text-sm font-medium text-destructive">
-                                    {form.formState.errors.name.message}
-                                </p>
-                            )}
-                        </div>
-
-                        <div className="space-y-2">
-                            <Label htmlFor="packagePrice">{t('packages.form.labels.price')}</Label>
-                            <Input
-                                id="packagePrice"
-                                type="number"
-                                step="0.01"
-                                placeholder="0.00"
-                                {...form.register("price", { valueAsNumber: true })}
-                                disabled={isLoading}
+                            <FormField
+                                control={form.control}
+                                name="price"
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>{t('packages.form.labels.price')}</FormLabel>
+                                        <FormControl>
+                                            <Input type="number" step="0.01" placeholder="0.00" {...field} />
+                                        </FormControl>
+                                         {calculatedLinesSum > 0 && (
+                                            <p className="mt-1 text-xs text-muted-foreground">
+                                                {t('packages.form.labels.linesSum')} {formatCurrency(calculatedLinesSum)}
+                                            </p>
+                                        )}
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
                             />
-                            {calculatedLinesSum > 0 && (
-                                <p className="mt-1 text-xs text-muted-foreground">
-                                    {t('packages.form.labels.linesSum')} {formatCurrency(calculatedLinesSum)}
-                                </p>
-                            )}
-                            {form.formState.errors.price && (
-                                <p className="text-sm font-medium text-destructive">
-                                    {form.formState.errors.price.message}
-                                </p>
-                            )}
                         </div>
-                    </div>
-
-                    <FormField
-                        control={form.control}
-                        name="description"
-                        render={({ field }) => (
-                            <FormItem className="mb-8">
-                                <FormLabel>{t('packages.form.labels.description')}</FormLabel>
-                                <FormControl>
-                                    <Textarea 
-                                        placeholder={t('packages.form.placeholders.description')}
-                                        {...field} 
-                                        disabled={isLoading} 
-                                    />
-                                </FormControl>
-                                <FormMessage />
-                            </FormItem>
-                        )}
-                    />
-
-                    <div className="grid grid-cols-1 gap-6 mb-8 sm:grid-cols-2">
                         <FormField
                             control={form.control}
-                            name="pointsAwarded"
+                            name="description"
                             render={({ field }) => (
                                 <FormItem>
-                                    <FormLabel>{t('packages.form.labels.pointsAwarded')}</FormLabel>
+                                    <FormLabel>{t('packages.form.labels.description')}</FormLabel>
                                     <FormControl>
-                                        <Input type="number" placeholder="0" {...field} onChange={e => field.onChange(parseInt(e.target.value) || 0)} disabled={isLoading} />
+                                        <Textarea 
+                                            placeholder={t('packages.form.placeholders.description')} 
+                                            {...field} 
+                                            value={field.value ?? ''} 
+                                        />
                                     </FormControl>
                                     <FormMessage />
                                 </FormItem>
                             )}
                         />
-                        <FormField
-                            control={form.control}
-                            name="isActive"
-                            render={({ field }) => (
-                                <FormItem className="flex flex-row items-center justify-between p-4 space-x-3 border rounded-lg">
-                                    <div className="space-y-0.5">
-                                        <FormLabel>{t('packages.form.labels.isActive')}</FormLabel>
-                                    </div>
-                                    <FormControl>
-                                        <Switch
-                                            checked={field.value}
-                                            onCheckedChange={field.onChange}
-                                            disabled={isLoading}
-                                        />
-                                    </FormControl>
-                                </FormItem>
-                            )}
-                        />
-                    </div>
-
-                    {/* Sección de Items del Paquete */}
-                    <Card className="mb-8">
-                        <CardHeader>
-                            <CardTitle>{t('packages.form.items.title')}</CardTitle>
-                            <CardDescription>{t('packages.form.items.description')}</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            <div className="mb-6 space-y-4">
-                                {fields.map((field, index) => {
-                                    const lineTotal = (field.price ?? 0) * (field.quantity || 0);
-                                    
-                                    return (
-                                        <div key={field.id} className="flex flex-wrap items-center p-3 space-x-4 border rounded-md">
-                                            <span className="flex-1 min-w-[150px]">
-                                                {field.itemType === 'SERVICE' ? t('packages.form.items.typeService') : t('packages.form.items.typeProduct')} - {getSelectedItemName(field.itemType, field.itemId)}
-                                            </span>
-                                            <span className="text-sm text-muted-foreground">{t('packages.form.items.quantityLabel')} {field.quantity}</span>
-                                            {field.price !== undefined && field.price !== null && (
-                                                <span className="text-sm font-medium">{t('packages.form.items.lineTotalLabel')} {formatCurrency(lineTotal)}</span>
-                                            )}
-                                            <Button 
-                                                type="button" 
-                                                variant="ghost" 
-                                                size="icon" 
-                                                onClick={() => remove(index)} 
-                                                disabled={isLoading}
-                                                title={t('packages.form.items.deleteItemTitle')}
-                                                className="ml-auto"
-                                            >
-                                                <Trash2 className="w-4 h-4 text-red-500" />
-                                            </Button>
-                                        </div>
-                                    );
-                                })}
-                                {form.formState.errors.items && fields.length === 0 && (
-                                    <p className="text-sm font-medium text-destructive">
-                                        {form.formState.errors.items.message || form.formState.errors.items.root?.message}
-                                    </p>
+                        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                            <FormField
+                                control={form.control}
+                                name="pointsAwarded"
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>{t('packages.form.labels.pointsAwarded')}</FormLabel>
+                                        <FormControl>
+                                            <Input type="number" step="1" placeholder="0" {...field} />
+                                        </FormControl>
+                                        <FormMessage />
+                                    </FormItem>
                                 )}
-                            </div>
+                            />
+                             <FormField
+                                control={form.control}
+                                name="isActive"
+                                render={({ field }) => (
+                                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm mt-4 md:mt-0">
+                                        <div className="space-y-0.5">
+                                            <FormLabel>{t('packages.form.labels.isActive')}</FormLabel>
+                                        </div>
+                                        <FormControl>
+                                            <Switch
+                                                checked={field.value}
+                                                onCheckedChange={field.onChange}
+                                            />
+                                        </FormControl>
+                                    </FormItem>
+                                )}
+                            />
+                        </div>
+                    </CardContent>
+                </Card>
 
-                            {/* Controles para añadir nuevo item */}
-                            <div className="flex flex-col flex-wrap items-start p-4 space-y-4 border rounded-md sm:flex-row sm:items-end sm:space-y-0 sm:space-x-4 bg-muted/40">
-                                <div className="flex-grow w-full sm:w-auto min-w-[120px]">
-                                    <Label htmlFor="itemTypeSelect">{t('packages.form.addItem.typeLabel')}</Label>
-                                    <Select 
-                                        value={itemTypeToAdd} 
-                                        onValueChange={(value: 'SERVICE' | 'PRODUCT') => {
-                                            setItemTypeToAdd(value);
-                                            setSelectedItemToAdd(null);
-                                            setPriceToAdd("");
-                                        }}
-                                        disabled={isLoading || loadingItems}
-                                    >
-                                        <SelectTrigger id="itemTypeSelect">
+                {/* Section 2: Package Items */}
+                <Card>
+                    <CardHeader>
+                        <CardTitle>{t('packages.form.items.title')}</CardTitle>
+                        <CardDescription>{t('packages.form.items.description')}</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="space-y-4 mb-6">
+                            {fields.map((field, index) => (
+                                <div key={field.id} className="flex items-center gap-3 p-3 border rounded-md bg-gray-50/50">
+                                    <div className="flex-shrink-0 w-16 text-xs font-semibold text-center uppercase text-muted-foreground">
+                                        {field.itemType === 'SERVICE' ? t('packages.form.items.typeService') : t('packages.form.items.typeProduct')}
+                                    </div>
+                                    <div className="flex-grow text-sm font-medium">
+                                        {getSelectedItemName(field.itemType, field.itemId)}
+                                    </div>
+                                    <div className="flex-shrink-0 w-20">
+                                         <FormField
+                                            control={form.control}
+                                            name={`items.${index}.quantity`}
+                                            render={({ field }) => (
+                                                <FormItem className="w-full">
+                                                    <FormLabel className="sr-only">{t('packages.form.items.quantityLabel')}</FormLabel>
+                                                    <FormControl>
+                                                        <Input type="number" min="1" {...field} className="h-8 text-center" />
+                                                    </FormControl>
+                                                    <FormMessage className="text-xs"/>
+                                                </FormItem>
+                                            )}
+                                        />
+                                    </div>
+                                    <div className="flex-shrink-0 w-24">
+                                        <FormField
+                                            control={form.control}
+                                            name={`items.${index}.price`}
+                                            render={({ field: { value, onChange, ...restField } }) => (
+                                                <FormItem className="w-full">
+                                                    <FormLabel className="sr-only">{t('packages.form.addItem.priceLabel')}</FormLabel>
+                                                    <FormControl>
+                                                         <Input 
+                                                             type="text" 
+                                                             placeholder={t('packages.form.placeholders.priceOptional')} 
+                                                             {...restField}
+                                                             value={value === undefined || value === null ? '' : String(value)} 
+                                                             onChange={(e) => {
+                                                                onChange(e.target.value);
+                                                             }}
+                                                             className="h-8 text-right" 
+                                                         />
+                                                    </FormControl>
+                                                    <FormMessage className="text-xs"/>
+                                                </FormItem>
+                                            )}
+                                        />
+                                    </div>
+                                    <div className="flex-shrink-0">
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon"
+                                            onClick={() => remove(index)}
+                                            title={t('packages.form.items.deleteItemTitle')}
+                                            className="text-destructive hover:bg-destructive/10 h-8 w-8"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </Button>
+                                    </div>
+                                </div>
+                            ))}
+                            {form.formState.errors.items && !form.formState.errors.items.root && !Array.isArray(form.formState.errors.items) && (
+                                <p className="text-sm font-medium text-destructive">
+                                    {form.formState.errors.items.message} 
+                                </p>
+                            )}
+                            {Array.isArray(form.formState.errors.items) && (
+                                form.formState.errors.items.map((error, index) => (
+                                    error && (
+                                        <p key={index} className="text-sm font-medium text-destructive">
+                                            Error en Ítem {index + 1}: {error.itemId?.message || error.quantity?.message || error.price?.message || error.itemType?.message}
+                                        </p>
+                                    )
+                                ))
+                            )}
+                            {fields.length === 0 && (
+                                <p className="text-sm text-center text-muted-foreground py-4">{t('packages.form.items.empty')}</p>
+                            )}
+                        </div>
+
+                        <div className="p-4 space-y-4 border border-dashed rounded-md">
+                             <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
+                                <div className="col-span-1 sm:col-span-1">
+                                    <Label>{t('packages.form.addItem.typeLabel')}</Label>
+                                    <Select value={itemTypeToAdd} onValueChange={(value: 'SERVICE' | 'PRODUCT') => { setItemTypeToAdd(value); setSelectedItemToAdd(null); }} disabled={loadingItems}>
+                                        <SelectTrigger>
                                             <SelectValue placeholder={t('packages.form.addItem.typePlaceholder')} />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            <SelectItem value="SERVICE">{t('packages.form.addItem.typeService')}</SelectItem>
-                                            <SelectItem value="PRODUCT">{t('packages.form.addItem.typeProduct')}</SelectItem>
+                                            <SelectItem value="SERVICE">{t('packages.form.items.typeService')}</SelectItem>
+                                            <SelectItem value="PRODUCT">{t('packages.form.items.typeProduct')}</SelectItem>
                                         </SelectContent>
                                     </Select>
                                 </div>
 
-                                <div className="flex-grow w-full sm:w-auto min-w-[200px]">
-                                     <Label>{t('packages.form.addItem.itemLabel')}</Label>
+                                <div className="col-span-1 sm:col-span-3">
+                                    <Label>{t('packages.form.addItem.itemLabel')}</Label>
                                     <Popover open={comboboxOpen} onOpenChange={setComboboxOpen}>
                                         <PopoverTrigger asChild>
                                             <Button
                                                 variant="outline"
                                                 role="combobox"
                                                 aria-expanded={comboboxOpen}
-                                                className="justify-between w-full font-normal"
-                                                disabled={isLoading || loadingItems || itemsOptions.length === 0}
+                                                className="w-full justify-between font-normal"
+                                                disabled={loadingItems || itemsOptions.length === 0}
                                             >
-                                                {selectedItemToAdd
-                                                    ? selectedItemToAdd.label
-                                                    : loadingItems ? t('packages.form.addItem.itemLoading') : t('packages.form.addItem.itemPlaceholder')}
+                                                <span className="truncate">
+                                                     {selectedItemToAdd
+                                                         ? selectedItemToAdd.label
+                                                         : t('packages.form.addItem.itemPlaceholder')}
+                                                </span>
                                                 <ChevronsUpDown className="w-4 h-4 ml-2 opacity-50 shrink-0" />
                                             </Button>
                                         </PopoverTrigger>
-                                        <PopoverContent className="w-[--radix-popover-trigger-width] max-h-[--radix-popover-content-available-height] p-0">
+                                        <PopoverContent className="w-[--radix-popover-trigger-width] p-0 max-h-[--radix-popover-content-available-height]">
                                             <Command>
-                                                <CommandInput placeholder={`${t(itemTypeToAdd === 'SERVICE' ? 'packages.form.addItem.searchService' : 'packages.form.addItem.searchProduct')}...`} />
+                                                <CommandInput 
+                                                    placeholder={itemTypeToAdd === 'SERVICE' ? t('packages.form.addItem.searchService') : t('packages.form.addItem.searchProduct')} 
+                                                />
                                                 <CommandList>
                                                     <CommandEmpty>{t('packages.form.addItem.searchEmpty')}</CommandEmpty>
                                                     <CommandGroup>
                                                         {itemsOptions.map((option) => (
                                                             <CommandItem
                                                                 key={option.value}
-                                                                value={option.label}
+                                                                value={option.label} 
                                                                 onSelect={(currentValue) => {
-                                                                    const currentLabel = currentValue.trim().toLowerCase();
-                                                                    const selected = itemsOptions.find(opt => opt.label.trim().toLowerCase() === currentLabel);
-                                                                    console.log("Item seleccionado:", selected);
+                                                                    const selectedLabel = currentValue?.trim().toLowerCase();
+                                                                    const selected = itemsOptions.find(
+                                                                        opt => opt.label?.trim().toLowerCase() === selectedLabel
+                                                                    );
                                                                     setSelectedItemToAdd(selected || null);
-                                                                    setPriceToAdd(selected?.basePrice?.toString() ?? "");
+                                                                    setPriceToAdd(selected?.basePrice !== undefined && selected?.basePrice !== null ? String(selected.basePrice) : '') 
                                                                     setComboboxOpen(false);
                                                                 }}
                                                             >
@@ -396,7 +472,10 @@ export function PackageDefinitionForm({
                                                                         selectedItemToAdd?.value === option.value ? "opacity-100" : "opacity-0"
                                                                     )}
                                                                 />
-                                                                {option.label}
+                                                                <span className="flex-1 truncate">{option.label}</span>
+                                                                {option.basePrice !== undefined && option.basePrice !== null && (
+                                                                    <span className="ml-2 text-xs text-muted-foreground">{formatCurrency(option.basePrice)}</span>
+                                                                )}
                                                             </CommandItem>
                                                         ))}
                                                     </CommandGroup>
@@ -405,55 +484,52 @@ export function PackageDefinitionForm({
                                         </PopoverContent>
                                     </Popover>
                                 </div>
-
-                                <div className="w-full sm:w-24">
-                                    <Label htmlFor="quantityInput">{t('packages.form.addItem.quantityLabel')}</Label>
-                                    <Input 
-                                        id="quantityInput" 
-                                        type="number" 
-                                        min="1" 
-                                        value={quantityToAdd} 
-                                        onChange={(e) => setQuantityToAdd(parseInt(e.target.value, 10) || 1)} 
-                                        disabled={isLoading}
+                             </div>
+                             
+                             <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
+                                <div className="col-span-1 sm:col-span-1">
+                                    <Label htmlFor="quantityToAdd">{t('packages.form.addItem.quantityLabel')}</Label>
+                                    <Input
+                                        id="quantityToAdd"
+                                        type="number"
+                                        min="1"
+                                        value={quantityToAdd}
+                                        onChange={(e) => setQuantityToAdd(Math.max(1, parseInt(e.target.value) || 1))}
+                                        className="text-center"
                                     />
                                 </div>
-
-                                <div className="w-full sm:w-28">
-                                    <Label htmlFor="priceInput">{t('packages.form.addItem.priceLabel')}</Label>
-                                    <Input 
-                                        id="priceInput" 
-                                        type="number" 
-                                        step="0.01"
-                                        placeholder={t('packages.form.placeholders.priceOptional')}
-                                        value={priceToAdd} 
-                                        onChange={(e) => setPriceToAdd(e.target.value)} 
-                                        disabled={isLoading || !selectedItemToAdd}
-                                    />
+                                <div className="col-span-1 sm:col-span-1">
+                                    <Label htmlFor="priceToAdd">{t('packages.form.addItem.priceLabel')} ({t('common.optional_short')})</Label>
+                                     <Input
+                                         id="priceToAdd"
+                                         type="text" 
+                                         placeholder={t('packages.form.placeholders.priceOptional')} 
+                                         value={priceToAdd} 
+                                         onChange={(e) => {
+                                             const value = e.target.value;
+                                             if (value === '' || /^[0-9]*\.?[\d]*$/.test(value)) { 
+                                                 setPriceToAdd(value);
+                                             }
+                                         }}
+                                         className="text-right"
+                                     />
+                                 </div>
+                                <div className="col-span-1 sm:col-span-2 flex items-end">
+                                    <Button 
+                                        type="button" 
+                                        onClick={handleAddItem} 
+                                        disabled={!selectedItemToAdd || loadingItems}
+                                        className="w-full"
+                                    >
+                                        <PlusCircle className="w-4 h-4 mr-2" />
+                                        {t('packages.form.addItem.addButton')}
+                                    </Button>
                                 </div>
-
-                                <Button 
-                                    type="button" 
-                                    onClick={handleAddItem} 
-                                    disabled={isLoading || loadingItems || !selectedItemToAdd} 
-                                    className="self-end w-full mt-4 sm:w-auto sm:mt-0"
-                                >
-                                    <PlusCircle className="w-4 h-4 mr-2" /> {t('packages.form.addItem.addButton')}
-                                </Button>
-                            </div>
-                        </CardContent>
-                    </Card>
-
-                    {/* Botones de Acción */}
-                    <div className="flex justify-end space-x-3">
-                        <Button type="button" variant="outline" onClick={onCancel} disabled={isLoading}>
-                            {t('common.cancel')}
-                        </Button>
-                        <Button type="submit" disabled={isLoading || !form.formState.isValid}>
-                            {isLoading ? t('common.saving') : (initialData ? t('packages.form.buttons.update') : t('packages.form.buttons.create'))}
-                        </Button>
-                    </div>
-                </div>
-            </Form>
-        </FormProvider>
+                             </div>
+                        </div>
+                    </CardContent>
+                </Card>
+            </form>
+        </Form>
     );
 } 

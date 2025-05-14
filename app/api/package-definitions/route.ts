@@ -3,27 +3,13 @@ import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { getServerAuthSession } from '@/lib/auth';
 import { Prisma } from '@prisma/client';
+import { ApiPackageDefinitionPayloadSchema } from '@/lib/schemas/package-definition';
 
 // Esquema para validar un item individual dentro del paquete al crear/actualizar
-const PackageItemSchema = z.object({
-  itemType: z.enum(['SERVICE', 'PRODUCT']),
-  itemId: z.string().min(1, "Debes seleccionar un servicio o producto."),
-  quantity: z.coerce.number().min(1, "La cantidad debe ser al menos 1."),
-  price: z.coerce.number().min(0, "El precio no puede ser negativo.").optional(),
-}).refine(data => (data.itemType === 'SERVICE' || data.itemType === 'PRODUCT'), {
-  message: 'Debe proporcionar itemId (y tipo SERVICE o PRODUCT), pero no ambos.',
-  path: ['itemId', 'itemType'],
-});
+// const PackageItemSchema = z.object({ ... });
 
 // Esquema para validar la creación de PackageDefinition
-const CreatePackageDefinitionSchema = z.object({
-  name: z.string().min(3, "El nombre debe tener al menos 3 caracteres."),
-  description: z.string().optional(),
-  price: z.coerce.number().min(0, "El precio no puede ser negativo."),
-  isActive: z.boolean().default(true),
-  pointsAwarded: z.coerce.number().min(0, "Los puntos no pueden ser negativos.").default(0),
-  items: z.array(PackageItemSchema).min(1, "El paquete debe contener al menos un ítem."),
-});
+// const CreatePackageDefinitionSchema = z.object({ ... });
 
 // --- Handler POST para Crear PackageDefinition ---
 export async function POST(request: Request) {
@@ -39,58 +25,86 @@ export async function POST(request: Request) {
     const systemId = session.user.systemId;
     const json = await request.json();
 
-    // Validar el cuerpo de la solicitud
-    const parsedData = CreatePackageDefinitionSchema.safeParse(json);
+    // Validar el cuerpo de la solicitud con el schema importado
+    const validatedData = ApiPackageDefinitionPayloadSchema.parse(json);
+    console.log("[API PKG_DEF POST] Zod validation successful:", validatedData);
 
-    if (!parsedData.success) {
-      console.error("Error de validación Zod:", parsedData.error.errors);
-      // Devolver errores detallados de Zod
-      return NextResponse.json({ error: 'Datos inválidos', details: parsedData.error.flatten().fieldErrors }, { status: 400 });
-    }
+    const { items, settings, vatTypeId, ...packageBaseData } = validatedData;
 
-    const { name, description, price, isActive, pointsAwarded, items } = parsedData.data;
+    // Transacción para crear todo
+    const newPackageDefId = await prisma.$transaction(async (tx) => {
+      // 1. Crear PackageDefinition base
+      const newPackageDef = await tx.packageDefinition.create({
+        data: {
+          // Campos obligatorios explícitos
+          name: validatedData.name,
+          price: validatedData.price,
+          // Resto de campos base (opcionales)
+          description: validatedData.description,
+          // Conexiones
+          system: { connect: { id: systemId } },
+          // Nota: vatTypeId ahora va en settings
+        }
+      });
 
-    // Mapear items del formulario al formato de Prisma para creación anidada
+      // 2. Crear PackageDefinitionSetting (incluyendo vatTypeId)
+      const newSettings = await tx.packageDefinitionSetting.create({
+        data: {
+          ...settings,
+          packageDefinition: { connect: { id: newPackageDef.id } },
+          ...(vatTypeId && { vatTypeId: vatTypeId }), // <<< Solo conectar el ID
+        }
+      });
+
+      // 3. Crear PackageItems
+      if (items && items.length > 0) {
     const prismaItemsData = items.map(item => ({
-      itemType: item.itemType,
+          packageDefinitionId: newPackageDef.id,
       quantity: item.quantity,
-      price: item.price,
-      ...(item.itemType === 'SERVICE' 
-        ? { service: { connect: { id: item.itemId } } } 
-        : { product: { connect: { id: item.itemId } } }
-      )
-    }));
+          itemType: item.serviceId ? 'SERVICE' : 'PRODUCT', // <<< Añadir itemType obligatorio
+          ...(item.serviceId && { serviceId: item.serviceId }),
+          ...(item.productId && { productId: item.productId }),
+        }));
+        await tx.packageItem.createMany({ data: prismaItemsData });
+      }
+      
+      return newPackageDef.id;
+    });
 
-    // Crear el paquete y sus items en una transacción
-    const newPackage = await prisma.packageDefinition.create({
-      data: {
-        name,
-        description,
-        price,
-        isActive,
-        pointsAwarded,
-        system: { connect: { id: systemId } },
+    // Buscar el paquete completo fuera de la transacción para incluir todo
+    const finalPackageResponse = await prisma.packageDefinition.findUnique({
+        where: { id: newPackageDefId }, 
+        include: {
+            settings: true, // <<< Incluir settings (contendrá vatTypeId)
         items: {
-          create: prismaItemsData,
-        },
-      },
       include: {
-        items: { // Incluir items creados en la respuesta
-          include: {
-            service: { select: { id: true, name: true, price: true } }, // Incluir precio base de servicio
-            product: { select: { id: true, name: true, price: true } }  // Incluir precio base de producto
+                    service: { select: { id: true, name: true } },
+                    product: { select: { id: true, name: true } }
           }
         } 
       }
     });
 
-    return NextResponse.json(newPackage, { status: 201 });
+    return NextResponse.json(finalPackageResponse, { status: 201 });
 
   } catch (error: any) {
     console.error("Error al crear paquete:", error);
-    // Manejar errores específicos de Prisma (ej: foreign key constraint)
-    if (error.code === 'P2025') { // Código de error de Prisma para registro no encontrado (ej: servicio/producto no existe)
-      return NextResponse.json({ error: 'Error al crear paquete: Uno de los servicios o productos seleccionados no existe.' }, { status: 400 });
+    if (error instanceof z.ZodError) {
+      console.error("Error de validación Zod:", error.errors);
+      return NextResponse.json({ error: 'Datos inválidos', details: error.flatten().fieldErrors }, { status: 400 });
+    }
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      if (error.code === 'P2002') {
+        const target = (error.meta?.target as string[])?.join(', ') || 'nombre';
+        return NextResponse.json({ error: `Conflicto: Ya existe un paquete con ese ${target}.` }, { status: 409 });
+      }
+      if (error.code === 'P2003') {
+         const fieldName = (error.meta?.field_name as string) || 'relacionado';
+         return NextResponse.json({ error: `Referencia inválida: El servicio, producto o tipo de IVA no existe (campo: ${fieldName}).` }, { status: 400 });
+      }
+      if (error.code === 'P2025') { // Podría ocurrir si se conecta a algo inválido
+        return NextResponse.json({ error: 'Error al crear paquete: Uno de los elementos referenciados no existe.' }, { status: 400 });
+      }
     }
     return NextResponse.json({ error: 'Error interno del servidor al crear el paquete.' }, { status: 500 });
   }
@@ -109,6 +123,7 @@ export async function GET(request: Request) {
   // <<< Leer parámetros de filtro por item >>>
   const serviceId = searchParams.get("serviceId");
   const productId = searchParams.get("productId");
+  const isActiveParam = searchParams.get('isActive');
 
   // Variables para paginación (solo si NO filtramos por item)
   let page = 1;
@@ -120,6 +135,13 @@ export async function GET(request: Request) {
   let whereClause: Prisma.PackageDefinitionWhereInput = {
     systemId: systemId,
   };
+
+  // Filtro por isActive (usando settings)
+  if (isActiveParam !== null) {
+    whereClause.settings = {
+      isActive: isActiveParam === 'true'
+    };
+  }
 
   // <<< Añadir filtro si serviceId o productId están presentes >>>
   if (serviceId) {
@@ -149,9 +171,9 @@ export async function GET(request: Request) {
     const findManyArgs: Prisma.PackageDefinitionFindManyArgs = {
         where: whereClause,
         include: {
+          settings: true, // <<< Incluir settings (contendrá vatTypeId)
           items: {
             include: {
-              // Incluir detalles necesarios para la tabla o vista
               service: { select: { id: true, name: true } }, 
               product: { select: { id: true, name: true } }
             }

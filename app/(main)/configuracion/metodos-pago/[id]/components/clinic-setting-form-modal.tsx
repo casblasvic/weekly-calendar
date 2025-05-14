@@ -49,6 +49,7 @@ interface ClinicSettingFormModalProps {
   paymentMethodDefinitionId: string;
   paymentMethodType: PaymentMethodType;
   initialData?: ClinicPaymentSettingWithRelations | null;
+  forcedClinicId?: string;
 }
 
 // Extend PosTerminal type locally if bankAccount relation isn't included by default in getPosTerminals
@@ -60,11 +61,13 @@ export function ClinicSettingFormModal({
   paymentMethodDefinitionId,
   paymentMethodType,
   initialData,
+  forcedClinicId,
 }: ClinicSettingFormModalProps) {
   const { t } = useTranslation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const isEditing = !!initialData;
+  const isClinicSelectDisabled = isEditing || !!forcedClinicId;
 
   const defaultFormValues = useMemo(() => 
     isEditing && initialData
@@ -78,7 +81,7 @@ export function ClinicSettingFormModal({
           isDefaultReceivingBankAccount: initialData.isDefaultReceivingBankAccount ?? false,
         }
       : {
-          clinicId: '',
+          clinicId: forcedClinicId || '',
           paymentMethodDefinitionId: paymentMethodDefinitionId,
           isActiveInClinic: true,
           receivingBankAccountId: null,
@@ -86,7 +89,7 @@ export function ClinicSettingFormModal({
           isDefaultPosTerminal: false,
           isDefaultReceivingBankAccount: false,
         }
-  , [isEditing, initialData, paymentMethodDefinitionId]);
+  , [isEditing, initialData, paymentMethodDefinitionId, forcedClinicId]);
 
   const form = useForm<ClinicPaymentSettingFormValues>({
     resolver: zodResolver(clinicPaymentSettingFormSchema),
@@ -135,34 +138,6 @@ export function ClinicSettingFormModal({
       form.reset(defaultFormValues);
     }
   }, [isOpen, defaultFormValues, form]);
-
-  // --- Cálculo de IDs ya usados en OTRAS configuraciones para esta clínica ---
-  const usedBankAccountIds = useMemo(() => {
-    if (!existingSettingsForClinic || !selectedClinicId) return new Set<string>();
-    const otherSettings = isEditing && initialData
-        ? existingSettingsForClinic.filter(setting => setting.id !== initialData.id)
-        : existingSettingsForClinic;
-    return new Set(
-        otherSettings
-            .filter(setting => setting.clinicId === selectedClinicId) 
-            .map(setting => setting.receivingBankAccountId)
-            .filter((id): id is string => !!id) 
-    );
-  }, [existingSettingsForClinic, selectedClinicId, isEditing, initialData]);
-
-  const usedPosTerminalIds = useMemo(() => {
-    if (!existingSettingsForClinic || !selectedClinicId) return new Set<string>();
-    const otherSettings = isEditing && initialData
-        ? existingSettingsForClinic.filter(setting => setting.id !== initialData.id)
-        : existingSettingsForClinic;
-    return new Set(
-        otherSettings
-            .filter(setting => setting.clinicId === selectedClinicId)
-            .map(setting => setting.posTerminalId)
-            .filter((id): id is string => !!id)
-    );
-  }, [existingSettingsForClinic, selectedClinicId, isEditing, initialData]);
-  // --- Fin Cálculo IDs Usados ---
 
   const associatedBankAccount = useMemo(() => {
       if (paymentMethodType !== PaymentMethodType.CARD || !watchedPosTerminalId || !posTerminals) {
@@ -231,7 +206,7 @@ export function ClinicSettingFormModal({
                               (paymentMethodType === PaymentMethodType.CARD && isFetchingPosTerminals);
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) handleClose(); }}>
       <DialogContent className="sm:max-w-[600px] p-6">
         <DialogHeader>
           <DialogTitle>
@@ -254,7 +229,7 @@ export function ClinicSettingFormModal({
           >
             
             {/* Columna 1 */} 
-            <div className="md:col-span-1 space-y-4">
+            <div className="space-y-4 md:col-span-1">
                 {/* --- Clínica --- */} 
                 <FormField
                   control={form.control}
@@ -265,11 +240,11 @@ export function ClinicSettingFormModal({
                       <Select 
                         onValueChange={field.onChange} 
                         value={field.value ?? ''} 
-                        disabled={isFetchingClinics || isEditing || isLoading}
+                        disabled={isFetchingClinics || isLoading || isClinicSelectDisabled}
                       >
                         <FormControl>
                           <SelectTrigger className={isFetchingClinics ? 'justify-start' : ''}>
-                             {isFetchingClinics && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} 
+                             {isFetchingClinics && <Loader2 className="w-4 h-4 mr-2 animate-spin" />} 
                             <SelectValue placeholder={isFetchingClinics ? t('common.loading') : t('config_clinic_payment_settings.form_placeholders.clinicId')} />
                           </SelectTrigger>
                         </FormControl>
@@ -294,7 +269,7 @@ export function ClinicSettingFormModal({
                   control={form.control}
                   name="isActiveInClinic"
                   render={({ field }) => (
-                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                    <FormItem className="flex flex-row items-center justify-between p-4 border rounded-lg">
                         <div className="space-y-0.5">
                             <FormLabel>{t('config_clinic_payment_settings.form_labels.isActiveInClinic')}</FormLabel>
                             <FormDescription>
@@ -327,7 +302,7 @@ export function ClinicSettingFormModal({
                         >
                           <FormControl>
                             <SelectTrigger className={isFetchingPosTerminals ? 'justify-start' : ''}>
-                               {isFetchingPosTerminals && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} 
+                               {isFetchingPosTerminals && <Loader2 className="w-4 h-4 mr-2 animate-spin" />} 
                               <SelectValue placeholder={
                                   !selectedClinicId ? t('config_clinic_payment_settings.select_clinic_first') 
                                   : isFetchingPosTerminals ? t('common.loading') 
@@ -337,15 +312,12 @@ export function ClinicSettingFormModal({
                           <SelectContent>
                               {!isFetchingPosTerminals && <SelectItem value="none">{t('common.none')}</SelectItem>} 
                               {!isFetchingPosTerminals && posTerminals?.map((terminal) => {
-                                  const isUsed = usedPosTerminalIds.has(terminal.id);
                                   return (
                                       <SelectItem 
                                           key={terminal.id} 
                                           value={terminal.id} 
-                                          disabled={isUsed}
                                       >
                                           {terminal.name} {terminal.provider ? `(${terminal.provider})` : ''}
-                                          {isUsed && <span className="ml-2 text-xs text-muted-foreground">({t('config_clinic_payment_settings.already_assigned')})</span>} 
                                       </SelectItem>
                                   );
                               })}
@@ -359,7 +331,7 @@ export function ClinicSettingFormModal({
                          </FormDescription>
                         <FormMessage />
                          {associatedBankAccount && (
-                            <div className="mt-2 text-xs text-muted-foreground border p-2 rounded-md bg-muted/50">
+                            <div className="p-2 mt-2 text-xs border rounded-md text-muted-foreground bg-muted/50">
                                 <span>{t('config_clinic_payment_settings.associated_account')}: </span>
                                 <span className="font-medium">{associatedBankAccount.accountName} (...{associatedBankAccount.iban?.slice(-4)})</span>
                             </div>
@@ -371,7 +343,7 @@ export function ClinicSettingFormModal({
             </div>
             
             {/* Columna 2 */} 
-            <div className="md:col-span-1 space-y-4">
+            <div className="space-y-4 md:col-span-1">
                 {/* --- Cuenta Bancaria Receptora (Solo si NO es CARD) --- */} 
                 {paymentMethodType !== PaymentMethodType.CARD && (
                     <FormField
@@ -387,7 +359,7 @@ export function ClinicSettingFormModal({
                           >
                             <FormControl>
                               <SelectTrigger className={isFetchingBankAccounts ? 'justify-start' : ''}>
-                                 {isFetchingBankAccounts && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} 
+                                 {isFetchingBankAccounts && <Loader2 className="w-4 h-4 mr-2 animate-spin" />} 
                                  <SelectValue placeholder={
                                      !selectedClinicId ? t('config_clinic_payment_settings.select_clinic_first') 
                                      : isFetchingBankAccounts ? t('common.loading')
@@ -397,15 +369,12 @@ export function ClinicSettingFormModal({
                             <SelectContent>
                                 {!isFetchingBankAccounts && <SelectItem value="none">{t('common.none')}</SelectItem>} 
                                 {!isFetchingBankAccounts && bankAccounts?.map((account) => {
-                                    const isUsed = usedBankAccountIds.has(account.id);
                                     return (
                                         <SelectItem 
                                             key={account.id} 
                                             value={account.id}
-                                            disabled={isUsed}
                                         >
                                             {account.accountName} ({account.iban ? `...${account.iban.slice(-4)}` : t('common.iban_not_available')})
-                                            {isUsed && <span className="ml-2 text-xs text-muted-foreground">({t('config_clinic_payment_settings.already_assigned')})</span>} 
                                         </SelectItem>
                                     );
                                 })}
@@ -429,7 +398,7 @@ export function ClinicSettingFormModal({
                       control={form.control}
                       name="isDefaultReceivingBankAccount"
                       render={({ field }) => (
-                        <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                        <FormItem className="flex flex-row items-center justify-between p-4 border rounded-lg">
                             <div className="space-y-0.5">
                                 <FormLabel>{t('config_clinic_payment_settings.form_labels.isDefaultReceivingBankAccount')}</FormLabel>
                                 <FormDescription>
@@ -440,7 +409,7 @@ export function ClinicSettingFormModal({
                                 <Switch
                                     checked={!!field.value}
                                     onCheckedChange={field.onChange}
-                                    disabled={!watchedReceivingBankAccountId || usedBankAccountIds.has(watchedReceivingBankAccountId) || isLoading}
+                                    disabled={!watchedReceivingBankAccountId || isLoading}
                                   />
                             </FormControl>
                         </FormItem>
@@ -454,7 +423,7 @@ export function ClinicSettingFormModal({
                       control={form.control}
                       name="isDefaultPosTerminal"
                       render={({ field }) => (
-                        <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                        <FormItem className="flex flex-row items-center justify-between p-4 border rounded-lg">
                             <div className="space-y-0.5">
                                 <FormLabel>{t('config_clinic_payment_settings.form_labels.isDefaultPosTerminal')}</FormLabel>
                                 <FormDescription>
@@ -465,7 +434,7 @@ export function ClinicSettingFormModal({
                                 <Switch
                                     checked={!!field.value}
                                     onCheckedChange={field.onChange}
-                                    disabled={!watchedPosTerminalId || usedPosTerminalIds.has(watchedPosTerminalId) || isLoading} 
+                                    disabled={!watchedPosTerminalId || isLoading} 
                                   />
                             </FormControl>
                         </FormItem>
@@ -473,7 +442,6 @@ export function ClinicSettingFormModal({
                     />
                 )}
             </div>
-            
           </form>
         </Form>
         
@@ -488,9 +456,13 @@ export function ClinicSettingFormModal({
             <Button 
                 type="submit" 
                 form="clinic-setting-form"
-                disabled={isLoading || !selectedClinicId}
+                disabled={ 
+                  isLoading || 
+                  !selectedClinicId || 
+                  isFetchingSelectData
+                }
             >
-                {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {isLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
                 {isEditing ? t('common.save_changes') : t('common.create')}
             </Button>
         </DialogFooter>

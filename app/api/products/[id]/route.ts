@@ -3,195 +3,240 @@ import { prisma } from '@/lib/db';
 import { Prisma } from '@prisma/client';
 // import { getCurrentUserSystemId } from '@/lib/auth'; // TODO: Ajustar ruta
 import { getServerAuthSession } from '@/lib/auth'; 
+import { ApiProductPayloadSchema, ProductFormValues } from '@/lib/schemas/product'; // <<< Importar nuevo schema
+import { z } from 'zod'; // Importar z para usar ZodError
 
-export async function GET(request: Request, props: { params: Promise<{ id: string }> }) {
-    const params = await props.params;
-    const productId = params.id;
-    let systemId: string | null = null; // Inicializar a null
+// Helper para extraer ID (mismo que en servicios)
+function extractIdFromUrl(url: string): string | null {
+    try {
+        const pathname = new URL(url).pathname;
+        const segments = pathname.split('/').filter(Boolean);
+        if (segments.length >= 3 && segments[0] === 'api' && segments[1] === 'products') {
+            return segments[2];
+        }
+        return null;
+    } catch (error) {
+        console.error("Error extracting ID from URL:", error);
+        return null;
+    }
+}
+
+export async function GET(request: Request) {
+    const id = extractIdFromUrl(request.url);
+    if (!id) {
+      return NextResponse.json({ error: 'No se pudo extraer el ID de la URL.' }, { status: 400 });
+    }
+    let systemId: string | null = null;
 
     try {
-        // --- Obtener sesión y systemId --- 
         const session = await getServerAuthSession();
         if (!session?.user?.systemId) {
             return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
         }
-        systemId = session.user.systemId; // Reasignar aquí
-        // --- Fin obtención --- 
+        systemId = session.user.systemId;
 
-        // Buscar por ID y verificar systemId
         const product = await prisma.product.findUnique({
-            where: { id: productId }, 
+            where: { id: id, systemId: systemId }, // <<< Añadir filtro systemId
             include: {
                 category: true,
                 vatType: true,
+                settings: true, // <<< Incluir settings
             },
         });
 
-        // Verificar si el producto existe y pertenece al systemId correcto
-        if (!product || product.systemId !== systemId) {
-             throw new Prisma.PrismaClientKnownRequestError('Not found', { code: 'P2025', clientVersion: '' }); // Simular error P2025
+        if (!product) { // La condición where ya filtra por systemId
+             throw new Prisma.PrismaClientKnownRequestError('Producto no encontrado', { code: 'P2025', clientVersion: '' });
         }
 
         return NextResponse.json(product);
     } catch (error) {
-        console.error(`Error fetching product ${productId} for system ${systemId ?? 'UNKNOWN'}:`, error);
+        console.error(`Error fetching product ${id} for system ${systemId ?? 'UNKNOWN'}:`, error);
         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
-            return NextResponse.json({ message: `Producto ${productId} no encontrado en este sistema` }, { status: 404 });
+            return NextResponse.json({ message: `Producto ${id} no encontrado en este sistema.` }, { status: 404 });
         }
         return NextResponse.json({ message: 'Error interno del servidor al obtener el producto' }, { status: 500 });
-    } finally {
-        await prisma.$disconnect();
     }
+    // No necesitamos finally { await prisma.$disconnect(); } en Next.js Route Handlers
 }
 
-export async function PUT(request: Request, props: { params: Promise<{ id: string }> }) {
-    const params = await props.params;
-    const productId = params.id;
-    let systemId: string | null = null; // Inicializar a null
-    let sku: string | null | undefined = undefined;
-    let updateData: Prisma.ProductUpdateArgs['data'] = {};
+export async function PUT(request: Request) {
+    const id = extractIdFromUrl(request.url);
+    if (!id) {
+      return NextResponse.json({ error: 'No se pudo extraer el ID de la URL.' }, { status: 400 });
+    }
+    const productId = id;
+    let systemId: string | null = null;
 
     try {
-        // --- Obtener sesión y systemId --- 
         const session = await getServerAuthSession();
         if (!session?.user?.systemId) {
             return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
         }
-        systemId = session.user.systemId; // Reasignar aquí
-        // --- Fin obtención --- 
+        systemId = session.user.systemId;
 
-        // Verificar existencia y pertenencia
-        const existingProduct = await prisma.product.findUnique({ where: { id: productId } });
-        if (!existingProduct || existingProduct.systemId !== systemId) {
+        const body = await request.json();
+        // Validar con el schema importado
+        const validatedData = ApiProductPayloadSchema.parse(body);
+        const { categoryId, vatTypeId, settings, ...productBaseData } = validatedData;
+        const skuValue = productBaseData.sku; // Guardar SKU para chequeo
+
+        // Verificar existencia y pertenencia ANTES de la transacción
+        const existingProductCheck = await prisma.product.findUnique({ 
+            where: { id: productId, systemId: systemId } 
+        });
+        if (!existingProductCheck) {
             return NextResponse.json({ message: `Producto ${productId} no encontrado en este sistema` }, { status: 404 });
         }
 
-        const body = await request.json();
-        const { name, description, price, costPrice, isActive, categoryId, vatTypeId } = body;
-        sku = body.sku;
-
-        // Validaciones (precio, coste, sku)
-        if (price !== undefined && (typeof price !== 'number' || price < 0)) {
-             return NextResponse.json({ message: 'El precio debe ser un número >= 0' }, { status: 400 });
-        }
-        if (costPrice !== undefined && costPrice !== null && (typeof costPrice !== 'number' || costPrice < 0)) {
-            return NextResponse.json({ message: 'El precio de coste debe ser un número >= 0 o nulo' }, { status: 400 });
-        }
-        if (sku !== undefined && sku !== null) { 
-             const existingProductWithSku = await prisma.product.findFirst({
+        // Transacción para actualizar
+        const updatedProductWithSettings = await prisma.$transaction(async (tx) => {
+            // 1. Validar unicidad de SKU si se proporciona y ha cambiado
+            if (skuValue && skuValue !== existingProductCheck.sku) { 
+                const existingSku = await tx.product.findFirst({
                 where: {
-                    sku: sku,
+                        sku: skuValue,
                     systemId: systemId,
-                    id: { not: productId } // Excluir el producto actual de la búsqueda
+                        id: { not: productId } // Excluir el actual
                 }
             });
-            if (existingProductWithSku) {
-                return NextResponse.json({ message: `El SKU '${sku}' ya está en uso por otro producto en este sistema.` }, { status: 409 });
+                if (existingSku) {
+                    throw new Prisma.PrismaClientKnownRequestError(
+                        `El SKU '${skuValue}' ya está en uso.`, 
+                        { code: 'P2002', clientVersion: 'tx', meta: { target: ['sku'] } }
+                    );
             }
         }
 
-        // Asignar valores a updateData (declarada fuera)
-        if (name !== undefined) updateData.name = name;
-        if (description !== undefined) updateData.description = description;
-        if (sku !== undefined) updateData.sku = sku; 
-        if (price !== undefined) updateData.price = parseFloat(price.toString());
-        if (costPrice !== undefined) updateData.costPrice = costPrice !== null ? parseFloat(costPrice.toString()) : null;
-        if (isActive !== undefined) updateData.isActive = !!isActive;
-        if (categoryId !== undefined) updateData.categoryId = categoryId;
-        if (vatTypeId !== undefined) updateData.vatTypeId = vatTypeId;
+            // 2. Actualizar Producto base
+            await tx.product.update({
+                where: { id: productId, systemId: systemId }, // Doble check
+                data: {
+                    name: productBaseData.name,
+                    description: productBaseData.description,
+                    sku: productBaseData.sku,
+                    barcode: productBaseData.barcode,
+                    price: productBaseData.price,
+                    costPrice: productBaseData.costPrice,
+                    ...(categoryId !== undefined && { 
+                        category: categoryId ? { connect: { id: categoryId } } : { disconnect: true }
+                    }),
+                    ...(vatTypeId !== undefined && { 
+                        vatType: vatTypeId ? { connect: { id: vatTypeId } } : { disconnect: true }
+                    }),
+                }
+            });
 
-        const updatedProduct = await prisma.product.update({
-            where: { id: productId, systemId: systemId }, 
-            data: updateData,
-            include: {
-                category: true,
-                vatType: true,
-            },
+            // 3. Upsert de ProductSetting
+            await tx.productSetting.upsert({
+                where: { productId: productId },
+                create: { 
+                    ...settings, 
+                    product: { connect: { id: productId } } 
+                },
+                update: settings,
+            });
+
+            // 4. Devolver el producto actualizado con settings
+            return await tx.product.findUniqueOrThrow({
+                where: { id: productId },
+                include: { settings: true, category: true, vatType: true }
+            });
         });
-        return NextResponse.json(updatedProduct);
+
+        return NextResponse.json(updatedProductWithSettings);
 
     } catch (error) {
         console.error(`Error updating product ${productId} for system ${systemId ?? 'UNKNOWN'}:`, error);
+        
         if (error instanceof Prisma.PrismaClientKnownRequestError) {
             if (error.code === 'P2025') {
-                 return NextResponse.json({ message: `Producto ${productId} no encontrado en este sistema` }, { status: 404 });
+                 return NextResponse.json({ message: `Producto ${productId} no encontrado.` }, { status: 404 });
             }
             if (error.code === 'P2002') { 
-                 const target = (error.meta?.target as string[])?.join(', ');
-                 if (target?.includes('sku')) {
-                      return NextResponse.json({ message: `Conflicto: El SKU '${sku || ''}' ya existe globalmente.` }, { status: 409 });
+                 const target = (error.meta?.target as string[])?.join(', ') || 'desconocido';
+                 const message = error.message.includes('ya está en uso') ? error.message : `Conflicto: El valor proporcionado para '${target}' ya existe.`;
+                 return NextResponse.json({ message }, { status: 409 });
                  }
-                 if (target?.includes('name_systemId')) { 
-                      return NextResponse.json({ message: `Conflicto: Ya existe un producto con el nombre '${updateData.name || ''}' en este sistema.` }, { status: 409 });
+             if (error.code === 'P2003') {
+                 const fieldName = (error.meta?.field_name as string) || 'desconocido';
+                 return NextResponse.json({ message: `Referencia inválida: La categoría o tipo de IVA no existe (campo: ${fieldName}).` }, { status: 400 });
                  }
-                 return NextResponse.json({ message: `Conflicto de datos: El valor proporcionado para '${target || 'campo único'}' ya existe.` }, { status: 409 });
-            }
+        }
+        if (error instanceof z.ZodError) { // Capturar ZodError
+            console.error("Error de validación Zod:", error.errors);
+            return NextResponse.json({ error: 'Datos de entrada inválidos', details: error.errors }, { status: 400 });
         }
         if (error instanceof SyntaxError) {
+           console.error("Error de sintaxis JSON:", error.message);
            return NextResponse.json({ message: 'JSON inválido' }, { status: 400 });
         }
         return NextResponse.json({ message: 'Error interno del servidor al actualizar el producto' }, { status: 500 });
-    } finally {
-        await prisma.$disconnect();
     }
 }
 
-export async function DELETE(request: Request, props: { params: Promise<{ id: string }> }) {
-    const params = await props.params;
-    const productId = params.id;
-    let systemId: string | null = null; // Inicializar a null
+export async function DELETE(request: Request) {
+    const id = extractIdFromUrl(request.url);
+    if (!id) {
+      return NextResponse.json({ error: 'No se pudo extraer el ID de la URL.' }, { status: 400 });
+    }
+    const productId = id;
+    let systemId: string | null = null;
 
     try {
-        // --- Obtener sesión y systemId --- 
         const session = await getServerAuthSession();
         if (!session?.user?.systemId) {
             return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
         }
-        systemId = session.user.systemId; // Reasignar aquí
-        // --- Fin obtención --- 
+        systemId = session.user.systemId;
         
-        // Verificar existencia y pertenencia al sistema ANTES de verificar dependencias
-        const existingProduct = await prisma.product.findUnique({ where: { id: productId } });
-        if (!existingProduct || existingProduct.systemId !== systemId) {
-             return NextResponse.json({ message: `Producto ${productId} no encontrado en este sistema` }, { status: 404 });
+        // Usar transacción para verificar dependencias y eliminar
+        await prisma.$transaction(async (tx) => {
+            // 1. Verificar existencia y pertenencia
+            const existingProduct = await tx.product.findUnique({
+                where: { id: productId, systemId: systemId }
+            });
+            if (!existingProduct) {
+                 throw new Prisma.PrismaClientKnownRequestError(
+                    `Producto ${productId} no encontrado en este sistema`, 
+                    { code: 'P2025', clientVersion: 'tx' }
+                 );
         }
 
-        // Verificar dependencias (tarifas, tickets, etc.)
-        const tariffAssociations = await prisma.tariffProductPrice.count({ where: { productId: productId }});
+            // 2. Verificar dependencias (mover dentro de la tx)
+            const tariffAssociations = await tx.tariffProductPrice.count({ where: { productId: productId }});
         if (tariffAssociations > 0) {
-            return NextResponse.json(
-                { message: `No se puede eliminar el producto ${productId} porque está asociado a ${tariffAssociations} tarifa(s). Desvincúlelo primero.` },
-                { status: 409 } // Conflict
-            );
+                 throw new Error(`Conflicto: Asociado a ${tariffAssociations} tarifa(s).`); // Lanzar error para rollback
         }
-        const ticketAssociations = await prisma.ticketItem.count({ where: { productId: productId }});
+            const ticketAssociations = await tx.ticketItem.count({ where: { productId: productId }});
         if (ticketAssociations > 0) {
-             return NextResponse.json(
-                { message: `No se puede eliminar el producto ${productId} porque está incluido en ${ticketAssociations} ticket(s) existentes.` },
-                { status: 409 } // Conflict
-            );
-        }
-        
-        // Eliminar usando where con id y systemId para doble verificación
-        await prisma.product.delete({
-            where: { id: productId, systemId: systemId },
+                 throw new Error(`Conflicto: Incluido en ${ticketAssociations} ticket(s).`); // Lanzar error para rollback
+            }
+            // TODO: Añadir verificaciones para InvoiceItem, PackageItem, ServiceConsumption si es necesario
+            
+            // 3. Eliminar (la cascada se encarga de ProductSetting)
+            await tx.product.delete({
+                where: { id: productId, systemId: systemId }, // Doble check
         });
+        });
+        
         return NextResponse.json({ message: `Producto ${productId} eliminado` }, { status: 200 });
 
-    } catch (error) {
+    } catch (error: any) {
         console.error(`Error deleting product ${productId} for system ${systemId ?? 'UNKNOWN'}:`, error);
+        
+        // Capturar errores lanzados desde la transacción
+        if (error.message?.startsWith('Conflicto:')) {
+             return NextResponse.json({ message: error.message }, { status: 409 });
+        }
+        
          if (error instanceof Prisma.PrismaClientKnownRequestError) {
-            // P2025 no debería ocurrir aquí
             if (error.code === 'P2025') {
-                 return NextResponse.json({ message: `Producto ${productId} no encontrado en este sistema` }, { status: 404 });
+                 return NextResponse.json({ message: `Producto ${productId} no encontrado en este sistema.` }, { status: 404 });
             }
-            if (error.code === 'P2003'){ // Foreign key constraint failed
-                 // Podría ser StockLedger u otra dependencia no verificada explícitamente
-                 return NextResponse.json({ message: `No se puede eliminar el producto ${productId} debido a registros dependientes existentes (ej: historial de stock).` }, { status: 409 });
+            if (error.code === 'P2003'){ 
+                 return NextResponse.json({ message: `No se puede eliminar el producto ${productId} debido a registros dependientes.` }, { status: 409 });
             }
         }
         return NextResponse.json({ message: 'Error interno del servidor al eliminar el producto' }, { status: 500 });
-    } finally {
-        await prisma.$disconnect();
     }
 } 

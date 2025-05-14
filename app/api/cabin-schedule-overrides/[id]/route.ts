@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { prisma } from '@/lib/prisma-old'; // Usar la ruta corregida
+import { prisma } from '@/lib/db'; // Corregido para apuntar a lib/db.ts
 import { parseISO, startOfDay, isValid } from 'date-fns';
 
 // Esquema para validar el ID de la ruta

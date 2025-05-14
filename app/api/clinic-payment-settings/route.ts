@@ -40,7 +40,13 @@ export async function GET(request: Request) {
           select: { id: true, name: true }
         },
         posTerminal: {
-          select: { id: true, name: true }
+          select: { 
+            id: true, 
+            name: true,
+            bankAccount: {
+              select: { id: true, accountName: true, iban: true }
+            }
+          }
         }
       },
       orderBy: {

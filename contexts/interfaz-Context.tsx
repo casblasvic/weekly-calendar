@@ -161,11 +161,15 @@ export function InterfazProvider({ children }: { children: ReactNode }) {
 
   // Marcar como inicializado inmediatamente
   useEffect(() => {
+        // Simular inicialización asíncrona si fuera necesario
+        // Por ahora, simplemente lo marcamos como inicializado
         setInitialized(true);
-  }, []);
+        console.log("[InterfazProvider] Context initialized."); // Log para confirmar
+  }, []); // <--- Se ejecuta solo una vez al montar
 
   // Crear un objeto con todas las funciones del servicio de datos
-  const interfaz: InterfazContextType = {
+  // Crear el objeto de contexto SOLO si está inicializado
+  const interfaz: InterfazContextType | undefined = initialized ? {
     initialized,
     
     // Función para reiniciar datos
@@ -437,8 +441,16 @@ export function InterfazProvider({ children }: { children: ReactNode }) {
     deleteUsuario: async (id) => { console.warn(`deleteUsuario(${id}) no implementado`); return false; },
 
     // Añadir aquí el resto de funciones delegadas...
-  };
-  
+  } : undefined; // Devolver undefined si no está inicializado
+
+  // No renderizar children hasta que el contexto esté listo
+  if (!initialized || !interfaz) {
+     console.log("[InterfazProvider] Waiting for initialization..."); // Log
+     return null; // O un componente <LoadingSpinner /> si prefieres
+  }
+
+  console.log("[InterfazProvider] Rendering children with context."); // Log
+
   return (
     <InterfazContext.Provider value={interfaz}>
       {children}

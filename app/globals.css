@@ -422,3 +422,30 @@ input[type="checkbox"] {
   }
 }
 
+/* Animaciones para el componente ShimmerButton */
+@keyframes shimmer-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes spin-around {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-shimmer-slide {
+  animation: shimmer-slide 3s linear infinite;
+}
+
+.animate-spin-around {
+  animation: spin-around 6s linear infinite;
+}
+

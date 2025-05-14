@@ -13,17 +13,14 @@ const saltRounds = 10; // Coste de hashing (podría ir a variables de entorno)
  * @returns NextResponse con la lista de usuarios (sin passwordHash) o un error.
  */
 export async function GET(request: Request) {
-  console.log("[API Users GET] Received request"); // Log inicio
   const session = await getServerAuthSession();
   if (!session || !session.user?.systemId) {
     console.error("[API Users GET] Unauthorized - No session or systemId");
     return NextResponse.json({ error: 'No autorizado o falta systemId.' }, { status: 401 });
   }
   const systemId = session.user.systemId;
-  console.log(`[API Users GET] Authorized for systemId: ${systemId}`);
 
   try {
-    console.log(`[API Users GET] Attempting to find users for systemId: ${systemId}`);
     const users = await prisma.user.findMany({
       where: { systemId: systemId }, // <<< Filtrar por systemId de la sesión
       // Excluir el campo passwordHash de la respuesta por seguridad
@@ -51,7 +48,6 @@ export async function GET(request: Request) {
         { firstName: 'asc' },
       ]
     });
-    console.log(`[API Users GET] Found ${users.length} users for systemId: ${systemId}`);
     return NextResponse.json(users);
   } catch (error) {
     // Log detallado del error

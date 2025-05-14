@@ -5,12 +5,6 @@ import { Button } from '@/app/components/ui/button'
 import { cn } from '@/lib/utils'
 import { ArrowLeft, Save, HelpCircle, X } from 'lucide-react'
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/app/components/ui/tooltip'
-import { 
   Dialog,
   DialogContent,
   DialogDescription,
@@ -18,6 +12,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/app/components/ui/dialog'
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
 
 interface ActionButtonsProps {
   // Callbacks
@@ -145,37 +140,35 @@ export function ActionButtons({
         )}
         
         {helpContent && (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Dialog>
-                  <DialogTrigger asChild>
-                    <Button 
-                      type="button" 
-                      variant="ghost" 
-                      size="icon" 
-                      className="h-8 w-8 border border-gray-200 bg-white hover:bg-gray-50"
-                    >
-                      <HelpCircle className="h-4 w-4 text-gray-500" />
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="max-w-lg">
-                    <DialogHeader>
-                      <DialogTitle>{helpTitle}</DialogTitle>
-                      <DialogDescription asChild>
-                        <div className="mt-4">
-                          {helpContent}
-                        </div>
-                      </DialogDescription>
-                    </DialogHeader>
-                  </DialogContent>
-                </Dialog>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>{helpTooltip}</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          <HoverCard openDelay={100} closeDelay={50}>
+            <HoverCardTrigger asChild>
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button 
+                    type="button" 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-8 w-8 border border-gray-200 bg-white hover:bg-gray-50"
+                  >
+                    <HelpCircle className="h-4 w-4 text-gray-500" />
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-lg">
+                  <DialogHeader>
+                    <DialogTitle>{helpTitle}</DialogTitle>
+                    <DialogDescription asChild>
+                      <div className="mt-4">
+                        {helpContent}
+                      </div>
+                    </DialogDescription>
+                  </DialogHeader>
+                </DialogContent>
+              </Dialog>
+            </HoverCardTrigger>
+            <HoverCardContent side="top" className="w-auto p-1 text-xs">
+              {helpTooltip}
+            </HoverCardContent>
+          </HoverCard>
         )}
       </div>
     </div>

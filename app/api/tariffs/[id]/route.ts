@@ -44,6 +44,33 @@ export async function GET(request: Request, props: { params: Promise<{ id: strin
             },
             vatType: true  // Incluir datos del IVA específico aplicado
           }
+        },
+        bonoPrices: {
+          where: { isActive: true },
+          orderBy: { bonoDefinition: { name: 'asc' } },
+          include: {
+            bonoDefinition: { // Incluir datos de la definición del bono
+              include: { service: { select: {name: true} }, product: {select: {name: true}} } // Incluir servicio/producto asociado
+            },
+            vatType: true // Incluir IVA específico
+          }
+        },
+        packagePrices: {
+           where: { isActive: true },
+           orderBy: { packageDefinition: { name: 'asc' } },
+           include: {
+            packageDefinition: { // Incluir datos de la definición del paquete
+              include: {
+                items: { // Incluir los items del paquete
+                  include: {
+                    service: { select: {name: true} },
+                    product: { select: {name: true} }
+                  }
+                }
+              }
+            },
+            vatType: true // Incluir IVA específico
+          }
         }
         // --- FIN INCLUSIÓN PRECIOS ---
       }

@@ -1,1 +1,49 @@
-{} 
+{
+  "common": {},
+  "clinics": {
+    "edit": {
+      "promotions": {
+        "description": "Manage global promotions and those specific to this clinic.",
+        "add": "Add Promotion"
+      }
+    }
+  },
+  "promotions": {
+    "form": {
+      "apply_to_all_clinics": "Apply to all clinics",
+      "targetTariffId": {
+        "label": "Specific Tariff",
+        "placeholder": "Select a tariff...",
+        "searchPlaceholder": "Search tariff...",
+        "emptyPlaceholder": "No tariffs found.",
+        "preselectedDesc": "Will apply to the \"{{tariffName}}\" tariff assigned to the current clinic."
+      },
+      "targetBonoDefinitionId": {
+        "label": "Specific Bonus Definition",
+        "description": "Limit on the number of times a single client can use the promo.",
+        "placeholder": "E.g., 1"
+      }
+    },
+    "columns": {
+        "name": "Name",
+        "code": "Code",
+        "type": "Type",
+        "targetScope": "Target",
+        "accumulationCompatibilities": "Accumulation",
+        "applicableClinics": "Applicable Clinics",
+        "isActive": "Active",
+        "startDate": "Start Date",
+        "endDate": "End Date",
+        "accumulationMode": "Accum. Mode"
+    },
+    "table": {
+        "filter_name_placeholder": "Filter by name...",
+        "no_results": "No promotions found."
+    }
+  },
+  "config_clinics": {
+      "tabs": {
+          "promotions": "Promotions"
+      }
+  }
+} 

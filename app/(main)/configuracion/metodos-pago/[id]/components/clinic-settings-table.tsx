@@ -22,6 +22,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import type { ClinicPaymentSettingWithRelations } from '@/lib/api/clinicPaymentSettings';
+import type { BankAccount } from '@prisma/client';
 import { PaymentMethodType } from '@prisma/client';
 import { updateClinicPaymentSetting, deleteClinicPaymentSetting } from '@/lib/api/clinicPaymentSettings';
 
@@ -42,6 +43,17 @@ export function ClinicPaymentSettingsTable({
   const queryClient = useQueryClient();
   const { t } = useTranslation();
   const { toast } = useToast();
+
+  // <<< --- INICIO: FUNCIÓN HELPER --- >>>
+  const formatAccountDisplay = (account: Pick<BankAccount, 'id' | 'accountName' | 'iban'> | null | undefined): string => {
+    if (!account) {
+      return t('common.none'); // Opcional: o simplemente "-"
+    }
+    const name = account.accountName;
+    const ibanSuffix = account.iban ? ` (****${account.iban.slice(-4)})` : "";
+    return `${name}${ibanSuffix}`;
+  };
+  // <<< --- FIN: FUNCIÓN HELPER --- >>>
 
   // Mutación para actualizar 'isActiveInClinic'
   const updateActiveMutation = useMutation<ClinicPaymentSettingWithRelations, Error, { id: string; isActive: boolean }>({
@@ -149,28 +161,36 @@ export function ClinicPaymentSettingsTable({
         );
       },
     },
-    // Columna Cuenta Bancaria (Con Badge)
+    // Columna Cuenta Bancaria (MODIFICADA)
     {
       accessorKey: "receivingBankAccount.accountName",
       header: t('config_clinic_payment_settings.columns.bankAccount'),
       cell: ({ row }) => {
         const setting = row.original;
-        const account = setting.receivingBankAccount;
-        const isDefault = setting.isDefaultReceivingBankAccount ?? false;
-        return account ? (
+        const currentPaymentType = setting.paymentMethodDefinition.type;
+        const isDefaultAccount = setting.isDefaultReceivingBankAccount ?? false;
+        let accountToDisplay: Pick<BankAccount, 'id' | 'accountName' | 'iban'> | null | undefined = null;
+
+        if (currentPaymentType === PaymentMethodType.CARD) {
+          // Para Tarjeta, mostrar la cuenta del TPV asociado
+          accountToDisplay = setting.posTerminal?.bankAccount;
+        } else {
+          // Para otros métodos, mostrar la cuenta directamente asignada
+          accountToDisplay = setting.receivingBankAccount;
+        }
+        
+        const displayText = formatAccountDisplay(accountToDisplay);
+
+        return (
           <div className="text-sm flex items-center">
-            <div>
-                <span className="font-medium">{account.accountName}</span>
-                <span className="block text-xs text-muted-foreground">{account.iban}</span>
-            </div>
-            {isDefault && (
+            <span>{displayText}</span>
+            {/* Mostrar badge Default solo si NO es tipo TARJETA y es la cuenta default directa */}
+            {currentPaymentType !== PaymentMethodType.CARD && isDefaultAccount && (
                 <Badge variant="outline" className="ml-2 border-green-500 text-green-600 px-1.5 py-0.5 text-xs">
                     {t('common.default')}
                 </Badge>
             )}
           </div>
-        ) : (
-          <span className="text-muted-foreground text-xs">{t('common.none')}</span>
         );
       },
     },

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react"
 import { useRouter, useSearchParams, useParams } from "next/navigation"
-import { FileQuestion, Plus, Minus, ChevronUp, ChevronDown, MessageSquare, Users, HelpCircle, X, Send, ShoppingCart, AlertCircle, Save, AlertTriangle, Star, Ticket } from "lucide-react"
+import { FileQuestion, Plus, Minus, ChevronUp, ChevronDown, MessageSquare, Users, HelpCircle, X, Send, ShoppingCart, AlertCircle, Save, AlertTriangle, Star, Ticket, Pencil, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -23,6 +23,7 @@ import { toast } from "@/components/ui/use-toast"
 import ImageGallery from "@/components/ui/image-gallery"
 import DocumentList from "@/components/ui/document-list"
 import FileUploader from "@/components/ui/file-uploader"
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card"
 
 // Usar SOLO contextos especializados (no importar useInterfaz directamente)
 import { useIVA } from "@/contexts/iva-context"
@@ -209,7 +210,7 @@ export default function NuevoServicio() {
       }
     };
     fetchExistingCodes();
-  }, [getAllServicios]); // Mantenemos dependencia
+  }, []); // <<< CAMBIO AQUÍ: Array de dependencias vacío
 
   // Modificar handleInputChange para usar campos Prisma y normalizeString
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -338,8 +339,8 @@ export default function NuevoServicio() {
     };
 
     fetchData();
-    // Actualizar dependencia
-  }, [tarifaId, getTarifaById, getTiposIVAByTarifaId, getFamiliasByTarifaId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps 
+  }, [tarifaId]); // <<< ELIMINAR getTarifaById, getTiposIVAByTarifaId, getFamiliasByTarifaId
   
   // useEffect para filtrar equipos cuando la tarifa o los equipos globales cambien
   useEffect(() => {
@@ -366,8 +367,8 @@ export default function NuevoServicio() {
 
     cargarEquiposClinica();
     console.log("[useEffect Equipos] Finalizado.");
-    // Actualizar dependencia
-  }, [tarifa, getClinicEquipos]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tarifa]); // <<< ELIMINAR getClinicEquipos
   
   // Cargar servicio si existe ID y establecer estado inicial
   useEffect(() => {
@@ -400,7 +401,7 @@ export default function NuevoServicio() {
             setHayCambios(false);
             setCurrentServicioId(servicioId);
 
-            // Cargar imágenes y documentos asociados (usando EntityType.SERVICE)
+            // --- RESTAURAR CARGA DE ASSETS ---
             setIsLoadingAssets(true);
              Promise.all([
                 getImagesByEntity(EntityType.SERVICE, servicioId),
@@ -412,6 +413,7 @@ export default function NuevoServicio() {
                  console.error("Error cargando assets del servicio:", err);
                  toast({ title: "Error", description: "No se pudieron cargar imágenes/documentos.", variant: "destructive" });
              }).finally(() => setIsLoadingAssets(false));
+            // --- FIN RESTAURACIÓN ---
 
           } else {
              console.error(`Servicio con ID ${servicioId} no encontrado.`);
@@ -444,7 +446,8 @@ export default function NuevoServicio() {
       }
     };
     fetchServicio();
-  }, [servicioId, tarifaId, getServicioById, router, getImagesByEntity, getDocumentsByEntity]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [servicioId, tarifaId, router]); // <<< ELIMINAR getServicioById, getImagesByEntity, getDocumentsByEntity
 
   // Añadir depuración de familias
   useEffect(() => {
@@ -1155,40 +1158,32 @@ export default function NuevoServicio() {
               {renderDocumentsSection()}
 
               {/* Tooltips */}
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger />
-                  <TooltipContent>
-                    <span>
-                      <p>ID Servicio: {servicio?.id}</p>
-                      <p>ID Tarifa: {tarifaId}</p>
-                    </span>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+              <HoverCard openDelay={100} closeDelay={50}>
+                <HoverCardTrigger asChild>
+                  <Button variant="ghost_destructive_table" size="icon_table" onClick={() => console.log('Eliminar consumos')} >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </HoverCardTrigger>
+                <HoverCardContent><p>Eliminar Consumos</p></HoverCardContent>
+              </HoverCard>
               
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger/>
-                  <TooltipContent>
-                    <span> 
-                      <p>ID Categoría: {servicio?.categoryId || 'N/A'}</p>
-                    </span>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+              <HoverCard openDelay={100} closeDelay={50}>
+                <HoverCardTrigger asChild>
+                  <Button variant="ghost_table" size="icon_table" onClick={() => handleSubSectionNavigation('bonos', 'Bonos')} >
+                    <Ticket className="w-4 h-4" />
+                  </Button>
+                </HoverCardTrigger>
+                <HoverCardContent><p>Configurar Bonos</p></HoverCardContent>
+              </HoverCard>
               
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger/>
-                  <TooltipContent>
-                    <span>
-                      <p>Creado: {servicio?.createdAt ? new Date(servicio.createdAt).toLocaleString() : 'N/A'}</p>
-                      <p>Actualizado: {servicio?.updatedAt ? new Date(servicio.updatedAt).toLocaleString() : 'N/A'}</p>
-                    </span>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+              <HoverCard openDelay={100} closeDelay={50}>
+                <HoverCardTrigger asChild>
+                  <Button variant="ghost_table" size="icon_table" onClick={() => handleSubSectionNavigation('puntos', 'Puntos')} >
+                    <Star className="w-4 h-4" />
+                  </Button>
+                </HoverCardTrigger>
+                <HoverCardContent><p>Configurar Puntos</p></HoverCardContent>
+              </HoverCard>
             </div>
           </div>
         </div> {/* Fin container mx-auto px-4 py-6 pb-12 */}
@@ -1202,36 +1197,30 @@ export default function NuevoServicio() {
               {/* Botones para subsecciones si el servicio está guardado */}
               {servicioGuardado && (
                   <>
-                      <TooltipProvider>
-                          <Tooltip>
-                              <TooltipTrigger asChild>
-                                  <Button variant="outline" size="icon" onClick={() => handleSubSectionNavigation('consumos', 'Consumos')} className={buttonNavClass}>
-                                      <ShoppingCart className="h-4 w-4" />
-                                  </Button>
-                              </TooltipTrigger>
-                              <TooltipContent><p>Gestionar Consumos</p></TooltipContent>
-                          </Tooltip>
-                      </TooltipProvider>
-                      <TooltipProvider>
-                          <Tooltip>
-                              <TooltipTrigger asChild>
-                                  <Button variant="outline" size="icon" onClick={() => handleSubSectionNavigation('bonos', 'Bonos')} className={buttonNavClass}>
-                                      <Ticket className="h-4 w-4" />
-                                  </Button>
-                              </TooltipTrigger>
-                              <TooltipContent><p>Configurar Bonos</p></TooltipContent>
-                          </Tooltip>
-                      </TooltipProvider>
-                      <TooltipProvider>
-                          <Tooltip>
-                              <TooltipTrigger asChild>
-                                  <Button variant="outline" size="icon" onClick={() => handleSubSectionNavigation('puntos', 'Puntos')} className={buttonNavClass}>
-                                      <Star className="h-4 w-4" />
-                                  </Button>
-                              </TooltipTrigger>
-                              <TooltipContent><p>Configurar Puntos</p></TooltipContent>
-                          </Tooltip>
-                      </TooltipProvider>
+                      <HoverCard openDelay={100} closeDelay={50}>
+                          <HoverCardTrigger asChild>
+                              <Button variant="outline" size="icon" onClick={() => handleSubSectionNavigation('consumos', 'Consumos')} className={buttonNavClass}>
+                                  <ShoppingCart className="h-4 w-4" />
+                              </Button>
+                          </HoverCardTrigger>
+                          <HoverCardContent><p>Gestionar Consumos</p></HoverCardContent>
+                      </HoverCard>
+                      <HoverCard openDelay={100} closeDelay={50}>
+                          <HoverCardTrigger asChild>
+                              <Button variant="outline" size="icon" onClick={() => handleSubSectionNavigation('bonos', 'Bonos')} className={buttonNavClass}>
+                                  <Ticket className="h-4 w-4" />
+                              </Button>
+                          </HoverCardTrigger>
+                          <HoverCardContent><p>Configurar Bonos</p></HoverCardContent>
+                      </HoverCard>
+                      <HoverCard openDelay={100} closeDelay={50}>
+                          <HoverCardTrigger asChild>
+                              <Button variant="outline" size="icon" onClick={() => handleSubSectionNavigation('puntos', 'Puntos')} className={buttonNavClass}>
+                                  <Star className="h-4 w-4" />
+                              </Button>
+                          </HoverCardTrigger>
+                          <HoverCardContent><p>Configurar Puntos</p></HoverCardContent>
+                      </HoverCard>
                       {/* Separador visual */}
                       <div className="border-l border-gray-300 h-6 my-auto mx-2"></div>
                   </>

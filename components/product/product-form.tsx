@@ -18,6 +18,11 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 type ProductWithRelations = Product & {
     category?: Category | null;
     vatType?: VATType | null;
+    settings?: {
+        id: string;
+        isForSale: boolean;
+        isActive: boolean;
+    } | null;
     // Añadir otras relaciones si fueran necesarias para el form
 };
 
@@ -52,9 +57,34 @@ interface ProductFormData {
     isDisabled: boolean; // Mapea a !isActive?
 }
 
+// <<< AÑADIR ESTADO INICIAL POR DEFECTO PARA EL FORMULARIO >>>
+const defaultProductFormData: ProductFormData = {
+    name: '',
+    categoryId: null,
+    priceWithVat: '',
+    vatTypeId: null,
+    belongsToFlatRate: null,
+    consumptionUnits: '',
+    consumptionType: null,
+    costPriceWithVat: '',
+    purchaseVatTypeId: null,
+    ean: null,
+    sku: null,
+    commissionType: 'Global',
+    commissionValue: null,
+    isForSale: true,
+    automaticDiscounts: false,
+    manualDiscounts: true,
+    acceptsPromotions: true,
+    affectsStatistics: true,
+    requiresLotReference: false,
+    isDisabled: false,
+};
+
 export function ProductForm({ initialData, isSaving, onSubmit }: ProductFormProps) {
     const router = useRouter();
-    const [formData, setFormData] = useState<Partial<ProductFormData>>({}); // Usar Partial para inicializar
+    // <<< USAR EL ESTADO INICIAL COMPLETO Y QUITAR Partial >>>
+    const [formData, setFormData] = useState<ProductFormData>(defaultProductFormData);
     const [categories, setCategories] = useState<Category[]>([]);
     const [vatTypes, setVatTypes] = useState<VATType[]>([]);
     // TODO: Cargar otros datos necesarios (tipos de comisión, tarifas planas, tipos de consumo?)
@@ -87,51 +117,31 @@ export function ProductForm({ initialData, isSaving, onSubmit }: ProductFormProp
     useEffect(() => {
         if (initialData) {
             // Mapear initialData a ProductFormData
-            // ¡Esta parte es compleja y requiere conocer cómo se calculan/almacenan los precios con IVA!
-            // Asumiremos valores directos por ahora, pero necesita revisión.
             setFormData({
-                name: initialData.name,
-                categoryId: initialData.categoryId,
-                priceWithVat: initialData.price?.toString() ?? '', // ¡Necesita cálculo inverso o campo específico!
-                vatTypeId: initialData.vatTypeId,
-                // ... mapear otros campos ...
-                ean: initialData.barcode, // Asumiendo que EAN es barcode
-                sku: initialData.sku,
-                isForSale: initialData.isForSale,
-                isDisabled: !initialData.isActive,
-                // ... completar mapeo ...
-                 commissionType: 'Global', // Valor por defecto inicial
-                 commissionValue: null,
-                 automaticDiscounts: false, // Valores por defecto
-                 manualDiscounts: true,
-                 acceptsPromotions: true,
-                 affectsStatistics: true,
-                 requiresLotReference: false,
+                name: initialData.name ?? defaultProductFormData.name,
+                categoryId: initialData.categoryId ?? defaultProductFormData.categoryId,
+                priceWithVat: initialData.price?.toString() ?? defaultProductFormData.priceWithVat,
+                vatTypeId: initialData.vatTypeId ?? defaultProductFormData.vatTypeId,
+                belongsToFlatRate: defaultProductFormData.belongsToFlatRate, // Asumir default, mapear si initialData lo tiene
+                consumptionUnits: defaultProductFormData.consumptionUnits, // Asumir default, mapear si initialData lo tiene
+                consumptionType: defaultProductFormData.consumptionType, // Asumir default, mapear si initialData lo tiene
+                costPriceWithVat: defaultProductFormData.costPriceWithVat, // Asumir default, mapear si initialData lo tiene
+                purchaseVatTypeId: defaultProductFormData.purchaseVatTypeId, // Asumir default, mapear si initialData lo tiene
+                ean: initialData.barcode ?? defaultProductFormData.ean,
+                sku: initialData.sku ?? defaultProductFormData.sku,
+                commissionType: defaultProductFormData.commissionType, // Usar default o mapear si initialData lo tiene
+                commissionValue: defaultProductFormData.commissionValue, // Usar default o mapear si initialData lo tiene
+                isForSale: initialData.settings?.isForSale ?? defaultProductFormData.isForSale,
+                automaticDiscounts: defaultProductFormData.automaticDiscounts, // Usar default o mapear si initialData lo tiene
+                manualDiscounts: defaultProductFormData.manualDiscounts, // Usar default o mapear si initialData lo tiene
+                acceptsPromotions: defaultProductFormData.acceptsPromotions, // Usar default o mapear si initialData lo tiene
+                affectsStatistics: defaultProductFormData.affectsStatistics, // Usar default o mapear si initialData lo tiene
+                requiresLotReference: defaultProductFormData.requiresLotReference, // Usar default o mapear si initialData lo tiene
+                isDisabled: initialData.settings?.isActive !== undefined ? !initialData.settings.isActive : defaultProductFormData.isDisabled,
             });
         } else {
-            // Valores por defecto para nuevo producto
-            setFormData({
-                name: '',
-                categoryId: null,
-                priceWithVat: '',
-                vatTypeId: null,
-                belongsToFlatRate: null,
-                consumptionUnits: '',
-                consumptionType: null,
-                costPriceWithVat: '',
-                purchaseVatTypeId: null,
-                ean: null,
-                sku: null,
-                commissionType: 'Global',
-                commissionValue: null,
-                isForSale: true,
-                automaticDiscounts: false,
-                manualDiscounts: true,
-                acceptsPromotions: true,
-                affectsStatistics: true,
-                requiresLotReference: false,
-                isDisabled: false,
-            });
+            // Para nuevo producto o si initialData se vuelve null, resetear a los valores por defecto.
+            setFormData(defaultProductFormData);
         }
     }, [initialData]);
 
@@ -192,7 +202,11 @@ export function ProductForm({ initialData, isSaving, onSubmit }: ProductFormProp
                             {/* Familia */}
                             <div>
                                 <Label htmlFor="categoryId">Familia</Label>
-                                <Select name="categoryId" value={formData.categoryId ?? undefined} onValueChange={(v) => handleSelectChange(v, 'categoryId')}>
+                                <Select 
+                                    name="categoryId" 
+                                    value={formData.categoryId || ''}
+                                    onValueChange={(v) => handleSelectChange(v, 'categoryId')}
+                                >
                                     <SelectTrigger><SelectValue placeholder="(Ninguna)" /></SelectTrigger>
                                     <SelectContent>
                                         {categories.map(cat => <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>)}
@@ -207,7 +221,11 @@ export function ProductForm({ initialData, isSaving, onSubmit }: ProductFormProp
                              {/* IVA */}
                             <div>
                                 <Label htmlFor="vatTypeId">IVA</Label>
-                                <Select name="vatTypeId" value={formData.vatTypeId ?? undefined} onValueChange={(v) => handleSelectChange(v, 'vatTypeId')}>
+                                <Select 
+                                    name="vatTypeId" 
+                                    value={formData.vatTypeId || ''}
+                                    onValueChange={(v) => handleSelectChange(v, 'vatTypeId')}
+                                >
                                     <SelectTrigger><SelectValue placeholder="(Ninguno)" /></SelectTrigger>
                                     <SelectContent>
                                         {vatTypes.map(vat => <SelectItem key={vat.id} value={vat.id}>{vat.name} ({vat.rate}%)</SelectItem>)}
@@ -218,7 +236,12 @@ export function ProductForm({ initialData, isSaving, onSubmit }: ProductFormProp
                             <div>
                                 <Label htmlFor="belongsToFlatRate">Pertenece a la tarifa plana</Label>
                                 {/* TODO: Cargar y mostrar tarifas planas */} 
-                                <Select name="belongsToFlatRate" value={formData.belongsToFlatRate ?? undefined} onValueChange={(v) => handleSelectChange(v, 'belongsToFlatRate')} disabled>
+                                <Select 
+                                    name="belongsToFlatRate" 
+                                    value={formData.belongsToFlatRate || ''}
+                                    onValueChange={(v) => handleSelectChange(v, 'belongsToFlatRate')}
+                                    disabled
+                                >
                                     <SelectTrigger><SelectValue placeholder="(Ninguna)" /></SelectTrigger>
                                     <SelectContent>
                                     </SelectContent>
@@ -233,7 +256,12 @@ export function ProductForm({ initialData, isSaving, onSubmit }: ProductFormProp
                                 <div className='flex-1'>
                                     <Label htmlFor="consumptionType">Tipo de consumo</Label>
                                      {/* TODO: Cargar y mostrar tipos */} 
-                                    <Select name="consumptionType" value={formData.consumptionType ?? undefined} onValueChange={(v) => handleSelectChange(v, 'consumptionType')} disabled>
+                                    <Select 
+                                        name="consumptionType" 
+                                        value={formData.consumptionType || ''}
+                                        onValueChange={(v) => handleSelectChange(v, 'consumptionType')}
+                                        disabled
+                                    >
                                         <SelectTrigger><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
                                          <SelectContent>
                                          </SelectContent>
@@ -252,7 +280,7 @@ export function ProductForm({ initialData, isSaving, onSubmit }: ProductFormProp
                             {/* IVA Compra */} 
                              <div>
                                 <Label htmlFor="purchaseVatTypeId">IVA Compra</Label>
-                                <Select name="purchaseVatTypeId" value={formData.purchaseVatTypeId ?? undefined} onValueChange={(v) => handleSelectChange(v, 'purchaseVatTypeId')}>
+                                <Select name="purchaseVatTypeId" value={formData.purchaseVatTypeId || ''} onValueChange={(v) => handleSelectChange(v, 'purchaseVatTypeId')}>
                                      <SelectTrigger><SelectValue placeholder="(Ninguno)" /></SelectTrigger>
                                      <SelectContent>
                                          {vatTypes.map(vat => <SelectItem key={vat.id} value={vat.id}>{vat.name} ({vat.rate}%)</SelectItem>)}

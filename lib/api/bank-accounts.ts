@@ -21,25 +21,37 @@ export interface BankAccount {
   // Añadir aquí otros campos si la API los devuelve y se necesitan en el frontend
 }
 
+// <<< NUEVO: Definir tipo para las opciones de getBankAccounts >>>
+interface GetBankAccountsOptions {
+  isActive?: boolean;
+  bankId?: string; // Podríamos necesitar otros filtros en el futuro
+}
+
 // Obtener todas las cuentas bancarias
-export async function getBankAccounts(): Promise<BankAccount[]> {
+export async function getBankAccounts(
+  options?: GetBankAccountsOptions
+): Promise<BankAccount[]> {
   try {
-    const response = await axios.get("/api/bank-accounts");
+    // Construir parámetros de consulta
+    const params = new URLSearchParams();
+    if (options?.isActive !== undefined) {
+      params.append('isActive', String(options.isActive));
+    }
+    if (options?.bankId) {
+      params.append('bankId', options.bankId);
+    }
+    // Añadir otros parámetros si se definen en GetBankAccountsOptions
+
+    const queryString = params.toString();
+    const apiUrl = `/api/bank-accounts${queryString ? `?${queryString}` : ''}`;
+
+    console.log(`[getBankAccounts] Fetching from: ${apiUrl}`); // Log para depuración
+
+    const response = await axios.get(apiUrl);
     return response.data;
   } catch (error) {
     console.error("Error al obtener cuentas bancarias:", error);
     throw new Error("No se pudieron cargar las cuentas bancarias");
-  }
-}
-
-// Obtener cuentas bancarias filtradas por banco
-export async function getBankAccountsByBank(bankId: string): Promise<BankAccount[]> {
-  try {
-    const response = await axios.get(`/api/bank-accounts?bankId=${bankId}`);
-    return response.data;
-  } catch (error) {
-    console.error(`Error al obtener cuentas bancarias del banco ${bankId}:`, error);
-    throw new Error("No se pudieron cargar las cuentas bancarias del banco");
   }
 }
 

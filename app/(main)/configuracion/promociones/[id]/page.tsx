@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useCallback } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -44,7 +44,10 @@ export default function EditarPromocionPage() {
   const router = useRouter();
   const params = useParams();
   const queryClient = useQueryClient();
+  const searchParams = useSearchParams();
   const promotionId = params.id as string;
+
+  const redirectBackTo = searchParams.get('redirectBackTo');
 
   const { data: promotion, isLoading, error, isError } = useQuery<PromotionWithRelations, Error>({
     queryKey: ['promotion', promotionId],
@@ -58,6 +61,10 @@ export default function EditarPromocionPage() {
       toast.success(`¡Promoción "${data.name}" actualizada con éxito! (Test estático)`);
       queryClient.invalidateQueries({ queryKey: ['promotions'] });
       queryClient.invalidateQueries({ queryKey: ['promotion', promotionId] });
+      
+      const targetUrl = redirectBackTo || '/configuracion/promociones';
+      router.push(targetUrl);
+      router.refresh();
     },
     onError: (error) => {
       toast.error(t('promotions.edit.error', { message: error.message }));
@@ -69,8 +76,12 @@ export default function EditarPromocionPage() {
   }, [mutation]);
 
   const handleCancel = useCallback(() => {
-    router.back();
-  }, [router]);
+    if (redirectBackTo) {
+        router.push(redirectBackTo);
+    } else {
+        router.back();
+    }
+  }, [router, redirectBackTo]);
 
   if (isLoading) {
     return (

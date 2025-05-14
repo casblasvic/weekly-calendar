@@ -5,19 +5,25 @@ import { useRouter } from 'next/navigation';
 import { Save, HelpCircle, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ServiceForm, ServiceFormData } from '@/components/service/service-form'; // Importar el formulario y su tipo
-import { Category, VATType, Equipment } from '@prisma/client';
+import { Category, VATType, Equipment, Service } from '@prisma/client';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton'; // Para el estado de carga
 import { Card, CardContent } from "@/components/ui/card"; // <<< AÑADIDO IMPORT
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
+import { ServiceActionFooter } from "@/components/service/service-action-footer"; // <-- Importar el nuevo componente
 
 export default function NuevoServicioPage() {
+    const { t } = useTranslation();
     const router = useRouter();
+    const queryClient = useQueryClient();
     const [categories, setCategories] = useState<Category[]>([]);
     const [vatTypes, setVatTypes] = useState<VATType[]>([]);
     const [equipments, setEquipments] = useState<Equipment[]>([]);
     const [isLoadingAux, setIsLoadingAux] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const formId = "new-service-form";
 
     // Cargar datos auxiliares necesarios para el formulario
     const loadAuxData = useCallback(async () => {
@@ -111,62 +117,146 @@ export default function NuevoServicioPage() {
          </div>
     );
 
-    return (
-        // Volver a usar Fragment <> y pb-24 en el div de contenido
-        <>
-            {/* Contenido principal con padding, max-w y pb-24 */}
-            <div className="p-4 md:p-6 lg:p-8 max-w-4xl mx-auto pb-24"> 
-                <h1 className="text-2xl font-semibold mb-6">Nuevo Servicio Global</h1>
+    // ... (fetchers y createService sin cambios) ...
+    const fetchCategories = async (): Promise<Category[]> => {
+        const res = await fetch('/api/categories');
+        if (!res.ok) throw new Error("Error fetching categories");
+        return res.json();
+    };
 
-                     {isLoadingAux ? (
-                        renderFormSkeleton()
-                     ) : error ? (
-                         <div className="text-red-600">Error al cargar datos: {error}</div>
-                     ) : (
+    const fetchVatTypes = async (): Promise<VATType[]> => {
+        const res = await fetch('/api/vat-types');
+        if (!res.ok) throw new Error("Error fetching VAT types");
+        return res.json();
+    };
+
+    const fetchEquipments = async (): Promise<Equipment[]> => {
+        const res = await fetch('/api/equipments');
+        if (!res.ok) throw new Error("Error fetching equipments");
+        return res.json();
+    };
+
+    const createService = async (data: ServiceFormData): Promise<Service> => {
+        const { id, ...createData } = data; 
+        const response = await fetch('/api/services', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(createData),
+        });
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.message || `Error ${response.status} al crear el servicio`);
+        }
+        return response.json();
+    };
+
+    // ... (useQuery para categories, vatTypes, equipments sin cambios) ...
+    const { data: categoriesData, isLoading: isLoadingCategories, isError: isErrorCategories } = useQuery<Category[]>({ 
+        queryKey: ["categories"],
+        queryFn: fetchCategories,
+    });
+
+    const { data: vatTypesData, isLoading: isLoadingVats, isError: isErrorVats } = useQuery<VATType[]>({ 
+        queryKey: ["vatTypes"],
+        queryFn: fetchVatTypes,
+    });
+
+    const { data: equipmentsData, isLoading: isLoadingEquips, isError: isErrorEquips } = useQuery<Equipment[]>({ 
+        queryKey: ["equipments"],
+        queryFn: fetchEquipments,
+    });
+
+    const isLoadingData = isLoadingCategories || isLoadingVats || isLoadingEquips;
+    const isDataError = isErrorCategories || isErrorVats || isErrorEquips;
+    // const dataError = errorCategories || errorVats || errorEquips; // Si quieres mostrar el error específico
+
+    // Mutación para crear el servicio
+    const createServiceMutation = useMutation<Service, Error, ServiceFormData>({
+        mutationFn: createService,
+        onSuccess: (newService) => {
+            toast.success(`${t('common.success')}: ${t('servicios.serviceCreated', { name: newService.name })}`);
+            queryClient.invalidateQueries({ queryKey: ['services'] }); 
+            // --- MODIFICACIÓN: Navegar a la página de edición del nuevo servicio --- 
+            // router.push('/configuracion/servicios'); // NO volver a la lista
+            router.replace(`/configuracion/servicios/${newService.id}`); // REEMPLAZAR URL actual
+            // --- FIN MODIFICACIÓN ---
+        },
+        onError: (error: Error) => {
+            toast.error(`${t('common.error')}: ${error.message}`);
+        },
+    });
+
+    const handleFormSubmitMutation = async (data: ServiceFormData) => {
+        await createServiceMutation.mutateAsync(data);
+    };
+    
+    // Función para disparar el submit del form desde el footer
+    const triggerFormSubmit = () => {
+        (document.getElementById(formId) as HTMLFormElement | null)?.requestSubmit();
+    };
+    
+    // Placeholder para la navegación de subsecciones (no aplica en 'nuevo')
+    const handleSubSectionNavigation = (section: string) => {
+        // No hacer nada o mostrar un toast informativo si se intenta
+        toast.info(t('services.new.actionsDisabled') || "Guarda el servicio primero para acceder a esta sección.");
+    };
+
+    if (isLoadingData) {
+        // Podríamos añadir un skeleton para el footer también si queremos
+        return (
+            <>
+              {renderFormSkeleton()}
+              {/* Skeleton Footer Opcional */}
+               <footer className="fixed bottom-0 z-10 px-4 py-3 border-t bg-background md:px-6 lg:px-8" style={{left: 'var(--main-margin-left)', width: 'var(--main-width)'}}>
+                    <div className="flex flex-wrap items-center justify-start gap-2 max-w-4xl mx-auto">
+                        {Array.from({ length: 5 }).map((_, i) => <Skeleton key={`action-${i}`} className="h-8 w-24" />)} 
+                        <div className="flex-grow"></div> 
+                        <Skeleton className="h-9 w-24" /> 
+                        <Skeleton className="h-9 w-28" /> 
+                        <Skeleton className="h-9 w-9 rounded-md" /> 
+                    </div>
+               </footer>
+             </>
+         );
+    }
+
+    if (isDataError) {
+        return <div className="p-4 text-red-500">{t('common.errorLoadingFormDependencies')}</div>;
+    }
+
+    if (!categoriesData || !vatTypesData || !equipmentsData) {
+         return <div className="p-4 text-orange-500">{t('common.dataNotReady')}</div>;
+    }
+
+    return (
+        <>
+            {/* Contenedor con padding y max-width */}
+            <div className="p-4 md:p-6 max-w-4xl mx-auto pb-20">
+                <h1 className="text-2xl font-semibold mb-6">{t('servicios.newServiceTitle')}</h1>
+
                          <ServiceForm 
-                             categories={categories}
-                             vatTypes={vatTypes}
-                             equipments={equipments}
-                             onSubmit={handleFormSubmit}
-                             isSaving={isSaving}
-                             formId="new-service-form"
+                    categories={categoriesData}
+                    vatTypes={vatTypesData}
+                    equipments={equipmentsData}
+                    onSubmit={handleFormSubmitMutation}
+                    isSaving={createServiceMutation.isPending}
+                    formId={formId}
+                    // initialData es undefined por defecto en ServiceForm
                          />
-                     )}
             </div>
 
-            {/* Footer fixed usando CSS Variables para left/width */}
-            <footer 
-                className="fixed bottom-0 z-10 border-t bg-background py-3 px-4 md:px-6 lg:px-8"
-                style={{
-                    left: 'var(--main-margin-left)', 
-                    width: 'var(--main-width)',
-                    transition: 'left 0.3s ease-in-out, width 0.3s ease-in-out'
-                } as React.CSSProperties}
-            >
-                 <div className="max-w-4xl mx-auto flex items-center justify-start space-x-2">
-                    {/* Botones Izquierda (NUEVO) */}
-                    <div className="flex items-center gap-2">
-                         <Button variant="outline" size="sm" onClick={() => toast.info("Funcionalidad de Puntos pendiente.")}>Puntos</Button>
-                         <Button variant="outline" size="sm" onClick={() => toast.info("Funcionalidad de Bonos pendiente.")}>Bonos</Button>
-                         <Button variant="outline" size="sm" onClick={() => toast.info("Funcionalidad de Suscripciones pendiente.")}>Suscripciones</Button>
-                    </div>
-
-                    {/* Botones Derecha (EXISTENTE) */}
-                    <div className="flex items-center gap-2">
-                        <Button variant="outline" onClick={() => router.back()} disabled={isSaving}>
-                            Volver
-                        </Button>
-                        <Button type="submit" form="new-service-form" disabled={isSaving}>
-                            <Save className="mr-2 h-4 w-4" />
-                            {isSaving ? 'Creando Servicio...' : 'Crear Servicio'}
-                        </Button>
-                        <Button variant="outline" size="icon" disabled>
-                           <HelpCircle className="h-4 w-4" />
-                           <span className="sr-only">Ayuda</span>
-                       </Button>
-                    </div>
-                 </div>
-            </footer>
+            {/* Usar el nuevo ServiceActionFooter */}
+            <ServiceActionFooter 
+                serviceId={null} // Indicar que es nuevo
+                isSaving={createServiceMutation.isPending} 
+                isLoading={isLoadingData} 
+                formId={formId} 
+                hasInitialData={false} // Indicar que no hay datos iniciales
+                onBack={() => router.back()}
+                onNavigate={handleSubSectionNavigation} // Navegación deshabilitada
+                onSubmitTrigger={triggerFormSubmit} 
+                // onHelp={() => {/* Lógica ayuda */}}
+            />
         </>
     );
 } 

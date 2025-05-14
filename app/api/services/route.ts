@@ -2,11 +2,11 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
-import { getServerAuthSession } from "@/lib/auth"; // Importar el helper
+import { getServerAuthSession } from "@/lib/auth";
+import { ApiServicePayloadSchema, ServiceFormValues } from '@/lib/schemas/service';
 
 /**
  * Handler para obtener todos los servicios.
- * TODO: Filtros (por tarifa, por familia, por clínica?), paginación, ordenación.
  * @param request La solicitud entrante.
  * @returns NextResponse con la lista de servicios o un error.
  */
@@ -22,18 +22,23 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const clinicId = searchParams.get('clinicId');
-  const isActive = searchParams.get('isActive');
+  const isActiveParam = searchParams.get('isActive');
 
   let whereClause: Prisma.ServiceWhereInput = {
-      systemId: systemId, // Usar el systemId de la sesión
+      systemId: systemId,
   };
 
   if (clinicId) {
     console.warn("[API Services GET] Filtrado por clinicId no implementado directamente en Service.");
-    // TODO: Si es necesario, añadir lógica para filtrar por clínica (posiblemente a través de Tarifas?)
+    // TODO: Lógica de filtrado por clínica (si es necesario)
   }
-  if (isActive !== null) {
-    whereClause.isActive = isActive === 'true';
+
+  // --- Filtrar por isActive usando la tabla settings --- 
+  if (isActiveParam !== null) {
+    const isActiveValue = isActiveParam === 'true';
+    whereClause.settings = {
+        isActive: isActiveValue
+    };
   }
 
   try {
@@ -42,6 +47,18 @@ export async function GET(request: Request) {
       include: {
         category: true,
         vatType: true,
+        settings: true,
+        tariffPrices: {
+          where: { isActive: true },
+          select: {
+            tariff: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
       },
       orderBy: {
         name: 'asc',
@@ -72,69 +89,115 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
 
-    // Quitar systemId del schema Zod, usar el de la sesión
-    const createServiceSchema = z.object({
-        name: z.string().min(1),
-        description: z.string().optional(),
-        durationMinutes: z.number().int().positive(),
-        price: z.number().positive().optional(),
-        code: z.string().optional(),
-        colorCode: z.string().optional(),
-        requiresMedicalSignOff: z.boolean().optional(),
-        pointsAwarded: z.number().int().optional(),
-        isActive: z.boolean().optional(),
-        categoryId: z.string().cuid().optional(),
-        vatTypeId: z.string().cuid().optional(),
-    });
-    
-    const validatedData = createServiceSchema.parse(body);
+    // Validar usando el schema específico de la API
+    const validatedData = ApiServicePayloadSchema.parse(body);
 
-    // Extraer systemId del body
-    const { categoryId, vatTypeId, ...restOfValidatedData } = validatedData;
+    const { categoryId, vatTypeId, settings, equipmentIds, skillIds, ...serviceBaseData } = validatedData;
 
-    // Construir objeto de datos para Prisma asegurando campos obligatorios
-    const dataToCreate: Prisma.ServiceCreateInput = {
+    // Usar transacción para asegurar atomicidad
+    const newServiceWithSettings = await prisma.$transaction(async (tx) => {
+      // 1. Crear el Servicio base
+      const newService = await tx.service.create({
+        data: {
+          // Campos obligatorios explícitos
         name: validatedData.name, 
         durationMinutes: validatedData.durationMinutes, 
-        ...restOfValidatedData, 
+          // Resto de campos base (opcionales)
+          code: validatedData.code,
+          description: validatedData.description,
+          price: validatedData.price,
+          colorCode: validatedData.colorCode,
+          // Conexiones de relaciones
         system: {
-            connect: { id: sessionSystemId } // Usar SIEMPRE el systemId de la sesión
+            connect: { id: sessionSystemId }
         },
         ...(categoryId && { category: { connect: { id: categoryId } } }),
         ...(vatTypeId && { vatType: { connect: { id: vatTypeId } } }),
-    };
+        },
+      });
 
-    const newService = await prisma.service.create({
-      data: dataToCreate,
-      include: {
-        category: true,
-        vatType: true,
-      },
+      // 2. Crear los Settings asociados
+      const newSettings = await tx.serviceSetting.create({
+        data: {
+          ...settings,
+          service: {
+            connect: { id: newService.id }
+          }
+        }
+      });
+      
+      // 3. Crear relaciones M-M para Equipos (si existen)
+      if (equipmentIds && equipmentIds.length > 0) {
+          await tx.serviceEquipmentRequirement.createMany({
+              data: equipmentIds.map(eqId => ({ serviceId: newService.id, equipmentId: eqId }))
+          });
+      }
+      
+      // 4. Crear relaciones M-M para Habilidades (si existen)
+      if (skillIds && skillIds.length > 0) {
+          await tx.serviceSkillRequirement.createMany({
+              data: skillIds.map(skId => ({ serviceId: newService.id, skillId: skId }))
+          });
+      }
+
+      // 5. Devolver el servicio completo con settings (y opcionalmente relaciones M-M si necesario)
+      //    Para devolverlo necesitamos hacer un find final DENTRO de la transacción
+      //    o construir el objeto manualmente (más simple si solo necesitamos settings)
+      //    Vamos a construirlo manualmente para simplificar
+      return { ...newService, settings: newSettings }; 
+      // Alternativa (más costosa): 
+      // return await tx.service.findUnique({ 
+      //   where: { id: newService.id }, 
+      //   include: { settings: true, category: true, vatType: true } 
+      // });
     });
 
-    return NextResponse.json(newService, { status: 201 });
+    // Recuperar relaciones asociadas fuera de la transacción si es necesario para la respuesta completa
+    const finalServiceResponse = await prisma.service.findUnique({
+        where: { id: newServiceWithSettings.id },
+      include: {
+            settings: true,
+        category: true,
+            vatType: true
+            // Incluir equipmentRequirements y skillRequirements si el frontend los necesita inmediatamente
+            // equipmentRequirements: { include: { equipment: true } }, 
+            // skillRequirements: { include: { skill: true } },
+        }
+    });
+
+    return NextResponse.json(finalServiceResponse, { status: 201 });
 
   } catch (error) {
     console.error("Error creating service:", error);
 
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
-      // P2002: Violación de unicidad (ej: name+tariffFamilyId)
       if (error.code === 'P2002') { 
-        return NextResponse.json({ message: 'Conflicto de datos (ej: servicio ya existe en esa familia)' }, { status: 409 });
+        // Detectar qué campo causó el error si es posible desde error.meta.target
+        const target = (error.meta?.target as string[])?.join(', ') || 'desconocido';
+        console.error(`Error de unicidad en campos: ${target}`);
+        return NextResponse.json({ message: `Conflicto: El servicio ya existe o viola una restricción única (campo: ${target}).` }, { status: 409 });
       }
-      // P2003: Foreign key constraint failed (ej: tariffFamilyId o vatTypeId no existen)
       if (error.code === 'P2003') { 
-           return NextResponse.json({ message: 'Referencia inválida (ej: familia o tipo de IVA no existe)' }, { status: 400 });
+        const fieldName = (error.meta?.field_name as string) || 'desconocido';
+        console.error(`Error de clave foránea en campo: ${fieldName}`);
+        return NextResponse.json({ message: `Referencia inválida: La categoría, tipo de IVA, equipo o habilidad especificada no existe (campo: ${fieldName}).` }, { status: 400 });
+      }
+      // P2025: Registro relacionado no encontrado (podría ocurrir si se intenta conectar a algo que no existe)
+      if (error.code === 'P2025') { 
+         console.error("Error P2025: Registro relacionado no encontrado", error.meta);
+         return NextResponse.json({ message: `Error al crear: ${error.message}` }, { status: 400 });
       }
     }
     if (error instanceof z.ZodError) {
-      // Error de validación Zod
+      console.error("Error de validación Zod:", error.errors);
       return NextResponse.json({ error: 'Datos de entrada inválidos', details: error.errors }, { status: 400 });
     }
     if (error instanceof SyntaxError) {
-       return NextResponse.json({ message: 'JSON inválido' }, { status: 400 });
+       console.error("Error de sintaxis JSON:", error.message);
+       return NextResponse.json({ message: 'JSON inválido en la solicitud' }, { status: 400 });
     }
 
+    // Error genérico
     return NextResponse.json(
       { message: 'Error interno del servidor al crear el servicio' },
       { status: 500 }

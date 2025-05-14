@@ -13,8 +13,8 @@ import { Search, ArrowLeft, HelpCircle } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { useRouter } from "next/navigation"
 import { IconButton } from "@/components/ui/icon-button"
-import { BackButton } from "@/components/ui/button"
 import { DialogFooter } from "@/components/ui/dialog"
+import { CustomDatePicker } from "@/components/custom-date-picker"
 
 interface PlannedService {
   clinic: string
@@ -251,7 +251,6 @@ export default function HistorialPage() {
             )}
 
             {/* Action buttons - always visible */}
-            <BackButton size="sm" className="h-8 px-2 rounded-md text-xs">Volver</BackButton>
             <Button variant="outline" size="sm" className="h-8 px-2 rounded-md text-xs">Exportar</Button>
             <Button size="sm" className="h-8 px-2 bg-purple-600 hover:bg-purple-700 rounded-md text-xs">Conversión</Button>
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

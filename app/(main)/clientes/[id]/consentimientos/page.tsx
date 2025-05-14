@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button"
 import { Search } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { IconButton } from "@/components/ui/icon-button"
-import { BackButton } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Printer, Eye, Download, Trash2, HelpCircle } from "lucide-react"
 
 interface ConsentForm {
   id: string
@@ -71,7 +72,6 @@ export default function ConsentimientosPage() {
 
       {/* Fixed buttons */}
       <div className="fixed bottom-4 right-4 flex items-center gap-2">
-        <BackButton>Volver</BackButton>
         <Button className="rounded-full bg-black text-white hover:bg-gray-800">Ayuda</Button>
       </div>
     </div>

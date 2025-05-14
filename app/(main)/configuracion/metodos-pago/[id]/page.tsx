@@ -1,9 +1,7 @@
 'use client'
 
-import React, { useState, useEffect } from 'react';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { useRouter, useParams } from 'next/navigation';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useRouter, useParams, usePathname, useSearchParams } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 import { useToast } from "@/components/ui/use-toast";
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -48,14 +46,20 @@ import { getPaymentMethodById, updatePaymentMethod } from '@/lib/api/paymentMeth
 import { getClinicPaymentSettings, type ClinicPaymentSettingWithRelations } from '@/lib/api/clinicPaymentSettings';
 import { ClinicPaymentSettingsTable } from './components/clinic-settings-table';
 import { ClinicSettingFormModal } from './components/clinic-setting-form-modal';
+import { PaymentMethodForm } from '../components/payment-method-form';
 
 export default function EditPaymentMethodPage() {
   const { t } = useTranslation();
   const router = useRouter();
   const params = useParams();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const paymentMethodId = params.id as string;
+
+  const filterClinicId = searchParams.get('filterClinicId');
+  const returnTo = searchParams.get('returnTo');
 
   const [isSubmittingGlobal, setIsSubmittingGlobal] = useState(false);
   const [isClinicSettingModalOpen, setIsClinicSettingModalOpen] = useState(false);
@@ -86,21 +90,15 @@ export default function EditPaymentMethodPage() {
     staleTime: 1000 * 60 * 2,
   });
 
-  const formGlobal = useForm<PaymentMethodDefinitionFormValues>({
-    resolver: zodResolver(paymentMethodDefinitionFormSchema),
-    defaultValues: {
-      name: '',
-      type: undefined,
-      details: null,
-      isActive: true,
-    },
-  });
-
-  useEffect(() => {
-    if (paymentMethodData) {
-      formGlobal.reset(paymentMethodData);
+  const filteredClinicSettings = useMemo(() => {
+    if (!clinicSettingsData) {
+      return [];
     }
-  }, [paymentMethodData, formGlobal]);
+    if (filterClinicId) {
+      return clinicSettingsData.filter(setting => setting.clinicId === filterClinicId);
+    }
+    return clinicSettingsData;
+  }, [clinicSettingsData, filterClinicId]);
 
   const mutationGlobal = useMutation<any, Error, PaymentMethodDefinitionFormValues>({
     mutationFn: (data) => updatePaymentMethod(paymentMethodId, data),
@@ -205,156 +203,100 @@ export default function EditPaymentMethodPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Form {...formGlobal}>
-            <form onSubmit={formGlobal.handleSubmit(onSubmitGlobal)} id="payment-method-edit-form" className="space-y-6">
-              <FormField
-                control={formGlobal.control}
-                name="name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('config_payment_methods.form_labels.name')}</FormLabel>
-                    <FormControl>
-                      <Input placeholder={t('config_payment_methods.form_placeholders.name')} {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={formGlobal.control}
-                name="type"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('config_payment_methods.form_labels.type')}</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value} disabled={isTypeFieldDisabled}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder={t('config_payment_methods.form_placeholders.type')} />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {Object.values(PaymentMethodType).map((typeValue) => (
-                          <SelectItem key={typeValue} value={typeValue}>
-                            {t(`enums.PaymentMethodType.${typeValue}`)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={formGlobal.control}
-                name="details"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('config_payment_methods.form_labels.details')}</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        placeholder={t('config_payment_methods.form_placeholders.details')}
-                        className="resize-none"
-                        {...field}
-                        value={field.value ?? ''}
-                      />
-                    </FormControl>
-                     <FormDescription>
-                        {t('config_payment_methods.form_descriptions.details')}
-                     </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={formGlobal.control}
-                name="isActive"
-                render={({ field }) => (
-                  <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
-                    <div className="space-y-0.5">
-                      <FormLabel className="text-base">
-                        {t('config_payment_methods.form_labels.isActive')}
-                      </FormLabel>
-                      <FormDescription>
-                        {t('config_payment_methods.form_descriptions.isActive')}
-                      </FormDescription>
-                    </div>
-                    <FormControl>
-                      <Switch
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                      />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
-            </form>
-          </Form>
+          <PaymentMethodForm
+            onSubmit={onSubmitGlobal}
+            initialData={paymentMethodData}
+            isLoading={mutationGlobal.isPending || isLoadingGlobal}
+            isEditMode={true}
+            disableTypeField={isTypeFieldDisabled}
+          />
         </CardContent>
       </Card>
 
       <Card className="flex-grow mb-20">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <div>
-             <CardTitle>{t('config_clinic_payment_settings.section_title')}</CardTitle>
-             <CardDescription>{t('config_clinic_payment_settings.table_title')}</CardDescription>
-           </div>
-           <Button onClick={handleAddClinicSetting} size="sm">
-             <PlusCircle className="h-4 w-4 mr-2" />
-             {t('config_clinic_payment_settings.add_button')}
-           </Button>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle>{t('config_payment_methods.clinic_settings_title')}</CardTitle>
+            <Button 
+              size="sm" 
+              variant="outline"
+              onClick={handleAddClinicSetting}
+            >
+              <PlusCircle className="w-4 h-4 mr-2" />
+              {t('config_clinic_payment_settings.add_method_button')}
+            </Button>
+          </div>
+          <CardDescription>{t('config_payment_methods.clinic_settings_description')}</CardDescription>
         </CardHeader>
         <CardContent>
-          {isLoadingClinicSettings ? (
-            <Skeleton className="h-40 w-full" />
-          ) : isErrorClinicSettings ? (
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertTitle>{t('common.errors.loadingTitle')}</AlertTitle>
-              <AlertDescription>
-                 {queryErrorClinicSettings?.message || t('common.errors.dataLoading', { context: 'configuraciones de clínica' })}
-              </AlertDescription>
-            </Alert>
-          ) : (
-            <ClinicPaymentSettingsTable 
-              data={clinicSettingsData || []}
-              paymentMethodType={paymentMethodData?.type as PaymentMethodType | undefined}
-              onEdit={handleEditClinicSetting}
-            />
+          {(isLoadingClinicSettings || isErrorClinicSettings) && (
+            <div className="text-center py-10">
+              {isLoadingClinicSettings && <Loader2 className="mx-auto h-8 w-8 animate-spin text-muted-foreground" />}
+              {isErrorClinicSettings && (
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertTitle>{t('common.error')}</AlertTitle>
+                  <AlertDescription>
+                    {queryErrorClinicSettings?.message || t('config_payment_methods.errors.loading_clinic_settings')}
+                  </AlertDescription>
+                </Alert>
+              )}
+            </div>
+          )}
+          {!isLoadingClinicSettings && !isErrorClinicSettings && (
+              <ClinicPaymentSettingsTable
+                data={filteredClinicSettings}
+                paymentMethodType={paymentMethodData?.type as PaymentMethodType | undefined}
+                onEdit={handleEditClinicSetting}
+              />
           )}
         </CardContent>
       </Card>
 
       <div className="fixed bottom-0 left-0 right-0 z-10 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container mx-auto px-4 py-3 max-w-4xl flex justify-end gap-3">
-           <Button variant="outline" onClick={() => router.back()} disabled={isSubmittingGlobal}>
+           <Button 
+             variant="outline" 
+             onClick={() => {
+               if (returnTo) {
+                 const decodedUrl = decodeURIComponent(returnTo);
+                 router.push(decodedUrl);
+               } else {
+                 router.back();
+               }
+             }}
+             disabled={mutationGlobal.isPending}
+           >
              <ArrowLeft className="h-4 w-4 mr-2" />
              {t('common.cancel')}
            </Button>
            <Button 
-             type="submit" 
-             form="payment-method-edit-form"
-             disabled={isSubmittingGlobal}
+             type="button"
+             onClick={() => {
+               (document.getElementById('payment-method-edit-form') as HTMLFormElement | null)?.requestSubmit();
+             }}
+             disabled={mutationGlobal.isPending || isLoadingGlobal}
            >
-             {isSubmittingGlobal && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} 
-             <Save className="h-4 w-4 mr-2" />
-             {t('common.saveChanges')}
+             {mutationGlobal.isPending ? (
+               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+             ) : (
+               <Save className="h-4 w-4 mr-2" />
+             )}
+             {t('common.save')}
            </Button>
         </div>
       </div>
 
-      <ClinicSettingFormModal
-        isOpen={isClinicSettingModalOpen}
-        onClose={() => {
-          setIsClinicSettingModalOpen(false);
-          setEditingClinicSetting(null);
-        }}
-        paymentMethodDefinitionId={paymentMethodId}
-        paymentMethodType={paymentMethodData?.type as PaymentMethodType}
-        initialData={editingClinicSetting}
-      />
+      {isClinicSettingModalOpen && (
+          <ClinicSettingFormModal
+            isOpen={isClinicSettingModalOpen}
+            onClose={() => setIsClinicSettingModalOpen(false)}
+            paymentMethodDefinitionId={paymentMethodId}
+            paymentMethodType={paymentMethodData?.type as PaymentMethodType}
+            initialData={editingClinicSetting}
+            forcedClinicId={filterClinicId || undefined}
+          />
+      )}
 
     </div>
   );

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import { Plus, ArrowUpDown, Trash2, Search, MoreHorizontal } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -16,7 +16,6 @@ import {
 } from "@/components/ui/table"
 import AddEquipmentModal from "@/components/modals/add-equipment-modal"
 import { SearchInput } from "@/components/SearchInput"
-import { useEquipment } from "@/contexts/equipment-context"
 import type { Equipment } from "@prisma/client";
 import { Badge } from "@/components/ui/badge"
 import { 
@@ -27,34 +26,47 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Skeleton } from "@/components/ui/skeleton"
 
+// Importar los hooks optimizados de TanStack Query
+import { useEquipmentQuery, useDeleteEquipmentMutation } from "@/lib/hooks/use-equipment-query"
+import { useClinicsQuery } from "@/lib/hooks/use-clinic-query"
+
 export default function EquipmentPage() {
   const router = useRouter()
-  const { allEquipos, deleteEquipo, clinics, addEquipo, updateEquipo, loading } = useEquipment()
+  
+  // Usar los hooks optimizados en lugar del contexto
+  const {
+    data: equipos = [],
+    isLoading: loadingEquipment,
+    error: equipmentError
+  } = useEquipmentQuery();
+  
+  const {
+    data: clinics = [],
+    isLoading: loadingClinics,
+  } = useClinicsQuery();
+  
+  // Mutación para eliminar equipamiento
+  const deleteEquipmentMutation = useDeleteEquipmentMutation();
+  
+  // Estado local
   const [searchTerm, setSearchTerm] = useState("")
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [selectedEquipment, setSelectedEquipment] = useState<Equipment | null>(null)
   const [isEditMode, setIsEditMode] = useState(false)
-  const [equipos, setEquipos] = useState<Equipment[]>([])
   
   const [sortColumn, setSortColumn] = useState<string>("name")
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc")
 
-  console.log("[EquipmentPage] Clinics state:", clinics);
+  // Estado de carga combinado
+  const loading = loadingEquipment || loadingClinics;
 
   const clinicNameMap = useMemo(() => {
     const map = new Map<string, string>();
     clinics.forEach(clinic => {
       map.set(String(clinic.id), clinic.name);
     });
-    console.log("[EquipmentPage] Generated Clinic Name Map:", map); 
     return map;
   }, [clinics]);
-
-  useEffect(() => {
-    if (allEquipos) {
-      setEquipos(allEquipos);
-    }
-  }, [allEquipos]);
 
   const handleSort = (column: string) => {
     if (sortColumn === column) {
@@ -65,7 +77,7 @@ export default function EquipmentPage() {
     }
   }
 
-  const filteredEquipment = equipos ? equipos.filter((item) => {
+  const filteredEquipment = equipos.filter((item) => {
     const searchLower = searchTerm.toLowerCase()
     const clinicName = item.clinicId ? clinicNameMap.get(String(item.clinicId))?.toLowerCase() ?? '' : '';
     return (
@@ -89,17 +101,19 @@ export default function EquipmentPage() {
     
     const comparison = aValue.localeCompare(bValue);
     return sortDirection === "asc" ? comparison : -comparison;
-  }) : [];
+  });
 
   const handleDelete = async (id: string) => {
-      if (confirm("¿Estás seguro de que quieres eliminar este equipo?")) {
-          const success = await deleteEquipo(id);
-          if (success) {
-              toast.success("Equipo eliminado correctamente");
-          } else {
-              toast.error("Error al eliminar el equipo");
-          }
-      }
+    if (confirm("¿Estás seguro de que quieres eliminar este equipo?")) {
+      deleteEquipmentMutation.mutate(id, {
+        onSuccess: () => {
+          toast.success("Equipo eliminado correctamente");
+        },
+        onError: (error) => {
+          toast.error(`Error al eliminar el equipo: ${error instanceof Error ? error.message : 'Error desconocido'}`);
+        }
+      });
+    }
   };
 
   const openModal = (equipment: Equipment | null = null) => {
@@ -109,9 +123,8 @@ export default function EquipmentPage() {
   };
 
   const handleModalSave = async (data: Partial<Equipment>) => {
-      console.log("handleModalSave called with:", data);
-      setIsModalOpen(false);
-      setSelectedEquipment(null);
+    setIsModalOpen(false);
+    setSelectedEquipment(null);
   };
 
   return (
@@ -227,7 +240,7 @@ export default function EquipmentPage() {
                           onClick={() => handleDelete(item.id)}
                           className="h-8 w-8 text-red-600 hover:text-red-700"
                           title="Eliminar"
-                          disabled={loading}
+                          disabled={loading || deleteEquipmentMutation.isPending}
                         >
                           <Trash2 className="w-4 h-4" />
                         </Button>

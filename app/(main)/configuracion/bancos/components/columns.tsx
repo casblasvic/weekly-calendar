@@ -18,7 +18,7 @@ import { Badge } from "@/components/ui/badge"
 import { AlertDialogAction } from "@/components/ui/alert-dialog"
 import { MoreHorizontal } from "lucide-react"
 
-// Tipo para banco
+// Tipo para banco - Añadir export
 export type Bank = {
   id: string
   name: string

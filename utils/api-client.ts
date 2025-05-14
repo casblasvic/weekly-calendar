@@ -90,7 +90,7 @@ export async function apiClient<T = any>(endpoint: string, options: ApiRequestOp
  * Métodos de conveniencia para diferentes tipos de solicitudes
  */
 export const api = {
-  get: <T>(endpoint: string, options?: Omit<ApiRequestOptions, \'method' | 'body'>) => 
+  get: <T>(endpoint: string, options?: Omit<ApiRequestOptions, 'method' | 'body'>) => 
     apiClient<T>(endpoint, { ...options, method: 'GET' }),
     
   post: <T>(endpoint: string, body: any, options?: Omit<ApiRequestOptions, 'method'>) => 
