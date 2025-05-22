@@ -25,6 +25,12 @@ import type { ClinicPaymentSettingWithRelations } from '@/lib/api/clinicPaymentS
 import type { BankAccount } from '@prisma/client';
 import { PaymentMethodType } from '@prisma/client';
 import { updateClinicPaymentSetting, deleteClinicPaymentSetting } from '@/lib/api/clinicPaymentSettings';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 interface ClinicPaymentSettingsTableProps {
   data: ClinicPaymentSettingWithRelations[];
@@ -59,10 +65,17 @@ export function ClinicPaymentSettingsTable({
   const updateActiveMutation = useMutation<ClinicPaymentSettingWithRelations, Error, { id: string; isActive: boolean }>({
     mutationFn: ({ id, isActive }) => updateClinicPaymentSetting(id, { isActiveInClinic: isActive }),
     onSuccess: (data) => {
+      // Invalidar la query para forzar un refetch es más robusto que setQueryData a veces
+      queryClient.invalidateQueries({ queryKey: ['clinicPaymentSettings', { paymentMethodDefinitionId: data.paymentMethodDefinitionId }] });
+      // Mantener el setQueryData también puede ser útil para una actualización optimista más rápida si funciona bien
       queryClient.setQueryData<ClinicPaymentSettingWithRelations[]>(['clinicPaymentSettings', { paymentMethodDefinitionId: data.paymentMethodDefinitionId }], (oldData) =>
         oldData ? oldData.map((item) => (item.id === data.id ? data : item)) : []
       );
       toast({ title: t('common.status_updated'), description: t('config_clinic_payment_settings.status_update_success', { clinicName: data.clinic.name, status: data.isActiveInClinic ? t('common.active') : t('common.inactive') }) });
+      // Si la lógica inversa actualiza Clinic.delayedPayments, también podrías necesitar invalidar la query de esa clínica específica si la UI depende de ella.
+      // queryClient.invalidateQueries({ queryKey: ['clinicDetail', data.clinicId] }); 
+      // O si afecta a la lista global de clínicas donde se muestra el flag:
+      // queryClient.invalidateQueries({ queryKey: ['allClinicsForPaymentSettings'] });
     },
     onError: (error) => {
       toast({ variant: "destructive", title: t('common.error'), description: error.message });
@@ -141,7 +154,14 @@ export function ClinicPaymentSettingsTable({
           <ArrowUpDown className="ml-2 h-4 w-4" />
         </Button>
       ),
-      cell: ({ row }) => <div>{row.original.clinic.name}</div>,
+      cell: ({ row }) => {
+        const clinicName = row.original.clinic.name;
+        return (
+          <Badge variant="outline" className="max-w-[150px] truncate">
+            {clinicName}
+          </Badge>
+        );
+      },
     },
     // Columna Activo en Clínica
     {

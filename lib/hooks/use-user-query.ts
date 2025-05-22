@@ -4,7 +4,9 @@ import { CACHE_TIME } from '@/lib/react-query';
 import type { User } from '@prisma/client';
 
 // Tipo para el usuario que se usará en el selector
-export interface UserForSelector extends Pick<User, 'id' | 'firstName' | 'lastName' | 'email'> {}
+export interface UserForSelector extends Pick<User, 'id' | 'firstName' | 'lastName' | 'email'> {
+  isActive?: boolean;
+}
 
 interface UsersByClinicQueryFilters {
   clinicId: string;

@@ -29,9 +29,10 @@ interface ClientSelectorSearchProps {
   selectedClientId?: string;
   onClientSelect: (client: ClientForSelector | null) => void;
   setFormValue: <T extends string>(field: T, value: any, options?: object) => void;
+  disabled?: boolean;
 }
 
-export function ClientSelectorSearch({ selectedClientId, onClientSelect, setFormValue }: ClientSelectorSearchProps) {
+export function ClientSelectorSearch({ selectedClientId, onClientSelect, setFormValue, disabled = false }: ClientSelectorSearchProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
@@ -47,7 +48,7 @@ export function ClientSelectorSearch({ selectedClientId, onClientSelect, setForm
     data: initialClient, 
     isLoading: isLoadingInitialClient,
   } = useClientByIdQuery(selectedClientId, {
-    enabled: !!selectedClientId && !open && (!selectedClientInternal || selectedClientInternal.id !== selectedClientId),
+    enabled: !!selectedClientId && !open, 
   });
 
   const handleClear = () => {
@@ -62,24 +63,32 @@ export function ClientSelectorSearch({ selectedClientId, onClientSelect, setForm
 
   useEffect(() => {
     if (selectedClientId) {
+      if (selectedClientInternal && selectedClientInternal.id === selectedClientId) {
+        if (!isDetailsOpen) setIsDetailsOpen(true);
+        return; 
+      }
+
       if (initialClient) {
-        if (!selectedClientInternal || selectedClientInternal.id !== initialClient.id) {
-          setSelectedClientInternal(initialClient);
-          setIsDetailsOpen(true);
-          const clientDisplayName = `${initialClient.firstName} ${initialClient.lastName}${initialClient.company?.fiscalName ? ` (${initialClient.company.fiscalName})` : initialClient.fiscalName ? ` (${initialClient.fiscalName})` : ''}`;
-          setFormValue("clientId", initialClient.id, { shouldValidate: true });
-          setFormValue("clientName", clientDisplayName);
-          setFormValue("clientDetails", initialClient);
-          onClientSelect(initialClient);
-        }
-      } else if (!isLoadingInitialClient) {
-        if (selectedClientInternal !== null && selectedClientInternal.id === selectedClientId) {
-          handleClear();
-        } else if (selectedClientInternal === null && selectedClientId) {
+        console.log("[ClientSelectorSearch useEffect] Usando initialClient para setear:", initialClient.id);
+        setSelectedClientInternal(initialClient);
+        setIsDetailsOpen(true);
+        const clientDisplayName = `${initialClient.firstName} ${initialClient.lastName}${initialClient.company?.fiscalName ? ` (${initialClient.company.fiscalName})` : initialClient.fiscalName ? ` (${initialClient.fiscalName})` : ''}`.trim();
+        setFormValue("clientId", initialClient.id, { shouldValidate: true });
+        setFormValue("clientName", clientDisplayName);
+        setFormValue("clientDetails", initialClient);
+        onClientSelect(initialClient); 
+      } else if (!isLoadingInitialClient && selectedClientId) {
+        if (selectedClientInternal && selectedClientInternal.id === selectedClientId) {
+           console.warn(`[ClientSelectorSearch useEffect] initialClient no se encontró para el ID ${selectedClientId} que estaba seleccionado internamente. Limpiando.`);
+           handleClear();
+        } else if (!selectedClientInternal) {
+           console.warn(`[ClientSelectorSearch useEffect] initialClient no se encontró para ${selectedClientId} y no había cliente interno seleccionado.`);
         }
       }
+
     } else {
       if (selectedClientInternal) {
+        console.log("[ClientSelectorSearch useEffect] selectedClientId (prop) es null/undefined, pero teníamos uno interno. Limpiando.");
         handleClear();
       }
     }
@@ -90,6 +99,7 @@ export function ClientSelectorSearch({ selectedClientId, onClientSelect, setForm
     selectedClientInternal, 
     setFormValue, 
     onClientSelect,
+    isDetailsOpen
   ]);
 
   const handleSelect = (client: ClientForSelector) => {
@@ -129,6 +139,7 @@ export function ClientSelectorSearch({ selectedClientId, onClientSelect, setForm
               size="sm" 
               onClick={handleClear}
               className="h-7 px-2 text-xs text-red-500 hover:text-red-700 hover:bg-red-50"
+              disabled={disabled}
             >
               {t('common.clearSelection')}
             </Button>
@@ -142,7 +153,7 @@ export function ClientSelectorSearch({ selectedClientId, onClientSelect, setForm
               role="combobox"
               aria-expanded={open}
               className="w-full justify-between h-9 px-3 py-1 text-sm border-gray-300 bg-white hover:bg-gray-50"
-              disabled={isLoadingInitialClient && !selectedClientInternal && !!selectedClientId}
+              disabled={(isLoadingInitialClient && !selectedClientInternal && !!selectedClientId) || disabled}
             >
               {selectedClientInternal ? (
                 <span className="flex items-center truncate">
@@ -170,6 +181,7 @@ export function ClientSelectorSearch({ selectedClientId, onClientSelect, setForm
                 className="h-9"
                 value={searchValue}
                 onValueChange={setSearchValue}
+                disabled={disabled}
               />
               {isLoadingSearch && <CommandEmpty>{t('common.loading')}</CommandEmpty>}
               {isErrorSearch && <CommandEmpty>{t('common.errors.loadingDesc')}</CommandEmpty>}
@@ -258,7 +270,7 @@ export function ClientSelectorSearch({ selectedClientId, onClientSelect, setForm
       )}
     </div>
   );
-}
+} 
 
 const InfoItem = ({ icon: Icon, label, value }: { icon: React.ElementType, label: string, value: string | null | undefined }) => {
   if (!value) return null;

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { Prisma } from '@prisma/client'; // Importar tipos de Prisma si son necesarios para errores
 import { z } from 'zod';
-import { DayOfWeek as PrismaDayOfWeek } from '@prisma/client';
+import { DayOfWeek as PrismaDayOfWeek, PaymentMethodDefinition, PaymentMethodType } from '@prisma/client';
 import { getServerAuthSession } from "@/lib/auth"; // Corrected import path
 
 /**
@@ -47,9 +47,9 @@ const UpdateClinicSchema = z.object({
   scheduleControl: z.boolean().optional().nullable(), 
   professionalSkills: z.boolean().optional().nullable(), 
   notes: z.string().optional().nullable(), 
-  openTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Formato HH:MM inválido").optional().nullable(), // Validar formato HH:MM
+  openTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Formato HH:MM inválido").optional().nullable(),
   closeTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Formato HH:MM inválido").optional().nullable(),
-  slotDuration: z.number().int().positive("Debe ser positivo").optional().nullable(), // Prisma usa Int
+  slotDuration: z.number().int().positive("Debe ser positivo").optional().nullable(),
   scheduleJson: z.any().optional().nullable(), // z.any() o un esquema más específico si es posible
   tariffId: z.string().optional().nullable(), // Asumiendo CUID para IDs <-- CAMBIADO: Quitado .cuid()
   linkedScheduleTemplateId: z.string().cuid({ message: "ID de plantilla inválido"}).optional().nullable(), // <<< AÑADIDO
@@ -113,6 +113,8 @@ const UpdateClinicAndScheduleSchema = z.object({
   scheduleControl: z.boolean().optional().nullable(), 
   professionalSkills: z.boolean().optional().nullable(), 
   notes: z.string().optional().nullable(), 
+  openTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Formato HH:MM inválido").optional().nullable(),
+  closeTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Formato HH:MM inválido").optional().nullable(),
   slotDuration: z.number().int().positive("Debe ser positivo").optional().nullable(),
   tariffId: z.string().optional().nullable(),
   linkedScheduleTemplateId: z.string().cuid({ message: "ID de plantilla inválido"}).optional().nullable(),
@@ -152,6 +154,41 @@ function convertWeekScheduleToBlockInput(schedule: z.infer<typeof WeekScheduleSc
   return blocks;
 }
 // --- FIN Función Auxiliar ---
+
+// --- INICIO: Helper para asegurar PaymentMethodDefinition de Pago Aplazado ---
+const DEFERRED_PAYMENT_METHOD_CODE = "SYS_DEFERRED_PAYMENT"; 
+const DEFERRED_PAYMENT_METHOD_NAME = "Pago Aplazado"; // Considerar i18n para el nombre si se muestra en UI no controlada por el frontend
+
+async function ensureDeferredPaymentMethodExists(
+  tx: Prisma.TransactionClient, 
+  systemId: string
+): Promise<PaymentMethodDefinition> {
+  console.log(`[ensureDeferredPM] Buscando método para systemId: ${systemId}, code: ${DEFERRED_PAYMENT_METHOD_CODE}`);
+  let deferredMethod = await tx.paymentMethodDefinition.findFirst({
+    where: { 
+      code: DEFERRED_PAYMENT_METHOD_CODE, 
+      systemId: systemId 
+    },
+  });
+
+  if (!deferredMethod) {
+    console.log(`[ensureDeferredPM] No encontrado. Creando método ${DEFERRED_PAYMENT_METHOD_NAME} para systemId: ${systemId}`);
+    deferredMethod = await tx.paymentMethodDefinition.create({
+      data: {
+        systemId: systemId,
+        name: DEFERRED_PAYMENT_METHOD_NAME,
+        code: DEFERRED_PAYMENT_METHOD_CODE,
+        type: PaymentMethodType.DEFERRED_PAYMENT, 
+        isActive: true, 
+      },
+    });
+    console.log(`[ensureDeferredPM] PaymentMethodDefinition para '${DEFERRED_PAYMENT_METHOD_NAME}' creado con ID: ${deferredMethod.id} para systemId: ${systemId}`);
+  } else {
+    console.log(`[ensureDeferredPM] Encontrado método existente con ID: ${deferredMethod.id}`);
+  }
+  return deferredMethod;
+}
+// --- FIN: Helper ---
 
 /**
  * Handler para obtener una clínica específica por su ID.
@@ -238,7 +275,10 @@ export async function PUT(request: Request, props: { params: Promise<{ id: strin
       independentScheduleData, 
       deleteIndependentBlocks,
       cabinsOrder,
-      ...clinicDataToUpdate 
+      countryIsoCode: countryIsoCodeFromInput,
+      tariffId: tariffIdFromInput,
+      linkedScheduleTemplateId: linkedScheduleTemplateIdFromInput,
+      ...clinicScalarData
     } = validatedData;
 
     const existingClinic = await prisma.clinic.findFirst({
@@ -252,12 +292,14 @@ export async function PUT(request: Request, props: { params: Promise<{ id: strin
 
     const updatedClinic = await prisma.$transaction(async (tx) => {
       const clinicUpdatePayload: Prisma.ClinicUpdateInput = {
-        ...clinicDataToUpdate,
-        ...(clinicDataToUpdate.countryIsoCode && { country: { connect: { isoCode: clinicDataToUpdate.countryIsoCode } } }),
-        ...(clinicDataToUpdate.tariffId && { tariff: { connect: { id: clinicDataToUpdate.tariffId } } }),
-        ...(clinicDataToUpdate.linkedScheduleTemplateId 
-            ? { linkedScheduleTemplate: { connect: { id: clinicDataToUpdate.linkedScheduleTemplateId } } }
-            : { linkedScheduleTemplate: { disconnect: true } }
+        ...clinicScalarData,
+        ...(countryIsoCodeFromInput && { country: { connect: { isoCode: countryIsoCodeFromInput } } }),
+        ...(tariffIdFromInput && { tariff: { connect: { id: tariffIdFromInput } } }),
+        ...(linkedScheduleTemplateIdFromInput 
+            ? { linkedScheduleTemplate: { connect: { id: linkedScheduleTemplateIdFromInput } } }
+            : (validatedData.hasOwnProperty('linkedScheduleTemplateId') && linkedScheduleTemplateIdFromInput === null
+                ? { linkedScheduleTemplate: { disconnect: true } } 
+                : {})
         ),
       };
       
@@ -273,6 +315,38 @@ export async function PUT(request: Request, props: { params: Promise<{ id: strin
         }
       });
 
+      if (validatedData.hasOwnProperty('delayedPayments') && clinicScalarData.hasOwnProperty('delayedPayments')) {
+        const deferredPaymentMethod = await ensureDeferredPaymentMethodExists(tx, systemId);
+
+        if (clinicScalarData.delayedPayments === true) {
+          await tx.clinicPaymentSetting.upsert({
+            where: {
+              systemId_clinicId_paymentMethodDefinitionId: {
+                systemId: systemId,
+                clinicId: clinicId,
+                paymentMethodDefinitionId: deferredPaymentMethod.id
+              }
+            },
+            update: { isActiveInClinic: true },
+            create: {
+              systemId: systemId,
+              clinicId: clinicId,
+              paymentMethodDefinitionId: deferredPaymentMethod.id,
+              isActiveInClinic: true
+            }
+          });
+        } else if (clinicScalarData.delayedPayments === false) {
+          await tx.clinicPaymentSetting.updateMany({
+            where: {
+              systemId: systemId,
+              clinicId: clinicId,
+              paymentMethodDefinitionId: deferredPaymentMethod.id
+            },
+            data: { isActiveInClinic: false }
+          });
+        }
+      }
+
       if (independentScheduleData) {
         if (deleteIndependentBlocks || independentScheduleData) {
           await tx.clinicScheduleBlock.deleteMany({ where: { clinicId: clinicId } });
@@ -284,9 +358,9 @@ export async function PUT(request: Request, props: { params: Promise<{ id: strin
           }
         }
         const clinicScheduleConfig = {
-            openTime: clinicDataToUpdate.openTime, 
-            closeTime: clinicDataToUpdate.closeTime,
-            slotDuration: clinicDataToUpdate.slotDuration,
+            openTime: clinicScalarData.openTime, 
+            closeTime: clinicScalarData.closeTime,
+            slotDuration: clinicScalarData.slotDuration,
         };
         await tx.clinicSchedule.upsert({
             where: { clinicId: clinicId },
@@ -364,7 +438,13 @@ export async function PATCH(request: Request, props: { params: Promise<{ id: str
       independentScheduleData, 
       deleteIndependentBlocks, 
       cabinsOrder,
-      ...clinicDataToUpdate 
+      countryIsoCode: countryIsoCodeFromInput,
+      tariffId: tariffIdFromInput,
+      linkedScheduleTemplateId: linkedScheduleTemplateIdFromInput,
+      openTime: openTimeFromInput, 
+      closeTime: closeTimeFromInput,
+      slotDuration: slotDurationFromInput,
+      ...clinicScalarData
     } = validatedData;
 
     const existingClinic = await prisma.clinic.findFirst({
@@ -377,16 +457,18 @@ export async function PATCH(request: Request, props: { params: Promise<{ id: str
     }
 
     const updatedClinic = await prisma.$transaction(async (tx) => {
-      if (Object.keys(clinicDataToUpdate).length > 0) {
+      if (Object.keys(clinicScalarData).length > 0) {
         const clinicPatchPayload: Prisma.ClinicUpdateInput = {
-          ...clinicDataToUpdate,
-          ...(clinicDataToUpdate.countryIsoCode && { country: { connect: { isoCode: clinicDataToUpdate.countryIsoCode } } }),
-          ...(clinicDataToUpdate.tariffId && { tariff: { connect: { id: clinicDataToUpdate.tariffId } } }),
-          ...(clinicDataToUpdate.linkedScheduleTemplateId 
-              ? { linkedScheduleTemplate: { connect: { id: clinicDataToUpdate.linkedScheduleTemplateId } } }
-              : (clinicDataToUpdate.hasOwnProperty('linkedScheduleTemplateId') && clinicDataToUpdate.linkedScheduleTemplateId === null 
-                  ? { linkedScheduleTemplate: { disconnect: true } } 
-                  : {}) 
+          ...clinicScalarData,
+          ...(countryIsoCodeFromInput && { country: { connect: { isoCode: countryIsoCodeFromInput } } }),
+          ...(tariffIdFromInput !== undefined && {
+            tariff: tariffIdFromInput ? { connect: { id: tariffIdFromInput } } : { disconnect: true }
+          }),
+          ...(linkedScheduleTemplateIdFromInput !== undefined 
+              ? (linkedScheduleTemplateIdFromInput 
+                  ? { linkedScheduleTemplate: { connect: { id: linkedScheduleTemplateIdFromInput } } } 
+                  : { linkedScheduleTemplate: { disconnect: true } })
+              : {}
           ),
         };
         await tx.clinic.update({
@@ -403,16 +485,23 @@ export async function PATCH(request: Request, props: { params: Promise<{ id: str
         if (blockInputs.length > 0) {
           await tx.clinicScheduleBlock.createMany({ data: blockInputs });
         }
-        const clinicScheduleConfig = {
-            openTime: clinicDataToUpdate.openTime, 
-            closeTime: clinicDataToUpdate.closeTime,
-            slotDuration: clinicDataToUpdate.slotDuration,
-        };
-        await tx.clinicSchedule.upsert({
-            where: { clinicId: clinicId },
-            update: clinicScheduleConfig,
-            create: { clinicId: clinicId, ...clinicScheduleConfig }
-        });
+        const clinicScheduleConfig: Prisma.ClinicScheduleUpdateInput = {};
+        if (openTimeFromInput !== undefined) clinicScheduleConfig.openTime = openTimeFromInput;
+        if (closeTimeFromInput !== undefined) clinicScheduleConfig.closeTime = closeTimeFromInput;
+        if (slotDurationFromInput !== undefined) clinicScheduleConfig.slotDuration = slotDurationFromInput;
+
+        if (Object.keys(clinicScheduleConfig).length > 0 || independentScheduleData) {
+            await tx.clinicSchedule.upsert({
+                where: { clinicId: clinicId },
+                update: clinicScheduleConfig,
+                create: {
+                    clinic: { connect: { id: clinicId } },
+                    openTime: openTimeFromInput !== undefined ? openTimeFromInput : null,
+                    closeTime: closeTimeFromInput !== undefined ? closeTimeFromInput : null,
+                    slotDuration: slotDurationFromInput !== undefined ? slotDurationFromInput : null,
+                }
+            });
+        }
       } else if (deleteIndependentBlocks === true) {
           await tx.clinicScheduleBlock.deleteMany({ where: { clinicId: clinicId } });
           await tx.clinicSchedule.deleteMany({ where: { clinicId: clinicId } });
@@ -427,6 +516,41 @@ export async function PATCH(request: Request, props: { params: Promise<{ id: str
         }
       }
       
+      // --- INICIO: Lógica para gestionar ClinicPaymentSetting de Pago Aplazado en PATCH ---
+      if (validatedData.hasOwnProperty('delayedPayments') && clinicScalarData.hasOwnProperty('delayedPayments')) {
+        const deferredPaymentMethod = await ensureDeferredPaymentMethodExists(tx, systemId);
+
+        // No es necesario if (deferredPaymentMethod) porque la función asegura su existencia o falla la transacción.
+        if (clinicScalarData.delayedPayments === true) {
+          await tx.clinicPaymentSetting.upsert({
+            where: {
+              systemId_clinicId_paymentMethodDefinitionId: {
+                systemId: systemId,
+                clinicId: clinicId,
+                paymentMethodDefinitionId: deferredPaymentMethod.id
+              }
+            },
+            update: { isActiveInClinic: true },
+            create: {
+              systemId: systemId,
+              clinicId: clinicId,
+              paymentMethodDefinitionId: deferredPaymentMethod.id,
+              isActiveInClinic: true
+            }
+          });
+        } else if (clinicScalarData.delayedPayments === false) {
+          await tx.clinicPaymentSetting.updateMany({
+            where: {
+              systemId: systemId,
+              clinicId: clinicId,
+              paymentMethodDefinitionId: deferredPaymentMethod.id
+            },
+            data: { isActiveInClinic: false }
+          });
+        }
+      }
+      // --- FIN: Lógica para gestionar ClinicPaymentSetting de Pago Aplazado en PATCH ---
+
       const finalUpdatedClinic = await tx.clinic.findUnique({
         where: { id: clinicId },
         include: {

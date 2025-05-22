@@ -14,9 +14,17 @@ export async function GET(request: Request) {
   const systemId = session.user.systemId;
 
   try {
+    // Seleccionamos solo los campos necesarios para el modal y evitamos _count pesado
     const paymentMethods = await prisma.paymentMethodDefinition.findMany({
       where: {
-        systemId: systemId,
+        systemId,
+        isActive: true,
+      },
+      select: {
+        id: true,
+        name: true,
+        code: true,
+        type: true,
       },
       orderBy: {
         name: 'asc',

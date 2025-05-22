@@ -49,8 +49,8 @@ model System {
   stockLedgers             StockLedger[]
   vatTypes                 VATType[]
   tariffs                  Tariff[]
-  tickets                  Ticket[]
-  invoices                 Invoice[] // <<< NUEVO
+  tickets                  Ticket[] // <<< NUEVO
+  invoices                 Invoice[]                 @relation("SystemInvoices") // <<< NUEVO
   payments                 Payment[]
   cashSessions             CashSession[]
   bonoDefinitions          BonoDefinition[]
@@ -69,6 +69,11 @@ model System {
 
   // >>> AÑADIR RELACIÓN INVERSA FALTANTE <<<
   clinicPaymentSettings ClinicPaymentSetting[]
+
+  // Relación inversa para DebtLedger
+  debtLedgers DebtLedger[]
+
+  changeLogs EntityChangeLog[] @relation("SystemLogs")
 
   @@map("systems")
 }
@@ -128,6 +133,8 @@ model User {
   customScheduleExceptions UserClinicScheduleException[]
   // <<< NUEVA RELACIÓN INVERSA PARA VENDEDOR >>>
   ticketsAsSeller          Ticket[]                      @relation("SellerUserTickets")
+  verifiedPayments         PaymentVerification[]         @relation("VerifiedBy")
+  changeLogs               EntityChangeLog[]             @relation("UserLogs")
 
   @@index([systemId])
   @@index([countryIsoCode]) // Añadir índice para la nueva FK
@@ -266,6 +273,9 @@ model Clinic {
 
   // <<< AÑADIR RELACIÓN INVERSA FALTANTE >>>
   payments Payment[] // Para Payment.clinic
+
+  // Relación inversa para DebtLedger
+  debtsOriginatedInClinic DebtLedger[]
 
   @@unique([name, systemId], name: "Clinic_name_systemId_key")
   @@index([systemId])
@@ -488,6 +498,9 @@ model Client {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Relación inversa para DebtLedger
+  debts DebtLedger[]
+
   @@index([systemId])
   @@index([companyId])
   @@index([countryIsoCode])
@@ -673,16 +686,18 @@ enum PaymentMethodType {
   ONLINE_GATEWAY // Pasarela online (Stripe, PayPal, etc.)
   CHECK // Cheque bancario
   INTERNAL_CREDIT // Crédito interno, Bono, Paquete, Puntos
+  DEFERRED_PAYMENT // <<< AÑADIDO NUEVO TIPO
   OTHER // Otro
 }
 
 // <<< NUEVO MODELO: Definición Método de Pago >>>
 model PaymentMethodDefinition {
-  id       String @id @default(cuid()) // <<< Cambiado a cuid()
+  id       String @id @default(cuid())
   systemId String // <<< Sin @db.ObjectId
   system   System @relation(fields: [systemId], references: [id], onDelete: Cascade)
 
   name     String
+  code     String? // <<< AÑADIDO CAMPO
   type     PaymentMethodType // CASH, CARD, BANK_TRANSFER, INTERNAL_CREDIT, etc.
   details  String?
   isActive Boolean           @default(true)
@@ -698,6 +713,7 @@ model PaymentMethodDefinition {
 
   // Asegurar índice único global
   @@unique([name, systemId])
+  @@unique([code, systemId], name: "PaymentMethodDefinition_code_systemId_key") // <<< AÑADIDO UNIQUE CONSTRAINT
   @@index([systemId])
   // <<< AÑADIR MAP >>>
   @@map("payment_method_definitions")
@@ -732,6 +748,10 @@ model PosTerminal {
 
   // Relación para el ámbito de clínicas
   applicableClinics PosTerminalClinicScope[]
+
+  // >>> INICIO: Relación inversa con CashSession >>>
+  cashSessions CashSession[] // Sesiones de caja asociadas a este TPV
+  // <<< FIN: Relación inversa con CashSession >>>
 
   // Constraints
   @@unique([name, systemId]) // Nombre único por sistema
@@ -986,18 +1006,18 @@ model ClinicScheduleBlock {
 // --- Modelos Catálogo (Servicios, Productos) y Stock ---
 
 model Service {
-  id                     String  @id @default(cuid())
-  code                   String? // Código interno o SKU
-  name                   String // Nombre del servicio
-  description            String?
-  durationMinutes        Int // Duración estándar del servicio
-  price                  Float? // Precio base (GLOBAL)
-  colorCode              String? // Color para la agenda
+  id              String  @id @default(cuid())
+  code            String? // Código interno o SKU
+  name            String // Nombre del servicio
+  description     String?
+  durationMinutes Int // Duración estándar del servicio
+  price           Float? // Precio base (GLOBAL)
+  colorCode       String? // Color para la agenda
   // requiresMedicalSignOff Boolean @default(false) // <<< MOVER a ServiceSetting
   // pointsAwarded          Int     @default(0) // <<< MOVER a ServiceSetting
   // isActive               Boolean @default(true) // <<< MOVER a ServiceSetting
-  systemId               String
-  system                 System  @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  systemId        String
+  system          System  @relation(fields: [systemId], references: [id], onDelete: Cascade)
 
   // Relaciones
   ticketItems        TicketItem[]
@@ -1038,9 +1058,9 @@ model Service {
 
 // --- NUEVO MODELO: Configuración de Servicio ---
 model ServiceSetting {
-  id            String  @id @default(cuid())
-  serviceId     String  @unique // Clave foránea y constraint único para One-to-One
-  service       Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  id        String  @id @default(cuid())
+  serviceId String  @unique // Clave foránea y constraint único para One-to-One
+  service   Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
 
   // Campos movidos y nuevos
   requiresMedicalSignOff Boolean @default(false) // Requiere firma médica?
@@ -1074,7 +1094,7 @@ model ServiceEquipmentRequirement {
   equipmentId String
 
   service   ServiceSetting @relation(fields: [serviceId], references: [serviceId], onDelete: Cascade)
-  equipment Equipment    @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+  equipment Equipment      @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
 
   @@id([serviceId, equipmentId])
   @@index([equipmentId]) // Índice para buscar servicios por equipo
@@ -1087,30 +1107,31 @@ model ServiceSkillRequirement {
   skillId   String
 
   service ServiceSetting @relation(fields: [serviceId], references: [serviceId], onDelete: Cascade)
-  skill   Skill        @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  skill   Skill          @relation(fields: [skillId], references: [id], onDelete: Cascade)
 
   @@id([serviceId, skillId])
   @@index([skillId]) // Índice para buscar servicios por habilidad
   @@map("service_skill_requirements")
 }
+
 // --- FIN NUEVOS MODELOS/TABLAS SERVICIO ---
 
 model Product {
-  id                String  @id @default(cuid())
-  name              String
-  description       String?
-  sku               String? @unique
-  barcode           String?
-  price             Float? // Precio de venta base (GLOBAL)
-  costPrice         Float? // Precio de coste (GLOBAL)
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+  sku         String? @unique
+  barcode     String?
+  price       Float? // Precio de venta base (GLOBAL)
+  costPrice   Float? // Precio de coste (GLOBAL)
   // currentStock      Int     @default(0) // <<< MOVER a ProductSetting
   // minStockThreshold Int? // <<< MOVER a ProductSetting
   // isForSale         Boolean @default(true) // <<< MOVER a ProductSetting
   // isInternalUse     Boolean @default(false) // <<< MOVER a ProductSetting
   // isActive          Boolean @default(true) // <<< MOVER a ProductSetting
   // pointsAwarded     Int     @default(0) // <<< MOVER a ProductSetting
-  systemId          String
-  system            System  @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  systemId    String
+  system      System  @relation(fields: [systemId], references: [id], onDelete: Cascade)
 
   // Relaciones
   stockMovements     StockLedger[]
@@ -1152,9 +1173,9 @@ model Product {
 
 // --- NUEVO MODELO: Configuración de Producto ---
 model ProductSetting {
-  id                String  @id @default(cuid())
-  productId         String  @unique // Clave foránea y constraint único para One-to-One
-  product           Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  id        String  @id @default(cuid())
+  productId String  @unique // Clave foránea y constraint único para One-to-One
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   // Campos movidos
   currentStock      Int     @default(0)
@@ -1172,6 +1193,7 @@ model ProductSetting {
 
   @@map("product_settings")
 }
+
 // --- FIN NUEVO MODELO PRODUCTO ---
 
 // Registro de movimientos de stock
@@ -1307,39 +1329,41 @@ model Tariff {
 
 // <<< MANTENER TicketType >>>
 enum TicketType {
-  SALE // Venta normal
-  RETURN // Devolución/Abono operativo
+  SALE // Ticket de venta estándar
+  RETURN // Ticket de devolución/abono
 }
 
 enum TicketStatus {
-  DRAFT // Borrador (presupuesto?)
-  OPEN // Abierto (pendiente de pago total)
-  PAID // Pagado
-  PARTIALLY_PAID // Parcialmente pagado
-  VOID // Anulado
-  REFUNDED // Reembolsado (total o parcial)
-  PARTIALLY_REFUNDED
+  OPEN // Abierto, editable, pendiente de pago/cierre.
+  CLOSED // Cerrado operacionalmente (pagos cubren total o pago aplazado). Editable bajo condiciones.
+  ACCOUNTED // Contabilizado en un cierre de caja. Inmutable.
+  VOID // Anulado. Inoperativo, no se contabiliza.
+}
+
+// NUEVO ENUM PARA TIPOS DE DESCUENTO
+enum DiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
 }
 
 // <<< ELIMINAR ENUM PaymentMethod (será reemplazado por PaymentMethodDefinition) >>>
 // enum PaymentMethod { ... }
 
 model Ticket {
-  id             String       @id @default(cuid())
-  ticketNumber   String // Número de ticket operativo (puede ser diferente al fiscal)
-  type           TicketType   @default(SALE) // <<< AÑADIDO: Tipo de ticket (Venta/Devolución)
-  status         TicketStatus @default(OPEN)
-  issueDate      DateTime     @default(now())
-  currencyCode   String // <<< NUEVO: Moneda del ticket (Asegurarse que esté presente)
-  totalAmount    Float // Importe total bruto (suma de items antes de descuentos globales)
+  id           String       @id @default(cuid())
+  ticketNumber String? // Número de ticket, se asigna al cerrar. Podría ser @unique dentro de una serie/clínica.
+  type         TicketType   @default(SALE)
+  status       TicketStatus @default(OPEN)
+  issueDate    DateTime     @default(now())
+  currencyCode String       @default("EUR") // Código ISO de la moneda del ticket
+  totalAmount  Float // Importe total bruto (suma de items antes de descuentos globales)
   // <<< ELIMINADO discountAmount >>>
   // discountAmount Float        @default(0) // Descuento GLOBAL aplicado al ticket 
-  taxAmount      Float // Importe total de impuestos (suma de IVA de items)
-  finalAmount    Float // Importe final (total - descuento + impuestos)
-  notes          String?
+  taxAmount    Float // Importe total de impuestos (suma de IVA de items)
+  finalAmount  Float // Importe final (total - descuento + impuestos)
   // <<< NUEVOS CAMPOS: Serie y Vendedor >>>
-  ticketSeries   String? // Serie operativa del ticket (ej: T2024-CLI1)
-  sellerUserId   String? // ID del usuario VENDEDOR (para comisiones)
+  ticketSeries String? // Serie operativa del ticket (ej: T2024-CLI1)
+  sellerUserId String? // ID del usuario VENDEDOR (para comisiones)
 
   // Relaciones Cliente/Empresa
   clientId  String? // Cliente (persona física) si aplica
@@ -1366,17 +1390,36 @@ model Ticket {
   returnTickets    Ticket[] @relation("TicketReturns")
 
   // Relación Opcional con Factura (si este ticket se facturó)
-  invoiceId String?  @unique // Un ticket solo puede generar una factura
-   invoice   Invoice? @relation("TicketInvoiceRelation") 
+  invoiceId     String?      @unique // Un ticket solo puede generar una factura
+  invoice       Invoice?     @relation("TicketInvoiceRelation")
   //invoice   Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull, onUpdate: Restrict) // <<< DESCOMENTADO Y CONFIRMADO
   // <<< FIN: Añadir Relaciones Ticket >>>
-
+  // >>> INICIO: Relación con CashSession (Paso 1.2) >>>
+  cashSessionId String? // ID de la CashSession en la que este ticket fue CONTABILIZADO
+  cashSession   CashSession? @relation("TicketsAccountedInSession", fields: [cashSessionId], references: [id], onDelete: SetNull)
+  // <<< FIN: Relación con CashSession (Paso 1.2) >>>
   // Relaciones Inversas
-  items    TicketItem[] // Líneas del ticket
-  payments Payment[] // Pagos asociados a este ticket (Vinculación principal a Payment se moverá a Invoice)
+  items         TicketItem[] // Líneas del ticket
+  payments      Payment[] // Pagos asociados a este ticket (Vinculación principal a Payment se moverá a Invoice)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  returnReason String? // Motivo de la devolución si es un ticket de tipo RETURN
+  notes        String? @db.Text // Notas adicionales o comentarios sobre el ticket
+
+  // --- Campos para Descuentos Globales del Ticket ---
+  discountType   DiscountType? // Tipo de descuento: Nulo, PORCENTAJE, FIJO
+  discountAmount Float? // Monto del descuento (valor si es FIJO, % si es PORCENTAJE)
+  discountReason String? // Razón o descripción del descuento global
+
+  dueAmount   Float? // Almacena el monto de la deuda original transferida a DebtLedger al cerrar
+  hasOpenDebt Boolean @default(false) // Indica si hay una deuda abierta en DebtLedger para este ticket
+
+  paidAmountDirectly Float @default(0) // Suma de pagos directos al ticket (no deudas)
+
+  // Relación inversa para DebtLedger
+  relatedDebts DebtLedger[] @relation("TicketDebts") // <--- Nombre añadido
 
   @@unique([ticketNumber, systemId]) // Número de ticket único por sistema
   @@index([type]) // <<< AÑADIDO ÍNDICE
@@ -1394,6 +1437,9 @@ model Ticket {
   @@index([appointmentId])
   @@index([originalTicketId]) // <<< AÑADIDO ÍNDICE
   @@index([invoiceId]) // <<< AÑADIDO ÍNDICE
+  // >>> INICIO: Índice para cashSessionId (Paso 1.2) >>>
+  @@index([cashSessionId])
+  // <<< FIN: Índice para cashSessionId (Paso 1.2) >>>
   @@map("tickets")
 }
 
@@ -1415,15 +1461,15 @@ model TicketItem {
   quantity    Float
 
   // Precios y Descuentos
-  unitPrice               Float
-  originalUnitPrice       Float?
-  isPriceOverridden       Boolean    @default(false)
-  manualDiscountAmount    Float      @default(0)
-  // <<< NUEVO CAMPO: Notas del Descuento Manual >>>
-  discountNotes           String? // Justificación del descuento manual por línea
-  promotionDiscountAmount Float      @default(0)
-  appliedPromotionId      String?
-  appliedPromotion        Promotion? @relation(fields: [appliedPromotionId], references: [id], onDelete: SetNull)
+  unitPrice                Float
+  originalUnitPrice        Float?
+  isPriceOverridden        Boolean    @default(false)
+  manualDiscountAmount     Float      @default(0)
+  manualDiscountPercentage Float? // <<< CAMPO AÑADIDO
+  discountNotes            String?
+  promotionDiscountAmount  Float      @default(0)
+  appliedPromotionId       String?
+  appliedPromotion         Promotion? @relation(fields: [appliedPromotionId], references: [id], onDelete: SetNull)
 
   // Impuestos
   vatRateId         String?
@@ -1443,7 +1489,7 @@ model TicketItem {
   // <<< FIN: Consumo de Bonos/Paquetes >>>
 
   // Datos Adicionales
-  professionalUserId String?
+  professionalUserId    String?
   // <<< NUEVO CAMPO: Indicador Generación Automática >>>
   isValidationGenerated Boolean @default(false) // true si fue creado por validación de servicio
 
@@ -1529,7 +1575,7 @@ model Invoice {
 
   // Relaciones Sistema y Auditoría
   systemId  String
-  system    System   @relation(fields: [systemId], references: [id], onDelete: Restrict) // Usamos Restrict por defecto
+  system    System   @relation("SystemInvoices", fields: [systemId], references: [id], onDelete: Restrict)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1537,10 +1583,13 @@ model Invoice {
   items    InvoiceItem[]
   // La relación inversa a Ticket se define EN Ticket
   // La relación inversa a Payment se define EN Payment
-   //ticket         Ticket?     @relation(fields: [ticketId], references: [id], onDelete: SetNull, onUpdate: Restrict)
-            // DENTRO DE Invoice:
+  //ticket         Ticket?     @relation(fields: [ticketId], references: [id], onDelete: SetNull, onUpdate: Restrict)
+  // DENTRO DE Invoice:
   ticket   Ticket?       @relation("TicketInvoiceRelation", fields: [ticketId], references: [id], onDelete: SetNull, onUpdate: Restrict)
   payments Payment[]
+
+  // Relación inversa para DebtLedger
+  relatedDebts DebtLedger[]
 
   @@unique([invoiceSeries, invoiceNumber, systemId])
   @@index([type])
@@ -1612,7 +1661,7 @@ model Payment {
   systemId                  String
   clinicId                  String?
   userId                    String // Usuario que registró el pago
-  ticketId                  String? // Ticket asociado (opcional)
+  ticketId                  String? // Ticket asociado (opcional, si es un pago directo al ticket)
   invoiceId                 String? // Factura asociada (opcional)
   paymentMethodDefinitionId String? // Método de pago utilizado (definición)
   posTerminalId             String? // TPV utilizado (si aplica)
@@ -1624,23 +1673,29 @@ model Payment {
   payerCompanyId            String? // Si paga una empresa diferente
   // --- Fin nuevos campos --- 
 
+  // --- NUEVA RELACIÓN: Vínculo a DebtLedger ---
+  debtLedgerId String? // ID de la deuda que este pago está saldando
+  debtLedger   DebtLedger? @relation("DebtPayments", fields: [debtLedgerId], references: [id], onDelete: SetNull)
+  // --- FIN NUEVA RELACIÓN ---
+
   system                  System                   @relation(fields: [systemId], references: [id], onDelete: Cascade)
-  clinic                  Clinic?                  @relation(fields: [clinicId], references: [id]) // Relación inversa faltaba en Clinic?
+  clinic                  Clinic?                  @relation(fields: [clinicId], references: [id])
   user                    User                     @relation(fields: [userId], references: [id])
-  ticket                  Ticket?                  @relation(fields: [ticketId], references: [id])
+  ticket                  Ticket?                  @relation(fields: [ticketId], references: [id]) // Pago puede estar asociado a un ticket directamente o a una deuda que vino de un ticket
   invoice                 Invoice?                 @relation(fields: [invoiceId], references: [id])
   paymentMethodDefinition PaymentMethodDefinition? @relation(fields: [paymentMethodDefinitionId], references: [id])
   posTerminal             PosTerminal?             @relation(fields: [posTerminalId], references: [id])
   bankAccount             BankAccount?             @relation(fields: [bankAccountId], references: [id])
-  cashSession             CashSession?             @relation(fields: [cashSessionId], references: [id])
+  cashSession             CashSession?             @relation(fields: [cashSessionId], references: [id], onDelete: SetNull)
   bonoInstance            BonoInstance?            @relation(fields: [bonoInstanceId], references: [id])
-  // --- Nuevas relaciones para pagos de terceros --- 
-  payerClient             Client?                  @relation("PayerClientPayments", fields: [payerClientId], references: [id]) // <<< AÑADIR NOMBRE RELACIÓN
-  payerCompany            Company?                 @relation("PayerCompanyPayments", fields: [payerCompanyId], references: [id]) // <<< AÑADIR NOMBRE RELACIÓN
-  // --- Fin nuevas relaciones --- 
+  payerClient             Client?                  @relation("PayerClientPayments", fields: [payerClientId], references: [id])
+  payerCompany            Company?                 @relation("PayerCompanyPayments", fields: [payerCompanyId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  // Relación inversa con PaymentVerification
+  verification PaymentVerification?
 
   @@index([systemId])
   @@index([clinicId])
@@ -1652,43 +1707,76 @@ model Payment {
   @@index([bankAccountId])
   @@index([cashSessionId])
   @@index([bonoInstanceId])
-  @@index([payerClientId]) // <<< AÑADIR ÍNDICE
-  @@index([payerCompanyId]) // <<< AÑADIR ÍNDICE
+  @@index([payerClientId])
+  @@index([payerCompanyId])
+  @@index([debtLedgerId]) // <<< AÑADIR ÍNDICE para la nueva FK
 }
 
 enum CashSessionStatus {
-  OPEN
-  CLOSED
-  RECONCILED // Arqueada/Conciliada
+  OPEN // Sesión activa.
+  CLOSED // Sesión cerrada por el usuario, lista para conciliar.
+  RECONCILED // Sesión conciliada, estado final. // Arqueada/Conciliada
 }
 
 model CashSession {
-  id              String            @id @default(cuid())
-  userId          String // Usuario que abre/cierra la caja
-  user            User              @relation(fields: [userId], references: [id])
-  clinicId        String // Clínica donde se realiza la sesión
-  clinic          Clinic            @relation(fields: [clinicId], references: [id])
-  openingTime     DateTime          @default(now())
-  closingTime     DateTime?
-  status          CashSessionStatus @default(OPEN)
-  openingBalance  Float // Saldo inicial en efectivo
-  closingBalance  Float? // Saldo final contado
-  expectedBalance Float? // Saldo esperado según movimientos
-  difference      Float? // Diferencia (contado - esperado)
-  notes           String?
-  systemId        String
-  system          System            @relation(fields: [systemId], references: [id], onDelete: Cascade)
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
+  id            String       @id @default(cuid())
+  sessionNumber String // Ej: CLINIC1-20240716-001
+  userId        String // Usuario que abre/cierra
+  user          User         @relation(fields: [userId], references: [id])
+  clinicId      String
+  clinic        Clinic       @relation(fields: [clinicId], references: [id])
+  posTerminalId String? // TPV físico asociado (opcional)
+  posTerminal   PosTerminal? @relation(fields: [posTerminalId], references: [id])
 
-  // Relaciones (Corregidas)
-  cashMovements Payment[] // Descomentado inverso Payment
+  openingTime        DateTime  @default(now())
+  closingTime        DateTime? // Al pasar a status CLOSED
+  reconciliationTime DateTime? // Al pasar a status RECONCILED
 
-  @@index([userId])
-  @@index([clinicId])
-  @@index([openingTime])
+  status CashSessionStatus @default(OPEN)
+
+  openingBalanceCash Float // Efectivo inicial
+  expectedCash       Float? // Calculado: openingBalanceCash + ingresos efectivo - salidas efectivo
+  countedCash        Float? // Efectivo físico contado al cerrar
+  differenceCash     Float? // Calculado: countedCash - expectedCash
+
+  countedCard           Float? // Total Tarjeta(s) contado por usuario
+  countedBankTransfer   Float? // Total Transferencias contadas
+  countedCheck          Float? // Total Cheques contados
+  countedInternalCredit Float? // Total Crédito Interno (Bonos, etc.)
+  countedOther          Json? // Otros métodos y sus totales: { "Bizum": 10.0, "Vales": 5.0 }
+
+  notes String? // Notas sobre cierre o conciliación
+
+  systemId  String
+  system    System   @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relación con Pagos realizados DURANTE esta sesión
+  payments Payment[]
+
+  // Relación inversa a Tickets contabilizados EN esta sesión
+  // Esta relación se establecerá en el modelo Ticket con el campo cashSessionId
+  // y la relación @relation("TicketsAccountedInSession", ...)
+  // Aquí solo necesitamos la referencia si queremos navegar desde CashSession a los Tickets.
+  // El plan original indica: ticketsAccountedInSession Ticket[] @relation("TicketsAccountedInSession")
+  // Esto es correcto si la relación principal está en Ticket.
+  ticketsAccountedInSession Ticket[] @relation("TicketsAccountedInSession")
+
+  // Flag: indica si se reabrió después de conciliada y hubo cambios
+  hasChangesAfterReconcile Boolean @default(false)
+
+  @@unique([clinicId, sessionNumber, systemId])
+  @@index([userId, clinicId, openingTime])
   @@index([status])
-  @@index([systemId])
+  // Eliminar el índice individual [userId] y [clinicId] si están cubiertos por el compuesto [userId, clinicId, openingTime]
+  // Mantenerlos si se necesitan búsquedas individuales frecuentes y el compuesto no es suficiente.
+  // Por ahora, los mantendré según el schema actual y añadiré el compuesto.
+  @@index([userId]) // Ya existe
+  @@index([clinicId]) // Ya existe
+  // @@index([openingTime]) // Ya existe como parte del anterior y del actual
+  // @@index([status]) // Ya existe
+  // @@index([systemId]) // Ya existe
   @@map("cash_sessions")
 }
 
@@ -1733,8 +1821,8 @@ model BonoDefinition {
   // pointsAwarded Int     @default(0) // <<< MOVER a BonoDefinitionSetting
 
   // --- Relaciones Sistema y Auditoría ---
-  systemId  String
-  system    System   @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  systemId String
+  system   System @relation(fields: [systemId], references: [id], onDelete: Cascade)
 
   // <<< NUEVA RELACIÓN 1-a-1 con BonoDefinitionSetting >>>
   settings BonoDefinitionSetting?
@@ -1760,19 +1848,19 @@ model BonoDefinition {
 
 // --- NUEVO MODELO: Configuración de BonoDefinition ---
 model BonoDefinitionSetting {
-  id                 String  @id @default(cuid())
-  bonoDefinitionId   String  @unique
-  bonoDefinition     BonoDefinition @relation(fields: [bonoDefinitionId], references: [id], onDelete: Cascade)
+  id               String         @id @default(cuid())
+  bonoDefinitionId String         @unique
+  bonoDefinition   BonoDefinition @relation(fields: [bonoDefinitionId], references: [id], onDelete: Cascade)
 
   // Campos movidos
-  validityDays       Int?
-  costPrice          Float? // Si se considera configuración
-  commissionType     String?
-  commissionValue    Float?
-  appearsInApp       Boolean @default(true)
-  autoAddToInvoice   Boolean @default(false)
-  isActive           Boolean @default(true)
-  pointsAwarded      Int     @default(0)
+  validityDays     Int?
+  costPrice        Float? // Si se considera configuración
+  commissionType   String?
+  commissionValue  Float?
+  appearsInApp     Boolean @default(true)
+  autoAddToInvoice Boolean @default(false)
+  isActive         Boolean @default(true)
+  pointsAwarded    Int     @default(0)
 
   // Otras posibles configuraciones futuras:
   // - Reglas de canje (días específicos, horas específicas)
@@ -1782,6 +1870,7 @@ model BonoDefinitionSetting {
 
   @@map("bono_definition_settings")
 }
+
 // --- FIN NUEVO MODELO BONO ---
 
 // Instancia específica de un bono comprada por un cliente
@@ -1816,14 +1905,14 @@ model BonoInstance {
 
 // Definición de un Paquete (agrupación de servicios/productos)
 model PackageDefinition {
-  id            String  @id @default(cuid())
-  name          String
-  description   String?
-  price         Float // Precio total del paquete
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+  price       Float // Precio total del paquete
   // isActive      Boolean @default(true) // <<< MOVER a PackageDefinitionSetting
   // pointsAwarded Int     @default(0) // <<< MOVER a PackageDefinitionSetting
-  systemId      String
-  system        System  @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  systemId    String
+  system      System  @relation(fields: [systemId], references: [id], onDelete: Cascade)
 
   // Relaciones
   items        PackageItem[]
@@ -1849,13 +1938,13 @@ model PackageDefinition {
 
 // --- NUEVO MODELO: Configuración de PackageDefinition ---
 model PackageDefinitionSetting {
-  id                    String  @id @default(cuid())
-  packageDefinitionId   String  @unique
-  packageDefinition     PackageDefinition @relation(fields: [packageDefinitionId], references: [id], onDelete: Cascade)
+  id                  String            @id @default(cuid())
+  packageDefinitionId String            @unique
+  packageDefinition   PackageDefinition @relation(fields: [packageDefinitionId], references: [id], onDelete: Cascade)
 
   // Campos movidos
-  isActive              Boolean @default(true)
-  pointsAwarded         Int     @default(0)
+  isActive      Boolean @default(true)
+  pointsAwarded Int     @default(0)
 
   // Otras posibles configuraciones futuras:
   // - Visibilidad en App
@@ -1865,6 +1954,7 @@ model PackageDefinitionSetting {
 
   @@map("package_definition_settings")
 }
+
 // --- FIN NUEVO MODELO PAQUETE ---
 
 // Item dentro de un Paquete (puede ser Servicio o Producto)
@@ -2127,6 +2217,7 @@ enum EntityType {
   PROMOTION // <<< AÑADIDO
   BONO_DEFINITION // <<< AÑADIDO
   PACKAGE_DEFINITION // <<< AÑADIDO
+  CASH_SESSION
 }
 
 model EntityImage {
@@ -2453,4 +2544,84 @@ model ClinicPaymentSetting {
   @@index([receivingBankAccountId])
   @@index([posTerminalId]) // <<< AÑADIR ÍNDICE >>>
   @@map("clinic_payment_settings")
+}
+
+// --- NUEVO MODELO: DebtLedger ---
+enum DebtStatus {
+  PENDING
+  PAID
+  PARTIALLY_PAID
+  CANCELLED // Si la deuda se anula por alguna razón que no sea un pago
+}
+
+model DebtLedger {
+  id        String   @id @default(cuid())
+  ticketId  String // FK al Ticket que originó la deuda
+  ticket    Ticket   @relation("TicketDebts", fields: [ticketId], references: [id], onDelete: Restrict) // <--- Nombre añadido y onDelete: Restrict
+  invoiceId String? // FK opcional a la Invoice, si el ticket se facturó
+  invoice   Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  clientId  String // FK al Client responsable de la deuda
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  clinicId  String // FK a la Clinic donde se originó la deuda/ticket
+  clinic    Clinic   @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+
+  originalAmount Float // El monto inicial de la deuda
+  paidAmount     Float      @default(0) // Cuánto se ha pagado de esta deuda específica
+  pendingAmount  Float // Calculado: originalAmount - paidAmount (se puede mantener o calcular al vuelo)
+  status         DebtStatus @default(PENDING)
+  dueDate        DateTime? // Fecha de vencimiento esperada para el pago (opcional)
+
+  notes String? // Notas adicionales sobre la deuda
+
+  systemId String
+  system   System @relation(fields: [systemId], references: [id], onDelete: Cascade)
+
+  // Relación inversa a los pagos que saldan esta deuda
+  payments Payment[] @relation("DebtPayments")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ticketId])
+  @@index([invoiceId])
+  @@index([clientId])
+  @@index([clinicId])
+  @@index([systemId])
+  @@index([status])
+  @@map("debt_ledgers")
+}
+
+// --- FIN NUEVO MODELO: DebtLedger ---
+
+// --- NUEVO MODELO: Verificación de Pagos ---
+model PaymentVerification {
+  id               String    @id @default(cuid())
+  paymentId        String    @unique
+  payment          Payment   @relation(fields: [paymentId], references: [id])
+  verified         Boolean   @default(false)
+  verifiedByUserId String?
+  verifiedByUser   User?     @relation("VerifiedBy", fields: [verifiedByUserId], references: [id])
+  verifiedAt       DateTime?
+  attachmentUrl    String?
+
+  @@index([paymentId])
+}
+
+// --- NUEVO MODELO: EntityChangeLog para auditoría ---
+model EntityChangeLog {
+  id         String     @id @default(cuid())
+  entityId   String
+  entityType EntityType
+  action     String // e.g. OPEN, CLOSE, REOPEN, RECONCILE, UPDATE
+  userId     String?
+  user       User?      @relation("UserLogs", fields: [userId], references: [id], onDelete: SetNull)
+  timestamp  DateTime   @default(now())
+  details    Json?
+
+  systemId String
+  system   System @relation("SystemLogs", fields: [systemId], references: [id], onDelete: Cascade)
+
+  @@index([entityId, entityType])
+  @@index([timestamp])
+  @@map("entity_change_logs")
 }

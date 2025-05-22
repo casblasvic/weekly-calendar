@@ -326,9 +326,9 @@ export default function NuevoTicketPage() {
                                       <SelectItem value="no-sellers" disabled className="text-xs">{t('tickets.noSellersAvailable')}</SelectItem>
                                     ) : (
                                       sellers.map((seller: UserForSelector) => (
-                                        <SelectItem key={seller.id} value={seller.id} className="text-xs">
+                                      <SelectItem key={seller.id} value={seller.id} className="text-xs">
                                           {`${seller.firstName || ''} ${seller.lastName || ''}`.trim() || seller.email}
-                                        </SelectItem>
+                                      </SelectItem>
                                       ))
                                     )}
                                   </SelectContent>
@@ -442,6 +442,8 @@ export default function NuevoTicketPage() {
                     {/* Tabla de Pagos */}
                     <div className="border-t border-b py-3">
                       <TicketPayments 
+                        payments={watch('payments') || []}
+                        deferredAmount={(watch('amountDeferred') || 0)}
                         onOpenAddPaymentModal={handleOpenAddPaymentModal} 
                         onRemovePayment={handleRemovePayment}
                       />

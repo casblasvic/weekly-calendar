@@ -78,9 +78,11 @@ export function usePaymentMethodsQuery(options?: Omit<UseQueryOptions<any, unkno
   return useQuery<any, unknown>({
     queryKey: ['payment-methods'],
     queryFn: async () => {
-      return await api.get('/api/payment-methods');
+      // Usar versión con caché para evitar llamadas duplicadas y mejorar UX
+      return await api.cached.get('/api/payment-methods');
     },
-    staleTime: CACHE_TIME.MEDIO, // 5 minutos
+    // Los métodos de pago cambian muy poco; manténlos en caché 30 min
+    staleTime: 1000 * 60 * 30, // 30 minutos
     ...options,
   });
 }
@@ -267,6 +269,13 @@ export function prefetchCommonData(queryClient = useQueryClient()) {
   queryClient.prefetchQuery({
     queryKey: ['clinics'],
     queryFn: async () => await api.cached.get('/api/clinics'),
+    staleTime: 1000 * 60 * 30, // 30 minutos
+  });
+  
+  // --- NUEVO: Métodos de Pago Definidos (muy usados en modales) ---
+  queryClient.prefetchQuery({
+    queryKey: ['payment-methods'],
+    queryFn: async () => await api.cached.get('/api/payment-methods'),
     staleTime: 1000 * 60 * 30, // 30 minutos
   });
 } 

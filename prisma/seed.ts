@@ -1,10 +1,14 @@
 // Importamos TODO el paquete como 'pkg'
 import pkg from '@prisma/client';
-// <<< CORREGIDO: Asegurar que Prisma está importado >>>
+// <<< RESTAURAR LA DESESTRUCTURACIÓN ORIGINAL DE PRISMA >>>
 const { PrismaClient, Prisma } = pkg; // Obtener constructor y namespace Prisma
 
 // --- Importación de Tipos Específicos ---
-import type { ScheduleTemplate as PrismaScheduleTemplateType, ScheduleTemplateBlock as PrismaScheduleTemplateBlockType, DayOfWeek, ScheduleTemplate } from '@prisma/client'; // Renombrar para evitar conflicto
+// <<< ELIMINAR LA IMPORTACIÓN DE TIPO AISLADA PARA EL NAMESPACE PRISMA >>>
+// import type { Prisma } from '@prisma/client'; 
+import type { ScheduleTemplate as PrismaScheduleTemplateType, ScheduleTemplateBlock as PrismaScheduleTemplateBlockType, /*DayOfWeek,*/ ScheduleTemplate } from '@prisma/client'; // Renombrar para evitar conflicto
+// <<< ASEGURAR QUE DayOfWeek SE IMPORTA COMO ENUM (VALOR) >>>
+import { DayOfWeek as PrismaDayOfWeekEnum } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library'; // Importar error específico
 // --- FIN Importación de Tipos ---
 
@@ -70,6 +74,7 @@ const initialMockData = {
       countryIsoCode: 'MA', // Ejemplo añadido
       languageIsoCode: 'fr', // Ejemplo añadido
       phone1CountryIsoCode: 'MA', // Ejemplo añadido
+      currency: 'MAD', // <<< AÑADIDO currency >>>
       config: { // Usado en upsert
         commercialName: 'Californie Multilaser',
         businessName: 'Organicare SARL AU',
@@ -122,6 +127,7 @@ const initialMockData = {
       countryIsoCode: 'MA',
       languageIsoCode: 'fr',
       phone1CountryIsoCode: 'MA',
+      currency: 'MAD', // <<< AÑADIDO currency >>>
       config: { // Usado en upsert
         commercialName: 'CAFC Multilaser Center',
         businessName: 'CAFC Group SARL',
@@ -171,6 +177,7 @@ const initialMockData = {
       countryIsoCode: 'ES',
       languageIsoCode: 'es',
       phone1CountryIsoCode: 'ES',
+      currency: 'EUR', // <<< AÑADIDO currency >>>
       config: { // Usado en upsert
         commercialName: 'Centro de Pruebas',
         businessName: 'Testing Solutions SL',
@@ -707,20 +714,160 @@ async function main() {
 
          const clinic = await prisma.clinic.upsert({
           where: { Clinic_name_systemId_key: { name: clinicData.name, systemId: system!.id } }, 
-          update: { address: clinicData.direccion, city: clinicData.city, phone: clinicData.telefono, email: clinicData.email, isActive: clinicData.isActive !== false, tariffId: targetTariffId }, 
-          create: { name: clinicData.name, prefix: clinicData.prefix, address: clinicData.direccion, city: clinicData.city, currency: 'EUR', phone: clinicData.telefono, email: clinicData.email, isActive: clinicData.isActive !== false, systemId: system!.id, tariffId: targetTariffId! }
+          update: { 
+            address: clinicData.direccion, 
+            city: clinicData.city, 
+            phone: clinicData.telefono, 
+            email: clinicData.email, 
+            isActive: clinicData.isActive !== false, 
+            tariffId: targetTariffId,
+            countryIsoCode: clinicData.countryIsoCode, // Añadido desde tu schema y datos previos
+            languageIsoCode: clinicData.languageIsoCode,
+            phone1CountryIsoCode: clinicData.phone1CountryIsoCode,
+            // Campos de configuración general que van directamente en Clinic
+            prefix: clinicData.prefix,
+            commercialName: clinicData.config?.commercialName,
+            businessName: clinicData.config?.businessName,
+            cif: clinicData.config?.cif,
+            phone2: clinicData.config?.phone2,
+            phone2CountryIsoCode: clinicData.config?.phone2CountryIsoCode,
+            initialCash: clinicData.config?.initialCash,
+            ticketSize: clinicData.config?.ticketSize,
+            affectsStats: clinicData.config?.affectsStats,
+            scheduleControl: clinicData.config?.scheduleControl,
+            delayedPayments: clinicData.config?.delayedPayments,
+            blockSignArea: clinicData.config?.blockSignArea,
+            blockPersonalData: clinicData.config?.blockPersonalData,
+            professionalSkills: clinicData.config?.professionalSkills,
+            notes: clinicData.config?.notes,
+            currency: clinicData.currency || 'EUR', // Asegurar moneda
+         }, 
+          create: { 
+            name: clinicData.name, 
+            prefix: clinicData.prefix, 
+            address: clinicData.direccion, 
+            city: clinicData.city, 
+            currency: clinicData.currency || 'EUR', 
+            phone: clinicData.telefono, 
+            email: clinicData.email, 
+            isActive: clinicData.isActive !== false, 
+            systemId: system!.id, 
+            tariffId: targetTariffId!,
+            countryIsoCode: clinicData.countryIsoCode,
+            languageIsoCode: clinicData.languageIsoCode,
+            phone1CountryIsoCode: clinicData.phone1CountryIsoCode,
+            // Campos de configuración general que van directamente en Clinic
+            commercialName: clinicData.config?.commercialName,
+            businessName: clinicData.config?.businessName,
+            cif: clinicData.config?.cif,
+            phone2: clinicData.config?.phone2,
+            phone2CountryIsoCode: clinicData.config?.phone2CountryIsoCode,
+            initialCash: clinicData.config?.initialCash,
+            ticketSize: clinicData.config?.ticketSize,
+            affectsStats: clinicData.config?.affectsStats,
+            scheduleControl: clinicData.config?.scheduleControl,
+            delayedPayments: clinicData.config?.delayedPayments,
+            blockSignArea: clinicData.config?.blockSignArea,
+            blockPersonalData: clinicData.config?.blockPersonalData,
+            professionalSkills: clinicData.config?.professionalSkills,
+            notes: clinicData.config?.notes,
+          }
          });
-         createdClinicsMap.set(clinicData.id, clinic);
+         createdClinicsMap.set(clinicData.id, clinic); // clinicData.id es el mock ID (string)
+         console.log(`Ensured clinic: ${clinic.name}`);
+
+        // --- Crear Cabinas para esta clínica ---
+        if (clinicData.config?.cabins && clinicData.config.cabins.length > 0) {
+          for (const cabinData of clinicData.config.cabins) {
+            await prisma.cabin.upsert({
+              // Usar code y clinicId para unicidad, ya que el ID del mock (cabinData.id) puede no ser string
+              where: { code_clinicId: { code: String(cabinData.code), clinicId: clinic.id } }, 
+              update: { 
+                name: cabinData.name, 
+                color: cabinData.color, 
+                isActive: cabinData.isActive, 
+                order: cabinData.order 
+              },
+              create: {
+                name: cabinData.name,
+                code: String(cabinData.code),
+                color: cabinData.color,
+                order: cabinData.order,
+                isActive: cabinData.isActive,
+                clinicId: clinic.id, // Usar el ID real de la clínica creada
+                systemId: system!.id,
+              },
+            });
+            console.log(`  -> Ensured cabin: ${cabinData.name} for clinic ${clinic.name}`);
+          }
+        }
+
+        // --- Crear Horario (ScheduleTemplate) para esta clínica y vincularlo ---
+        if (clinicData.config?.schedule) {
+          const scheduleData = clinicData.config.schedule;
+          const templateName = `Horario ${clinic.name}`;
+          // <<< VOLVER A any[] TEMPORALMENTE PARA DESBLOQUEAR >>>
+          const blocksToCreate: any[] = []; 
+          const dayMapping: { [key: string]: PrismaDayOfWeekEnum } = { 
+            monday: PrismaDayOfWeekEnum.MONDAY, tuesday: PrismaDayOfWeekEnum.TUESDAY, wednesday: PrismaDayOfWeekEnum.WEDNESDAY,
+            thursday: PrismaDayOfWeekEnum.THURSDAY, friday: PrismaDayOfWeekEnum.FRIDAY, saturday: PrismaDayOfWeekEnum.SATURDAY, sunday: PrismaDayOfWeekEnum.SUNDAY,
+          };
+    
+          for (const dayKey of Object.keys(scheduleData)) {
+            const daySchedule = scheduleData[dayKey as keyof typeof scheduleData];
+            // Asegurarse que daySchedule y daySchedule.ranges existen y son iterables
+            if (daySchedule && typeof daySchedule.isOpen === 'boolean' && Array.isArray(daySchedule.ranges)) {
+                if (daySchedule.isOpen && daySchedule.ranges.length > 0) {
+                    daySchedule.ranges.forEach(range => {
+                        if (range && typeof range.start === 'string' && typeof range.end === 'string') {
+                            blocksToCreate.push({
+                                dayOfWeek: dayMapping[dayKey],
+                                startTime: range.start,
+                                endTime: range.end,
+                                isWorking: true,
+                            });
+                        }
+                    });
+                }
+            } else {
+                 // Podrías añadir un log si la estructura de scheduleData[dayKey] no es la esperada
+                 // console.warn(`  -- Schedule data for ${dayKey} in clinic ${clinic.name} is not as expected or empty.`);
+            }
+          }
+    
+          if (blocksToCreate.length > 0 || clinicData.config.openTime || clinicData.config.closeTime || clinicData.config.slotDuration) { // Crear plantilla incluso si no hay bloques si hay config general de horario
+            const scheduleTemplate = await prisma.scheduleTemplate.upsert({
+              where: { name_systemId: { name: templateName, systemId: system!.id } },
+              update: {
+                description: `Horario principal para ${clinic.name}`,
+                openTime: clinicData.config.openTime, 
+                closeTime: clinicData.config.closeTime,
+                slotDuration: clinicData.config.slotDuration,
+                // Para actualizar bloques, Prisma requiere borrar y recrear o manejarlos individualmente.
+                // Por simplicidad en upsert, nos enfocamos en crear. Si se necesita actualizar bloques, es más complejo.
+              },
+              create: {
+                name: templateName,
+                description: `Horario principal para ${clinic.name}`,
+                systemId: system!.id,
+                openTime: clinicData.config.openTime,
+                closeTime: clinicData.config.closeTime,
+                slotDuration: clinicData.config.slotDuration,
+                blocks: { create: blocksToCreate }, // Solo se crean bloques aquí
+              },
+            });
+            console.log(`  -> Ensured schedule template: ${templateName} for clinic ${clinic.name}`);
+            
+            // Vincular plantilla a la clínica (si se creó o actualizó)
+            await prisma.clinic.update({
+              where: { id: clinic.id },
+              data: { linkedScheduleTemplateId: scheduleTemplate.id },
+            });
+            console.log(`  -> Linked template for clinic ${clinic.name}`);
+          }
+        } // Fin if (clinicData.config?.schedule)
   }
-  console.log('Clinics ensured.');
-
-  // --- Crear Cabinas ---
-  console.log('Creating cabins...');
-  // ... (Creación de Cabinas sin cambios, asumir que usa createdClinicsMap y system!.id) ...
-
-  // --- Crear Horarios de Clínica ---
-  console.log('Creating clinic schedules...');
-  // ... (Creación de Horarios de Clínica sin cambios, asumir que usa createdClinicsMap y system!.id) ...
+  console.log('Clinics, Cabins, and Schedules ensured.');
  
   // --- MAPAS PARA IDS (Solo poblar, ya declarados) ---
   console.log('Fetching base entity IDs for linking (Services, Products)...');
@@ -753,15 +900,91 @@ async function main() {
 
   // --- Crear Productos --- 
   console.log('Creating Products...');
-  const directProductData = [ /* ... (datos de producto como antes) ... */ ];
+  // <<< AÑADIR DATOS DE PRODUCTOS DIRECTAMENTE AQUÍ >>>
+  const directProductData = [
+    {
+      id: 'prod-1', // ID para mock
+      name: 'Crema Hidratante Facial',
+      sku: 'PROD-CHF-001',
+      description: 'Crema hidratante intensiva para todo tipo de pieles.',
+      costPrice: 8.50,
+      price: 25.00,
+      barcode: '8400000000011',
+      categoryId: categoryMap.get('Cremas Faciales'), // Usar categoryMap
+      vatTypeId: defaultVatTypeIdFromDB, // Usar IVA General por defecto
+      currentStock: 100,
+      minStockThreshold: 20,
+      isForSale: true,
+      isInternalUse: false,
+      activo: true, // para ProductSetting.isActive
+      pointsAwarded: 25,
+    },
+    {
+      id: 'prod-2',
+      name: 'Sérum Reparador Nocturno',
+      sku: 'PROD-SRN-001',
+      description: 'Sérum concentrado para reparación nocturna de la piel.',
+      costPrice: 15.00,
+      price: 45.00,
+      barcode: '8400000000028',
+      categoryId: categoryMap.get('Cremas Faciales'),
+      vatTypeId: defaultVatTypeIdFromDB,
+      currentStock: 50,
+      minStockThreshold: 10,
+      isForSale: true,
+      isInternalUse: false,
+      activo: true,
+      pointsAwarded: 45,
+    },
+    {
+      id: 'prod-3',
+      name: 'Aceite Corporal Nutritivo',
+      sku: 'PROD-ACN-001',
+      description: 'Aceite seco nutritivo para cuerpo y cabello.',
+      costPrice: 12.00,
+      price: 32.00,
+      barcode: '8400000000035',
+      categoryId: categoryMap.get('Productos Corporales'),
+      vatTypeId: defaultVatTypeIdFromDB,
+      currentStock: 75,
+      minStockThreshold: 15,
+      isForSale: true,
+      isInternalUse: false,
+      activo: true,
+      pointsAwarded: 30,
+    },
+    {
+      id: 'prod-4',
+      name: 'Protector Solar SPF50+',
+      sku: 'PROD-PSS-001',
+      description: 'Alta protección solar facial y corporal.',
+      costPrice: 9.00,
+      price: 28.00,
+      barcode: '8400000000042',
+      categoryId: categoryMap.get('Productos Corporales'), // Podría tener su propia categoría "Solares"
+      vatTypeId: defaultVatTypeIdFromDB,
+      currentStock: 120,
+      minStockThreshold: 25,
+      isForSale: true,
+      isInternalUse: false,
+      activo: true,
+      pointsAwarded: 20,
+    }
+  ];
+
   for (const productData of directProductData) { 
-      const categoryId = productData.categoryId; 
-      const vatTypeId = defaultVatTypeIdFromDB;
-      // <<< CORREGIDO: Upsert completo para producto y settings >>>
+      // Asegurarse que categoryId es válido (existe en la DB)
+      let finalCategoryId = productData.categoryId;
+      if (typeof productData.categoryId === 'string' && !Object.values(categoryMap).includes(productData.categoryId as any) && !(await prisma.category.findUnique({where: {id: productData.categoryId}}))) {
+        console.warn(`Category ID ${productData.categoryId} for product ${productData.name} not found in categoryMap or DB. Setting to null.`);
+        finalCategoryId = undefined; // o el ID de una categoría por defecto si prefieres
+      }
+
+
       const product = await prisma.product.upsert({
           where: { name_systemId: { name: productData.name, systemId: system!.id } }, 
-          update: { sku: productData.sku, description: productData.description, costPrice: productData.costPrice, price: productData.price, barcode: productData.barcode, categoryId: categoryId, vatTypeId: vatTypeId }, 
-          create: { name: productData.name, sku: productData.sku, description: productData.description, costPrice: productData.costPrice, price: productData.price, barcode: productData.barcode, categoryId: categoryId!, vatTypeId: vatTypeId!, systemId: system!.id }
+          update: { sku: productData.sku, description: productData.description, costPrice: productData.costPrice, price: productData.price, barcode: productData.barcode, categoryId: finalCategoryId, vatTypeId: productData.vatTypeId },
+          create: { name: productData.name, sku: productData.sku, description: productData.description, costPrice: productData.costPrice, price: productData.price, barcode: productData.barcode, categoryId: finalCategoryId, vatTypeId: productData.vatTypeId!, systemId: system!.id }
       });
       await prisma.productSetting.upsert({
         where: { productId: product.id },
@@ -769,6 +992,7 @@ async function main() {
           create: { productId: product.id, currentStock: productData.currentStock, minStockThreshold: productData.minStockThreshold, isForSale: productData.isForSale, isInternalUse: productData.isInternalUse, isActive: productData.activo, pointsAwarded: productData.pointsAwarded }
       });
       if (!productMap.has(product.name)) productMap.set(product.name, product.id);
+      console.log(`Ensured product: ${product.name}`);
   }
   console.log('Products ensured.');
 
@@ -791,16 +1015,43 @@ async function main() {
   console.log('Creating Package Definitions...');
   // <<< CORREGIDO: Upsert completo para paquete >>>
   const masajeIdForPack = serviceMap.get('Masaje Relajante');
-  const cremaIdForPack = productMap.get('Crema Hidratante Facial');
+  const cremaIdForPack = productMap.get('Crema Hidratante Facial'); // Ahora debería existir
   if (masajeIdForPack && cremaIdForPack) {
           const packRelax = await prisma.packageDefinition.upsert({
           where: { name_systemId: { name: 'Pack Relax Total', systemId: system!.id } }, 
               update: { price: 75 },
-          create: { name: 'Pack Relax Total', description: 'Un masaje relajante y una crema hidratante.', price: 75, systemId: system!.id, settings: { create: { isActive: true, pointsAwarded: 80 } }, items: { create: [ { itemType: 'SERVICE', serviceId: masajeIdForPack, quantity: 1 }, { itemType: 'PRODUCT', productId: cremaIdForPack, quantity: 1 } ] } }
+          create: { name: 'Pack Relax Total', description: 'Un masaje relajante y una crema hidratante.', price: 75, systemId: system!.id, settings: { create: { isActive: true, pointsAwarded: 80 } }, items: { create: [ { itemType: 'SERVICE', serviceId: masajeIdForPack, quantity: 1, price: serviceMap.get('Masaje Relajante') ? (await prisma.service.findUnique({where: {id: serviceMap.get('Masaje Relajante')!}}))?.price ?? 50 : 50 }, { itemType: 'PRODUCT', productId: cremaIdForPack, quantity: 1, price: productMap.get('Crema Hidratante Facial') ? (await prisma.product.findUnique({where: {id: productMap.get('Crema Hidratante Facial')!}}))?.price ?? 25 : 25 } ] } }
           });
           createdPackageDefsMap.set(packRelax.name, packRelax.id);
+          console.log(`Ensured package: ${packRelax.name}`);
   }
-  // ... otro paquete ...
+
+  const depilacionPiernasId = serviceMap.get('Depilación Láser Piernas');
+  const depilacionAxilasId = serviceMap.get('Depilación Axilas');
+  const protectorSolarId = productMap.get('Protector Solar SPF50+');
+
+  if (depilacionPiernasId && depilacionAxilasId && protectorSolarId) {
+    const packVeranoLaser = await prisma.packageDefinition.upsert({
+      where: { name_systemId: { name: 'Pack Verano Láser Plus', systemId: system!.id } },
+      update: { price: 160 }, // Precio del paquete ajustado
+      create: {
+        name: 'Pack Verano Láser Plus',
+        description: 'Depilación láser en piernas y axilas, más un protector solar.',
+        price: 160, // Precio total del paquete
+        systemId: system!.id,
+        settings: { create: { isActive: true, pointsAwarded: 150 } },
+        items: {
+          create: [
+            { itemType: 'SERVICE', serviceId: depilacionPiernasId, quantity: 1, price: serviceMap.get('Depilación Láser Piernas') ? (await prisma.service.findUnique({where: {id: serviceMap.get('Depilación Láser Piernas')!}}))?.price ?? 120 : 120 },
+            { itemType: 'SERVICE', serviceId: depilacionAxilasId, quantity: 1, price: serviceMap.get('Depilación Axilas') ? (await prisma.service.findUnique({where: {id: serviceMap.get('Depilación Axilas')!}}))?.price ?? 30 : 30 },
+            { itemType: 'PRODUCT', productId: protectorSolarId, quantity: 1, price: productMap.get('Protector Solar SPF50+') ? (await prisma.product.findUnique({where: {id: productMap.get('Protector Solar SPF50+')!}}))?.price ?? 28 : 28 },
+          ]
+        }
+      }
+    });
+    createdPackageDefsMap.set(packVeranoLaser.name, packVeranoLaser.id);
+    console.log(`Ensured package: ${packVeranoLaser.name}`);
+  }
   console.log('Package Definitions ensured.');
 
   // --- Crear Cuentas Bancarias --- 
@@ -839,7 +1090,122 @@ async function main() {
 
   // --- Crear Precios Específicos por Tarifa --- 
   console.log('Creating specific Tariff Prices for ALL Tariffs...');
-  // ... (Creación de Tariff Prices con upsert completo usando mapas globales) ...
+  const allTariffsFromDB = await prisma.tariff.findMany({ where: { systemId: system!.id } });
+
+  for (const tariff of allTariffsFromDB) {
+    console.log(`Processing tariff: ${tariff.name} (ID: ${tariff.id})`);
+
+    // SERVICIOS
+    for (const [serviceName, serviceId] of serviceMap) {
+      const serviceDetails = await prisma.service.findUnique({ where: { id: serviceId } });
+      if (serviceDetails && typeof serviceDetails.price === 'number') {
+        let specificPrice = serviceDetails.price;
+        if (tariff.name === 'Tarifa VIP') { // Ejemplo: 10% de descuento para VIP
+          specificPrice = parseFloat((serviceDetails.price * 0.9).toFixed(2));
+        }
+        try {
+          await prisma.tariffServicePrice.upsert({
+            where: { tariffId_serviceId: { tariffId: tariff.id, serviceId: serviceId } },
+            update: { price: specificPrice, vatTypeId: serviceDetails.vatTypeId || defaultVatTypeIdFromDB, isActive: true },
+            create: { tariffId: tariff.id, serviceId: serviceId, price: specificPrice, vatTypeId: serviceDetails.vatTypeId || defaultVatTypeIdFromDB, isActive: true }
+          });
+          console.log(`  -> Ensured price for service '${serviceName}' in tariff '${tariff.name}': ${specificPrice}`);
+        } catch (e: any) {
+          if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+            console.warn(`  -- Price for service '${serviceName}' in tariff '${tariff.name}' likely already exists (P2002). Skipping.`);
+          } else {
+            console.error(`  !! Error ensuring price for service '${serviceName}' in tariff '${tariff.name}':`, e);
+          }
+        }
+      } else {
+        console.warn(`  -- Service '${serviceName}' (ID: ${serviceId}) not found or has no base price. Skipping for tariff '${tariff.name}'.`);
+      }
+    }
+
+    // PRODUCTOS
+    for (const [productName, productId] of productMap) {
+      const productDetails = await prisma.product.findUnique({ where: { id: productId } });
+      if (productDetails && typeof productDetails.price === 'number') {
+        let specificPrice = productDetails.price;
+        if (tariff.name === 'Tarifa VIP') { // Ejemplo: 10% de descuento para VIP
+          specificPrice = parseFloat((productDetails.price * 0.9).toFixed(2));
+        }
+        try {
+          await prisma.tariffProductPrice.upsert({
+            where: { tariffId_productId: { tariffId: tariff.id, productId: productId } },
+            update: { price: specificPrice, vatTypeId: productDetails.vatTypeId || defaultVatTypeIdFromDB, isActive: true },
+            create: { tariffId: tariff.id, productId: productId, price: specificPrice, vatTypeId: productDetails.vatTypeId || defaultVatTypeIdFromDB, isActive: true }
+          });
+          console.log(`  -> Ensured price for product '${productName}' in tariff '${tariff.name}': ${specificPrice}`);
+        } catch (e: any) {
+          if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+            console.warn(`  -- Price for product '${productName}' in tariff '${tariff.name}' likely already exists (P2002). Skipping.`);
+          } else {
+            console.error(`  !! Error ensuring price for product '${productName}' in tariff '${tariff.name}':`, e);
+          }
+        }
+      } else {
+        console.warn(`  -- Product '${productName}' (ID: ${productId}) not found or has no base price. Skipping for tariff '${tariff.name}'.`);
+      }
+    }
+
+    // BONOS
+    for (const [bonoName, bonoDefId] of createdBonoDefsMap) {
+      const bonoDefDetails = await prisma.bonoDefinition.findUnique({ where: { id: bonoDefId } });
+      if (bonoDefDetails && typeof bonoDefDetails.price === 'number') {
+        let specificPrice = bonoDefDetails.price;
+        if (tariff.name === 'Tarifa VIP') { // Ejemplo: 5% de descuento para VIP en bonos
+          specificPrice = parseFloat((bonoDefDetails.price * 0.95).toFixed(2));
+        }
+        try {
+          await prisma.tariffBonoPrice.upsert({
+            where: { tariffId_bonoDefinitionId: { tariffId: tariff.id, bonoDefinitionId: bonoDefId } },
+            update: { price: specificPrice, vatTypeId: bonoDefDetails.vatTypeId || defaultVatTypeIdFromDB, isActive: true },
+            create: { tariffId: tariff.id, bonoDefinitionId: bonoDefId, price: specificPrice, vatTypeId: bonoDefDetails.vatTypeId || defaultVatTypeIdFromDB, isActive: true }
+          });
+          console.log(`  -> Ensured price for bono '${bonoName}' in tariff '${tariff.name}': ${specificPrice}`);
+        } catch (e: any) {
+          if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+            console.warn(`  -- Price for bono '${bonoName}' in tariff '${tariff.name}' likely already exists (P2002). Skipping.`);
+          } else {
+            console.error(`  !! Error ensuring price for bono '${bonoName}' in tariff '${tariff.name}':`, e);
+          }
+        }
+      } else {
+        console.warn(`  -- Bono Definition '${bonoName}' (ID: ${bonoDefId}) not found or has no base price. Skipping for tariff '${tariff.name}'.`);
+      }
+    }
+
+    // PAQUETES
+    for (const [packageName, packageDefId] of createdPackageDefsMap) {
+      const packageDefDetails = await prisma.packageDefinition.findUnique({ where: { id: packageDefId } });
+      if (packageDefDetails && typeof packageDefDetails.price === 'number') {
+        let specificPrice = packageDefDetails.price;
+        if (tariff.name === 'Tarifa VIP') { // Ejemplo: 5% de descuento para VIP en paquetes
+          specificPrice = parseFloat((packageDefDetails.price * 0.95).toFixed(2));
+        }
+        // El IVA de un paquete es más complejo, podría ser una media o el de la tarifa.
+        // Por simplicidad, usaremos el defaultVatTypeIdFromDB para el paquete en la tarifa.
+        try {
+          await prisma.tariffPackagePrice.upsert({
+            where: { tariffId_packageDefinitionId: { tariffId: tariff.id, packageDefinitionId: packageDefId } },
+            update: { price: specificPrice, vatTypeId: defaultVatTypeIdFromDB, isActive: true }, // Usar IVA por defecto de la tarifa para el paquete
+            create: { tariffId: tariff.id, packageDefinitionId: packageDefId, price: specificPrice, vatTypeId: defaultVatTypeIdFromDB, isActive: true }
+          });
+          console.log(`  -> Ensured price for package '${packageName}' in tariff '${tariff.name}': ${specificPrice}`);
+        } catch (e: any) {
+          if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+            console.warn(`  -- Price for package '${packageName}' in tariff '${tariff.name}' likely already exists (P2002). Skipping.`);
+          } else {
+            console.error(`  !! Error ensuring price for package '${packageName}' in tariff '${tariff.name}':`, e);
+          }
+        }
+      } else {
+        console.warn(`  -- Package Definition '${packageName}' (ID: ${packageDefId}) not found or has no base price. Skipping for tariff '${tariff.name}'.`);
+      }
+    }
+  }
+  console.log('Specific Tariff Prices ensured.');
 
   // --- Crear Promociones de Ejemplo ---
   console.log('Creating Example Promotions...');
@@ -992,15 +1358,15 @@ async function main() {
   console.log('Example users ensured.');
   // --- FIN Crear Usuarios ---
 
-  // <<< --- INICIO: SEEDING DE TICKETS Y PAGOS --- >>>
-  console.log('Creating comprehensive example Tickets, Items, and Payments...');
+  // <<< --- INICIO: SEEDING DE SESIONES DE CAJA, TICKETS Y PAGOS --- >>>
+  console.log('Creating example Cash Sessions, Tickets, Items, and Payments...');
 
   try {
-    // --- Prerequisitos (Asegurar que existen IDs necesarios) ---
-    const cashierUser1 = createdUsersMap.get('houda@multilaser.ma'); // Asumiendo que existe en el mapa
+    // --- Prerequisitos (Usuarios, Clientes, Clínicas, Servicios, etc. deben existir) ---
+    const cashierUser1 = createdUsersMap.get('houda@multilaser.ma');
     const cashierUser2 = createdUsersMap.get('latifa@multilaser.ma');
     const sellerUser1 = createdUsersMap.get('yasmine@multilaser.ma');
-    const adminUser = createdUsersMap.get('casblasvic@gmail.com'); // Para acciones administrativas si es necesario
+    const adminUser = createdUsersMap.get('casblasvic@gmail.com');
 
     const client1 = createdClientsMap.get('cliente1@example.com');
     const client2 = createdClientsMap.get('cliente2.casablanca@mail.ma');
@@ -1010,65 +1376,144 @@ async function main() {
 
     const serviceLimpiezaFacialId = serviceMap.get('Limpieza Facial Profunda');
     const serviceMasajeId = serviceMap.get('Masaje Relajante');
-    const productCremaId = productMap.get('Crema Hidratante Facial'); // Asumiendo que se creó este producto
+    const productCremaId = productMap.get('Crema Hidratante Facial');
 
     const bonoDefMasajeId = createdBonoDefsMap.get('Bono 5 Masajes Relajantes');
-    const packageDefRelaxId = createdPackageDefsMap.get('Pack Relax Total');
+    // const packageDefRelaxId = createdPackageDefsMap.get('Pack Relax Total'); // Ya no se usa en los tickets de ejemplo directamente
 
-    // Asegurarse de que las instancias existen (IDs guardados previamente)
-    // const bonoMasajeInstanceId = ... (obtenido al crear la instancia)
-    // const packRelaxInstanceId = ... (obtenido al crear la instancia)
-
-    // Asegurarse que los métodos de pago existen (variables globales)
     const paymentMethodCashId = paymentMethodCash?.id;
     const paymentMethodCardId = paymentMethodCard?.id;
-    const paymentMethodBonoId = paymentMethodBono?.id; // Para pago con bono consumido
+    const paymentMethodBonoId = paymentMethodBono?.id;
     const paymentMethodTransferId = paymentMethodTransfer?.id;
 
-    // IVA por defecto
     const defaultVatId = defaultVatTypeIdFromDB;
-
-    // Tarifas
     const tarifaGeneralId = tarifaGeneral?.id;
-    const tarifaVipId = tarifaVIP?.id;
 
-    if (!cashierUser1 || !cashierUser2 || !sellerUser1 || !adminUser || !client1 || !client2 || !clinic1 || !clinic2 || !serviceLimpiezaFacialId || !serviceMasajeId || !productCremaId || !paymentMethodCashId || !paymentMethodCardId || !paymentMethodBonoId || !defaultVatId || !tarifaGeneralId || !bonoDefMasajeId || !packageDefRelaxId) {
-      console.error("Missing prerequisite data for Ticket seeding. Check maps and variables.");
-      throw new Error("Missing prerequisite data for Ticket seeding.");
+    if (!cashierUser1 || !cashierUser2 || !sellerUser1 || !adminUser || !client1 || !client2 || !clinic1 || !clinic2 || !serviceLimpiezaFacialId || !serviceMasajeId || !productCremaId || !paymentMethodCashId || !paymentMethodCardId || !paymentMethodBonoId || !defaultVatId || !tarifaGeneralId || !bonoDefMasajeId /*|| !packageDefRelaxId*/) {
+      console.error("Missing prerequisite data for Seeding. Check maps and variables.");
+      throw new Error("Missing prerequisite data for Seeding.");
     }
 
-    // --- Escenario 1: Ticket Simple (Servicio + Producto), Pagado Efectivo ---
-    console.log("Seeding Ticket Scenario 1: Simple Sale, Cash Payment");
+    // --- Crear CashSessions de Ejemplo ---
+    console.log("Seeding example Cash Sessions...");
+    let cashSessionClinic1_Closed: pkg.CashSession | null = null;
+    if (clinic1 && cashierUser1 && system) {
+      const sessionNumberClinic1 = `${clinic1.prefix || 'CLI1'}-20231026-001`;
+      cashSessionClinic1_Closed = await prisma.cashSession.upsert({
+        where: { clinicId_sessionNumber_systemId: { clinicId: clinic1.id, sessionNumber: sessionNumberClinic1, systemId: system.id } },
+        update: { // Qué actualizar si ya existe. Podemos ser conservadores aquí o actualizar todos los campos.
+          userId: cashierUser1.id,
+          openingTime: new Date('2023-10-26T09:00:00Z'),
+          closingTime: new Date('2023-10-26T18:00:00Z'),
+          reconciliationTime: new Date('2023-10-26T18:30:00Z'),
+          status: 'RECONCILED',
+          openingBalanceCash: 100.00,
+          expectedCash: 255.50,
+          countedCash: 255.50,
+          differenceCash: 0,
+          countedCard: 120.00,
+          notes: 'Cierre de caja de ejemplo para clinic1, conciliado (actualizado por seed).',
+        },
+        create: {
+          sessionNumber: sessionNumberClinic1,
+          userId: cashierUser1.id,
+          clinicId: clinic1.id,
+          openingTime: new Date('2023-10-26T09:00:00Z'),
+          closingTime: new Date('2023-10-26T18:00:00Z'),
+          reconciliationTime: new Date('2023-10-26T18:30:00Z'),
+          status: 'RECONCILED', // Sesión cerrada y conciliada
+          openingBalanceCash: 100.00,
+          expectedCash: 255.50, // Ejemplo
+          countedCash: 255.50,   // Ejemplo
+          differenceCash: 0,     // Ejemplo
+          countedCard: 120.00,   // Ejemplo
+          notes: 'Cierre de caja de ejemplo para clinic1, conciliado.',
+          systemId: system.id,
+        }
+      });
+      console.log(`Upserted RECONCILED CashSession ${cashSessionClinic1_Closed.sessionNumber} for clinic1.`);
+    }
+
+    let cashSessionClinic2_Open: pkg.CashSession | null = null;
+    if (clinic2 && cashierUser2 && system) {
+      const sessionNumberClinic2 = `${clinic2.prefix || 'CLI2'}-20231027-001`;
+      cashSessionClinic2_Open = await prisma.cashSession.upsert({
+        where: { clinicId_sessionNumber_systemId: { clinicId: clinic2.id, sessionNumber: sessionNumberClinic2, systemId: system.id } },
+        update: {
+          userId: cashierUser2.id,
+          openingTime: new Date('2023-10-27T08:30:00Z'),
+          status: 'OPEN',
+          openingBalanceCash: 150.00,
+          notes: 'Sesión de caja abierta para clinic2 (actualizada por seed).',
+          // Campos que no se deben actualizar si la sesión estaba abierta y sigue abierta:
+          // closingTime: null, reconciliationTime: null, expectedCash: null, countedCash: null, differenceCash: null, countedCard: null
+        },
+        create: {
+          sessionNumber: sessionNumberClinic2,
+          userId: cashierUser2.id,
+          clinicId: clinic2.id,
+          openingTime: new Date('2023-10-27T08:30:00Z'),
+          status: 'OPEN', // Sesión activa
+          openingBalanceCash: 150.00,
+          systemId: system.id,
+          notes: 'Sesión de caja abierta para clinic2.'
+        }
+      });
+      console.log(`Upserted OPEN CashSession ${cashSessionClinic2_Open.sessionNumber} for clinic2.`);
+    }
+
+    // --- Escenario 1: Ticket Simple (Servicio + Producto), Pagado Efectivo, CONTABILIZADO ---
+    console.log("Seeding Ticket Scenario 1: Simple Sale, Cash Payment, ACCOUNTED");
+    // ... (cálculos de precios y VAT para ticket1_item1 y ticket1_item2 se mantienen igual) ...
     const ticket1_item1_price = await getTariffPrice(clinic1.tariffId, 'SERVICE', serviceLimpiezaFacialId) ?? 0;
     const ticket1_item1_quantity = 1;
     const ticket1_item1_lineTotal = ticket1_item1_price * ticket1_item1_quantity;
-    const ticket1_item1_vatDetails = await calculateVAT(ticket1_item1_lineTotal, defaultVatId, defaultVatId); // IVA sobre el total de línea (sin descuentos de línea aquí)
+    const ticket1_item1_vatDetails = await calculateVAT(ticket1_item1_lineTotal, defaultVatId, defaultVatId);
     const ticket1_item1_finalPrice = ticket1_item1_lineTotal + ticket1_item1_vatDetails.vatAmount;
 
     const ticket1_item2_price = await getTariffPrice(clinic1.tariffId, 'PRODUCT', productCremaId) ?? 0;
     const ticket1_item2_quantity = 1;
     const ticket1_item2_lineTotal = ticket1_item2_price * ticket1_item2_quantity;
-    const ticket1_item2_vatDetails = await calculateVAT(ticket1_item2_lineTotal, defaultVatId, defaultVatId); // IVA sobre el total de línea
+    const ticket1_item2_vatDetails = await calculateVAT(ticket1_item2_lineTotal, defaultVatId, defaultVatId);
     const ticket1_item2_finalPrice = ticket1_item2_lineTotal + ticket1_item2_vatDetails.vatAmount;
 
     const ticket1_totalAmount = ticket1_item1_lineTotal + ticket1_item2_lineTotal;
     const ticket1_taxAmount = ticket1_item1_vatDetails.vatAmount + ticket1_item2_vatDetails.vatAmount;
     const ticket1_finalAmount = ticket1_item1_finalPrice + ticket1_item2_finalPrice;
+    const ticket1_number = 'SEED-TKT-001';
 
-    const ticket1 = await prisma.ticket.create({
-      data: {
-        ticketNumber: 'SEED-TKT-001',
+    if (cashSessionClinic1_Closed) { // Solo crear si la sesión de caja existe
+    const ticket1 = await prisma.ticket.upsert({
+      where: { ticketNumber_systemId: { ticketNumber: ticket1_number, systemId: system!.id } },
+      update: {
         type: 'SALE',
-        status: 'PAID',
+        status: 'ACCOUNTED',
         currencyCode: clinic1.currency || 'EUR',
         totalAmount: ticket1_totalAmount,
         taxAmount: ticket1_taxAmount,
         finalAmount: ticket1_finalAmount,
-        notes: 'Ticket de ejemplo simple.',
+        notes: 'Ticket de ejemplo simple, contabilizado (actualizado por seed).',
+        clientId: client1.id,
+        cashierUserId: cashierUser1.id,
+        clinicId: clinic1.id,
+        cashSessionId: cashSessionClinic1_Closed.id,
+        // items y payments no se actualizan directamente aquí para evitar complejidad,
+        // se asume que si el ticket existe, sus items y pagos ya son correctos o se manejan por separado.
+      },
+      create: {
+        ticketNumber: ticket1_number,
+        type: 'SALE',
+        status: 'ACCOUNTED', // Cambiado de PAID a ACCOUNTED
+        currencyCode: clinic1.currency || 'EUR',
+        totalAmount: ticket1_totalAmount,
+        taxAmount: ticket1_taxAmount,
+        finalAmount: ticket1_finalAmount,
+        notes: 'Ticket de ejemplo simple, contabilizado.',
         clientId: client1.id,
         cashierUserId: cashierUser1.id,
         clinicId: clinic1.id,
         systemId: system!.id,
+        cashSessionId: cashSessionClinic1_Closed.id, // Vinculado a la sesión cerrada
         items: {
           create: [
             {
@@ -1096,57 +1541,72 @@ async function main() {
         payments: {
           create: [
             {
-              type: 'DEBIT', // Cobro
+              type: 'DEBIT',
               amount: ticket1_finalAmount,
-              paymentDate: new Date(),
+              paymentDate: new Date('2023-10-26T10:00:00Z'), // Fecha dentro de la sesión
               status: 'COMPLETED',
               paymentMethodDefinitionId: paymentMethodCashId,
-              userId: cashierUser1.id, // Usuario que registra el pago
+              userId: cashierUser1.id,
               clinicId: clinic1.id,
               systemId: system!.id,
-              payerClientId: client1.id // Quién paga
+              payerClientId: client1.id,
+              cashSessionId: cashSessionClinic1_Closed.id, // Pago vinculado a la sesión
             }
           ]
         }
       }
     });
-    console.log(`Created Ticket ${ticket1.ticketNumber} with items and payment.`);
+      console.log(`Upserted Ticket ${ticket1.ticketNumber} (ACCOUNTED) with items and payment.`);
+    }
 
-    // --- Escenario 2: Ticket con Descuento Manual por Línea, Vendedor, Pago Parcial Tarjeta ---
-    console.log("Seeding Ticket Scenario 2: Manual Discount, Seller, Partial Card Payment");
+
+    // --- Escenario 2: Ticket con Descuento Manual por Línea, Vendedor, Pago Parcial Tarjeta, ABIERTO ---
+    console.log("Seeding Ticket Scenario 2: Manual Discount, Seller, Partial Card Payment, OPEN");
+    // ... (cálculos de precios y VAT para ticket2_item1 se mantienen igual) ...
     const ticket2_item1_price = await getTariffPrice(clinic2.tariffId, 'SERVICE', serviceMasajeId) ?? 0;
     const ticket2_item1_quantity = 2;
     const ticket2_item1_grossLineTotal = ticket2_item1_price * ticket2_item1_quantity;
     const ticket2_item1_manualDiscount = 5.00;
-    // El descuento se aplica al total de la línea si es para todas las unidades, o por unidad si se especifica así.
-    // Aquí asumimos que el descuento de 5.00 es para el total de las 2 unidades.
     const ticket2_item1_price_after_discount = ticket2_item1_grossLineTotal - ticket2_item1_manualDiscount;
     const ticket2_item1_vatDetails = await calculateVAT(ticket2_item1_price_after_discount, defaultVatId, defaultVatId);
     const ticket2_item1_finalPrice = ticket2_item1_price_after_discount + ticket2_item1_vatDetails.vatAmount;
 
-
-    // Para el Ticket global:
-    // totalAmount es la suma de los precios brutos de línea (antes de descuentos de línea)
-    const ticket2_totalAmount = ticket2_item1_grossLineTotal;
-    // taxAmount es la suma de los IVAs de línea (calculados sobre precios descontados)
+    const ticket2_totalAmount = ticket2_item1_grossLineTotal; // Debería ser el total antes de descuentos para reflejar el valor bruto
     const ticket2_taxAmount = ticket2_item1_vatDetails.vatAmount;
-    // finalAmount es la suma de los finalPrice de línea
+    // El finalAmount es el que se paga después de descuentos e impuestos.
     const ticket2_finalAmount = ticket2_item1_finalPrice;
+    const ticket2_number = 'SEED-TKT-002';
 
 
-    const ticket2 = await prisma.ticket.create({
-        data: {
-            ticketNumber: 'SEED-TKT-002',
+    if (cashSessionClinic2_Open) { // Solo crear si la sesión de caja abierta existe
+    const ticket2 = await prisma.ticket.upsert({
+        where: { ticketNumber_systemId: { ticketNumber: ticket2_number, systemId: system!.id } },
+        update: {
             type: 'SALE',
-            status: 'PARTIALLY_PAID', // Pago parcial
+            status: 'OPEN',
+            currencyCode: clinic2.currency || 'EUR',
+            totalAmount: ticket2_totalAmount,
+            taxAmount: ticket2_taxAmount,
+            finalAmount: ticket2_finalAmount, // Este es el importe que queda por pagar o el total a pagar
+            notes: 'Ticket con descuento manual, pago parcial, actualmente abierto (actualizado por seed).',
+            clientId: client2.id,
+            cashierUserId: cashierUser2.id,
+            sellerUserId: sellerUser1.id,
+            clinicId: clinic2.id,
+             // No cashSessionId si está OPEN y no se ha cerrado nunca
+        },
+        create: {
+            ticketNumber: ticket2_number,
+            type: 'SALE',
+            status: 'OPEN', 
             currencyCode: clinic2.currency || 'EUR',
             totalAmount: ticket2_totalAmount,
             taxAmount: ticket2_taxAmount,
             finalAmount: ticket2_finalAmount,
-            notes: 'Ticket con descuento manual y pago parcial.',
+            notes: 'Ticket con descuento manual, pago parcial, actualmente abierto.',
             clientId: client2.id,
             cashierUserId: cashierUser2.id,
-            sellerUserId: sellerUser1.id, // Vendedor asignado
+            sellerUserId: sellerUser1.id,
             clinicId: clinic2.id,
             systemId: system!.id,
             items: {
@@ -1157,63 +1617,78 @@ async function main() {
                         description: 'Masaje Relajante (x2)',
                         quantity: ticket2_item1_quantity,
                         unitPrice: ticket2_item1_price,
-                        manualDiscountAmount: ticket2_item1_manualDiscount, // Descuento aplicado
-                        discountNotes: 'Descuento especial cliente frecuente.', // Nota del descuento
+                        manualDiscountAmount: ticket2_item1_manualDiscount,
+                        discountNotes: 'Descuento especial cliente frecuente.',
                         vatRateId: ticket2_item1_vatDetails.vatRateId,
                         vatAmount: ticket2_item1_vatDetails.vatAmount,
                         finalPrice: ticket2_item1_finalPrice, 
                     },
                 ]
             },
-            payments: { // Pago parcial
+            payments: {
                 create: [
                     {
                         type: 'DEBIT',
-                        amount: Math.round(ticket2_finalAmount / 2), // La mitad pagada
+                      amount: Math.round(ticket2_finalAmount / 2), // Asumiendo que el pago parcial se hizo
                         paymentDate: new Date(),
                         status: 'COMPLETED',
                         paymentMethodDefinitionId: paymentMethodCardId,
-                        // posTerminalId: ... // Añadir si se crea un TPV de ejemplo
                         userId: cashierUser2.id,
                         clinicId: clinic2.id,
                         systemId: system!.id,
-                        payerClientId: client2.id
+                      payerClientId: client2.id,
+                      cashSessionId: cashSessionClinic2_Open.id, 
                     }
                 ]
             }
         }
     });
-    console.log(`Created Ticket ${ticket2.ticketNumber} with manual discount and partial payment.`);
+      console.log(`Upserted Ticket ${ticket2.ticketNumber} (OPEN) with manual discount and partial payment.`);
+    }
 
 
-    // --- Escenario 3: Ticket por Consumo de Bono (isValidationGenerated) ---
-    console.log("Seeding Ticket Scenario 3: Bono Consumption (Validation Generated)");
-    if (bonoMasajeInstanceId && client1 && serviceMasajeId && paymentMethodBonoId) {
-         // Para consumo de bono, todos los montos son 0
+    // --- Escenario 3: Ticket por Consumo de Bono (isValidationGenerated), CONTABILIZADO ---
+    console.log("Seeding Ticket Scenario 3: Bono Consumption (Validation Generated), ACCOUNTED");
+    // ... (cálculos de precios para ticket3 se mantienen igual, todo es 0) ...
          const ticket3_item1_price = 0;
          const ticket3_item1_quantity = 1;
-         const ticket3_item1_lineTotal = 0;
-         const ticket3_item1_vatDetails = { vatAmount: 0, vatRateId: defaultVatId, vatPercentage: 0 }; // Asumir IVA 0 para items de valor 0
-         const ticket3_item1_finalPrice = 0;
+    // ...
+         const ticket3_finalAmount = 0;
 
          const ticket3_totalAmount = 0;
          const ticket3_taxAmount = 0;
-         const ticket3_finalAmount = 0;
+    const ticket3_number = 'SEED-TKT-003-BONO';
 
-         const ticket3 = await prisma.ticket.create({
-            data: {
-                ticketNumber: 'SEED-TKT-003-BONO',
+    if (bonoMasajeInstanceId && client1 && serviceMasajeId && paymentMethodBonoId && cashSessionClinic1_Closed) { // Asegurar sesión cerrada
+         const ticket3 = await prisma.ticket.upsert({
+            where: { ticketNumber_systemId: { ticketNumber: ticket3_number, systemId: system!.id } },
+            update: {
                 type: 'SALE',
-                status: 'PAID', // Pagado con el bono
+                status: 'ACCOUNTED',
                 currencyCode: clinic1.currency || 'EUR',
-                totalAmount: 0,
-                taxAmount: 0,
+                totalAmount: ticket3_totalAmount,
+                taxAmount: ticket3_taxAmount,
                 finalAmount: ticket3_finalAmount,
-                notes: 'Generado por consumo de bono masaje.',
+                notes: 'Generado por consumo de bono masaje, contabilizado (actualizado por seed).',
                 clientId: client1.id,
-                cashierUserId: cashierUser1.id, // O el profesional que validó
+                cashierUserId: cashierUser1.id,
+                clinicId: clinic1.id,
+                cashSessionId: cashSessionClinic1_Closed.id,
+            },
+            create: {
+                ticketNumber: ticket3_number,
+                type: 'SALE',
+                status: 'ACCOUNTED', 
+                currencyCode: clinic1.currency || 'EUR',
+                totalAmount: ticket3_totalAmount,
+                taxAmount: ticket3_taxAmount,
+                finalAmount: ticket3_finalAmount,
+                notes: 'Generado por consumo de bono masaje, contabilizado.',
+                clientId: client1.id,
+                cashierUserId: cashierUser1.id,
                 clinicId: clinic1.id,
                 systemId: system!.id,
+                cashSessionId: cashSessionClinic1_Closed.id, 
                 items: {
                     create: [
                         {
@@ -1221,438 +1696,107 @@ async function main() {
                             serviceId: serviceMasajeId,
                             description: 'Masaje Relajante (Consumo Bono)',
                             quantity: ticket3_item1_quantity,
-                            unitPrice: ticket3_item1_price, // Precio cero
+                            unitPrice: ticket3_item1_price,
                             manualDiscountAmount: 0,
                             promotionDiscountAmount: 0,
-                            vatRateId: ticket3_item1_vatDetails.vatRateId, 
-                            vatAmount: ticket3_item1_vatDetails.vatAmount,
-                            finalPrice: ticket3_item1_finalPrice,
-                            consumedBonoInstanceId: bonoMasajeInstanceId, // Link a la instancia consumida
-                            isValidationGenerated: true, // Marcar como generado por validación
+                            vatRateId: defaultVatId, 
+                            vatAmount: 0,
+                            finalPrice: 0,
+                            consumedBonoInstanceId: bonoMasajeInstanceId,
+                            isValidationGenerated: true,
                         },
                     ]
                 },
-                // No se crea un 'Payment' tradicional, el 'pago' es el consumo del bono.
-                // Podríamos crear un pago de tipo INTERNAL_CREDIT si el flujo lo requiere.
                  payments: {
                      create: [
                          {
-                             type: 'DEBIT', // Aunque sea 0, representa el 'cobro' via bono
+                             type: 'DEBIT',
                              amount: 0,
-                             paymentDate: new Date(),
+                             paymentDate: new Date('2023-10-26T11:00:00Z'), // Fecha dentro de la sesión cerrada
                              status: 'COMPLETED',
-                             paymentMethodDefinitionId: paymentMethodBonoId, // Método: Bono/Paquete
-                             bonoInstanceId: bonoMasajeInstanceId, // Opcional: link al bono usado en el pago
+                             paymentMethodDefinitionId: paymentMethodBonoId,
+                             bonoInstanceId: bonoMasajeInstanceId,
                              userId: cashierUser1.id,
                              clinicId: clinic1.id,
                              systemId: system!.id,
                              payerClientId: client1.id,
-                             notes: `Pago con Bono Instancia ID: ${bonoMasajeInstanceId}`
+                             notes: `Pago con Bono Instancia ID: ${bonoMasajeInstanceId}`,
+                             cashSessionId: cashSessionClinic1_Closed.id, // Pago vinculado a la sesión
                          }
                      ]
                  }
             }
          });
-         console.log(`Created Ticket ${ticket3.ticketNumber} for bono consumption.`);
-        // Aquí iría la lógica para decrementar remainingQuantity en BonoInstance si el seed lo hiciera
-    } else {
-        console.warn("Skipping Ticket Scenario 3 due to missing bono instance ID or other prerequisites.");
+        console.log(`Upserted Ticket ${ticket3.ticketNumber} (ACCOUNTED) for bono consumption.`);
     }
 
-    // --- Escenario 4: Ticket de Compra de Bono ---
-    console.log("Seeding Ticket Scenario 4: Bono Purchase");
-    // const ticket4_item1_price = await getTariffPrice(clinic1.tariffId, 'BONO', bonoDefMasajeId) ?? 0;
-    // const ticket4_item1_vat = await calculateVAT(ticket4_item1_price, defaultVatId, defaultVatId);
-    // const ticket4_finalAmount = ticket4_item1_price + ticket4_item1_vat.vatAmount;
-
-    if (bonoDefMasajeId && client1 && paymentMethodTransferId) {
-        const ticket4_item1_price = await getTariffPrice(clinic1.tariffId, 'BONO', bonoDefMasajeId) ?? 0;
+    // --- Escenario 4: Ticket Anulado (VOID), asociado a una sesión CERRADA (para registro) ---
+    console.log("Seeding Ticket Scenario 4: VOID Ticket, associated with a CLOSED session");
+    const ticket4_item1_price = await getTariffPrice(clinic1.tariffId, 'SERVICE', serviceMasajeId) ?? 0;
         const ticket4_item1_quantity = 1;
         const ticket4_item1_lineTotal = ticket4_item1_price * ticket4_item1_quantity;
         const ticket4_item1_vatDetails = await calculateVAT(ticket4_item1_lineTotal, defaultVatId, defaultVatId);
         const ticket4_item1_finalPrice = ticket4_item1_lineTotal + ticket4_item1_vatDetails.vatAmount;
+    const ticket4_number = 'SEED-TKT-004-VOID';
 
-        const ticket4_totalAmount = ticket4_item1_lineTotal;
-        const ticket4_taxAmount = ticket4_item1_vatDetails.vatAmount;
-        const ticket4_finalAmount = ticket4_item1_finalPrice;
-        
-        const ticket4 = await prisma.ticket.create({
-            data: {
-                ticketNumber: 'SEED-TKT-004-BUYBONO',
+    if (cashSessionClinic1_Closed && client1 && serviceMasajeId && cashierUser1 && system) {
+        const ticket4 = await prisma.ticket.upsert({
+            where: { ticketNumber_systemId: { ticketNumber: ticket4_number, systemId: system!.id } },
+            update: {
                 type: 'SALE',
-                status: 'PAID',
+                status: 'VOID', 
                 currencyCode: clinic1.currency || 'EUR',
-                totalAmount: ticket4_totalAmount,       // Corregido
-                taxAmount: ticket4_taxAmount,         // Corregido
-                finalAmount: ticket4_finalAmount,
-                notes: 'Compra de Bono 5 Masajes.',
+                totalAmount: ticket4_item1_lineTotal,
+                taxAmount: ticket4_item1_vatDetails.vatAmount,
+                finalAmount: ticket4_item1_finalPrice,
+                notes: 'Ticket de ejemplo anulado, registrado en cierre de caja (actualizado por seed).',
+                clientId: client1.id,
+                cashierUserId: cashierUser1.id,
+                clinicId: clinic1.id,
+                cashSessionId: cashSessionClinic1_Closed.id, 
+            },
+            create: {
+                ticketNumber: ticket4_number, 
+                 type: 'SALE',
+                status: 'VOID', 
+                 currencyCode: clinic1.currency || 'EUR',
+                totalAmount: ticket4_item1_lineTotal,
+                taxAmount: ticket4_item1_vatDetails.vatAmount,
+                finalAmount: ticket4_item1_finalPrice,
+                notes: 'Ticket de ejemplo anulado, registrado en cierre de caja.',
                 clientId: client1.id,
                 cashierUserId: cashierUser1.id,
                 clinicId: clinic1.id,
                 systemId: system!.id,
+                cashSessionId: cashSessionClinic1_Closed.id, 
                 items: {
-                    create: [
-                        {
-                            itemType: 'BONO_PURCHASE', // Tipo específico
-                            bonoDefinitionId: bonoDefMasajeId, // Link a la definición comprada
-                            description: 'Bono 5 Masajes Relajantes',
+                    create: [{
+                            itemType: 'SERVICE',
+                            serviceId: serviceMasajeId,
+                        description: 'Servicio que se anuló',
                             quantity: ticket4_item1_quantity,
                             unitPrice: ticket4_item1_price,
-                            manualDiscountAmount: 0,
-                            promotionDiscountAmount: 0,
-                            vatRateId: ticket4_item1_vatDetails.vatRateId, // Corregido
-                            vatAmount: ticket4_item1_vatDetails.vatAmount, // Corregido
+                        vatRateId: ticket4_item1_vatDetails.vatRateId,
+                        vatAmount: ticket4_item1_vatDetails.vatAmount,
                             finalPrice: ticket4_item1_finalPrice,
-                        },
-                    ]
-                },
-                payments: {
-                     create: [
-                         {
-                             type: 'DEBIT',
-                             amount: ticket4_finalAmount,
-                             paymentDate: new Date(),
-                             status: 'COMPLETED',
-                             paymentMethodDefinitionId: paymentMethodTransferId, // Pagado por transferencia
-                             // bankAccountId: ... // Añadir si se crea una cuenta de ejemplo
-                             userId: cashierUser1.id,
-                             clinicId: clinic1.id,
-                             systemId: system!.id,
-                             payerClientId: client1.id
-                         }
-                     ]
-                 }
+                    }]
+                }
+                // Los tickets VOID generalmente no tienen pagos, o si los tuvieron, se revirtieron.
             }
         });
-        console.log(`Created Ticket ${ticket4.ticketNumber} for bono purchase.`);
-        // Aquí se crearía la BonoInstance asociada a ticket4.items[0].id si el flujo fuera completo
-    } else {
-         console.warn("Skipping Ticket Scenario 4 due to missing prerequisites.");
+        console.log(`Upserted Ticket ${ticket4.ticketNumber} (VOID) and associated with closed CashSession.`);
     }
-
-
-    // --- Escenario 5: Ticket de Compra de Paquete ---
-    console.log("Seeding Ticket Scenario 5: Package Purchase");
-    // const ticket5_item1_price = await getTariffPrice(clinic1.tariffId, 'PACKAGE', packageDefRelaxId) ?? 0;
-    // El IVA de un paquete puede ser complejo (suma del IVA de sus componentes o IVA fijo?)
-    // Para el seed, calcularemos un IVA sobre el precio total usando el tipo por defecto.
-    // const ticket5_item1_vat = await calculateVAT(ticket5_item1_price, defaultVatId, defaultVatId);
-    // const ticket5_finalAmount = ticket5_item1_price + ticket5_item1_vat.vatAmount;
-
-     if (packageDefRelaxId && client2 && paymentMethodCardId) {
-         const ticket5_item1_price = await getTariffPrice(clinic1.tariffId, 'PACKAGE', packageDefRelaxId) ?? 0;
-         const ticket5_item1_quantity = 1;
-         const ticket5_item1_lineTotal = ticket5_item1_price * ticket5_item1_quantity;
-         // Para el seed, calcularemos un IVA sobre el precio total usando el tipo por defecto.
-         const ticket5_item1_vatDetails = await calculateVAT(ticket5_item1_lineTotal, defaultVatId, defaultVatId);
-         const ticket5_item1_finalPrice = ticket5_item1_lineTotal + ticket5_item1_vatDetails.vatAmount;
-
-         const ticket5_totalAmount = ticket5_item1_lineTotal;
-         const ticket5_taxAmount = ticket5_item1_vatDetails.vatAmount;
-         const ticket5_finalAmount = ticket5_item1_finalPrice;
-
-         const ticket5 = await prisma.ticket.create({
-             data: {
-                 ticketNumber: 'SEED-TKT-005-BUYPACK',
-                 type: 'SALE',
-                 status: 'PAID',
-                 currencyCode: clinic1.currency || 'EUR',
-                 totalAmount: ticket5_totalAmount,       // Corregido
-                 taxAmount: ticket5_taxAmount,         // Corregido
-                 finalAmount: ticket5_finalAmount,
-                 notes: 'Compra de Pack Relax Total.',
-                 clientId: client2.id, // Cliente 2 compra este
-                 cashierUserId: cashierUser1.id,
-                 clinicId: clinic1.id, // En clínica 1
-                 systemId: system!.id,
-                 items: {
-                     create: [
-                         {
-                             itemType: 'PACKAGE_PURCHASE', // Tipo específico
-                             packageDefinitionId: packageDefRelaxId, // Link a la definición comprada
-                             description: 'Pack Relax Total',
-                             quantity: ticket5_item1_quantity,
-                             unitPrice: ticket5_item1_price,
-                             manualDiscountAmount: 0,
-                             promotionDiscountAmount: 0,
-                             vatRateId: ticket5_item1_vatDetails.vatRateId, // Corregido
-                             vatAmount: ticket5_item1_vatDetails.vatAmount, // Corregido
-                             finalPrice: ticket5_item1_finalPrice,
-                         },
-                     ]
-                 },
-                 payments: {
-                      create: [
-                          {
-                              type: 'DEBIT',
-                              amount: ticket5_finalAmount,
-                              paymentDate: new Date(),
-                              status: 'COMPLETED',
-                              paymentMethodDefinitionId: paymentMethodCardId, // Pagado con tarjeta
-                              userId: cashierUser1.id,
-                              clinicId: clinic1.id,
-                              systemId: system!.id,
-                              payerClientId: client2.id
-                          }
-                      ]
-                  }
-             }
-         });
-         console.log(`Created Ticket ${ticket5.ticketNumber} for package purchase.`);
-         // Aquí se crearía la PackageInstance asociada
-     } else {
-          console.warn("Skipping Ticket Scenario 5 due to missing prerequisites.");
-     }
-
-    // --- Escenario 6: Ticket con Promoción Aplicada (Ejemplo: 10% dto en Limpieza Facial) ---
-    console.log("Seeding Ticket Scenario 6: Applied Promotion");
-    // Asumir que existe una promoción con ID 'promo-10pct-limpieza' que aplica 10% a serviceLimpiezaFacialId
-    const promotionNameExample = '10% Descuento Servicios Faciales'; // Nombre de la promoción a buscar
-    const promoExists = await prisma.promotion.findFirst({ where: { name: promotionNameExample, systemId: system!.id } });
-
-    if (promoExists && serviceLimpiezaFacialId && client1 && paymentMethodCashId) {
-        const ticket6_item1_price = await getTariffPrice(clinic1.tariffId, 'SERVICE', serviceLimpiezaFacialId) ?? 0;
-        const ticket6_item1_quantity = 1;
-        const ticket6_item1_grossLineTotal = ticket6_item1_price * ticket6_item1_quantity;
-        
-        // Aplicar descuento de promoción
-        const ticket6_item1_promoDiscountRate = promoExists.value ?? 0.10; // Usar valor de la promo, o 10% por defecto
-        const ticket6_item1_promoDiscountAmount = parseFloat((ticket6_item1_grossLineTotal * ticket6_item1_promoDiscountRate).toFixed(2));
-        const ticket6_item1_price_after_discount = ticket6_item1_grossLineTotal - ticket6_item1_promoDiscountAmount;
-        
-        const ticket6_item1_vatDetails = await calculateVAT(ticket6_item1_price_after_discount, defaultVatId, defaultVatId);
-        const ticket6_item1_finalPrice = ticket6_item1_price_after_discount + ticket6_item1_vatDetails.vatAmount;
-
-        const ticket6_totalAmount = ticket6_item1_grossLineTotal; // Bruto antes de descuento promo
-        const ticket6_taxAmount = ticket6_item1_vatDetails.vatAmount;
-        const ticket6_finalAmount = ticket6_item1_finalPrice;
-
-         const ticket6 = await prisma.ticket.create({
-            data: {
-                ticketNumber: 'SEED-TKT-006-PROMO',
-                type: 'SALE',
-                status: 'PAID',
-                currencyCode: clinic1.currency || 'EUR',
-                totalAmount: ticket6_totalAmount,
-                taxAmount: ticket6_taxAmount,
-                finalAmount: ticket6_finalAmount,
-                notes: 'Ticket con promoción 10% Limpieza Facial.',
-                clientId: client1.id,
-                cashierUserId: cashierUser1.id,
-                clinicId: clinic1.id,
-                systemId: system!.id,
-                items: {
-                    create: [
-                        {
-                            itemType: 'SERVICE',
-                            serviceId: serviceLimpiezaFacialId,
-                            description: `Limpieza Facial Profunda (Promo ${promoExists.name})`,
-                            quantity: ticket6_item1_quantity,
-                            unitPrice: ticket6_item1_price,
-                            manualDiscountAmount: 0,
-                            promotionDiscountAmount: ticket6_item1_promoDiscountAmount, // Descuento promo aplicado
-                            appliedPromotionId: promoExists.id, // Link a la promoción
-                            vatRateId: ticket6_item1_vatDetails.vatRateId,
-                            vatAmount: ticket6_item1_vatDetails.vatAmount,
-                            finalPrice: ticket6_item1_finalPrice,
-                        },
-                    ]
-                },
-                payments: {
-                     create: [
-                         {
-                             type: 'DEBIT',
-                             amount: ticket6_finalAmount,
-                             paymentDate: new Date(),
-                             status: 'COMPLETED',
-                             paymentMethodDefinitionId: paymentMethodCashId,
-                             userId: cashierUser1.id,
-                             clinicId: clinic1.id,
-                             systemId: system!.id,
-                             payerClientId: client1.id
-                         }
-                     ]
-                 }
-            }
-        });
-        console.log(`Created Ticket ${ticket6.ticketNumber} with promotion.`);
-    } else {
-        console.warn("Skipping Ticket Scenario 6 due to missing promotion or prerequisites.");
-    }
-
-     // --- Escenario 7: Ticket de Devolución (Return) ---
-    console.log("Seeding Ticket Scenario 7: Return Ticket");
-    // Crear primero un ticket simple para devolver
-    const original_t7_item1_price = 50; // Precio del producto a devolver
-    const original_t7_item1_quantity = 1;
-    const original_t7_item1_lineTotal = original_t7_item1_price * original_t7_item1_quantity;
-    const original_t7_item1_vatDetails = await calculateVAT(original_t7_item1_lineTotal, defaultVatId, defaultVatId);
-    const original_t7_item1_finalPrice = original_t7_item1_lineTotal + original_t7_item1_vatDetails.vatAmount;
-
-    const original_t7_totalAmount = original_t7_item1_lineTotal;
-    const original_t7_taxAmount = original_t7_item1_vatDetails.vatAmount;
-    const original_t7_finalAmount = original_t7_item1_finalPrice;
-
-    const originalTicketForReturn = await prisma.ticket.create({
-        data: { 
-            ticketNumber: 'SEED-TKT-ORG-RET', status: 'PAID', type: 'SALE',
-            clientId: client1.id, cashierUserId: cashierUser1.id, clinicId: clinic1.id, systemId: system!.id,
-            currencyCode: clinic1.currency || 'EUR', 
-            totalAmount: original_t7_totalAmount, 
-            taxAmount: original_t7_taxAmount, 
-            finalAmount: original_t7_finalAmount,
-            items: { create: [{ 
-                itemType: 'PRODUCT', 
-                productId: productCremaId, // Asegúrate que productCremaId está definido y es válido
-                description: 'Producto a devolver', 
-                quantity: original_t7_item1_quantity, 
-                unitPrice: original_t7_item1_price, 
-                manualDiscountAmount: 0,
-                promotionDiscountAmount: 0,
-                            vatRateId: original_t7_item1_vatDetails.vatRateId, 
-                            vatAmount: original_t7_item1_vatDetails.vatAmount, 
-                            finalPrice: original_t7_item1_finalPrice 
-            }] },
-            payments: { create: [{ 
-                type: 'DEBIT', 
-                amount: original_t7_finalAmount, 
-                paymentDate: new Date(), 
-                status: 'COMPLETED', 
-                paymentMethodDefinitionId: paymentMethodCashId, 
-                userId: cashierUser1.id, 
-                clinicId: clinic1.id, 
-                systemId: system!.id, 
-                payerClientId: client1.id 
-            }] }
-        }
-    });
-    // Ahora crear el ticket de devolución
-    const return_item1_quantity = -original_t7_item1_quantity;
-    const return_item1_unitPrice = original_t7_item1_price; // El precio unitario es el mismo, la cantidad es negativa
-    const return_item1_lineTotal = return_item1_unitPrice * return_item1_quantity; // Será negativo
-    // No hay descuentos en la devolución en este ejemplo
-    const return_item1_vatDetails = await calculateVAT(return_item1_lineTotal, original_t7_item1_vatDetails.vatRateId, defaultVatId); // IVA también será negativo
-    const return_item1_finalPrice = return_item1_lineTotal + return_item1_vatDetails.vatAmount;
-
-
-    const return_totalAmount = return_item1_lineTotal;
-    const return_taxAmount = return_item1_vatDetails.vatAmount;
-    const return_finalAmount = return_item1_finalPrice;
-
-
-    const returnTicket = await prisma.ticket.create({
-        data: {
-            ticketNumber: 'SEED-TKT-RETURN-001',
-            type: 'RETURN', // <<< TIPO RETURN
-            status: 'REFUNDED', // Estado devuelto/reembolsado
-            currencyCode: clinic1.currency || 'EUR',
-            totalAmount: return_totalAmount, 
-            taxAmount: return_taxAmount,
-            finalAmount: return_finalAmount,
-            notes: `Devolución del ticket ${originalTicketForReturn.ticketNumber}`,
-            originalTicketId: originalTicketForReturn.id, // <<< Link al original
-            clientId: client1.id,
-            cashierUserId: cashierUser1.id,
-            clinicId: clinic1.id,
-            systemId: system!.id,
-            items: { // Líneas negativas correspondientes
-                create: [
-                    {
-                        itemType: 'PRODUCT',
-                        productId: productCremaId, // Mismo producto
-                        description: 'Devolución Producto',
-                        quantity: return_item1_quantity, // Cantidad negativa
-                        unitPrice: return_item1_unitPrice, // Precio unitario (positivo)
-                        manualDiscountAmount: 0,
-                        promotionDiscountAmount: 0,
-                        vatRateId: return_item1_vatDetails.vatRateId,
-                        vatAmount: return_item1_vatDetails.vatAmount, // IVA negativo
-                        finalPrice: return_item1_finalPrice, // Final negativo
-                    },
-                ]
-            },
-            payments: { // Pago de tipo CRÉDITO (salida de dinero)
-                create: [
-                    {
-                        type: 'CREDIT', // <<< TIPO CREDITO
-                        amount: Math.abs(return_finalAmount), // Cantidad positiva para el pago, pero representa una salida
-                        paymentDate: new Date(),
-                        status: 'COMPLETED',
-                        paymentMethodDefinitionId: paymentMethodCashId, // Devuelto en efectivo
-                        userId: cashierUser1.id,
-                        clinicId: clinic1.id,
-                        systemId: system!.id,
-                        payerClientId: client1.id // A quién se devuelve
-                    }
-                ]
-            }
-        }
-    });
-    console.log(`Created Return Ticket ${returnTicket.ticketNumber} for ${originalTicketForReturn.ticketNumber}.`);
-
-
-    // --- Escenario 8: Ticket en Borrador (DRAFT) ---
-     console.log("Seeding Ticket Scenario 8: Draft Ticket");
-
-     // Para un borrador, los cálculos pueden ser tentativos o incluso no tener items aún.
-     // Aquí creamos uno con un item tentativo.
-     const ticket8_item1_price = await getTariffPrice(clinic1.tariffId, 'SERVICE', serviceLimpiezaFacialId) ?? 55; // Precio base o de tarifa
-     const ticket8_item1_quantity = 1;
-     const ticket8_item1_lineTotal = ticket8_item1_price * ticket8_item1_quantity;
-     const ticket8_item1_vatDetails = await calculateVAT(ticket8_item1_lineTotal, defaultVatId, defaultVatId);
-     const ticket8_item1_finalPrice = ticket8_item1_lineTotal + ticket8_item1_vatDetails.vatAmount;
-
-     const ticket8_totalAmount_draft = ticket8_item1_lineTotal;
-     const ticket8_taxAmount_draft = ticket8_item1_vatDetails.vatAmount;
-     const ticket8_finalAmount_draft = ticket8_item1_finalPrice;
-
-     const ticket8 = await prisma.ticket.create({
-        data: {
-            ticketNumber: 'SEED-TKT-DRAFT-001',
-            type: 'SALE',
-            status: 'DRAFT', // <<< ESTADO DRAFT
-            currencyCode: clinic1.currency || 'EUR',
-            totalAmount: ticket8_totalAmount_draft, 
-            taxAmount: ticket8_taxAmount_draft,
-            finalAmount: ticket8_finalAmount_draft,
-            notes: 'Ticket en borrador, pendiente de finalizar.',
-            clientId: client1.id, // Puede tener cliente
-            cashierUserId: cashierUser1.id,
-            clinicId: clinic1.id,
-            systemId: system!.id,
-            items: { // Puede tener items preliminares
-                create: [
-                     {
-                         itemType: 'SERVICE',
-                         serviceId: serviceLimpiezaFacialId,
-                         description: 'Limpieza Facial - Borrador',
-                         quantity: ticket8_item1_quantity,
-                         unitPrice: ticket8_item1_price, 
-                         manualDiscountAmount: 0,
-                         promotionDiscountAmount: 0,
-                         vatRateId: ticket8_item1_vatDetails.vatRateId,
-                         vatAmount: ticket8_item1_vatDetails.vatAmount, 
-                         finalPrice: ticket8_item1_finalPrice, 
-                     },
-                ]
-            }
-            // Sin sección de pagos para DRAFT
-        }
-     });
-     console.log(`Created Draft Ticket ${ticket8.ticketNumber}.`);
-
-
-    // --- (Opcional) Crear más escenarios: B2B, Citas, Consumo Paquete, etc. ---
 
   } catch (error) {
-    console.error("Error during Ticket seeding:", error);
-    // No salir, intentar continuar con el resto si es posible
+    console.error("Error during comprehensive Ticket, Item, and Payment seeding:", error);
+    // No lanzar error aquí para permitir que el resto del seed intente continuar si es posible
+    // o manejarlo según la política de errores del seed general.
   }
-  console.log('Comprehensive Ticket seeding attempt finished.');
+  console.log('Comprehensive example Tickets, Items, and Payments creation attempt finished.');
   // <<< --- FIN: SEEDING DE TICKETS Y PAGOS --- >>>
 
 
-  console.log(`Seeding finished.`);
+  console.log('Seeding completed.');
 } // Fin función main()
 
 main()

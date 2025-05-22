@@ -1,3 +1,4 @@
+/* stylelint-disable at-rule-no-unknown */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -324,7 +325,7 @@ select:focus {
 
 /* Button styles */
 .button-purple {
-  @apply bg-purple-600 hover:bg-purple-700 text-white;
+  @apply text-white bg-purple-600 hover:bg-purple-700;
 }
 
 /* Input focus styles */

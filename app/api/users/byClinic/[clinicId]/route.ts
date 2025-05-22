@@ -55,11 +55,11 @@ export async function GET(request: NextRequest, { params: paramsPromise }: { par
       where: {
         systemId: systemId,
         isActive: true,
-        clinicAssignments: { // Usar UserClinicAssignment para la relación
-          some: {
+        clinicAssignments: {
+           some: {
             clinicId: validatedClinicId,
-            // Aquí podríamos filtrar por roles si fuera necesario. Por ejemplo:
-            // role: { name: "Vendedor" } // Asumiendo que UserClinicAssignment tiene una relación a Role
+            // Aquí podríamos añadir un filtro para que el assignment esté activo si UserClinicAssignment tiene un campo isActive
+            // O filtrar por roles específicos si el campo 'role' está bien definido en UserClinicAssignment
           }
         }
       },
@@ -68,6 +68,7 @@ export async function GET(request: NextRequest, { params: paramsPromise }: { par
         firstName: true,
         lastName: true,
         email: true,
+        isActive: true,
       },
       orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
     })

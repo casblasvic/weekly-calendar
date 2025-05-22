@@ -340,8 +340,7 @@ export default function ClinicaDetailPage() {
     isLoading: isLoadingContext, // <<< AÑADIR isLoading del contexto
     fetchCabinsForClinic,
     activeClinicCabins,
-    isLoadingCabinsContext,
-    setActiveClinicById // <<< OBTENER NUEVA FUNCIÓN
+    isLoadingCabinsContext
   } = clinicContext
   const { templates } = useTemplates()
   const { getTarifaById, tarifas } = useTarif()
@@ -353,6 +352,8 @@ export default function ClinicaDetailPage() {
   
   // <<< MOVER AQUÍ EL NUEVO ESTADO >>>
   const [displayedCabins, setDisplayedCabins] = useState<Cabin[]>([]);
+  // Estado de carga local para cabinas (evita usar el del contexto cuando editamos otra clínica)
+  const [isLoadingCabinsLocal, setIsLoadingCabinsLocal] = useState<boolean>(false);
   
   // --- ESTADOS PARA PAÍSES (COLOCADOS AL PRINCIPIO) --- <<< NUEVO >>>
   const [countries, setCountries] = useState<CountryInfo[]>([]);
@@ -483,36 +484,68 @@ export default function ClinicaDetailPage() {
   }, []); // Array de dependencias vacío para ejecutar solo al montar.
   // --- FIN useEffect PAÍSES --- <<< NUEVO >>>
 
-  // <<< NUEVO useEffect para establecer la clínica activa según la URL >>>
+  // <<< NUEVO useEffect para cargar los datos de la clínica **sin** alterar el contexto >>>
   useEffect(() => {
-    console.log(`[ClinicaDetail] useEffect[clinicId, context] - URL ID: ${clinicId}, Context Active ID: ${clinicDataFromContext?.id}, isLoading: ${isLoadingContext}`);
-    // Asegurarse de que tenemos un ID de la URL y el contexto no está cargando datos generales
-    if (clinicId && !isLoadingContext) {
-        // Si la clínica activa del contexto no existe o su ID no coincide con el de la URL
-        if (!clinicDataFromContext || clinicDataFromContext.id !== clinicId) {
-            console.log(`[ClinicaDetail] URL ID (${clinicId}) differs from context active ID (${clinicDataFromContext?.id}). Calling setActiveClinicById...`);
-            // Llamar a la función del contexto para cargar la clínica correcta
-            setActiveClinicById(clinicId).then(() => {
-                console.log(`[ClinicaDetail] setActiveClinicById(${clinicId}) finished.`);
-                setIsInitializing(false); // Marcar como inicializado después de cargar la clínica correcta
-            }).catch(error => {
-                console.error(`[ClinicaDetail] Error calling setActiveClinicById(${clinicId}):`, error);
-                setIsInitializing(false); // Marcar como inicializado incluso si hay error
-            });
-        } else {
-            // La clínica del contexto ya coincide con la URL, marcamos como inicializado
-            console.log(`[ClinicaDetail] Context active ID (${clinicDataFromContext.id}) matches URL ID (${clinicId}). Initialized.`);
-            setIsInitializing(false);
-        }
-    } else if (!clinicId) {
-        console.error("[ClinicaDetail] No valid clinicId found in URL.");
-        setIsInitializing(false); // No hay ID, consideramos inicializado (mostrará error o vacío)
-    } else if (isLoadingContext) {
-        console.log("[ClinicaDetail] Context is loading, waiting to set active clinic...");
-        // No hacemos nada, esperamos a que isLoadingContext sea false
+    if (!clinicId) {
+      console.error("[ClinicaDetail] No se encontró clinicId en la URL.");
+      setIsInitializing(false);
+      return;
     }
-  }, [clinicId, setActiveClinicById, clinicDataFromContext?.id, isLoadingContext]); // Dependencias clave
 
+    // Evitar refetch si ya tenemos los datos correctos
+    if (clinicData && clinicData.id === clinicId) {
+      setIsInitializing(false);
+      return;
+    }
+
+    const loadClinic = async () => {
+      try {
+        setIsLoadingClinic(true);
+        const data = await getClinicaById(clinicId);
+        setClinicData(data);
+        if (data) {
+          setFormData(data);
+        }
+      } catch (error) {
+        console.error(`[ClinicaDetail] Error cargando datos de la clínica ${clinicId}:`, error);
+      } finally {
+        setIsLoadingClinic(false);
+        setIsInitializing(false);
+      }
+    };
+
+    loadClinic();
+  }, [clinicId, getClinicaById]);
+
+  // <<< NUEVO useEffect para cargar cabinas de la clínica editada sin tocar el contexto >>>
+  useEffect(() => {
+    const loadCabins = async () => {
+      if (!clinicId) {
+        setDisplayedCabins([]);
+        setIsLoadingCabinsLocal(false);
+        return;
+      }
+      setIsLoadingCabinsLocal(true);
+      try {
+        const res = await fetch(`/api/clinics/${clinicId}/cabins`);
+        if (res.ok) {
+          const cabins: Cabin[] = await res.json();
+          const sorted = [...cabins].sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity));
+          setDisplayedCabins(sorted);
+        } else {
+          console.warn(`[ClinicaDetail] No se pudieron obtener cabinas para la clínica ${clinicId}. Status: ${res.status}`);
+          setDisplayedCabins([]);
+        }
+      } catch (error) {
+        console.error(`[ClinicaDetail] Error obteniendo cabinas para la clínica ${clinicId}:`, error);
+        setDisplayedCabins([]);
+      } finally {
+        setIsLoadingCabinsLocal(false);
+      }
+    };
+
+    loadCabins();
+  }, [clinicId]);
 
   // useEffect para sincronizar isLoadingClinic LOCAL con isLoadingContext GLOBAL
   useEffect(() => {
@@ -2311,7 +2344,7 @@ export default function ClinicaDetailPage() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {isLoadingCabinsContext ? ( // <<< Usar isLoadingCabinsContext
+                          {isLoadingCabinsLocal ? ( // <<< Usar isLoadingCabinsLocal
                             <TableRow>
                               <TableCell colSpan={9} className="h-24 text-center">
                                 Cargando cabinas...

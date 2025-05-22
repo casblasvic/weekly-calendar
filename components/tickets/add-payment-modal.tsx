@@ -23,23 +23,30 @@ import {
 import { TicketPaymentFormValues } from '@/lib/schemas/ticket';
 import { usePaymentMethodsQuery } from '@/lib/hooks/use-api-query';
 import { formatCurrency } from '@/lib/utils';
-import { ShimmerButton } from '@/components/ui/shimmer-button';
 import { BorderBeam } from '@/components/ui/border-beam';
+import { PlusCircle, Loader2 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { useTranslation } from 'react-i18next';
+import { PaymentMethodType } from '@prisma/client';
 
 interface AddPaymentModalProps {
   isOpen: boolean;
   onClose: () => void;
   onAddPayment: (payment: TicketPaymentFormValues) => void;
   pendingAmount: number;
+  /**
+   * Lista opcional de tipos de método de pago que NO deben mostrarse en el selector.
+   * Ej.: [PaymentMethodType.DEFERRED_PAYMENT]
+   */
+  excludedPaymentMethodTypes?: PaymentMethodType[];
 }
 
 export function AddPaymentModal({ 
   isOpen, 
   onClose, 
   onAddPayment, 
-  pendingAmount 
+  pendingAmount,
+  excludedPaymentMethodTypes = [],
 }: AddPaymentModalProps) {
   const [paymentMethodId, setPaymentMethodId] = useState<string>('');
   const [amount, setAmount] = useState<number>(pendingAmount);
@@ -48,6 +55,12 @@ export function AddPaymentModal({
   const { t } = useTranslation();
 
   const { data: paymentMethods = [], isLoading: loadingPaymentMethods } = usePaymentMethodsQuery();
+
+  // Filtrar métodos de pago según exclusiones solicitadas
+  const filteredPaymentMethods = React.useMemo(() => {
+    if (!excludedPaymentMethodTypes || excludedPaymentMethodTypes.length === 0) return paymentMethods;
+    return paymentMethods.filter((m: { type?: PaymentMethodType }) => !m.type || !excludedPaymentMethodTypes.includes(m.type));
+  }, [paymentMethods, excludedPaymentMethodTypes]);
 
   useEffect(() => {
     if (isOpen) {
@@ -85,17 +98,41 @@ export function AddPaymentModal({
       return;
     }
 
-    const selectedMethod = paymentMethods.find(m => m.id === paymentMethodId);
+    const selectedMethod = paymentMethods.find((m: any) => m.id === paymentMethodId);
 
     onAddPayment({
       paymentMethodDefinitionId: paymentMethodId,
-      paymentMethodName: selectedMethod?.name || 'Desconocido', 
+      paymentMethodName: selectedMethod?.name || 'Desconocido',
+      paymentMethodCode: selectedMethod?.code || undefined,
       amount: amount,
       paymentDate: new Date(),
       transactionReference: reference,
       id: `temp-${Date.now()}-${Math.random()}` // Generar ID temporal único
     });
     onClose();
+  };
+
+  const renderSubmitButton = () => {
+    if (loadingPaymentMethods || amount <= 0 || !paymentMethodId) {
+      return (
+        <Button
+          disabled={true}
+          className="w-full text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700"
+        >
+          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+          {t('tickets.addPaymentModal.confirmButton')}
+        </Button>
+      );
+    }
+    return (
+      <Button
+        onClick={handleAddClick}
+        className="w-full text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700"
+      >
+        <PlusCircle className="w-4 h-4 mr-2" />
+        {t('tickets.addPaymentModal.confirmButton')}
+      </Button>
+    );
   };
 
   return (
@@ -114,9 +151,9 @@ export function AddPaymentModal({
           
           <div className="space-y-4">
             {/* Importe Pendiente (solo informativo) */}
-            <div className="text-center text-sm text-gray-600">
+            <div className="text-sm text-center text-gray-600">
               {t('tickets.addPaymentModal.pendingInfo')}
-              <span className="font-semibold text-purple-700 ml-1">
+              <span className="ml-1 font-semibold text-purple-700">
                 {formatCurrency(pendingAmount)}
               </span>
             </div>
@@ -136,11 +173,17 @@ export function AddPaymentModal({
                   {loadingPaymentMethods ? (
                     <SelectItem value="loading" disabled>{t('tickets.addPaymentModal.loadingMethods')}</SelectItem>
                   ) : (
-                    paymentMethods.map((method) => (
+                    filteredPaymentMethods.length > 0 ? (
+                      filteredPaymentMethods.map((method: any) => (
                       <SelectItem key={method.id} value={method.id}>
                         {method.name}
                       </SelectItem>
                     ))
+                    ) : (
+                      <SelectItem value="none" disabled>
+                        {t('tickets.addPaymentModal.noMethodsAvailable', 'Sin métodos disponibles')}
+                      </SelectItem>
+                    )
                   )}
                 </SelectContent>
               </Select>
@@ -157,7 +200,7 @@ export function AddPaymentModal({
                 placeholder="0.00"
                 value={amount > 0 ? amount.toString() : ''} // Mostrar cadena vacía si es 0
                 onChange={handleAmountChange}
-                className="focus:ring-purple-500/50 text-right text-red-600 font-semibold"
+                className="font-semibold text-right text-red-600 focus:ring-purple-500/50"
               />
             </div>
 
@@ -182,15 +225,7 @@ export function AddPaymentModal({
             >
               {t('common.cancel')}
             </Button>
-            <ShimmerButton 
-              className="shadow-lg"
-              onClick={handleAddClick}
-              disabled={loadingPaymentMethods || amount <= 0 || !paymentMethodId}
-            >
-              <span className="whitespace-pre-wrap text-center text-sm font-medium leading-none tracking-tight text-white dark:from-white dark:to-slate-900/10 lg:text-base">
-                {t('tickets.addPaymentModal.confirmButton')}
-              </span>
-            </ShimmerButton>
+            {renderSubmitButton()}
           </DialogFooter>
         </div>
       </DialogContent>

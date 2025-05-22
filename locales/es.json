@@ -83,7 +83,7 @@
             "close": "Cerrar",
             "add": "Añadir"
         },
-        "none": "Ninguno",
+        "none": "Ninguno/a",
         "all": "Todos",
         "featureNotImplementedYetShort": "Próximamente",
         "clinic": "Clínica",
@@ -148,7 +148,17 @@
         "loadingData": "Cargando datos...",
         "errorLoadingData": "Error al cargar los datos",
         "paymentDeletedError": "Error al eliminar el pago.",
-        "localPaymentRemovedSuccess": "Pago local eliminado correctamente."
+        "localPaymentRemovedSuccess": "Pago local eliminado correctamente.",
+        "reopen": "Reabrir",
+        "reopening": "Reabriendo...",
+        "confirmAndClose": "Sí, aplazar y cerrar",
+        "continueEditing": "No, seguir editando",
+        "view": "Ver",
+        "information": "Información",
+        "reopenSelected": "Reabrir seleccionados",
+        "selectClinicToViewData": "Por favor, selecciona una clínica para ver los datos.",
+        "noSelection": "Sin selección",
+        "redirectingAfterClose": "Guardando y cerrando el ticket..."
     },
     "sidebar": {
         "dashboard": "Inicio",
@@ -159,7 +169,28 @@
         "packages": "Paquetes",
         "reports": "Informes",
         "settings": "Configuración",
-        "logout": "Cerrar Sesión"
+        "logout": "Cerrar Sesión",
+        "errorSavingTicket": "Error al guardar el ticket.",
+        "reopenConfirmTitle": "Confirmar Reapertura de Ticket",
+        "reopenConfirmDescription": "¿Estás seguro de que quieres reabrir este ticket? Esta acción lo devolverá al estado 'Abierto' y permitirá su modificación.",
+        "completeAndCloseTicket": "Completar y Cerrar Ticket",
+        "closingTicket": "Cerrando ticket...",
+        "reopening": "Reabriendo ticket...",
+        "confirmDelayedPaymentTitle": "Confirmar Pago Aplazado",
+        "confirmDelayedPaymentDesc": "El ticket tiene un saldo pendiente de {{amount}} €. ¿Deseas registrar este importe como un pago aplazado y cerrar el ticket?",
+        "notifications": {
+            "addItemsBeforePayment": "Por favor, añade conceptos al ticket antes de registrar un pago.",
+            "ticketAlreadyPaid": "Este ticket ya ha sido pagado en su totalidad.",
+            "paymentDeletedSuccess": "Pago eliminado del ticket.",
+            "paymentNotFoundAnymore": "El pago ya no se encontró en la base de datos (posiblemente eliminado previamente). Se ha quitado de la vista actual.",
+            "clientRequired": "Cliente requerido para el ticket",
+            "clientRequiredDesc": "Por favor, seleccione un cliente antes de continuar.",
+            "itemsRequired": "El ticket debe contener al menos un producto o servicio.",
+            "ticketClosedSuccessTitle": "Ticket Cerrado con Éxito",
+            "mustBeFullyPaidTitle": "Ticket No Pagado Completamente",
+            "mustBeFullyPaidDesc": "El ticket tiene un saldo pendiente de {{amount}} €. Por favor, registra todos los pagos necesarios antes de proceder al cierre.",
+            "delayedPaymentWillBeRegistered": "Se registrará un pago aplazado por {{amount}} €."
+        }
     },
     "tickets": {
         "pageTitle": "Tickets",
@@ -199,6 +230,10 @@
         "errorLoadingTicket": "Error al cargar el ticket.",
         "ticketSavedSuccess": "Ticket guardado correctamente.",
         "errorSavingTicket": "Error al guardar el ticket.",
+        "reopenConfirmTitle": "Confirmar Reapertura de Ticket",
+        "reopenConfirmDescription": "¿Estás seguro de que quieres reabrir este ticket? Esta acción lo devolverá al estado 'Abierto' y permitirá su modificación.",
+        "completeAndCloseTicket": "Completar y Cerrar Ticket",
+        "closeTicket": "Cerrar Ticket",
         "addItemModal": {
             "title": "Añadir Concepto",
             "searchPlaceholder": "Buscar servicio, producto, bono o paquete...",
@@ -221,7 +256,8 @@
             "loading": "Cargando..."
         },
         "applyDiscountModal": {
-            "title": "Aplicar Descuento/Promoción",
+            "title": "Aplicar Descuento/Promoción a {{item}}",
+            "description": "Modal para aplicar descuentos, promociones o fijar un precio final para el ítem {{item}}.",
             "vatTypeLabel": "Tipo de IVA",
             "vatTypePlaceholder": "Seleccionar IVA...",
             "useCurrentVat": "IVA Actual ({{vatRate}}%)",
@@ -237,7 +273,9 @@
             "commentsPlaceholder": "Añade notas sobre el descuento...",
             "cancelButton": "Cancelar",
             "saveButton": "Aplicar Descuento",
-            "maxAmountInfo": "Máximo: {{amount}} €"
+            "maxAmountInfo": "Máximo: {{amount}} €",
+            "finalPriceIncVATLabel": "Precio Final (IVA Incl.)",
+            "fixedAmountLabel": "Descuento Fijo (€)"
         },
         "addPaymentModal": {
             "title": "Añadir Pago",
@@ -309,6 +347,7 @@
             "total": "Total",
             "noTicketsFound": "No se encontraron tickets para los criterios seleccionados."
         },
+        "noTicketsFound": "No se encontraron tickets para los criterios seleccionados.",
         "concept": "Concepto",
         "pvp": "PVP",
         "dto": "Dto.",
@@ -316,6 +355,8 @@
         "selectClinicMessage": "Por favor, selecciona una clínica para ver los tickets.",
         "pendingTicketsTitle": "Tickets Pendientes/Abiertos",
         "closedTicketsTitle": "Tickets Cerrados/Histórico",
+        "pendingTickets": "Tickets Pendientes",
+        "closedTickets": "Tickets Cerrados",
         "footer": {
             "viewCashRegister": "Ver Caja del Día",
             "newTicket": "Nuevo Ticket"
@@ -324,12 +365,17 @@
             "viewTooltip": "Ver Detalles",
             "editTooltip": "Editar Ticket",
             "deleteTooltip": "Eliminar Ticket",
-            "closedTooltip": "Ticket Cerrado (No editable)"
+            "closedTooltip": "Ticket Cerrado (No editable)",
+            "voidTooltip": "Anular Ticket",
+            "reopenTooltip": "Reabrir Ticket",
+            "closedAndSessionNotOpenTooltip": "No se puede reabrir: La sesión de caja asociada está cerrada/conciliada. Reabra primero la sesión de caja.",
+            "accountedOrVoidTooltip": "No se puede reabrir: El ticket está contabilizado o anulado."
         },
-        "entityName": "Tickets",
+        "entityName": "Ticket",
+        "entityNamePlural": "Tickets",
         "noClient": "Sin cliente asignado",
-        "seller": "Vendedor",
-        "selectSellerPlaceholder": "Seleccionar vendedor",
+        "seller": "Vendedor/a",
+        "selectSellerPlaceholder": "Seleccionar un vendedor...",
         "noSellersAvailable": "No hay vendedores disponibles",
         "notifications": {
             "createdSuccess": "Ticket {{ticketNumber}} creado con éxito.",
@@ -341,8 +387,43 @@
             "localPaymentRemovedSuccess": "Pago local eliminado correctamente.",
             "paymentNotFoundAnymore": "El pago ya no se encontró en la base de datos.",
             "addItemsBeforePayment": "Añada al menos un producto o servicio antes de realizar un pago.",
-            "ticketAlreadyPaid": "El ticket ya está completamente pagado."
-        }
+            "ticketAlreadyPaid": "El ticket ya está completamente pagado.",
+            "mustBeFullyPaidTitle": "Pago Requerido",
+            "mustBeFullyPaidDesc": "El ticket tiene un saldo pendiente de {{amount}}. Debe estar completamente pagado para cerrarse.",
+            "clinicNoDelayedPayment": "Esta clínica no permite pagos aplazados.",
+            "ticketVoidedSuccess": "Ticket {{ticketNumber}} anulado con éxito.",
+            "ticketVoidedError": "Error al anular el ticket {{ticketNumber}}.",
+            "noEffectiveChanges": "No se han realizado cambios efectivos en el ticket."
+        },
+        "sellerStatus": {
+            "inactiveInClinic": "(Inactivo en esta clínica)",
+            "differentClinic": "(Clínica: {{clinicName}})",
+            "inactiveSystem": "(Usuario inactivo)",
+            "notFoundInClinicList": "(No en lista activa de esta clínica)",
+            "activeInOtherClinic": "(Activo en otra clínica)"
+        },
+        "currentSellerInfo": "Vendedor asignado: {{name}} {{status}}",
+        "sellerInfoOriginal": "Vendedor original: {{name}} {{status}}",
+        "cashier": "Cajero/a",
+        "cashierInfoNotAvailable": "Información del cajero no disponible",
+        "creationDate": "Fecha Creación",
+        "reopenTicket": "Reabrir Ticket",
+        "confirmDelayedPaymentTitle": "Confirmar Pago Aplazado",
+        "confirmDelayedPaymentDesc": "El ticket tiene un saldo pendiente de {{amount}} €. ¿Deseas registrar este importe como un pago aplazado y cerrar el ticket?",
+        "reopenSuccessTitle": "Ticket Reabierto",
+        "reopenSuccessDescription": "El ticket {{ticketId}} ha sido reabierto y ahora está en estado 'Abierto'.",
+        "reopenSelected": "Reabrir seleccionados",
+        "selectTicketsToReopen": "Por favor, selecciona uno o más tickets cerrados para reabrir.",
+        "reopeningInProgressTitle": "Reapertura en curso",
+        "reopeningInProgressDesc": "Reabriendo {{count}} ticket(s)...",
+        "bulkReopenSummaryErrorTitle": "Resultado de la reapertura (con errores)",
+        "bulkReopenSummaryErrorDesc": "{{success}} ticket(s) reabiertos con éxito, {{error}} ticket(s) fallaron.",
+        "bulkReopenSummarySuccessTitle": "Reapertura completada",
+        "bulkReopenSummarySuccessDesc": "{{count}} ticket(s) han sido reabiertos con éxito.",
+        "reopenSingleSuccessDesc": "El ticket {{ticketNumberOrId}} se ha reabierto correctamente.",
+        "reopeningSingleTitle": "Reabriendo ticket",
+        "reopeningSingleDesc": "El ticket {{ticketId}} se está reabriendo...",
+        "reopenErrorDesc": "No se pudo reabrir el ticket {{ticketId}}."
     },
     "settings": {
         "title": "Configuración",

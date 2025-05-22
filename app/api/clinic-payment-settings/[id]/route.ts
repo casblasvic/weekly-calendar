@@ -6,6 +6,9 @@ import { Prisma, PaymentMethodType } from '@prisma/client'; // Importar tipos de
 import { clinicPaymentSettingFormSchema } from '@/lib/schemas/clinic-payment-setting';
 import { ZodError } from 'zod';
 
+// Definir la constante DEFERRED_PAYMENT_METHOD_CODE aquí también o importarla
+const DEFERRED_PAYMENT_METHOD_CODE = "SYS_DEFERRED_PAYMENT";
+
 // Esquema Zod para la validación de la actualización (PUT)
 const clinicPaymentSettingUpdateSchema = z.object({
   isActiveInClinic: z.boolean().optional(),
@@ -154,20 +157,28 @@ export async function PATCH(
 
   try {
     const body = await request.json();
-    // Validar solo los campos proporcionados en el body
     const parsedData = clinicPaymentSettingPatchSchema.parse(body);
 
-    // Obtener la configuración existente y el método de pago para validaciones
-    const existingSetting = await prisma.clinicPaymentSetting.findUnique({
+    const existingSettingWithPM = await prisma.clinicPaymentSetting.findUnique({
         where: { id: settingId, systemId: systemId },
-        include: { paymentMethodDefinition: true }, // Necesitamos el tipo
+        include: { 
+            paymentMethodDefinition: { 
+                select: { 
+                    code: true, 
+                    id: true, 
+                    type: true
+                }
+            }
+        }, 
     });
 
-    if (!existingSetting) {
+    if (!existingSettingWithPM) {
          return NextResponse.json({ message: 'Clinic payment setting not found' }, { status: 404 });
     }
 
-    const methodType = existingSetting.paymentMethodDefinition.type;
+    const methodCode = existingSettingWithPM.paymentMethodDefinition.code;
+    const paymentMethodDefinitionId = existingSettingWithPM.paymentMethodDefinition.id;
+    const methodType = existingSettingWithPM.paymentMethodDefinition.type;
 
     // --- Validaciones antes de la transacción ---
 
@@ -194,7 +205,7 @@ export async function PATCH(
     // Si el tipo es CARD y se intenta quitar el TPV (poner a null) mientras está activo -> Error
     if (methodType === PaymentMethodType.CARD && 
         parsedData.posTerminalId === null && 
-        (parsedData.isActiveInClinic ?? existingSetting.isActiveInClinic)) {
+        (parsedData.isActiveInClinic ?? existingSettingWithPM.isActiveInClinic)) {
         return NextResponse.json({ 
             message: 'Cannot remove POS Terminal from an active CARD payment method setting.',
             errors: [{ path: ['posTerminalId'], message: 'No se puede quitar el TPV de una configuración activa de Tarjeta.' }] 
@@ -203,18 +214,18 @@ export async function PATCH(
 
     // Si el tipo NO es CARD, forzar posTerminalId y isDefault a null/false si vienen en el payload
     if (methodType !== PaymentMethodType.CARD) {
-        if (parsedData.posTerminalId !== undefined && parsedData.posTerminalId !== null) { // Also check !== null
+        if (parsedData.posTerminalId !== undefined && parsedData.posTerminalId !== null) { 
              parsedData.posTerminalId = null;
              console.warn(`Attempted to set posTerminalId on non-CARD setting ${settingId}. Forcing to null.`);
         }
-         if (parsedData.isDefaultPosTerminal !== undefined && parsedData.isDefaultPosTerminal !== false) { // Also check !== false
+         if (parsedData.isDefaultPosTerminal !== undefined && parsedData.isDefaultPosTerminal !== false) { 
              parsedData.isDefaultPosTerminal = false;
              console.warn(`Attempted to set isDefaultPosTerminal on non-CARD setting ${settingId}. Forcing to false.`);
         }
     }
     
      // Si se intenta marcar como default TPV sin un TPV -> Error
-    if (parsedData.isDefaultPosTerminal === true && !(parsedData.posTerminalId ?? existingSetting.posTerminalId)) {
+    if (parsedData.isDefaultPosTerminal === true && !(parsedData.posTerminalId ?? existingSettingWithPM.posTerminalId)) {
        return NextResponse.json({ 
              message: 'Cannot set as default POS terminal without a terminal assigned.',
              errors: [{ path: ['isDefaultPosTerminal'], message: 'Debe haber un TPV asignado para marcarlo como predeterminado.' }]
@@ -222,7 +233,7 @@ export async function PATCH(
     }
     
     // <<< NUEVA VALIDACIÓN: Si se intenta marcar como default Cuenta sin una Cuenta -> Error >>>
-    if (parsedData.isDefaultReceivingBankAccount === true && !(parsedData.receivingBankAccountId ?? existingSetting.receivingBankAccountId)) {
+    if (parsedData.isDefaultReceivingBankAccount === true && !(parsedData.receivingBankAccountId ?? existingSettingWithPM.receivingBankAccountId)) {
         return NextResponse.json({ 
               message: 'Cannot set as default receiving bank account without an account assigned.',
               errors: [{ path: ['isDefaultReceivingBankAccount'], message: 'Debe haber una cuenta bancaria asignada para marcarla como predeterminada.' }]
@@ -233,13 +244,13 @@ export async function PATCH(
 
 
     // Usar transacción para actualizar y manejar la lógica de los 'isDefault'
-    const updatedSetting = await prisma.$transaction(async (tx) => {
+    const updatedSettingResult = await prisma.$transaction(async (tx) => {
       // 1a. Si se está marcando TPV como default, desmarcar los otros de la misma clínica
       // (No filtrar por paymentMethodDefinitionId, el TPV default es por clínica) 
       if (parsedData.isDefaultPosTerminal === true) {
         await tx.clinicPaymentSetting.updateMany({
           where: {
-            clinicId: existingSetting.clinicId,
+            clinicId: existingSettingWithPM.clinicId,
             // No filtrar por método de pago, el default TPV es por clínica
             id: { not: settingId }, // Excluir el que estamos actualizando
             isDefaultPosTerminal: true,
@@ -254,7 +265,7 @@ export async function PATCH(
       if (parsedData.isDefaultReceivingBankAccount === true) {
         await tx.clinicPaymentSetting.updateMany({
           where: {
-            clinicId: existingSetting.clinicId,
+            clinicId: existingSettingWithPM.clinicId,
             id: { not: settingId }, // Excluir el que estamos actualizando
             isDefaultReceivingBankAccount: true,
           },
@@ -264,13 +275,12 @@ export async function PATCH(
         });
       }
 
-      // 2. Preparar datos para la actualización
+      // 2. Preparar datos para la actualización del ClinicPaymentSetting
       const updatePayload: Prisma.ClinicPaymentSettingUpdateInput = {};
       if (parsedData.receivingBankAccountId !== undefined) {
           updatePayload.receivingBankAccount = parsedData.receivingBankAccountId === null 
               ? { disconnect: true } 
               : { connect: { id: parsedData.receivingBankAccountId } };
-          // Si se desconecta la cuenta, forzar a no ser default
           if (parsedData.receivingBankAccountId === null) {
               updatePayload.isDefaultReceivingBankAccount = false;
           }
@@ -279,7 +289,6 @@ export async function PATCH(
           updatePayload.posTerminal = parsedData.posTerminalId === null 
               ? { disconnect: true } 
               : { connect: { id: parsedData.posTerminalId } };
-           // Si se desconecta el TPV, forzar a no ser default
            if (parsedData.posTerminalId === null) {
               updatePayload.isDefaultPosTerminal = false;
            }
@@ -288,30 +297,39 @@ export async function PATCH(
           updatePayload.isActiveInClinic = parsedData.isActiveInClinic;
       }
       if (parsedData.isDefaultPosTerminal !== undefined) {
-          // Solo permitir true si el tipo es CARD
           updatePayload.isDefaultPosTerminal = methodType === PaymentMethodType.CARD ? parsedData.isDefaultPosTerminal : false;
       }
       if (parsedData.isDefaultReceivingBankAccount !== undefined) {
-          // <<< AÑADIDO >>>
           updatePayload.isDefaultReceivingBankAccount = parsedData.isDefaultReceivingBankAccount;
       }
       
 
-      // 3. Actualizar la configuración
-      const updated = await tx.clinicPaymentSetting.update({
+      // 3. Actualizar la configuración del ClinicPaymentSetting
+      const updatedDbSetting = await tx.clinicPaymentSetting.update({
         where: { id: settingId },
-        data: updatePayload, // Usar el payload construido
-        include: { // Devolver datos útiles para la UI
+        data: updatePayload, 
+        include: { 
             paymentMethodDefinition: true,
             receivingBankAccount: true,
             clinic: { select: { id: true, name: true } },
             posTerminal: { select: { id: true, name: true } }
         },
       });
-      return updated;
+
+      // --- INICIO: Lógica Inversa para Pago Aplazado ---
+      if (methodCode === DEFERRED_PAYMENT_METHOD_CODE && parsedData.isActiveInClinic !== undefined) {
+        await tx.clinic.update({
+          where: { id: existingSettingWithPM.clinicId, systemId: systemId }, // Usar clinicId del existingSetting
+          data: { delayedPayments: parsedData.isActiveInClinic }, // Sincronizar con el nuevo estado del setting
+        });
+        console.log(`[API CPS PATCH] Clinic ${existingSettingWithPM.clinicId} delayedPayments actualizado a ${parsedData.isActiveInClinic} por cambio en CPS ${settingId} para PM code ${methodCode}`);
+      }
+      // --- FIN: Lógica Inversa para Pago Aplazado ---
+
+      return updatedDbSetting;
     });
 
-    return NextResponse.json(updatedSetting);
+    return NextResponse.json(updatedSettingResult);
 
   } catch (error) {
     console.error(`Error patching clinic payment setting ${settingId}:`, error);

@@ -23,6 +23,10 @@ export type PaymentMethodDefinitionData = {
   type: PaymentMethodType;
   details: string | null;
   isActive: boolean;
+  code: string | null;
+  _count?: {
+    clinicSettings: number;
+  };
 };
 
 const getPaymentMethodTypeText = (type: PaymentMethodType, t: TFunction): string => {
@@ -89,6 +93,29 @@ export const getPaymentMethodDefinitionColumns = (t: TFunction): ColumnDef<Payme
     },
     filterFn: (row, id, value) => {
         return String(row.getValue(id)) === value;
+    },
+  },
+  {
+    accessorKey: "_count.clinicSettings",
+    header: () => <div>{t('config_payment_methods.table.active_clinics', 'Clínicas Activas')}</div>,
+    cell: ({ row }) => {
+      const count = row.original._count?.clinicSettings;
+      const methodCode = row.original.code;
+      const isGloballyActive = row.original.isActive;
+
+      if (methodCode === "SYS_DEFERRED_PAYMENT") {
+        return count !== undefined && count > 0 
+          ? <Badge variant="secondary">{count} {count === 1 ? t('common.clinic') : t('common.clinics')}</Badge> 
+          : <Badge variant="outline">{t('common.none')}</Badge>;
+      }
+      
+      if (count !== undefined && count > 0) {
+        return <Badge variant="default">{count} {count === 1 ? t('common.clinic') : t('common.clinics')}</Badge>;
+      } else if (isGloballyActive) {
+        return <Badge variant="secondary">{t('common.scope_global', 'Global')}</Badge>;
+      } else {
+        return <Badge variant="outline">{t('common.none')}</Badge>;
+      }
     },
   },
   {

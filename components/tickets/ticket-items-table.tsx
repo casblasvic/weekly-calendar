@@ -55,61 +55,23 @@ export function TicketItemsTable({
 
   const allItems = watch("items");
 
-  const calculateItemFinalPrice = useCallback((item: Partial<TicketItemFormValues>): number => {
-    const quantity = item.quantity || 0;
-    const unitPrice = item.unitPrice || 0;
-    let priceBeforeDiscount = quantity * unitPrice;
-    
-    // Calcular descuento (ya sea por porcentaje o cantidad fija)
-    const discountPercentage = item.discountPercentage || 0;
-    const discountAmount = item.discountAmount || 0;
-    
-    let totalDiscount = 0;
-    
-    if (discountPercentage > 0) {
-      totalDiscount = (priceBeforeDiscount * discountPercentage) / 100;
-    } else if (discountAmount > 0) {
-      totalDiscount = discountAmount;
-    }
-    
-    // Calcular el precio final después del descuento
-    const finalPrice = Math.max(0, priceBeforeDiscount - totalDiscount);
-    
-    return finalPrice;
-  }, []);
-
-  // Actualizar finalPrice cuando cambien quantity, unitPrice o discount
+  // Actualizar totales generales del ticket cuando los items cambian
   useEffect(() => {
     if (allItems?.length) {
-      allItems.forEach((item, index) => {
-        const finalPrice = calculateItemFinalPrice(item);
-        // Solo actualizar si es diferente para evitar renders innecesarios
-        if (finalPrice !== item.finalPrice) {
-          setValue(`items.${index}.finalPrice`, finalPrice);
-        }
-      });
-      
-      // Calcular totales
+      // Calcular subtotal general (suma de precios netos de línea)
       const subtotal = allItems.reduce((acc, item) => acc + (item.finalPrice || 0), 0);
       setValue('subtotalAmount', subtotal);
       
-      // Calcular impuestos
+      // Calcular impuestos generales (suma de los IVA de línea ya calculados)
       const taxAmount = allItems.reduce((acc, item) => {
-        const vatRate = item.vatRate || 0;
-        return acc + ((item.finalPrice || 0) * vatRate / 100);
+        return acc + (item.vatAmount || 0); // Usar el vatAmount del item directamente
       }, 0);
       setValue('taxAmount', taxAmount);
       
-      // Total
+      // Total general
       setValue('totalAmount', subtotal + taxAmount);
-      
-      // Pendiente y Aplazado (se actualizarán con los pagos)
-      // La actualización del pendiente se hace ahora en la página principal
-      // const amountPaid = getValues('amountPaid') || 0;
-      // const totalAmount = subtotal + taxAmount;
-      // setValue('amountPending', Math.max(0, totalAmount - amountPaid)); // Ya no se maneja aquí
     }
-  }, [allItems, calculateItemFinalPrice, setValue, getValues]);
+  }, [allItems, setValue]);
 
   return (
     <div className="space-y-3">
@@ -168,10 +130,10 @@ export function TicketItemsTable({
                         item.quantity
                       )}
                     </TableCell>
-                    <TableCell className="px-3 py-2 text-right">{formatCurrency(item.unitPrice, 'EUR')}</TableCell>
+                    <TableCell className="px-3 py-2 text-right">{formatCurrency(item.unitPrice, currencySymbol)}</TableCell>
                     <TableCell className="px-3 py-2 text-right">
-                      {item.manualDiscountPercentage > 0 ? `${item.manualDiscountPercentage.toFixed(2)}%` : '-'}
-                      {item.appliedPromotionId && item.manualDiscountPercentage <= 0 &&
+                      {item.manualDiscountPercentage != null && item.manualDiscountPercentage > 0 ? `${item.manualDiscountPercentage.toFixed(2)}%` : '-'}
+                      {item.appliedPromotionId && (item.manualDiscountPercentage == null || item.manualDiscountPercentage <= 0) &&
                         <HoverCard openDelay={100} closeDelay={50}>
                           <HoverCardTrigger asChild>
                             <span className="ml-1 font-semibold text-purple-600 cursor-help">P</span>
@@ -183,10 +145,12 @@ export function TicketItemsTable({
                       }
                     </TableCell>
                     <TableCell className="px-3 py-2 text-right">
-                      {item.discountAmount > 0 ? formatCurrency(item.discountAmount, 'EUR') : '-'}
+                      {item.manualDiscountAmount != null && item.manualDiscountAmount > 0 ? formatCurrency(item.manualDiscountAmount, currencySymbol) : '-'}
                     </TableCell>
-                    <TableCell className="px-3 py-2 text-right">{`${item.vatRate.toFixed(2)}%`}</TableCell>
-                    <TableCell className="px-3 py-2 font-semibold text-right">{formatCurrency(item.finalPrice + item.vatAmount, currencySymbol)}</TableCell>
+                    <TableCell className="px-3 py-2 text-right">{`${(item.vatRate || 0).toFixed(2)}%`}</TableCell>
+                    <TableCell className="px-3 py-2 font-semibold text-right">
+                      {formatCurrency((item.finalPrice || 0) + (item.vatAmount || 0), currencySymbol)}
+                    </TableCell>
                     {!readOnly && (
                       <TableCell className="px-2 py-1 text-right">
                         <div className="flex items-center justify-end gap-1">
@@ -195,7 +159,11 @@ export function TicketItemsTable({
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className={cn(`w-6 h-6 hover:text-purple-700 hover:bg-purple-100/50`, item.appliedPromotionId || item.discountAmount > 0 ? 'text-purple-600' : 'text-gray-400')}
+                                className={cn(`w-6 h-6 hover:text-purple-700 hover:bg-purple-100/50`, 
+                                  item.appliedPromotionId || 
+                                  (item.manualDiscountAmount != null && item.manualDiscountAmount > 0) || 
+                                  (item.manualDiscountPercentage != null && item.manualDiscountPercentage > 0) ? 
+                                  'text-purple-600 fill-purple-600' : 'text-gray-400')}
                                 onClick={() => onOpenDiscountModal(index)}
                                 aria-label="Aplicar descuento/promoción"
                               >
@@ -208,24 +176,23 @@ export function TicketItemsTable({
                           </HoverCard>
 
                           {/* Botón para aplicar Bono */}
-                          {(item.type === 'SERVICE') && (
-                            <HoverCard openDelay={100} closeDelay={50}>
-                              <HoverCardTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="w-6 h-6 text-blue-500 hover:text-blue-700 hover:bg-blue-100/50"
-                                  onClick={() => onOpenBonosModal(index)}
-                                  aria-label={t('tickets.itemsTable.applyBonoAriaLabel')}
-                                >
-                                  <Gift className="w-4 h-4" />
-                                </Button>
-                              </HoverCardTrigger>
-                              <HoverCardContent side="top" className="w-auto p-1 text-xs">
-                                {t('tickets.itemsTable.applyBonoTooltip')}
-                              </HoverCardContent>
-                            </HoverCard>
-                          )}
+                          <HoverCard openDelay={100} closeDelay={50}>
+                            <HoverCardTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="w-6 h-6 text-blue-500 hover:text-blue-700 hover:bg-blue-100/50"
+                                onClick={() => onOpenBonosModal(index)}
+                                aria-label={t('tickets.itemsTable.applyBonoAriaLabel')}
+                                disabled={true}
+                              >
+                                <Gift className="w-4 h-4" />
+                              </Button>
+                            </HoverCardTrigger>
+                            <HoverCardContent side="top" className="w-auto p-1 text-xs">
+                              {t('tickets.itemsTable.applyBonoTooltip')}
+                            </HoverCardContent>
+                          </HoverCard>
 
                           <HoverCard openDelay={100} closeDelay={50}>
                             <HoverCardTrigger asChild>
@@ -261,6 +228,7 @@ export function TicketItemsTable({
           size="sm" 
           onClick={() => alert("Modal Cheque Regalo Pendiente")}
           className="px-2 text-xs text-purple-700 border-purple-200 h-7 hover:bg-purple-50"
+          disabled={readOnly}
         >
           Añadir cheque regalo
         </Button>
@@ -269,6 +237,7 @@ export function TicketItemsTable({
           size="sm" 
           onClick={() => alert("Modal Código Promoción Pendiente")}
           className="px-2 text-xs text-purple-700 border-purple-200 h-7 hover:bg-purple-50"
+          disabled={readOnly}
         >
           Código de promoción
         </Button>
@@ -277,6 +246,7 @@ export function TicketItemsTable({
           size="sm" 
           onClick={onOpenAddItemModal}
           className="px-2 text-xs text-purple-700 border-purple-200 h-7 hover:bg-purple-50"
+          disabled={readOnly}
         >
           <PlusCircle className="mr-1 h-3.5 w-3.5" />
           Añadir Producto/Servicio

@@ -11,6 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,11 +21,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { BorderBeam } from '@/components/ui/border-beam';
-import { ShimmerButton } from '@/components/ui/shimmer-button';
+import { Button as ShadButton } from '@/components/ui/button';
 import { ticketItemSchema, TicketItemFormValues } from '@/lib/schemas/ticket'; // Asegúrate que la ruta es correcta
 import { useVatTypesQuery } from '@/lib/hooks/use-vat-query'; // Nombre corregido
 import { AlertCircle } from 'lucide-react';
 import { cn } from "@/lib/utils";
+import { toast } from "@/components/ui/use-toast";
 
 // Definir un schema local para el formulario del modal, si es necesario,
 // o usar directamente campos de TicketItemFormValues
@@ -61,144 +63,167 @@ export function ApplyDiscountModal({
   const { data: vatTypesData, isLoading: isLoadingVAT } = useVatTypesQuery();
   // TODO: Reemplazar con datos reales de promociones
   // const { data: promotionsData, isLoading: isLoadingPromotions } = useCompatiblePromotionsQuery(currentItem?.serviceId || currentItem?.productId);
-  const promotionsData = [
-    { id: 'promo1', name: 'Descuento Verano 10%', systemId: 'sys1' },
-    { id: 'promo2', name: 'Promo Especial Cliente VIP', systemId: 'sys1' },
-  ];
+  const promotionsData: any[] = []; // Placeholder
   const isLoadingPromotions = false;
 
-  // Estados locales para manejar los inputs independientemente de RHF si es más simple
-  const [discountType, setDiscountType] = useState<'finalPrice' | 'percentage' | 'promotion'>('percentage');
-  const [finalPriceValue, setFinalPriceValue] = useState<string>('');
-  const [discountPercentage, setDiscountPercentage] = useState<string>('');
-  const [selectedPromotionId, setSelectedPromotionId] = useState<string | null>(null);
-  const [accumulatedDiscount, setAccumulatedDiscount] = useState<boolean>(false);
-  const [notes, setNotes] = useState<string>('');
-  const [selectedVatId, setSelectedVatId] = useState<string | null | undefined>(undefined); // undefined para 'Usar actual'
+  const [discountType, setDiscountType] = useState<'finalPriceIncVAT' | 'percentage' | 'fixedAmount' | 'promotion'>('percentage');
+  const [finalPriceIncVATInput, setFinalPriceIncVATInput] = useState<string>(''); // Precio final CON IVA
+  const [percentageInput, setPercentageInput] = useState<string>('');
+  const [fixedAmountInput, setFixedAmountInput] = useState<string>('');
+  const [promotionIdInput, setPromotionIdInput] = useState<string | null>(null);
+  const [notesInput, setNotesInput] = useState<string>('');
+  const [selectedVatIdInModal, setSelectedVatIdInModal] = useState<string | undefined>(undefined);
 
-  // Resetear estado cuando el modal se abre o el item cambia
   useEffect(() => {
     if (isOpen && currentItem) {
-      // Priorizar el tipo de descuento ya aplicado si existe
-      if (currentItem.manualDiscountAmount && currentItem.manualDiscountAmount > 0 && currentItem.originalUnitPrice) {
-         // Calcular precio final a partir del descuento por importe
-        setDiscountType('finalPrice');
-        setFinalPriceValue((currentItem.originalUnitPrice - currentItem.manualDiscountAmount).toFixed(2));
-        setDiscountPercentage('');
-        setSelectedPromotionId(null);
-      } else if (currentItem.manualDiscountPercentage && currentItem.manualDiscountPercentage > 0) {
-        setDiscountType('percentage');
-        setFinalPriceValue('');
-        setDiscountPercentage(currentItem.manualDiscountPercentage.toString());
-        setSelectedPromotionId(null);
-      } else if (currentItem.appliedPromotionId) {
-        setDiscountType('promotion');
-        setFinalPriceValue('');
-        setDiscountPercentage('');
-        setSelectedPromotionId(currentItem.appliedPromotionId);
-      } else {
-        // Valor por defecto si no hay descuento aplicado
-        setDiscountType('percentage');
-        setFinalPriceValue('');
-        setDiscountPercentage('');
-        setSelectedPromotionId(null);
-      }
+      console.log("[ApplyDiscountModal useEffect] currentItem para inicializar modal:", JSON.parse(JSON.stringify(currentItem)));
+      const lineBasePrice = (currentItem.unitPrice || 0) * (currentItem.quantity || 0);
+      const itemVatRate = currentItem.vatRate || 0;
 
-      setAccumulatedDiscount(currentItem.accumulatedDiscount || false);
-      setNotes(currentItem.notes || '');
-      setSelectedVatId(currentItem.vatRateId ?? undefined); // Si es null/undefined en el item, usar 'Usar actual'
-    } else if (!isOpen) {
-      // Resetear al cerrar para asegurar que la próxima vez empiece con 'Usar actual'
-      setSelectedVatId(undefined);
+      // Establecer el VAT del modal al del ítem actual o 'current' si no hay uno específico.
+      setSelectedVatIdInModal(currentItem.vatRateId ?? undefined);
+
+      if (currentItem.isPriceOverridden && typeof currentItem.finalPrice === 'number') {
+        console.log("[ApplyDiscountModal useEffect] Inicializando en modo PRECIO FINAL DIRECTO");
+        setDiscountType('finalPriceIncVAT');
+        const priceWithVat = currentItem.finalPrice * (1 + itemVatRate / 100);
+        setFinalPriceIncVATInput(priceWithVat.toFixed(2));
+        setPercentageInput('');
+        setFixedAmountInput('');
+      } else if (currentItem.manualDiscountPercentage !== null && currentItem.manualDiscountPercentage !== undefined) {
+        console.log("[ApplyDiscountModal useEffect] Inicializando en modo PORCENTAJE");
+        setDiscountType('percentage');
+        setPercentageInput(currentItem.manualDiscountPercentage.toString());
+        setFixedAmountInput('');
+        setFinalPriceIncVATInput('');
+      } else if (currentItem.manualDiscountAmount !== null && currentItem.manualDiscountAmount !== undefined && currentItem.manualDiscountAmount > 0) {
+        console.log("[ApplyDiscountModal useEffect] Inicializando en modo IMPORTE FIJO");
+        setDiscountType('fixedAmount');
+        setFixedAmountInput(currentItem.manualDiscountAmount.toString());
+        if (lineBasePrice > 0 && currentItem.manualDiscountAmount > 0) {
+            setPercentageInput(parseFloat(((currentItem.manualDiscountAmount / lineBasePrice) * 100).toFixed(2)).toString());
+        } else {
+            setPercentageInput('');
+        }
+        setFinalPriceIncVATInput('');
+      } else if (currentItem.appliedPromotionId) {
+        console.log("[ApplyDiscountModal useEffect] Inicializando en modo PROMOCIÓN");
+        setDiscountType('promotion');
+        setPromotionIdInput(currentItem.appliedPromotionId);
+        setFinalPriceIncVATInput('');
+        setPercentageInput('');
+        setFixedAmountInput('');
+      } else {
+        console.log("[ApplyDiscountModal useEffect] Inicializando a PREDETERMINADO (sin descuento, sugiere porcentaje)");
+        setDiscountType('percentage');
+        setFinalPriceIncVATInput('');
+        setPercentageInput('');
+        setFixedAmountInput('');
+        setPromotionIdInput(null);
+      }
+      setNotesInput(currentItem.discountNotes || '');
     }
   }, [isOpen, currentItem]);
 
   const handleSave = () => {
     if (itemIndex === null || !currentItem) return;
 
-    const originalPrice = currentItem.originalUnitPrice ?? currentItem.unitPrice;
+    const lineBasePrice = (currentItem.unitPrice || 0) * (currentItem.quantity || 0);
+    const vatInfoToUse = vatTypesData?.find(vat => vat.id === selectedVatIdInModal) ?? 
+                         vatTypesData?.find(vat => vat.id === currentItem.vatRateId) ?? 
+                         { id: currentItem.vatRateId, rate: currentItem.vatRate, name: 'VAT actual' }; // Fallback
+    const vatRateValue = vatInfoToUse?.rate ?? 0;
 
     let updates: Partial<TicketItemFormValues> = {
-      notes: notes || null,
-      accumulatedDiscount: accumulatedDiscount,
-      vatRateId: selectedVatId === undefined ? currentItem.vatRateId : selectedVatId,
-      unitPrice: originalPrice,
-      originalUnitPrice: originalPrice,
-      manualDiscountAmount: 0,
-      manualDiscountPercentage: 0,
-      appliedPromotionId: null,
-      promotionDiscountAmount: 0,
-      discountAmount: 0,
+      discountNotes: notesInput || null,
+      isPriceOverridden: false,
+      manualDiscountPercentage: null,
+      manualDiscountAmount: null,
+      appliedPromotionId: null, 
+      promotionDiscountAmount: null,
+      vatRateId: vatInfoToUse?.id || null, 
+      vatRate: vatRateValue,
     };
 
-    let calculatedManualDiscount = 0;
-    let calculatedPromoDiscount = 0;
-    let finalPriceForVat = originalPrice;
-
     switch (discountType) {
-      case 'finalPrice':
-        const finalPriceNum = parseFloat(finalPriceValue);
-        if (!isNaN(finalPriceNum) && finalPriceNum >= 0 && finalPriceNum <= originalPrice) {
-          calculatedManualDiscount = originalPrice - finalPriceNum;
-          finalPriceForVat = finalPriceNum;
-          updates.manualDiscountAmount = calculatedManualDiscount;
-        } else {
-          console.error("Precio final inválido");
-          return;
+      case 'finalPriceIncVAT':
+        const finalPWithVAT = parseFloat(finalPriceIncVATInput);
+        if (!isNaN(finalPWithVAT) && finalPWithVAT >= 0) {
+          const netFinalPrice = finalPWithVAT / (1 + vatRateValue / 100);
+          if (netFinalPrice > lineBasePrice + 0.001 && lineBasePrice > 0) { 
+            toast({ title: "Error de Validación", description: `Precio final (neto ${netFinalPrice.toFixed(2)}) no puede ser mayor al precio base de línea (${lineBasePrice.toFixed(2)}).`, variant: "destructive" }); 
+            return;
+          }
+          updates.isPriceOverridden = true;
+          updates.finalPrice = parseFloat(netFinalPrice.toFixed(2)); 
+          const calculatedDiscountAmount = parseFloat((lineBasePrice - netFinalPrice).toFixed(2));
+          updates.manualDiscountAmount = calculatedDiscountAmount;
+          // Calcular y añadir manualDiscountPercentage
+          if (lineBasePrice > 0 && calculatedDiscountAmount > 0) {
+            updates.manualDiscountPercentage = parseFloat(((calculatedDiscountAmount / lineBasePrice) * 100).toFixed(2));
+          } else {
+            updates.manualDiscountPercentage = null;
+          }
+          updates.appliedPromotionId = null; 
+          updates.promotionDiscountAmount = null;
+        } else { 
+          toast({ title: "Error de Validación", description: "Precio final (IVA incluido) inválido.", variant: "destructive" });
+          return; 
         }
         break;
       case 'percentage':
-        const percentageNum = parseFloat(discountPercentage);
-        if (!isNaN(percentageNum) && percentageNum >= 0 && percentageNum <= 100) {
-          calculatedManualDiscount = originalPrice * (percentageNum / 100);
-          finalPriceForVat = originalPrice - calculatedManualDiscount;
-          updates.manualDiscountPercentage = percentageNum;
-          updates.manualDiscountAmount = calculatedManualDiscount;
-        } else {
-          console.error("Porcentaje inválido");
-          return;
+        const perc = parseFloat(percentageInput);
+        if (!isNaN(perc) && perc >= 0 && perc <= 100) {
+          updates.isPriceOverridden = false;
+          updates.manualDiscountPercentage = perc;
+          updates.manualDiscountAmount = parseFloat(((perc / 100) * lineBasePrice).toFixed(2));
+          updates.appliedPromotionId = promotionIdInput; 
+        } else { 
+          toast({ title: "Error de Validación", description: "Porcentaje de descuento inválido (0-100).", variant: "destructive" });
+          return; 
+        }
+        break;
+      case 'fixedAmount': 
+        const amount = parseFloat(fixedAmountInput);
+        if (!isNaN(amount) && amount >= 0 && amount <= lineBasePrice) {
+          updates.isPriceOverridden = false;
+          updates.manualDiscountAmount = amount;
+          if (lineBasePrice > 0) {
+            updates.manualDiscountPercentage = parseFloat(((amount / lineBasePrice) * 100).toFixed(2));
+          } else {
+            updates.manualDiscountPercentage = null;
+          }
+          updates.appliedPromotionId = promotionIdInput;
+        } else { 
+          toast({ title: "Error de Validación", description: `Importe de descuento inválido (0 - ${lineBasePrice.toFixed(2)}).`, variant: "destructive" });
+          return; 
         }
         break;
       case 'promotion':
-        if (selectedPromotionId) {
-          updates.appliedPromotionId = selectedPromotionId;
-          const promo = promotionsData.find(p => p.id === selectedPromotionId);
-          let promoDiscountValue = originalPrice * 0.15;
-          calculatedPromoDiscount = Math.min(promoDiscountValue, originalPrice);
-          finalPriceForVat = originalPrice - calculatedPromoDiscount;
-          updates.promotionDiscountAmount = calculatedPromoDiscount;
-        } else {
-           console.error("Promoción no seleccionada");
-           return;
+        if (promotionIdInput) {
+          updates.isPriceOverridden = false;
+          updates.appliedPromotionId = promotionIdInput;
+          updates.manualDiscountPercentage = null; 
+          updates.manualDiscountAmount = null;
+          // TODO: Obtener y aplicar el valor de la promoción a updates.promotionDiscountAmount
+          // const promo = promotionsData.find(p => p.id === promotionIdInput);
+          // if (promo) { updates.promotionDiscountAmount = calcularValorDescuento(promo, lineBasePrice); }
+        } else { 
+          toast({ title: "Error", description: "Promoción no seleccionada.", variant: "destructive" });
+          return; 
         }
         break;
     }
-
-    updates.discountAmount = calculatedManualDiscount + calculatedPromoDiscount;
-    updates.finalPrice = finalPriceForVat;
-
-    const finalVatIdToUse = updates.vatRateId;
-    const vatRateObject = vatTypesData?.find(vat => vat.id === finalVatIdToUse);
-    const vatRateToUse = vatRateObject?.rate ?? 0;
-
-    updates.vatRate = vatRateToUse;
-    updates.vatAmount = parseFloat(((finalPriceForVat * vatRateToUse) / 100).toFixed(2));
-
-    if(isNaN(updates.vatAmount)) {
-      updates.vatAmount = 0;
-    }
-
-    console.log("Applying discount updates (v2):", updates);
+    console.log("[ApplyDiscountModal handleSave] final updates a enviar a page.tsx:", JSON.stringify(updates, null, 2));
     onApplyDiscount(itemIndex, updates);
     onClose();
   };
 
   if (!currentItem) return null; // No renderizar si no hay item
 
-  const currentVatRate = vatTypesData?.find(vat => vat.id === currentItem.vatRateId)?.rate ?? 0;
-  const displayedSelectedVatRate = selectedVatId === undefined
-    ? currentVatRate
-    : vatTypesData?.find(vat => vat.id === selectedVatId)?.rate ?? currentVatRate;
+  const currentItemVatRateForDisplay = selectedVatIdInModal 
+    ? (vatTypesData?.find(vat => vat.id === selectedVatIdInModal)?.rate ?? 0)
+    : (currentItem.vatRate ?? 0);
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -208,6 +233,9 @@ export function ApplyDiscountModal({
             <DialogTitle className="text-xl font-semibold">
               {t('tickets.applyDiscountModal.title', { item: currentItem.concept || 'Concepto' })}
             </DialogTitle>
+            <DialogDescription className="sr-only">
+              {t('tickets.applyDiscountModal.description', { item: currentItem.concept || 'Concepto' })}
+            </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
@@ -216,22 +244,16 @@ export function ApplyDiscountModal({
                 {t('tickets.applyDiscountModal.vatTypeLabel')}
               </Label>
               <Select
-                value={selectedVatId === undefined ? 'current' : selectedVatId ?? ''}
-                onValueChange={(value) => setSelectedVatId(value === 'current' ? undefined : value)}
+                value={selectedVatIdInModal ?? 'current'} // 'current' si selectedVatIdInModal es undefined
+                onValueChange={(value) => setSelectedVatIdInModal(value === 'current' ? undefined : value)}
                 disabled={isLoadingVAT}
               >
-                <SelectTrigger
-                  id="vatType"
-                  className={cn(
-                    "w-full mt-1",
-                    "focus:ring-purple-500 focus:border-purple-500"
-                  )}
-                >
+                <SelectTrigger id="vatType" className={cn("w-full mt-1", "focus:ring-purple-500 focus:border-purple-500")}>
                   <SelectValue placeholder={t('tickets.applyDiscountModal.vatTypePlaceholder')} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="current">
-                    {t('tickets.applyDiscountModal.useCurrentVat', { vatRate: currentVatRate.toFixed(2) })}
+                    {t('tickets.applyDiscountModal.useCurrentVat', { vatRate: (currentItem.vatRate ?? 0).toFixed(2) })}
                   </SelectItem>
                   {vatTypesData?.map((vat) => (
                     <SelectItem key={vat.id} value={vat.id}>
@@ -241,102 +263,118 @@ export function ApplyDiscountModal({
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground mt-1">
-                {t('tickets.applyDiscountModal.selectedVatInfo', { vatRate: displayedSelectedVatRate.toFixed(2) })}
+                {t('tickets.applyDiscountModal.selectedVatInfo', { vatRate: currentItemVatRateForDisplay.toFixed(2) })}
               </p>
             </div>
 
             <RadioGroup
               value={discountType}
-              onValueChange={(value) => setDiscountType(value as 'finalPrice' | 'percentage' | 'promotion')}
+              onValueChange={(value) => {
+                setDiscountType(value as 'finalPriceIncVAT' | 'percentage' | 'fixedAmount' | 'promotion');
+                // Limpiar inputs al cambiar de tipo para evitar valores residuales
+                setFinalPriceIncVATInput('');
+                setPercentageInput('');
+                setFixedAmountInput('');
+              }}
               className="space-y-3 pt-2"
             >
+              {/* Precio final (IVA incl.) */}
               <div className="flex items-center space-x-3">
-                <RadioGroupItem value="finalPrice" id="r1" />
+                <RadioGroupItem value="finalPriceIncVAT" id="r_finalPrice" />
                 <Input
-                  id="finalPrice"
+                  id="finalPriceIncVATInput"
                   type="number"
-                  placeholder={t('tickets.applyDiscountModal.finalPriceLabel')}
-                  value={finalPriceValue}
-                  onChange={(e) => setFinalPriceValue(e.target.value)}
-                  disabled={discountType !== 'finalPrice'}
-                  className={cn("flex-1 h-9 text-sm", discountType === 'finalPrice' ? "border-purple-500 focus-visible:ring-purple-500" : "bg-gray-50")}
+                  placeholder={t('tickets.applyDiscountModal.finalPriceIncVATLabel', 'Precio Final (IVA Incl.)')}
+                  value={finalPriceIncVATInput}
+                  onChange={(e) => setFinalPriceIncVATInput(e.target.value)}
+                  disabled={discountType !== 'finalPriceIncVAT'}
+                  className="flex-1 h-9 text-sm border-purple-500 focus-visible:ring-purple-500"
                   step="0.01"
                   min="0"
                 />
               </div>
 
+              {/* Descuento porcentaje */}
               <div className="flex items-center space-x-3">
-                <RadioGroupItem value="percentage" id="r2" />
+                <RadioGroupItem value="percentage" id="r_percentage" />
                 <Input
-                  id="percentage"
+                  id="percentageInput"
                   type="number"
                   placeholder={t('tickets.applyDiscountModal.percentageLabel')}
-                  value={discountPercentage}
-                  onChange={(e) => setDiscountPercentage(e.target.value)}
+                  value={percentageInput}
+                  onChange={(e) => setPercentageInput(e.target.value)}
                   disabled={discountType !== 'percentage'}
-                  className={cn("flex-1 h-9 text-sm", discountType === 'percentage' ? "border-purple-500 focus-visible:ring-purple-500" : "bg-gray-50")}
+                  className="flex-1 h-9 text-sm border-purple-500 focus-visible:ring-purple-500"
                   step="0.01"
                   min="0"
                   max="100"
                 />
               </div>
 
+              {/* Descuento importe fijo */}
               <div className="flex items-center space-x-3">
-                <RadioGroupItem value="promotion" id="r3" />
+                <RadioGroupItem value="fixedAmount" id="r_fixedAmount" />
+                <Input
+                  id="fixedAmountInput"
+                  type="number"
+                  placeholder={t('tickets.applyDiscountModal.fixedAmountLabel', 'Descuento Fijo (€)')}
+                  value={fixedAmountInput}
+                  onChange={(e) => setFixedAmountInput(e.target.value)}
+                  disabled={discountType !== 'fixedAmount'}
+                  className="flex-1 h-9 text-sm border-purple-500 focus-visible:ring-purple-500"
+                  step="0.01"
+                  min="0"
+                />
+              </div>
+
+              {/* Promoción */}
+              <div className="flex items-center space-x-3">
+                <RadioGroupItem value="promotion" id="r_promotion" />
                 <Select
-                  value={selectedPromotionId || ''}
-                  onValueChange={setSelectedPromotionId}
-                  disabled={discountType !== 'promotion'}
+                  value={promotionIdInput || ''}
+                  onValueChange={setPromotionIdInput}
+                  disabled={discountType !== 'promotion' || isLoadingPromotions || promotionsData.length === 0}
                 >
-                  <SelectTrigger className={cn("flex-1 h-9 text-sm", discountType === 'promotion' ? "border-purple-500 focus-visible:ring-purple-500" : "bg-gray-50")}>
+                  <SelectTrigger className="flex-1 h-9 text-sm border-purple-500 focus-visible:ring-purple-500">
                     <SelectValue placeholder={t('tickets.applyDiscountModal.promotionPlaceholder')} />
                   </SelectTrigger>
                   <SelectContent>
-                    {promotionsData?.length > 0 ? promotionsData.map((promo) => (
-                      <SelectItem key={promo.id} value={promo.id} className="text-sm">
-                        {promo.name}
-                      </SelectItem>
-                    )) : (
+                    {isLoadingPromotions && <SelectItem value="loading" disabled>{t('common.loading')}</SelectItem>}
+                    {!isLoadingPromotions && promotionsData?.length === 0 && (
                       <SelectItem value="no-promo" disabled className="text-sm">
                         {t('tickets.applyDiscountModal.noPromotionsAvailable')}
                       </SelectItem>
                     )}
+                    {promotionsData?.map((promo) => (
+                      <SelectItem key={promo.id} value={promo.id} className="text-sm">
+                        {promo.name}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
             </RadioGroup>
 
-            <div className="flex items-center space-x-2 pt-3">
-               <Checkbox
-                 id="accumulatedDiscountCheck"
-                checked={accumulatedDiscount}
-                onCheckedChange={(checked) => setAccumulatedDiscount(Boolean(checked))}
-               />
-               <Label htmlFor="accumulatedDiscountCheck" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                  {t('tickets.applyDiscountModal.accumulatedDiscountLabel')}
-               </Label>
-            </div>
-
             <div className="space-y-1.5 pt-2">
               <Textarea
-                id="comments"
-               placeholder={t('tickets.applyDiscountModal.commentsPlaceholder')}
-               value={notes}
-               onChange={(e) => setNotes(e.target.value)}
+                id="discountNotesInput"
+                placeholder={t('tickets.applyDiscountModal.commentsPlaceholder')}
+                value={notesInput}
+                onChange={(e) => setNotesInput(e.target.value)}
                 className="min-h-[80px] text-sm"
               />
-           </div>
-
+            </div>
           </div>
 
           <DialogFooter className="mt-4 pt-4 border-t">
-            <Button variant="outline" onClick={onClose}>{t('tickets.applyDiscountModal.cancelButton')}</Button>
-            <ShimmerButton
-              className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2 shadow-lg bg-purple-600 hover:bg-purple-700 text-white"
+            <ShadButton type="button" variant="outline" onClick={onClose}>{t('tickets.applyDiscountModal.cancelButton')}</ShadButton>
+            <ShadButton
+              type="button"
+              className="h-10 px-4 py-2 bg-purple-600 text-white hover:bg-purple-700"
               onClick={handleSave}
             >
               {t('tickets.applyDiscountModal.saveButton')}
-            </ShimmerButton>
+            </ShadButton>
           </DialogFooter>
         </div>
       </DialogContent>

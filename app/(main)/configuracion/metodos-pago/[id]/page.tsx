@@ -47,6 +47,7 @@ import { getClinicPaymentSettings, type ClinicPaymentSettingWithRelations } from
 import { ClinicPaymentSettingsTable } from './components/clinic-settings-table';
 import { ClinicSettingFormModal } from './components/clinic-setting-form-modal';
 import { PaymentMethodForm } from '../components/payment-method-form';
+import { getClinics } from '@/lib/api/clinics';
 
 export default function EditPaymentMethodPage() {
   const { t } = useTranslation();
@@ -79,7 +80,7 @@ export default function EditPaymentMethodPage() {
   });
 
   const {
-    data: clinicSettingsData,
+    data: existingClinicSettings = [],
     isLoading: isLoadingClinicSettings,
     isError: isErrorClinicSettings,
     error: queryErrorClinicSettings
@@ -90,15 +91,52 @@ export default function EditPaymentMethodPage() {
     staleTime: 1000 * 60 * 2,
   });
 
-  const filteredClinicSettings = useMemo(() => {
-    if (!clinicSettingsData) {
-      return [];
-    }
+  const { 
+    data: allClinics = [], 
+    isLoading: isLoadingAllClinics,
+    isError: isErrorAllClinics,
+    error: queryErrorAllClinics 
+  } = useQuery<Clinic[], Error>({
+    queryKey: ['allClinicsForPaymentSettings'],
+    queryFn: () => getClinics(),
+    staleTime: 1000 * 60 * 5,
+  });
+
+  const combinedDataForTable = useMemo((): ClinicPaymentSettingWithRelations[] => {
+    if (isLoadingAllClinics || isLoadingClinicSettings || !Array.isArray(allClinics)) return [];
+
+    return allClinics.map(clinic => {
+      const existingSetting = existingClinicSettings.find(s => s.clinicId === clinic.id);
+      if (existingSetting) {
+        return existingSetting;
+      } else {
+        return {
+          id: `new-${clinic.id}-${paymentMethodId}`,
+          clinicId: clinic.id,
+          clinic: clinic,
+          paymentMethodDefinitionId: paymentMethodId,
+          paymentMethodDefinition: paymentMethodData as PaymentMethodDefinition,
+          isActiveInClinic: false,
+          isDefaultReceivingBankAccount: false,
+          isDefaultPosTerminal: false,
+          receivingBankAccountId: null,
+          receivingBankAccount: null,
+          posTerminalId: null,
+          posTerminal: null,
+          systemId: clinic.systemId,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        } as ClinicPaymentSettingWithRelations;
+      }
+    });
+  }, [allClinics, existingClinicSettings, paymentMethodId, paymentMethodData, isLoadingAllClinics, isLoadingClinicSettings]);
+
+  const filteredAndCombinedData = useMemo(() => {
     if (filterClinicId) {
-      return clinicSettingsData.filter(setting => setting.clinicId === filterClinicId);
+      return combinedDataForTable.filter(setting => setting.clinicId === filterClinicId);
     }
-    return clinicSettingsData;
-  }, [clinicSettingsData, filterClinicId]);
+    return combinedDataForTable;
+  }, [combinedDataForTable, filterClinicId]);
 
   const mutationGlobal = useMutation<any, Error, PaymentMethodDefinitionFormValues>({
     mutationFn: (data) => updatePaymentMethod(paymentMethodId, data),
@@ -140,10 +178,12 @@ export default function EditPaymentMethodPage() {
     setIsClinicSettingModalOpen(true);
   };
 
-  const hasExistingClinicSettings = clinicSettingsData && clinicSettingsData.length > 0;
+  const hasExistingClinicSettings = existingClinicSettings && existingClinicSettings.length > 0;
   const isTypeFieldDisabled = hasExistingClinicSettings || isLoadingClinicSettings || isSubmittingGlobal;
 
-  if (isLoadingGlobal || isLoadingClinicSettings) {
+  const pageIsLoading = isLoadingGlobal || isLoadingClinicSettings || isLoadingAllClinics || isErrorAllClinics;
+
+  if (pageIsLoading) {
     return (
       <div className="container mx-auto px-4 py-8 relative min-h-screen flex flex-col max-w-4xl">
         <Skeleton className="h-8 w-72 mb-6" />
@@ -243,9 +283,9 @@ export default function EditPaymentMethodPage() {
               )}
             </div>
           )}
-          {!isLoadingClinicSettings && !isErrorClinicSettings && (
+          {!isLoadingClinicSettings && !isErrorClinicSettings && !isLoadingAllClinics && !isErrorAllClinics && (
               <ClinicPaymentSettingsTable
-                data={filteredClinicSettings}
+                data={filteredAndCombinedData}
                 paymentMethodType={paymentMethodData?.type as PaymentMethodType | undefined}
                 onEdit={handleEditClinicSetting}
               />

@@ -16,6 +16,17 @@ const QueryParamsSchema = z.object({
   // Podríamos añadir más filtros como fechas, clienteId, etc. en el futuro
 });
 
+// Esquema de validación para la creación de un Ticket
+const createTicketSchema = z.object({
+  clinicId: z.string().cuid({ message: "ID de clínica inválido" }),
+  currencyCode: z.string().length(3, { message: "Código de moneda debe tener 3 caracteres" }),
+  clientId: z.string().cuid().optional().nullable(),
+  companyId: z.string().cuid().optional().nullable(),
+  sellerUserId: z.string().cuid().optional().nullable(),
+  appointmentId: z.string().cuid().optional().nullable(),
+  notes: z.string().optional().nullable(),
+});
+
 export async function GET(request: NextRequest) {
   try {
     const session = await getServerAuthSession();
@@ -107,5 +118,71 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ message: 'Validation Error', errors: error.errors }, { status: 400 });
     }
     return NextResponse.json({ message: 'Internal Server Error' }, { status: 500 });
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const session = await getServerAuthSession();
+    if (!session?.user?.id || !session.user.systemId) {
+      return NextResponse.json({ message: 'No autenticado o falta systemId' }, { status: 401 });
+    }
+    const cashierUserId = session.user.id;
+    const systemId = session.user.systemId;
+
+    const body = await request.json();
+    const validation = createTicketSchema.safeParse(body);
+
+    if (!validation.success) {
+      return NextResponse.json({ message: 'Datos de entrada inválidos', errors: validation.error.format() }, { status: 400 });
+    }
+
+    const { 
+      clinicId, 
+      currencyCode,
+      clientId, 
+      companyId, 
+      sellerUserId, 
+      appointmentId,
+      notes,
+    } = validation.data;
+
+    const newTicket = await prisma.ticket.create({
+      data: {
+        type: 'SALE',
+        status: TicketStatus.OPEN,
+        issueDate: new Date(),
+        currencyCode,
+        totalAmount: 0,
+        taxAmount: 0,
+        finalAmount: 0,
+        notes: notes ?? undefined,
+        cashierUser: { connect: { id: cashierUserId } },
+        sellerUser: sellerUserId ? { connect: { id: sellerUserId } } : undefined,
+        clinic: { connect: { id: clinicId } },
+        system: { connect: { id: systemId } },
+        appointment: appointmentId ? { connect: { id: appointmentId } } : undefined,
+        client: clientId ? { connect: { id: clientId } } : undefined,
+        company: companyId ? { connect: { id: companyId } } : undefined,
+        // No es necesario pasar clinicId, systemId, cashierUserId, etc., directamente
+        // si se usan objetos de conexión para las relaciones.
+      },
+      include: {
+        client: true,
+        sellerUser: { select: { id: true, firstName: true, lastName: true } },
+        cashierUser: { select: { id: true, firstName: true, lastName: true } },
+        clinic: { select: { id: true, name: true } },
+      }
+    });
+
+    return NextResponse.json(newTicket, { status: 201 });
+
+  } catch (error: any) {
+    console.error('[API_TICKETS_POST]', error);
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      // Manejar errores conocidos de Prisma (ej: foreign key constraint)
+      return NextResponse.json({ message: `Error de base de datos: ${error.message}` }, { status: 409 });
+    }
+    return NextResponse.json({ message: 'Error interno del servidor al crear el ticket.' }, { status: 500 });
   }
 } 

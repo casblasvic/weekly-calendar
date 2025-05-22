@@ -5,19 +5,19 @@ import { useForm, FormProvider, useFieldArray, Controller } from 'react-hook-for
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ticketFormSchema, defaultTicketFormValues, type TicketFormValues, type TicketItemFormValues, type TicketPaymentFormValues } from '@/lib/schemas/ticket';
 import { Button } from "@/components/ui/button";
-import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form";
+import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage, FormDescription } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, HelpCircle, Printer, Save, AlertTriangle, PlusCircle } from 'lucide-react';
+import { ArrowLeft, HelpCircle, Printer, Save, AlertTriangle, PlusCircle, RotateCcw, CheckCircle, Info } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useToast } from "@/components/ui/use-toast";
 import { ClientSelectorSearch } from '@/components/tickets/client-selector-search';
 import { TicketItemsTable } from '@/components/tickets/ticket-items-table';
 import { TicketPayments } from '@/components/tickets/ticket-payments';
+import { DebtPaymentsSection } from '@/components/tickets/debt-payments-section';
 import { Separator } from "@/components/ui/separator";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { ShimmerButton } from "@/components/ui/shimmer-button";
 import { MagicCard } from "@/components/ui/magic-card";
 import { BorderBeam } from "@/components/ui/border-beam";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -28,14 +28,54 @@ import { ApplyDiscountModal } from '@/components/tickets/apply-discount-modal';
 import { useClinic } from '@/contexts/clinic-context';
 import { useTranslation } from 'react-i18next';
 import { formatCurrency } from '@/lib/utils';
-import { useTicketDetailQuery, useUpdateTicketMutation, useDeleteTicketPaymentMutation } from '@/lib/hooks/use-ticket-query';
+import { 
+  useTicketDetailQuery, 
+  useUpdateTicketMutation, 
+  useReopenTicketMutation,
+  useCompleteAndCloseTicketMutation,
+  useAddTicketItemMutation,
+  useCreatePaymentMutation,
+  type AddTicketItemPayload,
+  type CreatePaymentPayload,
+  useSaveTicketBatchMutation,
+  type BatchUpdateTicketPayload
+} from '@/lib/hooks/use-ticket-query';
 import { useUsersByClinicQuery, type UserForSelector } from "@/lib/hooks/use-user-query";
+import { TicketStatus, DiscountType, type Client, type User, PaymentMethodDefinition, Prisma, CashSessionStatus } from '@prisma/client';
+import { 
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { useQueryClient } from '@tanstack/react-query';
+import { prefetchCommonData } from '@/lib/hooks/use-api-query';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { ChangeLogsAccordion } from '@/components/tickets/change-logs-accordion';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+
+// Define o importa la constante para el código del método de pago aplazado
+const DEFERRED_PAYMENT_METHOD_CODE = "SYS_DEFERRED_PAYMENT";
 
 interface EditTicketPageProps {
   params: Promise<{
     id: string
   }>
 }
+
+// Helper para mapear el tamaño de impresión de la API al del formulario
+const mapPrintSizeToFormEnum = (value?: string | null): TicketFormValues['printSize'] => {
+  if (!value) return defaultTicketFormValues.printSize || '80mm'; // Usar default del schema
+  const lowerValue = value.toLowerCase();
+  if (lowerValue === 'a4') return 'A4';
+  if (lowerValue === '58mm') return '58mm';
+  if (lowerValue === '80mm') return '80mm';
+  return defaultTicketFormValues.printSize || '80mm'; // Fallback al default del schema
+};
 
 export default function EditarTicketPage({ params }: EditTicketPageProps) {
   const router = useRouter();
@@ -47,10 +87,25 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
   const [defaultPaymentAmount, setDefaultPaymentAmount] = useState<number>(0);
   const [showConfirmDeleteModal, setShowConfirmDeleteModal] = useState(false);
   const [paymentIdToDelete, setPaymentIdToDelete] = useState<string | null>(null);
+  const [isTicketClosable, setIsTicketClosable] = useState(false);
+  const [showConfirmDelayedPaymentModal, setShowConfirmDelayedPaymentModal] = useState(false);
+  const [showPaymentRequiredModal, setShowPaymentRequiredModal] = useState(false);
+  const [pendingAmountForModal, setPendingAmountForModal] = useState<number>(0);
+  const [isReopenConfirmModalOpen, setIsReopenConfirmModalOpen] = useState(false); // <<< NUEVO ESTADO
   
   const { id } = use(params);
   const { activeClinic } = useClinic();
   const { t } = useTranslation();
+
+  const [isReadOnly, setIsReadOnly] = useState(true);
+  // <<< INICIO: Variables para control de reapertura >>>
+  const [canReopenTicket, setCanReopenTicket] = useState(false);
+  const [reopenButtonTooltip, setReopenButtonTooltip] = useState('');
+  // Mantiene el spinner activo hasta que la navegación haya ocurrido tras cerrar el ticket
+  const [redirectingAfterClose, setRedirectingAfterClose] = useState(false);
+  // Evitar parpadeo de totales al iniciar / reabrir
+  const [totalsReady, setTotalsReady] = useState(true);
+  // <<< FIN: Variables para control de reapertura >>>
 
   console.log("[EditarTicketPage] Active Clinic:", activeClinic);
   console.log("[EditarTicketPage] Active Clinic ID:", activeClinic?.id);
@@ -64,7 +119,9 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
   } = useTicketDetailQuery(id);
   
   const updateTicketMutation = useUpdateTicketMutation();
-  const deletePaymentMutation = useDeleteTicketPaymentMutation();
+  const reopenTicketMutation = useReopenTicketMutation();
+  const completeAndCloseMutation = useCompleteAndCloseTicketMutation();
+  const saveTicketBatchMutation = useSaveTicketBatchMutation();
 
   const {
     data: sellers = [],
@@ -82,211 +139,567 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
     defaultValues: defaultTicketFormValues,
     mode: 'onChange',
   });
+  const { control, handleSubmit, setValue, setError, clearErrors, formState, watch, getValues, trigger, reset } = form;
   
+  // Prefetch de datos comunes (incluye métodos de pago) para mejorar la UX al abrir modales
+  const queryClient = useQueryClient();
   useEffect(() => {
-    if (isSuccessTicket && ticketData && form) {
+    prefetchCommonData(queryClient);
+  }, [queryClient]);
+
+  useEffect(() => {
+    if (isSuccessTicket && ticketData && activeClinic) {
+      console.log("[DEBUG page.tsx useEffect] INICIO. activeClinic DISPONIBLE:", JSON.parse(JSON.stringify(activeClinic)));
+      console.log("[DEBUG page.tsx useEffect] INICIO. ticketData para resetear form:", JSON.parse(JSON.stringify(ticketData)));
+      const currentTicketStatus = ticketData.status as TicketStatus;
+      const readOnlyCalc = currentTicketStatus !== TicketStatus.OPEN;
+      setIsReadOnly(readOnlyCalc);
+
+      // <<< INICIO: Lógica de reapertura >>>
+      const isContabilizadoOAnulado = ticketData.status === TicketStatus.ACCOUNTED || ticketData.status === TicketStatus.VOID;
+      const isCerradoYConCajaNoAbierta = 
+          ticketData.status === TicketStatus.CLOSED &&
+          ticketData.cashSessionId && 
+          ticketData.cashSession?.status !== CashSessionStatus.OPEN;
+
+      const calculatedCanReopen = 
+          ticketData.status === TicketStatus.CLOSED &&
+          !isContabilizadoOAnulado &&
+          (!ticketData.cashSessionId || 
+           (ticketData.cashSessionId && ticketData.cashSession?.status === CashSessionStatus.OPEN)
+          );
+      setCanReopenTicket(calculatedCanReopen);
+
+      let tooltipKey = 'tickets.actions.reopenTooltip'; // Default
+      if (isContabilizadoOAnulado) {
+        tooltipKey = 'tickets.actions.accountedOrVoidTooltip';
+      } else if (isCerradoYConCajaNoAbierta) {
+        tooltipKey = 'tickets.actions.closedAndSessionNotOpenTooltip';
+      }
+      setReopenButtonTooltip(t(tooltipKey));
+      // <<< FIN: Lógica de reapertura >>>
+
       const formValues: Partial<TicketFormValues> = {
         clientId: ticketData.clientId,
-        clientName: ticketData.clientName,
-        clientDetails: ticketData.clientDetails,
-        sellerId: ticketData.sellerUser?.id,
-        series: ticketData.series,
-        printSize: ticketData.printSize,
-        observations: ticketData.observations || '',
-        status: ticketData.status,
-        items: ticketData.items.map((apiItem: any) => {
-          let conceptName = apiItem.description;
-
-          if (!conceptName) {
-            switch (apiItem.itemType) {
-              case 'SERVICE':
-                conceptName = apiItem.service?.name;
-                break;
-              case 'PRODUCT':
-                conceptName = apiItem.product?.name;
-                break;
-              case 'BONO_DEFINITION':
-              case 'BONO':
-                conceptName = apiItem.bonoDefinition?.name;
-                break;
-              case 'PACKAGE_DEFINITION':
-              case 'PACKAGE':
-                conceptName = apiItem.packageDefinition?.name;
-                break;
-              default:
-                if (apiItem.itemId && apiItem.itemId.startsWith('c')) {
-                  conceptName = apiItem.itemId;
-                } else {
-                  conceptName = 'Concepto no especificado';
-                }
-            }
-          }
-
-          return {
+        clientName: ticketData.client ? `${ticketData.client.firstName} ${ticketData.client.lastName || ''}`.trim() : undefined,
+        clientDetails: ticketData.client,
+        sellerId: ticketData.sellerUser?.id || null,
+        series: ticketData.ticketSeries || defaultTicketFormValues.series,
+        printSize: mapPrintSizeToFormEnum(ticketData.clinic?.ticketSize),
+        observations: ticketData.notes || defaultTicketFormValues.observations,
+        status: ticketData.status as TicketFormValues['status'],
+        
+        items: (ticketData.items || []).map((apiItem: any) => {
+          let formItem: TicketItemFormValues = {
             id: apiItem.id,
-            itemId: apiItem.itemId,
             type: apiItem.itemType,
-            concept: conceptName || 'Error al cargar concepto',
+            itemId: apiItem.itemId,
+            concept: apiItem.description || (apiItem.service?.name || apiItem.product?.name || apiItem.bonoDefinition?.name || apiItem.packageDefinition?.name || t('tickets.addItemModal.itemNotSpecified')),
             quantity: apiItem.quantity,
-            originalUnitPrice: apiItem.originalUnitPrice ?? apiItem.unitPrice,
+            originalUnitPrice: apiItem.originalUnitPrice ?? null,
             unitPrice: apiItem.unitPrice,
-            discountPercentage: apiItem.manualDiscountPercentage || 0,
-            discountAmount: apiItem.manualDiscountAmount || 0,
-            manualDiscountPercentage: apiItem.manualDiscountPercentage || 0,
-            manualDiscountAmount: apiItem.manualDiscountAmount || 0,
-            promotionDiscountAmount: apiItem.promotionDiscountAmount || 0,
+            manualDiscountPercentage: apiItem.manualDiscountPercentage ?? null,
+            manualDiscountAmount: apiItem.manualDiscountAmount ?? null,
+            isPriceOverridden: apiItem.isPriceOverridden ?? false,
+            discountNotes: apiItem.discountNotes ?? null, 
             appliedPromotionId: apiItem.appliedPromotionId || undefined,
-            accumulatedDiscount: apiItem.accumulatedDiscount || false,
-            finalPrice: apiItem.finalPrice,
-            vatRateId: apiItem.vatRateId || undefined,
-            vatRate: apiItem.vatRate || 0,
-            vatAmount: apiItem.vatAmount,
-            notes: apiItem.notes || '',
-            bonoInstanceId: apiItem.bonoInstanceId || undefined,
+            promotionDiscountAmount: apiItem.promotionDiscountAmount || 0,
+            vatRateId: apiItem.vatRate?.id || apiItem.vatRateId || undefined,
+            vatRate: apiItem.vatRate?.rate || 0,
+            finalPrice: 0, // Placeholder inicial, se refinará abajo o en recalculateItemTotals
+            vatAmount: 0,  // Placeholder
+            accumulatedDiscount: apiItem.accumulatedDiscount ?? false, 
+            bonoInstanceId: apiItem.consumedBonoInstanceId || undefined,
           };
+
+          // Ajuste para la carga inicial de ítems con precio sobreescrito
+          if (formItem.isPriceOverridden) {
+            if (apiItem.finalPrice !== null && apiItem.finalPrice !== undefined) {
+              // Si la BD provee un finalPrice (neto) para el ítem sobreescrito, usarlo.
+              formItem.finalPrice = apiItem.finalPrice;
+            } else if (formItem.manualDiscountAmount !== null) {
+              // Si no hay finalPrice de BD, pero sí un manualDiscountAmount y está sobreescrito,
+              // calcular el finalPrice (neto) basado en eso para la carga inicial.
+              const baseLinePriceInit = (formItem.unitPrice || 0) * (formItem.quantity || 0);
+              formItem.finalPrice = baseLinePriceInit - formItem.manualDiscountAmount;
+            }
+            // recalculateItemTotals se encargará de calcular el % correspondiente y el vatAmount
+          }
+          
+          // <<< LOG DE DEBUG >>>
+          if (apiItem.id === 'cmaqk6u8l0001y2xwfjy61xpg') { // ID del "Pack Verano Láser Plus"
+            console.log("[DEBUG page.tsx useEffect Carga] apiItem 'Pack Verano':", JSON.parse(JSON.stringify(apiItem)));
+            console.log("[DEBUG page.tsx useEffect Carga] formItem ANTES de recalculateTotals:", JSON.parse(JSON.stringify(formItem)));
+          }
+          // <<< FIN LOG >>>
+
+          return recalculateItemTotals(formItem);
         }),
-        payments: ticketData.payments.map(p => ({ 
-          id: p.id, 
-          paymentMethodDefinitionId: p.paymentMethodDefinitionId,
-          paymentMethodName: p.paymentMethodName || 'Desconocido',
+
+        payments: (ticketData.payments || []).map((p: any) => ({
+          id: p.id,
+          paymentMethodDefinitionId: p.paymentMethodDefinition?.id,
+          paymentMethodName: p.paymentMethodDefinition?.name || t('common.unknown'),
+          paymentMethodCode: p.paymentMethodDefinition?.code || null,
           amount: p.amount,
           paymentDate: p.paymentDate ? new Date(p.paymentDate) : new Date(),
           transactionReference: p.transactionReference || '',
           notes: p.notes || '',
         })),
-        ticketDate: ticketData.ticketDate ? new Date(ticketData.ticketDate) : new Date(),
+        ticketDate: ticketData.issueDate ? new Date(ticketData.issueDate) : (defaultTicketFormValues.ticketDate || new Date()),
         ticketNumber: ticketData.ticketNumber,
-        subtotalAmount: ticketData.subtotalAmount,
-        globalDiscountAmount: ticketData.globalDiscountAmount,
-        taxableBaseAmount: ticketData.taxableBaseAmount,
-        taxAmount: ticketData.taxAmount,
-        totalAmount: ticketData.totalAmount,
-        amountDeferred: ticketData.amountDeferred || 0,
+        
+        globalDiscountType: ticketData.discountType || null,
+        globalDiscountAmount: ticketData.discountAmount ?? null,
+        globalDiscountReason: ticketData.discountReason || null,
+        
+        // Los totales generales se recalcularán en el useEffect que observa items y pagos
+        subtotalAmount: 0, // Placeholder, se recalculará
+        taxAmount: 0,      // Placeholder, se recalculará
+        totalAmount: 0,    // Placeholder, se recalculará
+        amountPaid: 0,     // Placeholder, se recalculará
+        amountDeferred: ticketData.dueAmount && ticketData.dueAmount > 0 ? ticketData.dueAmount : 0,
       };
-      form.reset(formValues);
+      reset(formValues as TicketFormValues);
+      console.log("[DEBUG page.tsx useEffect] FIN. Formulario reseteado. Items en form:", JSON.stringify(getValues('items'), null, 2));
+      console.log("[DEBUG page.tsx useEffect] AFTER reset, amountDeferred value:", formValues.amountDeferred);
+
+      // Calcular totales inmediatamente tras el reset para evitar parpadeo en el resumen
+      const itemsInit = formValues.items || [];
+      const paymentsInit = formValues.payments || [];
+
+      const subtotalInit = itemsInit.reduce((sum, itm) => sum + (itm.finalPrice || 0), 0);
+      const totalIVAInit = itemsInit.reduce((sum, itm) => sum + (itm.vatAmount || 0), 0);
+
+      let effectiveGlobalDiscountInit = 0;
+      if (formValues.globalDiscountType === 'PERCENTAGE') {
+        effectiveGlobalDiscountInit = subtotalInit * ((formValues.globalDiscountAmount || 0) / 100);
+      } else if (formValues.globalDiscountType === 'FIXED_AMOUNT') {
+        effectiveGlobalDiscountInit = formValues.globalDiscountAmount || 0;
+      }
+      effectiveGlobalDiscountInit = Math.max(0, Math.min(effectiveGlobalDiscountInit, subtotalInit));
+
+      const taxableBaseInit = subtotalInit - effectiveGlobalDiscountInit;
+      const totalGeneralInit = taxableBaseInit + totalIVAInit;
+      const amountPaidInit = paymentsInit.reduce((sum, p) => sum + (p.amount || 0), 0);
+
+      form.setValue('subtotalAmount', parseFloat(subtotalInit.toFixed(2)));
+      form.setValue('taxableBaseAmount', parseFloat(taxableBaseInit.toFixed(2)));
+      form.setValue('taxAmount', parseFloat(totalIVAInit.toFixed(2)));
+      form.setValue('totalAmount', parseFloat(totalGeneralInit.toFixed(2)));
+      form.setValue('amountPaid', parseFloat(amountPaidInit.toFixed(2)));
+      // Marcar totales listos tras el primer cálculo
+      setTotalsReady(true);
     }
-  }, [isSuccessTicket, ticketData, form]);
+  }, [isSuccessTicket, ticketData, ticketData?.status, activeClinic, reset, getValues, t, mapPrintSizeToFormEnum]); // <<< AÑADIDO ticketData.status aquí
 
-  const { control, handleSubmit, setValue, setError, clearErrors, formState, watch, getValues, trigger } = form;
+  const watchedItems = watch("items");
+  const watchedPayments = watch("payments");
 
-  const onSubmit = async (data: TicketFormValues) => {
-    console.log("Datos del formulario para actualizar:", data);
-    if (!data.clientId) {
-      setError("clientId", { type: "manual", message: "Debe seleccionar un cliente." });
-      toast({
-        title: "Error de validación",
-        description: "Por favor, seleccione un cliente para el ticket.",
-        variant: "destructive",
-      });
+  useEffect(() => {
+    if (!ticketData || !activeClinic || (ticketData.status as string) !== TicketStatus.OPEN) {
+      setIsTicketClosable(false);
       return;
     }
-    if (!data.items || data.items.length === 0) {
-      toast({
-        title: "Error de validación",
-        description: "Debe añadir al menos un concepto al ticket.",
-        variant: "destructive",
-      });
-      return;
+
+    const currentItems = getValues('items') || [];
+    const currentPayments = getValues('payments') || [];
+
+    const globalDiscount = ticketData.discountAmount ?? 0;
+    const subtotalFromItems = currentItems.reduce((sum, item) => sum + (item.unitPrice * item.quantity), 0);
+    const taxFromItems = currentItems.reduce((sum, item) => sum + item.vatAmount, 0);
+    const ticketFinalAmount = subtotalFromItems + taxFromItems - globalDiscount;
+
+    const totalPaid = currentPayments.reduce((sum, payment) => sum + payment.amount, 0);
+    const dueAmount = ticketFinalAmount - totalPaid;
+    
+    setPendingAmountForModal(dueAmount);
+
+    const clinicAllowsDelayedPayments = activeClinic.delayedPayments === true;
+
+    if (dueAmount <= 0.009) {
+      setIsTicketClosable(true);
+    } else if (clinicAllowsDelayedPayments) {
+      setIsTicketClosable(true);
+    } else {
+      setIsTicketClosable(false);
+    }
+  }, [ticketData, activeClinic, watchedItems, watchedPayments, getValues]);
+
+  const recalculateItemTotals = (item: TicketItemFormValues): TicketItemFormValues => {
+    // console.debug("[recalculateItemTotals] Ítem RECIBIDO:", item);
+    const unitPrice = Number(item.unitPrice) || 0;
+    const quantity = Number(item.quantity) || 0;
+    const promoDiscount = Number(item.promotionDiscountAmount) || 0;
+    const vatRate = Number(item.vatRate) || 0;
+    
+    let linePriceNeto: number; 
+    let finalManualDiscountAmount = item.manualDiscountAmount ?? 0;
+    let finalManualDiscountPercentage = item.manualDiscountPercentage ?? null;
+    const baseLinePrice = unitPrice * quantity;
+
+    if (item.isPriceOverridden && typeof item.finalPrice === 'number') {
+      // console.debug("[recalculateItemTotals] MODO PRECIO SOBREESCRITO finalPrice:", item.finalPrice);
+      linePriceNeto = item.finalPrice; 
+      // El descuento en € es la diferencia entre el precio base y el precio final neto sobreescrito
+      finalManualDiscountAmount = parseFloat((baseLinePrice - linePriceNeto).toFixed(2));
+      if (finalManualDiscountAmount < 0) finalManualDiscountAmount = 0; // No puede ser negativo
+      
+      // Siempre calcular el porcentaje correspondiente a este descuento en €
+      if (baseLinePrice > 0 && finalManualDiscountAmount >= 0) {
+        finalManualDiscountPercentage = parseFloat(((finalManualDiscountAmount / baseLinePrice) * 100).toFixed(2));
+      } else {
+        finalManualDiscountPercentage = null;
+      }
+    } else {
+      // Modo NO sobreescrito: el descuento se determina por porcentaje o por un monto fijo directo.
+      if (finalManualDiscountPercentage !== null && finalManualDiscountPercentage !== undefined) {
+        // Si hay porcentaje, este tiene prioridad para calcular el monto.
+        finalManualDiscountAmount = parseFloat(((finalManualDiscountPercentage / 100) * baseLinePrice).toFixed(2));
+      } else if (finalManualDiscountAmount !== null && finalManualDiscountAmount !== undefined) {
+        // Si solo hay monto y no porcentaje, calcular el porcentaje si es posible.
+        if (baseLinePrice > 0 && finalManualDiscountAmount > 0) {
+          finalManualDiscountPercentage = parseFloat(((finalManualDiscountAmount / baseLinePrice) * 100).toFixed(2));
+        } else {
+          finalManualDiscountPercentage = null; // No se puede calcular % si el precio base es 0
+        }
+      } else {
+        // No hay ningún tipo de descuento manual aplicado
+        finalManualDiscountAmount = 0;
+        finalManualDiscountPercentage = null;
+      }
+      // El precio neto de línea es el base menos el descuento calculado (manual + promo)
+      linePriceNeto = baseLinePrice - finalManualDiscountAmount - promoDiscount;
     }
 
-    const apiData: Partial<TicketFormValues> = {
-      clientId: data.clientId,
-      sellerId: data.sellerId,
-      series: data.series,
-      printSize: data.printSize,
-      observations: data.observations,
-      items: data.items.map(item => ({
-          id: item.id?.startsWith('temp-') ? undefined : item.id,
-          itemId: item.itemId,
-          type: item.type,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          vatRateId: item.vatRateId,
-          manualDiscountPercentage: item.manualDiscountPercentage,
-          manualDiscountAmount: item.manualDiscountAmount,
-          appliedPromotionId: item.appliedPromotionId,
-          accumulatedDiscount: item.accumulatedDiscount,
-          notes: item.notes,
-          bonoInstanceId: item.bonoInstanceId,
-      })),
-      payments: data.payments.map(p => ({
-          id: p.id?.startsWith('payment-') ? undefined : p.id,
-          paymentMethodDefinitionId: p.paymentMethodDefinitionId,
-          amount: p.amount,
-          paymentDate: p.paymentDate,
-          transactionReference: p.transactionReference,
-          notes: p.notes,
-      })),
-      amountDeferred: data.amountDeferred,
+    if (linePriceNeto < 0) {
+        // console.warn("[recalculateItemTotals] linePriceNeto es negativo, ajustando a 0.");
+        linePriceNeto = 0; 
+    }
+
+    const itemVatAmount = linePriceNeto * (vatRate / 100);
+
+    const result = {
+      ...item,
+      manualDiscountAmount: parseFloat(finalManualDiscountAmount.toFixed(2)),
+      manualDiscountPercentage: finalManualDiscountPercentage,
+      finalPrice: parseFloat(linePriceNeto.toFixed(2)), // finalPrice en formState es NETO PRE-IVA
+      vatAmount: parseFloat(itemVatAmount.toFixed(2)),
     };
+    // console.debug("[recalculateItemTotals] Ítem A DEVOLVER:", result);
+    return result;
+  };
 
-    updateTicketMutation.mutate({ id, data: apiData }, {
-      onSuccess: (updatedTicket) => {
-        toast({
-          title: t('tickets.updateSuccess.title'),
-          description: t('tickets.updateSuccess.description', { ticketNumber: updatedTicket.ticketNumber }),
-          variant: "default",
+  const onSubmit = async (formData: TicketFormValues) => {
+    console.log("!!!!!!!! ONSUBMIT DEL FORMULARIO PRINCIPAL (page.tsx) EJECUTADO !!!!!!!!!!"); 
+    console.log("----------- ONSUBMIT (BATCH) EJECUTADO ----------- GUARDAR TICKET");
+    if (!ticketData) {
+      toast({ title: t("common.error"), description: "Datos originales del ticket no disponibles.", variant: "destructive" });
+      return;
+    }
+    if (!id) { 
+      toast({ title: t("common.error"), description: "ID del ticket no disponible para guardar.", variant: "destructive" });
+      return;
+    }
+
+    const payload: BatchUpdateTicketPayload = {}; 
+    let hasAnyScalarChanges = false; // Flag para rastrear si hubo cambios escalares
+
+    // --- 1. PROCESAR ACTUALIZACIONES ESCALARES --- (fusionado y limpiado)
+    if (formData.clientId !== (ticketData.clientId || null)) {
+      payload.scalarUpdates = { ...(payload.scalarUpdates ?? {}), clientId: formData.clientId || null };
+      hasAnyScalarChanges = true;
+    }
+    if (formData.sellerId !== (ticketData.sellerUser?.id || null)) {
+      payload.scalarUpdates = { ...(payload.scalarUpdates ?? {}), sellerUserId: formData.sellerId || null };
+      hasAnyScalarChanges = true;
+    }
+    if (formData.observations !== (ticketData.notes || '')) {
+      payload.scalarUpdates = { ...(payload.scalarUpdates ?? {}), notes: formData.observations || null };
+      hasAnyScalarChanges = true;
+    }
+    if (formData.series !== (ticketData.ticketSeries || '')) { 
+      payload.scalarUpdates = { ...(payload.scalarUpdates ?? {}), ticketSeries: formData.series || null };
+      hasAnyScalarChanges = true;
+    }
+    
+    const formDiscountType = formData.globalDiscountType || null;
+    const formDiscountAmount = formData.globalDiscountAmount !== undefined && formData.globalDiscountAmount !== null ? Number(formData.globalDiscountAmount) : null;
+    const formDiscountReason = formData.globalDiscountReason || null;
+
+    if (formDiscountType !== (ticketData.discountType || null) ||
+        formDiscountAmount !== (ticketData.discountAmount || null) ||
+        formDiscountReason !== (ticketData.discountReason || null)) {
+      if ((formDiscountAmount !== null && formDiscountAmount > 0 && formDiscountType === null) || 
+          (formDiscountType !== null && (formDiscountAmount === null || formDiscountAmount <= 0) ) ) {
+          if (! (formDiscountType === null && (formDiscountAmount === null || formDiscountAmount === 0))) {
+              toast({ title: t("common.errors.validation_failed"), description: t("tickets.errors.discountConsistency"), variant: "destructive" });
+              return;
+          }
+      }
+      payload.scalarUpdates = { ...(payload.scalarUpdates ?? {}), discountType: formDiscountType, discountAmount: (formDiscountType === null) ? null : formDiscountAmount, discountReason: (formDiscountType === null) ? null : formDiscountReason };
+      hasAnyScalarChanges = true;
+    }
+
+    if (!hasAnyScalarChanges || !payload.scalarUpdates || Object.keys(payload.scalarUpdates).length === 0) {
+        delete payload.scalarUpdates; 
+    }
+
+    // --- 2. PROCESAR ÍTEMS --- (fusionado y limpiado)
+    const originalApiItems = ticketData.items || [];
+    const currentFormItems = formData.items || [];
+    const itemsToAddForBackend: Array<
+      Omit<TicketItemFormValues, 'id' | 'concept' | 'finalPrice' | 'vatAmount'> & {
+        itemType: 'SERVICE' | 'PRODUCT' | 'BONO_DEFINITION' | 'PACKAGE_DEFINITION' | 'CUSTOM';
+        tempId?: string;
+      }
+    > = [];
+    const itemsToUpdateForBackend: Array<{ id: string; updates: Partial<Omit<TicketItemFormValues, 'id' | 'itemId' | 'type' | 'concept' | 'finalPrice' | 'vatAmount'>>; }> = [];
+    const itemIdsToDeleteFromBackend: string[] = [];
+
+    for (const currentItem of currentFormItems) {
+      if (!currentItem.id || currentItem.id.startsWith('local-')) {
+        const { id: localId, concept, finalPrice, vatAmount, type, discountNotes, ...itemDataRest } = currentItem;
+        if (!type) {
+          console.error("[onSubmit BATCH] Ítem nuevo no tiene 'type':", currentItem);
+          toast({title: "Error de Datos", description: `Un ítem nuevo (${concept}) no tiene tipo asignado.`, variant: "destructive"});
+          continue; 
+        }
+        itemsToAddForBackend.push({ 
+          ...itemDataRest, 
+          itemType: type as 'SERVICE' | 'PRODUCT' | 'BONO_DEFINITION' | 'PACKAGE_DEFINITION' | 'CUSTOM',
+          discountNotes: discountNotes,
+          tempId: localId 
         });
-        router.push("/facturacion/tickets");
-      },
-      onError: (error: any) => {
-        console.error("Error al actualizar el ticket:", error);
-        toast({
-          title: t('common.error'),
-          description: error?.message || t('tickets.updateError.description'),
-          variant: "destructive",
+      } else { 
+        const originalItem = originalApiItems.find(oi => oi.id === currentItem.id);
+        if (originalItem) {
+          const updates: Partial<TicketItemFormValues> = {};
+          let itemChanged = false;
+          // ... (tu lógica detallada de comparación de campos de ítem existente) ...
+          if (currentItem.quantity !== originalItem.quantity) { updates.quantity = currentItem.quantity; itemChanged = true; }
+          if (currentItem.unitPrice !== originalItem.unitPrice) { updates.unitPrice = currentItem.unitPrice; itemChanged = true; }
+          if (currentItem.isPriceOverridden !== (originalItem.isPriceOverridden ?? false)) { updates.isPriceOverridden = currentItem.isPriceOverridden; itemChanged = true;}
+          if (currentItem.finalPrice !== (originalItem.finalPrice ?? null) && currentItem.isPriceOverridden) { updates.finalPrice = currentItem.finalPrice; itemChanged = true;}
+          if ((currentItem.manualDiscountPercentage ?? null) !== (originalItem.manualDiscountPercentage ?? null)) { updates.manualDiscountPercentage = currentItem.manualDiscountPercentage ?? null; itemChanged = true;}
+          if ((currentItem.manualDiscountAmount ?? null) !== (originalItem.manualDiscountAmount ?? null)) { updates.manualDiscountAmount = currentItem.manualDiscountAmount ?? null; itemChanged = true;}
+          if ((currentItem.discountNotes || null) !== (originalItem.discountNotes || null)) { updates.discountNotes = currentItem.discountNotes || null; itemChanged = true;}
+          if ((currentItem.appliedPromotionId || null) !== (originalItem.appliedPromotionId || null)) { updates.appliedPromotionId = currentItem.appliedPromotionId || null; itemChanged = true;}
+          if ((currentItem.promotionDiscountAmount || 0) !== (originalItem.promotionDiscountAmount || 0)) { updates.promotionDiscountAmount = currentItem.promotionDiscountAmount || null; itemChanged = true;}
+          // ... (fin de tu lógica detallada de comparación) ...
+          if (itemChanged) {
+            itemsToUpdateForBackend.push({ id: currentItem.id, updates: updates as any });
+          }
+        }
+      }
+    }
+    for (const originalItem of originalApiItems) {
+      if (!currentFormItems.some(ci => ci.id === originalItem.id)) {
+        itemIdsToDeleteFromBackend.push(originalItem.id);
+      }
+    }
+
+    if (itemsToAddForBackend.length > 0) payload.itemsToAdd = itemsToAddForBackend;
+    if (itemsToUpdateForBackend.length > 0) payload.itemsToUpdate = itemsToUpdateForBackend;
+    if (itemIdsToDeleteFromBackend.length > 0) payload.itemIdsToDelete = itemIdsToDeleteFromBackend;
+
+    // --- 3. PROCESAR PAGOS Y APLAZADOS ---
+    const originalApiPayments = ticketData.payments || []; 
+    const currentFormPayments = formData.payments || []; 
+    
+    const paymentsToAddForBackendApi: Array<{
+      amount: number;
+      paymentDate?: Date;
+      transactionReference?: string | null;
+      notes?: string | null;
+      paymentMethodDefinitionId: string; 
+      tempId?: string;
+    }> = [];
+    const paymentIdsToDeleteFromBackend: string[] = []; // Renombrado para claridad
+
+    console.log("[onSubmit BATCH] INICIO Procesamiento Pagos. currentFormPayments:", JSON.stringify(currentFormPayments));
+    console.log("[onSubmit BATCH] INICIO Procesamiento Pagos. originalApiPayments:", JSON.stringify(originalApiPayments));
+
+    // Identificar pagos nuevos (reales o aplazados) y calcular total a aplazar
+    for (const formPayment of currentFormPayments) {
+      if (!formPayment.id || formPayment.id.startsWith('local-') || formPayment.id.startsWith('temp-')) {
+        // Es un pago NUEVO (real o aplazado)
+        console.log("[onSubmit BATCH] Procesando NUEVO PAGO:", JSON.stringify(formPayment));
+        if (!formPayment.paymentMethodDefinitionId) {
+          console.error("Error: paymentMethodDefinitionId es indefinido para un nuevo pago:", formPayment);
+          toast({ title: "Error de Datos", description: `El pago de ${formPayment.amount} no tiene un método de pago definido.`, variant: "destructive" });
+          continue; 
+        }
+        if (typeof formPayment.amount !== 'number' || formPayment.amount <= 0) {
+          console.error("Error: El importe del pago es inválido:", formPayment);
+          toast({ title: "Error de Datos", description: `El pago para ${formPayment.paymentMethodName} tiene un importe inválido.`, variant: "destructive" });
+          continue;
+        }
+        paymentsToAddForBackendApi.push({
+          amount: Number(formPayment.amount),
+          paymentDate: formPayment.paymentDate, 
+          transactionReference: formPayment.transactionReference,
+          notes: formPayment.notes,
+          paymentMethodDefinitionId: formPayment.paymentMethodDefinitionId,
+          tempId: (formPayment.id && (formPayment.id.startsWith('local-') || formPayment.id.startsWith('temp-'))) ? formPayment.id : undefined
         });
+      } else {
+        // Es un pago existente en BD que sigue presente sin cambios significativos
+        console.log("[onSubmit BATCH] PAGO EXISTENTE SIN CAMBIOS:", JSON.stringify(formPayment));
+      }
+    }
+
+    // Identificar pagos de BD que fueron eliminados del formulario (y no eran aplazados)
+    for (const originalDbPayment of originalApiPayments) {
+      const stillExistsInForm = currentFormPayments.some(
+        fp => fp.id === originalDbPayment.id
+      );
+      if (!stillExistsInForm) {
+        // Si no está en el form, O si está pero se convirtió en aplazado (ya añadido a delete arriba),
+        // se añade para borrar (Set se encargará de duplicados).
+        if (originalDbPayment.id && !originalDbPayment.id.startsWith('local-') && !originalDbPayment.id.startsWith('temp-')) { // Doble check por si acaso
+             paymentIdsToDeleteFromBackend.push(originalDbPayment.id);
+        }
+      }
+    }
+    
+    if (paymentsToAddForBackendApi.length > 0) {
+      payload.paymentsToAdd = paymentsToAddForBackendApi;
+    }
+    
+    const finalPaymentIdsToDelete = [...new Set(paymentIdsToDeleteFromBackend)];
+    if (finalPaymentIdsToDelete.length > 0) {
+        payload.paymentIdsToDelete = finalPaymentIdsToDelete;
+    }
+    // Si finalPaymentIdsToDelete está vacío, no se envía la clave `paymentIdsToDelete` al backend (Zod lo manejará con .optional())
+
+    // --- 4. VERIFICAR CAMBIOS Y ENVIAR --- 
+    console.log("[onSubmit BATCH] Payload PRE-VALIDACIÓN CAMBIOS:", JSON.parse(JSON.stringify(payload)));
+    const finalHasScalarChanges = !!payload.scalarUpdates && Object.keys(payload.scalarUpdates).length > 0;
+    const hasItemChanges = !!(payload.itemsToAdd?.length || payload.itemsToUpdate?.length || payload.itemIdsToDelete?.length);
+    // Modificado para también considerar si amountToDefer es explícitamente 0 (lo que es un cambio si antes era >0)
+    const hasPaymentRelatedChanges = !!(payload.paymentsToAdd?.length || payload.paymentIdsToDelete?.length);
+
+
+    if (!finalHasScalarChanges && !hasItemChanges && !hasPaymentRelatedChanges) {
+      // toast({ title: t("common.information"), description: t("tickets.notifications.noEffectiveChanges") }); // <<< LÍNEA ELIMINADA
+      return;
+    }
+
+    console.log("[onSubmit BATCH] Payload final a enviar:", JSON.parse(JSON.stringify(payload)));
+
+    // <<< INICIO LOGS ADICIONALES PARA paymentIdsToDelete >>>
+    console.log("[onSubmit BATCH] VALOR DE payload.paymentIdsToDelete ANTES DE MUTATE:", JSON.stringify(payload.paymentIdsToDelete, null, 2));
+    console.log("[onSubmit BATCH] TIPO DE payload.paymentIdsToDelete:", typeof payload.paymentIdsToDelete, "Es Array?", Array.isArray(payload.paymentIdsToDelete));
+    if (Array.isArray(payload.paymentIdsToDelete)) {
+      payload.paymentIdsToDelete.forEach((id, index) => {
+        console.log(`[onSubmit BATCH] paymentIdsToDelete[${index}]: '${id}', Tipo: ${typeof id}`);
+      });
+    }
+    // <<< FIN LOGS ADICIONALES >>>
+
+    saveTicketBatchMutation.mutate({ ticketId: id, payload }, {
+      onError: (error) => {
+        console.error("Error en mutación Batch onSubmit:", error);
       }
     });
   };
 
   const handleClientSelectedInForm = (client: any | null) => {
-    console.log("Cliente seleccionado:", client);
+    // --- INICIO LOGS DETALLADOS PARA SELECCIÓN DE CLIENTE ---
+    console.log("[handleClientSelectedInForm] Callback ejecutado. Cliente recibido:", client ? JSON.parse(JSON.stringify(client)) : null);
+    // --- FIN LOGS DETALLADOS ---
+
     if (client) {
-      setValue('clientId', client.id, { shouldValidate: true });
-      setValue('clientName', `${client.firstName} ${client.lastName}${client.companyName ? ` (${client.companyName})` : ''}`);
-      setValue('clientDetails', client);
+      console.log(`[handleClientSelectedInForm] Estableciendo clientId a: ${client.id}, clientName a: ${client.firstName} ${client.lastName}`);
+      setValue('clientId', client.id, { shouldValidate: true, shouldDirty: true });
+      setValue('clientName', `${client.firstName} ${client.lastName}${client.companyName ? ` (${client.companyName})` : ''}`.trim(), { shouldDirty: true });
+      setValue('clientDetails', client, { shouldDirty: true });
       clearErrors('clientId');
     } else {
-      setValue('clientId', undefined, { shouldValidate: true });
-      setValue('clientName', undefined);
-      setValue('clientDetails', undefined);
+      console.warn("[handleClientSelectedInForm] Limpiando campos de cliente porque el cliente recibido es null.");
+      setValue('clientId', undefined, { shouldValidate: true, shouldDirty: true });
+      setValue('clientName', undefined, { shouldDirty: true });
+      setValue('clientDetails', undefined, { shouldDirty: true });
     }
   };
 
   const handleOpenAddItemModal = () => setIsAddItemModalOpen(true);
   const handleCloseAddItemModal = () => setIsAddItemModalOpen(false);
   
-  const handleAddItem = (item: TicketFormValues['items'][0]) => {
-    const currentItems = watch('items') || [];
-    setValue('items', [...currentItems, item]);
+  const handleAddItem = (itemDataFromModal: TicketItemFormValues) => {
+    const currentTicketId = ticketData?.id;
+    if (!currentTicketId && !id) {
+      // Para un ticket completamente nuevo, aún no hay ID de ticket, está bien.
+    }
+
+    if (!itemDataFromModal.itemId || !itemDataFromModal.type) {
+        toast({ title: t("common.errors.validation_failed"), description: "Falta información del ítem (ID o tipo) desde el modal.", variant: "destructive" });
+        return;
+    }
+
+    const newItemId = itemDataFromModal.id || `local-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+
+    const newItem: TicketItemFormValues = {
+      ...itemDataFromModal,
+      id: newItemId, 
+    };
+    
+    console.log("[handleAddItem] Nuevo ítem para añadir localmente:", newItem);
+    const currentItems = getValues('items') || [];
+    setValue('items', [...currentItems, newItem], { shouldDirty: true, shouldValidate: true });
+    
     toast({
-      title: "Producto añadido",
-      description: `${item.concept} añadido al ticket.`,
+      title: t('tickets.notifications.itemAddedToDraftTitle', "Ítem añadido al borrador"),
+      description: t('tickets.notifications.itemAddedToDraftDesc', { concept: newItem.concept || 'Concepto' }),
       variant: "default",
+      duration: 3000,
     });
+    
+    setIsAddItemModalOpen(false);
   };
 
   const handleRemoveItem = (index: number) => {
     const currentItems = watch('items') || [];
     const updatedItems = currentItems.filter((_, i) => i !== index);
-    setValue('items', updatedItems);
+    setValue('items', updatedItems, { shouldDirty: true });
     toast({
       description: "Elemento eliminado del ticket.",
       variant: "default",
     });
   };
 
-  const handleQuantityChange = (index: number, newQuantity: number) => {
+  const handleQuantityChange = (index: number, newQuantityInput: string | number) => {
+    const newQuantity = Number(newQuantityInput);
+    if (isNaN(newQuantity)) return;
+
+    const currentItems = getValues('items') || [];
+    if (index < 0 || index >= currentItems.length) return;
+
     if (newQuantity <= 0) {
-      handleRemoveItem(index);
+      const itemToRemove = currentItems[index];
+      console.log("[handleQuantityChange] Cantidad <= 0, eliminando ítem localmente:", itemToRemove);
+      const updatedItems = currentItems.filter((_, i) => i !== index);
+      setValue('items', updatedItems, { shouldDirty: true, shouldValidate: true });
+      toast({ description: t('tickets.notifications.itemRemovedDueToZeroQuantity', "Ítem eliminado por cantidad cero."), variant: "default" });
     } else {
-      setValue(`items.${index}.quantity`, newQuantity);
-      trigger(`items.${index}`);
+      let itemToUpdate = { ...currentItems[index] };
+      itemToUpdate.quantity = newQuantity;
+      itemToUpdate = recalculateItemTotals(itemToUpdate);
+      
+      currentItems[index] = itemToUpdate;
+      setValue('items', [...currentItems], { shouldDirty: true, shouldValidate: true }); 
+      // Disparar validación para el ítem específico puede ser útil para mostrar errores de campo si los hay
+      // trigger(`items.${index}`);
     }
   };
 
   const handleOpenDiscountModal = (index: number) => {
+    // --- INICIO LOG ANTES DE ABRIR MODAL ---
+    console.log("[handleOpenDiscountModal] Valores del formulario ANTES de abrir modal descuento:", JSON.stringify(getValues(), null, 2));
+    // --- FIN LOG ---
+    const itemParaModal = getValues(`items.${index}`);
+    console.log("[handleOpenDiscountModal] Current item data para modal:", JSON.stringify(itemParaModal, null, 2));
     setEditingItemIndex(index);
     setIsApplyDiscountModalOpen(true);
   };
@@ -296,17 +709,102 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
     setEditingItemIndex(null);
   };
 
-  const handleApplyDiscount = (itemIndex: number, updates: Partial<TicketItemFormValues>) => {
-    if (itemIndex !== null) {
-      const currentItem = getValues(`items.${itemIndex}`);
-      const updatedItem = { ...currentItem, ...updates };
+  const handleApplyDiscount = (
+    itemIndex: number, 
+    updates: Partial<Pick<TicketItemFormValues, 'manualDiscountPercentage' | 'manualDiscountAmount' | 'promotionDiscountAmount' | 'appliedPromotionId' | 'discountNotes' | 'isPriceOverridden' | 'finalPrice' | 'vatRateId' | 'vatRate'>>
+  ) => {
+    if (itemIndex !== null && itemIndex >= 0) {
+      const currentItems = getValues('items');
+      if (!currentItems || itemIndex >= currentItems.length) { return; }
+      let itemToUpdate = { ...currentItems[itemIndex] };
+      let changed = false;
 
-      Object.keys(updates).forEach(key => {
-          setValue(`items.${itemIndex}.${key as keyof TicketItemFormValues}`, updates[key as keyof TicketItemFormValues] as any);
-      });
+      console.log("[handleApplyDiscount] itemToUpdate INICIAL:", JSON.parse(JSON.stringify(itemToUpdate)));
+      console.log("[handleApplyDiscount] updates RECIBIDAS del modal:", JSON.parse(JSON.stringify(updates)));
 
-      trigger(`items.${itemIndex}`); 
+      // Aplicar VAT si viene del modal (especialmente para modo precio final con IVA)
+      if (updates.vatRateId !== undefined) itemToUpdate.vatRateId = updates.vatRateId;
+      if (updates.vatRate !== undefined) itemToUpdate.vatRate = updates.vatRate;
+
+      if (updates.isPriceOverridden === true && updates.finalPrice !== undefined) {
+        console.log("[handleApplyDiscount] Aplicando Precio Final Directo (neto del modal):", updates.finalPrice);
+        itemToUpdate.isPriceOverridden = true;
+        itemToUpdate.finalPrice = updates.finalPrice; // Este es el precio de línea neto ANTES de IVA
+        
+        // Conservar el manualDiscountPercentage calculado y enviado por el modal
+        itemToUpdate.manualDiscountPercentage = updates.manualDiscountPercentage !== undefined ? updates.manualDiscountPercentage : null;
+        
+        itemToUpdate.manualDiscountAmount = updates.manualDiscountAmount ?? 0;
+        // Anular promoción si se fija precio final
+        itemToUpdate.appliedPromotionId = null;
+        itemToUpdate.promotionDiscountAmount = 0;
+        changed = true;
+      } else {
+        // Si no se fija precio, asegurar que isPriceOverridden sea false
+        if (itemToUpdate.isPriceOverridden === true) changed = true;
+        itemToUpdate.isPriceOverridden = false; 
+
+        let percentageHasBeenExplicitlySet = false;
+        if (updates.manualDiscountPercentage !== undefined) {
+            const newPerc = updates.manualDiscountPercentage ?? null;
+            if (newPerc !== itemToUpdate.manualDiscountPercentage) {
+                itemToUpdate.manualDiscountPercentage = newPerc;
+                changed = true;
+            }
+            if (newPerc !== null) { 
+                percentageHasBeenExplicitlySet = true;
+                const basePriceForDiscount = (itemToUpdate.unitPrice || 0) * (itemToUpdate.quantity || 0);
+                const calculatedAmount = parseFloat(((newPerc / 100) * basePriceForDiscount).toFixed(2));
+                if (calculatedAmount !== (itemToUpdate.manualDiscountAmount ?? null)) {
+                    itemToUpdate.manualDiscountAmount = calculatedAmount;
+                    changed = true;
+                }
+            } else { // Porcentaje se pone a null
+                if (updates.manualDiscountAmount === undefined && (itemToUpdate.manualDiscountAmount !== null && itemToUpdate.manualDiscountAmount !== 0)) {
+                    itemToUpdate.manualDiscountAmount = 0; 
+                    changed = true;
+                }
+            }
+        } 
+        
+        if (!percentageHasBeenExplicitlySet && updates.manualDiscountAmount !== undefined) { 
+            const newAmount = updates.manualDiscountAmount ?? null;
+            if (newAmount !== itemToUpdate.manualDiscountAmount) {
+                itemToUpdate.manualDiscountAmount = newAmount;
+                if (itemToUpdate.manualDiscountPercentage !== null && newAmount !== null) changed = true; 
+                else if (newAmount !== null) changed = true;
+                
+                if (itemToUpdate.manualDiscountPercentage !== null) {
+                    itemToUpdate.manualDiscountPercentage = null;
+                    changed = true; 
+                }
+            }
+        }
+      }
+
+      if (updates.appliedPromotionId !== undefined && updates.appliedPromotionId !== itemToUpdate.appliedPromotionId) {
+        itemToUpdate.appliedPromotionId = updates.appliedPromotionId;
+        // Aquí se debería recalcular promotionDiscountAmount si se aplica una nueva promo
+        // y anular descuentos manuales si la promo no es acumulable
+        changed = true;
+      }
+      if (updates.promotionDiscountAmount !== undefined && updates.promotionDiscountAmount !== itemToUpdate.promotionDiscountAmount) { 
+        itemToUpdate.promotionDiscountAmount = updates.promotionDiscountAmount;
+        changed = true;
+      }
+      if (updates.discountNotes !== undefined && updates.discountNotes !== itemToUpdate.discountNotes) { 
+        itemToUpdate.discountNotes = updates.discountNotes;
+        if (!changed) changed = true; // Marcar como cambiado si solo cambian las notas
+      }
+
+      console.log("[handleApplyDiscount] itemToUpdate ANTES de recalculateItemTotals:", JSON.stringify(itemToUpdate, null, 2));
+      itemToUpdate = recalculateItemTotals(itemToUpdate); // Siempre recalcular si hubo updates
+      
+      currentItems[itemIndex] = itemToUpdate;
+      setValue('items', [...currentItems], { shouldDirty: true, shouldValidate: true });
+      console.log("[handleApplyDiscount] Ítem actualizado en formState:", JSON.stringify(getValues(`items.${itemIndex}`), null, 2));
     }
+    handleCloseDiscountModal(); 
   };
 
   const handleOpenBonosModal = (itemIndex: number) => alert(`Abrir modal de Bonos para item ${itemIndex}`);
@@ -342,100 +840,305 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
     return Math.max(0, totalWithTax - paymentsTotal);
   };
 
-  const handleAddPayment = (payment: TicketPaymentFormValues) => {
-    const newPayment = {
-      ...payment,
-      id: `payment-${Date.now()}`,
+  const handleAddPayment = (paymentDataFromModal: TicketPaymentFormValues) => {
+    const currentTicketId = ticketData?.id;
+    const currentClinicId = activeClinic?.id;
+
+    if (!currentTicketId && !id) { // Para un ticket nuevo aún no hay ID de BD
+      // No hacer nada especial, el ID se asociará al guardar todo el ticket
+    }
+     if (!currentClinicId && !id) { // Asumo que clinicId también es necesario para un pago, incluso en borrador
+        toast({ title: "Error", description: "No se puede añadir pago, falta ID de clínica.", variant: "destructive" });
+        return;
+    }
+
+    const newPaymentId = paymentDataFromModal.id || `local-payment-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+
+    const newPayment: TicketPaymentFormValues = {
+      ...paymentDataFromModal,
+      id: newPaymentId,
+      // paymentDate se toma del modal, si no, podría ser new Date()
     };
-    
-    const currentPayments = watch('payments') || [];
-    setValue('payments', [...currentPayments, newPayment], { shouldDirty: true });
+
+    console.log("[handleAddPayment] Nuevo pago para añadir localmente:", newPayment);
+    const currentPayments = getValues('payments') || [];
+    setValue('payments', [...currentPayments, newPayment], { shouldDirty: true, shouldValidate: true });
+
+    toast({
+      title: t('tickets.notifications.paymentAddedToDraftTitle', "Pago añadido al borrador"),
+      description: t('tickets.notifications.paymentAddedToDraftDesc', { amount: formatCurrency(newPayment.amount, activeClinic?.currency || 'EUR') }),
+      variant: "default",
+      duration: 3000,
+    });
+    setIsAddPaymentModalOpen(false);
   };
 
   const handleRemovePayment = (paymentIdToRemove: string) => {
     const currentTicketPayments = getValues('payments') || [];
-    
-    // Primero, quitarlo de la UI localmente
-    const updatedPayments = currentTicketPayments.filter(
-      (payment) => payment.id !== paymentIdToRemove
-    );
+    const paymentIndexToRemove = currentTicketPayments.findIndex(p => p.id === paymentIdToRemove);
+
+    if (paymentIndexToRemove === -1) return;
+
+    const updatedPayments = currentTicketPayments.filter((_, i) => i !== paymentIndexToRemove);
     setValue('payments', updatedPayments, { shouldValidate: true, shouldDirty: true });
     trigger('payments');
 
-    // Verificar si el pago estaba originalmente en los datos cargados del ticket
-    // ticketData es el resultado de useTicketDetailQuery
-    const isPersistedPayment = ticketData?.payments.some(p => p.id === paymentIdToRemove);
-
-    if (isPersistedPayment) {
-      deletePaymentMutation.mutate(
-        { paymentId: paymentIdToRemove, ticketId: id as string },
-        {
-          onSuccess: (apiResponse) => { // apiResponse podría ser { success: true, message: "...", deletedPaymentId: "..." }
             toast({
-              description: t('tickets.notifications.paymentDeletedSuccess'),
-            });
-            // La invalidación de la query del ticket se maneja en el hook de la mutación useDeleteTicketPaymentMutation
-          },
-          onError: (error: any) => {
-            if (error?.response?.status === 404) {
-              // El pago ya no existía en la BD (quizás borrado en otra sesión o por otro usuario).
-              // La UI ya está actualizada, así que la acción del usuario es consistente.
-              // No es necesario mostrar un error disruptivo.
-              console.warn(`Attempted to delete payment ${paymentIdToRemove} which was not found in DB. Already removed from UI.`);
-              toast({
-                title: t('common.information'),
-                description: t('tickets.notifications.paymentNotFoundAnymore'),
-                variant: 'default',
-              });
-            } else {
-              // Para otros errores de API, mostrar error y revertir la UI.
-              toast({
-                title: t('common.error'),
-                description: error?.message || t('tickets.notifications.paymentDeletedError'),
-                variant: "destructive",
-              });
-              // Revertir la eliminación de la UI si la API falló por una razón distinta a 404
-              setValue('payments', currentTicketPayments, { shouldValidate: true });
-            }
-          },
-        }
-      );
-    } else {
-      // El pago era local (no persistido), ya se quitó de la UI.
-      // Mostrar un toast de éxito específico para eliminación local.
-      toast({
-        description: t('tickets.notifications.localPaymentRemovedSuccess'),
-      });
-    }
+      description: t('tickets.notifications.localPaymentRemovedSuccess'),
+      variant: "default",
+      duration: 3000,
+    });
   };
 
-  const onSubmitForm = handleSubmit(onSubmit);
+  const onSubmitForm = handleSubmit(
+    onSubmit,
+    (errors) => {
+      console.error("----------- ERROR DE VALIDACIÓN RHF (handleSubmit) -----------", errors);
+      // Loguear los valores completos del formulario en el momento del error
+      console.log("Valores del formulario en el momento del error de validación:", JSON.stringify(getValues(), null, 2));
+      
+      let errorMessages = t("common.errors.formProcessingDesc", "Por favor, revisa los campos del formulario:") + '\n';
+      for (const fieldName in errors) {
+        if (errors[fieldName as keyof TicketFormValues]) {
+          errorMessages += `- ${fieldName}: ${errors[fieldName as keyof TicketFormValues]?.message}\n`;
+        }
+      }
+      // Si errors está vacío pero la validación falló, es un error de .refine() o un NaN no capturado
+      if (Object.keys(errors).length === 0) {
+        errorMessages = t("common.errors.validation_failed", "Error de validación general. Verifica los cálculos de precios e IVA.");
+      }
+      toast({
+        title: t("common.errors.validation_failed", "Error de Validación"),
+        description: errorMessages,
+        variant: "destructive",
+        duration: 7000,
+      });
+    }
+  );
 
   const onFormSubmit: React.FormEventHandler<HTMLFormElement> = (e) => {
     e.preventDefault();
     onSubmitForm();
   };
 
-  const watchedItems = form.watch('items') || [];
-  const watchedPayments = form.watch('payments') || [];
-
   const currencyCode = activeClinic?.currency || 'EUR';
   const currencySymbol = currencyCode;
 
-  const subtotal = watchedItems.reduce((sum, item) => sum + (item.finalPrice || 0) * item.quantity, 0);
-  const totalDiscount = watchedItems.reduce((sum, item) => sum + (item.discountAmount || 0) * item.quantity, 0);
-  const totalVat = watchedItems.reduce((sum, item) => sum + (item.vatAmount || 0) * item.quantity, 0);
-  const totalAmount = subtotal + totalVat;
-  const amountPaid = watchedPayments.reduce((sum, payment) => sum + payment.amount, 0);
-  const currentPending = Math.max(0, totalAmount - amountPaid);
+  // Base imponible del ticket (suma de los precios finales NETOS de cada línea)
+  const subtotalNetoDeLineas = watchedItems.reduce((sum, item) => sum + (item.finalPrice || 0), 0);
+
+  // Total de descuentos aplicados en todas las líneas (solo descuentos de ítem, el global se aplica después)
+  const totalDescuentosDeLineas = watchedItems.reduce((sum, item) => {
+    const itemManualDiscount = item.manualDiscountAmount || 0;
+    const itemPromoDiscount = item.promotionDiscountAmount || 0; 
+    return sum + itemManualDiscount + itemPromoDiscount;
+  }, 0);
+  
+  // Total de IVA de todas las líneas
+  const totalIVADeLineas = watchedItems.reduce((sum, item) => sum + (item.vatAmount || 0), 0);
+
+  // Calcular el descuento global efectivo
+  const globalDiscountType = watch('globalDiscountType');
+  const globalDiscountValue = watch('globalDiscountAmount') || 0;
+  let effectiveGlobalDiscount = 0;
+  if (globalDiscountType === 'PERCENTAGE') {
+    effectiveGlobalDiscount = subtotalNetoDeLineas * (globalDiscountValue / 100);
+  } else if (globalDiscountType === 'FIXED_AMOUNT') {
+    effectiveGlobalDiscount = globalDiscountValue;
+  }
+  effectiveGlobalDiscount = Math.max(0, Math.min(effectiveGlobalDiscount, subtotalNetoDeLineas));
+
+  // Base Imponible final del Ticket (después de descuento global)
+  const taxableBaseFinalTicket = subtotalNetoDeLineas - effectiveGlobalDiscount;
+
+  // Total general del ticket
+  const totalGeneralTicket = taxableBaseFinalTicket + totalIVADeLineas;
+  
+  const amountPaid = watchedPayments.reduce((sum, payment) => sum + (payment.amount || 0), 0);
+  const currentPending = Math.max(0, totalGeneralTicket - amountPaid);
 
   useEffect(() => {
-    form.setValue('subtotalAmount', subtotal);
-    form.setValue('taxAmount', totalVat);
-    form.setValue('amountPaid', amountPaid);
-  }, [subtotal, totalVat, amountPaid, form]);
+    form.setValue('subtotalAmount', parseFloat(subtotalNetoDeLineas.toFixed(2))); 
+    form.setValue('taxableBaseAmount', parseFloat(taxableBaseFinalTicket.toFixed(2))); 
+    form.setValue('taxAmount', parseFloat(totalIVADeLineas.toFixed(2)));
+    form.setValue('totalAmount', parseFloat(totalGeneralTicket.toFixed(2))); 
+    form.setValue('amountPaid', parseFloat(amountPaid.toFixed(2)));
+    // El campo 'amountDeferred' se actualiza con ticketData.dueAmount en el useEffect de inicialización
+    // y el resumen de "Aplazado" lo calcula dinámicamente de watchedPayments.
+    setTotalsReady(true);
+  }, [subtotalNetoDeLineas, taxableBaseFinalTicket, totalIVADeLineas, totalGeneralTicket, amountPaid, form, watchedItems, watchedPayments]); // <<< AÑADIR watchedItems y watchedPayments
 
-  if (isLoadingTicket) {
+  // En el JSX del resumen, asegurar que:
+  // "Base Imponible": muestra subtotalNetoDeLineas (si quieres mostrar el subtotal antes de desc. global)
+  //                 o taxableBaseFinalTicket (si quieres mostrar la base imponible final para IVA).
+  // "Dto.": muestra totalDescuentosDeLineas + effectiveGlobalDiscount
+  // "IVA": muestra totalIVADeLineas
+  // "Total": muestra totalGeneralTicket
+
+  const handleCompleteAndCloseTicket = async () => {
+    console.log("[handleCompleteAndCloseTicket] Iniciando cierre de ticket...");
+
+    const isValid = await trigger(); 
+    if (!isValid) {
+      toast({
+        title: t("common.errors.validation_failed"),
+        description: t("tickets.notifications.fixValidationBeforeClosing", "Por favor, corrige los errores de validación antes de cerrar el ticket."), 
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // Intentar guardar cambios pendientes. Si falla (error real, no validación), mostrar toast y detener.
+    // Si no hay cambios, onSubmit NO debería mostrar su toast "noEffectiveChanges" y bloquear.
+    let saveAttemptError: Error | null = null;
+    try {
+      // Obtenemos los datos del formulario para ver si hay cambios ANTES de llamar a onSubmit
+      // Esto es una simplificación; la lógica completa de `hasEffectiveChanges` está en `onSubmit`
+      // Aquí solo queremos saber si DEBEMOS llamar a onSubmit.
+      const currentFormDataForChanges = getValues(); 
+      const { items: currentItemsForChanges, payments: currentPaymentsForChanges, ...scalarDataForChanges } = currentFormDataForChanges;
+      
+      let hasFormChanges = false;
+      if (ticketData) {
+        // Comprobar cambios escalares
+        if (scalarDataForChanges.clientId !== (ticketData.clientId || null) ||
+            scalarDataForChanges.sellerId !== (ticketData.sellerUser?.id || null) ||
+            scalarDataForChanges.observations !== (ticketData.notes || '') ||
+            scalarDataForChanges.series !== (ticketData.ticketSeries || '') ||
+            (scalarDataForChanges.globalDiscountType || null) !== (ticketData.discountType || null) ||
+            (scalarDataForChanges.globalDiscountAmount !== undefined && scalarDataForChanges.globalDiscountAmount !== null ? Number(scalarDataForChanges.globalDiscountAmount) : null) !== (ticketData.discountAmount || null) ||
+            (scalarDataForChanges.globalDiscountReason || null) !== (ticketData.discountReason || null)
+        ) {
+          hasFormChanges = true;
+        }
+
+        // Comprobar cambios en items (simplificado, la lógica completa está en onSubmit)
+        if (!hasFormChanges && currentItemsForChanges && ticketData.items && 
+            (currentItemsForChanges.length !== ticketData.items.length || 
+             JSON.stringify(currentItemsForChanges.map(i => ({...i, concept:undefined,ticket:undefined}))) !== JSON.stringify(ticketData.items.map(i => ({...i, concept:undefined,ticket:undefined}))))) {
+          hasFormChanges = true;
+        }
+        // Comprobar cambios en payments (simplificado)
+        if (!hasFormChanges && currentPaymentsForChanges && ticketData.payments && 
+            (currentPaymentsForChanges.length !== ticketData.payments.length || 
+             JSON.stringify(currentPaymentsForChanges) !== JSON.stringify(ticketData.payments))) {
+          hasFormChanges = true;
+        }
+      }
+
+      if (hasFormChanges) {
+        console.log("[handleCompleteAndCloseTicket] Se detectaron cambios, intentando guardar...");
+        await new Promise<void>((resolve, reject) => {
+          // Llamar a handleSubmit que internamente llama a onSubmit.
+          // onSubmit se encargará de la mutación saveTicketBatchMutation.
+          handleSubmit((data) => {
+            // onSubmit ya no tiene un onSuccess que muestre toast.
+            // Aquí simplemente esperamos que la mutación dentro de onSubmit termine.
+            // Necesitamos una forma de saber cuándo saveTicketBatchMutation ha terminado.
+            const interval = setInterval(() => {
+              if (!saveTicketBatchMutation.isPending) {
+                clearInterval(interval);
+                if (saveTicketBatchMutation.isError) {
+                  console.error("[handleCompleteAndCloseTicket] Error en saveTicketBatchMutation:", saveTicketBatchMutation.error);
+                  reject(saveTicketBatchMutation.error || new Error("Error guardando cambios antes de cerrar."));
+                } else {
+                  console.log("[handleCompleteAndCloseTicket] Guardado (o intento) completado.");
+                  resolve();
+                }
+              }
+            }, 100);
+            onSubmit(data); // Ejecuta la lógica de onSubmit y la mutación de guardado
+          }, (errors) => {
+            console.error("[handleCompleteAndCloseTicket] Error de validación RHF al intentar guardar:", errors);
+            reject(new Error(t("tickets.notifications.fixValidationBeforeSaving")));
+          })();
+        });
+      } else {
+        console.log("[handleCompleteAndCloseTicket] No se detectaron cambios efectivos para guardar.");
+      }
+    } catch (err: any) {
+      saveAttemptError = err;
+    }
+
+    if (saveAttemptError) {
+      console.error('[handleCompleteAndCloseTicket] Error durante el intento de guardado previo al cierre:', saveAttemptError);
+      toast({ title: t('common.error'), description: saveAttemptError.message || 'No se pudo guardar los cambios antes de cerrar.', variant: 'destructive' });
+      return; // Detener si el guardado falló
+    }
+
+    // --- Proceder con la lógica de cierre --- 
+    const currentTicketId = ticketData?.id; 
+    if (!currentTicketId) {
+      toast({ title: t("common.error"), description: "ID del ticket no disponible para cerrar.", variant: "destructive" });
+      return;
+    }
+
+    // Usar los datos más recientes del formulario DESPUÉS de que onSubmitForm los haya procesado potencialmente
+    const formDataForClose = getValues(); 
+    console.log("[handleCompleteAndCloseTicket] Datos del formulario para el cierre:", JSON.parse(JSON.stringify(formDataForClose)));
+
+    const finalTicketAmount = formDataForClose.totalAmount || 0;
+    let totalActuallyPaid = 0;
+    let explicitlyDeferredAmountInForm = 0;
+
+    (formDataForClose.payments || []).forEach(p => {
+      if (p.paymentMethodCode === DEFERRED_PAYMENT_METHOD_CODE) {
+        explicitlyDeferredAmountInForm += p.amount || 0;
+      } else {
+        totalActuallyPaid += p.amount || 0;
+      }
+    });
+
+    const netPendingAmount = Math.max(0, finalTicketAmount - totalActuallyPaid - explicitlyDeferredAmountInForm);
+    console.log(`[handleCompleteAndCloseTicket] finalTicketAmount: ${finalTicketAmount}, totalActuallyPaid: ${totalActuallyPaid}, explicitlyDeferredAmountInForm: ${explicitlyDeferredAmountInForm}, netPendingAmount: ${netPendingAmount}`);
+
+    if (netPendingAmount > 0.009) { // Usar un pequeño epsilon para comparaciones de flotantes
+      console.log("[handleCompleteAndCloseTicket] Saldo pendiente neto detectado. Mostrando modal de pago aplazado.");
+      setPendingAmountForModal(netPendingAmount);
+      setShowConfirmDelayedPaymentModal(true);
+    } else {
+      console.log("[handleCompleteAndCloseTicket] Sin saldo pendiente neto o todo cubierto/aplazado explícitamente. Llamando a completeAndCloseMutation.");
+      // Activar flag para mantener spinner y deshabilitar botones hasta redirección
+      setRedirectingAfterClose(true);
+      completeAndCloseMutation.mutate({ ticketId: currentTicketId, clinicId: activeClinic?.id }, {
+        onSuccess: () => {
+          router.push('/facturacion/tickets');
+        },
+        onSettled: () => {
+          // Safety: si por alguna razón no se redirige, quitar spinner tras 3s
+          setTimeout(() => setRedirectingAfterClose(false), 3000);
+        }
+      });
+    }
+  };
+
+  const handleConfirmDelayedPaymentAndClose = () => {
+    setShowConfirmDelayedPaymentModal(false);
+    const currentTicketId = ticketData?.id;
+    if (currentTicketId) {
+      setRedirectingAfterClose(true);
+      completeAndCloseMutation.mutate({ ticketId: currentTicketId, clinicId: activeClinic?.id }, {
+        onSuccess: () => {
+          router.push('/facturacion/tickets');
+        }
+        // onError se maneja globalmente en el hook
+      });
+    }
+  };
+
+  let cashierInfoText = t('tickets.cashierInfoNotAvailable', 'Información del cajero no disponible');
+  if (ticketData?.cashierUser) {
+    const cashierName = `${ticketData.cashierUser.firstName || ''} ${ticketData.cashierUser.lastName || ''}`.trim() || ticketData.cashierUser.email;
+    cashierInfoText = cashierName;
+    if (!ticketData.cashierUser.isActive) {
+      cashierInfoText += ` (${t('tickets.sellerStatus.inactiveSystem', '(Usuario inactivo)')})`;
+    }
+  }
+
+  // NUEVA VERIFICACIÓN DE CARGA INICIAL
+  const isPageLoading = isLoadingTicket || !activeClinic || !ticketData;
+
+  if (isPageLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <LoadingSpinner size="lg" />
@@ -448,7 +1151,7 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen text-red-600">
         <AlertTriangle className="w-12 h-12 mb-4" />
-        <h2 className="text-xl font-semibold mb-2">{t('common.errorLoadingData')}</h2>
+        <h2 className="mb-2 text-xl font-semibold">{t('common.errorLoadingData')}</h2>
         <p className="text-center">{errorTicket?.message || t('common.errorLoadingDataGeneric')}</p>
         <Button variant="outline" onClick={() => router.back()} className="mt-6">
           <ArrowLeft className="w-4 h-4 mr-2" /> {t('common.back')}
@@ -457,10 +1160,41 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
     );
   }
 
+  const handleReopenTicket = async () => {
+    if (!ticketData?.id || !activeClinic?.id) { 
+      toast({
+        title: t("common.error"),
+        description: "No se pudo obtener la información necesaria para reabrir el ticket.",
+        variant: "destructive",
+      });
+      return;
+    }
+    // Esta es la llamada correcta a la mutación que se hace desde el modal
+    reopenTicketMutation.mutate(
+      { ticketId: ticketData.id, clinicId: activeClinic.id },
+      {
+        onSuccess: () => {
+          setIsReopenConfirmModalOpen(false); // Cerrar modal en éxito
+          // El resto de la lógica de UI (toasts, etc.) se maneja en onSettled del hook.
+        },
+        onError: (error: any) => {
+          setIsReopenConfirmModalOpen(false); // Cerrar modal en error también
+          // El toast de error ya se maneja en el hook.
+          console.error("Error al intentar reabrir ticket desde página de edición:", error);
+        },
+      }
+    );
+  };
+
+  console.log('Estado de isReadOnly en render:', isReadOnly); // <<< CONSOLE LOG AÑADIDO
+  console.log('Estado de ticketData.status en render:', ticketData?.status);
+
+  // Eliminado overlay global; el spinner del botón indica el progreso
+
   return (
     <FormProvider {...form}>
-      <div className="flex-1 overflow-auto relative" style={{ "--sidebar-width": "var(--sidebar-width, 16rem)" } as React.CSSProperties}>
-        <div className="container mx-auto pb-24 relative">
+      <div className="relative flex-1 overflow-auto" style={{ "--sidebar-width": "var(--sidebar-width, 16rem)" } as React.CSSProperties}>
+        <div className="container relative pb-24 mx-auto">
           <div className="flex items-center justify-between mb-6">
             <h1 className="text-2xl font-semibold text-gray-800">Editar Ticket {watch("ticketNumber")}</h1>
           </div>
@@ -476,103 +1210,294 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
               <form 
                 id="editar-ticket-form" 
                 onSubmit={onFormSubmit}
-                className="space-y-6 relative bg-background p-5 rounded-xl"
+                className="relative p-5 space-y-6 bg-background rounded-xl"
               >
-                <div className="grid md:grid-cols-12 gap-6">
-                  {/* Columna izquierda - Datos Cliente y Ticket */}
-                  <div className="md:col-span-4 space-y-6">
-                    {/* Sección Cliente */}
-                    <div className="relative rounded-lg overflow-hidden">
-                      <MagicCard 
-                        gradientFrom="#8b5cf6" 
-                        gradientTo="#ec4899" 
-                        gradientSize={180}
-                        gradientOpacity={0.05}
-                        className="rounded-lg"
-                      >
-                        <div className="p-4 rounded-lg">
-                          <ClientSelectorSearch 
-                            selectedClientId={watch("clientId")}
-                            onClientSelect={handleClientSelectedInForm}
-                            setFormValue={(field, value, options) => {
-                              if (field === "clientId" || field === "clientName" || field === "clientDetails") {
-                                setValue(field as any, value, options);
-                              }
-                            }}
-                          />
-                        </div>
-                      </MagicCard>
-                    </div>
+                {/* Envolver el contenido principal del formulario con una key basada en isReadOnly */}
+                <div key={isReadOnly.toString()}>
+                  <div className="grid gap-6 md:grid-cols-12">
+                    <div className="space-y-6 md:col-span-4">
+                      <div className="relative overflow-hidden rounded-lg">
+                        <MagicCard 
+                          gradientFrom="#8b5cf6" 
+                          gradientTo="#ec4899" 
+                          gradientSize={180}
+                          gradientOpacity={0.05}
+                          className="rounded-lg"
+                        >
+                          <div className="p-4 rounded-lg">
+                            <ClientSelectorSearch 
+                              selectedClientId={watch("clientId")}
+                              onClientSelect={handleClientSelectedInForm}
+                              setFormValue={(field, value, options) => {
+                                if (field === "clientId" || field === "clientName" || field === "clientDetails") {
+                                  setValue(field as any, value, options);
+                                }
+                              }}
+                              disabled={isReadOnly}
+                            />
+                          </div>
+                        </MagicCard>
+                      </div>
 
-                    {/* Sección Datos del Ticket */}
-                    <div className="relative rounded-lg overflow-hidden">
-                      <BorderBeam 
-                        colorFrom="#8b5cf6"
-                        colorTo="#ec4899"
-                        duration={6}
-                        size={60}
-                        reverse={true}
-                      />
-                      <div className="p-4 rounded-lg border bg-card">
-                        <h2 className="text-sm font-medium text-gray-700 mb-3">Datos del Ticket</h2>
-                        
-                        <div className="grid gap-4">
-                          <FormField
-                            control={control}
-                            name="sellerId"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel className="text-xs">{t('tickets.seller')}</FormLabel>
-                                <Select 
-                                  value={field.value} 
-                                  onValueChange={field.onChange}
-                                  disabled={isLoadingSellers || sellers.length === 0}
-                                >
-                                  <FormControl>
-                                    <SelectTrigger className="h-8 text-xs">
-                                      <SelectValue placeholder={isLoadingSellers ? t('common.loading') : t('tickets.selectSellerPlaceholder')} />
-                                    </SelectTrigger>
-                                  </FormControl>
-                                  <SelectContent>
-                                    {isLoadingSellers ? (
-                                      <SelectItem value="loading" disabled className="text-xs">{t('common.loading')}</SelectItem>
-                                    ) : sellers.length === 0 ? (
-                                      <SelectItem value="no-sellers" disabled className="text-xs">{t('tickets.noSellersAvailable')}</SelectItem>
-                                    ) : (
-                                      sellers.map((seller: UserForSelector) => (
-                                        <SelectItem key={seller.id} value={seller.id} className="text-xs">
-                                          {`${seller.firstName || ''} ${seller.lastName || ''}`.trim() || seller.email}
-                                        </SelectItem>
-                                      ))
-                                    )}
-                                  </SelectContent>
-                                </Select>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
+                      {/* Historial de cambios */}
+                      {id && (
+                        <ChangeLogsAccordion entityId={id} />
+                      )}
+
+                      {/* Detalles del ticket en acordeón */}
+                      <Accordion type="single" collapsible defaultValue="details" className="relative overflow-hidden rounded-lg">
+                        <AccordionItem value="details">
+                          <AccordionTrigger className="p-4 text-sm font-medium bg-card border rounded-t-lg">
+                            Detalles del ticket
+                          </AccordionTrigger>
+                          <AccordionContent className="p-4 border rounded-b-lg bg-card">
+                            {/* contenido original */}
+                        <BorderBeam 
+                          colorFrom="#8b5cf6"
+                          colorTo="#ec4899"
+                          duration={6}
+                          size={60}
+                          reverse={true}
+                        />
+                        <div>
+                         <h2 className="mb-3 text-sm font-medium text-gray-700">{t('tickets.ticketDetails', 'Datos del Ticket')}</h2>
                           
-                          <div className="grid grid-cols-2 gap-4">
+                          <div className="mb-3">
+                            <FormLabel className="text-xs text-gray-600">{t('tickets.cashier', 'Cajero')}</FormLabel>
+                            <p className="mt-1 text-sm text-gray-800">{cashierInfoText}</p>
+                          </div>
+                          
+                          {ticketData?.issueDate && (
+                            <div className="mb-3">
+                              <FormLabel className="text-xs text-gray-600">{t('tickets.creationDate', 'Fecha Creación')}</FormLabel>
+                              <p className="mt-1 text-sm text-gray-800">
+                                {new Date(ticketData.issueDate).toLocaleString(undefined, { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                              </p>
+                            </div>
+                          )}
+                          
+                          <div className="grid gap-4">
                             <FormField
                               control={control}
-                              name="series"
-                              render={({ field }) => (
+                              name="sellerId"
+                              render={({ field }) => {
+                                const originalTicketSeller = ticketData?.sellerUser;
+                                const selectedSellerIdInForm = field.value;
+
+                                if (ticketData) {
+                                  console.log("[Seller FF DEBUG] ticketData.sellerUser directo:", ticketData.sellerUser);
+                                  console.log("[Seller FF DEBUG] ticketData.sellerUser.isActive:", ticketData.sellerUser?.isActive);
+                                  console.log("[Seller FF DEBUG] ticketData.sellerUser.email:", ticketData.sellerUser?.email);
+                                  console.log("[Seller FF DEBUG] sellers list raw:", JSON.parse(JSON.stringify(sellers)));
+                                }
+
+                                let informativeText = null;
+                                if (originalTicketSeller) {
+                                  const isOriginalSellerInCurrentClinicListAndActive = sellers.some(s => s.id === originalTicketSeller.id && s.isActive === true);
+                                  const originalSellerName = `${originalTicketSeller.firstName || ''} ${originalTicketSeller.lastName || ''}`.trim() || originalTicketSeller.email || 'Vendedor Desconocido';
+                                  
+                                  let statusKey = '';
+                                  if (typeof originalTicketSeller.isActive === 'boolean') {
+                                    if (originalTicketSeller.isActive === false) {
+                                      statusKey = 'tickets.sellerStatus.inactiveSystem';
+                                    } else {
+                                      if (!isOriginalSellerInCurrentClinicListAndActive) {
+                                        console.log("[Seller FF DEBUG] Vendedor activo pero no en lista de clínica actual. No se añade statusKey.");
+                                      }
+                                    }
+                                  } else {
+                                    console.log("[Seller FF DEBUG] originalTicketSeller.isActive no es booleano.");
+                                  }
+
+                                  if (statusKey) {
+                                    if (selectedSellerIdInForm === originalTicketSeller.id || selectedSellerIdInForm === null) {
+                                        informativeText = t('tickets.sellerInfoOriginal', { 
+                                          name: originalSellerName,
+                                          status: t(statusKey)
+                                        });
+                                    }
+                                  } else if (originalTicketSeller.isActive === true && !isOriginalSellerInCurrentClinicListAndActive) {
+                                    if (selectedSellerIdInForm === originalTicketSeller.id || selectedSellerIdInForm === null) {
+                                        informativeText = t('tickets.sellerInfoOriginal', { 
+                                          name: originalSellerName,
+                                          status: ''
+                                        });
+                                    }
+                                  }
+                                }
+
+                                let currentSelectionName = t('tickets.selectSellerPlaceholder');
+                                if (selectedSellerIdInForm) {
+                                  const foundSellerInList = sellers.find(s => s.id === selectedSellerIdInForm);
+                                  if (foundSellerInList) {
+                                    currentSelectionName = `${foundSellerInList.firstName || ''} ${foundSellerInList.lastName || ''}`.trim() || foundSellerInList.email;
+                                  }
+                                } else {
+                                  currentSelectionName = t('common.none');
+                                }
+
+                                return (
                                 <FormItem>
-                                  <FormLabel className="text-xs">Nº Serie</FormLabel>
-                                  <Select value={field.value} onValueChange={field.onChange}>
+                                  <FormLabel className="text-xs">{t('tickets.seller')}</FormLabel>
+                                    {informativeText && (
+                                      <FormDescription className="mb-1 text-xs italic text-gray-500">
+                                        {informativeText}
+                                      </FormDescription>
+                                    )}
+                                  <Select 
+                                      value={selectedSellerIdInForm || "__null__"} 
+                                      onValueChange={(value) => {
+                                        field.onChange(value === '__null__' ? null : value); 
+                                      }} 
+                                      disabled={isLoadingSellers || isReadOnly}
+                                  >
                                     <FormControl>
                                       <SelectTrigger className="h-8 text-xs">
-                                        <SelectValue placeholder="Serie" />
+                                          <SelectValue placeholder={currentSelectionName} /> 
                                       </SelectTrigger>
                                     </FormControl>
                                     <SelectContent>
-                                      {/* exampleSeries.map(serie => (
-                                        <SelectItem key={serie.id} value={serie.id} className="text-xs">
-                                          {serie.name}
-                                        </SelectItem>
-                                      )) */}
+                                        <SelectItem value="__null__" className="text-xs italic">{t('common.none')}</SelectItem>
+                                        {sellers.length === 0 && !isLoadingSellers && (
+                                          <p className="px-2 py-1.5 text-xs text-muted-foreground">{t('tickets.noSellersAvailable')}</p>
+                                        )}
+                                        {sellers.map((seller: UserForSelector) => (
+                                          <SelectItem key={seller.id} value={seller.id} className="text-xs" disabled={!seller.isActive}>
+                                            {`${seller.firstName || ''} ${seller.lastName || ''}`.trim() || seller.email}
+                                            {!seller.isActive ? ` (${t('tickets.sellerStatus.inactiveSystem')})` : ''}
+                                          </SelectItem>
+                                        ))}
                                     </SelectContent>
                                   </Select>
+                                  <FormMessage />
+                                </FormItem>
+                                );
+                              }}
+                            />
+                            
+                            <div className="grid grid-cols-2 gap-4">
+                              <FormField
+                                control={control}
+                                name="series"
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormLabel className="text-xs">Nº Serie</FormLabel>
+                                    <Select value={field.value} onValueChange={field.onChange} disabled={isReadOnly}>
+                                      <FormControl>
+                                        <SelectTrigger className="h-8 text-xs">
+                                          <SelectValue placeholder="Serie" />
+                                        </SelectTrigger>
+                                      </FormControl>
+                                      <SelectContent>
+                                      </SelectContent>
+                                    </Select>
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+                              
+                              <FormField
+                                control={control}
+                                name="printSize"
+                                render={({ field }) => { 
+                                  console.log("[DEBUG page.tsx PrintSize Field RENDER] field.value:", field.value);
+                                  return (
+                                  <FormItem>
+                                    <FormLabel className="text-xs">Tamaño impresión</FormLabel>
+                                      <Select 
+                                        value={field.value || undefined}
+                                        onValueChange={(value) => {
+                                          if (['80mm', '58mm', 'A4'].includes(value)) {
+                                            field.onChange(value);
+                                          } else {
+                                            field.onChange(undefined); 
+                                          }
+                                        }} 
+                                        disabled={isReadOnly}
+                                      >
+                                      <FormControl>
+                                        <SelectTrigger className="h-8 text-xs">
+                                            <SelectValue placeholder="Seleccionar tamaño..." />
+                                        </SelectTrigger>
+                                      </FormControl>
+                                      <SelectContent>
+                                          <SelectItem value="80mm" className="text-xs">80mm</SelectItem>
+                                          <SelectItem value="58mm" className="text-xs">58mm</SelectItem>
+                                          <SelectItem value="A4" className="text-xs">A4</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                    <FormMessage />
+                                  </FormItem>
+                                  );
+                                }}
+                              />
+                            </div>
+                            
+                            <FormField
+                              control={control}
+                              name="globalDiscountType"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel className="text-xs">Tipo Descuento Global</FormLabel>
+                                  <Select 
+                                    value={field.value ?? undefined}
+                                    onValueChange={(value) => {
+                                      const newType = value === '__null__' ? null : value as DiscountType | null;
+                                      field.onChange(newType);
+                                      if (newType === null) {
+                                        setValue('globalDiscountAmount', null, { shouldDirty: true });
+                                        setValue('globalDiscountReason', null, { shouldDirty: true });
+                                      }
+                                    }}
+                                    disabled={isReadOnly}
+                                  >
+                                    <FormControl><SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Sin descuento global..." /></SelectTrigger></FormControl>
+                                    <SelectContent>
+                                      <SelectItem value="__null__" className="text-xs italic">{t('common.none', 'Ninguno/a')}</SelectItem>
+                                      <SelectItem value="FIXED_AMOUNT" className="text-xs">Importe Fijo</SelectItem>
+                                      <SelectItem value="PERCENTAGE" className="text-xs">Porcentaje</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                            <FormField
+                              control={control}
+                              name="globalDiscountAmount"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel className="text-xs">Monto Dto. Global (€ o %)</FormLabel>
+                                  <FormControl>
+                                    <Input 
+                                      type="number"
+                                      {...field}
+                                      value={field.value === null || field.value === undefined ? '' : field.value}
+                                      onChange={e => field.onChange(e.target.value === '' ? null : parseFloat(e.target.value))}
+                                      className="h-8 text-xs"
+                                      disabled={isReadOnly || !watch('globalDiscountType')}
+                                      placeholder={watch('globalDiscountType') === 'PERCENTAGE' ? '% (ej: 10)' : '€ (ej: 5.50)'}
+                                    />
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                            <FormField
+                              control={control}
+                              name="globalDiscountReason"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel className="text-xs">Razón Dto. Global</FormLabel>
+                                  <FormControl>
+                                    <Input 
+                                      {...field} 
+                                      value={field.value || ''} 
+                                      className="h-8 text-xs"
+                                      disabled={isReadOnly || !watch('globalDiscountType')}
+                                      placeholder="Razón del descuento..."
+                                    />
+                                  </FormControl>
                                   <FormMessage />
                                 </FormItem>
                               )}
@@ -580,120 +1505,178 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
                             
                             <FormField
                               control={control}
-                              name="printSize"
+                              name="observations"
                               render={({ field }) => (
                                 <FormItem>
-                                  <FormLabel className="text-xs">Tamaño impresión</FormLabel>
-                                  <Select value={field.value} onValueChange={field.onChange}>
-                                    <FormControl>
-                                      <SelectTrigger className="h-8 text-xs">
-                                        <SelectValue placeholder="Tamaño" />
-                                      </SelectTrigger>
-                                    </FormControl>
-                                    <SelectContent>
-                                      {/* examplePrintSizes.map(size => (
-                                        <SelectItem key={size.id} value={size.id} className="text-xs">
-                                          {size.name}
-                                        </SelectItem>
-                                      )) */}
-                                    </SelectContent>
-                                  </Select>
+                                  <FormLabel className="text-xs">Observaciones</FormLabel>
+                                  <FormControl>
+                                    <Textarea 
+                                      {...field} 
+                                      placeholder="Observaciones del ticket" 
+                                      className="h-20 text-xs resize-none"
+                                      disabled={isReadOnly}
+                                    />
+                                  </FormControl>
                                   <FormMessage />
                                 </FormItem>
                               )}
                             />
                           </div>
-                          
-                          <FormField
-                            control={control}
-                            name="observations"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel className="text-xs">Observaciones</FormLabel>
-                                <FormControl>
-                                  <Textarea 
-                                    {...field} 
-                                    placeholder="Observaciones del ticket" 
-                                    className="h-20 text-xs resize-none"
-                                  />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
                         </div>
-                      </div>
+                          </AccordionContent>
+                        </AccordionItem>
+                      </Accordion>
                     </div>
-                  </div>
-                  
-                  {/* Columna derecha - Conceptos, Totales y Pagos */}
-                  <div className="md:col-span-8 space-y-4">
-                    <TicketItemsTable
-                      items={watchedItems}
-                      onOpenAddItemModal={handleOpenAddItemModal}
-                      onOpenBonosModal={(itemIndex) => console.log('Abrir modal bonos para:', itemIndex)}
-                      onOpenDiscountModal={handleOpenDiscountModal}
-                      onRemoveItem={handleRemoveItem}
-                      onQuantityChange={handleQuantityChange}
-                      readOnly={form.getValues('status') === 'PAID' || form.getValues('status') === 'CANCELLED'}
-                      currencyCode={currencyCode}
-                      currencySymbol={currencySymbol}
-                    />
                     
-                    <div className="border-t border-b py-3">
-                      <TicketPayments 
-                        onOpenAddPaymentModal={handleOpenAddPaymentModal} 
-                        onRemovePayment={handleRemovePayment}
+                    <div className="space-y-4 md:col-span-8">
+                      <TicketItemsTable
+                        items={watchedItems}
+                        onOpenAddItemModal={handleOpenAddItemModal}
+                        onOpenBonosModal={(itemIndex) => console.log('Abrir modal bonos para:', itemIndex)}
+                        onOpenDiscountModal={handleOpenDiscountModal}
+                        onRemoveItem={handleRemoveItem}
+                        onQuantityChange={handleQuantityChange}
+                        readOnly={isReadOnly}
+                        currencyCode={currencyCode}
+                        currencySymbol={currencySymbol}
                       />
-                    </div>
-                    
-                    <div className="mt-4 bg-gray-50 rounded-lg p-3">
-                      <div className="flex flex-wrap gap-x-8 gap-y-2">
-                        <div className="min-w-[140px]">
-                          <span className="text-xs text-gray-500 block mb-1">Base Imponible:</span>
-                          <span className="text-sm font-medium">{formatCurrency(subtotal, currencySymbol)}</span>
-                        </div>
-                        <div className="min-w-[90px]">
-                          <span className="text-xs text-gray-500 block mb-1">Dto.:</span>
-                          <span className="text-sm font-medium text-red-600">{formatCurrency(totalDiscount, currencySymbol)}</span>
-                        </div>
-                        <div className="min-w-[90px]">
-                          <span className="text-xs text-gray-500 block mb-1">IVA:</span>
-                          <span className="text-sm font-medium">{formatCurrency(totalVat, currencySymbol)}</span>
-                        </div>
-                        <div className="min-w-[100px]">
-                          <span className="text-xs text-gray-500 block mb-1">Total:</span>
-                          <span className="text-sm font-semibold text-purple-700">{formatCurrency(totalAmount, currencySymbol)}</span>
-                        </div>
-                        <div className="min-w-[110px]">
-                          <span className="text-xs text-gray-500 block mb-1">Pagado:</span>
-                          <span className="text-sm font-medium text-green-600">{formatCurrency(amountPaid, currencySymbol)}</span>
-                        </div>
-                        <div className="min-w-[110px]">
-                          <span className="text-xs text-gray-500 block mb-1">Pendiente:</span>
-                          <span className="text-sm font-medium text-amber-600">{formatCurrency(currentPending, currencySymbol)}</span>
-                        </div>
-                        <div className="min-w-[100px]">
-                          <span className="text-xs text-gray-500 block mb-1">Aplazado:</span>
-                          <span className="text-sm font-medium text-blue-600">{formatCurrency(watch('amountDeferred') || 0, currencySymbol)}</span>
+                      
+                      <div className="py-3 border-t border-b">
+                        {/* Tabs de pagos */}
+                        {(() => {
+                          const hasDeferredDebt = (() => {
+                            if (ticketData?.hasOpenDebt) return true;
+                            if (ticketData?.relatedDebts?.some(d => d.pendingAmount > 0.009)) return true;
+                            const hasDeferredPayment = ticketData?.status === 'ACCOUNTED' && ticketData.payments?.some(p => (p as any).paymentMethodDefinition?.type === 'DEFERRED_PAYMENT');
+                            return !!hasDeferredPayment;
+                          })();
+                          const directLabel = t('tickets.tabs.directPayments', 'Pagos');
+                          const deferredLabel = t('tickets.tabs.deferredPayments', 'Pagos aplazados');
+                          const noDeferredText = t('tickets.tabs.noDeferredPayments', 'Sin pagos aplazados registrados');
+                          return (
+                            <Tabs defaultValue="direct" className="w-full">
+                              <TabsList className="mb-4">
+                                <TabsTrigger value="direct">
+                                  {directLabel}
+                                </TabsTrigger>
+                                <TabsTrigger value="deferred" disabled={!hasDeferredDebt}>
+                                  {deferredLabel}
+                                </TabsTrigger>
+                              </TabsList>
+
+                              <TabsContent value="direct">
+                        <TicketPayments 
+                          payments={watchedPayments}
+                          deferredAmount={Number(watch('amountDeferred')) || 0}
+                          onOpenAddPaymentModal={handleOpenAddPaymentModal} 
+                          onRemovePayment={handleRemovePayment}
+                          readOnly={isReadOnly}
+                        />
+                              </TabsContent>
+
+                              <TabsContent value="deferred">
+                                {hasDeferredDebt ? (
+                                  <DebtPaymentsSection 
+                                    ticketId={id}
+                                    currentClinicId={activeClinic?.id || ticketData?.clinicId}
+                                  />
+                                ) : (
+                                  <div className="text-center text-sm text-gray-500 py-6">
+                                    {noDeferredText}
+                                  </div>
+                                )}
+                              </TabsContent>
+                            </Tabs>
+                          );
+                        })()}
+                      </div>
+                      
+                      <div className="p-3 mt-4 rounded-lg bg-gray-50">
+                        <div className="flex flex-wrap gap-x-8 gap-y-2">
+                          {totalsReady ? (
+                          <div className="min-w-[140px]">
+                             <span className="block mb-1 text-xs text-gray-500">Base Imponible:</span>
+                             <span className="text-sm font-medium">{formatCurrency(subtotalNetoDeLineas, currencySymbol)}</span>
+                           </div>
+                          ) : (
+                            <Skeleton className="w-24 h-6" />
+                          )}
+                          {totalsReady ? (
+                          <div className="min-w-[90px]">
+                            <span className="block mb-1 text-xs text-gray-500">Dto.:</span>
+                            <span className="text-sm font-medium text-red-600">{formatCurrency(totalDescuentosDeLineas + effectiveGlobalDiscount, currencySymbol)}</span>
+                          </div>
+                          ) : <Skeleton className="w-20 h-6" />}
+                          {totalsReady ? (
+                          <div className="min-w-[90px]">
+                            <span className="block mb-1 text-xs text-gray-500">IVA:</span>
+                            <span className="text-sm font-medium">{formatCurrency(totalIVADeLineas, currencySymbol)}</span>
+                          </div>
+                          ) : <Skeleton className="w-16 h-6" />}
+                          {totalsReady ? (
+                          <div className="min-w-[100px]">
+                            <span className="block mb-1 text-xs text-gray-500">Total:</span>
+                            <span className="text-sm font-semibold text-purple-700">{formatCurrency(totalGeneralTicket, currencySymbol)}</span>
+                          </div>
+                          ) : <Skeleton className="w-20 h-6" />}
+                          {totalsReady ? (
+                          <div className="min-w-[110px]">
+                            <span className="block mb-1 text-xs text-gray-500">Pagado:</span>
+                            <span className="text-sm font-medium text-green-600">{formatCurrency(amountPaid, currencySymbol)}</span>
+                          </div>
+                          ) : <Skeleton className="w-20 h-6" />}
+                          {totalsReady ? (
+                          <div className="min-w-[110px]">
+                            <span className="block mb-1 text-xs text-gray-500">Pendiente:</span>
+                            <span className="text-sm font-medium text-amber-600">{formatCurrency(currentPending, currencySymbol)}</span>
+                          </div>
+                          ) : <Skeleton className="w-20 h-6" />}
+                          
+                          {(() => {
+                            const explicitlyDeferredInForm = watchedPayments.reduce((sum, p) => {
+                              const matchesCode = p.paymentMethodCode === DEFERRED_PAYMENT_METHOD_CODE;
+                              const matchesType = (p as any).paymentMethodType === 'DEFERRED_PAYMENT';
+                              const matchesName = (p.paymentMethodName || '').toLowerCase().includes('aplazado');
+                              if (matchesCode || matchesType || matchesName) {
+                                return sum + (p.amount || 0);
+                              }
+                              return sum;
+                            }, 0);
+
+                            // El campo `amountDeferred` en el formState ya contiene el `dueAmount` si hasOpenDebt es true.
+                            // Mostrar si la clínica lo permite Y (hay algo explícitamente aplazado en el form O hay una deuda ya guardada)
+                            const showDeferredSection = (explicitlyDeferredInForm > 0 || (watch('amountDeferred') || 0) > 0);
+
+                            if (showDeferredSection) {
+                              return totalsReady ? (
+                          <div className="min-w-[100px]">
+                                  <span className="block mb-1 text-xs text-gray-500">Aplazado:</span>
+                                  <span className="text-sm font-medium text-blue-600">
+                                    {formatCurrency(explicitlyDeferredInForm > 0 ? explicitlyDeferredInForm : (watch('amountDeferred') || 0), currencySymbol)}
+                                  </span>
+                          </div>
+                              ) : <Skeleton className="w-20 h-6" />;
+                            }
+                            return null;
+                          })()}
                         </div>
                       </div>
                     </div>
                   </div>
-                </div>
+                </div> {/* Fin del div con key */} 
               </form>
             </Form>
           </div>
         </div>
 
         <footer className="fixed bottom-0 z-10 border-t bg-white/80 backdrop-blur-md shadow-[0_-2px_10px_rgba(0,0,0,0.05)]" style={{ left: "var(--sidebar-width, 16rem)", right: "0" }}>
-          <div className="container p-3 flex items-center justify-between">
+          <div className="container flex items-center justify-between p-3">
             <div className="flex items-center gap-3">
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-9 gap-1 text-xs border-gray-300 text-gray-700 hover:bg-gray-50"
+                className="gap-1 text-xs text-gray-700 border-gray-300 h-9 hover:bg-gray-50"
                 onClick={() => router.push("/facturacion/tickets")}
               >
                 <ArrowLeft className="h-3.5 w-3.5" /> Volver
@@ -702,7 +1685,7 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-9 gap-1 text-xs border-gray-300 text-gray-700 hover:bg-gray-50"
+                className="gap-1 text-xs text-gray-700 border-gray-300 h-9 hover:bg-gray-50"
                 onClick={() => alert("Imprimir ticket")}
               >
                 <Printer className="h-3.5 w-3.5" /> Imprimir
@@ -714,30 +1697,64 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-9 gap-1 text-xs border-gray-300 text-gray-700 hover:bg-gray-50"
-                onClick={() => alert("Mostrar ayuda")}
+                className="gap-1 text-xs text-gray-700 border-gray-300 h-9 hover:bg-gray-50"
+                onClick={() => alert(t("common.help_not_implemented"))}
               >
-                <HelpCircle className="h-3.5 w-3.5" /> Ayuda
+                <HelpCircle className="h-3.5 w-3.5" /> {t("common.help")}
               </Button>
               
-              <ShimmerButton
+              {!isReadOnly && (
+              <Button
                 type="button"
                 onClick={onSubmitForm}
-                disabled={updateTicketMutation.isPending || formState.isSubmitting}
-                shimmerColor="#8b5cf6"
-                shimmerSize="0.1em"
-                shimmerDuration="2.5s"
-                borderRadius="0.5rem"
-                background="rgba(109, 40, 217, 1)"
-                className="h-9 px-4 py-0 text-sm font-medium"
+                  disabled={saveTicketBatchMutation.isPending || formState.isSubmitting || !formState.isDirty}
+                className="px-4 py-0 text-sm font-medium h-9"
               >
-                {updateTicketMutation.isPending ? (
+                  {saveTicketBatchMutation.isPending ? (
                   <LoadingSpinner size="sm" className="mr-2" />
                 ) : (
                   <Save className="h-3.5 w-3.5 mr-1.5" />
                 )}
-                {updateTicketMutation.isPending ? t('common.saving') : t('common.saveChanges')}
-              </ShimmerButton>
+                  {saveTicketBatchMutation.isPending ? t('common.saving') : t('tickets.saveTicket')}
+              </Button>
+              )}
+
+              {!isReadOnly && (
+                <Button
+                  type="button"
+                  onClick={handleCompleteAndCloseTicket} 
+                  disabled={!isTicketClosable || completeAndCloseMutation.isPending || formState.isSubmitting || saveTicketBatchMutation.isPending}
+                  className="px-4 py-0 text-sm font-medium h-9"
+                >
+                  {completeAndCloseMutation.isPending ? (
+                    <LoadingSpinner size="sm" className="mr-2" />
+                  ) : (
+                    <CheckCircle className="h-3.5 w-3.5 mr-1.5" />
+                  )}
+                  {t('tickets.closeTicket')} 
+                </Button>
+              )}
+
+              {(ticketData?.status as string) === TicketStatus.CLOSED && /* !ticketData?.cashSessionId && */ ( // La lógica de cashSessionId ya está en canReopenTicket
+                <Button
+                  type="button"
+                  onClick={() => { // <<< CORREGIDO ONCLICK
+                    if (canReopenTicket) { // Usar la variable de estado que ya calcula esto
+                      setIsReopenConfirmModalOpen(true);
+                    }
+                  }}
+                  disabled={reopenTicketMutation.isPending || !canReopenTicket} // <<< USAR canReopenTicket >>>
+                  title={reopenButtonTooltip} // <<< USAR reopenButtonTooltip >>>
+                  className="px-4 py-0 text-sm font-medium h-9"
+                >
+                  {reopenTicketMutation.isPending ? (
+                    <LoadingSpinner size="sm" className="mr-2" />
+                  ) : (
+                    <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
+                  )}
+                  {reopenTicketMutation.isPending ? t('common.reopening') : t('tickets.reopenTicket')}
+                </Button>
+              ) }
             </div>
           </div>
         </footer>
@@ -769,6 +1786,66 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
           onApplyDiscount={handleApplyDiscount}
         />
       )}
+
+      <AlertDialog open={showConfirmDelayedPaymentModal} onOpenChange={setShowConfirmDelayedPaymentModal}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("tickets.confirmDelayedPaymentTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("tickets.confirmDelayedPaymentDesc", { amount: formatCurrency(pendingAmountForModal, activeClinic?.currency || 'EUR') })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setShowConfirmDelayedPaymentModal(false)}>
+              {t("common.continueEditing")} 
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmDelayedPaymentAndClose}>
+              {t("common.confirmAndClose")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={showPaymentRequiredModal} onOpenChange={setShowPaymentRequiredModal}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center">
+              <AlertTriangle className="w-5 h-5 mr-2 text-yellow-500" /> {t("tickets.notifications.mustBeFullyPaidTitle")}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("tickets.notifications.mustBeFullyPaidDesc", { amount: formatCurrency(pendingAmountForModal, activeClinic?.currency || 'EUR') })}
+              <br />
+              {t("tickets.notifications.clinicNoDelayedPayment")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setShowPaymentRequiredModal(false)}>{t("common.close")}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Modal de Confirmación para Reabrir Ticket */}
+      <AlertDialog open={isReopenConfirmModalOpen} onOpenChange={setIsReopenConfirmModalOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('tickets.reopenConfirmTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('tickets.reopenConfirmDescription', { ticketId: ticketData?.ticketNumber || id })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setIsReopenConfirmModalOpen(false)}>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleReopenTicket} // Este es el onClick que ejecuta la mutación
+              disabled={reopenTicketMutation.isPending || !canReopenTicket}
+              className="bg-teal-600 hover:bg-teal-700"
+              title={reopenButtonTooltip} 
+            >
+              {reopenTicketMutation.isPending ? t('common.reopening') : t('tickets.reopenTicket')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </FormProvider>
   );
 } 

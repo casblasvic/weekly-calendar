@@ -4,6 +4,10 @@ import { Prisma, PaymentMethodType } from '@prisma/client';
 import { getServerAuthSession } from "@/lib/auth";
 import { clinicPaymentSettingFormSchema } from '@/lib/schemas/clinic-payment-setting';
 import { ZodError } from 'zod';
+import { PaymentMethodDefinition } from '@prisma/client';
+
+// Definir la constante DEFERRED_PAYMENT_METHOD_CODE aquí también o importarla
+const DEFERRED_PAYMENT_METHOD_CODE = "SYS_DEFERRED_PAYMENT";
 
 // GET /api/clinic-payment-settings?clinicId=...
 export async function GET(request: Request) {
@@ -75,6 +79,19 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const parsedData = clinicPaymentSettingFormSchema.parse(body);
+
+    // --- INICIO: Lógica Inversa para Pago Aplazado ---
+    let isDeferredPaymentMethod = false;
+    if (parsedData.paymentMethodDefinitionId) {
+      const paymentMethodDef = await prisma.paymentMethodDefinition.findUnique({
+        where: { id: parsedData.paymentMethodDefinitionId, systemId: systemId },
+        select: { code: true }
+      });
+      if (paymentMethodDef?.code === DEFERRED_PAYMENT_METHOD_CODE) {
+        isDeferredPaymentMethod = true;
+      }
+    }
+    // --- FIN: Lógica Inversa para Pago Aplazado ---
 
     const [clinicCheck, methodCheck, posTerminalCheck, accountCheck] = await Promise.all([
         prisma.clinic.findFirst({ 
@@ -174,6 +191,16 @@ export async function POST(request: Request) {
                 posTerminal: { select: { id: true, name: true } }
             },
         });
+
+        // --- INICIO: Actualizar Clinic si es Pago Aplazado y se está activando ---
+        if (isDeferredPaymentMethod && parsedData.isActiveInClinic) {
+            await tx.clinic.update({
+                where: { id: parsedData.clinicId, systemId: systemId },
+                data: { delayedPayments: true },
+            });
+            console.log(`[API CPS POST] Clinic ${parsedData.clinicId} delayedPayments actualizado a true por creación de setting para PM ${parsedData.paymentMethodDefinitionId}`);
+        }
+        // --- FIN: Actualizar Clinic ---
         return created;
     });
 

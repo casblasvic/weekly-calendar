@@ -16,13 +16,15 @@ import {
 } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Search, Package, Gift, ShoppingBag, Clipboard, Plus, Info } from 'lucide-react';
+import { Search, Package, Gift, ShoppingBag, Clipboard } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/use-toast';
 import { MagicCard } from '@/components/ui/magic-card';
 import { BorderBeam } from '@/components/ui/border-beam';
-import { ShimmerButton } from '@/components/ui/shimmer-button';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { PlusCircle } from "lucide-react";
+import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { cn } from '@/lib/utils';
 import { type TicketItemFormValues } from '@/lib/schemas/ticket';
@@ -350,7 +352,7 @@ export function AddItemModal({ isOpen, onClose, onAddItem }: AddItemModalProps) 
       });
       return;
     }
-
+    
     const finalUnitPrice = typeof unitPrice === 'number' ? unitPrice : selectedItem.price || 0;
 
     // Construir el objeto del ítem para el ticket
@@ -372,12 +374,11 @@ export function AddItemModal({ isOpen, onClose, onAddItem }: AddItemModalProps) 
       promotionDiscountAmount: 0,      
       finalPrice: finalUnitPrice * quantity,
       vatAmount: (finalUnitPrice * quantity * (selectedItem.vatType?.rate ?? 0)) / 100,
-      notes: '',
       appliedPromotionId: undefined,
       accumulatedDiscount: false,
       bonoInstanceId: undefined,
     };
-
+    
     onAddItem(ticketItem);
     
     // Restablecer estados
@@ -473,6 +474,10 @@ export function AddItemModal({ isOpen, onClose, onAddItem }: AddItemModalProps) 
     );
   };
   
+  // Traducciones
+  const { t: tCommon } = useTranslation('common');
+  const { t } = useTranslation('tickets');
+  
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-[600px] max-h-[85vh] overflow-hidden flex flex-col">
@@ -489,19 +494,19 @@ export function AddItemModal({ isOpen, onClose, onAddItem }: AddItemModalProps) 
           </DialogTitle>
           
           {/* Buscador */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 flex-1 overflow-hidden">
+          <div className="grid flex-1 grid-cols-1 gap-6 overflow-hidden md:grid-cols-3">
             {/* Columna Izquierda: Lista de ítems */}
-            <div className="md:col-span-2 flex flex-col overflow-hidden">
+            <div className="flex flex-col overflow-hidden md:col-span-2">
               {/* Buscador y Pestañas */}
               <div className="p-4">
                 <div className="relative mb-4">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Buscar..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-9"
-                  />
+                  <Search className="absolute w-4 h-4 -translate-y-1/2 left-3 top-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Buscar..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-9"
+            />
                 </div>
               </div>
             </div>
@@ -589,26 +594,18 @@ export function AddItemModal({ isOpen, onClose, onAddItem }: AddItemModalProps) 
           </div>
         )}
         
-        <DialogFooter className="flex justify-between space-x-2">
+        <DialogFooter className="mt-2 sm:mt-4">
           <Button variant="outline" onClick={onClose}>
-            Cancelar
+            {tCommon('cancel')}
           </Button>
-          
-          <ShimmerButton
-            shimmerColor="#8b5cf6"
-            shimmerSize="0.1em"
-            shimmerDuration="2.5s"
-            borderRadius="0.5rem"
-            background="rgba(109, 40, 217, 1)"
-            className="px-4 py-2 text-sm font-medium"
+          <Button
             onClick={handleAddItem}
-            disabled={!selectedItem}
+            disabled={!selectedItem || quantity <= 0}
+            className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white hover:from-purple-700 hover:to-indigo-700 min-w-[120px]"
           >
-            <span className="flex items-center gap-1.5">
-              <Plus className="w-4 h-4" /> 
-              Añadir
-            </span>
-          </ShimmerButton>
+            <PlusCircle className="w-4 h-4 mr-2" />
+            {t('addItemModal.confirmButton')}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

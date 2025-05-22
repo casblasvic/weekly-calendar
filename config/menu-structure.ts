@@ -49,10 +49,17 @@ import {
 export interface MenuItem {
   id: string
   label: string
-  icon: React.ElementType
-  href: string
-  badge?: number
+  icon?: React.ElementType
+  activeIcon?: React.ElementType
+  href?: string
   submenu?: MenuItem[]
+  permissions?: string[]
+  isNew?: boolean
+  isExternal?: boolean
+  badge?: number | string | undefined
+  hasAlertIndicator?: boolean
+  activePaths?: string[]
+  dataTestId?: string
 }
 
 export const menuItems: MenuItem[] = [
@@ -125,7 +132,6 @@ export const menuItems: MenuItem[] = [
     label: "Agenda",
     icon: Calendar,
     href: "/agenda",
-    badge: 32,
   },
   {
     id: "facturacion",
@@ -138,7 +144,6 @@ export const menuItems: MenuItem[] = [
         label: "Listado de tickets",
         icon: Receipt,
         href: "/facturacion/tickets",
-        badge: 5,
       },
       {
         id: "busqueda-facturacion",
@@ -219,7 +224,6 @@ export const menuItems: MenuItem[] = [
     label: "Control de stock",
     icon: Package,
     href: "/stock",
-    badge: 1,
   },
   {
     id: "presencia",

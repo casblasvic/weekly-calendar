@@ -85,14 +85,10 @@ export function AgendaNavBar({
       
       // Si tenemos onViewChange, lo usamos para transición suave
       if (onViewChange) {
-        // Usar requestAnimationFrame para evitar bloqueos de UI
-        requestAnimationFrame(() => {
-          onViewChange("week", newDate);
-          // Desbloquear después del siguiente frame de animación
-          requestAnimationFrame(() => {
-            isUpdatingRef.current = false;
-          });
-        });
+        onViewChange("week", newDate);
+        setTimeout(() => {
+          isUpdatingRef.current = false;
+        }, 150);
       } else {
         // Fallback al comportamiento anterior
         setCurrentDate(newDate);
@@ -122,14 +118,10 @@ export function AgendaNavBar({
       
       // Si tenemos onViewChange, lo usamos para transición suave
       if (onViewChange) {
-        // Usar requestAnimationFrame para sincronizar con el ciclo de renderizado
-        requestAnimationFrame(() => {
-          onViewChange(view, newDate);
-          // Desbloquear después del siguiente frame
-          requestAnimationFrame(() => {
-            isUpdatingRef.current = false;
-          });
-        });
+        onViewChange(view, newDate);
+        setTimeout(() => {
+          isUpdatingRef.current = false;
+        }, 150);
       } else {
         // Fallback
         setCurrentDate(newDate);
@@ -407,7 +399,7 @@ export function AgendaNavBar({
           className="w-[180px] text-left justify-between"
         >
           <span>(Todos)</span>
-          <ChevronDown className="h-4 w-4 opacity-50" />
+          <ChevronDown className="w-4 h-4 opacity-50" />
         </Button>
       </div>
       {isBlockModalOpen && (
