@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -20,7 +20,7 @@ import type { DateRange } from 'react-day-picker'; // Import DateRange from reac
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { SlidersHorizontal, Search, X, FileText, RotateCcw, Trash2, Eye, Download, ChevronDown, Lock, LockOpen } from 'lucide-react'; // Added Lock, LockOpen
-import { useRouter } from 'next/navigation'; 
+import { useRouter, useSearchParams } from 'next/navigation'; 
 import { useClinicsQuery } from '@/lib/hooks/use-clinic-query'; 
 import { cn } from '@/lib/utils'; // Added cn import
 
@@ -57,8 +57,10 @@ export default function BusquedaFacturacionPage() {
   const [pageSize, setPageSize] = useState(10);
   const [totalPages, setTotalPages] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
+  const [isInitialFilterLoadDone, setIsInitialFilterLoadDone] = useState(false);
 
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { data: clinicsData, isLoading: isLoadingClinics, error: errorClinics } = useClinicsQuery();
   const availableClinics: Clinic[] = clinicsData || [];
 
@@ -92,6 +94,39 @@ export default function BusquedaFacturacionPage() {
   ];
 
   useEffect(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    const urlSearchType = params.get('searchType') as 'Ticket' | 'Factura' | null;
+    const urlTicketNumber = params.get('ticketNumber');
+    const urlInvoiceNumber = params.get('invoiceNumber');
+    const urlClientId = params.get('clientId');
+    const urlDateFrom = params.get('dateFrom');
+    const urlDateTo = params.get('dateTo');
+    const urlClinicIds = params.get('clinicIds');
+    const urlPage = params.get('page');
+    const urlPageSize = params.get('pageSize');
+
+    let filtersApplied = false;
+
+    if (urlSearchType) { setSearchType(urlSearchType); filtersApplied = true; }
+    if (urlTicketNumber) { setTicketNumber(urlTicketNumber); filtersApplied = true; }
+    if (urlInvoiceNumber) { setInvoiceNumber(urlInvoiceNumber); filtersApplied = true; }
+    if (urlClientId) { setClientId(urlClientId); filtersApplied = true; }
+    if (urlDateFrom && urlDateTo) {
+      setDateRange({ from: new Date(urlDateFrom), to: new Date(urlDateTo) });
+      filtersApplied = true;
+    } else if (urlDateFrom) {
+      setDateRange({ from: new Date(urlDateFrom), to: undefined });
+      filtersApplied = true;
+    }
+    if (urlClinicIds) { setSelectedClinicIds(urlClinicIds.split(',')); filtersApplied = true; }
+    if (urlPage) { setCurrentPage(parseInt(urlPage, 10)); filtersApplied = true; } 
+    if (urlPageSize) { setPageSize(parseInt(urlPageSize, 10)); filtersApplied = true; } 
+    
+    setIsInitialFilterLoadDone(true); 
+
+  }, []); 
+
+  useEffect(() => {
   }, []);
 
   const handleClearFilters = () => {
@@ -100,7 +135,7 @@ export default function BusquedaFacturacionPage() {
     setInvoiceNumber('');
     setDateRange(undefined);
     setClientId('');
-    setSelectedClinicIds(['ALL']); // Reset to 'ALL' clinics selected by default
+    setSelectedClinicIds(['ALL']); 
     setSearchResults([]);
     setCurrentPage(1);
     setTotalCount(0);
@@ -108,31 +143,25 @@ export default function BusquedaFacturacionPage() {
 
   const handleClinicSelectionChange = (clinicId: string) => {
     setSelectedClinicIds(prev => {
-      // Si se selecciona 'Todas', siempre mostramos todas las clínicas
       if (clinicId === 'ALL') {
         return ['ALL'];
       } 
-      // Si ya estaba seleccionado 'Todas' y se hace clic en una clínica específica
       else if (prev.includes('ALL')) {
         return [clinicId];
       } 
-      // Si se hace clic en una clínica ya seleccionada
       else if (prev.includes(clinicId)) {
-        // Si es la única clínica seleccionada, volvemos a 'Todas'
         if (prev.length === 1) {
           return ['ALL'];
         }
-        // Si hay más de una clínica seleccionada, quitamos esta
         return prev.filter(id => id !== clinicId);
       } 
-      // Si se selecciona una clínica nueva
       else {
         return [...prev, clinicId];
       }
     });
   };
 
-  const handleSearch = async (newPage = 1, newPageSize = pageSize) => {
+  const handleSearch = useCallback(async (pageToFetch = 1, sizeOfPage = pageSize) => {
     const query = new URLSearchParams();
     query.set('searchType', searchType);
     if (ticketNumber) query.set('ticketNumber', ticketNumber);
@@ -144,12 +173,10 @@ export default function BusquedaFacturacionPage() {
     if (selectedClinicIds.length > 0 && !selectedClinicIds.includes('ALL')) {
       query.set('clinicIds', selectedClinicIds.join(','));
     } else {
-      // 'ALL' or empty means all clinics, so don't add clinicIds to query
-      // The API handles missing clinicIds as all clinics
     }
 
-    query.set('page', newPage.toString());
-    query.set('pageSize', newPageSize.toString());
+    query.set('page', pageToFetch.toString());
+    query.set('pageSize', sizeOfPage.toString());
 
     setIsLoading(true);
     try {
@@ -173,7 +200,30 @@ export default function BusquedaFacturacionPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [searchType, ticketNumber, invoiceNumber, clientId, dateRange, selectedClinicIds, pageSize]);
+
+  useEffect(() => {
+    if (isInitialFilterLoadDone) {
+      const queryParams = new URLSearchParams();
+      if (searchType) queryParams.set('searchType', searchType);
+      if (ticketNumber) queryParams.set('ticketNumber', ticketNumber);
+      if (invoiceNumber) queryParams.set('invoiceNumber', invoiceNumber);
+      if (clientId) queryParams.set('clientId', clientId);
+      if (dateRange?.from) queryParams.set('dateFrom', dateRange.from.toISOString());
+      if (dateRange?.to) queryParams.set('dateTo', dateRange.to.toISOString());
+      if (selectedClinicIds.length > 0 && !(selectedClinicIds.length === 1 && selectedClinicIds[0] === 'ALL')) {
+         queryParams.set('clinicIds', selectedClinicIds.join(','));
+      } else if (selectedClinicIds.length === 1 && selectedClinicIds[0] === 'ALL') {
+      }
+      queryParams.set('page', currentPage.toString());
+      queryParams.set('pageSize', pageSize.toString());
+      
+      const newUrl = `/facturacion/busqueda?${queryParams.toString()}`;
+      router.replace(newUrl);
+
+      handleSearch(currentPage, pageSize); 
+    }
+  }, [searchType, ticketNumber, invoiceNumber, clientId, dateRange, selectedClinicIds, currentPage, pageSize, isInitialFilterLoadDone, router, handleSearch]);
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
@@ -387,7 +437,20 @@ export default function BusquedaFacturacionPage() {
                       <Button variant="ghost" size="sm" className="h-8 text-xs text-gray-600 hover:bg-gray-100"
                         onClick={() => {
                           if (item.type === 'Ticket' && item.ticketId) {
-                            router.push(`/facturacion/tickets/editar/${item.ticketId}?from=/facturacion/busqueda`);
+                            const queryParams = new URLSearchParams();
+                            if (searchType) queryParams.set('searchType', searchType);
+                            if (ticketNumber) queryParams.set('ticketNumber', ticketNumber);
+                            if (invoiceNumber) queryParams.set('invoiceNumber', invoiceNumber);
+                            if (clientId) queryParams.set('clientId', clientId);
+                            if (dateRange?.from) queryParams.set('dateFrom', dateRange.from.toISOString());
+                            if (dateRange?.to) queryParams.set('dateTo', dateRange.to.toISOString());
+                            if (selectedClinicIds.length > 0) queryParams.set('clinicIds', selectedClinicIds.join(','));
+                            if (currentPage) queryParams.set('page', currentPage.toString());
+                            if (pageSize) queryParams.set('pageSize', pageSize.toString());
+
+                            const queryString = queryParams.toString();
+                            const fromUrl = `/facturacion/busqueda${queryString ? `?${queryString}` : ''}`;
+                            router.push(`/facturacion/tickets/editar/${item.ticketId}?from=${encodeURIComponent(fromUrl)}`);
                           } else if (item.type === 'Factura') {
                             // router.push(`/facturacion/facturas/ver/${item.id}`); // TODO: Implement view invoice page
                             console.log('View invoice', item.id);

@@ -52,7 +52,7 @@ import { MultiSelectCombobox, type ComboboxOption } from "@/components/ui/multi-
 import { posTerminalFormSchema, type PosTerminalFormValues } from '@/lib/schemas/pos-terminal';
 import { type Clinic } from '@prisma/client';
 import { getBanks, type Bank } from '@/lib/api/banks';
-import { getBankAccountsByBank, type BankAccount } from '@/lib/api/bank-accounts';
+import { getBankAccounts, type BankAccount } from '@/lib/api/bank-accounts';
 import { getActiveClinics } from '@/lib/api/clinics';
 import { type PosTerminal } from '@/lib/api/pos-terminals';
 
@@ -127,7 +127,7 @@ export function PosTerminalForm({
         console.log(`[Query bankAccounts] Running for bankId: ${selectedBankId}`);
         if (!selectedBankId) return undefined;
         try {
-            const result = await getBankAccountsByBank(selectedBankId);
+            const result = await getBankAccounts({ bankId: selectedBankId });
             console.log(`[Query bankAccounts] API Result for bankId ${selectedBankId}:`, result);
             return Array.isArray(result) ? result : undefined;
         } catch (error) {

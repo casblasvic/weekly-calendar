@@ -21,7 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 // Button from '@/components/ui/button' is already imported earlier
 import { DateRangePickerPopover } from '@/components/date-range-picker-popover';
 import type { DateRange } from 'react-day-picker';
-import { FilterX, RotateCcw } from 'lucide-react';
+import { FilterX, RotateCcw, Download, Search } from 'lucide-react';
 
 interface DebtListProps {
   clinicId?: string;
@@ -35,17 +35,21 @@ export function DebtList({ clinicId }: DebtListProps) {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
-  // Filter states
+  // Filter states for UI
   const [filterStatus, setFilterStatus] = useState<DebtStatus | null>(null);
   const [filterDateRange, setFilterDateRange] = useState<DateRange | undefined>(undefined);
+
+  // Applied filter states for query
+  const [appliedFilterStatus, setAppliedFilterStatus] = useState<DebtStatus | null>(null);
+  const [appliedFilterDateRange, setAppliedFilterDateRange] = useState<DateRange | undefined>(undefined);
 
   const { data, isLoading, refetch } = useDebtLedgersQuery({
     clinicId,
     page: currentPage,
     pageSize,
-    status: filterStatus,
-    dateFrom: filterDateRange?.from ? format(filterDateRange.from, 'yyyy-MM-dd') : undefined,
-    dateTo: filterDateRange?.to ? format(filterDateRange.to, 'yyyy-MM-dd') : undefined,
+    status: appliedFilterStatus, // Use applied filters
+    dateFrom: appliedFilterDateRange?.from ? format(appliedFilterDateRange.from, 'yyyy-MM-dd') : undefined,
+    dateTo: appliedFilterDateRange?.to ? format(appliedFilterDateRange.to, 'yyyy-MM-dd') : undefined,
   });
   const actualDebts = data?.debts || [];
 
@@ -63,11 +67,22 @@ export function DebtList({ clinicId }: DebtListProps) {
     setCurrentPage(1); // Reset to first page when page size changes
   };
 
+  const handleSearchClick = () => {
+    setAppliedFilterStatus(filterStatus);
+    setAppliedFilterDateRange(filterDateRange);
+    setCurrentPage(1); // Reset to first page when applying new filters
+    // refetch() se llamará automáticamente debido al cambio en appliedFilters o currentPage si es necesario, 
+    // o podemos llamarlo explícitamente si la query no reacciona a los cambios de appliedFilterStatus/DateRange por sí misma.
+    // Dado que useDebtLedgersQuery depende de appliedFilterStatus y appliedFilterDateRange, el cambio en estos estados debería desencadenar una nueva obtención de datos.
+  };
+
   const handleClearFilters = () => {
     setFilterStatus(null);
     setFilterDateRange(undefined);
+    setAppliedFilterStatus(null); // Clear applied filters as well
+    setAppliedFilterDateRange(undefined);
     setCurrentPage(1); // Reset to first page
-    // refetch(); // Opcional: si los filtros no se aplican en vivo con cada cambio de estado
+    // refetch(); // Similar a handleSearchClick, el cambio en appliedFilters debería ser suficiente.
   };
 
   // Nuevos estados para el modal de ajuste
@@ -88,7 +103,12 @@ export function DebtList({ clinicId }: DebtListProps) {
 
 
   if (isLoading) {
-    return <div className="flex items-center gap-2 text-sm text-gray-500"><Loader2 className="w-4 h-4 animate-spin"/> Cargando deudas...</div>;
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[300px] py-10">
+        <Loader2 className="w-12 h-12 text-purple-600 animate-spin" />
+        <p className="mt-4 text-lg text-gray-700">Cargando deudas...</p>
+      </div>
+    );
   }
 
   return (
@@ -121,9 +141,17 @@ export function DebtList({ clinicId }: DebtListProps) {
               className="w-full"
             />
           </div>
-          <Button onClick={handleClearFilters} variant="outline" className="h-10 flex items-center">
-            <RotateCcw size={16} className="mr-2"/> Limpiar
-          </Button>
+          <div className="flex flex-wrap justify-end items-center gap-3">
+            <Button onClick={handleClearFilters} variant="outline" className="h-9 text-sm text-gray-700 border-gray-300 hover:bg-gray-50 px-3">
+              <RotateCcw size={15} className="mr-1.5" /> Limpiar
+            </Button>
+            <Button variant="outline" className="h-9 text-sm text-blue-600 border-blue-500 hover:bg-blue-50 hover:text-blue-700 px-3" onClick={() => { /* TODO: Implementar exportación */ alert('Exportar CSV no implementado'); }}>
+              <Download size={15} className="mr-1.5" /> Exportar CSV
+            </Button>
+            <Button onClick={handleSearchClick} className="h-9 text-sm bg-purple-600 hover:bg-purple-700 text-white px-4">
+              <Search size={15} className="mr-1.5" /> Buscar
+            </Button>
+          </div>
         </div>
       </div>
       <Table className="rounded-md">
