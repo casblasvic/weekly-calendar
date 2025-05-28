@@ -22,21 +22,23 @@ export function CalendarDateRangePicker() {
         <Button
           id="date"
           variant={"outline"}
-          className="w-[300px] justify-start text-left font-normal"
+          className="w-full justify-start text-left font-normal"
         >
-          <CalendarIcon className="mr-2 h-4 w-4" />
-          {dateRange?.from ? (
-            dateRange.to ? (
-              <>
-                {format(dateRange.from, "d MMM, yyyy", { locale: es })} -{" "}
-                {format(dateRange.to, "d MMM, yyyy", { locale: es })}
-              </>
+          <CalendarIcon className="mr-2 h-4 w-4 flex-shrink-0" />
+          <span className="block truncate">
+            {dateRange?.from ? (
+              dateRange.to ? (
+                <>
+                  {format(dateRange.from, "d MMM, yyyy", { locale: es })} -{" "}
+                  {format(dateRange.to, "d MMM, yyyy", { locale: es })}
+                </>
+              ) : (
+                format(dateRange.from, "d MMM, yyyy", { locale: es })
+              )
             ) : (
-              format(dateRange.from, "d MMM, yyyy", { locale: es })
-            )
-          ) : (
-            <span>Selecciona un rango</span>
-          )}
+              "Selecciona un rango"
+            )}
+          </span>
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-auto p-0" align="start">

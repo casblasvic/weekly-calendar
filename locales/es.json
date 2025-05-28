@@ -129,6 +129,7 @@
         "clearFilters": "Limpiar Filtros",
         "clearSelection": "Limpiar selección",
         "help_not_implemented": "Funcionalidad de ayuda aún no implementada.",
+        "rowsPerPage": "Filas:",
         "searchByNameOrDesc": "Buscar por nombre o descripción...",
         "allServices": "Todos los servicios",
         "searchService": "Buscar servicio...",
@@ -158,7 +159,15 @@
         "reopenSelected": "Reabrir seleccionados",
         "selectClinicToViewData": "Por favor, selecciona una clínica para ver los datos.",
         "noSelection": "Sin selección",
-        "redirectingAfterClose": "Guardando y cerrando el ticket..."
+        "redirectingAfterClose": "Guardando y cerrando el ticket...",
+    "dateRange": "Rango de Fechas",
+    "selectStatus": "Seleccionar estado",
+    "export": "Exportar",
+    "search": "Buscar",
+        "print": "Imprimir",
+        "comments": "Comentarios",
+        "viewAll": "Ver todos",
+        "viewDetails": "Ver desglose"
     },
     "sidebar": {
         "dashboard": "Inicio",
@@ -193,6 +202,8 @@
         }
     },
     "tickets": {
+        "newCreditNote": "Nuevo Abono",
+        "newTicket": "Nuevo Ticket",
         "pageTitle": "Tickets",
         "new": "Nuevo Ticket",
         "edit": "Editar Ticket",
@@ -367,7 +378,7 @@
             "deleteTooltip": "Eliminar Ticket",
             "closedTooltip": "Ticket Cerrado (No editable)",
             "voidTooltip": "Anular Ticket",
-            "reopenTooltip": "Reabrir Ticket",
+            "reopenTooltip": "Reabrir este ticket. Estará disponible si el ticket está cerrado y su caja asociada (si existe) está abierta.",
             "closedAndSessionNotOpenTooltip": "No se puede reabrir: La sesión de caja asociada está cerrada/conciliada. Reabra primero la sesión de caja.",
             "accountedOrVoidTooltip": "No se puede reabrir: El ticket está contabilizado o anulado."
         },
@@ -423,7 +434,101 @@
         "reopenSingleSuccessDesc": "El ticket {{ticketNumberOrId}} se ha reabierto correctamente.",
         "reopeningSingleTitle": "Reabriendo ticket",
         "reopeningSingleDesc": "El ticket {{ticketId}} se está reabriendo...",
-        "reopenErrorDesc": "No se pudo reabrir el ticket {{ticketId}}."
+        "reopenErrorDesc": "No se pudo reabrir el ticket {{ticketId}}.",
+        "tabs": {
+            "directPayments": "Pagos Directos",
+            "deferredPayments": "Pagos Aplazados",
+            "noDeferredPayments": "Sin pagos aplazados registrados"
+        }
+    },
+    "cash": {
+        "loadingSessions": "Cargando cajas del día...",
+        "status": {
+            "OPEN": "Abierta",
+            "CLOSED": "Cerrada",
+            "RECONCILED": "Conciliada"
+        },
+        "finder": {
+            "title": "Buscador de cajas",
+            "date": "Fecha",
+            "clinic": "Clínica",
+            "billed": "Facturado",
+            "difference": "Diferencia",
+            "initialCash": "Caja Inicial",
+            "withdrawn": "Retirado",
+            "finalCash": "Caja Final",
+            "status": "Estado",
+            "viewSession": "Ver Caja",
+            "totalBilled": "Total Facturado",
+            "totalDifference": "Total Diferencia",
+            "totalWithdrawn": "Total Retirado",
+        "totalInitialCash": "Total Caja Inicial",
+        "totalFinalCash": "Total Caja Final",
+            "noResults": "No se encontraron cajas para los filtros seleccionados."
+        },
+        "viewCash": "Ver Caja",
+        "dayCashTitle": "Caja del Día {{date}}",
+        "tabs": {
+            "summary": "Resumen",
+            "tickets": "Tickets",
+            "ticketsInSection": "Tickets en esta Sesión"
+        },
+        "summary": {
+            "totalCash": "Total efectivo",
+            "ticketsDay": "Tickets del día",
+            "debtPayments": "Cobros Aplazados",
+            "counted": "Contado",
+            "bankTransfer": "Transferencia",
+            "check": "Cheque",
+            "internalCredit": "Bono/Paquete",
+            "deferredTotal": "Pagos Aplazados",
+            "terminal": "TPV",
+            "totalCard": "Total tarjeta",
+            "totalBilled": "Total Facturado"
+        },
+        "logs": {
+            "title": "Historial de cambios",
+            "none": "Sin cambios",
+            "event": "Evento",
+            "when": "Fecha",
+            "who": "Usuario"
+        },
+        "sidebar": {
+            "title": "Cierre de Caja",
+            "initialCash": "Caja inicial",
+            "manualCashInput": "Efectivo añadido manualmente",
+            "expectedCash": "Total efectivo (Calculado)",
+            "countedCash": "Efectivo contado en caja",
+            "cashExpenses": "Pagos por caja (Gastos)",
+            "difference": "DIFERENCIA EFECTIVO",
+            "finalCount": "RECUENTO CAJA FINAL EFECTIVO",
+            "cashWithdrawal": "Cantidad retirada",
+            "totalFacturado": "Total facturado",
+            "totalDifference": "Diferencia efectiva",
+            "totalWithdrawn": "Total retirado",
+            "nextDayOpening": "Caja final"
+        },
+        "comments": "Comentario supervisor",
+        "reconcileSession": "Conciliar Caja",
+        "reopenSession": "Reabrir Caja",
+        "closeSession": "Cerrar Caja",
+        "verifyDrawer": {
+            "title": "Pagos pendientes",
+            "date": "Fecha",
+            "method": "Método",
+            "actions": "Acciones",
+            "description": "Revisa y confirma transferencias y cheques.",
+            "noPending": "No hay pagos pendientes",
+            "amount": "Importe"
+        },
+        "ticketSummary": {
+            "totalTicket": "Total Ticket",
+            "paid": "Pagado",
+            "deferred": "Aplazado"
+        },
+        "paymentMethods": {
+            "deferredPayment": "Pago Aplazado"
+        }
     },
     "settings": {
         "title": "Configuración",

@@ -253,12 +253,24 @@ export async function POST(request: NextRequest, { params: paramsPromise }: { pa
       const ticketGlobalDiscount = currentTicketState.discountAmount ?? 0;
       const newTicketFinalAmount = newTicketTotalAmount + newTicketTaxAmount - ticketGlobalDiscount; 
 
+      // --- INICIO DE MODIFICACIONES ---
+      const currentPaidAmount = currentTicketState.paidAmount ?? 0;
+      let newPendingAmount = newTicketFinalAmount - currentPaidAmount;
+      newPendingAmount = Math.max(0, newPendingAmount); // Asegurar que no sea negativo
+      const newHasOpenDebt = newPendingAmount > 0;
+      // --- FIN DE MODIFICACIONES ---
+
       return tx.ticket.update({
         where: { id: ticketId }, 
         data: {
           totalAmount: parseFloat(newTicketTotalAmount.toFixed(2)), 
           taxAmount: parseFloat(newTicketTaxAmount.toFixed(2)),     
-          finalAmount: parseFloat(newTicketFinalAmount.toFixed(2)),   
+          finalAmount: parseFloat(newTicketFinalAmount.toFixed(2)),
+          // --- INICIO DE MODIFICACIONES ---
+          // paidAmount no se modifica aquí, solo se usa para calcular pendingAmount
+          pendingAmount: parseFloat(newPendingAmount.toFixed(2)),
+          hasOpenDebt: newHasOpenDebt,
+          // --- FIN DE MODIFICACIONES ---
         },
         include: { 
           client: { select: { id: true, firstName: true, lastName: true, email: true, phone: true, taxId: true, fiscalName: true, address: true, city: true, postalCode: true, countryIsoCode: true }},

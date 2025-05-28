@@ -29,7 +29,22 @@ export async function GET(request: Request, props: { params: Promise<{ id: strin
     return NextResponse.json(cabins);
   } catch (error) {
     console.error(`[API GET /api/clinics/[id]/cabins] Error fetching cabins for clinicId ${clinicId}:`, error);
-    return NextResponse.json({ error: 'Failed to fetch cabins' }, { status: 500 });
+    if (error instanceof Prisma.PrismaClientInitializationError) {
+      // Specific error for DB connection issues (e.g., P1000, P1001)
+      return NextResponse.json(
+        { message: "Cannot connect to the database. Please try again later." },
+        { status: 503 } // 503 Service Unavailable
+      );
+    } else if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      // Handle other known Prisma errors (e.g., unique constraint violation P2002, record not found P2025)
+      // You might want to customize messages based on error.code
+      return NextResponse.json(
+        { message: "A database operational error occurred. Our team has been notified." },
+        { status: 500 }
+      );
+    }
+    // Generic fallback for other types of errors
+    return NextResponse.json({ message: 'Failed to fetch cabins due to an unexpected server error.' }, { status: 500 });
   } finally {
     // await prisma.$disconnect(); // Considerar la gestión de la conexión
   }

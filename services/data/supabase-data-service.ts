@@ -16,19 +16,22 @@
 // FIN TODO
 
 // Comentar importaciones problemáticas
-// import type { DataService, Client } from './data-service.ts'; 
-// import type {
-//   BaseEntity,
-//   Clinica,
-//   EntityDocument,
-//   EntityImage,
-//   Equipo,
-//   FamiliaTarifa,
-//   ScheduleBlock,
-//   Servicio,
-//   Tarifa,
-//   TipoIVA
-// } from './models/interfaces.ts';
+import type { DataService, Client, ScheduleTemplate } from './data-service.ts'; 
+import type {
+  BaseEntity,
+  Clinica,
+  EntityDocument,
+  EntityImage,
+  Equipo,
+  FamiliaTarifa,
+  ScheduleBlock,
+  Servicio,
+  Tarifa,
+  TipoIVA,
+  Producto,
+  Bono,
+  Usuario
+} from './models/interfaces.ts';
 
 // Tipos para la configuración de Supabase
 export interface SupabaseConnectionConfig {
@@ -70,7 +73,6 @@ export class SupabaseDataService implements DataService {
       // Ejemplo:
       // await this.supabase.from(`${this.schema}.clinicas`).select('count').single();
       
-      console.log(`SupabaseDataService: Conectado a schema "${this.schema}" en Supabase`);
       this.initialized = true;
     } catch (error) {
       console.error('Error al inicializar SupabaseDataService:', error);
@@ -106,6 +108,192 @@ export class SupabaseDataService implements DataService {
       console.error(`Error al limpiar datos en schema "${this.schema}":`, error);
       throw error;
     }
+  }
+
+  async clearStorageAndReloadData(): Promise<void> {
+    console.warn("SupabaseDataService.clearStorageAndReloadData not implemented.");
+    return Promise.resolve();
+  }
+
+  async getAllScheduleTemplates(): Promise<ScheduleTemplate[]> {
+    console.warn("SupabaseDataService.getAllScheduleTemplates not implemented.");
+    return Promise.resolve([]);
+  }
+
+  async getScheduleTemplateById(id: string): Promise<ScheduleTemplate | null> {
+    console.warn(`SupabaseDataService.getScheduleTemplateById(${id}) not implemented.`);
+    return Promise.resolve(null);
+  }
+
+  async createScheduleTemplate(template: Omit<ScheduleTemplate, 'id' | 'createdAt' | 'updatedAt'>): Promise<ScheduleTemplate> {
+    console.warn("SupabaseDataService.createScheduleTemplate not implemented.");
+    // This needs to return a mock ScheduleTemplate or reject
+    // For simplicity, let's throw an error, as creating a full mock is complex here.
+    return Promise.reject(new Error('SupabaseDataService.createScheduleTemplate not implemented')); 
+  }
+
+  async updateScheduleTemplate(id: string, template: Partial<ScheduleTemplate>): Promise<ScheduleTemplate | null> {
+    console.warn(`SupabaseDataService.updateScheduleTemplate(${id}) not implemented.`);
+    return Promise.resolve(null);
+  }
+
+  async deleteScheduleTemplate(id: string): Promise<boolean> {
+    console.warn(`SupabaseDataService.deleteScheduleTemplate(${id}) not implemented.`);
+    return Promise.resolve(false);
+  }
+
+  async getScheduleTemplatesByClinic(clinicId: string | null): Promise<ScheduleTemplate[]> {
+    console.warn(`SupabaseDataService.getScheduleTemplatesByClinic(${clinicId ?? 'all'}) not implemented.`);
+    return Promise.resolve([]);
+  }
+
+  async getAllFiles(): Promise<EntityDocument[]> {
+    console.warn("SupabaseDataService.getAllFiles not implemented.");
+    return Promise.resolve([]);
+  }
+
+  async getFileById(id: string): Promise<EntityDocument | null> {
+    console.warn(`SupabaseDataService.getFileById(${id}) not implemented.`);
+    return Promise.resolve(null);
+  }
+
+  async saveFile(file: Omit<EntityDocument, 'id'>): Promise<EntityDocument> {
+    console.warn("SupabaseDataService.saveFile not implemented.");
+    // Requires creating a mock EntityDocument or rejecting
+    // The actual file content (Blob) would likely be part of the 'file' object
+    // or handled by a separate mechanism in a real implementation.
+    return Promise.reject(new Error('SupabaseDataService.saveFile not implemented'));
+  }
+
+  async deleteFile(id: string): Promise<boolean> {
+    console.warn(`SupabaseDataService.deleteFile(${id}) not implemented.`);
+    return Promise.resolve(false);
+  }
+
+  async updateFileMetadata(id: string, metadata: Partial<Omit<EntityDocument, 'id' | 'createdAt' | 'updatedAt' | 'url' | 'size' | 'type' | 'name'>>): Promise<EntityDocument | null> {
+    console.warn(`SupabaseDataService.updateFileMetadata(${id}) not implemented.`);
+    return Promise.resolve(null);
+  }
+
+  async restoreFile(id: string): Promise<boolean> {
+    console.warn(`SupabaseDataService.restoreFile(${id}) not implemented.`);
+    return Promise.resolve(false);
+  }
+
+  async getFilesByFilter(filter: {entityType?: string, entityId?: string, category?: string}): Promise<EntityDocument[]> {
+    console.warn(`SupabaseDataService.getFilesByFilter(${JSON.stringify(filter)}) not implemented.`);
+    return Promise.resolve([]);
+  }
+
+  async getStorageStats(clinicId?: string): Promise<{used: number, byType: Record<string, number>}> {
+    console.warn(`SupabaseDataService.getStorageStats(${clinicId ?? 'all'}) not implemented.`);
+    return Promise.resolve({ used: 0, byType: {} });
+  }
+
+  async getAllProductos(): Promise<Producto[]> {
+    console.warn("SupabaseDataService.getAllProductos not implemented.");
+    return Promise.resolve([]);
+  }
+
+  async getProductoById(id: string): Promise<Producto | null> {
+    console.warn(`SupabaseDataService.getProductoById(${id}) not implemented.`);
+    return Promise.resolve(null);
+  }
+
+  async createProducto(producto: Omit<Producto, 'id'>): Promise<Producto> {
+    console.warn("SupabaseDataService.createProducto not implemented.");
+    // Requires creating a mock Producto or rejecting
+    return Promise.reject(new Error('SupabaseDataService.createProducto not implemented'));
+  }
+
+  async updateProducto(id: string, producto: Partial<Producto>): Promise<Producto | null> {
+    console.warn(`SupabaseDataService.updateProducto(${id}) not implemented.`);
+    return Promise.resolve(null);
+  }
+
+  async deleteProducto(id: string): Promise<boolean> {
+    console.warn(`SupabaseDataService.deleteProducto(${id}) not implemented.`);
+    return Promise.resolve(false);
+  }
+
+  async getProductosByTarifaId(tarifaId: string): Promise<Producto[]> {
+    console.warn(`SupabaseDataService.getProductosByTarifaId(${tarifaId}) not implemented.`);
+    return Promise.resolve([]);
+  }
+
+  async getProductosByFamilia(familia: string): Promise<Producto[]> {
+    console.warn(`SupabaseDataService.getProductosByFamilia(${familia}) not implemented.`);
+    return Promise.resolve([]);
+  }
+
+  async getAllBonos(): Promise<Bono[]> {
+    console.warn("SupabaseDataService.getAllBonos not implemented.");
+    return Promise.resolve([]);
+  }
+
+  async getBonoById(id: string): Promise<Bono | null> {
+    console.warn(`SupabaseDataService.getBonoById(${id}) not implemented.`);
+    return Promise.resolve(null);
+  }
+
+  async createBono(bono: Omit<Bono, 'id'>): Promise<Bono> {
+    console.warn("SupabaseDataService.createBono not implemented.");
+    return Promise.reject(new Error('SupabaseDataService.createBono not implemented'));
+  }
+
+  async updateBono(id: string, bono: Partial<Bono>): Promise<Bono | null> {
+    console.warn(`SupabaseDataService.updateBono(${id}) not implemented.`);
+    return Promise.resolve(null);
+  }
+
+  async deleteBono(id: string): Promise<boolean> {
+    console.warn(`SupabaseDataService.deleteBono(${id}) not implemented.`);
+    return Promise.resolve(false);
+  }
+
+  async getBonosByServicioId(servicioId: string): Promise<Bono[]> {
+    console.warn(`SupabaseDataService.getBonosByServicioId(${servicioId}) not implemented.`);
+    return Promise.resolve([]);
+  }
+
+  async getBonosHabilitados(): Promise<Bono[]> {
+    console.warn("SupabaseDataService.getBonosHabilitados not implemented.");
+    return Promise.resolve([]);
+  }
+
+  async toggleBonoStatus(id: string): Promise<boolean> {
+    console.warn(`SupabaseDataService.toggleBonoStatus(${id}) not implemented.`);
+    return Promise.resolve(false);
+  }
+
+  async getAllUsuarios(): Promise<Usuario[]> {
+    console.warn("SupabaseDataService.getAllUsuarios not implemented.");
+    return Promise.resolve([]);
+  }
+
+  async getUsuarioById(id: string): Promise<Usuario | null> {
+    console.warn(`SupabaseDataService.getUsuarioById(${id}) not implemented.`);
+    return Promise.resolve(null);
+  }
+
+  async createUsuario(usuario: Omit<Usuario, 'id'>): Promise<Usuario> {
+    console.warn("SupabaseDataService.createUsuario not implemented.");
+    return Promise.reject(new Error('SupabaseDataService.createUsuario not implemented'));
+  }
+
+  async updateUsuario(id: string, usuario: Partial<Usuario>): Promise<Usuario | null> {
+    console.warn(`SupabaseDataService.updateUsuario(${id}) not implemented.`);
+    return Promise.resolve(null);
+  }
+
+  async deleteUsuario(id: string): Promise<boolean> {
+    console.warn(`SupabaseDataService.deleteUsuario(${id}) not implemented.`);
+    return Promise.resolve(false);
+  }
+
+  async getUsuariosByClinica(clinicaId: string): Promise<Usuario[]> {
+    console.warn(`SupabaseDataService.getUsuariosByClinica(${clinicaId}) not implemented.`);
+    return Promise.resolve([]);
   }
 
   // #region Operaciones básicas de tabla
@@ -228,7 +416,7 @@ export class SupabaseDataService implements DataService {
   // #region Implementación de la interfaz DataService
   
   // Operaciones con imágenes
-  async getEntityImages(entityType: string, entityId: string): Promise<EntityImage[]> {
+  getEntityImages = async (entityType: string, entityId: string): Promise<EntityImage[]> => {
     return this.getAll<EntityImage>(`entity_images_${entityType}_${entityId}`);
   }
   

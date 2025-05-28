@@ -20,16 +20,18 @@ export interface CashSessionTotalsResponse {
 
 export function useCashSessionTotalsQuery(
   sessionId: string | undefined | null,
-  options?: Omit<UseQueryOptions<CashSessionTotalsResponse, Error>, 'queryKey' | 'queryFn' | 'enabled'>
+  options?: Omit<UseQueryOptions<CashSessionTotalsResponse, Error, CashSessionTotalsResponse>, 'queryKey' | 'queryFn'>
 ) {
-  return useQuery<CashSessionTotalsResponse, Error>({
+  return useQuery<CashSessionTotalsResponse, Error, CashSessionTotalsResponse>({
     queryKey: ['cashSession', 'totalsByPos', sessionId],
     queryFn: async () => {
       if (!sessionId) throw new Error('sessionId required');
       return await api.get<CashSessionTotalsResponse>(`/api/cash-sessions/${sessionId}/totals-by-pos`);
     },
-    enabled: !!sessionId,
     staleTime: CACHE_TIME.CORTO,
+    // default behaviour if not overridden, allow override via options
+    enabled: options?.enabled ?? !!sessionId,
+    keepPreviousData: options?.keepPreviousData ?? false,
     ...options,
   });
-} 
+}

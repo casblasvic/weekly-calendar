@@ -115,6 +115,7 @@ function debounce<F extends (...args: any[]) => any>(func: F, waitFor: number) {
 const menuItems = [
   { id: "datos", label: "Datos de la clínica", icon: Building2 },
   { id: "horarios", label: "Horarios", icon: Clock },
+  { id: "excepciones", label: "Excepciones Horario", icon: Calendar },
   { id: "usuarios", label: "Usuarios", icon: Users },
   { id: "tarifa", label: "Tarifa", icon: Tag },
   { id: "entidades", label: "Entidades bancarias", icon: CreditCard },
@@ -2301,10 +2302,43 @@ export default function ClinicaDetailPage() {
                       </div>
                     </TabsContent>
 
-                    <TabsContent value="excepciones">
-                      <div className="p-6 text-center text-gray-500">
-                        Funcionalidad de excepciones horarias en desarrollo o refactorización.
-                      </div>
+                    <TabsContent value="excepciones" className="mt-4">
+                      <Card>
+                        <CardHeader>
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <CardTitle>Excepciones de Horario</CardTitle>
+                              <CardDescription>
+                                Define periodos específicos donde el horario general no aplica (ej. festivos, vacaciones).
+                                Estos horarios especiales prevalecerán sobre el horario general de la clínica.
+                              </CardDescription>
+                            </div>
+                            <Button size="sm" disabled>
+                              <Plus className="mr-2 h-4 w-4" /> Añadir Nueva Excepción
+                            </Button>
+                          </div>
+                        </CardHeader>
+                        <CardContent>
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Nombre</TableHead>
+                                <TableHead>Fecha Inicio</TableHead>
+                                <TableHead>Fecha Fin</TableHead>
+                                <TableHead>Días Afectados</TableHead>
+                                <TableHead className="text-right">Acciones</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              <TableRow>
+                                <TableCell colSpan={5} className="text-center text-muted-foreground">
+                                  No hay excepciones de horario definidas.
+                                </TableCell>
+                              </TableRow>
+                            </TableBody>
+                          </Table>
+                        </CardContent>
+                      </Card>
                     </TabsContent>
                   </Tabs>
                 </Card>

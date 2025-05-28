@@ -3,7 +3,7 @@
 import * as React from "react"
 import { Clock, Plus, Trash } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Card } from "@/components/ui/card"
+import { Card, CardHeader, CardContent, CardDescription, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -13,8 +13,6 @@ import { Input } from "@/components/ui/input"
 import { useState, useEffect } from "react"
 // Importar tipos necesarios del schema Prisma
 import type { ScheduleTemplateBlock, ClinicScheduleBlock, DayOfWeek as PrismaDayOfWeek, Clinic } from '@prisma/client'
-// Importar Clinica si no está ya importada
-// import type { Clinica } from '@/services/data/models/interfaces'; // Eliminado
 
 export interface ScheduleConfigProps {
   clinic: Clinic | null;
@@ -82,7 +80,8 @@ const convertBlocksToWeekSchedule = (
 // --- Fin Función Helper ---
 
 export function ScheduleConfig({ clinic, onChange, showTemplateSelector = false, isReadOnly = false }: ScheduleConfigProps) {
-  const { templates } = useTemplates()
+  // Datos de ejemplo para la tabla de excepciones (solo para diseño)
+  const { templates, loading: isLoadingTemplates } = useTemplates()
 
   const [currentSchedule, setCurrentSchedule] = useState<WeekSchedule | null>(null);
   const [expandedDays, setExpandedDays] = React.useState<string[]>([])
@@ -199,6 +198,172 @@ export function ScheduleConfig({ clinic, onChange, showTemplateSelector = false,
   const handleTemplateChange = (templateId: string) => {
     const template = templates.find((t) => t.id === templateId)
     // <<< COMENTAR LÓGICA OBSOLETA: Las plantillas no tienen .schedule directamente >>>
+
+  if (isLoadingTemplates) {
+    return <div>Cargando plantillas...</div>;
+  }
+
+  // Eliminada la comprobación de templatesError aquí
+
+  if (!currentSchedule) {
+    return <div>Cargando configuración de horario...</div>; // O un spinner/placeholder más elegante
+  }
+
+  return (
+    <div className="space-y-6">
+      {showTemplateSelector && (
+        <div className="space-y-2">
+          <Label>Seleccionar plantilla</Label>
+          <Select
+            value={clinic?.linkedScheduleTemplateId || ""} // Usar el ID de la plantilla vinculada desde la prop clinic
+            onValueChange={handleTemplateChange}
+            disabled={isReadOnly || isLoadingTemplates}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder={isLoadingTemplates ? "Cargando plantillas..." : "Seleccionar plantilla"} />
+            </SelectTrigger>
+            <SelectContent>
+              {templates?.map((template) => (
+                <SelectItem key={template.id} value={template.id}>
+                  {template.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {clinic?.linkedScheduleTemplateId && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Actualmente usando la plantilla: {templates.find(t => t.id === clinic.linkedScheduleTemplateId)?.name || 'Desconocida'}.
+              Los cambios directos al horario general se guardarán como horario individual y desvincularán la plantilla.
+            </p>
+          )}
+        </div>
+      )}
+
+      {Object.entries(DAYS).map(([dayKey, dayName]) => {
+        const daySchedule = currentSchedule[dayKey as keyof WeekSchedule]
+        if (!daySchedule) return null // Manejo por si currentSchedule no está completamente inicializado
+
+        return (
+          <Card key={dayKey} className="overflow-hidden">
+            <div className="flex items-center justify-between p-4 cursor-pointer bg-gray-50 hover:bg-gray-100">
+              <div className="flex items-center space-x-3">
+                {!isReadOnly && (
+                  <Checkbox
+                    id={`cb-${dayKey}`}
+                    checked={daySchedule.isOpen}
+                    onCheckedChange={(checked) => {
+                      const newDaySchedule = { ...daySchedule, isOpen: !!checked };
+                      if (!!checked && newDaySchedule.ranges.length === 0) {
+                        // Si se marca como abierto y no hay rangos, añadir uno por defecto
+                        newDaySchedule.ranges.push({ start: "09:00", end: "17:00" });
+                      }
+                      updateDaySchedule(dayKey as keyof WeekSchedule, newDaySchedule);
+                    }}
+                    // Deshabilitar si es read-only
+                    disabled={isReadOnly}
+                    className="mr-3"
+                  />
+                )}
+                <Label htmlFor={`cb-${dayKey}`} className="text-lg font-semibold capitalize cursor-pointer">
+                  {dayName}
+                </Label>
+              </div>
+              <div className="flex flex-wrap items-center w-full gap-2 sm:w-auto">
+                <Button variant="ghost" size="sm" className="flex-shrink-0" disabled={isReadOnly}>
+                  {expandedDays.includes(dayKey) ? "Ocultar" : "Mostrar"}
+                </Button>
+                <Select
+                  value=""
+                  onValueChange={(copyFrom) => {
+                    if (copyFrom) {
+                      copySchedule(copyFrom as keyof WeekSchedule, dayKey as keyof WeekSchedule)
+                    }
+                  }}
+                  disabled={isReadOnly}
+                >
+                  <SelectTrigger className="w-full sm:w-[130px]" disabled={isReadOnly}>
+                    <SelectValue placeholder="Copiar de..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(DAYS).map(
+                      ([key, label]) =>
+                        key !== dayKey && (
+                          <SelectItem key={key} value={key} disabled={isReadOnly}>
+                            {label}
+                          </SelectItem>
+                        ),
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {expandedDays.includes(dayKey) && daySchedule.isOpen && (
+              <div className="p-4 space-y-3 border-t">
+                {daySchedule?.ranges.map((range, index) => (
+                  <div key={index} className="flex items-center space-x-2">
+                    <Input
+                      type="time"
+                      value={range.start}
+                      onChange={(e) => {
+                        const newRanges = [...daySchedule.ranges]
+                        newRanges[index] = { ...newRanges[index], start: e.target.value }
+                        updateDaySchedule(dayKey as keyof WeekSchedule, { ...daySchedule, ranges: newRanges })
+                      }}
+                      className="w-32"
+                      // Deshabilitar si es read-only
+                      disabled={isReadOnly} 
+                    />
+                    <span>-</span>
+                    <Input
+                      type="time"
+                      value={range.end}
+                      onChange={(e) => {
+                        const newRanges = [...daySchedule.ranges]
+                        newRanges[index] = { ...newRanges[index], end: e.target.value }
+                        updateDaySchedule(dayKey as keyof WeekSchedule, { ...daySchedule, ranges: newRanges })
+                      }}
+                      className="w-32"
+                      // Deshabilitar si es read-only
+                      disabled={isReadOnly} 
+                    />
+                    {!isReadOnly && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          const newRanges = daySchedule.ranges.filter((_, i) => i !== index)
+                          updateDaySchedule(dayKey as keyof WeekSchedule, { ...daySchedule, ranges: newRanges })
+                        }}
+                        disabled={isReadOnly} 
+                      >
+                        <Trash className="w-4 h-4 text-red-500" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+                {!isReadOnly && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const newRanges = [...daySchedule.ranges, { start: "09:00", end: "17:00" }]
+                      updateDaySchedule(dayKey as keyof WeekSchedule, { ...daySchedule, ranges: newRanges })
+                    }}
+                    className="mt-2"
+                    disabled={isReadOnly} 
+                  >
+                    <Plus className="w-4 h-4 mr-2" /> Añadir Rango
+                  </Button>
+                )}
+              </div>
+            )}
+          </Card>
+        )
+      })}
+    </div>
+  )
+  // <<< COMENTAR LÓGICA OBSOLETA: Las plantillas no tienen .schedule directamente >>>
     /*
     if (template && template.schedule) { // Asumiendo que la plantilla tiene un campo 'schedule' con formato WeekSchedule
         // O si la plantilla tiene .blocks, convertirla

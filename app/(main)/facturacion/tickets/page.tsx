@@ -9,6 +9,7 @@ import { useRouter } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 import { useClinic } from '@/contexts/clinic-context';
 import { useTicketsQuery, PaginatedTicketsResponse, TicketFilters, useReopenTicketMutation } from '@/lib/hooks/use-ticket-query';
+import { useDailyCashSessionQuery } from '@/lib/hooks/use-cash-session-query';
 import { TicketStatus, Client, User, CashSessionStatus } from '@prisma/client';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
@@ -60,8 +61,18 @@ const TicketsTable = ({
   onToggleSelect,
   onToggleSelectAll,
 }: TicketsTableProps) => {
+
+  const isTicketReopenable = (ticket: TicketDisplayData | undefined): boolean => {
+    if (!ticket) return false;
+    const isClosed = ticket.status === TicketStatus.CLOSED;
+    const cashSessionOpenOrNotLinked = !ticket.cashSessionId || 
+                                     (ticket.cashSessionId && ticket.cashSession?.status === CashSessionStatus.OPEN);
+    return isClosed && cashSessionOpenOrNotLinked;
+  };
+
   const router = useRouter();
   const { t } = useTranslation(); // Para internacionalización
+  const returnToPath = "/facturacion/tickets";
   const queryClient = useQueryClient(); // Inicializar queryClient
 
   const [isReopenConfirmOpen, setIsReopenConfirmOpen] = useState(false);
@@ -120,14 +131,13 @@ const TicketsTable = ({
                 {enableSelection && (
                   <TableHead className="w-8">
                     <Checkbox
-                      checked={ticketsData ? ticketsData.filter(t => {
-                        const isContabilizadoOAnulado = t.status === TicketStatus.ACCOUNTED || t.status === TicketStatus.VOID;
-                        const isCerradoYConCajaNoAbierta = t.status === TicketStatus.CLOSED && t.cashSessionId && t.cashSession?.status !== CashSessionStatus.OPEN;
-                        const esReabribleDirectamente = t.status === TicketStatus.CLOSED && (!t.cashSessionId || (t.cashSessionId && t.cashSession?.status === CashSessionStatus.OPEN));
-                        return esReabribleDirectamente;
-                      }).every(t => selectedIds.includes(t.id)) : false}
+                      checked={ticketsData && ticketsData.length > 0 ? ticketsData.filter(isTicketReopenable).every(t => selectedIds.includes(t.id)) && ticketsData.filter(isTicketReopenable).length > 0 : false}
+                      disabled={!ticketsData || ticketsData.filter(isTicketReopenable).length === 0}
                       onCheckedChange={(checked) => {
-                        if (onToggleSelectAll) onToggleSelectAll(!!checked, []);
+                        if (onToggleSelectAll) {
+                          const reopenableTicketIds = ticketsData?.filter(isTicketReopenable).map(t => t.id) || [];
+                          onToggleSelectAll(!!checked, reopenableTicketIds);
+                        }
                       }}
                     />
                   </TableHead>
@@ -194,30 +204,14 @@ const TicketsTable = ({
               {enableSelection && (
                 <TableHead className="w-8">
                   <Checkbox
-                    checked={ticketsData && ticketsData.length > 0 ? ticketsData.filter(t => {
-                      const isContabilizadoOAnulado = t.status === TicketStatus.ACCOUNTED || t.status === TicketStatus.VOID;
-                      const isCerradoYConCajaNoAbierta = t.status === TicketStatus.CLOSED && t.cashSessionId && t.cashSession?.status !== CashSessionStatus.OPEN;
-                      return t.status === TicketStatus.CLOSED && (!t.cashSessionId || (t.cashSessionId && t.cashSession?.status === CashSessionStatus.OPEN)) && !isContabilizadoOAnulado && !isCerradoYConCajaNoAbierta;
-                    }).every(t => selectedIds.includes(t.id)) && ticketsData.filter(t => {
-                      const isContabilizadoOAnulado = t.status === TicketStatus.ACCOUNTED || t.status === TicketStatus.VOID;
-                      const isCerradoYConCajaNoAbierta = t.status === TicketStatus.CLOSED && t.cashSessionId && t.cashSession?.status !== CashSessionStatus.OPEN;
-                      return t.status === TicketStatus.CLOSED && (!t.cashSessionId || (t.cashSessionId && t.cashSession?.status === CashSessionStatus.OPEN)) && !isContabilizadoOAnulado && !isCerradoYConCajaNoAbierta;
-                    }).length > 0 : false}
+                    checked={ticketsData && ticketsData.length > 0 ? ticketsData.filter(isTicketReopenable).every(t => selectedIds.includes(t.id)) && ticketsData.filter(isTicketReopenable).length > 0 : false}
+                    disabled={!ticketsData || ticketsData.filter(isTicketReopenable).length === 0}
                     onCheckedChange={(checked) => {
-                      if (onToggleSelectAll && ticketsData) {
-                        const reabribleIds = ticketsData.filter(t => {
-                          const isContabilizadoOAnulado = t.status === TicketStatus.ACCOUNTED || t.status === TicketStatus.VOID;
-                          const isCerradoYConCajaNoAbierta = t.status === TicketStatus.CLOSED && t.cashSessionId && t.cashSession?.status !== CashSessionStatus.OPEN;
-                          return t.status === TicketStatus.CLOSED && (!t.cashSessionId || (t.cashSessionId && t.cashSession?.status === CashSessionStatus.OPEN)) && !isContabilizadoOAnulado && !isCerradoYConCajaNoAbierta;
-                        }).map(t => t.id);
-                        onToggleSelectAll(!!checked, reabribleIds);
+                      if (onToggleSelectAll) {
+                        const reopenableTicketIds = ticketsData?.filter(isTicketReopenable).map(t => t.id) || [];
+                        onToggleSelectAll(!!checked, reopenableTicketIds);
                       }
                     }}
-                    disabled={!ticketsData || ticketsData.filter(t => {
-                      const isContabilizadoOAnulado = t.status === TicketStatus.ACCOUNTED || t.status === TicketStatus.VOID;
-                      const isCerradoYConCajaNoAbierta = t.status === TicketStatus.CLOSED && t.cashSessionId && t.cashSession?.status !== CashSessionStatus.OPEN;
-                      return t.status === TicketStatus.CLOSED && (!t.cashSessionId || (t.cashSessionId && t.cashSession?.status === CashSessionStatus.OPEN)) && !isContabilizadoOAnulado && !isCerradoYConCajaNoAbierta;
-                    }).length === 0}
                   />
                 </TableHead>
               )}
@@ -230,7 +224,17 @@ const TicketsTable = ({
             </TableRow>
           </TableHeader>
           <TableBody>
-              {ticketsData && ticketsData.map((ticket: TicketDisplayData) => {
+              {ticketsData && ticketsData.map((ticket, index) => {
+                // --- DEBUGGING TICKET REOPENABILITY ---
+                console.log(
+                  `Ticket ID: ${ticket.id}, 
+                   Status: ${ticket.status}, 
+                   CashSessionId: ${ticket.cashSessionId}, 
+                   CashSession Status: ${ticket.cashSession?.status}, 
+                   IsReopenable: ${isTicketReopenable(ticket)}`
+                );
+                // --- END DEBUGGING ---
+
                 // --- INICIO LÓGICA DE CANDADOS MEJORADA ---
                 const isContabilizadoOAnulado = ticket.status === TicketStatus.ACCOUNTED || ticket.status === TicketStatus.VOID;
                 
@@ -258,7 +262,7 @@ const TicketsTable = ({
                   <TableCell>
                     <Checkbox
                       checked={selectedIds.includes(ticket.id)}
-                      disabled={!esReabribleDirectamente}
+                      disabled={!isTicketReopenable(ticket)}
                       onCheckedChange={(checked) => {
                         if (onToggleSelect) onToggleSelect(ticket.id, !!checked);
                       }}
@@ -276,7 +280,7 @@ const TicketsTable = ({
                       variant="ghost" 
                       size="icon" 
                       className="hover:text-blue-600"
-                          onClick={() => router.push(`/facturacion/tickets/editar/${ticket.id}`)}
+                          onClick={() => router.push(`/facturacion/tickets/editar/${ticket.id}?from=${encodeURIComponent(returnToPath)}`)}
                       title={t('tickets.actions.viewTooltip')}
                     >
                           <Eye className="w-4 h-4" />
@@ -288,7 +292,7 @@ const TicketsTable = ({
                           variant="ghost" 
                           size="icon" 
                           className="hover:text-green-600"
-                          onClick={() => router.push(`/facturacion/tickets/editar/${ticket.id}`)}
+                          onClick={() => router.push(`/facturacion/tickets/editar/${ticket.id}?from=${encodeURIComponent(returnToPath)}`)}
                           title={t('tickets.actions.editTooltip')}
                         >
                             <Edit3 className="w-4 h-4" />
@@ -321,46 +325,24 @@ const TicketsTable = ({
                           </Button>
                         )}
 
-                        {/* --- LÓGICA DE CANDADOS REVISADA --- */}
-                        {/* Mostrar Candado INTERACTIVO para Reabrir (Verde/Teal) */}
-                        {esReabribleDirectamente && (
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="text-teal-500 hover:text-teal-700" 
-                            onClick={() => {
+                        {/* --- Unified Reopen/Lock Button --- */}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className={isTicketReopenable(ticket) ? "text-teal-500 hover:text-teal-700" : "text-gray-400 cursor-not-allowed"}
+                          onClick={() => {
+                            if (isTicketReopenable(ticket)) {
                               handleOpenReopenDialog(ticket.id);
-                            }}
-                            title={t('tickets.actions.reopenTooltip')}
-                          >
-                            <Unlock className="w-4 h-4" /> 
+                            }
+                          }}
+                          disabled={!isTicketReopenable(ticket)}
+                          title={isTicketReopenable(ticket) ? t('tickets.actions.reopenTooltip') : 
+                                   (ticket.status !== TicketStatus.CLOSED ? t('tickets.cannotReopenReason.notClosed') : 
+                                    (ticket.cashSessionId && ticket.cashSession?.status !== CashSessionStatus.OPEN ? t('tickets.cannotReopenReason.cashSessionNotOpen', { cashSessionStatus: ticket.cashSession?.status }) : 
+                                     t('tickets.cannotReopenDefaultTooltip')))}
+                        >
+                          {isTicketReopenable(ticket) ? <Unlock className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
                         </Button>
-                        )}
-
-                        {/* Mostrar Candado FIJO Informativo (Bloqueado por Caja - Violeta) */}
-                        {esBloqueadoPorCaja && (
-                           <Button 
-                             variant="ghost" 
-                             size="icon" 
-                             className="text-purple-500 cursor-not-allowed" 
-                             title={t('tickets.actions.closedAndSessionNotOpenTooltip')} // Asumir esta clave de traducción existe
-                           >
-                            <Lock className="w-4 h-4" />
-                      </Button>
-                        )}
-                        
-                        {/* Mostrar Candado FIJO Informativo (Bloqueado Definitivo - Gris) */}
-                        {esBloqueadoDefinitivo && (
-                           <Button 
-                             variant="ghost" 
-                             size="icon" 
-                             className="text-gray-400 cursor-not-allowed"
-                             title={t('tickets.actions.accountedOrVoidTooltip')} // Asumir esta clave de traducción existe
-                           >
-                            <Lock className="w-4 h-4" />
-                      </Button>
-                        )}
-                        {/* --- FIN LÓGICA DE CANDADOS REVISADA --- */}
                   </div>
                 </TableCell>
               </TableRow>
@@ -400,6 +382,16 @@ export default function ListadoTicketsPage() {
   const { t } = useTranslation();
   const { activeClinic } = useClinic();
   const router = useRouter();
+  console.log("Active Clinic on Tickets Page Load:", activeClinic);
+
+  const todayForQuery = format(new Date(), 'yyyy-MM-dd');
+  const { data: todaySessionData, isLoading: isLoadingTodaySession } = useDailyCashSessionQuery(
+    activeClinic?.id,
+    todayForQuery,
+    { enabled: !!activeClinic?.id }
+  );
+
+  const isTodaySessionOpen = todaySessionData?.status === CashSessionStatus.OPEN;
 
   // Estado para la paginación (ejemplo básico, se puede expandir)
   const [pendingPage, setPendingPage] = useState(1);
@@ -501,8 +493,14 @@ export default function ListadoTicketsPage() {
     queryClient.invalidateQueries({ queryKey: ['tickets'] }); // Invalida todas las listas de tickets
   };
 
-  // --- FOOTER CON BOTONES ---
-  const FooterButtons = () => {
+  interface FooterButtonsProps {
+  isTodaySessionOpen: boolean;
+  isLoadingTodaySession: boolean;
+  activeClinicId: string | undefined;
+}
+
+// --- FOOTER CON BOTONES ---
+  const FooterButtons = ({ isTodaySessionOpen, isLoadingTodaySession, activeClinicId }: FooterButtonsProps) => {
     const todayStr = new Date().toISOString().substring(0,10); // YYYY-MM-DD
     return (
       <footer className="fixed bottom-0 z-40 border-t bg-white/80 backdrop-blur-md shadow-[0_-2px_10px_rgba(0,0,0,0.05)]"
@@ -514,7 +512,8 @@ export default function ListadoTicketsPage() {
               variant="outline"
               size="sm"
               className="gap-1 text-xs text-gray-700 border-gray-300 h-8 hover:bg-gray-50"
-              onClick={() => router.push(`/caja/${todayStr}?clinicId=${activeClinic?.id || ''}`)}
+              onClick={() => router.push(`/caja/${todayStr}?clinicId=${activeClinicId || ''}&returnTo=/facturacion/tickets`)}
+              disabled={isLoadingTodaySession || !isTodaySessionOpen}
             >
               <Wallet className="h-3.5 w-3.5" /> {t('cash.viewCash', 'Ver caja')}
             </Button>
@@ -588,7 +587,11 @@ export default function ListadoTicketsPage() {
         </Button>
       </div>
 
-      <FooterButtons />
+      <FooterButtons 
+        isTodaySessionOpen={isTodaySessionOpen} 
+        isLoadingTodaySession={isLoadingTodaySession} 
+        activeClinicId={activeClinic?.id}
+      />
     </div>
   );
 } 

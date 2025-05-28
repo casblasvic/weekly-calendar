@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerAuthSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { z } from 'zod';
-import { TicketStatus, Prisma, DiscountType, VATType, CashSessionStatus } from '@prisma/client';
+import { TicketStatus, Prisma, DiscountType, VATType, CashSessionStatus, TicketItemType } from '@prisma/client';
 // Importaremos BatchUpdateTicketPayload desde el hook o lo definiremos aquí con Zod
 
 // Esquema para los parámetros de la ruta
@@ -23,7 +23,7 @@ const batchUpdateTicketPayloadSchema = z.object({
     discountReason: z.string().max(255).nullable().optional(),
   }).optional(),
   itemsToAdd: z.array(z.object({
-    itemType: z.enum(['SERVICE', 'PRODUCT', 'BONO_DEFINITION', 'PACKAGE_DEFINITION']),
+    itemType: z.nativeEnum(TicketItemType),
     itemId: z.string().cuid(),
     quantity: z.number().min(0.01),
     unitPrice: z.number().min(0).optional(),
@@ -65,7 +65,7 @@ const batchUpdateTicketPayloadSchema = z.object({
 
 async function getPriceAndVatDetails(
   tx: Prisma.TransactionClient, 
-  itemType: 'PRODUCT' | 'SERVICE' | 'BONO_DEFINITION' | 'PACKAGE_DEFINITION', 
+  itemType: TicketItemType, 
   itemId: string, 
   clinicTariffId: string, 
   systemId: string,
@@ -87,7 +87,7 @@ async function getPriceAndVatDetails(
     throw new Error("No se pudo determinar un tipo de IVA por defecto para el sistema o la tarifa de la clínica.");
   }
 
-  if (itemType === 'PRODUCT') {
+  if (itemType === TicketItemType.PRODUCT) {
     const product = await tx.product.findUnique({ 
       where: { id: itemId, systemId: systemId },
       include: { 
@@ -111,7 +111,7 @@ async function getPriceAndVatDetails(
     if (vatFromTariffPrice?.id && vatFromTariffPrice?.rate !== undefined) resolvedVatRateDetails = vatFromTariffPrice;
     else if (vatFromProductBase?.id && vatFromProductBase?.rate !== undefined) resolvedVatRateDetails = vatFromProductBase;
 
-  } else if (itemType === 'SERVICE') {
+  } else if (itemType === TicketItemType.SERVICE) {
     const service = await tx.service.findUnique({ 
       where: { id: itemId, systemId: systemId },
       include: { 
@@ -135,7 +135,7 @@ async function getPriceAndVatDetails(
     if (vatFromTariffPrice?.id && vatFromTariffPrice?.rate !== undefined) resolvedVatRateDetails = vatFromTariffPrice;
     else if (vatFromServiceBase?.id && vatFromServiceBase?.rate !== undefined) resolvedVatRateDetails = vatFromServiceBase;
 
-  } else if (itemType === 'BONO_DEFINITION') {
+  } else if (itemType === TicketItemType.BONO_DEFINITION) {
     const bonoDef = await tx.bonoDefinition.findUnique({
       where: { id: itemId, systemId: systemId },
       include: {
@@ -155,7 +155,7 @@ async function getPriceAndVatDetails(
     else if (bonoDef.vatType) resolvedVatRateDetails = bonoDef.vatType;
     else resolvedVatRateDetails = defaultVatForComplexItems;
 
-  } else if (itemType === 'PACKAGE_DEFINITION') {
+  } else if (itemType === TicketItemType.PACKAGE_DEFINITION) {
     const packageDef = await tx.packageDefinition.findUnique({
       where: { id: itemId, systemId: systemId },
       include: {
@@ -180,10 +180,10 @@ async function getPriceAndVatDetails(
   
   if (!resolvedVatRateDetails?.id || resolvedVatRateDetails.rate === undefined ) {
     // Si es BONO o PACKAGE y no tienen IVA explícito, usar el defaultVatForComplexItems
-    if ((itemType === 'BONO_DEFINITION' || itemType === 'PACKAGE_DEFINITION') && defaultVatForComplexItems) {
+    if ((itemType === TicketItemType.BONO_DEFINITION || itemType === TicketItemType.PACKAGE_DEFINITION) && defaultVatForComplexItems) {
         resolvedVatRateDetails = defaultVatForComplexItems;
     } else {
-        throw new Error(`El ${itemType.toLowerCase()} '${description}' no tiene un tipo de IVA configurado o por defecto.`);
+        throw new Error(`El ${itemType} '${description}' no tiene un tipo de IVA configurado o por defecto.`);
     }
   }
   return { resolvedUnitPrice, resolvedVatRateDetails, description, originalItemPrice };
@@ -363,10 +363,10 @@ export async function PUT(request: NextRequest, { params: paramsPromise }: { par
           const ticketItemDataForCreation: Prisma.TicketItemUncheckedCreateInput = {
             ticketId: ticket.id,
             itemType: itemToAdd.itemType,
-            ...(itemToAdd.itemType === 'PRODUCT' && { productId: itemToAdd.itemId }),
-            ...(itemToAdd.itemType === 'SERVICE' && { serviceId: itemToAdd.itemId }),
-            ...(itemToAdd.itemType === 'BONO_DEFINITION' && { bonoDefinitionId: itemToAdd.itemId }),
-            ...(itemToAdd.itemType === 'PACKAGE_DEFINITION' && { packageDefinitionId: itemToAdd.itemId }),
+            ...(itemToAdd.itemType === TicketItemType.PRODUCT && { productId: itemToAdd.itemId }),
+            ...(itemToAdd.itemType === TicketItemType.SERVICE && { serviceId: itemToAdd.itemId }),
+            ...(itemToAdd.itemType === TicketItemType.BONO_DEFINITION && { bonoDefinitionId: itemToAdd.itemId }),
+            ...(itemToAdd.itemType === TicketItemType.PACKAGE_DEFINITION && { packageDefinitionId: itemToAdd.itemId }),
             description: itemDescription,
             quantity: quantity,
             unitPrice: resolvedUnitPrice,
@@ -711,6 +711,27 @@ export async function PUT(request: NextRequest, { params: paramsPromise }: { par
         // dataToUpdate.paidAmountDirectly, dataToUpdate.dueAmount, y dataToUpdate.hasOpenDebt ya están seteados.
 
         console.log("[API BatchUpdate] Recalculated Totals => totalAmount (subtotal neto línea):", dataToUpdate.totalAmount, "taxAmount:", dataToUpdate.taxAmount, "finalAmount (a pagar):", dataToUpdate.finalAmount, "paidAmountDirectly:", dataToUpdate.paidAmountDirectly, "dueAmount (aplazado):", dataToUpdate.dueAmount, "hasOpenDebt:", dataToUpdate.hasOpenDebt);
+
+        // Recalcular la suma total de todos los pagos DEBIT asociados al ticket
+        // Esto asegura que paidAmount refleje el estado real después de eliminaciones/adiciones.
+        const allTicketPayments = await tx.payment.findMany({
+          where: {
+            ticketId: ticket.id,
+            type: 'DEBIT' // Considerar solo ingresos para el paidAmount general
+          }
+        });
+        const totalActuallyPaid = allTicketPayments.reduce((sum, payment) => sum + payment.amount, 0);
+
+        dataToUpdate.paidAmount = parseFloat(totalActuallyPaid.toFixed(2));
+
+        // Asegurarse de que finalAmount es un número para el cálculo de pendingAmount
+        const finalAmountForPendingCalc = (typeof dataToUpdate.finalAmount === 'number') 
+                                          ? dataToUpdate.finalAmount 
+                                          : (ticket.finalAmount ?? 0); // Usar el valor existente si no se recalculó
+
+        dataToUpdate.pendingAmount = parseFloat((finalAmountForPendingCalc - totalActuallyPaid).toFixed(2));
+
+        console.log(`[API BatchUpdate] Recalculated general paidAmount: ${dataToUpdate.paidAmount}, pendingAmount: ${dataToUpdate.pendingAmount}`);
         
         await tx.ticket.update({
           where: { id: ticketId },

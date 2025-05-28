@@ -40,6 +40,24 @@ async function getData(serviceId: string, systemId: string) {
         service: { select: { id: true, name: true } },
         product: { select: { id: true, name: true } },
         vatType: { select: { id: true, name: true, rate: true } },
+        settings: { // <<< AÑADIDO
+            select: {
+                isActive: true,
+                validityDays: true,
+                pointsAwarded: true,
+            }
+        },
+        tariffPrices: { // <<< AÑADIDO
+           select: {
+                // price: true, // Descomentar si el precio de la tarifa es necesario aquí
+                tariff: {
+                    select: {
+                        id: true,
+                        name: true,
+                    }
+                }
+            }
+        },
       },
     });
 
@@ -50,10 +68,8 @@ async function getData(serviceId: string, systemId: string) {
         service: bono.service ?? null, 
         product: bono.product ?? null,
         vatType: bono.vatType ?? null,
-        // Añade las otras relaciones requeridas por el tipo si existen en tu modelo
-        // Por ejemplo: instances: [], tariffPrices: [] etc. Si BonoList las requiere.
-        // Si BonoList no las necesita, puedes simplificar esto.
-        // Por ahora, asumimos que BonoList puede manejar el tipo básico más las inclusiones hechas.
+        settings: bono.settings ?? null, // <<< AÑADIDO (o manejar si es null y el tipo no lo permite)
+        tariffPrices: bono.tariffPrices || [], // <<< AÑADIDO (o manejar si es undefined y el tipo no lo permite)
     }));
 
 

@@ -1,8 +1,9 @@
 "use client";
 
-import React, { use, useState, useEffect } from 'react';
+import React, { use, useState, useEffect, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
+import type { Decimal } from '@prisma/client/runtime/library';
 import { useClinic } from '@/contexts/clinic-context';
 import { 
   useDailyCashSessionQuery, 
@@ -16,7 +17,7 @@ import {
 } from '@/lib/hooks/use-cash-session-query';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ArrowLeft, Wallet, CreditCard, Landmark, Ticket as TicketIcon, Gift, CircleDollarSign, Printer, Info, X, Check, Save, Loader2, ChevronRight, ChevronDown, Eye, ShieldCheck, RefreshCcw } from 'lucide-react';
+import { ArrowLeft, Wallet, CreditCard, Landmark, Ticket as TicketIcon, Gift, CircleDollarSign, FileText, Printer, Info, X, Check, Save, Loader2, ChevronRight, ChevronDown, Eye, ShieldCheck, RefreshCcw } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -46,9 +47,12 @@ export default function CashPage({ params }: CashPageProps) {
   const { toast } = useToast();
 
   const { date } = use(params); // Unwrap
+  const returnToQueryParam = searchParams.get('returnTo');
   const clinicId = searchParams.get('clinicId') || activeClinic?.id;
 
   const { data: sessionData, isLoading, isError, refetch } = useDailyCashSessionQuery(clinicId, date);
+  const clinicIdQueryParam = searchParams.get('clinicId');
+  const returnToPath = `/caja/${date}${clinicIdQueryParam ? `?clinicId=${clinicIdQueryParam}` : ''}`;
   const session = sessionData; // Para no renombrar en todo el código por ahora
 
   const [closeFormData, setCloseFormData] = useState<Partial<CloseCashSessionPayload>>({});
@@ -56,6 +60,7 @@ export default function CashPage({ params }: CashPageProps) {
   const closeSessionMutation = useCloseCashSessionMutation();
   const reopenMutation = useReopenCashSessionMutation();
   const reconcileMutation = useReconcileCashSessionMutation();
+  const [isClosingSession, setIsClosingSession] = useState(false);
 
   // Verificación de pagos
   const [drawerFilters, setDrawerFilters] = useState<{methodType: PaymentMethodType | null, posTerminalId?: string|null}>({methodType: null});
@@ -64,10 +69,37 @@ export default function CashPage({ params }: CashPageProps) {
   const { data: pendingPayments = [], refetch: refetchPending } = usePendingPaymentVerificationsQuery({ clinicId, sessionId: session?.id || undefined, methodType: drawerFilters.methodType || undefined, posTerminalId: drawerFilters.posTerminalId });
   const verifyMutation = useVerifyPaymentMutation();
 
-  const { data: totals } = useCashSessionTotalsQuery(session?.id);
+  // const { data: totalsData, isLoading: isLoadingTotals } = useCashSessionTotalsQuery(session?.id); // Removed duplicate declaration
+
+  const { data: totals, isFetching: isTotalsFetching } = useCashSessionTotalsQuery(session?.id, { enabled: !!session?.id });
+  const totalsData = totals as import('@/lib/hooks/use-cash-session-totals').CashSessionTotalsResponse | undefined; // This is the totalsData to be used
+
+  const totalFacturado = useMemo(() => {
+    if (!session || !session.ticketsAccountedInSession) return 0;
+    return session.ticketsAccountedInSession.reduce((sum, ticket) => {
+      const amount = ticket.finalAmount;
+      let finalAmountValue = 0;
+
+      if (typeof amount === 'number') {
+        finalAmountValue = amount;
+      } else if (amount !== null && typeof amount === 'object' && 'toNumber' in amount) {
+        // Safely access .toNumber() after confirming amount is a non-null object with this property
+        finalAmountValue = (amount as Decimal).toNumber();
+      }
+      // If amount is null, or an object without 'toNumber', finalAmountValue remains 0.
+      return sum + finalAmountValue;
+    }, 0);
+  }, [session]);
+
   const [countedByPos, setCountedByPos] = useState<Record<string,string>>({});
   const [countedTransfer, setCountedTransfer] = useState('');
   const [countedCheck, setCountedCheck] = useState('');
+  // notesUI state removed, notes are now handled via closeFormData.notes
+  // directCashPayoutsUI state removed, will be a derived const using closeFormData.directCashPayouts
+
+  // Determinar estado de la sesión para lógicas tempranas
+  const currentStatus = session?.status;
+  const isSessionOpen = currentStatus === CashSessionStatus.OPEN;
 
   // Sincronizar countedCard total según recuento por TPV
   useEffect(() => {
@@ -75,25 +107,104 @@ export default function CashPage({ params }: CashPageProps) {
     setCloseFormData(prev => ({ ...prev, countedCard: total }));
   }, [countedByPos]);
 
+  useEffect(() => {
+    const getNumber = (value: Decimal | number | string | null | undefined): number | null => {
+      if (value === null || typeof value === 'undefined') return null;
+      if (typeof value === 'number') return value;
+      if (typeof value === 'string') {
+        const numericValue = parseFloat(value);
+        return isNaN(numericValue) ? null : numericValue;
+      }
+      // Explicitly check if it's a Decimal instance
+      if (typeof value === 'object' && value !== null && typeof (value as any).toNumber === 'function' && typeof (value as any).toFixed === 'function') { // Duck typing for Decimal
+        return value.toNumber();
+      }
+      // If it's none of the above, it's an unexpected type. Log an error and return 0.
+      console.error(`[CashPage:getNumber] Unexpected value type: ${typeof value}, value:`, value);
+      return 0;
+    };
+
+    const getStringFromDecimalOrNumber = (value: Decimal | number | null | undefined): string => {
+      if (value === null || typeof value === 'undefined') return '';
+      // If it's Decimal, convert to string. If number, convert to string.
+      return value.toString();
+    };
+
+    if (session) {
+      setCloseFormData(prev => ({
+        ...prev,
+        countedCash: getNumber(session.countedCash) ?? 0,
+        manualCashInput: getNumber(session.manualCashInput) ?? 0,
+        cashWithdrawals: getNumber(session.cashWithdrawals) ?? 0,
+        cashExpenses: getNumber(session.cashExpenses) ?? 0,
+        notes: session.notes ?? '',
+        countedCard: getNumber(session.countedCard) ?? 0,
+        countedBankTransfer: getNumber(session.countedBankTransfer) ?? 0,
+        countedCheck: getNumber(session.countedCheck) ?? 0,
+        countedInternalCredit: getNumber(session.countedInternalCredit) ?? 0,
+        // countedOther: session.countedOther, // Handle Prisma.JsonValue if necessary
+      }));
+
+      // Update countedTransfer and countedCheck states
+      if (session.countedBankTransfer !== null && typeof session.countedBankTransfer !== 'undefined') {
+        setCountedTransfer(getStringFromDecimalOrNumber(session.countedBankTransfer));
+      } else if (!isSessionOpen) { // Only clear if session is closed and no value from session
+        setCountedTransfer('');
+      }
+      // If session is open and session.countedBankTransfer is null,
+      // the CountedTransfer input will be empty unless the user types.
+
+      if (session.countedCheck !== null && typeof session.countedCheck !== 'undefined') {
+        setCountedCheck(getStringFromDecimalOrNumber(session.countedCheck));
+      } else if (!isSessionOpen) { // Only clear if session is closed and no value from session
+        setCountedCheck('');
+      }
+      // If session is open and session.countedCheck is null,
+      // the CountedCheck input will be empty unless the user types.
+
+    } else {
+      // No session, reset all form data and related states
+      setCloseFormData(prev => ({
+        ...prev,
+        countedCash: null,
+        manualCashInput: null,
+        cashWithdrawals: null,
+        cashExpenses: null,
+        notes: '',
+        countedCard: null,
+        countedBankTransfer: null,
+        countedCheck: null,
+        countedInternalCredit: null,
+      }));
+      setCountedTransfer('');
+      setCountedCheck('');
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, isSessionOpen, activeClinic?.currency]);
+
   const formatCurrency = (val: number) => new Intl.NumberFormat('es-ES', { style: 'currency', currency: activeClinic?.currency || 'EUR' }).format(val);
 
   // --- NUEVOS CÁLCULOS BASADOS EN totals (totales por TPV) ---
-  const cardTotalsAvailable = !!totals;
+  // Solo mostramos totales si:
+  // 1) Existe un sessionId válido
+  // 2) Ya tenemos datos (totalsData)
+  // 3) La query ha terminado de cargar para ese sessionId
+  const cardTotalsAvailable = !!session?.id && !!totalsData && !isTotalsFetching;
 
-  const totalCardAmountFromTotals = cardTotalsAvailable ? totals!.cardByPos.reduce((sum, pos) => sum + pos.expectedTotal, 0) : null;
-  const cardDetailsFromTotals = cardTotalsAvailable ? totals!.cardByPos.flatMap(pos => [
+  const totalCardAmountFromTotals = cardTotalsAvailable ? totalsData!.cardByPos.reduce((sum, pos) => sum + pos.expectedTotal, 0) : null;
+  const cardDetailsFromTotals = cardTotalsAvailable ? totalsData!.cardByPos.flatMap(pos => [
     { label: `${t('cash.summary.terminal', 'TPV')}: ${pos.posName}`, value: pos.expectedTotal, isHeader: true },
     { label: t('cash.summary.ticketsDay', 'Tickets del día'), value: pos.expectedTickets, isSubDetail: true },
     { label: t('cash.summary.debtPayments', 'Cobros Aplazados'), value: pos.expectedDeferred, isSubDetail: true },
   ]) : [];
 
-  const transferTotalsFromTotals = cardTotalsAvailable ? totals!.transfer : null;
-  const checkTotalsFromTotals = cardTotalsAvailable ? totals!.check : null;
+  const transferTotalsFromTotals = cardTotalsAvailable ? totalsData!.transfer : null;
+  const checkTotalsFromTotals = cardTotalsAvailable ? totalsData!.check : null;
 
   const transferAmount = transferTotalsFromTotals?.expectedTotal ?? 0;
   const checkAmount = checkTotalsFromTotals?.expectedTotal ?? 0;
 
-  const cardHighlight = cardTotalsAvailable ? totals!.cardByPos.some(pos => pos.expectedDeferred > 0) : false;
+  const cardHighlight = cardTotalsAvailable ? totalsData!.cardByPos.some(pos => pos.expectedDeferred > 0) : false;
 
   // --- FIN NUEVOS CÁLCULOS ---
 
@@ -166,7 +277,13 @@ export default function CashPage({ params }: CashPageProps) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen gap-4">
         <p className="text-red-500">{t('cash.errorLoading', 'Error cargando caja')}</p>
-        <Button onClick={() => router.back()}><ArrowLeft className="w-4 h-4 mr-1" />{t('common.back')}</Button>
+        <Button onClick={() => {
+          if (returnToQueryParam) {
+            router.push(returnToQueryParam);
+          } else {
+            router.push('/facturacion/cajas-dia');
+          }
+        }}><ArrowLeft className="w-4 h-4 mr-1" />{t('common.back')}</Button>
       </div>
     );
   }
@@ -178,24 +295,41 @@ export default function CashPage({ params }: CashPageProps) {
         <p className="max-w-md text-center text-gray-600">
           {t('cash.noSessionToday', 'No existe una sesión de caja abierta para esta clínica en la fecha seleccionada.')}
         </p>
-        <Button onClick={() => router.back()} variant="outline" size="sm"><ArrowLeft className="w-3.5 h-3.5 mr-1" />{t('common.back')}</Button>
+        <Button onClick={() => {
+          if (returnToQueryParam) {
+            router.push(returnToQueryParam);
+          } else {
+            router.push('/facturacion/cajas-dia');
+          }
+        }} variant="outline" size="sm"><ArrowLeft className="w-3.5 h-3.5 mr-1" />{t('common.back')}</Button>
       </div>
     );
   }
 
   const handleInputChange = (field: keyof CloseCashSessionPayload, value: string | number) => {
-    setCloseFormData(prev => ({ ...prev, [field]: typeof value === 'string' ? parseFloat(value) || 0 : value }));
+    if (field === 'notes') {
+      setCloseFormData(prev => ({ ...prev, notes: value as string }));
+    } else {
+      // For numeric fields, parse to float or set to null if input is empty/invalid
+      const numericValue = parseFloat(value as string);
+      setCloseFormData(prev => ({
+        ...prev,
+        [field]: isNaN(numericValue) ? null : numericValue,
+      }));
+    }
   };
 
   const handleCloseSession = async () => {
+    setIsClosingSession(true);
     if (!session) return;
 
     // Asegurar que contamos efectivo mínimo
-    const countedCashValue = (closeFormData.countedCash ?? parseFloat(countedCashUI as any)) || 0;
-    if (isNaN(countedCashValue)) {
-      toast({ variant:'destructive', title:t('cash.error','Falta efectivo contado')});
+    if (closeFormData.countedCash === null || typeof closeFormData.countedCash === 'undefined') {
+      toast({ variant:'destructive', title:t('cash.error','Falta efectivo contado'), description: t('cash.error.countedCashRequired', 'Debe introducir el efectivo contado.')});
+      setIsClosingSession(false); // Reset loading state
       return;
     }
+    const countedCashValue = closeFormData.countedCash;
 
     const payload: CloseCashSessionPayload = {
       countedCash: countedCashValue,
@@ -204,8 +338,10 @@ export default function CashPage({ params }: CashPageProps) {
       countedCheck: closeFormData.countedCheck ?? undefined,
       countedInternalCredit: closeFormData.countedInternalCredit ?? undefined,
       countedOther: closeFormData.countedOther ?? undefined,
-      countedCashWithdrawal: closeFormData.countedCashWithdrawal ?? undefined,
-      notes: closeFormData.notes ?? undefined,
+      manualCashInput: closeFormData.manualCashInput ?? null,
+      cashWithdrawals: closeFormData.cashWithdrawals ?? null,
+      cashExpenses: closeFormData.cashExpenses ?? null, // Added cashExpenses to payload
+      notes: closeFormData.notes ?? null,
     };
 
     try {
@@ -222,31 +358,66 @@ export default function CashPage({ params }: CashPageProps) {
       if (!closeSessionMutation.isError) {
         toast({ variant: 'destructive', title: 'Error inesperado', description: error.message || 'Ocurrió un error' });
       }
+    } finally {
+      setIsClosingSession(false);
     }
   };
 
   // Valores para UI, considerando que `session` puede ser null inicialmente
   const openingBalanceCash = session?.openingBalanceCash ?? 0;
-  const expectedCash = session?.expectedCash ?? 0;
+  const serverExpectedCash = session?.expectedCash ?? 0; // Renamed to avoid conflict, used for initial/closed state
   const paymentTotals: CashSessionPaymentTotal[] = session?.paymentTotals || [];
+  console.log('[FE DEBUG] Raw session.paymentTotals:', JSON.stringify(session?.paymentTotals, null, 2));
   const ticketsInSession: CashSessionTicket[] = session?.ticketsAccountedInSession || [];
 
-  const currentStatus = session?.status;
-  const isSessionOpen = currentStatus === CashSessionStatus.OPEN;
+  // Calculate true total for cash payments by summing all relevant entries
+  const totalCashAmount = paymentTotals
+    .filter(pt => pt.paymentMethodType === PaymentMethodType.CASH)
+    .reduce((sum, pt) => sum + (pt.totalAmount || 0), 0);
+
+  const totalCashDirectAmount = paymentTotals
+    .filter(pt => pt.paymentMethodType === PaymentMethodType.CASH)
+    .reduce((sum, pt) => sum + (pt.directAmount || 0), 0);
+
+  const totalCashDebtPaymentAmount = paymentTotals
+    .filter(pt => pt.paymentMethodType === PaymentMethodType.CASH)
+    .reduce((sum, pt) => sum + (pt.debtPaymentAmount || 0), 0);
+
+  console.log('[FE DEBUG] Calculated totalCashAmount:', totalCashAmount);
+  console.log('[FE DEBUG] Calculated totalCashDirectAmount:', totalCashDirectAmount);
+  console.log('[FE DEBUG] Calculated totalCashDebtPaymentAmount:', totalCashDebtPaymentAmount);
 
   // Para los inputs, usar valores de la sesión si está cerrada/reconciliada, o del form si está abierta
   const countedCashUI = isSessionOpen ? (closeFormData.countedCash ?? '') : (session?.countedCash ?? '');
-  const differenceCashUI = isSessionOpen ? ((closeFormData.countedCash ?? 0) - expectedCash) : (session?.differenceCash ?? 0);
-  const cashWithdrawalUI = isSessionOpen ? (closeFormData.countedCashWithdrawal ?? '') : ((session as any)?.cashWithdrawal ?? '');
-  const nextDayOpeningCashUI = isSessionOpen ? ((closeFormData.countedCash ?? 0) - (closeFormData.countedCashWithdrawal ?? 0)) : ((session?.countedCash ?? 0) - ((session as any)?.cashWithdrawal ?? 0));
+  const manualCashInputUI = isSessionOpen ? (closeFormData.manualCashInput?.toString() ?? '') : (session?.manualCashInput?.toString() ?? '');
+  const cashExpensesUI = isSessionOpen ? (closeFormData.cashExpenses?.toString() ?? '') : ''; // Assuming cashExpenses are not stored directly on session for closed view, or adjust if they are
+  const cashCardExpectedAmount = totalCashAmount;
+  const cashCardDifference = (parseFloat(countedCashUI.toString() || '0')) - cashCardExpectedAmount;
+  // differenceCashUI (sidebar) should reflect the specific cash reconciliation, not the overall session difference including opening balance for this display.
+  // This specific cashCardDifference is for the summary card, which is now removed for CASH method.
+  // const differenceCashUI_old = isSessionOpen ? cashCardDifference : (session?.differenceCash ?? 0);
 
-  const notesUI = isSessionOpen ? (closeFormData.notes ?? '') : (session?.notes ?? '');
+  // New live calculations for the sidebar
+  const totalCashPaymentAmount = paymentTotals.find(pt => pt.paymentMethodType === PaymentMethodType.CASH)?.totalAmount || 0;
+  
+  const liveExpectedCashInDrawer = 
+    (session?.openingBalanceCash ?? 0) + 
+    (parseFloat(closeFormData.manualCashInput?.toString() ?? '0') || 0) + 
+    totalCashPaymentAmount - 
+    (parseFloat(closeFormData.cashExpenses?.toString() ?? '0') || 0);
+
+  const liveDifferenceCash = (closeFormData.countedCash ?? 0) - liveExpectedCashInDrawer;
+  const transferDifference = (parseFloat(countedTransfer) || 0) - transferAmount;
+  const checkDifference = (parseFloat(countedCheck) || 0) - checkAmount;
+  const cashWithdrawalUI = isSessionOpen ? (closeFormData.cashWithdrawals ?? '') : (session?.cashWithdrawals ?? '');
+  const nextDayOpeningCashUI = isSessionOpen ? ((parseFloat(countedCashUI.toString()) || 0) - (parseFloat(cashWithdrawalUI.toString()) || 0)) : ((session?.countedCash ?? 0) - (session?.cashWithdrawals ?? 0));
 
   const hasPendingTransfer = pendingPayments.some(p=>p.paymentMethodDefinition.type==='BANK_TRANSFER');
   const hasPendingCheck = pendingPayments.some(p=>p.paymentMethodDefinition.type==='CHECK');
 
   return (
-    <div className="container px-4 py-6 mx-auto space-y-6">
+    <div className="flex flex-col h-full">
+      <div className="flex-grow overflow-y-auto p-4 space-y-6">
       <h1 className="mb-4 text-2xl font-semibold">{t('cash.dayCashTitle', { date: format(new Date(date), 'dd/MM/yyyy', { locale: es }) })}</h1>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -259,28 +430,32 @@ export default function CashPage({ params }: CashPageProps) {
             </TabsList>
             <TabsContent value="summary" className="pt-4">
               <div className="grid gap-4 md:grid-cols-2">
+                {/* Total Facturado Card */}
+                <SummaryCard
+                  title={t('cash.summary.totalBilled', 'Total Facturado')}
+                  amount={totalFacturado}
+                  icon={FileText}
+                  details={[]}
+                  highlight={false}
+                  className="bg-indigo-50 border-indigo-200"
+                />
                 {/* Efectivo */}
                 <SummaryCard 
                   title={t('cash.summary.totalCash', 'Total efectivo')} 
-                  amount={paymentTotals.find(pt => pt.paymentMethodType === PaymentMethodType.CASH)?.totalAmount || 0}
+                  amount={totalCashAmount}
                   icon={Wallet}
+                  // @ts-ignore - Adding for debug
+                  _debug_props={{amount: totalCashAmount, direct: totalCashDirectAmount, debt: totalCashDebtPaymentAmount, paymentTotals: session?.paymentTotals?.filter(pt => pt.paymentMethodType === PaymentMethodType.CASH) }}
                   details={[
-                    { label: t('cash.summary.ticketsDay', 'Tickets del día'), value: paymentTotals.find(pt => pt.paymentMethodType === PaymentMethodType.CASH)?.directAmount || 0 },
-                    { label: t('cash.summary.debtPayments', 'Cobros Aplazados'), value: paymentTotals.find(pt => pt.paymentMethodType === PaymentMethodType.CASH)?.debtPaymentAmount || 0 },
+                    { label: t('cash.summary.ticketsDay', 'Tickets del día'), value: totalCashDirectAmount },
+                    { label: t('cash.summary.debtPayments', 'Cobros Aplazados'), value: totalCashDebtPaymentAmount },
                   ]}
-                  highlight={paymentTotals.find(pt => pt.paymentMethodType === PaymentMethodType.CASH)?.totalAmount !== paymentTotals.find(pt => pt.paymentMethodType === PaymentMethodType.CASH)?.directAmount}
+                  highlight={totalCashAmount !== totalCashDirectAmount}
                   onViewDetails={hasCashPayments ? ()=>{ setDrawerFilters({methodType: PaymentMethodType.CASH}); setIsVerifyDrawerOpen(true);} : undefined}
-                  extra={(
-                    <div className="flex items-center justify-between gap-1 mt-2 text-xs">
-                      <span>{t('cash.summary.counted','Contado')}:</span>
-                      <Input type="number" value={countedCashUI} onChange={e=>handleInputChange('countedCash', e.target.value)} className="w-20 text-xs h-7" step="0.01" placeholder="0.00" />
-                      <span className={`font-medium ${differenceCashUI===0?'text-green-600':differenceCashUI>0?'text-blue-600':'text-red-600'}`}>{formatCurrency(differenceCashUI)}</span>
-                    </div>
-                  )}
                 />
                 {/* Tarjeta con TPVs */}
                 <CardTPVSummary
-                  totals={totals?.cardByPos || []}
+                  totals={cardTotalsAvailable ? totalsData!.cardByPos : []}
                   countedByPos={countedByPos}
                   onCountedChange={(posId, val) => {
                     setCountedByPos(prev => ({ ...prev, [posId]: val }));
@@ -308,7 +483,7 @@ export default function CashPage({ params }: CashPageProps) {
                     <div className="flex items-center justify-between gap-1 mt-2 text-xs">
                       <span>{t('cash.summary.counted','Contado')}:</span>
                       <Input type="number" value={countedTransfer} onChange={e=>{setCountedTransfer(e.target.value); setCloseFormData(prev=>({...prev, countedBankTransfer: parseFloat(e.target.value)||0}));}} className="w-20 text-xs h-7" step="0.01" placeholder="0.00" />
-                      <span className="font-medium">{formatCurrency((parseFloat(countedTransfer)||0) - transferAmount)}</span>
+                      <span className={`font-medium ${transferDifference===0?'text-green-600':transferDifference>0?'text-blue-600':'text-red-600'}`}>{formatCurrency(transferDifference)}</span>
                     </div>
                   )}
                 />
@@ -326,7 +501,7 @@ export default function CashPage({ params }: CashPageProps) {
                     <div className="flex items-center justify-between gap-1 mt-2 text-xs">
                       <span>{t('cash.summary.counted','Contado')}:</span>
                       <Input type="number" value={countedCheck} onChange={e=>{setCountedCheck(e.target.value); setCloseFormData(prev=>({...prev, countedCheck: parseFloat(e.target.value)||0}));}} className="w-20 text-xs h-7" step="0.01" placeholder="0.00" />
-                      <span className="font-medium">{formatCurrency((parseFloat(countedCheck)||0) - checkAmount)}</span>
+                      <span className={`font-medium ${checkDifference===0?'text-green-600':checkDifference>0?'text-blue-600':'text-red-600'}`}>{formatCurrency(checkDifference)}</span>
                     </div>
                   )}
                 />
@@ -342,30 +517,31 @@ export default function CashPage({ params }: CashPageProps) {
                 />
                 <SummaryCard 
                   title={t('cash.summary.deferredTotal','Pagos Aplazados')} 
-                  amount={totals?.deferred.amount || 0} 
+                  amount={cardTotalsAvailable ? totalsData!.deferred.amount : 0} 
                   icon={CircleDollarSign} 
                   details={[]} 
                   highlight={false}
-                  onViewDetails={(totals?.deferred.amount||0)>0 ? ()=>{ setDrawerFilters({ methodType: PaymentMethodType.DEFERRED_PAYMENT }); setIsVerifyDrawerOpen(true);} : undefined }
+                  onViewDetails={cardTotalsAvailable && totalsData!.deferred.amount>0 ? ()=>{ setDrawerFilters({ methodType: PaymentMethodType.DEFERRED_PAYMENT }); setIsVerifyDrawerOpen(true);} : undefined }
                 />
+
               </div>
             </TabsContent>
             <TabsContent value="tickets" className="pt-4 space-y-4">
               <h3 className="font-semibold text-gray-700 text-md">{t('cash.tabs.ticketsInSection','Tickets en esta Sesión')}</h3>
-              <CashSessionTicketsTable tickets={ticketsInSession || []} currency={activeClinic?.currency || 'EUR'} />
+              <CashSessionTicketsTable tickets={ticketsInSession || []} currency={activeClinic?.currency || 'EUR'} returnToPath={returnToPath} />
             </TabsContent>
           </Tabs>
         </div>
 
         {/* Sidebar (1/3) */}
-        <div className="space-y-6 lg:sticky lg:top-6"> {/* Sidebar fija en scroll largo */}
+        <div className="space-y-6"> {/* Sidebar ya no es sticky, se desplaza con el contenido */}
           <UserInfoCard user={session?.user} />
 
           {/* Historial de cambios */}
           <Accordion type="single" collapsible className="bg-white border rounded-lg shadow">
             <AccordionItem value="item-1">
               <AccordionTrigger className="flex items-center justify-between px-4 py-2 text-sm font-medium">
-                <span>{t('cash.logs','Historial de cambios')}</span>
+                <span>{t('cash.logs.title','Historial de cambios')}</span>
                 <span className="ml-2 text-xs text-gray-500">{logs.length}</span>
               </AccordionTrigger>
               <AccordionContent className="px-4">
@@ -399,49 +575,78 @@ export default function CashPage({ params }: CashPageProps) {
             <h3 className="mb-3 text-sm font-semibold">{t('cash.sidebar.title', 'Cierre de Caja')}</h3>
             <div className="space-y-3 text-xs">
               <InfoRow label={t('cash.sidebar.initialCash', 'Caja inicial')} value={formatCurrency(openingBalanceCash)} />
-              <InfoRow label={t('cash.sidebar.expectedCash', 'Total efectivo (Calculado)')} value={formatCurrency(expectedCash)} />
-              
-              <InputRow label={t('cash.sidebar.countedCash', 'Pagos por caja')} type="number" value={countedCashUI} onChange={e => handleInputChange('countedCash', e.target.value)} disabled={!isSessionOpen} />
-              <InfoRow label={t('cash.sidebar.difference', 'DIFERENCIA EFECTIVO')} value={formatCurrency(differenceCashUI)} className={`font-bold ${differenceCashUI === 0 ? 'text-green-600' : (differenceCashUI > 0 ? 'text-blue-600' : 'text-red-600')}`} />
-              
-              <InfoRow label={t('cash.sidebar.finalCount', 'RECUENTO CAJA FINAL EFECTIVO')} value={formatCurrency(parseFloat(countedCashUI.toString()) || 0)} className="font-semibold" />
-              <InputRow label={t('cash.sidebar.cashWithdrawal', 'Cantidad retirada')} type="number" value={cashWithdrawalUI} onChange={e => handleInputChange('countedCashWithdrawal', e.target.value)} disabled={!isSessionOpen} />
+              <InputRow label={t('cash.sidebar.manualCashInput', 'Efectivo añadido manualmente')} type="number" value={closeFormData.manualCashInput ?? ''} onChange={e => handleInputChange('manualCashInput', e.target.value)} disabled={!isSessionOpen} />
+              <InfoRow label={t('cash.sidebar.totalCashCollected', 'Total efectivo cobrado')} value={formatCurrency(session?.paymentTotals?.find(pt => pt.paymentMethodType === PaymentMethodType.CASH)?.totalAmount || 0)} />
+              <InfoRow label={t('cash.sidebar.expectedCash', 'Total efectivo (Calculado)')} value={formatCurrency(isSessionOpen ? liveExpectedCashInDrawer : serverExpectedCash)} />
+              <InputRow label={t('cash.sidebar.cashExpenses', 'Pagos por caja (Gastos)')} type="number" value={closeFormData.cashExpenses ?? ''} onChange={e => handleInputChange('cashExpenses', e.target.value)} disabled={!isSessionOpen} />
+              <InputRow label={t('cash.sidebar.countedCash', 'Efectivo contado en caja')} type="number" value={closeFormData.countedCash ?? ''} onChange={e => handleInputChange('countedCash', e.target.value)} disabled={!isSessionOpen} />
+              <InfoRow label={t('cash.sidebar.difference', 'DIFERENCIA EFECTIVO')} value={formatCurrency(isSessionOpen ? liveDifferenceCash : (session?.differenceCash ?? 0))} className={`font-bold ${(isSessionOpen ? liveDifferenceCash : (session?.differenceCash ?? 0)) === 0 ? 'text-green-600' : ((isSessionOpen ? liveDifferenceCash : (session?.differenceCash ?? 0)) > 0 ? 'text-blue-600' : 'text-red-600')}`} />
+              {/* RECUENTO CAJA FINAL EFECTIVO: Simplemente el efectivo contado */}
+              <InfoRow 
+                label={t('cash.sidebar.finalCount', 'RECUENTO CAJA FINAL EFECTIVO')} 
+                value={formatCurrency(closeFormData.countedCash ?? 0)} 
+                className={`font-semibold ${ (closeFormData.countedCash ?? 0) === 0 ? 'text-black' : ((closeFormData.countedCash ?? 0) > 0 ? 'text-blue-600' : 'text-red-600')}`}
+              />
+
+              <InputRow label={t('cash.sidebar.cashWithdrawal', 'Cantidad retirada')} type="number" value={closeFormData.cashWithdrawals ?? ''} onChange={e => handleInputChange('cashWithdrawals', e.target.value)} disabled={!isSessionOpen} />
 
               {/* Resumen Totales */}
               {!isSessionOpen && (
                 <div className="pt-2 mt-3 space-y-1 border-t">
-                  <InfoRow label={t('cash.sidebar.totalFacturado','Total facturado')}
-                    value={formatCurrency(paymentTotals.reduce((s,pt)=>s+pt.totalAmount,0))} />
-                  <InfoRow label={t('cash.sidebar.totalDifference','Diferencia efectiva')} value={formatCurrency(differenceCashUI)} />
-                  <InfoRow label={t('cash.sidebar.totalWithdrawn','Total retirado')} value={formatCurrency((session as any)?.cashWithdrawal || 0)} />
+                  {/* "Total facturado", "Diferencia efectiva" and "Total retirado" have been removed from here as per user request */}
+                  {/* The new "Total Facturado" card is now shown in the main payment methods summary area */}
                 </div>
               )}
             </div>
             <div className="pt-3 mt-4 border-t">
-              <InfoRow label={t('cash.sidebar.nextDayOpening', 'Caja inicial día siguiente')} value={formatCurrency(nextDayOpeningCashUI)} isLarge />
+              {/* CAJA INICIAL DÍA SIGUIENTE: (RECUENTO CAJA FINAL EFECTIVO) - (Cantidad retirada) */}
+              <InfoRow 
+                label={t('cash.sidebar.nextDayOpening', 'Caja inicial día siguiente')} 
+                value={formatCurrency((closeFormData.countedCash ?? 0) - (closeFormData.cashWithdrawals ?? 0))} 
+                isLarge 
+                className={`${ ((closeFormData.countedCash ?? 0) - (closeFormData.cashWithdrawals ?? 0)) === 0 ? 'text-black' : (((closeFormData.countedCash ?? 0) - (closeFormData.cashWithdrawals ?? 0)) > 0 ? 'text-blue-600' : 'text-red-600')}`}
+              />
             </div>
             {/* Comentarios supervisor */}
             <div className="mt-4">
               <Label className="text-xs">{t('cash.comments','Comentario supervisor')}</Label>
-              <Textarea value={notesUI} onChange={e=>handleInputChange('notes',e.target.value)} className="h-20 mt-1" />
+              <Textarea value={closeFormData.notes ?? ''} onChange={e=>handleInputChange('notes',e.target.value)} className="h-20 mt-1" disabled={!isSessionOpen} />
             </div>
           </div>
         </div>
       </div>
 
-      {/* Footer fijo usando estrategia de Layout */}
-      <footer 
-        className="fixed bottom-0 right-0 z-40 flex items-center justify-end p-3 border-t shadow-sm bg-white/80 backdrop-blur-sm"
-        style={{ left: 'var(--sidebar-width, 0px)', width: 'calc(100% - var(--sidebar-width, 0px))' }}
-      >
-        <Button variant="outline" onClick={() => router.back()} size="sm"><ArrowLeft className="w-3.5 h-3.5 mr-1" />{t('common.back')}</Button>
+      </div> {/* Closing the flex-grow overflow-y-auto p-4 space-y-6 div */}
+      <footer className="sticky bottom-0 bg-white p-4 border-t z-10 shadow-md flex items-center justify-end w-full">
+        <Button variant="outline" onClick={() => {
+          if (returnToQueryParam) {
+            router.push(returnToQueryParam);
+          } else {
+            router.push('/facturacion/cajas-dia');
+          }
+        }} size="sm"><ArrowLeft className="w-3.5 h-3.5 mr-1" />{t('common.back')}</Button>
         <Button variant="outline" onClick={() => alert('Imprimir')} size="sm" className="ml-2"><Printer className="w-3.5 h-3.5 mr-1" />{t('common.print')}</Button>
         <Button variant="outline" onClick={() => alert('Comentarios')} size="sm" disabled className="ml-2"><Info className="w-3.5 h-3.5 mr-1" />{t('common.comments')}</Button>
         {isSessionOpen && (
-          <Button onClick={() => {
-            if(window.confirm(t('cash.closeModal.title','Confirmar Cierre de Caja')+"?")) handleCloseSession();
-          }} size="sm" className="ml-2 text-white bg-purple-600 hover:bg-purple-700" disabled={pendingPayments.some(p=>p.cashSessionId===session.id)}>
-            <Save className="w-3.5 h-3.5 mr-1" />{t('cash.closeSession', 'Cerrar Caja')}
+          <Button 
+            onClick={() => {
+              if(window.confirm(t('cash.closeModal.title','Confirmar Cierre de Caja')+"?")) handleCloseSession();
+            }} 
+            size="sm" 
+            className="ml-2 text-white bg-purple-600 hover:bg-purple-700"
+            disabled={isClosingSession || !!session?.hasEarlierOpenSession}
+          >
+            {isClosingSession ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
+                {t('cash.closingSession', 'Cerrando...')}
+              </>
+            ) : (
+              <>
+                <Save className="w-3.5 h-3.5 mr-1" />
+                {t('cash.closeSession', 'Cerrar Caja')}
+              </>
+            )}
           </Button>
         )}
         {currentStatus === CashSessionStatus.CLOSED && (
@@ -471,15 +676,29 @@ export default function CashPage({ params }: CashPageProps) {
         <DrawerContent className="max-h-[80vh] overflow-y-auto">
           <DrawerHeader>
             <DrawerTitle>
-              {drawerFilters.methodType===PaymentMethodType.DEFERRED_PAYMENT ? t('cash.verifyDrawer.deferredTitle','Pagos aplazados en tickets') : `${t('cash.verifyDrawer.title','Pagos pendientes')} - ${drawerFilters.methodType || 'ALL'}`}
+              {
+                isSessionOpen
+                  ? (drawerFilters.methodType === PaymentMethodType.DEFERRED_PAYMENT 
+                      ? t('cash.drawer.deferredBreakdownTitle', 'Desglose de Pagos Aplazados') 
+                      : `${t('cash.drawer.breakdownTitle', 'Desglose de Pagos')} - ${t(`enums.paymentMethodType.${drawerFilters.methodType}`, drawerFilters.methodType || 'Todos')}`)
+                  : (drawerFilters.methodType === PaymentMethodType.DEFERRED_PAYMENT 
+                      ? t('cash.verifyDrawer.deferredTitle', 'Pagos aplazados en tickets') 
+                      : `${t('cash.verifyDrawer.title', 'Pagos pendientes')} - ${t(`enums.paymentMethodType.${drawerFilters.methodType}`, drawerFilters.methodType || 'Todos')}`)
+              }
             </DrawerTitle>
             <DrawerDescription className="flex items-center justify-between">
-              {t('cash.verifyDrawer.description','Revisa y confirma transferencias y cheques.')}
+              {
+                isSessionOpen 
+                  ? (drawerFilters.methodType === PaymentMethodType.DEFERRED_PAYMENT 
+                      ? t('cash.drawer.deferredBreakdownDescription', 'Detalle de los pagos aplazados registrados en tickets para esta sesión.')
+                      : t('cash.drawer.breakdownDescription', 'Detalle de los pagos registrados para el método seleccionado en esta sesión.'))
+                  : t('cash.verifyDrawer.description','Revisa y confirma transferencias y cheques.')
+              }
               <Button variant="ghost" size="icon" onClick={()=>refetchPending()}><RefreshCcw className="w-4 h-4" /></Button>
             </DrawerDescription>
           </DrawerHeader>
           <div className="p-4 space-y-2 text-xs">
-            {pendingPayments.length===0 ? (
+            {isSessionOpen || pendingPayments.length === 0 ? (
               <div className="py-4">
                 <p className="text-center text-gray-500">{t('cash.verifyDrawer.noPending','No hay pagos pendientes')}</p>
                 {/* Mostrar pagos del día si existen */}
@@ -556,14 +775,15 @@ interface SummaryCardProps {
   onViewDetails?: () => void;
   highlight?: boolean;
   extra?: React.ReactNode;
+  className?: string;
 }
-const SummaryCard: React.FC<SummaryCardProps> = ({ title, amount, icon: Icon, details, onViewDetails, highlight, extra }) => {
+const SummaryCard: React.FC<SummaryCardProps> = ({ title, amount, icon: Icon, details, onViewDetails, highlight, extra, className }) => {
   const { t } = useTranslation();
   const { activeClinic } = useClinic();
   const formatCurrency = (val: number) => new Intl.NumberFormat('es-ES', { style: 'currency', currency: activeClinic?.currency || 'EUR' }).format(val);
 
   return (
-    <div className={`border rounded-lg p-4 bg-white shadow-sm ${highlight ? 'border-red-500 animate-pulse' : ''}`}>
+    <div className={`border rounded-lg p-4 bg-white shadow-sm ${highlight ? 'ring-2 ring-offset-1 ring-yellow-400' : ''} ${className || ''}`}>
       <div className="flex items-center justify-between mb-1">
         <h3 className="flex items-center text-sm font-medium text-gray-700">
           <Icon className="w-4 h-4 mr-2 text-purple-600" /> {title}
@@ -645,8 +865,9 @@ const UserInfoCard: React.FC<UserInfoCardProps> = ({ user }) => {
 interface CashSessionTicketsTableProps {
   tickets: CashSessionTicket[] | undefined;
   currency: string;
+  returnToPath: string;
 }
-const CashSessionTicketsTable: React.FC<CashSessionTicketsTableProps> = ({ tickets, currency }) => {
+const CashSessionTicketsTable: React.FC<CashSessionTicketsTableProps> = ({ tickets, currency, returnToPath }) => {
   const { t } = useTranslation();
   const router = useRouter();
   const formatCurrency = (val: number) => new Intl.NumberFormat('es-ES', { style: 'currency', currency: currency || 'EUR' }).format(val);
@@ -671,8 +892,9 @@ const CashSessionTicketsTable: React.FC<CashSessionTicketsTableProps> = ({ ticke
   }
 
   return (
-    <ScrollArea className="h-[300px] border rounded-md">
-      <Table className="w-full text-xs">
+    <>
+      <ScrollArea className="h-[300px] border rounded-md">
+        <Table className="w-full text-xs">
         <TableHeader>
           <TableRow>
             <th className="w-4" />
@@ -690,7 +912,7 @@ const CashSessionTicketsTable: React.FC<CashSessionTicketsTableProps> = ({ ticke
               <TableCell className="px-1 font-medium">{ticket.ticketNumber || '-'}</TableCell>
               <TableCell className="flex items-center justify-between px-1">
                 <span>{ticket.client ? `${ticket.client.firstName} ${ticket.client.lastName || ''}`.trim() : '-'}</span>
-                <Button variant="ghost" size="icon" onClick={(e)=>{e.stopPropagation(); router.push(`/facturacion/tickets/editar/${ticket.id}`)}}>
+                <Button variant="ghost" size="icon" onClick={(e)=>{e.stopPropagation(); router.push(`/facturacion/tickets/editar/${ticket.id}?from=${encodeURIComponent(returnToPath)}`)}}>
                   <Eye className="w-4 h-4 text-purple-600" />
                 </Button>
               </TableCell>
@@ -698,15 +920,15 @@ const CashSessionTicketsTable: React.FC<CashSessionTicketsTableProps> = ({ ticke
             </TableRow>,
             expanded[ticket.id] && (
               <TableRow key={ticket.id+"-exp"} className="bg-gray-50/60">
-                <TableCell colSpan={3} className="p-3">
+                <TableCell colSpan={4} className="p-3">
                   <div className="grid gap-2 text-xs sm:grid-cols-3">
                     <div className="p-2 bg-white border rounded shadow-sm"><p className="text-[10px] text-gray-500">{t('cash.ticketSummary.totalTicket')}</p><p className="font-semibold">{formatCurrency(ticket.finalAmount)}</p></div>
-                    <div className="p-2 bg-white border rounded shadow-sm"><p className="text-[10px] text-gray-500">{t('cash.ticketSummary.paid')}</p><p className="font-semibold">{formatCurrency(getPaidAmount(ticket))}</p></div>
+                    <div className="p-2 bg-white border rounded shadow-sm"><p className="text-[10px] text-gray-500">{t('cash.ticketSummary.paid','Pagado')}</p><p className="font-semibold">{formatCurrency(getPaidAmount(ticket))}</p></div>
                     <div className="p-2 bg-white border rounded shadow-sm"><p className="text-[10px] text-gray-500">{t('cash.ticketSummary.deferred')}</p><p className="font-semibold">{formatCurrency(ticket.dueAmount || 0)}</p></div>
                   </div>
                   {ticket.payments?.length ? (
-                    <div className="grid gap-2 mt-2 sm:grid-cols-2 md:grid-cols-3">
-                      {ticket.payments.map(pay => (
+                    <div className="mt-3 space-y-1">
+                      {ticket.payments.filter(pay => pay.paymentMethodDefinition.name !== t('cash.paymentMethods.deferredPayment')).map(pay => (
                         <div key={pay.id} className="flex items-center justify-between border rounded p-1 text-[10px] bg-white shadow-sm">
                           <span className="truncate">{pay.paymentMethodDefinition.name}{pay.posTerminal?.name ? ` (${pay.posTerminal.name})` : ''}</span>
                           <span className="font-medium">{formatCurrency(pay.amount)}</span>
@@ -720,12 +942,13 @@ const CashSessionTicketsTable: React.FC<CashSessionTicketsTableProps> = ({ ticke
           ])}
         </TableBody>
       </Table>
-      {/* Controles de paginación */}
-      <div className="flex items-center justify-between px-1 mt-2 text-xs">
-        <div className="flex items-center gap-1">
-          <span>{t('common.rowsPerPage','Filas:')}</span>
-          <select value={rowsPerPage} onChange={e=>{setRowsPerPage(parseInt(e.target.value)); setPage(1);}} className="border rounded px-1 py-0.5 text-xs bg-white focus:outline-none">
-            {[5,10,25,50].map(n=><option key={n} value={n}>{n}</option>)}
+    </ScrollArea>
+    {/* Controles de paginación */}
+    <div className="flex items-center justify-between px-1 mt-2 text-xs">
+      <div className="flex items-center gap-1">
+        <span>{t('common.rowsPerPage','Filas:')}</span>
+        <select value={rowsPerPage} onChange={e=>{setRowsPerPage(parseInt(e.target.value)); setPage(1);}} className="border rounded px-1 py-0.5 text-xs bg-white focus:outline-none">
+          {[5,10,25,50].map(n=><option key={n} value={n}>{n}</option>)}
           </select>
         </div>
         <div className="flex items-center gap-2">
@@ -738,7 +961,7 @@ const CashSessionTicketsTable: React.FC<CashSessionTicketsTableProps> = ({ ticke
           </Button>
         </div>
       </div>
-    </ScrollArea>
+    </>
   );
 };
 

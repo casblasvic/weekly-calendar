@@ -44,7 +44,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     initializeDataService(config)
       .then(() => {
         setIsDataServiceInitialized(true);
-        console.log("Servicio de datos inicializado correctamente.");
       })
       .catch(error => {
         console.error('Error al inicializar el servicio de datos:', error);

@@ -14,11 +14,13 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     where: {
       systemId,
       OR: [
-        { cashSessionId: sessionId },
+        // 1) Pagos cuyo ticket pertenece a la caja
         { ticket: { cashSessionId: sessionId } },
+        // 2) Pagos sin ticket (movimientos manuales) asociados directamente a la caja
+        { ticketId: null, cashSessionId: sessionId },
       ],
     },
-    include: { paymentMethodDefinition: true, posTerminal: true }
+    include: { paymentMethodDefinition: true, posTerminal: true },
   });
 
   // Helper maps

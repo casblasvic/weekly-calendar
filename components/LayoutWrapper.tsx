@@ -119,6 +119,16 @@ export function LayoutWrapper({ children }: LayoutWrapperProps) {
       lastPathname.current = pathname;
     }
   }, [pathname, isMobile, isSidebarCollapsed]);
+
+  // Actualizar la variable CSS --sidebar-width cuando el estado del sidebar cambie
+  useEffect(() => {
+    const root = document.documentElement;
+    if (isMobile) {
+      root.style.setProperty('--sidebar-width', isSidebarVisible ? '3.5rem' : '0px');
+    } else {
+      root.style.setProperty('--sidebar-width', isSidebarCollapsed ? '3.5rem' : '16rem');
+    }
+  }, [isMobile, isSidebarVisible, isSidebarCollapsed]);
   
   // Manejar el cambio de visibilidad de la barra lateral en móvil
   const toggleMobileSidebar = useCallback(() => {
@@ -240,7 +250,7 @@ export function LayoutWrapper({ children }: LayoutWrapperProps) {
 
       {/* Área principal CON overflow-auto y estilos calculados */}
       <main
-        className="flex-1 overflow-auto" 
+        className="flex-1" 
         style={mainStyle} // <<< Usar el objeto style calculado
       >
         {/* Renderizar children directamente */} 

@@ -54,10 +54,8 @@ export interface MenuItem {
   href?: string
   submenu?: MenuItem[]
   permissions?: string[]
-  isNew?: boolean
   isExternal?: boolean
-  badge?: number | string | undefined
-  hasAlertIndicator?: boolean
+  badge?: number | string | boolean | undefined
   activePaths?: string[]
   dataTestId?: string
 }

@@ -20,6 +20,7 @@ if (!i18n.isInitialized) {
       debug: process.env.NODE_ENV === 'development', // Activar debug en desarrollo
       fallbackLng: 'es', // Idioma de respaldo si el detectado no está disponible
       // lng: 'es', // Opcional: Forzar un idioma inicial específico
+      returnObjects: true,
       interpolation: {
         escapeValue: false, // React ya escapa por defecto
       },

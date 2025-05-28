@@ -70,7 +70,7 @@ export function AgendaLayout({
 
   return (
     <div className="flex flex-col h-screen bg-white">
-      <header className="px-4 py-3 z-30 relative bg-white border-b">
+      <header className="px-4 py-3 relative bg-white border-b">
         <div className="px-4 py-3">
           <h1 className="text-2xl font-medium mb-4">{title}</h1>
           <DateDisplay date={date} />

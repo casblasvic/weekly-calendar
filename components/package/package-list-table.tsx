@@ -433,9 +433,11 @@ export default function PackageListTable({
         }
         
         setSelectedPackageDefinitionIds(selectedIds);
+    };
+    
     if (error && !isLoading) {
         return <div className="p-4 text-red-600">{t('common.errors.loadingError')}: {error}</div>;
-     }
+    }
 
     return (
         <>
@@ -570,7 +572,7 @@ export default function PackageListTable({
                     <Button onClick={handleAddSelectedToTariff} disabled={isAddingPackages || selectedCount === 0}>
                         {isAddingPackages ? t('common.adding') : `${t('common.addSelected')} ${selectedCount > 0 ? `(${selectedCount})` : ''}`}
                         <Plus className="ml-2 h-4 w-4" />
-                </Button>
+                    </Button>
                 </div>
                 ) : (
                     null 

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 import { useClinic } from '@/contexts/clinic-context';
@@ -17,6 +17,7 @@ import {
   type CashSessionFilters
 } from '@/lib/hooks/use-cash-session-query';
 import { ArrowLeft, Wallet, CreditCard, Landmark, Ticket as TicketIcon, Gift, CircleDollarSign, Printer, Info, X, Check, Save, Loader2, Search, Download, CalendarDays, Filter, HelpCircle, Eye } from 'lucide-react';
+import { DateRangePickerPopover } from '@/components/date-range-picker-popover';
 import { Table, TableBody, TableCell, TableHeader, TableRow, TableHead } from '@/components/ui/table';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -41,6 +42,12 @@ export default function ListadoCajasDiaPage() {
   const [statusFilter, setStatusFilter] = useState<CashSessionStatus | 'ALL'>('ALL');
   const [clinicFilter, setClinicFilter] = useState<string | undefined>(activeClinic?.id); // Inicializar con activeClinic?.id o undefined
 
+  useEffect(() => {
+    if (!clinicFilter && activeClinic?.id) {
+      setClinicFilter(activeClinic.id);
+    }
+  }, [activeClinic?.id]);
+
   const buildFilters = (): CashSessionFilters => {
     const activeFilters: CashSessionFilters = {
       page: 1, // TODO: Implementar paginación
@@ -53,25 +60,44 @@ export default function ListadoCajasDiaPage() {
       activeFilters.status = statusFilter;
     }
     if (dateRange?.from) {
-      activeFilters.startDate = format(dateRange.from, 'yyyy-MM-dd');
+      // Asegurar que la fecha tenga el formato correcto para la API
+      const startDate = new Date(dateRange.from);
+      startDate.setHours(0, 0, 0, 0);
+      activeFilters.startDate = format(startDate, 'yyyy-MM-dd');
     } else {
       delete activeFilters.startDate;
     }
     if (dateRange?.to) {
-      activeFilters.endDate = format(dateRange.to, 'yyyy-MM-dd');
+      // Asegurar que la fecha tenga el formato correcto para la API
+      const endDate = new Date(dateRange.to);
+      endDate.setHours(23, 59, 59, 999);
+      activeFilters.endDate = format(endDate, 'yyyy-MM-dd');
     } else {
       if (dateRange?.from && !dateRange?.to) {
-        activeFilters.endDate = format(dateRange.from, 'yyyy-MM-dd');
+        // Si solo hay fecha de inicio, usar la misma como fecha fin
+        const sameDate = new Date(dateRange.from);
+        sameDate.setHours(23, 59, 59, 999);
+        activeFilters.endDate = format(sameDate, 'yyyy-MM-dd');
       } else {
         delete activeFilters.endDate;
       }
     }
+    console.log('Aplicando filtros:', activeFilters);
     return activeFilters;
   };
 
   const filters = buildFilters();
 
   const { data: cashSessionsResponse, isLoading, isError, error, refetch } = useCashSessionsQuery(filters, {});
+
+  // Mientras no tengamos clínica activa mostramos spinner
+  if (!clinicFilter) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-150px)]">
+        <Loader2 className="w-12 h-12 mb-4 text-purple-600 animate-spin" />
+      </div>
+    );
+  }
 
   const formatCurrency = (val: number) => new Intl.NumberFormat('es-ES', { style: 'currency', currency: activeClinic?.currency || 'EUR' }).format(val);
 
@@ -96,9 +122,14 @@ export default function ListadoCajasDiaPage() {
   const cashSessions = cashSessionsResponse?.data || [];
 
   // Calcular totales para el pie de la tabla
-  const totalFacturadoGeneral = cashSessions.reduce((sum, s) => sum + ((s as any).totalFacturadoEnSesion || 0), 0);
-  const totalDiferenciaGeneral = cashSessions.reduce((sum, s) => sum + (s.differenceCash || 0), 0);
-  const totalRetiradoGeneral = cashSessions.reduce((sum, s) => sum + ((s as any).cashWithdrawal || 0), 0);
+  const totalFacturadoGeneral = cashSessions.reduce((sum, s) => {
+    const sessionFacturado = (s as any).ticketsAccountedInSession?.reduce((ticketSum, ticket: CashSessionTicket) => ticketSum + Number(ticket.finalAmount ?? 0), 0) ?? 0;
+    return sum + sessionFacturado;
+  }, 0);
+  const totalDiferenciaGeneral = cashSessions.reduce((sum, s) => sum + Number(s.differenceCash ?? 0), 0);
+  const totalCajaInicialGeneral = cashSessions.reduce((sum, s) => sum + (Number(s.openingBalanceCash ?? 0) + (Number(s.manualCashInput ?? 0) > 0 ? Number(s.manualCashInput ?? 0) : 0)), 0);
+  const totalRetiradoGeneral = cashSessions.reduce((sum, s) => sum + Number(s.cashWithdrawals ?? 0), 0);
+  const totalCajaFinalGeneral = cashSessions.reduce((sum, s) => sum + (Number(s.countedCash ?? 0) - Number(s.cashWithdrawals ?? 0)), 0);
 
   return (
     <div className="container px-4 py-6 pb-20 mx-auto space-y-6"> {/* Padding bottom para footer */}
@@ -108,58 +139,23 @@ export default function ListadoCajasDiaPage() {
       <div className="grid grid-cols-1 gap-4 p-4 mb-6 border rounded-lg md:grid-cols-2 lg:grid-cols-4 bg-gray-50">
         <div>
           <Label htmlFor="dateRange" className="text-xs">{t('common.dateRange', 'Rango de Fechas')}</Label>
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                id="dateRange"
-                variant={"outline"}
-                className={cn(
-                  "w-full justify-start text-left font-normal h-9 text-xs mt-1",
-                  !dateRange && "text-muted-foreground"
-                )}
-              >
-                <CalendarDays className="mr-2 h-3.5 w-3.5" />
-                {dateRange?.from ? (
-                  dateRange.to ? (
-                    <>
-                      {format(dateRange.from, "dd/MM/yy", { locale: es })} - {" "}
-                      {format(dateRange.to, "dd/MM/yy", { locale: es })}
-                    </>
-                  ) : (
-                    format(dateRange.from, "dd/MM/yy", { locale: es })
-                  )
-                ) : (
-                  <span>{t('common.selectDateRange', 'Selecciona rango')}</span>
-                )}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="start">
-              <Calendar
-                initialFocus
-                mode="range"
-                defaultMonth={dateRange?.from}
-                selected={dateRange}
-                onSelect={setDateRange}
-                numberOfMonths={2}
-                locale={es}
-              />
-              <div className="flex justify-end p-2 border-t border-gray-200">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setDateRange(undefined)}
-                  className="text-xs"
-                >
-                  <X className="mr-2 h-3.5 w-3.5" />
-                  {t('common.clearSelection', 'Limpiar selección')}
-                </Button>
-              </div>
-            </PopoverContent>
-          </Popover>
+          <div className="mt-1">
+            <DateRangePickerPopover 
+              dateRange={dateRange} 
+              setDateRange={setDateRange} 
+              className="text-xs h-9"
+              onApplyFilter={() => {
+                // Solo refrescar datos cuando hay un rango completo
+                if (dateRange?.from && dateRange?.to) {
+                  refetch();
+                }
+              }}
+            />
+          </div>
         </div>
 
         <div>
-          <Label htmlFor="statusFilter" className="text-xs">{t('common.status', 'Estado')}</Label>
+          <Label htmlFor="statusFilter" className="text-xs">{t('common.status.title', 'Estado')}</Label>
           <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as CashSessionStatus | 'ALL')} >
             <SelectTrigger className="mt-1 text-xs h-9">
               <SelectValue placeholder={t('common.selectStatus','Seleccionar estado')} />
@@ -194,7 +190,9 @@ export default function ListadoCajasDiaPage() {
               <TableHead>{t('cash.finder.clinic', 'Clínica')}</TableHead>
               <TableHead className="text-right">{t('cash.finder.billed', 'Facturado')}</TableHead>
               <TableHead className="text-right">{t('cash.finder.difference', 'Diferencia')}</TableHead>
+              <TableHead className="text-right">{t('cash.finder.initialCash', 'Caja inicial')}</TableHead>
               <TableHead className="text-right">{t('cash.finder.withdrawn', 'Retirado')}</TableHead>
+              <TableHead className="text-right">{t('cash.finder.finalCash', 'Caja final')}</TableHead>
               <TableHead>{t('cash.finder.status', 'Estado')}</TableHead>
               <TableHead className="text-center w-[100px]">{t('common.actions', 'Acciones')}</TableHead>
             </TableRow>
@@ -202,28 +200,39 @@ export default function ListadoCajasDiaPage() {
           <TableBody>
             {cashSessions.length === 0 && !isLoading && (
               <TableRow>
-                <TableCell colSpan={7} className="h-24 text-center text-gray-500">
+                <TableCell colSpan={9} className="h-24 text-center text-gray-500">
                   {t('cash.finder.noResults', 'No se encontraron cajas para los filtros seleccionados.')}
                 </TableCell>
               </TableRow>
             )}
-            {cashSessions.flatMap(session => [
-              <TableRow key={session.id} className="cursor-pointer hover:bg-gray-50" onClick={() => router.push(`/caja/${format(parseISO(session.openingTime as unknown as string), 'yyyy-MM-dd')}?clinicId=${session.clinicId}&sessionId=${session.id}`)}>
-                <TableCell>{format(parseISO(session.openingTime as unknown as string), 'dd/MM/yyyy')}</TableCell>
-                <TableCell>{(session as any).clinic?.name || 'N/A'}</TableCell>
-                <TableCell className="text-right">{formatCurrency((session as any).totalFacturadoEnSesion || 0)}</TableCell>
-                <TableCell className={`text-right font-medium ${session.differenceCash === 0 ? 'text-green-600' : (session.differenceCash && session.differenceCash > 0 ? 'text-blue-600' : 'text-red-600')}`}>{formatCurrency(session.differenceCash || 0)}</TableCell>
-                <TableCell className="text-right">{formatCurrency((session as any).cashWithdrawal || 0)}</TableCell>
-                <TableCell>
-                  <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${session.status === CashSessionStatus.OPEN ? 'bg-green-100 text-green-700' : (session.status === CashSessionStatus.CLOSED ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700')}`}>{t(`cash.status.${session.status}`, session.status)}</span>
-                </TableCell>
-                <TableCell className="text-center">
-                  <Button variant="ghost" size="icon" className="h-7 w-7 hover:text-purple-600" title={t('cash.finder.viewSession', 'Ver Caja')}>
-                    <Eye className="w-4 h-4" />
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ])}
+            {cashSessions.flatMap(session => {
+                const facturado = (session as any).ticketsAccountedInSession?.reduce((sum, ticket: CashSessionTicket) => sum + Number(ticket.finalAmount ?? 0), 0) ?? 0;
+                const diferencia = Number(session.differenceCash ?? 0);
+                const cajaInicial = Number(session.openingBalanceCash ?? 0) + (Number(session.manualCashInput ?? 0) > 0 ? Number(session.manualCashInput ?? 0) : 0);
+                const retirado = Number(session.cashWithdrawals ?? 0);
+                const cajaFinal = Number(session.countedCash ?? 0) - Number(session.cashWithdrawals ?? 0);
+
+                return (
+                  <TableRow key={session.id} className="cursor-pointer hover:bg-gray-50" onClick={() => router.push(`/caja/${format(parseISO(session.openingTime as unknown as string), 'yyyy-MM-dd')}?clinicId=${session.clinicId}&sessionId=${session.id}`)}>
+                    <TableCell>{format(parseISO(session.openingTime as unknown as string), 'dd/MM/yyyy', { locale: es })}</TableCell>
+                    <TableCell>{(session as any).clinic?.name || 'N/A'}</TableCell>
+                    <TableCell className="text-right">{formatCurrency(facturado)}</TableCell>
+                    <TableCell className={`text-right font-medium ${diferencia === 0 ? 'text-green-600' : (diferencia > 0 ? 'text-blue-600' : 'text-red-600')}`}>{formatCurrency(diferencia)}</TableCell>
+                    <TableCell className="text-right">{formatCurrency(cajaInicial)}</TableCell>
+                    <TableCell className="text-right">{formatCurrency(retirado)}</TableCell>
+                    <TableCell className="text-right">{formatCurrency(cajaFinal)}</TableCell>
+                    <TableCell>
+                      <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${session.status === CashSessionStatus.OPEN ? 'bg-green-100 text-green-700' : (session.status === CashSessionStatus.CLOSED ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700')}`}>{t(`cash.status.${session.status}`, session.status)}</span>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <Button variant="ghost" size="icon" className="h-7 w-7 hover:text-purple-600" title={t('cash.finder.viewSession', 'Ver Caja')}
+                      onClick={(e) => { e.stopPropagation(); router.push(`/caja/${format(parseISO(session.openingTime as unknown as string), 'yyyy-MM-dd')}?clinicId=${session.clinicId}&sessionId=${session.id}`); }}>
+                        <Eye className="w-4 h-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
           </TableBody>
         </Table>
       </div>

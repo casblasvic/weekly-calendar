@@ -186,6 +186,13 @@ export async function POST(request: NextRequest, { params: paramsPromise }: { pa
         });
       }
 
+      // --- NUEVO: asegurar coherencia de pagos ---
+      await tx.payment.updateMany({
+        where: { ticketId: ticket.id, systemId },
+        data: { cashSessionId: openSession.id },
+      });
+      console.log(`[API_TICKETS_COMPLETE_CLOSE] Pagos de ticket ${ticket.id} vinculados a sesión ${openSession.id}`);
+
       console.log(`[API_TICKETS_COMPLETE_CLOSE] Paso 6: Actualizando ticket ${ticketId} a estado CLOSED y vinculando cashSessionId ${openSession.id}`);
       // Actualizar el ticket
       const finalUpdatedTicket = await tx.ticket.update({

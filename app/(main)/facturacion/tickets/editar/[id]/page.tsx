@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, use } from 'react';
+import React, { useEffect, useState, use, useCallback } from 'react';
 import { useForm, FormProvider, useFieldArray, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ticketFormSchema, defaultTicketFormValues, type TicketFormValues, type TicketItemFormValues, type TicketPaymentFormValues } from '@/lib/schemas/ticket';
@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ArrowLeft, HelpCircle, Printer, Save, AlertTriangle, PlusCircle, RotateCcw, CheckCircle, Info } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useToast } from "@/components/ui/use-toast";
 import { ClientSelectorSearch } from '@/components/tickets/client-selector-search';
 import { TicketItemsTable } from '@/components/tickets/ticket-items-table';
@@ -38,7 +38,8 @@ import {
   type AddTicketItemPayload,
   type CreatePaymentPayload,
   useSaveTicketBatchMutation,
-  type BatchUpdateTicketPayload
+  type BatchUpdateTicketPayload,
+  ticketKeys
 } from '@/lib/hooks/use-ticket-query';
 import { useUsersByClinicQuery, type UserForSelector } from "@/lib/hooks/use-user-query";
 import { TicketStatus, DiscountType, type Client, type User, PaymentMethodDefinition, Prisma, CashSessionStatus } from '@prisma/client';
@@ -80,6 +81,8 @@ const mapPrintSizeToFormEnum = (value?: string | null): TicketFormValues['printS
 export default function EditarTicketPage({ params }: EditTicketPageProps) {
   const router = useRouter();
   const { toast } = useToast();
+  const searchParams = useSearchParams();
+  const fromPath = searchParams.get('from');
   const [isAddItemModalOpen, setIsAddItemModalOpen] = useState(false);
   const [isAddPaymentModalOpen, setIsAddPaymentModalOpen] = useState(false);
   const [isApplyDiscountModalOpen, setIsApplyDiscountModalOpen] = useState(false);
@@ -103,8 +106,15 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
   const [reopenButtonTooltip, setReopenButtonTooltip] = useState('');
   // Mantiene el spinner activo hasta que la navegación haya ocurrido tras cerrar el ticket
   const [redirectingAfterClose, setRedirectingAfterClose] = useState(false);
+  // Estado para controlar el cierre del ticket
+  const [isClosingTicket, setIsClosingTicket] = useState(false);
+  
+  // Estado para forzar un re-renderizado después de cerrar
+  const [closingTicket, setClosingTicket] = useState(false);
   // Evitar parpadeo de totales al iniciar / reabrir
   const [totalsReady, setTotalsReady] = useState(true);
+  const [activeTab, setActiveTab] = useState('items');
+  const [isSavingBeforeClose, setIsSavingBeforeClose] = useState(false);
   // <<< FIN: Variables para control de reapertura >>>
 
   console.log("[EditarTicketPage] Active Clinic:", activeClinic);
@@ -118,10 +128,16 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
     isSuccess: isSuccessTicket,
   } = useTicketDetailQuery(id);
   
+  const queryClient = useQueryClient();
   const updateTicketMutation = useUpdateTicketMutation();
   const reopenTicketMutation = useReopenTicketMutation();
   const completeAndCloseMutation = useCompleteAndCloseTicketMutation();
   const saveTicketBatchMutation = useSaveTicketBatchMutation();
+  
+  // Prefetch de datos comunes (incluye métodos de pago) para mejorar la UX al abrir modales
+  useEffect(() => {
+    prefetchCommonData(queryClient);
+  }, [queryClient]);
 
   const {
     data: sellers = [],
@@ -142,7 +158,6 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
   const { control, handleSubmit, setValue, setError, clearErrors, formState, watch, getValues, trigger, reset } = form;
   
   // Prefetch de datos comunes (incluye métodos de pago) para mejorar la UX al abrir modales
-  const queryClient = useQueryClient();
   useEffect(() => {
     prefetchCommonData(queryClient);
   }, [queryClient]);
@@ -179,6 +194,78 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
       setReopenButtonTooltip(t(tooltipKey));
       // <<< FIN: Lógica de reapertura >>>
 
+      // 1. Process items, applying recalculateItemTotals to each
+      const processedItemsForForm = (ticketData.items || []).map((apiItem: any) => {
+        let formItem: TicketItemFormValues = {
+          id: apiItem.id,
+          type: apiItem.itemType,
+          itemId: apiItem.itemId,
+          concept: apiItem.description || (apiItem.service?.name || apiItem.product?.name || apiItem.bonoDefinition?.name || apiItem.packageDefinition?.name || t('tickets.addItemModal.itemNotSpecified')),
+          quantity: apiItem.quantity,
+          originalUnitPrice: apiItem.originalUnitPrice ?? null,
+          unitPrice: apiItem.unitPrice,
+          manualDiscountPercentage: apiItem.manualDiscountPercentage ?? null,
+          manualDiscountAmount: apiItem.manualDiscountAmount ?? null,
+          isPriceOverridden: apiItem.isPriceOverridden ?? false,
+          discountNotes: apiItem.discountNotes ?? null,
+          appliedPromotionId: apiItem.appliedPromotionId || undefined,
+          promotionDiscountAmount: apiItem.promotionDiscountAmount || 0,
+          vatRateId: apiItem.vatRate?.id || apiItem.vatRateId || undefined,
+          vatRate: apiItem.vatRate?.rate || 0,
+          finalPrice: 0, // Placeholder
+          vatAmount: 0,  // Placeholder
+          accumulatedDiscount: apiItem.accumulatedDiscount ?? false,
+          bonoInstanceId: apiItem.consumedBonoInstanceId || undefined,
+        };
+        if (formItem.isPriceOverridden) {
+          if (apiItem.finalPrice !== null && apiItem.finalPrice !== undefined) {
+            formItem.finalPrice = apiItem.finalPrice;
+          } else if (formItem.manualDiscountAmount !== null) {
+            const baseLinePriceInit = (formItem.unitPrice || 0) * (formItem.quantity || 0);
+            formItem.finalPrice = baseLinePriceInit - formItem.manualDiscountAmount;
+          }
+        }
+        // <<< LOG DE DEBUG >>>
+        if (apiItem.id === 'cmaqk6u8l0001y2xwfjy61xpg') { // ID del "Pack Verano Láser Plus"
+            console.log("[DEBUG page.tsx useEffect Carga] apiItem 'Pack Verano':", JSON.parse(JSON.stringify(apiItem)));
+            console.log("[DEBUG page.tsx useEffect Carga] formItem ANTES de recalculateTotals:", JSON.parse(JSON.stringify(formItem)));
+        }
+        // <<< FIN LOG >>>
+        return recalculateItemTotals(formItem);
+      });
+
+      // 2. Process payments
+      const processedPaymentsForForm = (ticketData.payments || []).map((p: any) => ({
+        id: p.id,
+        paymentMethodDefinitionId: p.paymentMethodDefinition?.id,
+        paymentMethodName: p.paymentMethodDefinition?.name || t('common.unknown'),
+        paymentMethodCode: p.paymentMethodDefinition?.code || null,
+        amount: p.amount,
+        paymentDate: p.paymentDate ? new Date(p.paymentDate) : new Date(),
+        transactionReference: p.transactionReference || '',
+        notes: p.notes || '',
+      }));
+
+      // 3. Calculate initial summary totals based on processed items and payments
+      const subtotalInit = processedItemsForForm.reduce((sum, itm) => sum + (itm.finalPrice || 0), 0);
+      const totalIVAInit = processedItemsForForm.reduce((sum, itm) => sum + (itm.vatAmount || 0), 0);
+
+      let effectiveGlobalDiscountInit = 0;
+      const globalDiscountTypeInit = ticketData.discountType || null;
+      const globalDiscountAmountInit = ticketData.discountAmount ?? null;
+
+      if (globalDiscountTypeInit === 'PERCENTAGE') {
+        effectiveGlobalDiscountInit = subtotalInit * ((globalDiscountAmountInit || 0) / 100);
+      } else if (globalDiscountTypeInit === 'FIXED_AMOUNT') {
+        effectiveGlobalDiscountInit = globalDiscountAmountInit || 0;
+      }
+      effectiveGlobalDiscountInit = Math.max(0, Math.min(effectiveGlobalDiscountInit, subtotalInit));
+
+      const taxableBaseInit = subtotalInit - effectiveGlobalDiscountInit;
+      const totalGeneralInit = taxableBaseInit + totalIVAInit;
+      const amountPaidInit = processedPaymentsForForm.reduce((sum, p) => sum + (p.amount || 0), 0);
+
+      // 4. Construct the complete formValues object for reset
       const formValues: Partial<TicketFormValues> = {
         clientId: ticketData.clientId,
         clientName: ticketData.client ? `${ticketData.client.firstName} ${ticketData.client.lastName || ''}`.trim() : undefined,
@@ -188,143 +275,75 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
         printSize: mapPrintSizeToFormEnum(ticketData.clinic?.ticketSize),
         observations: ticketData.notes || defaultTicketFormValues.observations,
         status: ticketData.status as TicketFormValues['status'],
-        
-        items: (ticketData.items || []).map((apiItem: any) => {
-          let formItem: TicketItemFormValues = {
-            id: apiItem.id,
-            type: apiItem.itemType,
-            itemId: apiItem.itemId,
-            concept: apiItem.description || (apiItem.service?.name || apiItem.product?.name || apiItem.bonoDefinition?.name || apiItem.packageDefinition?.name || t('tickets.addItemModal.itemNotSpecified')),
-            quantity: apiItem.quantity,
-            originalUnitPrice: apiItem.originalUnitPrice ?? null,
-            unitPrice: apiItem.unitPrice,
-            manualDiscountPercentage: apiItem.manualDiscountPercentage ?? null,
-            manualDiscountAmount: apiItem.manualDiscountAmount ?? null,
-            isPriceOverridden: apiItem.isPriceOverridden ?? false,
-            discountNotes: apiItem.discountNotes ?? null, 
-            appliedPromotionId: apiItem.appliedPromotionId || undefined,
-            promotionDiscountAmount: apiItem.promotionDiscountAmount || 0,
-            vatRateId: apiItem.vatRate?.id || apiItem.vatRateId || undefined,
-            vatRate: apiItem.vatRate?.rate || 0,
-            finalPrice: 0, // Placeholder inicial, se refinará abajo o en recalculateItemTotals
-            vatAmount: 0,  // Placeholder
-            accumulatedDiscount: apiItem.accumulatedDiscount ?? false, 
-            bonoInstanceId: apiItem.consumedBonoInstanceId || undefined,
-          };
-
-          // Ajuste para la carga inicial de ítems con precio sobreescrito
-          if (formItem.isPriceOverridden) {
-            if (apiItem.finalPrice !== null && apiItem.finalPrice !== undefined) {
-              // Si la BD provee un finalPrice (neto) para el ítem sobreescrito, usarlo.
-              formItem.finalPrice = apiItem.finalPrice;
-            } else if (formItem.manualDiscountAmount !== null) {
-              // Si no hay finalPrice de BD, pero sí un manualDiscountAmount y está sobreescrito,
-              // calcular el finalPrice (neto) basado en eso para la carga inicial.
-              const baseLinePriceInit = (formItem.unitPrice || 0) * (formItem.quantity || 0);
-              formItem.finalPrice = baseLinePriceInit - formItem.manualDiscountAmount;
-            }
-            // recalculateItemTotals se encargará de calcular el % correspondiente y el vatAmount
-          }
-          
-          // <<< LOG DE DEBUG >>>
-          if (apiItem.id === 'cmaqk6u8l0001y2xwfjy61xpg') { // ID del "Pack Verano Láser Plus"
-            console.log("[DEBUG page.tsx useEffect Carga] apiItem 'Pack Verano':", JSON.parse(JSON.stringify(apiItem)));
-            console.log("[DEBUG page.tsx useEffect Carga] formItem ANTES de recalculateTotals:", JSON.parse(JSON.stringify(formItem)));
-          }
-          // <<< FIN LOG >>>
-
-          return recalculateItemTotals(formItem);
-        }),
-
-        payments: (ticketData.payments || []).map((p: any) => ({
-          id: p.id,
-          paymentMethodDefinitionId: p.paymentMethodDefinition?.id,
-          paymentMethodName: p.paymentMethodDefinition?.name || t('common.unknown'),
-          paymentMethodCode: p.paymentMethodDefinition?.code || null,
-          amount: p.amount,
-          paymentDate: p.paymentDate ? new Date(p.paymentDate) : new Date(),
-          transactionReference: p.transactionReference || '',
-          notes: p.notes || '',
-        })),
+        items: processedItemsForForm,
+        payments: processedPaymentsForForm,
         ticketDate: ticketData.issueDate ? new Date(ticketData.issueDate) : (defaultTicketFormValues.ticketDate || new Date()),
         ticketNumber: ticketData.ticketNumber,
-        
-        globalDiscountType: ticketData.discountType || null,
-        globalDiscountAmount: ticketData.discountAmount ?? null,
+        globalDiscountType: globalDiscountTypeInit,
+        globalDiscountAmount: globalDiscountAmountInit,
         globalDiscountReason: ticketData.discountReason || null,
-        
-        // Los totales generales se recalcularán en el useEffect que observa items y pagos
-        subtotalAmount: 0, // Placeholder, se recalculará
-        taxAmount: 0,      // Placeholder, se recalculará
-        totalAmount: 0,    // Placeholder, se recalculará
-        amountPaid: 0,     // Placeholder, se recalculará
+        subtotalAmount: parseFloat(subtotalInit.toFixed(2)),
+        taxableBaseAmount: parseFloat(taxableBaseInit.toFixed(2)),
+        taxAmount: parseFloat(totalIVAInit.toFixed(2)),
+        totalAmount: parseFloat(totalGeneralInit.toFixed(2)),
+        amountPaid: parseFloat(amountPaidInit.toFixed(2)),
         amountDeferred: ticketData.dueAmount && ticketData.dueAmount > 0 ? ticketData.dueAmount : 0,
       };
-      reset(formValues as TicketFormValues);
-      console.log("[DEBUG page.tsx useEffect] FIN. Formulario reseteado. Items en form:", JSON.stringify(getValues('items'), null, 2));
-      console.log("[DEBUG page.tsx useEffect] AFTER reset, amountDeferred value:", formValues.amountDeferred);
 
-      // Calcular totales inmediatamente tras el reset para evitar parpadeo en el resumen
-      const itemsInit = formValues.items || [];
-      const paymentsInit = formValues.payments || [];
-
-      const subtotalInit = itemsInit.reduce((sum, itm) => sum + (itm.finalPrice || 0), 0);
-      const totalIVAInit = itemsInit.reduce((sum, itm) => sum + (itm.vatAmount || 0), 0);
-
-      let effectiveGlobalDiscountInit = 0;
-      if (formValues.globalDiscountType === 'PERCENTAGE') {
-        effectiveGlobalDiscountInit = subtotalInit * ((formValues.globalDiscountAmount || 0) / 100);
-      } else if (formValues.globalDiscountType === 'FIXED_AMOUNT') {
-        effectiveGlobalDiscountInit = formValues.globalDiscountAmount || 0;
-      }
-      effectiveGlobalDiscountInit = Math.max(0, Math.min(effectiveGlobalDiscountInit, subtotalInit));
-
-      const taxableBaseInit = subtotalInit - effectiveGlobalDiscountInit;
-      const totalGeneralInit = taxableBaseInit + totalIVAInit;
-      const amountPaidInit = paymentsInit.reduce((sum, p) => sum + (p.amount || 0), 0);
-
-      form.setValue('subtotalAmount', parseFloat(subtotalInit.toFixed(2)));
-      form.setValue('taxableBaseAmount', parseFloat(taxableBaseInit.toFixed(2)));
-      form.setValue('taxAmount', parseFloat(totalIVAInit.toFixed(2)));
-      form.setValue('totalAmount', parseFloat(totalGeneralInit.toFixed(2)));
-      form.setValue('amountPaid', parseFloat(amountPaidInit.toFixed(2)));
-      // Marcar totales listos tras el primer cálculo
+      // 5. Reset the form with all pre-calculated values
+      reset(formValues as TicketFormValues); 
+      console.log("[DEBUG page.tsx useEffect] FIN. Formulario reseteado. formState.isDirty DESPUÉS de reset:", form.formState.isDirty);
       setTotalsReady(true);
     }
   }, [isSuccessTicket, ticketData, ticketData?.status, activeClinic, reset, getValues, t, mapPrintSizeToFormEnum]); // <<< AÑADIDO ticketData.status aquí
 
+  useEffect(() => {
+    console.log('[EditarTicketPage] Form state debug:', {
+      isDirty: form.formState.isDirty,
+      dirtyFields: form.formState.dirtyFields,
+    });
+  }, [form.formState.isDirty, form.formState.dirtyFields]);
+
   const watchedItems = watch("items");
   const watchedPayments = watch("payments");
+  const watchedTotalAmountFromForm = watch('totalAmount');
 
   useEffect(() => {
+    // Ensure ticketData and activeClinic are loaded, and ticket is OPEN
     if (!ticketData || !activeClinic || (ticketData.status as string) !== TicketStatus.OPEN) {
       setIsTicketClosable(false);
       return;
     }
 
-    const currentItems = getValues('items') || [];
-    const currentPayments = getValues('payments') || [];
+    // Use watched values for direct reactivity
+    const currentTotalAmount = watchedTotalAmountFromForm || 0;
+    const currentPaymentsArray = watchedPayments || [];
 
-    const globalDiscount = ticketData.discountAmount ?? 0;
-    const subtotalFromItems = currentItems.reduce((sum, item) => sum + (item.unitPrice * item.quantity), 0);
-    const taxFromItems = currentItems.reduce((sum, item) => sum + item.vatAmount, 0);
-    const ticketFinalAmount = subtotalFromItems + taxFromItems - globalDiscount;
-
-    const totalPaid = currentPayments.reduce((sum, payment) => sum + payment.amount, 0);
-    const dueAmount = ticketFinalAmount - totalPaid;
+    const totalPaid = currentPaymentsArray.reduce((sum, payment) => sum + (payment.amount || 0), 0);
+    // Ensure dueAmount is not negative for the check, and use a small epsilon for float comparisons.
+    const dueAmount = Math.max(0, currentTotalAmount - totalPaid); 
     
-    setPendingAmountForModal(dueAmount);
+    // Update pendingAmountForModal, ensuring it's 0 if effectively paid.
+    setPendingAmountForModal(dueAmount < 0.009 ? 0 : dueAmount);
 
     const clinicAllowsDelayedPayments = activeClinic.delayedPayments === true;
 
-    if (dueAmount <= 0.009) {
+    // Determine if ticket is closable
+    if (dueAmount <= 0.009) { // Using a small epsilon for float comparisons (e.g., $0.009)
       setIsTicketClosable(true);
     } else if (clinicAllowsDelayedPayments) {
+      // If clinic allows delayed payments, ticket is closable even if there's a pending amount.
+      // handleCompleteAndCloseTicket will manage the deferral process.
       setIsTicketClosable(true);
     } else {
       setIsTicketClosable(false);
     }
-  }, [ticketData, activeClinic, watchedItems, watchedPayments, getValues]);
+  }, [
+    ticketData?.status, // More specific dependency
+    activeClinic?.delayedPayments, // More specific dependency
+    watchedTotalAmountFromForm,
+    watchedPayments,
+  ]);
 
   const recalculateItemTotals = (item: TicketItemFormValues): TicketItemFormValues => {
     // console.debug("[recalculateItemTotals] Ítem RECIBIDO:", item);
@@ -520,9 +539,10 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
     console.log("[onSubmit BATCH] INICIO Procesamiento Pagos. currentFormPayments:", JSON.stringify(currentFormPayments));
     console.log("[onSubmit BATCH] INICIO Procesamiento Pagos. originalApiPayments:", JSON.stringify(originalApiPayments));
 
-    // Identificar pagos nuevos (reales o aplazados) y calcular total a aplazar
+    // Identificar pagos nuevos (reales o aplazados)
     for (const formPayment of currentFormPayments) {
-      if (!formPayment.id || formPayment.id.startsWith('local-') || formPayment.id.startsWith('temp-')) {
+      // A new payment is identified by having a tempId and no database id
+      if (formPayment.tempId && !formPayment.id) {
         // Es un pago NUEVO (real o aplazado)
         console.log("[onSubmit BATCH] Procesando NUEVO PAGO:", JSON.stringify(formPayment));
         if (!formPayment.paymentMethodDefinitionId) {
@@ -541,7 +561,7 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
           transactionReference: formPayment.transactionReference,
           notes: formPayment.notes,
           paymentMethodDefinitionId: formPayment.paymentMethodDefinitionId,
-          tempId: (formPayment.id && (formPayment.id.startsWith('local-') || formPayment.id.startsWith('temp-'))) ? formPayment.id : undefined
+          tempId: formPayment.tempId // Use the tempId from the form payment
         });
       } else {
         // Es un pago existente en BD que sigue presente sin cambios significativos
@@ -549,28 +569,16 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
       }
     }
 
-    // Identificar pagos de BD que fueron eliminados del formulario (y no eran aplazados)
-    for (const originalDbPayment of originalApiPayments) {
-      const stillExistsInForm = currentFormPayments.some(
-        fp => fp.id === originalDbPayment.id
-      );
-      if (!stillExistsInForm) {
-        // Si no está en el form, O si está pero se convirtió en aplazado (ya añadido a delete arriba),
-        // se añade para borrar (Set se encargará de duplicados).
-        if (originalDbPayment.id && !originalDbPayment.id.startsWith('local-') && !originalDbPayment.id.startsWith('temp-')) { // Doble check por si acaso
-             paymentIdsToDeleteFromBackend.push(originalDbPayment.id);
-        }
-      }
-    }
-    
     if (paymentsToAddForBackendApi.length > 0) {
       payload.paymentsToAdd = paymentsToAddForBackendApi;
     }
-    
-    const finalPaymentIdsToDelete = [...new Set(paymentIdsToDeleteFromBackend)];
-    if (finalPaymentIdsToDelete.length > 0) {
-        payload.paymentIdsToDelete = finalPaymentIdsToDelete;
+
+    // Use paymentIdsToDelete from form state, which is populated by handleRemovePayment
+    if (formData.paymentIdsToDelete && formData.paymentIdsToDelete.length > 0) {
+      payload.paymentIdsToDelete = [...new Set(formData.paymentIdsToDelete)]; // Ensure uniqueness
     }
+    // The old logic for deducing paymentIdsToDeleteFromBackend by comparing arrays is no longer needed
+    // as handleRemovePayment now correctly manages this in formData.paymentIdsToDelete.
     // Si finalPaymentIdsToDelete está vacío, no se envía la clave `paymentIdsToDelete` al backend (Zod lo manejará con .optional())
 
     // --- 4. VERIFICAR CAMBIOS Y ENVIAR --- 
@@ -599,8 +607,13 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
     // <<< FIN LOGS ADICIONALES >>>
 
     saveTicketBatchMutation.mutate({ ticketId: id, payload }, {
+      // onSuccess is handled by the useSaveTicketBatch hook's default options
+      // and augmented by the useEffect for isSavingBeforeClose
       onError: (error) => {
         console.error("Error en mutación Batch onSubmit:", error);
+        if (isSavingBeforeClose) {
+           setIsSavingBeforeClose(false); // Ensure flag is reset on save error during close flow
+        }
       }
     });
   };
@@ -610,17 +623,30 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
     console.log("[handleClientSelectedInForm] Callback ejecutado. Cliente recibido:", client ? JSON.parse(JSON.stringify(client)) : null);
     // --- FIN LOGS DETALLADOS ---
 
+    // Obtener el cliente actualmente asignado en el formulario
+    const currentClientId = getValues('clientId');
+    const selectedClientId = client?.id ?? null;
+
+    // Si no hay cambio real, no marcar el formulario como dirty ni actualizar valores
+    if (currentClientId === selectedClientId) {
+      console.log('[handleClientSelectedInForm] Selección de cliente idéntica a la actual. No se modifican valores.');
+      return;
+    }
+
+    // Determinar si se debe marcar como dirty (solo si hay cambio)
+    const shouldMarkDirty = true; // Siempre hay cambio si llegamos aquí
+
     if (client) {
       console.log(`[handleClientSelectedInForm] Estableciendo clientId a: ${client.id}, clientName a: ${client.firstName} ${client.lastName}`);
-      setValue('clientId', client.id, { shouldValidate: true, shouldDirty: true });
-      setValue('clientName', `${client.firstName} ${client.lastName}${client.companyName ? ` (${client.companyName})` : ''}`.trim(), { shouldDirty: true });
-      setValue('clientDetails', client, { shouldDirty: true });
+      setValue('clientId', client.id, { shouldValidate: true, shouldDirty: shouldMarkDirty });
+      setValue('clientName', `${client.firstName} ${client.lastName}${client.companyName ? ` (${client.companyName})` : ''}`.trim(), { shouldDirty: shouldMarkDirty });
+      setValue('clientDetails', client, { shouldDirty: shouldMarkDirty });
       clearErrors('clientId');
     } else {
       console.warn("[handleClientSelectedInForm] Limpiando campos de cliente porque el cliente recibido es null.");
-      setValue('clientId', undefined, { shouldValidate: true, shouldDirty: true });
-      setValue('clientName', undefined, { shouldDirty: true });
-      setValue('clientDetails', undefined, { shouldDirty: true });
+      setValue('clientId', undefined, { shouldValidate: true, shouldDirty: shouldMarkDirty });
+      setValue('clientName', undefined, { shouldDirty: shouldMarkDirty });
+      setValue('clientDetails', undefined, { shouldDirty: shouldMarkDirty });
     }
   };
 
@@ -852,42 +878,61 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
         return;
     }
 
-    const newPaymentId = paymentDataFromModal.id || `local-payment-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    // Generate a temporary ID for new payments
+    const tempId = `temp-payment-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
 
     const newPayment: TicketPaymentFormValues = {
       ...paymentDataFromModal,
-      id: newPaymentId,
-      // paymentDate se toma del modal, si no, podría ser new Date()
+      id: undefined, // Database ID is undefined for new payments
+      tempId: tempId, // Store the temporary ID
+      // paymentDate is taken from the modal
     };
 
     console.log("[handleAddPayment] Nuevo pago para añadir localmente:", newPayment);
     const currentPayments = getValues('payments') || [];
     setValue('payments', [...currentPayments, newPayment], { shouldDirty: true, shouldValidate: true });
 
-    toast({
-      title: t('tickets.notifications.paymentAddedToDraftTitle', "Pago añadido al borrador"),
-      description: t('tickets.notifications.paymentAddedToDraftDesc', { amount: formatCurrency(newPayment.amount, activeClinic?.currency || 'EUR') }),
-      variant: "default",
-      duration: 3000,
-    });
     setIsAddPaymentModalOpen(false);
   };
 
-  const handleRemovePayment = (paymentIdToRemove: string) => {
+  const handleRemovePayment = (paymentIdentifier: string) => { // Renamed param for clarity
     const currentTicketPayments = getValues('payments') || [];
-    const paymentIndexToRemove = currentTicketPayments.findIndex(p => p.id === paymentIdToRemove);
+    // Find by either database id or tempId
+    const paymentToRemove = currentTicketPayments.find(p => p.id === paymentIdentifier || p.tempId === paymentIdentifier);
 
-    if (paymentIndexToRemove === -1) return;
+    if (!paymentToRemove) {
+      console.warn("[handleRemovePayment] Payment with identifier", paymentIdentifier, "not found in form values.");
+      return;
+    }
 
-    const updatedPayments = currentTicketPayments.filter((_, i) => i !== paymentIndexToRemove);
-    setValue('payments', updatedPayments, { shouldValidate: true, shouldDirty: true });
-    trigger('payments');
+    const paymentMethodDisplayName = paymentToRemove.paymentMethodName || t('common.unknown'); // paymentMethodName should be populated when the payment is added/loaded
+    const formattedAmount = formatCurrency(paymentToRemove.amount, activeClinic?.currency || 'EUR');
 
-            toast({
-      description: t('tickets.notifications.localPaymentRemovedSuccess'),
-      variant: "default",
-      duration: 3000,
+    const confirmationMessage = t('tickets.confirmations.removePayment.message', {
+      paymentMethod: paymentMethodDisplayName,
+      amount: formattedAmount
     });
+
+    if (!window.confirm(confirmationMessage)) {
+      return; // User cancelled
+    }
+
+    const updatedPayments = currentTicketPayments.filter(p => (p.id || p.tempId) !== paymentIdentifier);
+    setValue('payments', updatedPayments, { shouldValidate: true, shouldDirty: true });
+    trigger('payments'); // Trigger validation for the payments array
+
+    // If the payment being removed has a database ID (i.e., it's not a new one identified by tempId),
+    // add its ID to the paymentIdsToDelete array.
+    if (paymentToRemove.id && !paymentToRemove.tempId) { // Check it's an existing DB payment
+      const currentPaymentIdsToDelete = getValues('paymentIdsToDelete') || [];
+      if (!currentPaymentIdsToDelete.includes(paymentToRemove.id)) {
+        setValue('paymentIdsToDelete', [...currentPaymentIdsToDelete, paymentToRemove.id], { shouldDirty: true });
+      }
+      console.log("[handleRemovePayment] Payment marked for DB deletion:", paymentToRemove.id);
+    } else {
+      console.log("[handleRemovePayment] New (unsaved) payment removed from form:", paymentIdentifier);
+    }
+
   };
 
   const onSubmitForm = handleSubmit(
@@ -921,6 +966,7 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
     onSubmitForm();
   };
 
+  console.log('Active Clinic Currency:', activeClinic?.currency);
   const currencyCode = activeClinic?.currency || 'EUR';
   const currencySymbol = currencyCode;
 
@@ -942,9 +988,9 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
   const globalDiscountValue = watch('globalDiscountAmount') || 0;
   let effectiveGlobalDiscount = 0;
   if (globalDiscountType === 'PERCENTAGE') {
-    effectiveGlobalDiscount = subtotalNetoDeLineas * (globalDiscountValue / 100);
+    effectiveGlobalDiscount = subtotalNetoDeLineas * ((globalDiscountValue / 100) || 0);
   } else if (globalDiscountType === 'FIXED_AMOUNT') {
-    effectiveGlobalDiscount = globalDiscountValue;
+    effectiveGlobalDiscount = globalDiscountValue || 0;
   }
   effectiveGlobalDiscount = Math.max(0, Math.min(effectiveGlobalDiscount, subtotalNetoDeLineas));
 
@@ -958,14 +1004,15 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
   const currentPending = Math.max(0, totalGeneralTicket - amountPaid);
 
   useEffect(() => {
-    form.setValue('subtotalAmount', parseFloat(subtotalNetoDeLineas.toFixed(2))); 
-    form.setValue('taxableBaseAmount', parseFloat(taxableBaseFinalTicket.toFixed(2))); 
-    form.setValue('taxAmount', parseFloat(totalIVADeLineas.toFixed(2)));
-    form.setValue('totalAmount', parseFloat(totalGeneralTicket.toFixed(2))); 
-    form.setValue('amountPaid', parseFloat(amountPaid.toFixed(2)));
+    form.setValue('subtotalAmount', parseFloat(subtotalNetoDeLineas.toFixed(2)), { shouldDirty: false }); 
+    form.setValue('taxableBaseAmount', parseFloat(taxableBaseFinalTicket.toFixed(2)), { shouldDirty: false }); 
+    form.setValue('taxAmount', parseFloat(totalIVADeLineas.toFixed(2)), { shouldDirty: false });
+    form.setValue('totalAmount', parseFloat(totalGeneralTicket.toFixed(2)), { shouldDirty: false }); 
+    form.setValue('amountPaid', parseFloat(amountPaid.toFixed(2)), { shouldDirty: false });
     // El campo 'amountDeferred' se actualiza con ticketData.dueAmount en el useEffect de inicialización
     // y el resumen de "Aplazado" lo calcula dinámicamente de watchedPayments.
     setTotalsReady(true);
+    console.log('[EditarTicketPage] Totals calculated. isDirty:', form.formState.isDirty, 'dirtyFields:', form.formState.dirtyFields); // LOG AÑADIDO
   }, [subtotalNetoDeLineas, taxableBaseFinalTicket, totalIVADeLineas, totalGeneralTicket, amountPaid, form, watchedItems, watchedPayments]); // <<< AÑADIR watchedItems y watchedPayments
 
   // En el JSX del resumen, asegurar que:
@@ -977,138 +1024,76 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
 
   const handleCompleteAndCloseTicket = async () => {
     console.log("[handleCompleteAndCloseTicket] Iniciando cierre de ticket...");
-
     const isValid = await trigger(); 
     if (!isValid) {
-      toast({
-        title: t("common.errors.validation_failed"),
-        description: t("tickets.notifications.fixValidationBeforeClosing", "Por favor, corrige los errores de validación antes de cerrar el ticket."), 
-        variant: "destructive",
-      });
       return;
     }
-    
-    // Intentar guardar cambios pendientes. Si falla (error real, no validación), mostrar toast y detener.
-    // Si no hay cambios, onSubmit NO debería mostrar su toast "noEffectiveChanges" y bloquear.
-    let saveAttemptError: Error | null = null;
-    try {
-      // Obtenemos los datos del formulario para ver si hay cambios ANTES de llamar a onSubmit
-      // Esto es una simplificación; la lógica completa de `hasEffectiveChanges` está en `onSubmit`
-      // Aquí solo queremos saber si DEBEMOS llamar a onSubmit.
-      const currentFormDataForChanges = getValues(); 
-      const { items: currentItemsForChanges, payments: currentPaymentsForChanges, ...scalarDataForChanges } = currentFormDataForChanges;
+
+    const closeTicket = () => {
+      if (!id) {
+        return;
+      }
       
-      let hasFormChanges = false;
-      if (ticketData) {
-        // Comprobar cambios escalares
-        if (scalarDataForChanges.clientId !== (ticketData.clientId || null) ||
-            scalarDataForChanges.sellerId !== (ticketData.sellerUser?.id || null) ||
-            scalarDataForChanges.observations !== (ticketData.notes || '') ||
-            scalarDataForChanges.series !== (ticketData.ticketSeries || '') ||
-            (scalarDataForChanges.globalDiscountType || null) !== (ticketData.discountType || null) ||
-            (scalarDataForChanges.globalDiscountAmount !== undefined && scalarDataForChanges.globalDiscountAmount !== null ? Number(scalarDataForChanges.globalDiscountAmount) : null) !== (ticketData.discountAmount || null) ||
-            (scalarDataForChanges.globalDiscountReason || null) !== (ticketData.discountReason || null)
-        ) {
-          hasFormChanges = true;
-        }
-
-        // Comprobar cambios en items (simplificado, la lógica completa está en onSubmit)
-        if (!hasFormChanges && currentItemsForChanges && ticketData.items && 
-            (currentItemsForChanges.length !== ticketData.items.length || 
-             JSON.stringify(currentItemsForChanges.map(i => ({...i, concept:undefined,ticket:undefined}))) !== JSON.stringify(ticketData.items.map(i => ({...i, concept:undefined,ticket:undefined}))))) {
-          hasFormChanges = true;
-        }
-        // Comprobar cambios en payments (simplificado)
-        if (!hasFormChanges && currentPaymentsForChanges && ticketData.payments && 
-            (currentPaymentsForChanges.length !== ticketData.payments.length || 
-             JSON.stringify(currentPaymentsForChanges) !== JSON.stringify(ticketData.payments))) {
-          hasFormChanges = true;
-        }
-      }
-
-      if (hasFormChanges) {
-        console.log("[handleCompleteAndCloseTicket] Se detectaron cambios, intentando guardar...");
-        await new Promise<void>((resolve, reject) => {
-          // Llamar a handleSubmit que internamente llama a onSubmit.
-          // onSubmit se encargará de la mutación saveTicketBatchMutation.
-          handleSubmit((data) => {
-            // onSubmit ya no tiene un onSuccess que muestre toast.
-            // Aquí simplemente esperamos que la mutación dentro de onSubmit termine.
-            // Necesitamos una forma de saber cuándo saveTicketBatchMutation ha terminado.
-            const interval = setInterval(() => {
-              if (!saveTicketBatchMutation.isPending) {
-                clearInterval(interval);
-                if (saveTicketBatchMutation.isError) {
-                  console.error("[handleCompleteAndCloseTicket] Error en saveTicketBatchMutation:", saveTicketBatchMutation.error);
-                  reject(saveTicketBatchMutation.error || new Error("Error guardando cambios antes de cerrar."));
-                } else {
-                  console.log("[handleCompleteAndCloseTicket] Guardado (o intento) completado.");
-                  resolve();
-                }
-              }
-            }, 100);
-            onSubmit(data); // Ejecuta la lógica de onSubmit y la mutación de guardado
-          }, (errors) => {
-            console.error("[handleCompleteAndCloseTicket] Error de validación RHF al intentar guardar:", errors);
-            reject(new Error(t("tickets.notifications.fixValidationBeforeSaving")));
-          })();
-        });
-      } else {
-        console.log("[handleCompleteAndCloseTicket] No se detectaron cambios efectivos para guardar.");
-      }
-    } catch (err: any) {
-      saveAttemptError = err;
-    }
-
-    if (saveAttemptError) {
-      console.error('[handleCompleteAndCloseTicket] Error durante el intento de guardado previo al cierre:', saveAttemptError);
-      toast({ title: t('common.error'), description: saveAttemptError.message || 'No se pudo guardar los cambios antes de cerrar.', variant: 'destructive' });
-      return; // Detener si el guardado falló
-    }
-
-    // --- Proceder con la lógica de cierre --- 
-    const currentTicketId = ticketData?.id; 
-    if (!currentTicketId) {
-      toast({ title: t("common.error"), description: "ID del ticket no disponible para cerrar.", variant: "destructive" });
-      return;
-    }
-
-    // Usar los datos más recientes del formulario DESPUÉS de que onSubmitForm los haya procesado potencialmente
-    const formDataForClose = getValues(); 
-    console.log("[handleCompleteAndCloseTicket] Datos del formulario para el cierre:", JSON.parse(JSON.stringify(formDataForClose)));
-
-    const finalTicketAmount = formDataForClose.totalAmount || 0;
-    let totalActuallyPaid = 0;
-    let explicitlyDeferredAmountInForm = 0;
-
-    (formDataForClose.payments || []).forEach(p => {
-      if (p.paymentMethodCode === DEFERRED_PAYMENT_METHOD_CODE) {
-        explicitlyDeferredAmountInForm += p.amount || 0;
-      } else {
-        totalActuallyPaid += p.amount || 0;
-      }
-    });
-
-    const netPendingAmount = Math.max(0, finalTicketAmount - totalActuallyPaid - explicitlyDeferredAmountInForm);
-    console.log(`[handleCompleteAndCloseTicket] finalTicketAmount: ${finalTicketAmount}, totalActuallyPaid: ${totalActuallyPaid}, explicitlyDeferredAmountInForm: ${explicitlyDeferredAmountInForm}, netPendingAmount: ${netPendingAmount}`);
-
-    if (netPendingAmount > 0.009) { // Usar un pequeño epsilon para comparaciones de flotantes
-      console.log("[handleCompleteAndCloseTicket] Saldo pendiente neto detectado. Mostrando modal de pago aplazado.");
-      setPendingAmountForModal(netPendingAmount);
-      setShowConfirmDelayedPaymentModal(true);
-    } else {
-      console.log("[handleCompleteAndCloseTicket] Sin saldo pendiente neto o todo cubierto/aplazado explícitamente. Llamando a completeAndCloseMutation.");
-      // Activar flag para mantener spinner y deshabilitar botones hasta redirección
+      // Mostrar estado de carga inmediatamente
       setRedirectingAfterClose(true);
-      completeAndCloseMutation.mutate({ ticketId: currentTicketId, clinicId: activeClinic?.id }, {
-        onSuccess: () => {
-          router.push('/facturacion/tickets');
-        },
-        onSettled: () => {
-          // Safety: si por alguna razón no se redirige, quitar spinner tras 3s
-          setTimeout(() => setRedirectingAfterClose(false), 3000);
-        }
-      });
+      
+      // Pequeño retraso para asegurar que la UI se actualice
+      setTimeout(() => {
+        completeAndCloseMutation.mutate(
+          { 
+            ticketId: id,
+            clinicId: activeClinic?.id 
+          },
+          {
+            onSuccess: (data) => {
+              // Actualizar la caché con los datos del servidor
+              if (data) {
+                queryClient.setQueryData(ticketKeys.detail(id), data);
+                queryClient.setQueryData(['ticket', id], data);
+                
+                // Invalidar consultas en segundo plano sin esperar
+                const invalidationPromises = [
+                  queryClient.invalidateQueries({ queryKey: ticketKeys.all, exact: false })
+                ];
+                
+                if (activeClinic?.id) {
+                  invalidationPromises.push(
+                    queryClient.invalidateQueries({ queryKey: ['openTicketsCount', activeClinic.id, 'OPEN'] })
+                  );
+                }
+                
+                // No esperar a que se completen las invalidaciones
+                Promise.allSettled(invalidationPromises).catch(console.error);
+              }
+              
+              // Redirigir inmediatamente para mejor experiencia de usuario
+              router.push('/facturacion/tickets');
+            },
+            onError: (error) => {
+              console.error("Error al cerrar el ticket:", error);
+              setRedirectingAfterClose(false);
+            }
+          }
+        );
+      }, 50); // Pequeño retraso para asegurar que la UI se actualice
+    };
+
+    if (formState.isDirty) {
+      console.log("[handleCompleteAndCloseTicket] Hay cambios pendientes. Guardando primero...");
+      setIsSavingBeforeClose(true);
+      
+      // Guardar primero y luego cerrar
+      try {
+        await form.handleSubmit(onSubmit)();
+        // Si el guardado es exitoso, proceder con el cierre
+        closeTicket();
+      } catch (error) {
+        console.error("Error al guardar antes de cerrar:", error);
+        setIsSavingBeforeClose(false);
+      }
+    } else {
+      console.log("[handleCompleteAndCloseTicket] No hay cambios pendientes. Cerrando directamente...");
+      closeTicket();
     }
   };
 
@@ -1117,12 +1102,41 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
     const currentTicketId = ticketData?.id;
     if (currentTicketId) {
       setRedirectingAfterClose(true);
-      completeAndCloseMutation.mutate({ ticketId: currentTicketId, clinicId: activeClinic?.id }, {
-        onSuccess: () => {
-          router.push('/facturacion/tickets');
+      
+      completeAndCloseMutation.mutate(
+        { 
+          ticketId: currentTicketId, 
+          clinicId: activeClinic?.id 
+        },
+        {
+          onSuccess: (data) => {
+            // Actualizar la caché con los datos del servidor
+            if (data) {
+              queryClient.setQueryData(ticketKeys.detail(currentTicketId), data);
+              queryClient.setQueryData(['ticket', currentTicketId], data);
+              
+              // Invalidar las consultas relacionadas para forzar una actualización
+              queryClient.invalidateQueries({ queryKey: ticketKeys.all, exact: false });
+              
+              if (activeClinic?.id) {
+                queryClient.invalidateQueries({ queryKey: ['openTicketsCount', activeClinic.id, 'OPEN'] });
+              }
+            }
+            
+            // Redirigir después de actualizar la caché
+            router.push('/facturacion/tickets');
+          },
+          onError: (error) => {
+            console.error("Error al cerrar el ticket con pago aplazado:", error);
+            setRedirectingAfterClose(false);
+            toast({
+              title: t("common.error"),
+              description: t("tickets.notifications.closeError"),
+              variant: "destructive",
+            });
+          }
         }
-        // onError se maneja globalmente en el hook
-      });
+      );
     }
   };
 
@@ -1162,11 +1176,6 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
 
   const handleReopenTicket = async () => {
     if (!ticketData?.id || !activeClinic?.id) { 
-      toast({
-        title: t("common.error"),
-        description: "No se pudo obtener la información necesaria para reabrir el ticket.",
-        variant: "destructive",
-      });
       return;
     }
     // Esta es la llamada correcta a la mutación que se hace desde el modal
@@ -1285,10 +1294,7 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
                                 const selectedSellerIdInForm = field.value;
 
                                 if (ticketData) {
-                                  console.log("[Seller FF DEBUG] ticketData.sellerUser directo:", ticketData.sellerUser);
-                                  console.log("[Seller FF DEBUG] ticketData.sellerUser.isActive:", ticketData.sellerUser?.isActive);
-                                  console.log("[Seller FF DEBUG] ticketData.sellerUser.email:", ticketData.sellerUser?.email);
-                                  console.log("[Seller FF DEBUG] sellers list raw:", JSON.parse(JSON.stringify(sellers)));
+                                  // [Seller FF DEBUG] Logs removed
                                 }
 
                                 let informativeText = null;
@@ -1302,7 +1308,7 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
                                       statusKey = 'tickets.sellerStatus.inactiveSystem';
                                     } else {
                                       if (!isOriginalSellerInCurrentClinicListAndActive) {
-                                        console.log("[Seller FF DEBUG] Vendedor activo pero no en lista de clínica actual. No se añade statusKey.");
+                                        // [Seller FF DEBUG] Log removed
                                       }
                                     }
                                   } else {
@@ -1559,7 +1565,7 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
                                 <TabsTrigger value="direct">
                                   {directLabel}
                                 </TabsTrigger>
-                                <TabsTrigger value="deferred" disabled={!hasDeferredDebt}>
+                                <TabsTrigger value="deferred" disabled={!(ticketData?.status === TicketStatus.ACCOUNTED && ticketData?.cashSession?.status === CashSessionStatus.CLOSED)}>
                                   {deferredLabel}
                                 </TabsTrigger>
                               </TabsList>
@@ -1571,6 +1577,7 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
                           onOpenAddPaymentModal={handleOpenAddPaymentModal} 
                           onRemovePayment={handleRemovePayment}
                           readOnly={isReadOnly}
+                          currencyCode={currencySymbol} // Pass currency code
                         />
                               </TabsContent>
 
@@ -1669,7 +1676,7 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
           </div>
         </div>
 
-        <footer className="fixed bottom-0 z-10 border-t bg-white/80 backdrop-blur-md shadow-[0_-2px_10px_rgba(0,0,0,0.05)]" style={{ left: "var(--sidebar-width, 16rem)", right: "0" }}>
+        <footer className="fixed bottom-0 z-10 border-t bg-white/80 backdrop-blur-md shadow-[0_-2px_10px_rgba(0,0,0,0.05)]" style={{ left: "var(--sidebar-width, 16rem)", right: "0", transition: "left 0.2s ease-out" }}>
           <div className="container flex items-center justify-between p-3">
             <div className="flex items-center gap-3">
               <Button
@@ -1677,7 +1684,7 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
                 variant="outline"
                 size="sm"
                 className="gap-1 text-xs text-gray-700 border-gray-300 h-9 hover:bg-gray-50"
-                onClick={() => router.push("/facturacion/tickets")}
+                onClick={() => router.push(fromPath || "/facturacion/tickets")}
               >
                 <ArrowLeft className="h-3.5 w-3.5" /> Volver
               </Button>
@@ -1707,7 +1714,7 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
               <Button
                 type="button"
                 onClick={onSubmitForm}
-                  disabled={saveTicketBatchMutation.isPending || formState.isSubmitting || !formState.isDirty}
+                  disabled={!(ticketData?.status === TicketStatus.OPEN && formState.isDirty) || saveTicketBatchMutation.isPending || completeAndCloseMutation.isPending || isSavingBeforeClose || formState.isSubmitting}
                 className="px-4 py-0 text-sm font-medium h-9"
               >
                   {saveTicketBatchMutation.isPending ? (
@@ -1723,7 +1730,7 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
                 <Button
                   type="button"
                   onClick={handleCompleteAndCloseTicket} 
-                  disabled={!isTicketClosable || completeAndCloseMutation.isPending || formState.isSubmitting || saveTicketBatchMutation.isPending}
+                  disabled={!isTicketClosable || completeAndCloseMutation.isPending || saveTicketBatchMutation.isPending || isSavingBeforeClose || formState.isSubmitting}
                   className="px-4 py-0 text-sm font-medium h-9"
                 >
                   {completeAndCloseMutation.isPending ? (
@@ -1774,6 +1781,7 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
           onClose={() => setIsAddPaymentModalOpen(false)}
           onAddPayment={handleAddPayment}
           pendingAmount={defaultPaymentAmount}
+          currencyCode={currencySymbol} // Pass currency code
         />
       )}
       

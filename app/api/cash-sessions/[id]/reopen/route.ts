@@ -63,7 +63,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
           countedOther: null,
           notes: newNotes,
           // No modificar openingBalanceCash ni openingTime
-          // cashWithdrawal se pondría a null si existiera en el modelo
+          // manualCashInput and cashWithdrawals will persist their values from before reopening.
+          reconciliationTime: null, // Anular tiempo de reconciliación anterior
+          calculatedDeferredAtClose: null, // Anular cálculo de diferidos anterior (o 0 si es Decimal no nullable)
         },
       });
 

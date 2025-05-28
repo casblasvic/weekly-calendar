@@ -445,7 +445,6 @@ export function InterfazProvider({ children }: { children: ReactNode }) {
 
   // No renderizar children hasta que el contexto esté listo
   if (!initialized || !interfaz) {
-     console.log("[InterfazProvider] Waiting for initialization..."); // Log
      return null; // O un componente <LoadingSpinner /> si prefieres
   }
 

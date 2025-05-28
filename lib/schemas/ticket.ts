@@ -37,7 +37,8 @@ export type TicketItemFormValues = z.infer<typeof ticketItemSchema>;
 
 // Schema para un pago individual
 export const ticketPaymentSchema = z.object({
-  id: z.string().optional(),
+  id: z.string().optional(), // Database ID
+  tempId: z.string().optional(), // Temporary client-side ID for new payments
   paymentMethodDefinitionId: z.string().optional().nullable(),
   paymentMethodName: z.string().optional().nullable(),
   paymentMethodCode: z.string().optional().nullable(),
@@ -144,6 +145,7 @@ export const ticketFormSchema = z.object({
   payments: z.array(ticketPaymentSchema).optional().default([]),
   amountPaid: z.number().default(0), // Suma de los pagos
   amountDeferred: z.number().default(0), // Parte del pendiente que se marca como aplazado
+  paymentIdsToDelete: z.array(z.string().cuid()).optional(), // IDs de pagos marcados para eliminar al guardar
 
   // --- Otros ---
   clinicId: z.string().optional(), // Se tomará del contexto de la clínica activa
@@ -158,6 +160,9 @@ export const defaultTicketFormValues: Partial<TicketFormValues> = {
   printSize: '80mm',
   series: 'TICK',
   status: 'OPEN',
+  clientId: undefined, 
+  clientName: '', 
+  clientDetails: null, 
   items: [],
   payments: [],
   subtotalAmount: 0,
@@ -170,4 +175,5 @@ export const defaultTicketFormValues: Partial<TicketFormValues> = {
   amountPaid: 0,
   amountDeferred: 0,
   observations: '',
+  paymentIdsToDelete: [],
 }; 

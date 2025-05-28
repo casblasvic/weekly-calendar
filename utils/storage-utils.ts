@@ -380,7 +380,6 @@ export function loadClinicData(): void {
     if (!localData && !cookieData) {
       console.log("No se encontraron datos de clínicas en el almacenamiento")
     } else {
-      console.log("Datos de clínicas disponibles para hidratación")
     }
   } catch (error) {
     console.error("Error al cargar datos de clínicas:", error)
@@ -393,7 +392,6 @@ export function loadThemeData(): void {
     // Similar a la función anterior, asegura que los datos estén disponibles
     const themeMode = localStorage.getItem("theme-mode")
     if (!themeMode) {
-      console.log("No se encontró configuración de tema, usando predeterminado")
     }
   } catch (error) {
     console.error("Error al cargar datos de tema:", error)

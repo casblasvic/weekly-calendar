@@ -49,12 +49,10 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       if (!cashSession) {
         throw new Error('Sesión de caja no encontrada.');
       }
-
       if (cashSession.status !== CashSessionStatus.OPEN) {
         throw new Error('La sesión de caja no está abierta y no puede ser cerrada.');
       }
 
-      // Verificar que no existan pagos de transferencia/cheque sin verificar en esta sesión
       const pendingVerifications = await tx.payment.count({
         where: {
           cashSessionId: sessionId,
@@ -63,12 +61,10 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
           verification: { is: null },
         },
       });
-
       if (pendingVerifications > 0) {
         throw new Error('Existen pagos de transferencia o cheque sin verificar.');
       }
 
-      // Calcular expectedCash basado en openingBalanceCash y los pagos tipo CASH en la sesión
       const cashPaymentsTotal = cashSession.payments
         .filter(p => p.paymentMethodDefinition?.type === 'CASH' && p.type === 'DEBIT')
         .reduce((sum, p) => sum + p.amount, 0);
@@ -77,29 +73,10 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
         .reduce((sum, p) => sum + p.amount, 0);
       
       const expectedCash = cashSession.openingBalanceCash + cashPaymentsTotal - cashRefundsTotal;
-
       const differenceCash = (countedCash !== undefined) ? countedCash - expectedCash : null;
 
-      const closedSession = await tx.cashSession.update({
-        where: { id: sessionId },
-        data: {
-          closingTime: new Date(),
-          status: CashSessionStatus.CLOSED,
-          countedCash,
-          countedCard,
-          countedBankTransfer,
-          countedCheck,
-          countedInternalCredit,
-          countedOther: countedOther ? countedOther as Prisma.InputJsonValue : Prisma.JsonNull, // Cast a Prisma.InputJsonValue
-          // cashWithdrawal, // Asumiendo que cashWithdrawal no es un campo de CashSession directamente
-          notes,
-          expectedCash,
-          differenceCash,
-        },
-      });
-
       // Marcar todos los tickets asociados a esta sesión (con status CLOSED) como ACCOUNTED
-      const ticketsAccounted = await tx.ticket.updateMany({
+      const ticketsAccountedUpdateResult = await tx.ticket.updateMany({
         where: {
           cashSessionId: sessionId,
           status: TicketStatus.CLOSED,
@@ -108,8 +85,10 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
         data: { status: TicketStatus.ACCOUNTED },
       });
 
-      // ---- CREAR/ACTUALIZAR DEBTS PARA TICKETS ACCOUNTED ----
-      if (ticketsAccounted.count > 0) {
+      let calculatedDeferredAtClose = 0;
+
+      // ---- CREAR/ACTUALIZAR DEBTS PARA TICKETS ACCOUNTED Y CALCULAR TOTAL APLAZADO ----
+      if (ticketsAccountedUpdateResult.count > 0) {
         const accountedTickets = await tx.ticket.findMany({
           where: { cashSessionId: sessionId, status: TicketStatus.ACCOUNTED, systemId },
           include: { payments: { include: { paymentMethodDefinition: true } }, clinic: true },
@@ -124,29 +103,33 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
             }
             return isDeferred;
           });
-          const totalDeferred = deferredPayments.reduce((s,p)=>s+p.amount,0);
-          if (totalDeferred > 0.009) {
-            // comprobar debt existente
+          const totalDeferredForTicket = deferredPayments.reduce((s,p)=>s+p.amount,0);
+
+          if (totalDeferredForTicket > 0.009) { 
             const existingDebt = await tx.debtLedger.findFirst({ where: { ticketId: t.id, systemId } });
             if (existingDebt) {
               await tx.debtLedger.update({
                 where: { id: existingDebt.id },
                 data: {
-                  originalAmount: totalDeferred,
-                  pendingAmount: totalDeferred - existingDebt.paidAmount,
-                  status: existingDebt.paidAmount > 0 ? 'PARTIALLY_PAID' : 'PENDING',
+                  originalAmount: totalDeferredForTicket,
+                  pendingAmount: totalDeferredForTicket - existingDebt.paidAmount,
+                  status: (totalDeferredForTicket - existingDebt.paidAmount) < 0.009 ? 'PAID' : (existingDebt.paidAmount > 0 ? 'PARTIALLY_PAID' : 'PENDING'),
                 },
               });
             } else {
-              if (!t.clientId) continue; // safety
+              if (!t.clientId) {
+                console.warn(`Ticket ${t.id} no tiene clientId, no se puede crear deuda. Se marcará sin deuda pendiente.`);
+                await tx.ticket.update({ where: { id: t.id }, data: { hasOpenDebt: false, dueAmount: 0 } });
+                continue; 
+              }
               await tx.debtLedger.create({
                 data: {
                   ticketId: t.id,
                   clientId: t.clientId!,
                   clinicId: t.clinicId!,
-                  originalAmount: totalDeferred,
+                  originalAmount: totalDeferredForTicket,
                   paidAmount: 0,
-                  pendingAmount: totalDeferred,
+                  pendingAmount: totalDeferredForTicket,
                   status: 'PENDING',
                   systemId,
                 },
@@ -158,16 +141,47 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
                   action: 'DEBT_CREATED',
                   userId,
                   systemId,
-                  details: { amount: totalDeferred },
+                  details: { amount: totalDeferredForTicket },
                 },
               });
             }
-            await tx.ticket.update({ where: { id: t.id }, data: { hasOpenDebt: true, dueAmount: totalDeferred } });
+            await tx.ticket.update({ where: { id: t.id }, data: { hasOpenDebt: true, dueAmount: totalDeferredForTicket } });
+            calculatedDeferredAtClose += totalDeferredForTicket;
+            process.stdout.write(`[LOG_AFTER_ACCUM] Ticket_ID: ${t.id}, current_calcDefAtClose: ${calculatedDeferredAtClose}\n`);
+          } else {
+             const existingDebt = await tx.debtLedger.findFirst({ where: { ticketId: t.id, systemId } });
+             if(existingDebt && existingDebt.pendingAmount > 0.009) {
+                await tx.debtLedger.update({
+                    where: {id: existingDebt.id},
+                    data: {pendingAmount: 0, status: 'PAID'}
+                });
+             }
+            await tx.ticket.update({ where: { id: t.id }, data: { hasOpenDebt: false, dueAmount: 0 } });
           }
         }
       }
 
-      return [closedSession, ticketsAccounted];
+      process.stdout.write(`[LOG_BEFORE_DB_UPDATE] Final_calcDefAtClose: ${calculatedDeferredAtClose}, Type: ${typeof calculatedDeferredAtClose}\n`);
+      
+      const closedSession = await tx.cashSession.update({
+        where: { id: sessionId },
+        data: {
+          closingTime: new Date(),
+          status: CashSessionStatus.CLOSED,
+          countedCash,
+          countedCard,
+          countedBankTransfer,
+          countedCheck,
+          countedInternalCredit,
+          countedOther: countedOther ? countedOther as Prisma.InputJsonValue : Prisma.JsonNull,
+          notes,
+          expectedCash,
+          differenceCash,
+          calculatedDeferredAtClose, 
+        },
+      });
+
+      return [closedSession, ticketsAccountedUpdateResult];
     });
 
     return NextResponse.json({ ...updatedSession, ticketsAccountedCount: ticketsUpdateResult.count }, { status: 200 });

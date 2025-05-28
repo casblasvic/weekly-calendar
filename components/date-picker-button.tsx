@@ -39,16 +39,11 @@ export function DatePickerButton({
   useEffect(() => {
     if (currentDate) {
       const newMonth = new Date(currentDate);
-      // Comparar solo año y mes para evitar actualizaciones innecesarias
-      if (
-        newMonth.getFullYear() !== currentMonth.getFullYear() ||
-        newMonth.getMonth() !== currentMonth.getMonth()
-      ) {
-        setCurrentMonth(newMonth);
-        setSelectedYear(newMonth.getFullYear());
-      }
+      // Solo sincronizar cuando currentDate cambie
+      setCurrentMonth(newMonth);
+      setSelectedYear(newMonth.getFullYear());
     }
-  }, [currentDate, currentMonth]);
+  }, [currentDate]);
 
   // Cerrar el calendario al hacer clic fuera
   useEffect(() => {
@@ -325,7 +320,7 @@ export function DatePickerButton({
       {isOpen && (
         <div
           ref={calendarRef}
-          className="absolute top-full right-auto left-0 mt-1 z-[9999] bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden"
+          className={`absolute mt-2 rounded-md shadow-lg bg-white ${view === 'day' ? 'z-[9999]' : 'z-50'}`}
           style={{ width: `${calendarWidth}px`, maxHeight: "350px" }}
         >
           <div className="p-2">
@@ -378,4 +373,3 @@ export function DatePickerButton({
     </div>
   )
 }
-

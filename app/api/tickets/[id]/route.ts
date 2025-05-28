@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerAuthSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { z } from 'zod';
-import { TicketStatus, Prisma } from '@prisma/client';
+import { TicketStatus, Prisma, CashSessionStatus } from '@prisma/client';
 
 // Definir el esquema de validación para los parámetros de la ruta
 const paramsSchema = z.object({
@@ -350,8 +350,17 @@ export async function DELETE(request: NextRequest, { params: paramsPromise }: { 
         throw new Error('Solo se pueden eliminar tickets que estén en estado OPEN.');
       }
 
-      if (ticket.cashSessionId) {
-        throw new Error('No se puede eliminar un ticket que ya ha sido incluido o está referenciado en un cierre de caja.');
+      let cashSessionIdForPotentialDeletion: string | null = ticket.cashSessionId;
+      let clinicIdForPotentialEmptySessionCheck: string | null = ticket.clinicId;
+
+      if (cashSessionIdForPotentialDeletion) {
+        const cashSession = await tx.cashSession.findUnique({
+          where: { id: cashSessionIdForPotentialDeletion },
+          select: { status: true },
+        });
+        if (cashSession && (cashSession.status === CashSessionStatus.CLOSED || cashSession.status === CashSessionStatus.RECONCILED)) {
+          throw new Error(`No se puede eliminar un ticket de una sesión de caja que está ${cashSession.status}.`);
+        }
       }
 
       // Lógica de reversión para cada ítem del ticket ANTES de eliminar nada
@@ -391,6 +400,52 @@ export async function DELETE(request: NextRequest, { params: paramsPromise }: { 
       await tx.ticket.delete({
         where: { id: ticketId },
       });
+
+      // START: Logic to delete CashSession if it becomes empty and meets criteria
+      if (cashSessionIdForPotentialDeletion && clinicIdForPotentialEmptySessionCheck) {
+        const remainingTicketsCount = await tx.ticket.count({
+          where: { cashSessionId: cashSessionIdForPotentialDeletion },
+        });
+
+        if (remainingTicketsCount === 0) {
+          const cashSessionToDelete = await tx.cashSession.findUnique({
+            where: { id: cashSessionIdForPotentialDeletion },
+          });
+
+          if (
+            cashSessionToDelete &&
+            cashSessionToDelete.status === CashSessionStatus.OPEN &&
+            (cashSessionToDelete.manualCashInput === null || cashSessionToDelete.manualCashInput.toNumber() === 0) &&
+            (cashSessionToDelete.cashWithdrawals === null || cashSessionToDelete.cashWithdrawals.toNumber() === 0) &&
+            cashSessionToDelete.countedCash === null && // Not manually counted
+            (cashSessionToDelete.openingBalanceCash === null || cashSessionToDelete.openingBalanceCash === 0) // Did not carry a significant balance
+          ) {
+            await tx.cashSession.delete({
+              where: { id: cashSessionIdForPotentialDeletion },
+            });
+            console.log(`[CASH_SESSION_AUTO_DELETE] CashSession ${cashSessionIdForPotentialDeletion} deleted automatically as it became empty and met inactivity criteria after ticket ${ticketId} deletion.`);
+            
+            // Optional: Create an EntityChangeLog for this auto-deletion
+            await tx.entityChangeLog.create({
+                data: {
+                    entityId: cashSessionIdForPotentialDeletion,
+                    entityType: 'CASH_SESSION' as any,
+                    action: 'AUTO_DELETE_EMPTY',
+                    userId: session.user.id,
+                    systemId: systemId,
+                    details: {
+                        reason: `Session became empty after ticket ${ticketId} was deleted and met inactivity criteria.`,
+                        deletedTicketId: ticketId,
+                        clinicId: clinicIdForPotentialEmptySessionCheck,
+                    } as any,
+                },
+            });
+          } else if (cashSessionToDelete) {
+            console.log(`[CASH_SESSION_AUTO_DELETE_SKIP] CashSession ${cashSessionIdForPotentialDeletion} is empty but did not meet all criteria for auto-deletion. Status: ${cashSessionToDelete.status}, ManualInput: ${cashSessionToDelete.manualCashInput}, Withdrawals: ${cashSessionToDelete.cashWithdrawals}, CountedCash: ${cashSessionToDelete.countedCash}, OpeningBalance: ${cashSessionToDelete.openingBalanceCash}`);
+          }
+        }
+      }
+      // END: Logic to delete CashSession
     });
 
     return NextResponse.json({ message: 'Ticket eliminado correctamente' }, { status: 200 });

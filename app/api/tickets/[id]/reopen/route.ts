@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerAuthSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { z } from 'zod';
-import { TicketStatus, Prisma, DebtStatus } from '@prisma/client';
+import { TicketStatus, Prisma, DebtStatus, CashSessionStatus } from '@prisma/client';
 
 const paramsSchema = z.object({
   id: z.string().cuid({ message: "ID de ticket inválido." }),
@@ -47,12 +47,27 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
         throw new Error('Solo se pueden reabrir tickets que estén en estado CLOSED.');
       }
 
-      // Condición corregida y simplificada para cashSessionId
-      if (ticket.cashSessionId) { 
-        console.log(`[API REOPEN TICKET] Error: El ticket ya tiene un CashSessionId válido. CashSessionId: '${ticket.cashSessionId}', Tipo: ${typeof ticket.cashSessionId}`);
-        throw new Error('No se puede reabrir un ticket que ya ha sido incluido en un cierre de caja.');
+      // Verificar la caja asociada si existe
+      if (ticket.cashSessionId) {
+        console.log(`[API REOPEN TICKET] Ticket asociado a CashSessionId: ${ticket.cashSessionId}. Verificando estado de la caja.`);
+        const cashSession = await tx.cashSession.findUnique({
+          where: { id: ticket.cashSessionId, systemId: systemId }, // Asegurar que la caja pertenezca al mismo systemId
+        });
+
+        if (!cashSession) {
+          console.log(`[API REOPEN TICKET] Error: Caja (CashSession) con ID ${ticket.cashSessionId} no encontrada.`);
+          throw new Error('La caja asociada al ticket no fue encontrada.');
+        }
+
+        if (cashSession.status !== CashSessionStatus.OPEN) {
+          console.log(`[API REOPEN TICKET] Error: La caja asociada (ID: ${ticket.cashSessionId}) no está ABIERTA. Estado actual: ${cashSession.status}`);
+          throw new Error('No se puede reabrir un ticket si la caja asociada no está en estado ABIERTA.');
+        }
+        console.log(`[API REOPEN TICKET] La caja asociada (ID: ${ticket.cashSessionId}) está ABIERTA. Se permite la reapertura del ticket.`);
+      } else {
+        console.log(`[API REOPEN TICKET] El ticket no está asociado a ninguna caja. Se permite la reapertura.`);
       }
-      console.log(`[API REOPEN TICKET] El ticket cumple las condiciones para ser reabierto. CashSessionId actual: '${ticket.cashSessionId}'`);
+      console.log(`[API REOPEN TICKET] El ticket cumple las condiciones para ser reabierto.`);
       
       // Gestionar DebtLedger si existe una deuda abierta para este ticket
       const activeDebt = ticket.relatedDebts.find(d => d.status === DebtStatus.PENDING || d.status === DebtStatus.PARTIALLY_PAID);

@@ -74,6 +74,7 @@ model System {
   debtLedgers DebtLedger[]
 
   changeLogs EntityChangeLog[] @relation("SystemLogs")
+  debtAdjustments DebtAdjustment[] @relation("SystemDebtAdjustments") // Ajustes de deuda dentro de este sistema
 
   @@map("systems")
 }
@@ -134,6 +135,7 @@ model User {
   // <<< NUEVA RELACIÓN INVERSA PARA VENDEDOR >>>
   ticketsAsSeller          Ticket[]                      @relation("SellerUserTickets")
   verifiedPayments         PaymentVerification[]         @relation("VerifiedBy")
+  debtAdjustmentsMade      DebtAdjustment[]              @relation("UserDebtAdjustments") // Ajustes de deuda realizados por este usuario
   changeLogs               EntityChangeLog[]             @relation("UserLogs")
 
   @@index([systemId])
@@ -277,6 +279,9 @@ model Clinic {
   // Relación inversa para DebtLedger
   debtsOriginatedInClinic DebtLedger[]
 
+  // Relation for schedule exceptions
+  scheduleExceptions ClinicTemplateAssignment[]
+
   @@unique([name, systemId], name: "Clinic_name_systemId_key")
   @@index([systemId])
   @@index([tariffId]) // Añadir índice para tariffId
@@ -286,6 +291,29 @@ model Clinic {
   @@index([phone1CountryIsoCode]) // <<< AÑADIR ÍNDICE
   @@index([phone2CountryIsoCode]) // <<< AÑADIR ÍNDICE
   @@map("clinics")
+}
+
+// Model for Clinic Schedule Exceptions (Assignments with date ranges)
+// Initially added with relations commented out for a step-by-step approach
+model ClinicTemplateAssignment {
+  id String @id @default(cuid())
+
+  clinicId String // Foreign key for Clinic
+  clinic   Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  templateId String // Foreign key for ScheduleTemplate
+  template   ScheduleTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  startDate DateTime
+  endDate   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([clinicId, templateId, startDate])
+  @@index([clinicId])
+  @@index([templateId])
+  @@map("clinic_template_assignments")
 }
 
 // --- Modelos RBAC (Role-Based Access Control) ---
@@ -949,6 +977,9 @@ model ScheduleTemplate {
   blocks        ScheduleTemplateBlock[]
   linkedClinics Clinic[]                @relation("LinkedClinicTemplate")
 
+  // Relation for clinic schedule exceptions using this template
+  clinicExceptionAssignments ClinicTemplateAssignment[]
+
   @@unique([name, systemId])
   @@index([systemId])
   @@map("schedule_templates")
@@ -1227,6 +1258,7 @@ model StockLedger {
   @@index([movementDate])
   @@index([userId])
   @@index([systemId])
+  @@index([movementType])
   @@map("stock_ledgers")
 }
 
@@ -1321,7 +1353,7 @@ model Tariff {
   @@unique([name, systemId]) // Nombre único por sistema
   @@index([systemId])
   @@index([vatTypeId])
-  // @@index([currencyCode]) // Índice opcional para moneda
+  @@index([currencyCode]) // Índice opcional para moneda
   @@map("tariffs")
 }
 
@@ -1349,6 +1381,18 @@ enum DiscountType {
 // <<< ELIMINAR ENUM PaymentMethod (será reemplazado por PaymentMethodDefinition) >>>
 // enum PaymentMethod { ... }
 
+
+// Enum para los tipos de ítems de un ticket
+enum TicketItemType {
+  SERVICE            // Ítem es un servicio
+  PRODUCT            // Ítem es un producto
+  BONO_DEFINITION    // Ítem es la definición de un bono (para venta)
+  PACKAGE_DEFINITION // Ítem es la definición de un paquete (para venta)
+  DEBT_LIQUIDATION   // Ítem es una liquidación de deuda
+  ADJUSTMENT         // Ítem es un ajuste (ej. redondeo, cargo manual)
+  // Puedes añadir más tipos según necesidad
+}
+
 model Ticket {
   id           String       @id @default(cuid())
   ticketNumber String? // Número de ticket, se asigna al cerrar. Podría ser @unique dentro de una serie/clínica.
@@ -1361,6 +1405,8 @@ model Ticket {
   // discountAmount Float        @default(0) // Descuento GLOBAL aplicado al ticket 
   taxAmount    Float // Importe total de impuestos (suma de IVA de items)
   finalAmount  Float // Importe final (total - descuento + impuestos)
+  paidAmount   Float @default(0) // Importe pagado de este ticket
+  pendingAmount Float @default(0) // Importe pendiente (finalAmount - paidAmount)
   // <<< NUEVOS CAMPOS: Serie y Vendedor >>>
   ticketSeries String? // Serie operativa del ticket (ej: T2024-CLI1)
   sellerUserId String? // ID del usuario VENDEDOR (para comisiones)
@@ -1447,7 +1493,7 @@ model TicketItem {
   id                  String             @id @default(cuid())
   ticketId            String
   ticket              Ticket             @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  itemType            String // "SERVICE", "PRODUCT", "BONO_PURCHASE", "PACKAGE_PURCHASE"
+  itemType            TicketItemType // MODIFICADO: Ahora usa el enum TicketItemType
   serviceId           String?
   service             Service?           @relation(fields: [serviceId], references: [id], onDelete: SetNull)
   productId           String?
@@ -1734,8 +1780,13 @@ model CashSession {
 
   status CashSessionStatus @default(OPEN)
 
-  openingBalanceCash Float // Efectivo inicial
-  expectedCash       Float? // Calculado: openingBalanceCash + ingresos efectivo - salidas efectivo
+  openingBalanceCash Float // Efectivo inicial (puede ser calculado del anterior cerrado o fijado si es el primero)
+
+  manualCashInput           Decimal? @default(0) // Efectivo añadido manualmente a la caja
+  cashWithdrawals           Decimal? @default(0) // Retiros de efectivo (ej: para llevar al banco)
+  cashExpenses              Decimal? @default(0) // Gastos pagados directamente desde la caja durante la sesión
+
+  expectedCash       Float? // Calculado: openingBalanceCash + manualCashInput + ingresos efectivo - salidas efectivo - (NO cashWithdrawals here, that's an action after counting)
   countedCash        Float? // Efectivo físico contado al cerrar
   differenceCash     Float? // Calculado: countedCash - expectedCash
 
@@ -1744,6 +1795,7 @@ model CashSession {
   countedCheck          Float? // Total Cheques contados
   countedInternalCredit Float? // Total Crédito Interno (Bonos, etc.)
   countedOther          Json? // Otros métodos y sus totales: { "Bizum": 10.0, "Vales": 5.0 }
+  calculatedDeferredAtClose Float? // NUEVO: Total de importes aplazados calculados en el momento del cierre
 
   notes String? // Notas sobre cierre o conciliación
 
@@ -1777,6 +1829,11 @@ model CashSession {
   // @@index([openingTime]) // Ya existe como parte del anterior y del actual
   // @@index([status]) // Ya existe
   // @@index([systemId]) // Ya existe
+  @@index([posTerminalId])
+
+  // Deudas originadas en esta sesión
+  originatedDebts DebtLedger[] @relation("DebtsOriginatingInSession")
+
   @@map("cash_sessions")
 }
 
@@ -2212,6 +2269,8 @@ enum EntityType {
   INVOICE // <<< AÑADIDO
   PAYMENT
   EMPLOYMENT_CONTRACT
+  DEBT_LEDGER      // Para registrar cambios en las deudas
+  DEBT_ADJUSTMENT  // Para registrar la creación/modificación de ajustes de deuda
   BANK // <<< AÑADIDO
   BANK_ACCOUNT // <<< AÑADIDO
   PROMOTION // <<< AÑADIDO
@@ -2588,10 +2647,49 @@ model DebtLedger {
   @@index([clinicId])
   @@index([systemId])
   @@index([status])
+  // ID de la CashSession donde se originó la deuda (a través del ticket)
+  cashSessionId          String?
+  originatingCashSession CashSession? @relation("DebtsOriginatingInSession", fields: [cashSessionId], references: [id], onDelete: SetNull)
+
+  // Relación inversa a los ajustes de esta deuda
+  debtAdjustments        DebtAdjustment[]
+
+  @@index([cashSessionId])
   @@map("debt_ledgers")
 }
 
-// --- FIN NUEVO MODELO: DebtLedger ---
+// --- Enum para Tipos de Ajuste de Deuda ---
+enum DebtAdjustmentType {
+  CANCELLATION              // Cancelación/condonación/descuento post-venta
+  ADMINISTRATIVE_CORRECTION // Para corregir errores en el monto original
+  OTHER                     // Otro tipo de ajuste
+}
+
+// --- Modelo para Ajustes de Deuda ---
+model DebtAdjustment {
+  id               String    @id @default(cuid())
+  debtLedgerId     String
+  debtLedger       DebtLedger @relation(fields: [debtLedgerId], references: [id], onDelete: Cascade)
+
+  adjustmentType   DebtAdjustmentType
+  amount           Float             // Monto del ajuste (positivo representa una reducción de la deuda)
+  reason           String
+  adjustmentDate   DateTime  @default(now())
+
+  userId           String
+  user             User      @relation("UserDebtAdjustments", fields: [userId], references: [id], onDelete: Restrict) // Evitar que se borren ajustes si se borra el usuario
+
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  systemId         String
+  system           System    @relation("SystemDebtAdjustments", fields: [systemId], references: [id], onDelete: Cascade)
+
+  @@index([debtLedgerId])
+  @@index([userId])
+  @@index([systemId])
+  @@index([adjustmentType])
+  @@map("debt_adjustments")
+}
 
 // --- NUEVO MODELO: Verificación de Pagos ---
 model PaymentVerification {
@@ -2605,6 +2703,7 @@ model PaymentVerification {
   attachmentUrl    String?
 
   @@index([paymentId])
+  @@index([verifiedByUserId])
 }
 
 // --- NUEVO MODELO: EntityChangeLog para auditoría ---

@@ -129,7 +129,7 @@ export type UpdatedTicketScalarResponse = Prisma.TicketGetPayload<{
 }>;
 
 // Claves de Query
-const ticketKeys = {
+export const ticketKeys = {
   all: ['tickets'] as const,
   lists: () => [...ticketKeys.all, 'list'] as const,
   list: (filters: string) => [...ticketKeys.lists(), { filters }] as const,
@@ -545,64 +545,91 @@ export function useCompleteAndCloseTicketMutation() {
       return await api.post<TicketApiResponse>(`/api/tickets/${ticketId}/complete-and-close`, {});
     },
     onMutate: async ({ ticketId, clinicId }) => {
+      // Cancelar queries actuales
       await queryClient.cancelQueries({ queryKey: ticketKeys.detail(ticketId) });
       await queryClient.cancelQueries({ queryKey: ['ticket', ticketId] });
+      
       if (clinicId) {
         await queryClient.cancelQueries({ queryKey: ['openTicketsCount', clinicId, 'OPEN'] });
       }
 
-      const openKey: TicketsQueryKey | undefined = clinicId ? ['tickets', { clinicId, status: [TicketStatus.OPEN], page: 1, pageSize: 10 }] : undefined;
-      const closedKey: TicketsQueryKey | undefined = clinicId ? ['tickets', { clinicId, status: [TicketStatus.CLOSED, TicketStatus.ACCOUNTED, TicketStatus.VOID], page: 1, pageSize: 10 }] : undefined;
+      const openKey: TicketsQueryKey | undefined = clinicId 
+        ? ['tickets', { clinicId, status: [TicketStatus.OPEN], page: 1, pageSize: 10 }] 
+        : undefined;
+      
+      const closedKey: TicketsQueryKey | undefined = clinicId 
+        ? ['tickets', { clinicId, status: [TicketStatus.CLOSED, TicketStatus.ACCOUNTED, TicketStatus.VOID], page: 1, pageSize: 10 }] 
+        : undefined;
+
       if (openKey) await queryClient.cancelQueries({ queryKey: openKey });
       if (closedKey) await queryClient.cancelQueries({ queryKey: closedKey });
 
+      // Guardar estado previo
       const prevDetail = queryClient.getQueryData<TicketApiResponse>(ticketKeys.detail(ticketId));
       const prevDetailSingle = queryClient.getQueryData<TicketApiResponse>(['ticket', ticketId]);
       const prevOpenCount = clinicId ? queryClient.getQueryData<number>(['openTicketsCount', clinicId, 'OPEN']) : undefined;
       const prevOpenList = openKey ? queryClient.getQueryData<PaginatedTicketsResponse>(openKey) : undefined;
       const prevClosedList = closedKey ? queryClient.getQueryData<PaginatedTicketsResponse>(closedKey) : undefined;
 
+      // Actualizar optimistamente
       if (prevDetail) {
-        queryClient.setQueryData(ticketKeys.detail(ticketId), { ...prevDetail, status: TicketStatus.CLOSED });
+        const updatedTicket = { ...prevDetail, status: TicketStatus.CLOSED };
+        queryClient.setQueryData(ticketKeys.detail(ticketId), updatedTicket);
       }
       if (prevDetailSingle) {
         queryClient.setQueryData(['ticket', ticketId], { ...prevDetailSingle, status: TicketStatus.CLOSED });
       }
 
+      // Actualizar listas
       if (openKey) {
-        queryClient.setQueryData<PaginatedTicketsResponse>(openKey, (old) => old ? { ...old, data: old.data.filter(t => t.id !== ticketId), totalCount: Math.max(0, old.totalCount - 1) } : old );
+        queryClient.setQueryData<PaginatedTicketsResponse>(openKey, (old) => 
+          old ? { 
+            ...old, 
+            data: old.data.filter(t => t.id !== ticketId), 
+            totalCount: Math.max(0, old.totalCount - 1) 
+          } : old
+        );
       }
-      // NO MODIFICAR OPTIMISTAMENTE LA LISTA DE CERRADOS AQUÍ
-      /*
-      if (closedKey && prevDetail) {
-        const ticketForList = { ...prevDetail, status: TicketStatus.CLOSED } as any;
-        queryClient.setQueryData<PaginatedTicketsResponse>(closedKey, (old) => {
-          if (!old) return { data: [ticketForList], totalCount: 1, page: 1, pageSize: 10, totalPages: 1 } as PaginatedTicketsResponse;
-          return { ...old, data: [ticketForList, ...old.data], totalCount: old.totalCount + 1 };
-        });
-      }
-      */
 
+      // Actualizar contador
       if (clinicId) {
         queryClient.setQueryData<number>(['openTicketsCount', clinicId, 'OPEN'], (old = 0) => Math.max(0, old - 1));
       }
 
-      return { previousTicketDetail: prevDetailSingle ?? prevDetail, previousOpenCount: prevOpenCount, previousOpenTicketsList: prevOpenList, previousClosedTicketsList: prevClosedList, openTicketsQueryKey: openKey, closedTicketsQueryKey: closedKey, clinicId, ticketId } as CloseTicketOptimisticContext;
+      // Redirigir inmediatamente (esto se manejará en el componente que llama a la mutación)
+      
+      return { 
+        previousTicketDetail: prevDetailSingle ?? prevDetail, 
+        previousOpenCount: prevOpenCount,
+        previousOpenTicketsList: prevOpenList,
+        previousClosedTicketsList: prevClosedList,
+        openTicketsQueryKey: openKey,
+        closedTicketsQueryKey: closedKey,
+        clinicId, 
+        ticketId 
+      } as CloseTicketOptimisticContext;
     },
-    onSuccess: (_data, variables) => {
-      // No es necesario mostrar un toast aquí, la redirección y actualización de lista son suficientes.
-      const ticketId = variables.ticketId;
-      const clinicId = variables.clinicId;
-
-      // Invalidar todas las listas de tickets para asegurar consistencia.
+    onSuccess: (data, variables, context) => {
+      const { ticketId, clinicId } = variables;
+      
+      // Actualizar con los datos del servidor
+      if (data) {
+        queryClient.setQueryData(ticketKeys.detail(ticketId), data);
+        queryClient.setQueryData(['ticket', ticketId], data);
+      }
+      
+      // Invalidar consultas relacionadas
       queryClient.invalidateQueries({ queryKey: ticketKeys.all, exact: false });
       
       if (clinicId) {
         queryClient.invalidateQueries({ queryKey: ['openTicketsCount', clinicId, 'OPEN'] });
       }
-      // Eliminar la query del detalle del ticket de la caché para forzar una carga limpia si se vuelve a acceder.
+      
+      // Eliminar la query del detalle del ticket de la caché para forzar una carga limpia si se vuelve a acceder
       queryClient.removeQueries({ queryKey: ticketKeys.detail(ticketId) });
       queryClient.removeQueries({ queryKey: ['ticket', ticketId] });
+      
+      // No mostramos toast aquí para mantener la consistencia con la eliminación de toasts
     },
     onError: (error: any, variables, context) => {
       // Revertir cambios optimistas en caso de error
@@ -620,11 +647,7 @@ export function useCompleteAndCloseTicketMutation() {
         queryClient.setQueryData<PaginatedTicketsResponse>(context.closedTicketsQueryKey, context.previousClosedTicketsList);
       }
       
-      toast({
-        variant: "destructive",
-        title: "Error al cerrar ticket",
-        description: error.message || "No se pudo completar y cerrar el ticket.",
-      });
+      // Error handling sin toast
     },
   });
 }
@@ -771,42 +794,50 @@ export function useReopenTicketMutation() {
         queryClient.setQueryData<PaginatedTicketsResponse>(context.openTicketsQueryKey, context.previousOpenTicketsList);
       }
       
-      toast({
-        variant: "destructive",
-        title: "Error al reabrir ticket",
-        description: error.message || "No se pudo reabrir el ticket.",
-      });
+      // Error handling sin toast
     },
-    onSettled: async (data, error, variables, context) => { // <<< HACER ASYNC
+    onSettled: async (data, error, variables, context) => {
       const { ticketId, clinicId } = variables;
 
-      // 1. Invalidar PRIMERO para marcarla como stale
-      await queryClient.invalidateQueries({ queryKey: ticketKeys.detail(ticketId), exact: true });
-      
-      // 2. Forzar un REFETCH INMEDIATO y esperar a que complete
-      await queryClient.refetchQueries({ queryKey: ticketKeys.detail(ticketId), exact: true });
-      await queryClient.refetchQueries({ queryKey: ['ticket', ticketId], exact: true });
+      try {
+        // 1. Actualizar primero el detalle del ticket
+        await queryClient.invalidateQueries({ queryKey: ticketKeys.detail(ticketId), exact: true });
+        
+        // Ejecutar en paralelo las actualizaciones del detalle
+        await Promise.all([
+          queryClient.refetchQueries({ queryKey: ticketKeys.detail(ticketId), exact: true }),
+          queryClient.refetchQueries({ queryKey: ['ticket', ticketId], exact: true })
+        ]);
 
-      // Resto de las invalidaciones (contadores, listas)
-      if (clinicId) {
-        // Invalidate and refetch count
-        await queryClient.invalidateQueries({ queryKey: ['openTicketsCount', clinicId, 'OPEN'] });
-        await queryClient.refetchQueries({ queryKey: ['openTicketsCount', clinicId, 'OPEN'] });
+        // 2. Actualizar contadores y listas
+        if (clinicId) {
+          // Actualizar contador
+          await queryClient.invalidateQueries({ queryKey: ['openTicketsCount', clinicId, 'OPEN'] });
+          await queryClient.refetchQueries({ queryKey: ['openTicketsCount', clinicId, 'OPEN'] });
 
-        // Invalidate and refetch lists
-        const closedKey: TicketsQueryKey = ['tickets', { clinicId, status: [TicketStatus.CLOSED, TicketStatus.ACCOUNTED, TicketStatus.VOID], page: 1, pageSize: 10}];
-        const openKey: TicketsQueryKey = ['tickets', { clinicId, status: [TicketStatus.OPEN], page: 1, pageSize: 10}];
-        await queryClient.invalidateQueries({ queryKey: closedKey });
-        await queryClient.refetchQueries({ queryKey: closedKey });
-        await queryClient.invalidateQueries({ queryKey: openKey });
-        await queryClient.refetchQueries({ queryKey: openKey });
-      } else {
-        // Si no hay clinicId, invalidar y refetch de forma más general si es posible o necesario
-        await queryClient.invalidateQueries({ queryKey: ticketKeys.lists() });
-        await queryClient.refetchQueries({ queryKey: ticketKeys.lists() });
+          // Definir claves de consulta
+          const closedKey: TicketsQueryKey = ['tickets', { clinicId, status: [TicketStatus.CLOSED, TicketStatus.ACCOUNTED, TicketStatus.VOID], page: 1, pageSize: 10}];
+          const openKey: TicketsQueryKey = ['tickets', { clinicId, status: [TicketStatus.OPEN], page: 1, pageSize: 10}];
+          
+          // Invalidar y actualizar listas en paralelo
+          await Promise.all([
+            queryClient.invalidateQueries({ queryKey: closedKey }),
+            queryClient.invalidateQueries({ queryKey: openKey })
+          ]);
+          
+          // Refetch en paralelo
+          await Promise.all([
+            queryClient.refetchQueries({ queryKey: closedKey }),
+            queryClient.refetchQueries({ queryKey: openKey })
+          ]);
+        } else {
+          // Si no hay clinicId, actualizar de forma más general
+          await queryClient.invalidateQueries({ queryKey: ticketKeys.lists() });
+          await queryClient.refetchQueries({ queryKey: ticketKeys.lists() });
+        }
+      } catch (error) {
+        console.error('Error en onSettled de reapertura de ticket:', error);
       }
-      
-      // Ya no mostramos el toast aquí para evitar retraso; se muestra en onSuccess
     },
   });
 }

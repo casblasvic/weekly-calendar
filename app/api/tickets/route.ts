@@ -89,6 +89,12 @@ export async function GET(request: NextRequest) {
         cashierUser: { // Cajero
           select: { id: true, firstName: true, lastName: true },
         },
+        cashSession: {
+          select: {
+            id: true,
+            status: true
+          }
+        },
         // No es necesario incluir clinic si ya filtramos por clinicId, a menos que queramos más datos de la clínica.
         // items: true, // Podría ser pesado, considerar si se necesita en el listado general
         // payments: true, // También podría ser pesado

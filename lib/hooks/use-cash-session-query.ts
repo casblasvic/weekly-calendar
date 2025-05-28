@@ -1,7 +1,7 @@
 import { UseQueryOptions, useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { api } from '@/utils/api-client'; 
 import { CACHE_TIME } from '@/lib/react-query'; 
-import type { CashSession, CashSessionStatus, User, Clinic, PosTerminal, Payment, Ticket, PaymentMethodType, PaymentType } from '@prisma/client';
+import type { CashSession, CashSessionStatus, User, Clinic, PosTerminal, Payment, Ticket, PaymentMethodType, PaymentType, Prisma } from '@prisma/client';
 import { toast } from '@/components/ui/use-toast';
 
 // Tipos para la respuesta de la API de CashSession (detalle)
@@ -40,13 +40,15 @@ export interface CreateCashSessionPayload {
 // Tipos para el payload de cierre de CashSession
 export interface CloseCashSessionPayload {
   countedCash?: number | null;
+  manualCashInput?: number | null; // Cash added manually during this session
+  cashWithdrawals?: number | null; // Cash physically withdrawn at close
+  cashExpenses?: number | null; // Cash expenses paid out from the drawer during this session
   countedCard?: number | null;
   countedBankTransfer?: number | null;
   countedCheck?: number | null;
   countedInternalCredit?: number | null;
   countedOther?: Record<string, number> | null; // Prisma.JsonValue o un tipo más específico
   notes?: string | null;
-  countedCashWithdrawal?: number | null;
 }
 
 // Tipos para el payload de conciliación de CashSession
@@ -173,6 +175,7 @@ export function useCloseCashSessionMutation() {
       queryClient.invalidateQueries({ queryKey: cashSessionKeys.lists() });
       // Importante: También invalidar las listas de tickets, ya que su estado puede cambiar a ACCOUNTED.
       queryClient.invalidateQueries({ queryKey: ['tickets', 'list'] }); // Asumiendo que 'tickets' y 'list' son parte de ticketKeys
+      queryClient.invalidateQueries({ queryKey: [...cashSessionKeys.lists(), 'openCount', updatedSession.clinicId] });
       // O una invalidación más general si no se conoce el filtro exacto:
       // queryClient.invalidateQueries({ queryKey: ticketKeys.lists() }); // Usando la factory de ticketKeys.
       
@@ -233,9 +236,48 @@ export interface CashSessionFilters {
 }
 
 // Tipos para la respuesta paginada de CashSessions
+
+// Interface for individual items in the cash session list from GET /api/cash-sessions
+export interface CashSessionListItem {
+  id: string;
+  sessionNumber: string;
+  userId: string;
+  clinicId: string;
+  posTerminalId: string | null;
+  openingBalanceCash: number;
+  manualCashInput: number;
+  cashWithdrawals: number;
+  expectedCash: number;
+  countedCash: number;
+  differenceCash: number;
+  status: CashSessionStatus;
+  openingTime: string; // Dates are stringified in JSON
+  closingTime: string | null;
+  reconciliationTime: string | null;
+  notes: string | null;
+  systemId: string;
+  countedCard: number;
+  countedBankTransfer: number;
+  countedCheck: number;
+  countedInternalCredit: number;
+  countedOther: Prisma.JsonValue; 
+  hasChangesAfterReconcile: boolean;
+  calculatedDeferredAtClose: number;
+  user: Pick<User, 'id' | 'firstName' | 'lastName' | 'email'> | null;
+  clinic: Pick<Clinic, 'id' | 'name' | 'currency'> | null;
+  posTerminal: Pick<PosTerminal, 'id' | 'name'> | null;
+  ticketsAccountedInSession: Array<{
+    id: string;
+    ticketNumber: string | null;
+    finalAmount: number;
+    client: { id: string; firstName: string; lastName: string | null; } | null;
+  }>;
+  totalFacturadoEnSesion: number;
+}
+
 // (CashSession base, no el DetailResponse completo para listas)
 export type PaginatedCashSessionsResponse = {
-  data: CashSession[]; 
+  data: CashSessionListItem[]; 
   totalCount: number;
   page: number;
   pageSize: number;
@@ -305,9 +347,15 @@ export interface CashSessionResponse {
   countedCheck?: number | null;
   countedInternalCredit?: number | null;
   countedOther?: any | null; // Prisma.JsonValue
-  cashWithdrawal?: number | null;
+  manualCashInput?: number | null;
+  cashWithdrawals?: number | null;
+  cashExpenses?: number | null; // Added to reflect value stored at closing
+  hasEarlierOpenSession?: boolean;
 }
 
+/**
+ * Hook para obtener una sesión de caja por fecha.
+ */
 export function useDailyCashSessionQuery(
   clinicId: string | undefined | null, 
   date: string | undefined | null, // Espera YYYY-MM-DD
@@ -348,7 +396,8 @@ export function useReopenCashSessionMutation() {
       // queryClient.invalidateQueries({ queryKey: cashSessionKeys.detailByDate(reopenedSession.clinicId, reopenedSession.openingTime.toISOString().substring(0,10)) });
 
       // Invalidar tickets para que se actualice su estado de ACCOUNTED a CLOSED
-      queryClient.invalidateQueries({ queryKey: ['tickets'] }); 
+      queryClient.invalidateQueries({ queryKey: ['tickets'] });
+      queryClient.invalidateQueries({ queryKey: [...cashSessionKeys.lists(), 'openCount', reopenedSession.clinicId] }); 
 
       toast({
         title: "Caja Reabierta",
@@ -380,7 +429,7 @@ export function useOpenCashSessionsCountQuery(
   options?: Omit<UseQueryOptions<number, Error>, 'queryKey' | 'queryFn' | 'enabled'>
 ) {
   return useQuery<number, Error>({
-    queryKey: ['cashSession', 'openCount', clinicId],
+    queryKey: [...cashSessionKeys.lists(), 'openCount', clinicId],
     queryFn: async () => {
       if (!clinicId) return 0;
       const resp = await api.get<{ count: number }>(`/api/cash-sessions/count-open?clinicId=${clinicId}`);

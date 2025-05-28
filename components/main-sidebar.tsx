@@ -319,34 +319,31 @@ const MenuItemComponent = ({
           )}
         </div>
         {(!isCollapsed || depth > 0) && <span className="flex-1 text-left">{item.label}</span>}
-        {/* Lógica de Badge/Indicador actualizada */}
-        {item.hasAlertIndicator && (!item.badge || item.badge === 0 || String(item.badge).trim() === '...' || String(item.badge).trim() === '') && (
-          <span className="w-2 h-2 ml-auto bg-red-500 rounded-full"></span> // Punto rojo simple
-        )}
-        {item.badge && item.badge !== 0 && String(item.badge).trim() !== '' && String(item.badge).trim() !== '...' &&  (
-          <span
-            className={cn(
-              'ml-auto text-xs font-semibold px-1.5 py-0.5 rounded-full transition-all duration-300 ease-in-out',
-              'bg-destructive text-destructive-foreground',
-              {
-                'group-hover:bg-destructive/90': true,
-              },
-              isCollapsed && depth === 0 
-                ? 'absolute top-1 right-1 text-[10px] p-0.5 leading-none transform translate-x-1/2 -translate-y-1/2' 
-                : 'relative',
-              isCollapsed && depth > 0 && !isHovered && 'hidden',
-              isCollapsed && depth === 0 && !isOpen && !isHovered && item.submenu && item.submenu.length > 0 && 'opacity-0 group-hover:opacity-100'
-            )}
-          >
-            {String(item.badge)}
-          </span>
+        {/* Updated Badge Logic: Shows a red dot if badge is true, otherwise shows standard badge */}
+        {typeof item.badge === 'boolean' && item.badge === true ? (
+          <span className="w-2 h-2 ml-auto bg-red-500 rounded-full"></span>
+        ) : (
+          item.badge && typeof item.badge !== 'boolean' && item.badge !== 0 && String(item.badge).trim() !== '' && String(item.badge).trim() !== '...' &&  (
+            <span
+              className={cn(
+                'ml-auto text-xs font-semibold px-1.5 py-0.5 rounded-full transition-all duration-300 ease-in-out',
+                'bg-destructive text-destructive-foreground',
+                {
+                  'group-hover:bg-destructive/90': true,
+                },
+                isCollapsed && depth === 0 
+                  ? 'absolute top-1 right-1 text-[10px] p-0.5 leading-none transform translate-x-1/2 -translate-y-1/2' 
+                  : 'relative',
+                isCollapsed && depth > 0 && !isHovered && 'hidden',
+                isCollapsed && depth === 0 && !isOpen && !isHovered && item.submenu && item.submenu.length > 0 && 'opacity-0 group-hover:opacity-100'
+              )}
+            >
+              {String(item.badge)}
+            </span>
+          )
         )}
         {(!isCollapsed || depth > 0) && hasSubmenu && (
           <ChevronRight className={cn("h-4 w-4 transition-transform", isOpen && "rotate-90")} />
-        )}
-        {/* Indicador visual para submenús cuando NO está colapsado */}
-        {!isCollapsed && hasSubmenu && depth === 0 && !isOpen && (
-          <div className="absolute w-1 h-1 bg-purple-600 rounded-full top-1 right-9"></div>
         )}
       </Button>
       
@@ -852,8 +849,7 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
 
     const updateBadges = (items: MenuItem[]): MenuItem[] => {
       return items.map(item => {
-        let newBadge: string | number | undefined = item.badge;
-        let newHasAlertIndicator = item.hasAlertIndicator;
+        let newBadge: string | number | boolean | undefined = item.badge; // Allow boolean for dot
 
         if (item.id === 'listado-tickets') {
           if (isLoadingTicketsCount) {
@@ -861,9 +857,9 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
           } else if (openTicketsCount > 0) {
             newBadge = openTicketsCount;
           } else {
-            newBadge = undefined; // No mostrar badge si es 0 o no hay datos
+            newBadge = undefined;
           }
-          if (newBadge) facturacionHasAlert = true; // Si listado-tickets tiene badge, facturación debe tener alerta
+          if (newBadge) facturacionHasAlert = true;
         }
 
         if (item.id === 'cajas-dia') {
@@ -879,19 +875,18 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
 
         let submenuItems = item.submenu;
         if (item.submenu) {
-          submenuItems = updateBadges(item.submenu); // Procesar recursivamente submenús
-          // Comprobar si algún hijo directo tiene alerta o badge para el menú agrupador
-          if (item.id === 'facturacion') { // Asumiendo que 'facturacion' es el ID del menú padre
-            // facturacionHasAlert ya se actualizó si 'listado-tickets' tiene badge.
-            // Podríamos añadir lógica aquí si otros hijos de facturación también pueden tener alertas independientes.
-            newHasAlertIndicator = facturacionHasAlert;
+          submenuItems = updateBadges(item.submenu);
+          if (item.id === 'facturacion') {
+            if (facturacionHasAlert && newBadge === undefined) { // Only set dot if no other badge is present
+              newBadge = true; // Set to true to show red dot
+            }
           }
         }
 
         return {
           ...item,
           badge: newBadge,
-          hasAlertIndicator: newHasAlertIndicator,
+          // hasAlertIndicator property is removed
           submenu: submenuItems,
         };
       });

@@ -27,6 +27,7 @@ import { useClinic } from '@/contexts/clinic-context';
 import { useUsersByClinicQuery, type UserForSelector } from "@/lib/hooks/use-user-query";
 import { useTranslation } from "react-i18next";
 import { useCreateTicketMutation } from "@/lib/hooks/use-ticket-query";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 // Datos de ejemplo para selects
 const exampleSellers = [
@@ -439,14 +440,39 @@ export default function NuevoTicketPage() {
                     {/*   </div> */}
                     {/* </div> */}
                     
-                    {/* Tabla de Pagos */}
-                    <div className="border-t border-b py-3">
-                      <TicketPayments 
-                        payments={watch('payments') || []}
-                        deferredAmount={(watch('amountDeferred') || 0)}
-                        onOpenAddPaymentModal={handleOpenAddPaymentModal} 
-                        onRemovePayment={handleRemovePayment}
-                      />
+                    {/* Tabs de pagos */}
+                    <div className="py-3 border-t border-b">
+                      {(() => {
+                        const directLabel = t('tickets.tabs.directPayments', 'Pagos');
+                        const deferredLabel = t('tickets.tabs.deferredPayments', 'Pagos aplazados');
+                        const noDeferredText = t('tickets.tabs.noDeferredPayments', 'Este ticket aún no tiene pagos aplazados.'); // Or a more suitable message for new tickets
+                        return (
+                          <Tabs defaultValue="direct" className="w-full">
+                            <TabsList className="mb-4">
+                              <TabsTrigger value="direct">
+                                {directLabel}
+                              </TabsTrigger>
+                              <TabsTrigger value="deferred" disabled={true}>
+                                {deferredLabel}
+                              </TabsTrigger>
+                            </TabsList>
+                            <TabsContent value="direct">
+                              <TicketPayments 
+                                payments={watch('payments') || []}
+                                deferredAmount={(watch('amountDeferred') || 0)}
+                                onOpenAddPaymentModal={handleOpenAddPaymentModal} 
+                                onRemovePayment={handleRemovePayment}
+                                readOnly={false} // Payments are not read-only in new ticket page
+                              />
+                            </TabsContent>
+                            <TabsContent value="deferred">
+                              <div className="text-center text-sm text-gray-500 py-6">
+                                {noDeferredText}
+                              </div>
+                            </TabsContent>
+                          </Tabs>
+                        );
+                      })()}
                     </div>
                     
                     {/* Resumen de Totales (debajo de la tabla de pagos) */}

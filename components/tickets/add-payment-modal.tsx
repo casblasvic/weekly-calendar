@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -34,6 +34,7 @@ interface AddPaymentModalProps {
   onClose: () => void;
   onAddPayment: (payment: TicketPaymentFormValues) => void;
   pendingAmount: number;
+  currencyCode: string; // Added currency code prop
   /**
    * Lista opcional de tipos de método de pago que NO deben mostrarse en el selector.
    * Ej.: [PaymentMethodType.DEFERRED_PAYMENT]
@@ -41,11 +42,21 @@ interface AddPaymentModalProps {
   excludedPaymentMethodTypes?: PaymentMethodType[];
 }
 
+// Helper hook to get the previous value of a prop or state
+function usePrevious<T>(value: T): T | undefined {
+  const ref = useRef<T | undefined>(undefined);
+  useEffect(() => {
+    ref.current = value;
+  }, [value]);
+  return ref.current;
+}
+
 export function AddPaymentModal({ 
   isOpen, 
   onClose, 
   onAddPayment, 
   pendingAmount,
+  currencyCode,
   excludedPaymentMethodTypes = [],
 }: AddPaymentModalProps) {
   const [paymentMethodId, setPaymentMethodId] = useState<string>('');
@@ -54,7 +65,28 @@ export function AddPaymentModal({
   const { toast } = useToast();
   const { t } = useTranslation();
 
-  const { data: paymentMethods = [], isLoading: loadingPaymentMethods } = usePaymentMethodsQuery();
+  const { data: paymentMethods = [], isLoading: loadingPaymentMethods, error: paymentMethodsError } = usePaymentMethodsQuery();
+
+  useEffect(() => {
+    console.log('[AddPaymentModal] Payment Methods Query Status:', { loadingPaymentMethods, hasData: paymentMethods.length > 0, error: paymentMethodsError });
+  }, [loadingPaymentMethods, paymentMethods, paymentMethodsError]);
+
+  useEffect(() => {
+    console.log('[AddPaymentModal] Amount state:', amount);
+  }, [amount]);
+
+  useEffect(() => {
+    console.log('[AddPaymentModal] PaymentMethodId state:', paymentMethodId);
+  }, [paymentMethodId]);
+
+  useEffect(() => {
+    const conditions = {
+      loadingPaymentMethods,
+      isAmountInvalid: amount <= 0,
+      isPaymentMethodMissing: !paymentMethodId,
+    };
+    console.log('[AddPaymentModal] Disable button conditions:', conditions, 'Resulting disableButton:', loadingPaymentMethods || amount <= 0 || !paymentMethodId);
+  }, [loadingPaymentMethods, amount, paymentMethodId]);
 
   // Filtrar métodos de pago según exclusiones solicitadas
   const filteredPaymentMethods = React.useMemo(() => {
@@ -62,20 +94,35 @@ export function AddPaymentModal({
     return paymentMethods.filter((m: { type?: PaymentMethodType }) => !m.type || !excludedPaymentMethodTypes.includes(m.type));
   }, [paymentMethods, excludedPaymentMethodTypes]);
 
+  const prevIsOpen = usePrevious(isOpen);
+
   useEffect(() => {
+    // Update amount whenever pendingAmount changes and modal is open
     if (isOpen) {
-      // Redondear el pendiente a 2 decimales al iniciar
-      setAmount(parseFloat(pendingAmount.toFixed(2)));
-      setPaymentMethodId(''); // Resetear método de pago
-      setReference(''); // Resetear referencia
+      const newAmount = parseFloat(pendingAmount.toFixed(2));
+      // console.log(`[AddPaymentModal] pendingAmount Effect: oldAmount=${amount}, newPending=${pendingAmount}, newAmountToSet=${newAmount}`);
+      setAmount(newAmount);
     }
-  }, [pendingAmount, isOpen]);
+  }, [pendingAmount, isOpen]); // amount removed from deps to avoid potential loops if parent also reacts to changes from here
+
+  useEffect(() => {
+    // Reset payment method and reference only when modal transitions from closed to open
+    if (isOpen && !prevIsOpen) {
+      console.log('[AddPaymentModal] Modal transitioned to open. Resetting paymentMethodId and reference.');
+      setPaymentMethodId('');
+      setReference('');
+      // Amount is set by the effect above based on the initial pendingAmount
+    }
+  }, [isOpen, prevIsOpen]);
 
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
+    const inputValue = e.target.value;
+    console.log('[AddPaymentModal] handleAmountChange - input value:', inputValue);
     // Permitir números y un punto decimal
-    if (/^\d*\.?\d{0,2}$/.test(value) || value === '') {
-      setAmount(value === '' ? 0 : parseFloat(value));
+    if (/^\d*\.?\d{0,2}$/.test(inputValue) || inputValue === '') {
+      const newAmount = inputValue === '' ? 0 : parseFloat(inputValue);
+      setAmount(newAmount);
+      console.log('[AddPaymentModal] handleAmountChange - newAmount set:', newAmount);
     }
   };
   
@@ -113,23 +160,15 @@ export function AddPaymentModal({
   };
 
   const renderSubmitButton = () => {
-    if (loadingPaymentMethods || amount <= 0 || !paymentMethodId) {
-      return (
-        <Button
-          disabled={true}
-          className="w-full text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700"
-        >
-          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-          {t('tickets.addPaymentModal.confirmButton')}
-        </Button>
-      );
-    }
+    const isButtonDisabled = loadingPaymentMethods || amount <= 0 || !paymentMethodId;
+
     return (
       <Button
-        onClick={handleAddClick}
+        onClick={!isButtonDisabled ? handleAddClick : undefined}
+        disabled={isButtonDisabled}
         className="w-full text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700"
       >
-        <PlusCircle className="w-4 h-4 mr-2" />
+        <PlusCircle className="w-4 h-4 mr-2" /> {/* Always show PlusCircle */}
         {t('tickets.addPaymentModal.confirmButton')}
       </Button>
     );
@@ -154,7 +193,7 @@ export function AddPaymentModal({
             <div className="text-sm text-center text-gray-600">
               {t('tickets.addPaymentModal.pendingInfo')}
               <span className="ml-1 font-semibold text-purple-700">
-                {formatCurrency(pendingAmount)}
+                {formatCurrency(pendingAmount, currencyCode)}
               </span>
             </div>
 
@@ -163,7 +202,10 @@ export function AddPaymentModal({
               <Label htmlFor="payment-method">{t('tickets.addPaymentModal.paymentMethodLabel')}</Label>
               <Select 
                 value={paymentMethodId}
-                onValueChange={setPaymentMethodId}
+                onValueChange={(value) => {
+                  console.log('[AddPaymentModal] Payment method SELECTED. Value:', value, 'Type:', typeof value);
+                  setPaymentMethodId(value);
+                }}
               >
                 {/* Quitar clase de borde explícita si existe, usar estilos por defecto */}
                 <SelectTrigger id="payment-method" className="w-full focus:ring-purple-500/50">
@@ -174,11 +216,14 @@ export function AddPaymentModal({
                     <SelectItem value="loading" disabled>{t('tickets.addPaymentModal.loadingMethods')}</SelectItem>
                   ) : (
                     filteredPaymentMethods.length > 0 ? (
-                      filteredPaymentMethods.map((method: any) => (
-                      <SelectItem key={method.id} value={method.id}>
-                        {method.name}
-                      </SelectItem>
-                    ))
+                      filteredPaymentMethods.map((method) => {
+                        console.log('[AddPaymentModal] Rendering payment method option:', method);
+                        return (
+                          <SelectItem key={method.id} value={method.id}>
+                            {method.name}
+                          </SelectItem>
+                        );
+                      })
                     ) : (
                       <SelectItem value="none" disabled>
                         {t('tickets.addPaymentModal.noMethodsAvailable', 'Sin métodos disponibles')}

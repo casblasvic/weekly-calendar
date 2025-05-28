@@ -11,6 +11,7 @@ import type { TicketFormValues, TicketPaymentFormValues } from '@/lib/schemas/ti
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
+import { formatCurrency } from '@/lib/format-utils';
 import { PaymentMethodType } from '@prisma/client';
 
 interface SimplePaymentMethod {
@@ -27,6 +28,7 @@ interface TicketPaymentsProps {
   onRemovePayment?: (paymentId: string) => void;
   readOnly?: boolean;
   paymentMethodsCatalog?: SimplePaymentMethod[]; // Lista de métodos para mostrar nombres/iconos reales
+  currencyCode: string; // Added currency code prop
 }
 
 // Simulación de formas de pago (deberían venir de la DB/contexto)
@@ -45,7 +47,11 @@ export function TicketPayments({
   onRemovePayment, 
   readOnly = false,
   paymentMethodsCatalog = [],
+  currencyCode,
 }: TicketPaymentsProps) {
+  // Ensure formatCurrency is correctly imported if not from '@/lib/utils'
+  // For example, if it's in '@/lib/format-utils':
+  // import { formatCurrency } from '@/lib/format-utils';
   // Resolver el icono del método de pago según el tipo
   const getPaymentMethodIcon = (methodId: string) => {
     // Esto es simplificado, se puede mejorar con un mapeo más completo
@@ -99,7 +105,7 @@ export function TicketPayments({
               
               return (
                 <TableRow 
-                  key={payment.id || `payment-${index}`}
+                  key={payment.id || payment.tempId || `payment-${index}`}
                   className={cn(
                     "hover:bg-purple-50/30",
                     isDeferredLine && "bg-blue-50/30 hover:bg-blue-100/50" // Estilo opcional para la línea aplazada
@@ -116,7 +122,7 @@ export function TicketPayments({
                     </div>
                   </TableCell>
                   <TableCell className="text-right font-medium">
-                    {payment?.amount?.toFixed(2) || '0.00'} €
+                    {formatCurrency(payment?.amount || 0, currencyCode)}
                   </TableCell>
                   <TableCell className="text-right text-gray-600 text-sm">
                     {payment?.paymentDate && !isDeferredLine // No mostrar fecha para la línea aplazada
@@ -133,7 +139,12 @@ export function TicketPayments({
                           "h-7 w-7 rounded-full",
                           "text-red-500 hover:text-red-700 hover:bg-red-50"
                         )}
-                        onClick={() => payment.id && handleRemovePayment(payment.id)}
+                        onClick={() => {
+                        const identifier = payment.id || payment.tempId;
+                        if (identifier) {
+                          handleRemovePayment(identifier);
+                        }
+                      }}
                       >
                         <XCircle className="h-4 w-4" />
                       </Button>

@@ -32,7 +32,6 @@ export const initializeDataService = async (config: SupabaseConnectionConfig): P
       return;
   }
 
-  console.log("[initializeDataService] Configurando instancia de SupabaseDataService.");
 
   // Crear directamente la instancia de Supabase
   if (!config) { // Chequeo básico por si acaso
@@ -43,7 +42,6 @@ export const initializeDataService = async (config: SupabaseConnectionConfig): P
   // Inicializar el servicio
   await dataServiceInstance.initialize();
   
-  console.log(`Servicio de datos inicializado: supabase`); // Tipo fijo
 };
 
 /**

@@ -26,7 +26,6 @@ export function StorageInitializer() {
       
       // Marcar como inicializado
       setIsInitialized(true);
-      console.log("🏥 Datos de almacenamiento inicializados correctamente");
     } catch (error) {
       console.error("Error al inicializar los datos de almacenamiento:", error);
     }

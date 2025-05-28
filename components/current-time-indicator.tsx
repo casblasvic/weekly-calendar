@@ -260,28 +260,45 @@ export const CurrentTimeIndicator: React.FC<CurrentTimeIndicatorProps> = ({
     // Evitar múltiples actualizaciones superpuestas
     let updateScheduled = false;
     
-    // Actualizar posición inmediatamente, pero no más de una vez por cada 16ms (60fps)
     const scheduleUpdate = () => {
       if (updateScheduled) return;
       updateScheduled = true;
-      
       requestAnimationFrame(() => {
         updatePosition();
         updateScheduled = false;
       });
     };
     
-    // Actualización inicial
+    // Ejecución inmediata
     scheduleUpdate();
-    
-    // Actualización periódica
+
+    // Ejecución tardía para asegurar montaje completo del DOM tras navegación/cambio de fecha
+    const lateTimeout = setTimeout(scheduleUpdate, 150);
+
+    // Repetir cada minuto para seguir la hora actual
     const intervalId = setInterval(scheduleUpdate, 60000);
-    
+
     // Limpieza
     return () => {
       clearInterval(intervalId);
+      clearTimeout(lateTimeout);
     };
   }, [timeSlots, updatePosition, rowHeight]);
+
+  // Recalcular posición cuando el DOM del contenedor cambie (navegación entre días)
+  useLayoutEffect(() => {
+    const container = agendaRef.current;
+    if (!container) return;
+
+    const observer = new MutationObserver(() => {
+      // Recalcular posición tras cambios en el DOM (añadir filas, etc.)
+      updatePosition();
+    });
+
+    observer.observe(container, { childList: true, subtree: true });
+
+    return () => observer.disconnect();
+  }, [agendaRef, updatePosition]);
 
   // Verificar si mostrar
   const shouldShow = isWithinTimeRange && isVisible && isWithinClinicHours() && position !== null;
@@ -299,7 +316,7 @@ export const CurrentTimeIndicator: React.FC<CurrentTimeIndicatorProps> = ({
       indicatorRef.current.style.borderTop = '2px solid red';
       indicatorRef.current.style.setProperty('--current-time-indicator-border-color', 'red');
 
-      indicatorRef.current.style.transform = `translateY(${position}px)`;
+      indicatorRef.current.style.transform = `translateY(${Math.max(position ?? 0, 0)}px)`;
       indicatorRef.current.style.display = 'block';
       indicatorRef.current.style.visibility = 'visible';
       indicatorRef.current.style.opacity = '1';
@@ -386,8 +403,12 @@ export const CurrentTimeIndicator: React.FC<CurrentTimeIndicatorProps> = ({
   }, [agendaRef]); 
   // --- FIN: useEffect con window.resize --- 
 
-  // Solo renderizar si es visible y está dentro del rango
-  if (!shouldShow) {
+  console.log('[CurrentTimeIndicator] debug:', { position, isVisible });
+
+  // Forzar el indicador a mostrarse si isVisible es true, usando effectivePosition
+  const effectivePosition = (position !== null ? Math.max(position, 0) : 0);
+
+  if (!isVisible) {
     return null;
   }
 
@@ -398,21 +419,19 @@ export const CurrentTimeIndicator: React.FC<CurrentTimeIndicatorProps> = ({
       className={cn(
         "current-time-indicator", // Clase principal de CSS
         "pointer-events-none", // Evitar que intercepte eventos del ratón
-        "z-10", // Asegurar que esté por encima de las celdas pero debajo de modales
+        "z-50", // Mantener por encima de otros elementos relevantes
+        "absolute h-0.5 bg-red-500",
         className
       )}
       style={{
-        position: 'absolute', // <-- FORZAR Posición Absoluta
-        top: 0, // <-- Establecer top base en 0
-        left: 0, // <-- Establecer left base en 0
-        height: "2px", // Altura de la línea
-        width: indicatorWidth !== null ? `${indicatorWidth}px` : "100%", // Usa el estado o fallback
-        display: 'none', // Oculto por defecto, el useEffect lo mostrará
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        height: '2px',
+        width: indicatorWidth !== null ? `${indicatorWidth}px` : '100%',
+        display: 'none',
         opacity: 0,
-        visibility: 'hidden',
-        // La posición vertical se controla con transform en el useEffect
-        // El border-top se aplica en el useEffect
-        // backgroundColor: 'red', // Quitar, se usa border-top
+        visibility: 'hidden'
       }}
       aria-hidden="true"
     >
@@ -429,4 +448,3 @@ const parseTime = (time: string): number => {
   const [hours, minutes] = time.split(":").map(Number)
   return hours * 60 + minutes
 }
-
