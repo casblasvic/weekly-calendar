@@ -1,88 +1,121 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerAuthSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
-import { PaymentMethodType, CashSessionStatus } from '@prisma/client';
+import { PaymentMethodType, CashSessionStatus, Prisma } from '@prisma/client';
 
 export async function GET(req: NextRequest) {
   const clinicId = req.nextUrl.searchParams.get('clinicId');
   const dateIso = req.nextUrl.searchParams.get('date'); // yyyy-mm-dd
-  if (!clinicId || !dateIso) {
-    return NextResponse.json({ message: 'clinicId y date son obligatorios' }, { status: 400 });
-  }
-  const session = await getServerAuthSession();
-  if (!session?.user?.systemId) {
-    return NextResponse.json({ message: 'No autenticado' }, { status: 401 });
-  }
-  const systemId = session.user.systemId;
-  const start = new Date(dateIso + 'T00:00:00');
-  const end = new Date(dateIso + 'T23:59:59');
+  const sessionId = req.nextUrl.searchParams.get('sessionId');
 
-  const cashSession = await prisma.cashSession.findFirst({
-    where: {
-      clinicId,
-      systemId,
-      openingTime: { gte: start, lte: end },
-      // Aquí NO filtramos por status: 'OPEN', porque queremos la sesión del día, esté abierta o cerrada.
+  // Validación de parámetros de entrada
+  if (!clinicId) {
+    return NextResponse.json({ message: 'clinicId es obligatorio' }, { status: 400 });
+  }
+  if (!dateIso && !sessionId) {
+    return NextResponse.json({ message: '(date o sessionId) es obligatorio junto con clinicId' }, { status: 400 });
+  }
+
+  // Autenticación y obtención de systemId
+  const auth = await getServerAuthSession();
+  if (!auth?.user?.systemId) {
+    return NextResponse.json({ message: 'No autenticado o systemId no encontrado en la sesión' }, { status: 401 });
+  }
+  const systemId = auth.user.systemId;
+
+  // Definición de los campos a seleccionar para la cashSession
+  const cashSessionSelectFields = {
+    id: true,
+    sessionNumber: true,
+    userId: true,
+    clinicId: true,
+    posTerminalId: true,
+    openingBalanceCash: true,
+    manualCashInput: true,
+    cashWithdrawals: true,
+    cashExpenses: true,
+    expectedCash: true,
+    countedCash: true,
+    differenceCash: true,
+    status: true,
+    openingTime: true,
+    closingTime: true,
+    reconciliationTime: true,
+    notes: true,
+    systemId: true,
+    countedCard: true,
+    countedBankTransfer: true,
+    countedCheck: true,
+    countedInternalCredit: true,
+    countedOther: true,
+    hasChangesAfterReconcile: true,
+    calculatedDeferredAtClose: true,
+    payments: {
+      include: { paymentMethodDefinition: true, posTerminal: true },
     },
-    select: {
-      id: true,
-      sessionNumber: true,
-      userId: true,
-      clinicId: true,
-      posTerminalId: true,
-      openingBalanceCash: true,
-      manualCashInput: true,
-      cashWithdrawals: true,
-      cashExpenses: true, // Added cashExpenses
-      expectedCash: true,
-      countedCash: true,
-      differenceCash: true,
-      status: true,
-      openingTime: true,
-      closingTime: true,
-      reconciliationTime: true,
-      notes: true,
-      systemId: true,
-      countedCard: true,
-      countedBankTransfer: true,
-      countedCheck: true,
-      countedInternalCredit: true,
-      countedOther: true,
-      hasChangesAfterReconcile: true,
-      calculatedDeferredAtClose: true,
-      payments: {
-        include: { paymentMethodDefinition: true, posTerminal: true },
-      },
-      user: { select: { id: true, firstName: true, lastName: true } },
-      clinic: { select: { id: true, name: true, currency: true } },
-      posTerminal: { select: { id: true, name: true } },
-      ticketsAccountedInSession: {
-        select: {
-          id: true,
-          ticketNumber: true,
-          finalAmount: true,
-          paidAmountDirectly: true,
-          hasOpenDebt: true,
-          dueAmount: true,
-          client: { select: { firstName: true, lastName: true } },
-          payments: {
-            select: {
-              id: true,
-              amount: true,
-              type: true,
-              debtLedgerId: true,
-              paymentMethodDefinition: { select: { type: true, name: true } },
-              posTerminal: { select: { id:true, name: true } }, // Added posTerminalId selection
-              posTerminalId: true, // Ensure posTerminalId is directly available on the payment object
-            },
+    user: { select: { id: true, firstName: true, lastName: true } },
+    clinic: { select: { id: true, name: true, currency: true } },
+    posTerminal: { select: { id: true, name: true } },
+    ticketsAccountedInSession: {
+      select: {
+        id: true,
+        ticketNumber: true,
+        finalAmount: true,
+        paidAmountDirectly: true,
+        hasOpenDebt: true,
+        dueAmount: true,
+        client: { select: { firstName: true, lastName: true } },
+        payments: {
+          select: {
+            id: true,
+            amount: true,
+            type: true,
+            debtLedgerId: true,
+            paymentMethodDefinition: { select: { type: true, name: true } },
+            posTerminal: { select: { id:true, name: true } },
+            posTerminalId: true,
           },
         },
-        orderBy: { ticketNumber: 'asc' },
-      }
+      },
+      orderBy: { ticketNumber: Prisma.SortOrder.asc },
     }
-  });
+  };
 
-  if (!cashSession) return NextResponse.json(null, { status: 200 });
+  let cashSession: any = null; // Tipar explícitamente si es posible, o usar el tipo inferido por Prisma
+
+  try {
+    if (sessionId) {
+      cashSession = await prisma.cashSession.findUnique({
+        where: {
+          id: sessionId,
+          clinicId: clinicId, // Asegurar que pertenece a la clínica y sistema correctos
+          systemId: systemId,
+        },
+        select: cashSessionSelectFields,
+      });
+    } else if (dateIso) { 
+      const start = new Date(dateIso + 'T00:00:00.000Z'); // Forzar UTC
+      const end = new Date(dateIso + 'T23:59:59.999Z');   // Forzar UTC
+      cashSession = await prisma.cashSession.findFirst({
+        where: {
+          clinicId: clinicId,
+          systemId: systemId,
+          openingTime: { gte: start, lte: end },
+        },
+        select: cashSessionSelectFields,
+      });
+    }
+  } catch (error) {
+    console.error("[API /cash-sessions/by-date] Error al buscar cash session:", error);
+    return NextResponse.json({ message: 'Error al acceder a la base de datos' }, { status: 500 });
+  }
+
+  if (!cashSession) {
+    return NextResponse.json(null, { status: 200 }); // No se encontró sesión, pero no es un error de servidor
+  }
+
+  // El resto de la lógica (hasEarlierOpenSession, paymentTotals, etc.) continúa desde aquí
+  // usando la variable 'cashSession' que ya tiene los datos seleccionados.
 
   let hasEarlierOpenSession = false;
   if (cashSession.status === CashSessionStatus.OPEN) {

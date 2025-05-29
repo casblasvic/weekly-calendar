@@ -82,6 +82,7 @@ export const authOptions: AuthConfig = {
   pages: {
     signIn: '/login',
     signOut: '/login',
+    error: '/login', // Redirige los errores de autenticación a la página de login
   },
   secret: process.env.NEXTAUTH_SECRET,
 };

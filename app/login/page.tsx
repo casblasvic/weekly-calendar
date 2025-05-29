@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent, useEffect } from 'react';
 import { signIn } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
@@ -24,8 +24,44 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
   const callbackUrl = searchParams.get('callbackUrl') || '/dashboard';
+  const errorParam = searchParams.get('error'); // Leer el parámetro 'error' de la URL
+
+  // useEffect para manejar errores pasados por NextAuth.js en la URL
+  useEffect(() => {
+    if (errorParam) {
+      let friendlyErrorMessage = "Ocurrió un error inesperado durante el inicio de sesión.";
+      switch (errorParam) {
+        case 'CredentialsSignin':
+          friendlyErrorMessage = 'Usuario o contraseña incorrectos. Por favor, inténtalo de nuevo.';
+          break;
+        case 'OAuthSignin':
+        case 'OAuthCallback':
+        case 'OAuthCreateAccount':
+        case 'EmailCreateAccount':
+        case 'Callback':
+        case 'SessionRequired':
+        // Puedes añadir más casos específicos basados en los códigos de error de NextAuth.js
+        // https://next-auth.js.org/configuration/pages#error-codes
+          friendlyErrorMessage = 'Ha ocurrido un error con el proveedor de autenticación. Por favor, inténtalo más tarde.';
+          break;
+        case 'AccessDenied':
+            friendlyErrorMessage = 'Acceso denegado. No tienes permiso para realizar esta acción.';
+            break;
+        case 'Configuration':
+            friendlyErrorMessage = 'Hay un problema con la configuración del servidor de autenticación.';
+            break;
+        default:
+          // Para errores desconocidos o no manejados específicamente
+          friendlyErrorMessage = `Error de autenticación: ${errorParam}. Inténtalo de nuevo.`;
+          break;
+      }
+      setError(friendlyErrorMessage);
+      toast.error("Error de autenticación", {
+        description: friendlyErrorMessage,
+      });
+    }
+  }, [errorParam]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
