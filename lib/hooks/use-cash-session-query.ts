@@ -64,7 +64,7 @@ export const cashSessionKeys = {
   details: () => [...cashSessionKeys.all, 'detail'] as const,
   detail: (id: string | null) => [...cashSessionKeys.details(), id] as const,
   active: (clinicId?: string, posTerminalId?: string) => [...cashSessionKeys.all, 'active', { clinicId, posTerminalId }] as const,
-  detailByDate: (clinicId?: string, date?: string) => [...cashSessionKeys.all, 'detailByDate', { clinicId, date }] as const,
+  detailByDate: (clinicId: string | undefined | null, identifier: { date?: string | null | undefined; sessionId?: string | null | undefined; }) => [...cashSessionKeys.all, 'detailByDate', { clinicId, ...identifier }] as const,
 };
 
 // Placeholder para futuros hooks
@@ -359,20 +359,32 @@ export interface CashSessionResponse {
 export function useDailyCashSessionQuery(
   clinicId: string | undefined | null, 
   date: string | undefined | null, // Espera YYYY-MM-DD
+  sessionId?: string | undefined | null, // Nuevo parámetro
   options?: Omit<UseQueryOptions<CashSessionResponse | null, Error, CashSessionResponse | null>, 'queryKey' | 'queryFn'>
 ) {
   return useQuery<CashSessionResponse | null, Error>({
-    queryKey: cashSessionKeys.detailByDate(clinicId, date),
+    // Ajustar queryKey para incluir sessionId si está presente, para un cacheo único
+    queryKey: cashSessionKeys.detailByDate(clinicId, { 
+      date: sessionId ? undefined : date, // Solo usar date en la key si no hay sessionId
+      sessionId: sessionId 
+    }),
     queryFn: async () => {
-      if (!clinicId || !date) return null;
-      // La API /api/cash-sessions (GET sin ID) ahora es para listar y paginar, no para detalle por fecha.
-      // La API para obtener el detalle de UNA sesión, incluyendo la del día, es /api/cash-sessions/[id]
-      // o /api/cash-sessions/active?clinicId=...&date=...
-      // Por ahora, vamos a asumir que el GET a /api/cash-sessions con clinicId y date devuelve LA sesión de ese día.
-      // Si no, tendríamos que cambiar esto a /api/cash-sessions/active o ajustar la API GET /api/cash-sessions.
-      return await api.get<CashSessionResponse | null>(`/api/cash-sessions/by-date?clinicId=${clinicId}&date=${date}`);
+      if (!clinicId) return null;
+      if (!date && !sessionId) return null; // Necesitamos al menos date o sessionId
+
+      let apiUrl = `/api/cash-sessions/by-date?clinicId=${clinicId}`;
+      if (sessionId) {
+        apiUrl += `&sessionId=${sessionId}`;
+        // Opcionalmente, si la API también espera 'date' incluso con sessionId, añadirlo:
+        // if (date) apiUrl += `&date=${date}`;
+      } else if (date) {
+        apiUrl += `&date=${date}`;
+      }
+      
+      return await api.get<CashSessionResponse | null>(apiUrl);
     },
-    enabled: !!clinicId && !!date,
+    // Habilitar la query si clinicId está presente, y al menos date o sessionId también lo están.
+    enabled: !!clinicId && (!!date || !!sessionId),
     staleTime: CACHE_TIME.CORTO,
     ...options,
   });

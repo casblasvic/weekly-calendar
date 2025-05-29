@@ -212,9 +212,15 @@ export default function ListadoCajasDiaPage() {
                 const retirado = Number(session.cashWithdrawals ?? 0);
                 const cajaFinal = Number(session.countedCash ?? 0) - Number(session.cashWithdrawals ?? 0);
 
+                const openingTimeDateObj = parseISO(session.openingTime as unknown as string);
+                // Usar Date.UTC para construir una nueva fecha basada en componentes UTC, luego formatear.
+                // Esto asegura que la 'fecha' de la sesión sea la fecha UTC.
+                const displayOpeningDate = format(new Date(Date.UTC(openingTimeDateObj.getUTCFullYear(), openingTimeDateObj.getUTCMonth(), openingTimeDateObj.getUTCDate())), 'dd/MM/yyyy', { locale: es });
+                const linkOpeningDate = format(new Date(Date.UTC(openingTimeDateObj.getUTCFullYear(), openingTimeDateObj.getUTCMonth(), openingTimeDateObj.getUTCDate())), 'yyyy-MM-dd');
+
                 return (
-                  <TableRow key={session.id} className="cursor-pointer hover:bg-gray-50" onClick={() => router.push(`/caja/${format(parseISO(session.openingTime as unknown as string), 'yyyy-MM-dd')}?clinicId=${session.clinicId}&sessionId=${session.id}`)}>
-                    <TableCell>{format(parseISO(session.openingTime as unknown as string), 'dd/MM/yyyy', { locale: es })}</TableCell>
+                  <TableRow key={session.id} className="cursor-pointer hover:bg-gray-50" onClick={() => router.push(`/caja/${linkOpeningDate}?clinicId=${session.clinicId}&sessionId=${session.id}`)}>
+                    <TableCell>{displayOpeningDate}</TableCell>
                     <TableCell>{(session as any).clinic?.name || 'N/A'}</TableCell>
                     <TableCell className="text-right">{formatCurrency(facturado)}</TableCell>
                     <TableCell className={`text-right font-medium ${diferencia === 0 ? 'text-green-600' : (diferencia > 0 ? 'text-blue-600' : 'text-red-600')}`}>{formatCurrency(diferencia)}</TableCell>
@@ -226,7 +232,7 @@ export default function ListadoCajasDiaPage() {
                     </TableCell>
                     <TableCell className="text-center">
                       <Button variant="ghost" size="icon" className="h-7 w-7 hover:text-purple-600" title={t('cash.finder.viewSession', 'Ver Caja')}
-                      onClick={(e) => { e.stopPropagation(); router.push(`/caja/${format(parseISO(session.openingTime as unknown as string), 'yyyy-MM-dd')}?clinicId=${session.clinicId}&sessionId=${session.id}`); }}>
+                      onClick={(e) => { e.stopPropagation(); router.push(`/caja/${linkOpeningDate}?clinicId=${session.clinicId}&sessionId=${session.id}`); }}>
                         <Eye className="w-4 h-4" />
                       </Button>
                     </TableCell>

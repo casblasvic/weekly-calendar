@@ -48,9 +48,11 @@ export default function CashPage({ params }: CashPageProps) {
 
   const { date } = use(params); // Unwrap
   const returnToQueryParam = searchParams.get('returnTo');
-  const clinicId = searchParams.get('clinicId') || activeClinic?.id;
+  const clinicIdFromParams = searchParams.get('clinicId');
+  const sessionIdFromParams = searchParams.get('sessionId');
+  const clinicId = clinicIdFromParams || activeClinic?.id;
 
-  const { data: sessionData, isLoading, isError, refetch } = useDailyCashSessionQuery(clinicId, date);
+  const { data: sessionData, isLoading, isError, refetch } = useDailyCashSessionQuery(clinicId, date, sessionIdFromParams ?? undefined);
   const clinicIdQueryParam = searchParams.get('clinicId');
   const returnToPath = `/caja/${date}${clinicIdQueryParam ? `?clinicId=${clinicIdQueryParam}` : ''}`;
   const session = sessionData; // Para no renombrar en todo el código por ahora
