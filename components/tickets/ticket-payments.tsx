@@ -28,7 +28,8 @@ interface TicketPaymentsProps {
   onRemovePayment?: (paymentId: string) => void;
   readOnly?: boolean;
   paymentMethodsCatalog?: SimplePaymentMethod[]; // Lista de métodos para mostrar nombres/iconos reales
-  currencyCode: string; // Added currency code prop
+  currencyCode?: string; // Moneda opcional
+  isAddPaymentDisabled?: boolean; // Nueva prop para deshabilitar el botón de añadir pago
 }
 
 // Simulación de formas de pago (deberían venir de la DB/contexto)
@@ -48,6 +49,7 @@ export function TicketPayments({
   readOnly = false,
   paymentMethodsCatalog = [],
   currencyCode,
+  isAddPaymentDisabled = false, // Valor por defecto
 }: TicketPaymentsProps) {
   // Ensure formatCurrency is correctly imported if not from '@/lib/utils'
   // For example, if it's in '@/lib/format-utils':
@@ -91,6 +93,9 @@ export function TicketPayments({
     } 
   };
 
+  const formatAmount = (amount: number) =>
+    currencyCode ? formatCurrency(amount, currencyCode) : amount.toFixed(2);
+
   return (
     <div className="space-y-2">
       {allPayments.length > 0 ? (
@@ -122,7 +127,7 @@ export function TicketPayments({
                     </div>
                   </TableCell>
                   <TableCell className="text-right font-medium">
-                    {formatCurrency(payment?.amount || 0, currencyCode)}
+                    {formatAmount(payment?.amount || 0)}
                   </TableCell>
                   <TableCell className="text-right text-gray-600 text-sm">
                     {payment?.paymentDate && !isDeferredLine // No mostrar fecha para la línea aplazada
@@ -168,7 +173,7 @@ export function TicketPayments({
           variant="outline"
           size="sm"
           className="h-8 border-purple-600 text-purple-700 hover:bg-purple-50 hover:text-purple-800 shadow-sm"
-          disabled={readOnly}
+          disabled={readOnly || isAddPaymentDisabled} // Usar la nueva prop
         >
           <PlusCircle className="mr-1.5 h-3.5 w-3.5" />
           Añadir Pago

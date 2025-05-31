@@ -172,12 +172,12 @@ export function useCloseCashSessionMutation() {
     onSuccess: (updatedSession, variables) => {
       queryClient.invalidateQueries({ queryKey: cashSessionKeys.detail(variables.sessionId) });
       queryClient.invalidateQueries({ queryKey: cashSessionKeys.active(updatedSession.clinicId, updatedSession.posTerminalId || undefined) });
-      queryClient.invalidateQueries({ queryKey: cashSessionKeys.lists() });
-      // Importante: También invalidar las listas de tickets, ya que su estado puede cambiar a ACCOUNTED.
-      queryClient.invalidateQueries({ queryKey: ['tickets', 'list'] }); // Asumiendo que 'tickets' y 'list' son parte de ticketKeys
+      // Invalida todas las listas, sin importar filtros
+      queryClient.invalidateQueries({ queryKey: cashSessionKeys.lists(), exact: false });
+      // Contador de abiertas
       queryClient.invalidateQueries({ queryKey: [...cashSessionKeys.lists(), 'openCount', updatedSession.clinicId] });
-      // O una invalidación más general si no se conoce el filtro exacto:
-      // queryClient.invalidateQueries({ queryKey: ticketKeys.lists() }); // Usando la factory de ticketKeys.
+      // Invalidar tickets para que se actualice su estado
+      queryClient.invalidateQueries({ queryKey: ['tickets'], exact: false });
       
       toast({
         title: "Caja Cerrada",
@@ -452,3 +452,8 @@ export function useOpenCashSessionsCountQuery(
     ...options,
   });
 } 
+
+// Helper function to invalidate queries
+function invalidateQueries(queryClient: any, queryKey: any, exact: boolean = true) {
+  queryClient.invalidateQueries({ queryKey, exact });
+}

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerAuthSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { z } from 'zod';
-import { CashSessionStatus, TicketStatus } from '@prisma/client';
+import { CashSessionStatus, TicketStatus, Prisma } from '@prisma/client';
 
 const paramsSchema = z.object({
   id: z.string().cuid({ message: "ID de sesión inválido." }),
@@ -91,6 +91,71 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
           details: {} as any
         }
       });
+
+      // Lógica para ajustar la siguiente caja abierta si existe
+      if (reopenedSession.clinicId) { // clinicId es mandatorio
+        const nextOpenSession = await tx.cashSession.findFirst({
+          where: {
+            clinicId: reopenedSession.clinicId,
+            // posTerminalId ya no es un criterio para la secuencia de cajas de una clínica
+            openingTime: { gt: reopenedSession.openingTime },
+            status: CashSessionStatus.OPEN,
+          },
+          orderBy: {
+            openingTime: 'asc',
+          },
+        });
+
+        if (nextOpenSession) {
+          // Encontramos la siguiente caja abierta (Caja B).
+          // Ahora buscamos la caja cerrada anterior a la que reabrimos (Caja A)
+          const previousClosedSessionToReopened = await tx.cashSession.findFirst({
+            where: {
+              clinicId: reopenedSession.clinicId,
+              // posTerminalId ya no es un criterio para la secuencia de cajas de una clínica
+              openingTime: { lt: reopenedSession.openingTime },
+              status: CashSessionStatus.CLOSED,
+              closingTime: { not: null },
+              countedCash: { not: null },
+            },
+            orderBy: {
+              openingTime: 'desc',
+            },
+          });
+
+          let newOpeningBalanceForNextSession = new Prisma.Decimal(0);
+          if (previousClosedSessionToReopened) {
+            const prevCountedCashDecimal = new Prisma.Decimal(previousClosedSessionToReopened.countedCash || 0);
+            const prevCashWithdrawalsDecimal = new Prisma.Decimal(previousClosedSessionToReopened.cashWithdrawals || 0);
+            newOpeningBalanceForNextSession = prevCountedCashDecimal.sub(prevCashWithdrawalsDecimal);
+          }
+
+          // Actualizar el openingBalanceCash de la nextOpenSession (Caja B)
+          await tx.cashSession.update({
+            where: { id: nextOpenSession.id },
+            data: {
+              openingBalanceCash: newOpeningBalanceForNextSession.toNumber(), // Usar 'set' explícito
+              notes: `${nextOpenSession.notes || ''}\nSaldo inicial ajustado el ${new Date().toISOString()} debido a reapertura de caja anterior (ID: ${reopenedSession.id}).`.trim(),
+            },
+          });
+
+          // Registrar este cambio también
+          await tx.entityChangeLog.create({
+            data: {
+              entityId: nextOpenSession.id,
+              entityType: 'CASH_SESSION' as any,
+              action: 'UPDATE_OPENING_BALANCE',
+              userId,
+              systemId,
+              details: {
+                reason: `Reapertura de caja ${reopenedSession.id}`,
+                oldOpeningBalance: nextOpenSession.openingBalanceCash?.toString(),
+                newOpeningBalance: newOpeningBalanceForNextSession.toNumber().toString(),
+              } as Prisma.JsonValue,
+            },
+          });
+        }
+      }
 
       return reopenedSession;
     });

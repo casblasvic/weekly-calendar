@@ -112,12 +112,12 @@ export type BatchUpdateTicketPayload = z.infer<typeof batchUpdateTicketPayloadSc
 // Schema principal para el formulario de creación/edición de Ticket
 export const ticketFormSchema = z.object({
   // --- Sección Cliente ---
-  clientId: z.string().optional(), // Se seleccionará mediante un buscador
+  clientId: z.string().optional().nullable(), // Se seleccionará mediante un buscador
   clientName: z.string().optional(), // Nombre del cliente (display)
   clientDetails: z.any().optional(), // Objeto con más detalles del cliente (display)
 
   // --- Sección Datos Ticket (Cabecera) ---
-  ticketNumber: z.string().optional(), // Autogenerado o para edición
+  ticketNumber: z.string().optional().nullable(), // Autogenerado o puede ser null hasta la numeración
   ticketDate: z.date().default(() => new Date()),
   sellerId: z.string().optional().nullable(), // ID del usuario vendedor
   series: z.string().optional().default('TICK'), // Serie del ticket

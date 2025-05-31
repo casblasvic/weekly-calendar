@@ -14,13 +14,14 @@ export async function getOpenCashSessionForClinic(tx: any, clinicId: string, sys
 /**
  * Generates the next ticket number for a given clinic within a system.
  * Ticket numbers are padded with leading zeros to a length of 6 characters (e.g., "000001").
- * This function assumes ticket numbers are sequential per clinic.
+ * This function assumes ticket numbers are sequential per clinic and series.
  */
-export async function generateNextTicketNumber(tx: any, systemId: string, clinicId: string): Promise<string> {
+export async function generateNextTicketNumber(tx: any, systemId: string, clinicId: string, series: string = 'TCK'): Promise<string> {
   const latestTicket = await tx.ticket.findFirst({
     where: {
       systemId,
       clinicId,
+      ticketSeries: series,
     },
     orderBy: {
       createdAt: 'desc', // Order by creation time to reliably get the last entered ticket
@@ -99,7 +100,7 @@ export async function ensureCashSessionForOperation(tx: any, clinicId: string, u
 
   if (lastClosedSessionToday) {
     // This new session is subsequent to another one closed today
-    openingBalance = (lastClosedSessionToday.countedCash?.toNumber() || 0) - (lastClosedSessionToday.cashWithdrawals?.toNumber() || 0);
+    openingBalance = (Number(lastClosedSessionToday.countedCash ?? 0)) - (Number(lastClosedSessionToday.cashWithdrawals ?? 0));
   } else {
     // No session was closed today. Look for the latest closed session from any previous day.
     const lastClosedSessionAnyDay = await tx.cashSession.findFirst({
@@ -111,36 +112,61 @@ export async function ensureCashSessionForOperation(tx: any, clinicId: string, u
       orderBy: { closingTime: 'desc' }, // The absolute latest closed session for this clinic
     });
     if (lastClosedSessionAnyDay) {
-      openingBalance = (lastClosedSessionAnyDay.countedCash?.toNumber() || 0) - (lastClosedSessionAnyDay.cashWithdrawals?.toNumber() || 0);
+      openingBalance = (Number(lastClosedSessionAnyDay.countedCash ?? 0)) - (Number(lastClosedSessionAnyDay.cashWithdrawals ?? 0));
     }
     // If no closed sessions ever, openingBalance remains 0 (default)
   }
   
   openingBalance = Math.max(0, openingBalance); // Ensure opening balance is not negative
 
-  // 3. Create and return a new CashSession
+  // 3. Calcular sessionNumber único para hoy en esta clínica
+  const today = new Date();
+  const datePrefix = `${today.getFullYear()}${(today.getMonth() + 1)
+    .toString()
+    .padStart(2, '0')}${today.getDate().toString().padStart(2, '0')}`;
+
+  // Obtener prefijo de clínica (si existe)
+  const clinic = await tx.clinic.findUnique({ where: { id: clinicId } });
+  const clinicPrefix = clinic?.prefix || 'CLI';
+
+  const lastSessionToday = await tx.cashSession.findFirst({
+    where: {
+      clinicId,
+      sessionNumber: {
+        startsWith: `${clinicPrefix}-${datePrefix}-`,
+      },
+    },
+    orderBy: { sessionNumber: 'desc' },
+  });
+
+  let newSequence = 1;
+  if (lastSessionToday?.sessionNumber) {
+    const lastSeqStr = lastSessionToday.sessionNumber.split('-').pop();
+    if (lastSeqStr) {
+      newSequence = parseInt(lastSeqStr, 10) + 1;
+    }
+  }
+
+  const sessionNumber = `${clinicPrefix}-${datePrefix}-${newSequence
+    .toString()
+    .padStart(3, '0')}`;
+
+  // 4. Create and return a new CashSession
   const newCashSession = await tx.cashSession.create({
     data: {
       systemId,
       clinicId,
-      openedById: userId,
+      sessionNumber,
+      userId,
       openingTime: new Date(),
       status: 'OPEN',
       openingBalanceCash: openingBalance,
-      // Default other financial fields to 0 or null as appropriate
-      expectedCash: openingBalance, // Initially, expected is same as opening
+      expectedCash: openingBalance, // Initially, expected equals opening
       countedCash: null,
-      cashSales: 0,
-      cardSales: 0,
-      otherSales: 0,
-      totalSales: 0,
       cashExpenses: 0,
-      cashIncome: 0, // This might be openingBalance or payments received
       manualCashInput: 0,
       cashWithdrawals: 0,
-      deferredPaymentsTotal: 0,
       calculatedDeferredAtClose: null,
-      posTerminalCount: 1, // Default or could be a setting
     },
   });
 

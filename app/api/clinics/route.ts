@@ -53,10 +53,15 @@ export async function GET(request: Request) {
 
   try {
     const clinics = await prisma.clinic.findMany({
-      where: { systemId: systemId },
+      where: {
+        systemId: session.user.systemId,
+        // Considerar si se deben mostrar todas las clínicas (activas e inactivas) para la asociación,
+        // o solo las activas. Por ahora, las mostraré todas para que el admin decida.
+        // isActive: true, 
+      },
       select: {
-        id: true, 
-        name: true, 
+        id: true,
+        name: true,
         prefix: true, 
         isActive: true, 
         phone: true, 
@@ -71,7 +76,15 @@ export async function GET(request: Request) {
         languageIsoCode: true,   // Campo directo
         phone1CountryIsoCode: true, // Campo directo
         phone2CountryIsoCode: true, // Campo directo
-        tariffId: true           // FK Tarifa
+        tariffId: true,           // FK Tarifa
+        legalEntityId: true,
+        legalEntity: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        // legalEntityId: true    // Esta línea era la duplicada y se elimina
       },
       orderBy: { name: 'asc' }
     });

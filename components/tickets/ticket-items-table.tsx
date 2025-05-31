@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useCallback, useEffect } from 'react';
+import Link from 'next/link';
 import { useFieldArray, useFormContext } from 'react-hook-form';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
@@ -33,6 +34,10 @@ interface TicketItemsTableProps {
   readOnly?: boolean;
   currencyCode: string;
   currencySymbol: string;
+  /** ID del ticket original cuando se trata de un ticket de liquidación. Si se proporciona, los conceptos DEBT_LIQUIDATION se vuelven clicables. */
+  linkToOriginTicketId?: string;
+  /** ID del ticket actual (liquidación) para rellenar la query ?from= al navegar */
+  currentTicketId?: string;
 }
 
 export function TicketItemsTable({
@@ -45,6 +50,8 @@ export function TicketItemsTable({
   readOnly = false,
   currencyCode,
   currencySymbol,
+  linkToOriginTicketId,
+  currentTicketId,
 }: TicketItemsTableProps) {
   const { t } = useTranslation();
   const { control, watch, setValue, getValues } = useFormContext<TicketFormValues>();
@@ -109,7 +116,18 @@ export function TicketItemsTable({
                     key={item.id || index} 
                     className="border-b hover:bg-gray-50/50"
                   >
-                    <TableCell className="px-3 py-2 font-medium">{item.concept}</TableCell>
+                    <TableCell className="px-3 py-2 font-medium">
+                      {readOnly && (item as any).type === 'DEBT_LIQUIDATION' && linkToOriginTicketId ? (
+                        <Link
+                          href={`/facturacion/tickets/editar/${linkToOriginTicketId}?from=/facturacion/tickets/editar/${currentTicketId}`}
+                          className="text-purple-600 underline hover:text-purple-800"
+                        >
+                          {item.concept}
+                        </Link>
+                      ) : (
+                        item.concept
+                      )}
+                    </TableCell>
                     <TableCell className="px-3 py-2 text-right">
                       {!readOnly ? (
                         <Input

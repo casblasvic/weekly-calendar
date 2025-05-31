@@ -88,7 +88,9 @@ export default function ListadoCajasDiaPage() {
 
   const filters = buildFilters();
 
-  const { data: cashSessionsResponse, isLoading, isError, error, refetch } = useCashSessionsQuery(filters, {});
+  const { data: cashSessionsResponse, isLoading, isError, error, refetch } = useCashSessionsQuery(filters, {
+    refetchOnMount: 'always', // Forzar refetch siempre que el componente se monte
+  });
 
   // Mientras no tengamos clínica activa mostramos spinner
   if (!clinicFilter) {

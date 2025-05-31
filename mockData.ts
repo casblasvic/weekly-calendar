@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Este archivo sirve como adaptador temporal para mantener compatibilidad con código existente
  * mientras migramos al nuevo sistema basado en contextos y servicios de datos.

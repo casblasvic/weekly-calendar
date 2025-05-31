@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { useDebtLedgersQuery, DebtLedgerListItem } from '@/lib/hooks/use-debt-ledgers';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Loader2, Wallet, XCircle, Eye, SlidersHorizontal } from 'lucide-react';
+import { Loader2, Wallet, XCircle, ChevronDown, ChevronRight, Circle, Eye, SlidersHorizontal, FilterX, RotateCcw, Download, Search } from 'lucide-react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { formatCurrency } from '@/lib/utils';
@@ -18,10 +18,8 @@ import { PaginationControls } from '@/components/pagination-controls';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-// Button from '@/components/ui/button' is already imported earlier
 import { DateRangePickerPopover } from '@/components/date-range-picker-popover';
 import type { DateRange } from 'react-day-picker';
-import { FilterX, RotateCcw, Download, Search } from 'lucide-react';
 
 interface DebtListProps {
   clinicId?: string;
@@ -56,6 +54,7 @@ export function DebtList({ clinicId }: DebtListProps) {
   const { toast } = useToast();
   const [selectedDebt, setSelectedDebt] = useState<DebtLedgerListItem | null>(null);
   const [showModal, setShowModal] = useState(false);
+  const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
@@ -157,6 +156,8 @@ export function DebtList({ clinicId }: DebtListProps) {
       <Table className="rounded-md">
         <TableHeader>
           <TableRow>
+            <TableHead></TableHead>
+            <TableHead>Estado</TableHead>
             <TableHead>Clínica</TableHead>
             <TableHead>Nº Ticket</TableHead>
             <TableHead>Cliente</TableHead>
@@ -167,52 +168,71 @@ export function DebtList({ clinicId }: DebtListProps) {
         </TableHeader>
         <TableBody>
           {actualDebts.map((d) => (
-            <TableRow key={d.id} className="hover:bg-gray-50">
-              <TableCell>{d.clinic?.name || '-'}</TableCell>
-              <TableCell>{d.ticket?.ticketNumber ?? '-'}</TableCell>
-              <TableCell>{d.client ? `${d.client.firstName || ''} ${d.client.lastName || ''}` : '-'}</TableCell>
-              <TableCell className="text-right font-medium text-amber-600">{formatCurrency(d.pendingAmount)}</TableCell>
-              <TableCell className="text-right text-sm text-gray-600">{format(new Date(d.createdAt), 'dd/MM/yyyy', { locale: es })}</TableCell>
-              <TableCell className="text-right space-x-1">
-                {/* Botón Liquidar Deuda */}
-                <Button 
-                  size="icon" 
-                  variant="ghost" 
-                  className="text-purple-600 hover:bg-purple-50" 
-                  onClick={() => liquidate(d)} 
-                  title="Liquidar Deuda"
-                  disabled={d.ticket?.cashSession?.status === 'OPEN'}
-                >
-                  <Wallet className="w-4 h-4"/>
-                </Button>
-                
-                {/* Botón Ajustar/Cancelar Deuda */}
-                <Button 
-                  size="icon" 
-                  variant="ghost" 
-                  className="text-red-600 hover:bg-red-50"
-                  onClick={() => openAdjustmentModal(d)}
-                  title="Cancelar/Ajustar Deuda"
-                  disabled={d.ticket?.cashSession?.status === 'OPEN'} 
-                >
-                  <XCircle className="w-4 h-4"/>
-                </Button>
+            <React.Fragment key={d.id}>
+              {/* MAIN ROW */}
+              <TableRow className="hover:bg-gray-50">
+                <TableCell className="w-4">
+                  <Button variant="ghost" size="icon" onClick={() => setExpandedRows(prev => ({ ...prev, [d.id]: !prev[d.id] }))}>
+                    {expandedRows[d.id] ? <ChevronDown className="w-4 h-4"/> : <ChevronRight className="w-4 h-4"/>}
+                  </Button>
+                </TableCell>
+                <TableCell className="w-4">
+                  <Circle className="w-3 h-3" style={{ color: d.status === 'PAID' ? '#16a34a' : d.status === 'PARTIALLY_PAID' ? '#f97316' : '#dc2626' }}/>
+                </TableCell>
+                <TableCell>{d.clinic?.name || '-'}</TableCell>
+                <TableCell>{d.ticket?.ticketNumber ?? '-'}</TableCell>
+                <TableCell>{d.client ? `${d.client.firstName || ''} ${d.client.lastName || ''}` : '-'}</TableCell>
+                <TableCell className="text-right font-medium text-amber-600">{formatCurrency(d.pendingAmount)}</TableCell>
+                <TableCell className="text-right text-sm text-gray-600">{format(new Date(d.createdAt), 'dd/MM/yyyy', { locale: es })}</TableCell>
+                <TableCell className="text-right space-x-1">
+                  {/* Botón Liquidar Deuda */}
+                  <Button 
+                    size="icon" 
+                    variant="ghost" 
+                    className="text-purple-600 hover:bg-purple-50" 
+                    onClick={() => liquidate(d)} 
+                    title="Liquidar Deuda"
+                    disabled={d.ticket?.cashSession?.status === 'OPEN'}
+                  >
+                    <Wallet className="w-4 h-4"/>
+                  </Button>
+                  
+                  {/* Botón Ajustar/Cancelar Deuda */}
+                  <Button 
+                    size="icon" 
+                    variant="ghost" 
+                    className="text-red-600 hover:bg-red-50"
+                    onClick={() => openAdjustmentModal(d)}
+                    title="Cancelar/Ajustar Deuda"
+                    disabled={d.ticket?.cashSession?.status === 'OPEN'} 
+                  >
+                    <XCircle className="w-4 h-4"/>
+                  </Button>
 
-                {/* Botón Ver/Editar Ticket (sin cambios) */}
-                <Button 
-                  size="icon" 
-                  variant="ghost" 
-                  className="text-blue-600 hover:bg-blue-50"
-                  onClick={() => router.push(`/facturacion/tickets/editar/${d.ticketId}?from=${encodeURIComponent(pathname)}`)}
-                  title="Ver/Editar Ticket"
-                >
-                  <Eye className="w-4 h-4"/>
-                </Button>
-              </TableCell>
-            </TableRow>
+                  {/* Botón Ver/Editar Ticket (sin cambios) */}
+                  <Button 
+                    size="icon" 
+                    variant="ghost" 
+                    className="text-blue-600 hover:bg-blue-50"
+                    onClick={() => router.push(`/facturacion/tickets/editar/${d.ticketId}?from=${encodeURIComponent(pathname)}`)}
+                    title="Ver/Editar Ticket"
+                  >
+                    <Eye className="w-4 h-4"/>
+                  </Button>
+                </TableCell>
+              </TableRow>
+              {/* EXPANDED ROW */}
+              {expandedRows[d.id] && (
+                <TableRow className="bg-gray-50">
+                  <TableCell colSpan={8} className="p-4">
+                    <ExpandedDebtDetail debtId={d.id} />
+                  </TableCell>
+                </TableRow>
+              )}
+            </React.Fragment>
           ))}
           {actualDebts.length === 0 && (
-            <TableRow><TableCell colSpan={6} className="py-6 text-center text-gray-500">Sin deudas pendientes.</TableCell></TableRow>
+            <TableRow><TableCell colSpan={8} className="py-6 text-center text-gray-500">Sin deudas pendientes.</TableCell></TableRow>
           )}
         </TableBody>
       </Table>
@@ -288,3 +308,76 @@ export function DebtList({ clinicId }: DebtListProps) {
     </div>
   );
 } 
+
+
+// --- COMPONENTE DETALLE EXPANDIDO ---
+import { useDebtLedgerDetailQuery, DebtLedgerDetailResponse, useCancelDebtPaymentMutation } from '@/lib/hooks/use-debt-ledger-detail';
+import { CancelPaymentModal } from './cancel-payment-modal';
+
+function ExpandedDebtDetail({ debtId }: { debtId: string }) {
+  const { data, isLoading } = useDebtLedgerDetailQuery(debtId);
+  const [selectedPaymentId, setSelectedPaymentId] = useState<string | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const { mutateAsync: cancelPayment, isPending: cancelling } = useCancelDebtPaymentMutation();
+  const { toast } = useToast();
+
+  if (isLoading || !data) {
+    return <div className="flex items-center gap-2 text-sm text-gray-500"><Loader2 className="w-4 h-4 animate-spin"/> Cargando...</div>;
+  }
+
+  const handleCancel = async (reason: string) => {
+    if (!selectedPaymentId) return;
+    try {
+      await cancelPayment({ paymentId: selectedPaymentId, reason });
+      toast({ description: 'Liquidación anulada.' });
+      setIsModalOpen(false);
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Error', description: e.message || 'No se pudo anular.' });
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* resumen */}
+      <div className="flex flex-wrap gap-4 text-sm">
+        <span>Original: <strong>{formatCurrency(data.originalAmount)}</strong></span>
+        <span>Liquidado: <strong>{formatCurrency(data.paidAmount)}</strong></span>
+        <span>Pendiente: <strong>{formatCurrency(data.pendingAmount)}</strong></span>
+      </div>
+
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Método</TableHead>
+            <TableHead className="text-right">Importe</TableHead>
+            <TableHead className="text-right">Fecha</TableHead>
+            <TableHead>Usuario</TableHead>
+            <TableHead>Estado</TableHead>
+            <TableHead></TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {data.payments.map(p => (
+            <TableRow key={p.id} className={p.status === 'CANCELLED' ? 'opacity-60' : ''}>
+              <TableCell>{p.paymentMethodDefinition?.name ?? '-'}</TableCell>
+              <TableCell className="text-right">{formatCurrency(p.amount)}</TableCell>
+              <TableCell className="text-right text-sm text-gray-600">{format(new Date(p.paymentDate), 'dd/MM/yyyy', { locale: es })}</TableCell>
+              <TableCell>{p.user ? `${p.user.firstName || ''} ${p.user.lastName || ''}` : '-'}</TableCell>
+              <TableCell>{p.status === 'CANCELLED' ? 'Anulado' : 'Completado'}</TableCell>
+              <TableCell>
+                {p.status !== 'CANCELLED' && (
+                  <Button size="icon" variant="ghost" className="text-red-600 hover:bg-red-50" onClick={() => { setSelectedPaymentId(p.id); setIsModalOpen(true); }} title="Anular pago">
+                    <XCircle className="w-4 h-4" />
+                  </Button>
+                )}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+
+      {/* modal */}
+      <CancelPaymentModal open={isModalOpen} onOpenChange={v => { if (!cancelling) setIsModalOpen(v);} } onConfirm={handleCancel} isSubmitting={cancelling} />
+    </div>
+  );
+}

@@ -41,14 +41,30 @@ export interface ButtonProps
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, asChild = false, ...props }, ref) => {
-    const Comp = asChild ? Slot : "button"
+    const Comp = asChild ? Slot : "button";
+
+    // When using Slot, we cannot enforce any attribute – delegate completely.
+    if (asChild) {
+      return (
+        <Comp
+          className={cn(buttonVariants({ variant, size, className }))}
+          ref={ref}
+          {...props}
+        />
+      );
+    }
+
+    // Native <button>. Ensure type defaults to "button" (avoiding unintended form submits)
+    const { type, ...rest } = props as React.ButtonHTMLAttributes<HTMLButtonElement>;
+
     return (
       <Comp
+        type={type ?? "button"}
         className={cn(buttonVariants({ variant, size, className }))}
         ref={ref}
-        {...props}
+        {...rest}
       />
-    )
+    );
   }
 )
 Button.displayName = "Button"

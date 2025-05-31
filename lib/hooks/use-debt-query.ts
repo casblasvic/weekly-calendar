@@ -14,6 +14,7 @@ interface DebtLedgerResponse {
     id: string;
     amount: number;
     paymentDate: string;
+    status?: string | null;
     paymentMethodDefinition: { id: string; name: string; type: PaymentMethodType } | null;
     user: { id: string; firstName: string | null; lastName: string | null } | null;
     clinicId: string | null;
@@ -34,7 +35,8 @@ export function useDebtByTicketQuery(ticketId: string | null, options?: Omit<Use
     queryKey: debtKeys.detailByTicket(ticketId),
     queryFn: async () => {
       if (!ticketId) return null;
-      return await api.cached.get<DebtLedgerResponse | null>(`/api/tickets/${ticketId}/debt`);
+      // Usamos petición sin caché para reflejar cancelaciones o nuevas liquidaciones inmediatamente
+      return await api.get<DebtLedgerResponse | null>(`/api/tickets/${ticketId}/debt`);
     },
     enabled: !!ticketId,
     staleTime: 0,
@@ -62,7 +64,9 @@ export function useCreateDebtPaymentMutation() {
       return await api.post('/api/payments/debt', payload);
     },
     onSuccess: (_, variables) => {
+      // Invalidar queries relacionadas con deuda para reflejar cambios en todas las vistas
       queryClient.invalidateQueries({ queryKey: ['debt'] });
+      queryClient.invalidateQueries({ queryKey: ['debtLedgers'] });
       if (variables.debtLedgerId) {
         queryClient.invalidateQueries({ queryKey: debtKeys.detail(variables.debtLedgerId) });
       }

@@ -69,12 +69,14 @@ model System {
 
   // >>> AÑADIR RELACIÓN INVERSA FALTANTE <<<
   clinicPaymentSettings ClinicPaymentSetting[]
+  documentSeries        DocumentSeries[]
 
   // Relación inversa para DebtLedger
   debtLedgers DebtLedger[]
+  legalEntities LegalEntity[] // <<< AÑADIR RELACIÓN INVERSA PARA LEGALENTITY
 
-  changeLogs EntityChangeLog[] @relation("SystemLogs")
-  debtAdjustments DebtAdjustment[] @relation("SystemDebtAdjustments") // Ajustes de deuda dentro de este sistema
+  changeLogs      EntityChangeLog[] @relation("SystemLogs")
+  debtAdjustments DebtAdjustment[]  @relation("SystemDebtAdjustments") // Ajustes de deuda dentro de este sistema
 
   @@map("systems")
 }
@@ -169,12 +171,44 @@ model CountryInfo {
   // <<< AÑADIR RELACIÓN INVERSA FALTANTE >>>
   companies Company[] // Para Company.country
   clients   Client[] // Para Client.country
+  legalEntities LegalEntity[] @relation(name: "LegalEntityJurisdictionCountry") // Jurisdicción fiscal
+  legalEntitiesPhone LegalEntity[] @relation(name: "LegalEntityPhoneCountry") // LegalEntities que usan este país para su teléfono
 
   @@index([currencyCode]) // <-- Añadir índice para moneda
   @@map("country_info")
 }
 
 // --- FIN NUEVO MODELO ---
+
+// Modelo para Sociedades Mercantiles (Entidades Legales)
+model LegalEntity {
+  id                  String   @id @default(cuid())
+  name                String   // Nombre de la razón social (ej: "Mi Empresa S.L.")
+  fullAddress         String?  // Dirección fiscal completa (ej: "Calle Falsa 123, Madrid, 28001, España")
+  
+  countryIsoCode      String   // Código ISO del país para la jurisdicción fiscal
+  country             CountryInfo @relation(name: "LegalEntityJurisdictionCountry", fields: [countryIsoCode], references: [isoCode])
+  
+  taxIdentifierFields Json?    // Almacena identificadores fiscales como {"CIF": "B12345678", "VAT_ID": "ESB12345678"} o {"RC": "123", "TP": "456", "ICE": "789"}
+  notes               String?  // Notas adicionales sobre la sociedad
+  email               String?  // Email de contacto de la sociedad
+  phone               String?  // Número de teléfono de contacto
+  phoneCountryIsoCode String?  // Código ISO del país para el prefijo telefónico
+  phoneCountry        CountryInfo? @relation("LegalEntityPhoneCountry", fields: [phoneCountryIsoCode], references: [isoCode], onDelete: SetNull)
+
+  systemId String
+  system   System @relation(fields: [systemId], references: [id], onDelete: Cascade)
+
+  // Relación inversa: Una sociedad puede tener muchas clínicas
+  clinics Clinic[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([systemId])
+  @@index([countryIsoCode])
+  @@map("legal_entities")
+}
 
 // --- Modelo Clínica ---
 
@@ -199,6 +233,11 @@ model Clinic {
   // --- Relación con CountryInfo --- 
   countryIsoCode String?
   country        CountryInfo? @relation(fields: [countryIsoCode], references: [isoCode], onDelete: SetNull)
+
+  // --- NUEVA RELACIÓN CON LEGALENTITY ---
+  legalEntityId String?      @map("legal_entity_id")
+  legalEntity   LegalEntity? @relation(fields: [legalEntityId], references: [id], onDelete: SetNull) // Si se borra la LegalEntity, la clínica queda sin asociar
+  // --- FIN NUEVA RELACIÓN ---
   // --- Fin Relación --- 
 
   // --- NUEVO: Idioma preferido --- 
@@ -273,7 +312,7 @@ model Clinic {
   availablePosTerminals PosTerminalClinicScope[] // TPVs específicos disponibles para esta clínica
   // <<< FIN AÑADIR RELACIONES INVERSAS PARA ÁMBITO >>>
 
-  // <<< AÑADIR RELACIÓN INVERSA FALTANTE >>>
+  // <<< AÑADIR RELACIÓN INVERSA >>>
   payments Payment[] // Para Payment.clinic
 
   // Relación inversa para DebtLedger
@@ -282,9 +321,13 @@ model Clinic {
   // Relation for schedule exceptions
   scheduleExceptions ClinicTemplateAssignment[]
 
+  // Relación inversa con DocumentSeries
+  documentSeries DocumentSeries[]
+
   @@unique([name, systemId], name: "Clinic_name_systemId_key")
   @@index([systemId])
   @@index([tariffId]) // Añadir índice para tariffId
+  @@index([legalEntityId]) // Índice para la nueva relación
   @@index([linkedScheduleTemplateId]) // Añadir índice para la nueva FK
   @@index([countryIsoCode]) // Añadir índice para la nueva FK
   @@index([languageIsoCode]) // <<< AÑADIR ÍNDICE
@@ -464,7 +507,7 @@ model Lead {
   system           System     @relation(fields: [systemId], references: [id], onDelete: Cascade)
   // <<< AÑADIR RELACIÓN INVERSA FALTANTE >>>
   companyId        String? // Para Company.leads
-  company          Company?   @relation(fields: [companyId], references: [id], onDelete: SetNull) // Relación opcional
+  company          Company?   @relation(fields: [companyId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1205,7 +1248,7 @@ model Product {
 // --- NUEVO MODELO: Configuración de Producto ---
 model ProductSetting {
   id        String  @id @default(cuid())
-  productId String  @unique // Clave foránea y constraint único para One-to-One
+  productId String  @unique
   product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   // Campos movidos
@@ -1217,9 +1260,9 @@ model ProductSetting {
   pointsAwarded     Int     @default(0)
 
   // Otros campos de configuración específicos de producto (futuros)
-  // dimensions      String?
-  // weight          Float?
-  // expirationRule  String?
+  // - Reglas de caducidad
+  // - Límite de uso por día/semana
+  // - Si es transferible
   // ...
 
   @@map("product_settings")
@@ -1381,35 +1424,34 @@ enum DiscountType {
 // <<< ELIMINAR ENUM PaymentMethod (será reemplazado por PaymentMethodDefinition) >>>
 // enum PaymentMethod { ... }
 
-
 // Enum para los tipos de ítems de un ticket
 enum TicketItemType {
-  SERVICE            // Ítem es un servicio
-  PRODUCT            // Ítem es un producto
-  BONO_DEFINITION    // Ítem es la definición de un bono (para venta)
+  SERVICE // Ítem es un servicio
+  PRODUCT // Ítem es un producto
+  BONO_DEFINITION // Ítem es la definición de un bono (para venta)
   PACKAGE_DEFINITION // Ítem es la definición de un paquete (para venta)
-  DEBT_LIQUIDATION   // Ítem es una liquidación de deuda
-  ADJUSTMENT         // Ítem es un ajuste (ej. redondeo, cargo manual)
+  DEBT_LIQUIDATION // Ítem es una liquidación de deuda
+  ADJUSTMENT // Ítem es un ajuste (ej. redondeo, cargo manual)
   // Puedes añadir más tipos según necesidad
 }
 
 model Ticket {
-  id           String       @id @default(cuid())
-  ticketNumber String? // Número de ticket, se asigna al cerrar. Podría ser @unique dentro de una serie/clínica.
-  type         TicketType   @default(SALE)
-  status       TicketStatus @default(OPEN)
-  issueDate    DateTime     @default(now())
-  currencyCode String       @default("EUR") // Código ISO de la moneda del ticket
-  totalAmount  Float // Importe total bruto (suma de items antes de descuentos globales)
+  id            String       @id @default(cuid())
+  ticketNumber  String? // Número de ticket, se asigna al cerrar. Podría ser @unique dentro de una serie/clínica.
+  type          TicketType   @default(SALE)
+  status        TicketStatus @default(OPEN)
+  issueDate     DateTime     @default(now())
+  currencyCode  String       @default("EUR") // Código ISO de la moneda del ticket
+  totalAmount   Float // Importe total bruto (suma de items antes de descuentos globales)
   // <<< ELIMINADO discountAmount >>>
   // discountAmount Float        @default(0) // Descuento GLOBAL aplicado al ticket 
-  taxAmount    Float // Importe total de impuestos (suma de IVA de items)
-  finalAmount  Float // Importe final (total - descuento + impuestos)
-  paidAmount   Float @default(0) // Importe pagado de este ticket
-  pendingAmount Float @default(0) // Importe pendiente (finalAmount - paidAmount)
+  taxAmount     Float // Importe total de impuestos (suma de IVA de items)
+  finalAmount   Float // Importe final (total - descuento + impuestos)
+  paidAmount    Float        @default(0) // Importe pagado de este ticket
+  pendingAmount Float        @default(0) // Importe pendiente (finalAmount - paidAmount)
   // <<< NUEVOS CAMPOS: Serie y Vendedor >>>
-  ticketSeries String? // Serie operativa del ticket (ej: T2024-CLI1)
-  sellerUserId String? // ID del usuario VENDEDOR (para comisiones)
+  ticketSeries  String? // Serie operativa del ticket (ej: T2024-CLI1)
+  sellerUserId  String? // ID del usuario VENDEDOR (para comisiones)
 
   // Relaciones Cliente/Empresa
   clientId  String? // Cliente (persona física) si aplica
@@ -1465,9 +1507,11 @@ model Ticket {
   paidAmountDirectly Float @default(0) // Suma de pagos directos al ticket (no deudas)
 
   // Relación inversa para DebtLedger
-  relatedDebts DebtLedger[] @relation("TicketDebts") // <--- Nombre añadido
+  relatedDebts     DebtLedger[]    @relation("TicketDebts") // <--- Nombre añadido
+  documentSeriesId String?
+  documentSeries   DocumentSeries? @relation(fields: [documentSeriesId], references: [id], onDelete: SetNull)
 
-  @@unique([ticketNumber, systemId]) // Número de ticket único por sistema
+  @@unique([ticketNumber, clinicId, systemId]) // Unicidad por clínica y sistema para evitar colisiones
   @@index([type]) // <<< AÑADIDO ÍNDICE
   @@index([status])
   @@index([issueDate])
@@ -1485,6 +1529,7 @@ model Ticket {
   @@index([invoiceId]) // <<< AÑADIDO ÍNDICE
   // >>> INICIO: Índice para cashSessionId (Paso 1.2) >>>
   @@index([cashSessionId])
+  @@index([documentSeriesId])
   // <<< FIN: Índice para cashSessionId (Paso 1.2) >>>
   @@map("tickets")
 }
@@ -1590,7 +1635,7 @@ model Invoice {
   clientId          String? // Si es factura de VENTA a Cliente B2C
   client            Client?  @relation(fields: [clientId], references: [id], onDelete: SetNull)
   companyId         String? // Si es factura de VENTA a Cliente B2B
-  company           Company? @relation("SaleInvoices", fields: [companyId], references: [id], onDelete: SetNull) // Nombre relación para inversa
+  company           Company? @relation("SaleInvoices", fields: [companyId], references: [id], onDelete: Restrict) // Nombre relación para inversa
   supplierCompanyId String? // Si es factura de COMPRA a Proveedor
   supplierCompany   Company? @relation("PurchaseInvoices", fields: [supplierCompanyId], references: [id], onDelete: Restrict) // Nombre relación para inversa
 
@@ -1707,7 +1752,7 @@ model Payment {
   systemId                  String
   clinicId                  String?
   userId                    String // Usuario que registró el pago
-  ticketId                  String? // Ticket asociado (opcional, si es un pago directo al ticket)
+  ticketId                  String? // Ticket asociado (opcional)
   invoiceId                 String? // Factura asociada (opcional)
   paymentMethodDefinitionId String? // Método de pago utilizado (definición)
   posTerminalId             String? // TPV utilizado (si aplica)
@@ -1782,19 +1827,19 @@ model CashSession {
 
   openingBalanceCash Float // Efectivo inicial (puede ser calculado del anterior cerrado o fijado si es el primero)
 
-  manualCashInput           Decimal? @default(0) // Efectivo añadido manualmente a la caja
-  cashWithdrawals           Decimal? @default(0) // Retiros de efectivo (ej: para llevar al banco)
-  cashExpenses              Decimal? @default(0) // Gastos pagados directamente desde la caja durante la sesión
+  manualCashInput Decimal? @default(0) // Efectivo añadido manualmente a la caja
+  cashWithdrawals Decimal? @default(0) // Retiros de efectivo (ej: para llevar al banco)
+  cashExpenses    Decimal? @default(0) // Gastos pagados directamente desde la caja durante la sesión
 
-  expectedCash       Float? // Calculado: openingBalanceCash + manualCashInput + ingresos efectivo - salidas efectivo - (NO cashWithdrawals here, that's an action after counting)
-  countedCash        Float? // Efectivo físico contado al cerrar
-  differenceCash     Float? // Calculado: countedCash - expectedCash
+  expectedCash   Float? // Calculado: openingBalanceCash + manualCashInput + ingresos efectivo - salidas efectivo - (NO cashWithdrawals here, that's an action after counting)
+  countedCash    Float? // Efectivo físico contado al cerrar
+  differenceCash Float? // Calculado: countedCash - expectedCash
 
-  countedCard           Float? // Total Tarjeta(s) contado por usuario
-  countedBankTransfer   Float? // Total Transferencias contadas
-  countedCheck          Float? // Total Cheques contados
-  countedInternalCredit Float? // Total Crédito Interno (Bonos, etc.)
-  countedOther          Json? // Otros métodos y sus totales: { "Bizum": 10.0, "Vales": 5.0 }
+  countedCard               Float? // Total Tarjeta(s) contado por usuario
+  countedBankTransfer       Float? // Total Transferencias contadas
+  countedCheck              Float? // Total Cheques contados
+  countedInternalCredit     Float? // Total Crédito Interno (Bonos, etc.)
+  countedOther              Json? // Otros métodos y sus totales: { "Bizum": 10.0, "Vales": 5.0 }
   calculatedDeferredAtClose Float? // NUEVO: Total de importes aplazados calculados en el momento del cierre
 
   notes String? // Notas sobre cierre o conciliación
@@ -1818,6 +1863,9 @@ model CashSession {
   // Flag: indica si se reabrió después de conciliada y hubo cambios
   hasChangesAfterReconcile Boolean @default(false)
 
+  // Deudas originadas en esta sesión
+  originatedDebts DebtLedger[] @relation("DebtsOriginatingInSession")
+
   @@unique([clinicId, sessionNumber, systemId])
   @@index([userId, clinicId, openingTime])
   @@index([status])
@@ -1830,10 +1878,6 @@ model CashSession {
   // @@index([status]) // Ya existe
   // @@index([systemId]) // Ya existe
   @@index([posTerminalId])
-
-  // Deudas originadas en esta sesión
-  originatedDebts DebtLedger[] @relation("DebtsOriginatingInSession")
-
   @@map("cash_sessions")
 }
 
@@ -2269,8 +2313,8 @@ enum EntityType {
   INVOICE // <<< AÑADIDO
   PAYMENT
   EMPLOYMENT_CONTRACT
-  DEBT_LEDGER      // Para registrar cambios en las deudas
-  DEBT_ADJUSTMENT  // Para registrar la creación/modificación de ajustes de deuda
+  DEBT_LEDGER // Para registrar cambios en las deudas
+  DEBT_ADJUSTMENT // Para registrar la creación/modificación de ajustes de deuda
   BANK // <<< AÑADIDO
   BANK_ACCOUNT // <<< AÑADIDO
   PROMOTION // <<< AÑADIDO
@@ -2439,9 +2483,6 @@ model Cabin {
 }
 
 // --- FIN NUEVO MODELO CABINA ---
-
-// --- ELIMINAR Modelo ClinicTemplateAssignment ---
-// <<< Modelo eliminado completo >>>
 
 // --- Modelo para Bloqueos Específicos de Horario de Cabina ---
 
@@ -2638,8 +2679,14 @@ model DebtLedger {
   // Relación inversa a los pagos que saldan esta deuda
   payments Payment[] @relation("DebtPayments")
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @updatedAt
+  // ID de la CashSession donde se originó la deuda (a través del ticket)
+  cashSessionId          String?
+  originatingCashSession CashSession? @relation("DebtsOriginatingInSession", fields: [cashSessionId], references: [id], onDelete: SetNull)
+
+  // Relación inversa a los ajustes de esta deuda
+  debtAdjustments DebtAdjustment[]
 
   @@index([ticketId])
   @@index([invoiceId])
@@ -2647,42 +2694,35 @@ model DebtLedger {
   @@index([clinicId])
   @@index([systemId])
   @@index([status])
-  // ID de la CashSession donde se originó la deuda (a través del ticket)
-  cashSessionId          String?
-  originatingCashSession CashSession? @relation("DebtsOriginatingInSession", fields: [cashSessionId], references: [id], onDelete: SetNull)
-
-  // Relación inversa a los ajustes de esta deuda
-  debtAdjustments        DebtAdjustment[]
-
   @@index([cashSessionId])
   @@map("debt_ledgers")
 }
 
 // --- Enum para Tipos de Ajuste de Deuda ---
 enum DebtAdjustmentType {
-  CANCELLATION              // Cancelación/condonación/descuento post-venta
+  CANCELLATION // Cancelación/condonación/descuento post-venta
   ADMINISTRATIVE_CORRECTION // Para corregir errores en el monto original
-  OTHER                     // Otro tipo de ajuste
+  OTHER // Otro tipo de ajuste
 }
 
 // --- Modelo para Ajustes de Deuda ---
 model DebtAdjustment {
-  id               String    @id @default(cuid())
-  debtLedgerId     String
-  debtLedger       DebtLedger @relation(fields: [debtLedgerId], references: [id], onDelete: Cascade)
+  id           String     @id @default(cuid())
+  debtLedgerId String
+  debtLedger   DebtLedger @relation(fields: [debtLedgerId], references: [id], onDelete: Cascade)
 
-  adjustmentType   DebtAdjustmentType
-  amount           Float             // Monto del ajuste (positivo representa una reducción de la deuda)
-  reason           String
-  adjustmentDate   DateTime  @default(now())
+  adjustmentType DebtAdjustmentType
+  amount         Float // Monto del ajuste (positivo representa una reducción de la deuda)
+  reason         String
+  adjustmentDate DateTime           @default(now())
 
-  userId           String
-  user             User      @relation("UserDebtAdjustments", fields: [userId], references: [id], onDelete: Restrict) // Evitar que se borren ajustes si se borra el usuario
+  userId String
+  user   User   @relation("UserDebtAdjustments", fields: [userId], references: [id], onDelete: Restrict) // Evitar que se borren ajustes si se borra el usuario
 
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
-  systemId         String
-  system           System    @relation("SystemDebtAdjustments", fields: [systemId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  systemId  String
+  system    System   @relation("SystemDebtAdjustments", fields: [systemId], references: [id], onDelete: Cascade)
 
   @@index([debtLedgerId])
   @@index([userId])
@@ -2723,4 +2763,31 @@ model EntityChangeLog {
   @@index([entityId, entityType])
   @@index([timestamp])
   @@map("entity_change_logs")
+}
+
+// Añadir enum para tipos de documento genéricos (tickets, facturas, etc.)
+enum DocumentType {
+  TICKET
+  INVOICE
+  CREDIT_NOTE
+  DELIVERY_NOTE
+}
+
+model DocumentSeries {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   System       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  clinicId       String? // opcional: serie global dentro de organización
+  clinic         Clinic?      @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  code           String
+  documentType   DocumentType
+  prefix         String?      @default("")
+  padding        Int          @default(6)
+  nextNumber     Int          @default(1)
+  resetPolicy    String       @default("NEVER") // simplificado; puede mapear a enum en app layer
+  lastResetAt    DateTime?
+
+  tickets Ticket[]
+
+  @@unique([organizationId, clinicId, code, documentType])
 }

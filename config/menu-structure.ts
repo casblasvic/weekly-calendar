@@ -254,6 +254,12 @@ export const menuItems: MenuItem[] = [
         href: "/configuracion/clinicas",
       },
       {
+        id: "sociedades_mercantiles",
+        label: "Sociedades Mercantiles",
+        icon: Landmark,
+        href: "/configuracion/sociedades",
+      },
+      {
         id: "usuarios",
         label: "Usuarios",
         icon: UserCog,

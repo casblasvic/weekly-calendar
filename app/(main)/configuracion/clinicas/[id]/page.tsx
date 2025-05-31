@@ -53,7 +53,9 @@ import { CountryInfo } from "@prisma/client";
 import { ActionButtons } from '@/app/components/ui/action-buttons';
 import { DataTable } from "@/components/ui/data-table"
 import type { ColumnDef } from "@tanstack/react-table"
-import { DataTableColumnHeader } from "@/components/ui/data-table-column-header"
+import { DataTableColumnHeader } from "@/components/ui/data-table-column-header";
+import { useLegalEntitiesQuery } from "@/lib/hooks/use-legal-entity-query";
+// Card components are already imported earlier, removing duplicate.
 import type { ScheduleTemplateBlock as PrismaScheduleTemplateBlock, ClinicScheduleBlock as PrismaClinicScheduleBlock } from '@prisma/client';
 import type { ScheduleTemplate } from '@prisma/client'; 
 import { useTranslation } from 'react-i18next';
@@ -62,6 +64,12 @@ import Link from 'next/link';
 import { BankDataTable } from '@/app/(main)/configuracion/bancos/components/data-table';
 import { type Bank } from '@/app/(main)/configuracion/bancos/components/columns';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 // <<< AÑADIR IMPORTACIONES FALTANTES >>>
 import React from 'react'; // Importar React explícitamente
 import { getClinicPaymentSettings } from "@/lib/api/clinicPaymentSettings";
@@ -349,7 +357,8 @@ export default function ClinicaDetailPage() {
   const { allEquipos, getClinicEquipos } = useEquipment() 
   const router = useRouter()
   const searchParams = useSearchParams()
-  const params = useParams()
+  const params = useParams();
+  const { data: legalEntitiesData, isLoading: isLoadingLegalEntities } = useLegalEntitiesQuery();
   
   // <<< MOVER AQUÍ EL NUEVO ESTADO >>>
   const [displayedCabins, setDisplayedCabins] = useState<Cabin[]>([]);
@@ -1178,52 +1187,11 @@ export default function ClinicaDetailPage() {
   }, []); // Dependencia vacía, ya que ahora solo usa setDisplayedCabins
   // --- FIN MODIFICACIÓN handleReorderCabin ---
 
-  // Placeholder: Función para convertir WeekSchedule a formato Prisma para bloques
-  const weekScheduleToPrismaBlocks = useCallback((schedule: WeekSchedule | null | undefined): Omit<PrismaClinicScheduleBlock, 'id' | 'clinicId' | 'createdAt' | 'updatedAt'>[] => {
-      // ^-- Ajustar Omit para excluir campos autogenerados
-      if (!schedule) {
-          return [];
-      }
-      const prismaBlocks: Omit<PrismaClinicScheduleBlock, 'id' | 'clinicId' | 'createdAt' | 'updatedAt'>[] = [];
+  // La función handleApplyGeneralTimesToAllDays ya está definida más arriba (alrededor de la línea 998)
+  // Se elimina esta segunda definición para evitar el error de redeclaración.
 
-      for (const dayKey in schedule) {
-          const day = schedule[dayKey as keyof WeekSchedule];
-          if (day.isOpen && day.ranges.length > 0) {
-              const dayOfWeekPrisma = dayKey.toUpperCase() as DayOfWeek; // Usar DayOfWeek importado
+  // --- FIN Nuevo Handler ---
 
-              day.ranges.forEach(range => {
-                  if (range.start && range.end && range.start < range.end) {
-                      prismaBlocks.push({
-                          dayOfWeek: dayOfWeekPrisma,
-                          startTime: range.start,
-                          endTime: range.end,
-                          isWorking: true, // Asumir que los bloques creados son laborables
-                          // No incluir createdAt/updatedAt aquí
-                      });
-                  } else {
-                       console.warn(`[weekScheduleToPrismaBlocks] Skipping invalid range for ${dayKey}:`, range);
-                  }
-              });
-          }
-      }
-      console.log("[weekScheduleToPrismaBlocks] Converted schedule to Prisma blocks:", prismaBlocks);
-      return prismaBlocks;
-  }, []); // Dependencia vacía ya que no usa props/estado del componente
-
-  // --- Helper para comparar horarios --- 
-  const sonHorariosIguales = (schedule1: WeekSchedule | null, schedule2: WeekSchedule | null): boolean => {
-      // Comparación simple pero efectiva usando JSON stringify.
-       if (schedule1 === null && schedule2 === null) return true;
-       if (schedule1 === null || schedule2 === null) return false;
-       // Normalizar antes de comparar (opcional pero robusto)
-       // const normalized1 = JSON.stringify(schedule1, Object.keys(schedule1).sort());
-       // const normalized2 = JSON.stringify(schedule2, Object.keys(schedule2).sort());
-       // return normalized1 === normalized2;
-       return JSON.stringify(schedule1) === JSON.stringify(schedule2);
-   };
-
-  // --- Lógica de Guardado Refactorizada (v3) --- 
-  // <<< MOVER handleSaveClick aquí, DESPUÉS de sonHorariosIguales >>>
   const handleSaveClick = useCallback(async () => {
     if (!clinicData || !formData) { // <<< Añadir chequeo para formData
       toast({ title: "Error", description: "Datos de la clínica o formulario no disponibles.", variant: "destructive" });
@@ -1241,6 +1209,7 @@ export default function ClinicaDetailPage() {
         name: formData.name, // <<< Usar formData
         address: formData.address, // <<< Usar formData
         city: formData.city, // <<< Usar formData
+        legalEntityId: formData.legalEntityId, // Asegurarse de que se envía
         postalCode: formData.postalCode, // <<< Usar formData
         province: formData.province, // <<< Usar formData
         // countryCode: formData.countryCode, // <<< Usar formData <<<- REEMPLAZAR
@@ -1612,6 +1581,17 @@ export default function ClinicaDetailPage() {
     // setCurrentScheduleConfig(newSchedule); 
   }, [useTemplateSchedule]); // Depender de useTemplateSchedule
 
+  const selectedLegalEntityForDisplay = useMemo(() => {
+    if (!formData?.legalEntityId || !Array.isArray(legalEntitiesData)) {
+      return null;
+    }
+    // Assuming legalEntitiesData is an array of legal entity objects
+    // @ts-ignore TS assumes legalEntitiesData is any[] so 'le' is any. Add specific type if available.
+    return legalEntitiesData.find(le => le.id === formData.legalEntityId) || null;
+  }, [formData?.legalEntityId, legalEntitiesData]);
+
+
+
   // ... useEffect para cargar datos de la clínica ...
   useEffect(() => {
     // ... existente ...
@@ -1726,34 +1706,97 @@ export default function ClinicaDetailPage() {
                         onChange={handleFormChange} // <<< Usar handleFormChange
                       />
                       </div>
+                    {/* 
                     <div className="space-y-2">
                       <Label htmlFor="businessName" className="text-sm">
                         Razón Social
                       </Label>
                       <Input
                         id="businessName"
-                        name="businessName" // <<< Añadir name
-                        value={formData?.businessName || ''} // <<< Usar formData
+                        name="businessName"
+                        value={formData?.businessName || ''}
                         className="text-sm h-9"
-                        onChange={handleFormChange} // <<< Usar handleFormChange
+                        onChange={handleFormChange}
                       />
                     </div>
+                    */}
+                    {/* 
                     <div className="space-y-2">
                       <Label htmlFor="cif" className="text-sm">
                         CIF
                       </Label>
                       <Input
                         id="cif"
-                        name="cif" // <<< Añadir name
-                        value={formData?.cif || ''} // <<< Usar formData
+                        name="cif"
+                        value={formData?.cif || ''}
                         className="text-sm h-9"
-                        onChange={handleFormChange} // <<< Usar handleFormChange
+                        onChange={handleFormChange}
                       />
                     </div>
-                  </div>
+                    */}
+                    {/* FIN CIF Input div COMENTADO */} 
 
+                    {/* Selector para Sociedad Mercantil Asociada (COMIENZO) */}
+                    {/* Este div es un item del grid principal */}
+                    <div className="space-y-2">
+                      <Label htmlFor="legalEntityId" className="text-sm">
+                        Sociedad Mercantil Asociada
+                      </Label>
+                      <Select
+                        name="legalEntityId"
+                        value={formData?.legalEntityId || ""} 
+                        onValueChange={(value) => handleFormChange({ target: { name: 'legalEntityId', value: value === "NONE" ? null : value, type: 'select' } } as any)}
+                        disabled={isLoadingLegalEntities}
+                      >
+                        <SelectTrigger className="text-sm h-9" disabled={isLoadingLegalEntities}>
+                          <SelectValue placeholder={isLoadingLegalEntities ? "Cargando sociedades..." : "Selecciona una sociedad"} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="NONE">Ninguna</SelectItem>
+                          {Array.isArray(legalEntitiesData) && legalEntitiesData.map((le: any) => (
+                            <SelectItem key={le.id} value={le.id}>
+                              {le.name} ({le.cif})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {/* Selector para Sociedad Mercantil Asociada (FIN) */} 
+
+                    {/* Tarjeta de Datos Fiscales de la Sociedad Mercantil Seleccionada (COMIENZO) */}
+                    {selectedLegalEntityForDisplay && (
+                      <div className="md:col-span-1 mt-1"> {/* Ajustado a md:col-span-1 */}
+                        <Accordion type="single" collapsible className="w-full">
+                          <AccordionItem value="legal-entity-fiscal-data">
+                            <AccordionTrigger className="text-sm py-3">
+                              Datos Fiscales Adicionales: {selectedLegalEntityForDisplay.name}
+                            </AccordionTrigger>
+                            <AccordionContent>
+                              <div className="space-y-1 text-xs pt-2 pb-1 pl-2 pr-2 border-t">
+                                {selectedLegalEntityForDisplay.taxIdentifierFields && typeof selectedLegalEntityForDisplay.taxIdentifierFields === 'object' && Object.keys(selectedLegalEntityForDisplay.taxIdentifierFields).length > 0 ? (
+                                  Object.entries(selectedLegalEntityForDisplay.taxIdentifierFields).map(([key, value]) => (
+                                    <div key={key} className="flex justify-between">
+                                      <span className="font-semibold">{key}:</span>
+                                      <span>{String(value)}</span>
+                                    </div>
+                                  ))
+                                ) : (
+                                  <p className="text-gray-500 italic">No hay identificadores fiscales adicionales para esta sociedad.</p>
+                                )}
+                              </div>
+                            </AccordionContent>
+                          </AccordionItem>
+                        </Accordion>
+                      </div>
+                    )}
+                    {/* Tarjeta de Datos Fiscales (FIN) */} 
+                  </div> {/* Este es el cierre del div className="grid gap-4 md:grid-cols-2" principal */}
+
+                  {/* La sección Ubicación comienza DESPUÉS del grid principal de Info General */}
                   <SectionTitle icon={MapPin} title="Ubicación" color="text-green-600 border-green-600" />
                   <div className="grid gap-4 md:grid-cols-2">
+                    {/* ... resto de los campos de ubicación ... */}
+
                     <div className="space-y-2">
                       <Label htmlFor="countryIsoCode" className="text-sm"> {/* Cambiado htmlFor */}
                         País

@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerAuthSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(_req: NextRequest, context: { params: any }) {
   try {
-    const ticketId = params.id;
+    const { id: ticketId } = await context.params as { id: string };
     const session = await getServerAuthSession();
     if (!session?.user?.systemId) {
       return NextResponse.json({ message: 'No autenticado' }, { status: 401 });

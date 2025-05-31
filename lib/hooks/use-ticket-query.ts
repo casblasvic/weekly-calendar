@@ -1,6 +1,7 @@
 import { UseQueryOptions, useQuery, useQueryClient, useMutation, QueryFunctionContext, QueryKey } from '@tanstack/react-query';
 import { api } from '@/utils/api-client'; 
 import { CACHE_TIME } from '@/lib/react-query'; 
+import { cashSessionKeys } from '@/lib/hooks/use-cash-session-query';
 import type { TicketFormValues, TicketItemFormValues, TicketPaymentFormValues } from '@/lib/schemas/ticket';
 import { Ticket, TicketStatus, User, Client, Prisma, DiscountType, CashSessionStatus } from '@prisma/client';
 import { toast } from '@/components/ui/use-toast';
@@ -192,8 +193,14 @@ export function useCreateTicketMutation() {
     mutationFn: async (data) => {
       return await api.post<TicketApiResponse>('/api/tickets', data);
     },
-    onSuccess: () => {
+    onSuccess: (createdTicket) => {
       queryClient.invalidateQueries({ queryKey: ticketKeys.lists() });
+      // También refrescar información de cajas (lista y contador de abiertas)
+      const clinicId = (createdTicket as any)?.clinic?.id;
+      if (clinicId) {
+        queryClient.invalidateQueries({ queryKey: cashSessionKeys.lists() });
+        queryClient.invalidateQueries({ queryKey: [...cashSessionKeys.lists(), 'openCount', clinicId] });
+      }
     }
   });
 }
@@ -261,7 +268,21 @@ export function useDeleteTicketMutation() {
       return await api.delete<{ message: string }>(`/api/tickets/${id}`);
     },
     onSuccess: (data, id) => {
-      queryClient.invalidateQueries({ queryKey: ticketKeys.lists() });
+      // Actualizar en caché de manera optimista las listas para mayor agilidad
+      queryClient.setQueriesData<PaginatedTicketsResponse>(
+        { queryKey: ['tickets'] },
+        (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            data: old.data.filter((t) => t.id !== id),
+          } as PaginatedTicketsResponse;
+        }
+      );
+
+      // Invalidar todas las queries de tickets para refetch en segundo plano
+      queryClient.invalidateQueries({ queryKey: ['tickets'] });
+      // Eliminar cache del detalle concreto
       queryClient.removeQueries({ queryKey: ticketKeys.detail(id), exact: false });
       toast({
         title: "Ticket Eliminado",
@@ -329,7 +350,7 @@ export function useTicketsQuery(
     queryKey,
     queryFn,
     staleTime: CACHE_TIME.CORTO,
-    enabled: !!filters.clinicId, 
+    enabled: !!filters.clinicId, // La query solo se ejecuta si clinicId está presente
     ...hookOptions, // Aplicar opciones pasadas al hook
   };
 

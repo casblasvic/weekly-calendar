@@ -34,6 +34,7 @@ import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } f
 import { useCashSessionTotalsQuery } from '@/lib/hooks/use-cash-session-totals';
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
 import { useChangeLogs } from '@/lib/hooks/use-change-logs';
+import { ChangeLogsTable } from '@/components/change-logs-table';
 
 interface CashPageProps {
   params: Promise<{ date: string }>;
@@ -260,7 +261,6 @@ export default function CashPage({ params }: CashPageProps) {
   },[session]);
 
   const {data:logData=[]}=useChangeLogs('CASH_SESSION',session?.id);
-  const logs=logData.map(l=>({event:l.action,time:new Date(l.timestamp),user:l.user?`${l.user.firstName||''} ${l.user.lastName||''}`.trim():undefined}));
 
   const formatDateClinic = (d:Date)=>{
     const tz = (activeClinic as any)?.country?.timezone || undefined;
@@ -544,30 +544,13 @@ export default function CashPage({ params }: CashPageProps) {
             <AccordionItem value="item-1">
               <AccordionTrigger className="flex items-center justify-between px-4 py-2 text-sm font-medium">
                 <span>{t('cash.logs.title','Historial de cambios')}</span>
-                <span className="ml-2 text-xs text-gray-500">{logs.length}</span>
+                <span className="ml-2 text-xs text-gray-500">{logData.length}</span>
               </AccordionTrigger>
               <AccordionContent className="px-4">
-                {logs.length===0 ? (
+                {logData.length===0 ? (
                   <p className="text-xs text-gray-500">{t('cash.logs.none','Sin cambios')}</p>
                 ) : (
-                  <Table className="text-xs">
-                    <TableHeader>
-                      <TableRow>
-                        <th>{t('cash.logs.event','Evento')}</th>
-                        <th>{t('cash.logs.when','Fecha')}</th>
-                        <th>{t('cash.logs.who','Usuario')}</th>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {logs.map((log,idx)=>(
-                        <TableRow key={idx}>
-                          <TableCell>{log.event}</TableCell>
-                          <TableCell>{formatDateClinic(log.time)}</TableCell>
-                          <TableCell>{log.user||'-'}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                  <ChangeLogsTable logs={logData} />
                 )}
               </AccordionContent>
             </AccordionItem>

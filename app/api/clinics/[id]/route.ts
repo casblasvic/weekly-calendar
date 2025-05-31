@@ -54,8 +54,13 @@ const UpdateClinicSchema = z.object({
   tariffId: z.string().optional().nullable(), // Asumiendo CUID para IDs <-- CAMBIADO: Quitado .cuid()
   linkedScheduleTemplateId: z.string().cuid({ message: "ID de plantilla inválido"}).optional().nullable(), // <<< AÑADIDO
   deleteIndependentBlocks: z.boolean().optional(),
+  legalEntityId: z.string().cuid("ID de Sociedad Mercantil inválido").nullable().optional(),
 }).strict(); // Usar .strict() para asegurar que NO se permitan campos extra (opcional pero recomendado)
 
+/**
+ * Esquema para validar el body de la solicitud PUT
+ * Incluir TODOS los campos editables desde el formulario de configuración
+ */
 // Añadir esquema Zod para WeekSchedule (o importarlo si existe)
 // Asegúrate de que coincida con la estructura enviada por el frontend
 const TimeRangeSchema = z.object({
@@ -121,6 +126,7 @@ const UpdateClinicAndScheduleSchema = z.object({
   // Añadir el campo opcional para el horario independiente
   independentScheduleData: WeekScheduleSchema.optional(),
   deleteIndependentBlocks: z.boolean().optional(),
+  legalEntityId: z.string().cuid("ID de Sociedad Mercantil inválido").nullable().optional(),
   // --- NUEVO CAMPO PARA ORDEN DE CABINAS ---
   cabinsOrder: z.array(z.object({
     id: z.string().cuid({ message: "ID de cabina inválido en ordenación." }),
@@ -229,6 +235,7 @@ export async function GET(request: Request, props: { params: Promise<{ id: strin
         independentSchedule: true,
         tariff: true,
         cabins: true,
+        legalEntity: true // Incluir el objeto legalEntity completo
       }
     });
 
@@ -251,6 +258,7 @@ export async function GET(request: Request, props: { params: Promise<{ id: strin
  * @returns NextResponse con la clínica actualizada (JSON) o un mensaje de error.
  */
 export async function PUT(request: Request, props: { params: Promise<{ id: string }> }) {
+  console.log('[API PUT /clinics/:id] Received request');
   const session = await getServerAuthSession();
   if (!session?.user?.systemId) {
     return NextResponse.json({ error: 'Unauthorized: No valid session found' }, { status: 401 });
@@ -269,7 +277,9 @@ export async function PUT(request: Request, props: { params: Promise<{ id: strin
 
   try {
     const body = await request.json();
+    console.log('[API PUT /clinics/:id] Request body:', JSON.stringify(body, null, 2));
     const validatedData = UpdateClinicAndScheduleSchema.parse(body);
+    console.log('[API PUT /clinics/:id] Validated legalEntityId:', validatedData.legalEntityId);
     
     const { 
       independentScheduleData, 

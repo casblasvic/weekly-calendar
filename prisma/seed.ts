@@ -401,28 +401,28 @@ async function getTariffPrice(tariffId: string, itemType: 'SERVICE' | 'PRODUCT' 
       priceRecord = await prisma.tariffProductPrice.findUnique({
         where: { tariffId_productId: { tariffId, productId: itemId } },
       });
-       if (priceRecord) return priceRecord.price;
-       // Fallback al precio base del producto
-       const product = await prisma.product.findUnique({ where: { id: itemId } });
-       return product?.price ?? null;
+      if (priceRecord) return priceRecord.price;
+      // Fallback al precio base del producto
+      const product = await prisma.product.findUnique({ where: { id: itemId } });
+      return product?.price ?? null;
 
     } else if (itemType === 'BONO') {
       priceRecord = await prisma.tariffBonoPrice.findUnique({
         where: { tariffId_bonoDefinitionId: { tariffId, bonoDefinitionId: itemId } },
       });
-       if (priceRecord) return priceRecord.price;
-       // Fallback al precio base del bono
-       const bonoDef = await prisma.bonoDefinition.findUnique({ where: { id: itemId } });
-       return bonoDef?.price ?? null;
+      if (priceRecord) return priceRecord.price;
+      // Fallback al precio base del bono
+      const bonoDef = await prisma.bonoDefinition.findUnique({ where: { id: itemId } });
+      return bonoDef?.price ?? null;
 
     } else if (itemType === 'PACKAGE') {
       priceRecord = await prisma.tariffPackagePrice.findUnique({
         where: { tariffId_packageDefinitionId: { tariffId, packageDefinitionId: itemId } },
       });
-       if (priceRecord) return priceRecord.price;
-       // Fallback al precio base del paquete
-       const packageDef = await prisma.packageDefinition.findUnique({ where: { id: itemId } });
-       return packageDef?.price ?? null;
+      if (priceRecord) return priceRecord.price;
+      // Fallback al precio base del paquete
+      const packageDef = await prisma.packageDefinition.findUnique({ where: { id: itemId } });
+      return packageDef?.price ?? null;
     }
   } catch (error) {
     console.error(`Error fetching tariff price for ${itemType} ID ${itemId} in Tariff ${tariffId}:`, error);
@@ -432,32 +432,32 @@ async function getTariffPrice(tariffId: string, itemType: 'SERVICE' | 'PRODUCT' 
 
 // <<< NUEVO: Función Helper para calcular IVA >>>
 async function calculateVAT(price: number, vatTypeId: string | null, defaultVatTypeId: string): Promise<{ vatAmount: number; vatRateId: string | null; vatPercentage: number }> {
-    let finalVatTypeId = vatTypeId;
-    let vatRate = 0;
+  let finalVatTypeId = vatTypeId;
+  let vatRate = 0;
 
-    if (!finalVatTypeId) {
-        finalVatTypeId = defaultVatTypeId; // Usar IVA por defecto si no hay uno específico
+  if (!finalVatTypeId) {
+    finalVatTypeId = defaultVatTypeId; // Usar IVA por defecto si no hay uno específico
+  }
+
+  if (finalVatTypeId) {
+    try {
+      const vatType = await prisma.vATType.findUnique({ where: { id: finalVatTypeId } });
+      if (vatType) {
+        vatRate = vatType.rate;
+      } else {
+        console.warn(`VAT Type with ID ${finalVatTypeId} not found. Using 0 VAT.`);
+        finalVatTypeId = null; // Marcar como nulo si no se encontró
+      }
+    } catch (error) {
+      console.error(`Error fetching VAT Type ID ${finalVatTypeId}:`, error);
+      finalVatTypeId = null; // Marcar como nulo en caso de error
     }
+  } else {
+    console.warn(`No specific or default VAT Type ID provided. Using 0 VAT.`);
+  }
 
-    if (finalVatTypeId) {
-        try {
-            const vatType = await prisma.vATType.findUnique({ where: { id: finalVatTypeId } });
-            if (vatType) {
-                vatRate = vatType.rate;
-            } else {
-                 console.warn(`VAT Type with ID ${finalVatTypeId} not found. Using 0 VAT.`);
-                 finalVatTypeId = null; // Marcar como nulo si no se encontró
-            }
-        } catch (error) {
-            console.error(`Error fetching VAT Type ID ${finalVatTypeId}:`, error);
-            finalVatTypeId = null; // Marcar como nulo en caso de error
-        }
-    } else {
-        console.warn(`No specific or default VAT Type ID provided. Using 0 VAT.`);
-    }
-
-    const vatAmount = parseFloat(((price * vatRate) / 100).toFixed(2));
-    return { vatAmount, vatRateId: finalVatTypeId, vatPercentage: vatRate };
+  const vatAmount = parseFloat(((price * vatRate) / 100).toFixed(2));
+  return { vatAmount, vatRateId: finalVatTypeId, vatPercentage: vatRate };
 }
 
 async function main() {
@@ -569,25 +569,8 @@ async function main() {
 
   // --- Crear Roles y asignar todos los permisos al Admin ---
   // <<< CORREGIDO: Asignación directa a variables globales y upsert completo >>>
-  adminRole = await prisma.role.upsert({ 
-      where: { name_systemId: { name: 'Administrador', systemId: system!.id } }, 
-      update: { description: 'Rol con acceso total al sistema' }, 
-      // <<< CORREGIDO: Usar 'create' en la tabla intermedia RolePermission >>>
-    create: {
-      name: 'Administrador',
-          description: 'Rol con acceso total al sistema', 
-          systemId: system!.id, 
-      permissions: {
-              // <<< CORREGIDO: Eliminar systemId explícito al crear el permiso a través de la relación >>>
-              create: allPermissions.map(p => ({ permissionId: p.id })) 
-          } 
-      },
-  });
-  staffRole = await prisma.role.upsert({ 
-      where: { name_systemId: { name: 'Personal Clinica', systemId: system!.id } }, 
-      update: { description: 'Rol para el personal de la clínica con acceso limitado' }, 
-      create: { name: 'Personal Clinica', description: 'Rol para el personal de la clínica con acceso limitado', systemId: system!.id /* Añadir permisos específicos si es necesario */ },
-  });
+  adminRole = await prisma.role.upsert({ where: { name_systemId: { name: 'Administrador', systemId: system!.id } }, update: { description: 'Rol con acceso total al sistema' }, create: { name: 'Administrador', description: 'Rol con acceso total al sistema', systemId: system!.id, permissions: { create: allPermissions.map(p => ({ permissionId: p.id })) } } });
+  staffRole = await prisma.role.upsert({ where: { name_systemId: { name: 'Personal Clinica', systemId: system!.id } }, update: { description: 'Rol para el personal de la clínica con acceso limitado' }, create: { name: 'Personal Clinica', description: 'Rol para el personal de la clínica con acceso limitado', systemId: system!.id /* Añadir permisos específicos si es necesario */ } });
   console.log('Base roles ensured.');
 
   // --- Crear Plantillas de Horario y Bloques --- 
@@ -629,6 +612,58 @@ async function main() {
   const defaultPassword = 'password123';
   const hashedPassword = await bcrypt.hash(defaultPassword, saltRounds);
   console.log(`Hashed default password.`);
+
+  // --- Crear Usuarios ---
+  console.log('Creating users...');
+  const usersData = initialMockData.usuarios || [];
+  for (const userData of usersData) {
+    const roleName = userData.perfil === 'Personal Clinica' ? 'Personal Clinica' : 'Administrador';
+    const roleId = roleName === 'Administrador' ? adminRole!.id : staffRole!.id;
+
+    const user = await prisma.user.upsert({
+      where: { email: userData.email },
+      update: {
+        firstName: userData.nombre,
+        lastName: userData.apellidos,
+        phone: userData.telefono,
+        isActive: userData.activo !== false,
+        passwordHash: hashedPassword,
+      },
+      create: {
+        email: userData.email,
+        firstName: userData.nombre,
+        lastName: userData.apellidos,
+        phone: userData.telefono,
+        isActive: userData.activo !== false,
+        passwordHash: hashedPassword,
+        systemId: system!.id,
+      },
+    });
+
+    createdUsersMap.set(userData.email, user);
+
+    // Asignar rol al usuario
+    await prisma.userRole.upsert({
+      where: { userId_roleId: { userId: user.id, roleId } },
+      update: {},
+      create: { userId: user.id, roleId },
+    });
+
+    // Asignar clínicas al usuario
+    if (Array.isArray(userData.clinicasIds)) {
+      for (const mockClinicId of userData.clinicasIds) {
+        const clinic = createdClinicsMap.get(mockClinicId);
+        if (clinic) {
+          await prisma.userClinicAssignment.upsert({
+            where: { userId_clinicId: { userId: user.id, clinicId: clinic.id } },
+            update: {},
+            create: { userId: user.id, clinicId: clinic.id, roleId },
+          });
+        }
+      }
+    }
+  }
+  console.log(`Users ensured. Created ${createdUsersMap.size} users.`);
 
   // --- Crear Tipos de IVA --- 
   console.log('Creating VAT types...');
@@ -724,25 +759,9 @@ async function main() {
             countryIsoCode: clinicData.countryIsoCode, // Añadido desde tu schema y datos previos
             languageIsoCode: clinicData.languageIsoCode,
             phone1CountryIsoCode: clinicData.phone1CountryIsoCode,
-            // Campos de configuración general que van directamente en Clinic
-            prefix: clinicData.prefix,
-            commercialName: clinicData.config?.commercialName,
-            businessName: clinicData.config?.businessName,
-            cif: clinicData.config?.cif,
-            phone2: clinicData.config?.phone2,
-            phone2CountryIsoCode: clinicData.config?.phone2CountryIsoCode,
-            initialCash: clinicData.config?.initialCash,
-            ticketSize: clinicData.config?.ticketSize,
-            affectsStats: clinicData.config?.affectsStats,
-            scheduleControl: clinicData.config?.scheduleControl,
-            delayedPayments: clinicData.config?.delayedPayments,
-            blockSignArea: clinicData.config?.blockSignArea,
-            blockPersonalData: clinicData.config?.blockPersonalData,
-            professionalSkills: clinicData.config?.professionalSkills,
-            notes: clinicData.config?.notes,
             currency: clinicData.currency || 'EUR', // Asegurar moneda
          }, 
-          create: { 
+          create: {
             name: clinicData.name, 
             prefix: clinicData.prefix, 
             address: clinicData.direccion, 
@@ -1062,7 +1081,7 @@ async function main() {
       if (bbvaId) {
           const accBBVA = await prisma.bankAccount.upsert({
               where: { iban: 'ES9121000418450200051332' }, 
-              update: { accountName: 'Cuenta Principal BBVA', swiftBic: 'BBVAESMMXXX', currency: 'EUR', bankId: bbvaId, systemId: system!.id, isActive: true },
+              update: { accountName: 'Cuenta Principal BBVA', swiftBic: 'BBVAESMMXXX', currency: 'EUR', isActive: true },
               create: { accountName: 'Cuenta Principal BBVA', iban: 'ES9121000418450200051332', swiftBic: 'BBVAESMMXXX', currency: 'EUR', bankId: bbvaId, systemId: system!.id, isActive: true }
           });
           createdBankAccountsMap.set(accBBVA.iban, accBBVA.id);
@@ -1070,13 +1089,13 @@ async function main() {
       if (santanderId) {
            const accSantander1 = await prisma.bankAccount.upsert({
               where: { iban: 'ES8000490001591234567890' },
-              update: { accountName: 'Cuenta Santander 1', swiftBic: 'BSCHESMMXXX', currency: 'EUR', bankId: santanderId, systemId: system!.id, isActive: true },
+              update: { accountName: 'Cuenta Santander 1', swiftBic: 'BSCHESMMXXX', currency: 'EUR', isActive: true },
               create: { accountName: 'Cuenta Santander 1', iban: 'ES8000490001591234567890', swiftBic: 'BSCHESMMXXX', currency: 'EUR', bankId: santanderId, systemId: system!.id, isActive: true }
           });
           createdBankAccountsMap.set(accSantander1.iban, accSantander1.id);
           const accSantander2 = await prisma.bankAccount.upsert({
               where: { iban: 'ES1200491111009876543210' },
-              update: { accountName: 'Cuenta Gastos Santander', swiftBic: 'BSCHESMMXXX', currency: 'EUR', bankId: santanderId, systemId: system!.id, isActive: false },
+              update: { accountName: 'Cuenta Gastos Santander', swiftBic: 'BSCHESMMXXX', currency: 'EUR', isActive: false },
               create: { accountName: 'Cuenta Gastos Santander', iban: 'ES1200491111009876543210', swiftBic: 'BSCHESMMXXX', currency: 'EUR', bankId: santanderId, systemId: system!.id, isActive: false }
           });
           createdBankAccountsMap.set(accSantander2.iban, accSantander2.id);
@@ -1256,7 +1275,7 @@ async function main() {
 
       // Cliente sin email, usar otro identificador único si es necesario o permitir null si el schema lo permite.
       // Para este ejemplo, asumimos que se puede identificar por una combinación (esto es solo un ejemplo)
-      const client3Data = { firstName: 'Cliente', lastName: 'Test Sin Email', phone: '600333444', systemId: system!.id, address: 'Plaza Mayor 1', city: 'Sevilla', countryIsoCode: 'ES', postalCode: '41001' };
+      const client3Data = { firstName: 'Cliente', lastName: 'Test Sin Email', phone: '600333444', systemId: system!.id, /*birthDate*/ birthDate: new Date('1995-01-01'), gender: 'Male', address: 'Plaza Mayor 1', city: 'Sevilla', countryIsoCode: 'ES', postalCode: '41001' };
       // const client3 = await prisma.client.create({ data: client3Data }); // Usar create si no hay constraint única para upsert sin email
       // createdClientsMap.set('client3-no-email', client3); // Usar un ID temporal si es necesario
   } catch (error) { console.error("Error creating example clients:", error); }
@@ -1288,78 +1307,8 @@ async function main() {
    } catch (error) { console.error("Error creating Bono/Package Instances:", error); }
    console.log('Bono/Package Instances creation attempt finished.');
 
-   // <<< --- REFACTORIZACIÓN y AMPLIACIÓN Tickets de Ejemplo --- >>>
-   console.log('Creating example Tickets (Expanded)...');
-   // ... (Creación de Tickets, Items y Payments (Tickets) con upsert/create completos, usando mapas y variables globales) ...
-   console.log('Example Tickets creation attempt finished.');
-   // <<< --- FIN REFACTORIZACIÓN Tickets --- >>>
-
-
-  // --- Crear Usuarios de Ejemplo --- 
-  console.log('Creating example users...');
-  const usersData = initialMockData.usuarios || [];
-  // <<< INICIALIZAR MAPA ANTES DEL BUCLE (Ya hecho arriba) >>>
-  // const createdUsersMap = new Map<string, pkg.User>();
-
-  for (const userData of usersData) {
-    // <<< CORREGIDO: Usar email como where y mapear campos correctamente >>>
-    const user = await prisma.user.upsert({
-      where: { email: userData.email }, // Usar email único
-      update: {
-        firstName: userData.nombre,
-        lastName: userData.apellidos,
-        phone: userData.telefono,
-        isActive: userData.activo,
-        // passwordHash: hashedPassword, // Actualizar hash si es necesario?
-      },
-      create: {
-        email: userData.email,
-        firstName: userData.nombre,
-        lastName: userData.apellidos,
-        phone: userData.telefono,
-        isActive: userData.activo,
-        passwordHash: hashedPassword,
-        systemId: system!.id // Obligatorio al crear
-        // roles, clinicAssignments se manejan después
-      }
-    });
-
-    // <<< POBLAR EL MAPA DE USUARIOS >>>
-    if (user.email) { // Guardar por email si existe
-        createdUsersMap.set(user.email, user);
-    }
-
-    // Asignar usuario a clínicas y rol
-    // <<< CORREGIDO: Usar clinicasIds y añadir roleId obligatorio >>>
-    const roleToAssign = userData.perfil === 'Administrador' ? adminRole : staffRole;
-    if (userData.clinicasIds && userData.clinicasIds.length > 0 && roleToAssign) {
-      for (const clinicMockId of userData.clinicasIds) {
-        const clinic = createdClinicsMap.get(clinicMockId);
-        if (clinic) {
-          await prisma.userClinicAssignment.upsert({
-            where: { userId_clinicId: { userId: user.id, clinicId: clinic.id } },
-            update: { roleId: roleToAssign.id }, // Actualizar rol si cambia
-            create: { userId: user.id, clinicId: clinic.id, roleId: roleToAssign.id } // <<< AÑADIDO roleId >>>
-          });
-        }
-      }
-    }
-
-    // <<< ELIMINADO: La lógica de asignar roles aquí es redundante/incorrecta >>>
-    // <<< Se maneja a través de UserClinicAssignment.roleId >>>
-    // if (userData.perfil === 'Personal Clinica') {
-    //   await prisma.role.upsert({
-    //     where: { id: staffRole?.id },
-    //     update: { userIds: [...(adminRole?.userIds || []), user.id] },
-    //     create: { userIds: [...(adminRole?.userIds || []), user.id] }
-    //   });
-    // }
-  }
-  console.log('Example users ensured.');
-  // --- FIN Crear Usuarios ---
-
-  // <<< --- INICIO: SEEDING DE SESIONES DE CAJA, TICKETS Y PAGOS --- >>>
-  console.log('Creating example Cash Sessions, Tickets, Items, and Payments...');
+   // <<< --- INICIO: SEEDING DE SESIONES DE CAJA, TICKETS Y PAGOS --- >>>
+   console.log('Creating example Cash Sessions, Tickets, Items, and Payments...');
 
   try {
     // --- Prerequisitos (Usuarios, Clientes, Clínicas, Servicios, etc. deben existir) ---
@@ -1480,11 +1429,11 @@ async function main() {
     const ticket1_totalAmount = ticket1_item1_lineTotal + ticket1_item2_lineTotal;
     const ticket1_taxAmount = ticket1_item1_vatDetails.vatAmount + ticket1_item2_vatDetails.vatAmount;
     const ticket1_finalAmount = ticket1_item1_finalPrice + ticket1_item2_finalPrice;
-    const ticket1_number = 'SEED-TKT-001';
+    const ticket1_number = '2025-000001';
 
     if (cashSessionClinic1_Closed) { // Solo crear si la sesión de caja existe
     const ticket1 = await prisma.ticket.upsert({
-      where: { ticketNumber_systemId: { ticketNumber: ticket1_number, systemId: system!.id } },
+      where: { ticketNumber_clinicId_systemId: { ticketNumber: ticket1_number, clinicId: clinic1.id, systemId: system!.id } },
       update: {
         type: 'SALE',
         status: 'ACCOUNTED',
@@ -1575,12 +1524,12 @@ async function main() {
     const ticket2_taxAmount = ticket2_item1_vatDetails.vatAmount;
     // El finalAmount es el que se paga después de descuentos e impuestos.
     const ticket2_finalAmount = ticket2_item1_finalPrice;
-    const ticket2_number = 'SEED-TKT-002';
+    const ticket2_number = '2025-000002';
 
 
     if (cashSessionClinic2_Open) { // Solo crear si la sesión de caja abierta existe
     const ticket2 = await prisma.ticket.upsert({
-        where: { ticketNumber_systemId: { ticketNumber: ticket2_number, systemId: system!.id } },
+        where: { ticketNumber_clinicId_systemId: { ticketNumber: ticket2_number, clinicId: clinic2.id, systemId: system!.id } },
         update: {
             type: 'SALE',
             status: 'OPEN',
@@ -1657,11 +1606,11 @@ async function main() {
 
          const ticket3_totalAmount = 0;
          const ticket3_taxAmount = 0;
-    const ticket3_number = 'SEED-TKT-003-BONO';
+    const ticket3_number = '2025-000003-BONO';
 
     if (bonoMasajeInstanceId && client1 && serviceMasajeId && paymentMethodBonoId && cashSessionClinic1_Closed) { // Asegurar sesión cerrada
          const ticket3 = await prisma.ticket.upsert({
-            where: { ticketNumber_systemId: { ticketNumber: ticket3_number, systemId: system!.id } },
+            where: { ticketNumber_clinicId_systemId: { ticketNumber: ticket3_number, clinicId: clinic1.id, systemId: system!.id } },
             update: {
                 type: 'SALE',
                 status: 'ACCOUNTED',
@@ -1737,11 +1686,11 @@ async function main() {
         const ticket4_item1_lineTotal = ticket4_item1_price * ticket4_item1_quantity;
         const ticket4_item1_vatDetails = await calculateVAT(ticket4_item1_lineTotal, defaultVatId, defaultVatId);
         const ticket4_item1_finalPrice = ticket4_item1_lineTotal + ticket4_item1_vatDetails.vatAmount;
-    const ticket4_number = 'SEED-TKT-004-VOID';
+    const ticket4_number = '2025-000004-VOID';
 
     if (cashSessionClinic1_Closed && client1 && serviceMasajeId && cashierUser1 && system) {
         const ticket4 = await prisma.ticket.upsert({
-            where: { ticketNumber_systemId: { ticketNumber: ticket4_number, systemId: system!.id } },
+            where: { ticketNumber_clinicId_systemId: { ticketNumber: ticket4_number, clinicId: clinic1.id, systemId: system!.id } },
             update: {
                 type: 'SALE',
                 status: 'VOID', 

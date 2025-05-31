@@ -3,48 +3,65 @@ import { getServerAuthSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { PaymentMethodType } from '@prisma/client';
 
+/**
+ * GET /api/payments/pending-verification
+ * Devuelve los pagos (transferencias, cheques, etc.) que aún no han sido verificados.
+ * Query params:
+ *   - clinicId  (obligatorio)
+ *   - sessionId (opcional)  -> limita a una caja concreta
+ *   - methodType (opcional) -> PaymentMethodType específico
+ *   - posTerminalId (opcional)
+ * Respuesta: { data: Payment[] }
+ */
 export async function GET(req: NextRequest) {
-  const clinicId = req.nextUrl.searchParams.get('clinicId');
+  const params = req.nextUrl.searchParams;
+  const clinicId = params.get('clinicId');
   if (!clinicId) {
     return NextResponse.json({ message: 'clinicId requerido' }, { status: 400 });
   }
-  const session = await getServerAuthSession();
-  if (!session?.user?.systemId) {
+  const sessionId = params.get('sessionId');
+  const methodType = params.get('methodType') as PaymentMethodType | null;
+  const posTerminalId = params.get('posTerminalId');
+
+  // Auth
+  const auth = await getServerAuthSession();
+  if (!auth?.user?.systemId) {
     return NextResponse.json({ message: 'No autenticado' }, { status: 401 });
   }
-  const systemId = session.user.systemId;
+  const systemId = auth.user.systemId;
 
-  // Leer filtros opcionales
-  const methodType = req.nextUrl.searchParams.get('methodType') as PaymentMethodType | null;
-  const posTerminalId = req.nextUrl.searchParams.get('posTerminalId');
-  const sessionIdParam = req.nextUrl.searchParams.get('sessionId');
+  const defaultMethodTypes: PaymentMethodType[] = ['BANK_TRANSFER', 'CHECK'];
+  const methodTypesFilter = methodType ? [methodType] : defaultMethodTypes;
 
-  // @ts-ignore tabla generada
-  const verified = await prisma.paymentVerification.findMany({ select: { paymentId: true }});
-  const verifiedIds = verified.map(v => v.paymentId);
+  try {
+    const payments = await prisma.payment.findMany({
+      where: {
+        clinicId,
+        systemId,
+        ...(sessionId ? { cashSessionId: sessionId } : {}),
+        ...(posTerminalId ? { posTerminalId } : {}),
+        paymentMethodDefinition: {
+          type: { in: methodTypesFilter },
+        },
+        verification: { is: null }, // Falta verificación
+      },
+      orderBy: { paymentDate: 'asc' },
+      include: {
+        paymentMethodDefinition: { select: { id: true, name: true, type: true } },
+        posTerminal: { select: { name: true } },
+        ticket: {
+          select: {
+            ticketNumber: true,
+            client: { select: { firstName: true, lastName: true } },
+          },
+        },
+        invoice: { select: { invoiceNumber: true } },
+      },
+    });
 
-  const where = {
-    systemId,
-    clinicId,
-    ...(sessionIdParam ? { cashSessionId: sessionIdParam } : {}),
-    ...(methodType ? { paymentMethodDefinition: { type: methodType } } : { paymentMethodDefinition: { type: { in: [PaymentMethodType.BANK_TRANSFER, PaymentMethodType.CHECK, PaymentMethodType.CARD] }}}),
-    ...(posTerminalId ? { posTerminalId } : {}),
-    id: { notIn: verifiedIds },
-  } as any;
-
-  const payments = await prisma.payment.findMany({
-    where,
-    include: {
-      paymentMethodDefinition: true,
-      ticket: { select: { ticketNumber: true, client: { select: { firstName: true, lastName: true } } } },
-      invoice: { select: { invoiceNumber: true } },
-      posTerminal: { select: { name: true } },
-    },
-    orderBy: { paymentDate: 'desc' },
-  });
-
-  const expected = payments.reduce((s,p)=>s + (p.type==='DEBIT'?p.amount:-p.amount),0);
-  const summary = { expected, verified:0, invalid:0};
-
-  return NextResponse.json({ data: payments, summary });
-} 
+    return NextResponse.json({ data: payments });
+  } catch (error) {
+    console.error('[API_PAYMENTS_PENDING_VERIFICATION] Error:', error);
+    return NextResponse.json({ message: 'Error interno del servidor' }, { status: 500 });
+  }
+}

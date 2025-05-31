@@ -4,6 +4,8 @@
         "save": "Guardar",
         "cancel": "Volver",
         "delete": "Eliminar",
+        "remove": "Eliminar",
+        "confirm_delete": "Sí, eliminar",
         "edit": "Editar",
         "add": "Añadir",
         "actions": "Acciones",
@@ -1662,5 +1664,42 @@
                 "add": "Añadir Promoción"
             }
         }
-    }
+    },
+  "config_legal_entities": {
+    "form": {
+      "tax_identifiers_title": "Identificadores Fiscales",
+      "add_tax_identifier": "Añadir Identificador Fiscal",
+      "associated_clinics_title": "Clínicas Asociadas",
+      "associated_clinics_description": "Selecciona las clínicas que pertenecerán a esta sociedad mercantil.",
+      "clinic_not_associated": "Sin sociedad asignada",
+      "notes_title": "Notas Adicionales",
+      "name": "Nombre de la Sociedad",
+      "name_placeholder": "Ej: Mi Empresa S.L.",
+      "country": "País (Jurisdicción Fiscal)",
+      "country_select_placeholder": "Selecciona un país",
+      "fullAddress": "Dirección Fiscal Completa",
+      "fullAddress_placeholder": "Ej: Calle Falsa 123, Ciudad, Provincia, CP, País",
+      "tax_identifier_name": "Nombre del Identificador",
+      "tax_identifier_name_placeholder": "Ej: CIF, NIF, VAT ID",
+      "tax_identifier_value": "Valor del Identificador",
+      "tax_identifier_value_placeholder": "Ej: B12345678",
+      "email": "Email de Contacto",
+      "email_placeholder": "Ej: contacto@empresa.com",
+      "phone_country": "Prefijo Telefónico",
+      "phone_country_select_placeholder": "País",
+      "phone_number": "Número de Teléfono",
+      "phone_number_placeholder": "Ej: 912345678",
+      "notes_label": "Contenido de las notas",
+      "notes_placeholder": "Cualquier información relevante..."
+    },
+    "edit_page_title": "Editar Sociedad Mercantil",
+    "clinics_table": {
+      "clinic_name": "Clínica",
+      "association_status": "Estado Asociación",
+      "associate": "Asociar",
+      "associate_aria_label": "Asociar clínica"
+    },
+    "delete_confirm_title": "¿Estás seguro?",
+    "delete_confirm_desc": "Esta acción no se puede deshacer. Esto eliminará permanentemente la sociedad mercantil y desasociará todas sus clínicas. Las clínicas no serán eliminadas."
+  }
 } 

@@ -8,7 +8,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 import { useClinic } from '@/contexts/clinic-context';
-import { useTicketsQuery, PaginatedTicketsResponse, TicketFilters, useReopenTicketMutation } from '@/lib/hooks/use-ticket-query';
+import { useTicketsQuery, PaginatedTicketsResponse, TicketFilters, useReopenTicketMutation, useDeleteTicketMutation } from '@/lib/hooks/use-ticket-query';
 import { useDailyCashSessionQuery } from '@/lib/hooks/use-cash-session-query';
 import { TicketStatus, Client, User, CashSessionStatus } from '@prisma/client';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -28,6 +28,14 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/components/ui/use-toast';
 import { Checkbox } from "@/components/ui/checkbox";
+
+// Helper function for date normalization (client-side)
+// Normalizes a date to the start of its UTC day (00:00:00.000Z)
+const normalizeDateToUTCStartOfDayClient = (dateInput: Date | string): Date => {
+  const date = new Date(dateInput); // Creates a new Date object from string or copies if Date
+  date.setUTCHours(0, 0, 0, 0); // Sets time to midnight UTC
+  return date;
+};
 
 // Definición del tipo para los datos de los tickets (AHORA BASADO EN LA API)
 // Este tipo representa UN ticket individual como lo recibimos del hook
@@ -70,6 +78,45 @@ const TicketsTable = ({
     return isClosed && cashSessionOpenOrNotLinked;
   };
 
+  const canDeleteTicket = (ticket: TicketDisplayData | undefined): boolean => {
+    if (!ticket) return false;
+
+    // Condition 1: Ticket status must be OPEN
+    if (ticket.status !== TicketStatus.OPEN) {
+      return false;
+    }
+
+    // Condition 2: If cash session exists, it must be OPEN
+    if (ticket.cashSessionId && ticket.cashSession?.status !== CashSessionStatus.OPEN) {
+      return false;
+    }
+
+    // Condition 3: No payments on later days
+    // This relies on ticket.payments being available in TicketDisplayData.
+    // NOTE: Currently, ticket.payments is undefined as it's not fetched by the GET /api/tickets endpoint for the list view.
+    // As a result, this specific check will be skipped if ticket.payments is not a populated array.
+    // For full UI-backend alignment on this rule, GET /api/tickets should include payments for the list.
+    if (Array.isArray((ticket as any).payments) && (ticket as any).payments.length > 0) {
+      if (!ticket.issueDate) { 
+        // This case should ideally not occur if issueDate is a mandatory field for tickets.
+        console.warn("Ticket issueDate is missing, cannot perform payment date validation for deletion.");
+        return false; // Being conservative: if issueDate is missing, prevent deletion.
+      }
+      
+      const normalizedTicketIssueDate = normalizeDateToUTCStartOfDayClient(ticket.issueDate);
+      
+      for (const payment of (ticket as any).payments) {
+        if (payment.paymentDate) { // Ensure paymentDate exists on the payment object
+          const normalizedPaymentDate = normalizeDateToUTCStartOfDayClient(payment.paymentDate);
+          if (normalizedPaymentDate.getTime() > normalizedTicketIssueDate.getTime()) {
+            return false; // Found a payment on a later day
+          }
+        }
+      }
+    }
+    return true; // All conditions met or payment check appropriately skipped/handled
+  };
+
   const router = useRouter();
   const { t } = useTranslation(); // Para internacionalización
   const returnToPath = "/facturacion/tickets";
@@ -77,8 +124,11 @@ const TicketsTable = ({
 
   const [isReopenConfirmOpen, setIsReopenConfirmOpen] = useState(false);
   const [ticketIdToReopen, setTicketIdToReopen] = useState<string | null>(null);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [ticketIdToDelete, setTicketIdToDelete] = useState<string | null>(null);
 
   const reopenTicketMutation = useReopenTicketMutation();
+  const deleteTicketMutation = useDeleteTicketMutation();
 
   const handleOpenReopenDialog = (ticketId: string) => {
     setTicketIdToReopen(ticketId);
@@ -115,6 +165,27 @@ const TicketsTable = ({
           });
           setIsReopenConfirmOpen(false);
           setTicketIdToReopen(null);
+        }
+      });
+    }
+  };
+
+  const handleOpenDeleteDialog = (ticketId: string) => {
+    setTicketIdToDelete(ticketId);
+    setIsDeleteConfirmOpen(true);
+  };
+
+  const handleConfirmDelete = () => {
+    if (ticketIdToDelete) {
+      toast({ title: t('tickets.deletingSingleTitle'), description: t('tickets.deletingSingleDesc', { ticketId: ticketIdToDelete }) });
+      deleteTicketMutation.mutate(ticketIdToDelete, {
+        onSuccess: () => {
+          setIsDeleteConfirmOpen(false);
+          setTicketIdToDelete(null);
+        },
+        onError: () => {
+          setIsDeleteConfirmOpen(false);
+          setTicketIdToDelete(null);
         }
       });
     }
@@ -312,18 +383,23 @@ const TicketsTable = ({
                         </Button>
                         )}
                         
-                        {/* Botón Eliminar: Solo si OPEN y no ACCOUNTED */}
-                        {(ticket.status === TicketStatus.OPEN && !ticket.cashSessionId) && (
+                        {/* Botón Eliminar: Siempre visible, desactivado si no se puede eliminar */}
                         <Button 
                           variant="ghost" 
                           size="icon" 
                           className="hover:text-red-600"
-                            onClick={() => { /* TODO: Implementar llamada a useDeleteTicketMutation con confirmación */ alert(`${t('tickets.actions.delete')} ${ticket.id}`); }}
+                          onClick={() => {
+                            // La comprobación canDeleteTicket ya está en el disabled, 
+                            // pero una doble comprobación aquí no hace daño y previene clics accidentales si el estado cambia rápidamente.
+                            if (canDeleteTicket(ticket)) {
+                              handleOpenDeleteDialog(ticket.id);
+                            }
+                          }}
+                          disabled={!canDeleteTicket(ticket)} // El botón se desactiva si canDeleteTicket es false
                           title={t('tickets.actions.deleteTooltip')}
                         >
                             <Trash2 className="w-4 h-4" />
                           </Button>
-                        )}
 
                         {/* --- Unified Reopen/Lock Button --- */}
                         <Button
@@ -373,6 +449,24 @@ const TicketsTable = ({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* --- Diálogo Confirmación Eliminar --- */}
+      <AlertDialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('tickets.deleteConfirmTitle', 'Eliminar ticket')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('tickets.deleteConfirmDescription', { ticketId: ticketIdToDelete, defaultValue: '¿Seguro que deseas eliminar el ticket {{ticketId}}? Esta acción no se puede deshacer.' })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common.cancel', 'Cancelar')}</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmDelete}>
+              {t('common.confirm', 'Confirmar')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 };
@@ -388,6 +482,7 @@ export default function ListadoTicketsPage() {
   const { data: todaySessionData, isLoading: isLoadingTodaySession } = useDailyCashSessionQuery(
     activeClinic?.id,
     todayForQuery,
+    undefined,
     { enabled: !!activeClinic?.id }
   );
 
@@ -441,6 +536,7 @@ export default function ListadoTicketsPage() {
   };
 
   const reopenTicketMutation = useReopenTicketMutation();
+  const deleteTicketMutation = useDeleteTicketMutation();
   const queryClient = useQueryClient(); // Asegúrate que queryClient está disponible
 
   const handleBulkReopen = async () => {

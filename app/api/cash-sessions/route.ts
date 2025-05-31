@@ -98,7 +98,7 @@ export async function GET(req: NextRequest) {
       // Incluir los tickets contabilizados en la sesión
       ticketsAccountedInSession: {
         where: {
-          status: { in: [TicketStatus.CLOSED, TicketStatus.ACCOUNTED] },
+          status: { in: [TicketStatus.OPEN, TicketStatus.CLOSED, TicketStatus.ACCOUNTED] },
         },
         select: {
           id: true,

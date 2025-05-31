@@ -122,7 +122,7 @@ export async function GET(req: NextRequest) {
     const earlierOpenSessionCheck = await prisma.cashSession.findFirst({
       where: {
         clinicId: cashSession.clinicId,
-        posTerminalId: cashSession.posTerminalId, // Handles if posTerminalId is null
+        // posTerminalId ya no es un criterio para la secuencia de cajas de una clínica
         openingTime: { lt: cashSession.openingTime },
         status: CashSessionStatus.OPEN,
         id: { not: cashSession.id } // Exclude the current session itself

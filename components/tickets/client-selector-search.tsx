@@ -69,7 +69,6 @@ export function ClientSelectorSearch({ selectedClientId, onClientSelect, setForm
       }
 
       if (initialClient) {
-        console.log("[ClientSelectorSearch useEffect] Usando initialClient para setear:", initialClient.id);
         setSelectedClientInternal(initialClient);
         setIsDetailsOpen(true);
         const clientDisplayName = `${initialClient.firstName} ${initialClient.lastName}${initialClient.company?.fiscalName ? ` (${initialClient.company.fiscalName})` : initialClient.fiscalName ? ` (${initialClient.fiscalName})` : ''}`.trim();
@@ -79,16 +78,13 @@ export function ClientSelectorSearch({ selectedClientId, onClientSelect, setForm
         onClientSelect(initialClient); 
       } else if (!isLoadingInitialClient && selectedClientId) {
         if (selectedClientInternal && selectedClientInternal.id === selectedClientId) {
-           console.warn(`[ClientSelectorSearch useEffect] initialClient no se encontró para el ID ${selectedClientId} que estaba seleccionado internamente. Limpiando.`);
            handleClear();
         } else if (!selectedClientInternal) {
-           console.warn(`[ClientSelectorSearch useEffect] initialClient no se encontró para ${selectedClientId} y no había cliente interno seleccionado.`);
         }
       }
 
     } else {
       if (selectedClientInternal) {
-        console.log("[ClientSelectorSearch useEffect] selectedClientId (prop) es null/undefined, pero teníamos uno interno. Limpiando.");
         handleClear();
       }
     }

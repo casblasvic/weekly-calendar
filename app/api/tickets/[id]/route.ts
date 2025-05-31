@@ -333,7 +333,7 @@ export async function DELETE(request: NextRequest, { params: paramsPromise }: { 
       const ticket = await tx.ticket.findUnique({
         where: { id: ticketId, systemId: systemId },
         include: { 
-          items: { // Incluir items para la lógica de reversión
+          items: { // Incluir items para comprobación y reversión
             include: {
               product: { include: { settings: true } },
               consumedBonoInstance: true,
@@ -348,6 +348,12 @@ export async function DELETE(request: NextRequest, { params: paramsPromise }: { 
 
       if (ticket.status !== TicketStatus.OPEN) {
         throw new Error('Solo se pueden eliminar tickets que estén en estado OPEN.');
+      }
+
+      //  Validar que no existan ítems "validados" (generados por la validación de servicio)
+      const hasValidatedItems = ticket.items.some((it) => it.isValidationGenerated === true);
+      if (hasValidatedItems) {
+        throw new Error('No se puede eliminar un ticket que contiene ítems validados.');
       }
 
       let cashSessionIdForPotentialDeletion: string | null = ticket.cashSessionId;

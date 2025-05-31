@@ -18,11 +18,13 @@ interface DebtPaymentModalProps {
   onClose: () => void;
   pendingAmount: number;
   onConfirm: (payload: { paymentMethodDefinitionId: string; amount: number; transactionReference?: string }) => void;
+  /** Muestra spinner y deshabilita confirmación mientras se envía */
+  isSubmitting?: boolean;
   /** Id de la clínica donde se liquida (para futuras mejoras). */
   clinicId?: string;
 }
 
-export function DebtPaymentModal({ isOpen, onClose, pendingAmount, onConfirm, clinicId }: DebtPaymentModalProps) {
+export function DebtPaymentModal({ isOpen, onClose, pendingAmount, onConfirm, isSubmitting = false, clinicId }: DebtPaymentModalProps) {
   const { toast } = useToast();
   const { data: paymentMethods = [], isLoading: loadingPaymentMethods } = usePaymentMethodsQuery();
   const [paymentMethodId, setPaymentMethodId] = useState<string>("");
@@ -113,18 +115,18 @@ export function DebtPaymentModal({ isOpen, onClose, pendingAmount, onConfirm, cl
           </div>
 
           <DialogFooter className="pt-4">
-            <Button variant="outline" onClick={onClose}>Cancelar</Button>
-            <Button onClick={handleConfirm} disabled={loadingPaymentMethods || !paymentMethodId || amount <= 0}>
-              {loadingPaymentMethods ? (
+            <Button variant="outline" onClick={onClose} disabled={isSubmitting}>Cancelar</Button>
+            <Button onClick={handleConfirm} disabled={isSubmitting || loadingPaymentMethods || !paymentMethodId || amount <= 0}>
+              {(isSubmitting || loadingPaymentMethods) ? (
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
               ) : (
                 <PlusCircle className="w-4 h-4 mr-2" />
               )}
-              Liquidar
+              {isSubmitting ? 'Registrando...' : 'Liquidar'}
             </Button>
           </DialogFooter>
         </div>
       </DialogContent>
     </Dialog>
   );
-} 
+}

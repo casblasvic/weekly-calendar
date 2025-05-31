@@ -6,6 +6,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { ChangeLogsTable } from '@/components/change-logs-table';
 
 interface ChangeLogsProps {
   entityId: string;
@@ -34,17 +35,8 @@ export function ChangeLogsAccordion({ entityId }: ChangeLogsProps) {
         <AccordionContent className="p-4 border-t">
           {isLoading ? (
             <div className="flex items-center gap-2 text-sm text-gray-500"><Loader2 className="w-4 h-4 animate-spin"/> Cargando...</div>
-          ) : logs.length === 0 ? (
-            <p className="text-sm text-gray-500">Sin registros.</p>
           ) : (
-            <ul className="space-y-2 text-sm">
-              {logs.map((l) => (
-                <li key={l.id} className="flex justify-between">
-                  <span className="font-medium">{l.action}</span>
-                  <span className="text-gray-600">{format(new Date(l.timestamp), 'dd/MM/yyyy HH:mm', { locale: es })}</span>
-                </li>
-              ))}
-            </ul>
+            <ChangeLogsTable logs={logs} initialDesc={orderDesc} />
           )}
         </AccordionContent>
       </AccordionItem>

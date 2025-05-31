@@ -4,6 +4,16 @@ import { prisma } from '@/lib/db';
 import { z } from 'zod';
 import { TicketStatus, CashSessionStatus, PaymentType } from '@prisma/client'; // Importar PaymentType
 
+// Utilidades auxiliares
+async function isLastTicketInSeries(tx: any, systemId: string, clinicId: string, series: string, ticketNumber: string) {
+  const latestTicket = await tx.ticket.findFirst({
+    where: { systemId, clinicId, ticketSeries: series },
+    orderBy: { ticketNumber: 'desc' },
+    select: { id: true, ticketNumber: true },
+  });
+  return latestTicket?.ticketNumber === ticketNumber;
+}
+
 const ParamsSchema = z.object({
   paymentId: z.string().cuid({ message: "El ID del pago debe ser un CUID válido." }),
 });
@@ -40,7 +50,9 @@ export async function DELETE(request: NextRequest, { params: paramsPromise }: { 
           systemId: systemId, 
         },
         include: {
-          ticket: { select: { id: true, status: true } },
+          ticket: { 
+            select: { id: true, status: true, ticketNumber: true, ticketSeries: true, clinicId: true, paidAmountDirectly: true, paidAmount: true, pendingAmount: true, finalAmount: true, _count: { select: { items: true, payments: true } }, items: { select: { id: true } } }
+          },
           cashSession: { select: { id: true, status: true } },
         }
       });
@@ -56,10 +68,11 @@ export async function DELETE(request: NextRequest, { params: paramsPromise }: { 
       if (!paymentToDelete.ticket) {
           throw new Error('El pago no está asociado a ningún ticket.');
       }
-      if (paymentToDelete.ticket.status !== TicketStatus.OPEN) {
-        throw new Error(`Solo se pueden eliminar pagos de tickets en estado OPEN. Estado actual del ticket: ${paymentToDelete.ticket.status}`);
+      if (paymentToDelete.ticket.status === TicketStatus.ACCOUNTED) {
+        throw new Error(`No se puede eliminar un pago de un ticket ACCOUNTED. Use la cancelación.`);
       }
 
+      // Asegurar que la sesión de caja asociada está abierta
       if (paymentToDelete.cashSession && 
           (paymentToDelete.cashSession.status === CashSessionStatus.CLOSED || paymentToDelete.cashSession.status === CashSessionStatus.RECONCILED)) {
         throw new Error(`No se puede eliminar un pago asociado a una sesión de caja cerrada o conciliada (Sesión: ${paymentToDelete.cashSessionId}).`);
@@ -68,25 +81,35 @@ export async function DELETE(request: NextRequest, { params: paramsPromise }: { 
       deletedPaymentAmount = paymentToDelete.amount;
       associatedTicketId = paymentToDelete.ticketId;
 
-      await tx.payment.delete({
-        where: {
-          id: paymentId,
-        },
-      });
+      await tx.payment.delete({ where: { id: paymentId } });
 
-      // Decrementar paidAmountDirectly en el Ticket si el pago era de tipo DEBIT
-      if (associatedTicketId && paymentToDelete.type === PaymentType.DEBIT) {
-        await tx.ticket.update({
+      // Recalcular importes del ticket
+      if (associatedTicketId) {
+        const updatedTicket = await tx.ticket.update({
           where: { id: associatedTicketId },
           data: {
-            paidAmountDirectly: { decrement: deletedPaymentAmount }
+            paidAmountDirectly: paymentToDelete.type === PaymentType.DEBIT ? { decrement: deletedPaymentAmount } : undefined,
+            paidAmount: { decrement: deletedPaymentAmount },
+            pendingAmount: { increment: deletedPaymentAmount },
           }
         });
-      } else if (associatedTicketId && paymentToDelete.type === PaymentType.CREDIT) {
-        // Si en el futuro se permiten pagos CREDIT directos al ticket (devoluciones parciales sin ticket de devolución)
-        // Aquí se incrementaría paidAmountDirectly (o se manejaría una lógica de "monto devuelto")
-        // Por ahora, solo consideramos DEBIT para paidAmountDirectly.
+
+        // Verificar si el ticket ha quedado sin pagos y con solo un item
+        const counts = await tx.ticket.findUnique({
+          where: { id: associatedTicketId },
+          select: { ticketNumber: true, ticketSeries: true, clinicId: true, _count: { select: { items: true, payments: true } } }
+        });
+        if (counts && counts._count.payments === 0 && counts._count.items <= 1) {
+          const lastInSeries = await isLastTicketInSeries(tx, systemId, counts.clinicId, counts.ticketSeries ?? 'TCK', counts.ticketNumber);
+          if (lastInSeries) {
+            await tx.ticket.delete({ where: { id: associatedTicketId } });
+          } else {
+            await tx.ticket.update({ where: { id: associatedTicketId }, data: { status: TicketStatus.VOID, finalAmount: 0 } });
+          }
+        }
       }
+
+      // TODO: registrar en change log
     });
 
     return NextResponse.json({ message: 'Pago eliminado correctamente' }, { status: 200 });
@@ -94,6 +117,7 @@ export async function DELETE(request: NextRequest, { params: paramsPromise }: { 
   } catch (error: any) {
     console.error('[API_PAYMENTS_DELETE] Error al eliminar el pago:', error);
     const status = error.message?.includes("no encontrado") ? 404 :
+                   error.message?.includes("ACCOUNTED") ? 403 :
                    error.message?.includes("Solo se pueden eliminar") || error.message?.includes("asociado a una deuda") || error.message?.includes("asociado a una sesión de caja cerrada") ? 403 :
                    error.message?.includes("no está asociado a ningún ticket") ? 400 : 500;
     return NextResponse.json(
