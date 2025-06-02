@@ -70,8 +70,15 @@ export default function CategoryFormModal({
     setIsSaving(true);
     setErrors(null);
 
+    // Convertir cadenas vacías a null antes de validar
+    const dataToValidate = {
+      ...formData,
+      description: formData.description?.trim() === '' ? null : formData.description,
+      parentId: formData.parentId?.trim() === '' ? null : formData.parentId
+    };
+
     // Validar con Zod
-    const result = CategoryFormSchema.safeParse(formData);
+    const result = CategoryFormSchema.safeParse(dataToValidate);
     if (!result.success) {
       setErrors(result.error.format());
       setIsSaving(false);
@@ -82,6 +89,10 @@ export default function CategoryFormModal({
     const url = category ? `/api/categories/${category.id}` : '/api/categories';
     const method = category ? 'PUT' : 'POST';
 
+    console.log('Sending data:', dataToSend);
+    console.log('URL:', url);
+    console.log('Method:', method);
+
     try {
       const response = await fetch(url, {
         method: method,
@@ -89,12 +100,17 @@ export default function CategoryFormModal({
         body: JSON.stringify(dataToSend),
       });
 
+      console.log('Response status:', response.status);
+      
       if (!response.ok) {
         let errorMsg = `Error ${response.status}`;
         try {
            const errorData = await response.json();
+           console.log('Error data:', errorData);
            errorMsg = errorData.message || errorMsg;
-        } catch(e){}
+        } catch(e){
+          console.log('Could not parse error response');
+        }
         throw new Error(errorMsg);
       }
 

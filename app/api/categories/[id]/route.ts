@@ -1,7 +1,7 @@
-import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
+import { NextResponse } from 'next/server';
 
 // Esquema para validar el ID en los parámetros
 const ParamsSchema = z.object({
@@ -19,9 +19,11 @@ const UpdateCategorySchema = z.object({
 /**
  * Handler para obtener una categoría específica por ID.
  */
-export async function GET(request: Request, { params }: { params: { id: string } }) {
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const resolvedParams = await params;
+  
   // Validar ID
-  const paramsValidation = ParamsSchema.safeParse(params);
+  const paramsValidation = ParamsSchema.safeParse(resolvedParams);
   if (!paramsValidation.success) {
     return NextResponse.json({ error: 'ID de categoría inválido.', details: paramsValidation.error.errors }, { status: 400 });
   }
@@ -48,29 +50,37 @@ export async function GET(request: Request, { params }: { params: { id: string }
 /**
  * Handler para actualizar una categoría existente.
  */
-export async function PUT(request: Request, { params }: { params: { id: string } }) {
+export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const resolvedParams = await params;
+  console.log('PUT /api/categories/[id] - params:', resolvedParams);
+  
   // Validar ID
-  const paramsValidation = ParamsSchema.safeParse(params);
+  const paramsValidation = ParamsSchema.safeParse(resolvedParams);
   if (!paramsValidation.success) {
+    console.log('Invalid category ID:', paramsValidation.error.errors);
     return NextResponse.json({ error: 'ID de categoría inválido.', details: paramsValidation.error.errors }, { status: 400 });
   }
   const { id: categoryId } = paramsValidation.data;
 
   try {
     const body = await request.json();
+    console.log('Request body:', body);
 
     // Validar body
     const validation = UpdateCategorySchema.safeParse(body);
     if (!validation.success) {
+      console.log('Validation failed:', validation.error.format());
       return NextResponse.json(
         { message: 'Datos inválidos.', details: validation.error.format() },
         { status: 400 }
       );
     }
     const updateData = validation.data;
+    console.log('Validated data:', updateData);
 
     // Verificar que se intenta actualizar algo
     if (Object.keys(updateData).length === 0) {
+        console.log('No data to update');
         return NextResponse.json({ error: 'No se proporcionaron datos para actualizar.' }, { status: 400 });
     }
     
@@ -140,9 +150,11 @@ export async function PUT(request: Request, { params }: { params: { id: string }
 /**
  * Handler para eliminar una categoría.
  */
-export async function DELETE(request: Request, { params }: { params: { id: string } }) {
-   // Validar ID
-  const paramsValidation = ParamsSchema.safeParse(params);
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const resolvedParams = await params;
+  
+  // Validar ID
+  const paramsValidation = ParamsSchema.safeParse(resolvedParams);
   if (!paramsValidation.success) {
     return NextResponse.json({ error: 'ID de categoría inválido.', details: paramsValidation.error.errors }, { status: 400 });
   }
