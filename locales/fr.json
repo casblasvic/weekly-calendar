@@ -45,5 +45,135 @@
       "tabs": {
           "promotions": "Promotions"
       }
+  },
+  "accounting": {
+    "import": {
+      "title": "Importer Plan Comptable",
+      "tabs": {
+        "predefined": "Modèles Prédéfinis",
+        "csv": "Importer CSV"
+      },
+      "legalEntity": {
+        "label": "Entité Juridique",
+        "placeholder": "Sélectionnez une entité juridique...",
+        "searchPlaceholder": "Rechercher une entité...",
+        "emptyPlaceholder": "Aucune entité trouvée",
+        "createNew": "+ Créer nouvelle entité juridique"
+      },
+      "country": {
+        "label": "Pays",
+        "placeholder": "Sélectionnez le pays du plan comptable",
+        "description": "Définit le plan comptable standard à appliquer"
+      },
+      "sector": {
+        "label": "Type d'Activité",
+        "placeholder": "Sélectionnez le type d'activité",
+        "description": "Personnalise le plan comptable selon votre secteur spécifique",
+        "comingSoon": "(Bientôt disponible)",
+        "generalPlan": {
+          "name": "Plan Général (Sans spécialisation)",
+          "description": "Plan comptable standard sans personnalisations par secteur"
+        }
+      },
+      "template": {
+        "label": "Modèle Disponible",
+        "description": "Modèle adapté pour {{country}} - {{sector}}"
+      },
+      "preview": {
+        "title": "Aperçu du Plan",
+        "showingAccounts": "Affichage de {{count}} comptes comptables",
+        "columns": {
+          "number": "Numéro",
+          "name": "Nom du Compte",
+          "type": "Type",
+          "description": "Description"
+        },
+        "expandAll": "Tout Développer",
+        "collapseAll": "Tout Réduire"
+      },
+      "mode": {
+        "label": "Mode d'Importation",
+        "options": {
+          "replace": "Remplacer le plan existant",
+          "merge": "Fusionner avec le plan existant"
+        },
+        "descriptions": {
+          "merge": "Les nouveaux comptes seront ajoutés sans supprimer les existants"
+        }
+      },
+      "warnings": {
+        "checkingMovements": "Vérification des mouvements comptables...",
+        "hasMovements": {
+          "title": "Plan comptable avec mouvements",
+          "description": "Cette entité a {{count}} écritures comptables enregistrées. Remplacer le plan pourrait affecter l'intégrité des données.",
+          "confirmButton": "Je comprends les risques, continuer"
+        },
+        "replace": {
+          "title": "Remplacer le plan comptable ?",
+          "description": "Cette action supprimera tous les comptes existants. Les personnalisations actuelles seront perdues.",
+          "confirmReplace": "Supprimer le plan existant et en sélectionner un nouveau",
+          "warningWithMovements": "(AVERTISSEMENT : {{count}} écritures comptables seront supprimées)"
+        }
+      },
+      "progress": {
+        "importing": "Importation du plan comptable...",
+        "checkingExisting": "Vérification du plan existant...",
+        "creatingAccounts": "Création des comptes comptables...",
+        "applyingMappings": "Application des mappages automatiques...",
+        "success": "Plan comptable importé avec succès",
+        "error": "Erreur lors de l'importation : {{error}}"
+      },
+      "actions": {
+        "import": "Importer le Plan",
+        "cancel": "Annuler",
+        "back": "Retour"
+      },
+      "errors": {
+        "noLegalEntity": "Vous devez sélectionner une entité juridique",
+        "noCountry": "Vous devez sélectionner un pays",
+        "noSector": "Vous devez sélectionner un type d'activité",
+        "loadingTemplate": "Erreur lors du chargement du modèle"
+      },
+      "standardInfo": {
+        "accountingStandard": "Norme comptable :",
+        "currency": "Devise :",
+        "fiscalYear": "Exercice fiscal :",
+        "sectorCustomization": "Personnalisation sectorielle :"
+      }
+    },
+    "sectors": {
+      "AESTHETIC_CLINIC": {
+        "name": "Clinique Esthétique",
+        "description": "Spécialisé en soins esthétiques, médecine esthétique et procédures non invasives"
+      },
+      "BEAUTY_CENTER": {
+        "name": "Centre de Beauté et Coiffure",
+        "description": "Services de beauté, coiffure, esthétique et soins personnels"
+      },
+      "SPA_WELLNESS": {
+        "name": "Spa et Centre de Bien-être",
+        "description": "Services de spa, bien-être, thérapies holistiques et soins de relaxation"
+      },
+      "MEDICAL_CENTER": {
+        "name": "Centre Médical Privé",
+        "description": "Cabinets médicaux et centres de santé privés"
+      },
+      "PHYSIOTHERAPY_CENTER": {
+        "name": "Centre de Physiothérapie",
+        "description": "Services de physiothérapie, rééducation et thérapie physique"
+      },
+      "DENTAL_CLINIC": {
+        "name": "Clinique Dentaire",
+        "description": "Services dentaires et soins bucco-dentaires"
+      }
+    },
+    "accountTypes": {
+      "ASSET": "Actif",
+      "LIABILITY": "Passif",
+      "EQUITY": "Capitaux Propres",
+      "REVENUE": "Produits",
+      "EXPENSE": "Charges",
+      "COST_OF_GOODS_SOLD": "Coût des Ventes"
+    }
   }
 } 

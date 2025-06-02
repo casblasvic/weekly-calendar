@@ -79,7 +79,34 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       return NextResponse.json({ message: 'Una categoría no puede ser su propia categoría padre.' }, { status: 400 });
     }
 
-    // TODO: ¿Validar que el parentId pertenezca al mismo systemId?
+    // Validar que el parentId pertenezca al mismo systemId
+    if (updateData.parentId) {
+      // Primero obtener la categoría actual para conocer su systemId
+      const currentCategory = await prisma.category.findUnique({
+        where: { id: categoryId },
+        select: { systemId: true }
+      });
+
+      if (!currentCategory) {
+        return NextResponse.json({ message: `Categoría ${categoryId} no encontrada.` }, { status: 404 });
+      }
+
+      // Verificar que la categoría padre existe y pertenece al mismo sistema
+      const parentCategory = await prisma.category.findUnique({
+        where: { id: updateData.parentId },
+        select: { systemId: true }
+      });
+
+      if (!parentCategory) {
+        return NextResponse.json({ message: 'La categoría padre especificada no existe.' }, { status: 400 });
+      }
+
+      if (parentCategory.systemId !== currentCategory.systemId) {
+        return NextResponse.json({ 
+          message: 'La categoría padre debe pertenecer al mismo sistema.' 
+        }, { status: 400 });
+      }
+    }
 
     const updatedCategory = await prisma.category.update({
       where: { id: categoryId },

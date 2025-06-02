@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { AlertCircle, CheckCircle2, Download, FileUp, Info, Loader2, Upload, X } from "lucide-react";
+import { AlertCircle, CheckCircle2, Download, FileUp, Info, Loader2, Upload, X, Sparkles, FileText } from "lucide-react";
 import Papa from "papaparse";
 import { toast } from "sonner";
 import { Progress } from "@/components/ui/progress";
@@ -31,6 +31,14 @@ import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+
+// Importar el nuevo componente de plantillas
+import dynamic from 'next/dynamic';
+const AccountingTemplateImporter = dynamic(
+  () => import('@/components/accounting/template-importer/AccountingTemplateImporter'),
+  { ssr: false }
+);
 
 // Esquema de validación del formulario
 const importFormSchema = z.object({
@@ -92,6 +100,8 @@ export default function ImportarPlanContablePage() {
     skipped: 0,
     errors: [],
   });
+  const [selectedLegalEntity, setSelectedLegalEntity] = useState<string>("");
+  const [activeTab, setActiveTab] = useState<"template" | "csv">("template");
 
   // Inicializar el formulario
   const form = useForm<ImportFormValues>({
@@ -114,6 +124,7 @@ export default function ImportarPlanContablePage() {
         // Seleccionar la primera entidad por defecto si existe
         if (data.length > 0) {
           form.setValue('legalEntityId', data[0].id);
+          setSelectedLegalEntity(data[0].id);
         }
       } catch (error) {
         console.error('Error cargando entidades legales:', error);
@@ -475,192 +486,259 @@ export default function ImportarPlanContablePage() {
     );
   }
 
-return (
-  <div className="space-y-6">
-    <div>
-      <h2 className="text-2xl font-bold tracking-tight">Importar Plan Contable</h2>
-      <p className="text-muted-foreground">
-        Importa un archivo CSV con el plan de cuentas contables.
-      </p>
-    </div>
+  const handleImportComplete = () => {
+    // Actualizar la página o redirigir después de una importación exitosa
+    toast.success("Plan contable importado correctamente");
+    // Opcionalmente, redirigir a la página del plan contable
+    // router.push('/configuracion/contabilidad');
+  };
 
-    <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleImport)}>
-        <Card>
-          <CardHeader>
-            <CardTitle>Importar desde CSV</CardTitle>
-            <CardDescription>
-              Sube un archivo CSV con el plan de cuentas. Asegúrate de que el archivo siga el formato esperado.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-4">
-              <FormField
-                control={form.control}
-                name="legalEntityId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Entidad Legal</FormLabel>
-                    <Select
-                      onValueChange={field.onChange}
-                      value={field.value}
-                      disabled={isImporting}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Selecciona una entidad legal" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {legalEntities.map((entity) => (
-                          <SelectItem key={entity.id} value={entity.id}>
-                            {entity.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold tracking-tight">Importar Plan Contable</h2>
+        <p className="text-muted-foreground">
+          Importa un plan de cuentas predefinido o desde un archivo CSV personalizado.
+        </p>
+      </div>
 
-              <div className="grid gap-2">
-                <Label htmlFor="csvFile">Archivo CSV</Label>
-                <div className="flex items-center gap-2">
-                  <Input
-                    id="csvFile"
-                    type="file"
-                    accept=".csv"
-                    onChange={handleFileSelect}
-                    disabled={isImporting}
-                  />
-                  {selectedFile && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      type="button"
-                      onClick={() => setSelectedFile(null)}
-                      disabled={isImporting}
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  )}
-                </div>
-                {selectedFile && (
-                  <p className="text-sm text-muted-foreground">
-                    {selectedFile.name} ({(selectedFile.size / 1024).toFixed(2)} KB)
-                  </p>
-                )}
-              </div>
+      {/* Selector de entidad legal global */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Entidad Legal</CardTitle>
+          <CardDescription>
+            Selecciona la entidad legal para la cual importarás el plan contable
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            <Label htmlFor="global-legal-entity">Entidad Legal</Label>
+            <Select
+              value={selectedLegalEntity}
+              onValueChange={(value) => {
+                setSelectedLegalEntity(value);
+                form.setValue('legalEntityId', value);
+              }}
+            >
+              <SelectTrigger id="global-legal-entity">
+                <SelectValue placeholder="Selecciona una entidad legal" />
+              </SelectTrigger>
+              <SelectContent>
+                {legalEntities.map((entity) => (
+                  <SelectItem key={entity.id} value={entity.id}>
+                    {entity.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
 
-              <FormField
-                control={form.control}
-                name="updateExisting"
-                render={({ field }) => (
-                  <FormItem className="flex flex-row items-center space-x-3 space-y-0 rounded-md border p-4">
-                    <FormControl>
-                      <Checkbox
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                        disabled={isImporting}
-                      />
-                    </FormControl>
-                    <div className="space-y-1 leading-none">
-                      <FormLabel>Actualizar cuentas existentes</FormLabel>
-                      <p className="text-sm text-muted-foreground">
-                        Si está marcado, se actualizarán las cuentas que ya existan con el mismo número de cuenta.
-                      </p>
+      {/* Tabs para las opciones de importación */}
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "template" | "csv")}>
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="template" className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4" />
+            Plantillas Predefinidas
+          </TabsTrigger>
+          <TabsTrigger value="csv" className="flex items-center gap-2">
+            <FileText className="h-4 w-4" />
+            Importar CSV
+          </TabsTrigger>
+        </TabsList>
+
+        {/* Contenido para plantillas predefinidas */}
+        <TabsContent value="template" className="mt-4">
+          <AccountingTemplateImporter
+            systemId={CURRENT_SYSTEM_ID}
+            legalEntityId={selectedLegalEntity}
+            currentLanguage="es"
+            onImportComplete={handleImportComplete}
+          />
+        </TabsContent>
+
+        {/* Contenido para importación CSV */}
+        <TabsContent value="csv" className="mt-4">
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(handleImport)}>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Importar desde CSV</CardTitle>
+                  <CardDescription>
+                    Sube un archivo CSV con el plan de cuentas. Asegúrate de que el archivo siga el formato esperado.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid gap-4">
+                    <FormField
+                      control={form.control}
+                      name="legalEntityId"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Entidad Legal</FormLabel>
+                          <Select
+                            onValueChange={field.onChange}
+                            value={field.value}
+                            disabled={isImporting}
+                          >
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Selecciona una entidad legal" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {legalEntities.map((entity) => (
+                                <SelectItem key={entity.id} value={entity.id}>
+                                  {entity.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <div className="grid gap-2">
+                      <Label htmlFor="csvFile">Archivo CSV</Label>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          id="csvFile"
+                          type="file"
+                          accept=".csv"
+                          onChange={handleFileSelect}
+                          disabled={isImporting}
+                        />
+                        {selectedFile && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            type="button"
+                            onClick={() => setSelectedFile(null)}
+                            disabled={isImporting}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                      {selectedFile && (
+                        <p className="text-sm text-muted-foreground">
+                          {selectedFile.name} ({(selectedFile.size / 1024).toFixed(2)} KB)
+                        </p>
+                      )}
                     </div>
-                  </FormItem>
-                )}
-              />
-            </div>
 
-            {isImporting && (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">Importando...</span>
-                  <span className="text-sm text-muted-foreground">
-                    Por favor, espera
-                  </span>
-                </div>
-                <Progress value={0} className="h-2" />
-              </div>
-            )}
+                    <FormField
+                      control={form.control}
+                      name="updateExisting"
+                      render={({ field }) => (
+                        <FormItem className="flex flex-row items-center space-x-3 space-y-0 rounded-md border p-4">
+                          <FormControl>
+                            <Checkbox
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                              disabled={isImporting}
+                            />
+                          </FormControl>
+                          <div className="space-y-1 leading-none">
+                            <FormLabel>Actualizar cuentas existentes</FormLabel>
+                            <p className="text-sm text-muted-foreground">
+                              Si está marcado, se actualizarán las cuentas que ya existan con el mismo número de cuenta.
+                            </p>
+                          </div>
+                        </FormItem>
+                      )}
+                    />
+                  </div>
 
-            {importResults.error && (
-              <Alert variant="destructive">
-                <AlertCircle className="h-4 w-4" />
-                <AlertTitle>Error</AlertTitle>
-                <AlertDescription>{importResults.error}</AlertDescription>
-              </Alert>
-            )}
+                  {isImporting && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium">Importando...</span>
+                        <span className="text-sm text-muted-foreground">
+                          Por favor, espera
+                        </span>
+                      </div>
+                      <Progress value={0} className="h-2" />
+                    </div>
+                  )}
 
-            {importResults.success && (
-              <Alert>
-                <CheckCircle2 className="h-4 w-4" />
-                <AlertTitle>¡Importación completada!</AlertTitle>
-                <AlertDescription>
-                  Se importaron {importResults.created} cuentas nuevas, se actualizaron {importResults.updated} y se omitieron {importResults.skipped}.
-                </AlertDescription>
-              </Alert>
-            )}
+                  {importResults.error && (
+                    <Alert variant="destructive">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertTitle>Error</AlertTitle>
+                      <AlertDescription>{importResults.error}</AlertDescription>
+                    </Alert>
+                  )}
 
-            {importResults?.errors && importResults.errors.length > 0 && (
-              <div className="space-y-2">
-                <h4 className="text-sm font-medium">Errores de validación:</h4>
-                <div className="max-h-60 overflow-auto rounded-md border">
-                  <table className="w-full text-sm">
-                    <thead className="sticky top-0 bg-muted">
-                      <tr>
-                        <th className="border-b px-4 py-2 text-left">Fila</th>
-                        <th className="border-b px-4 py-2 text-left">Mensaje</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {importResults.errors.map((error, index) => (
-                        <tr key={index} className="border-b">
-                          <td className="px-4 py-2">{error.row}</td>
-                          <td className="px-4 py-2">{error.message}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </CardContent>
-          <CardFooter className="flex justify-between">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={downloadTemplate}
-              disabled={isImporting}
-            >
-              <Download className="mr-2 h-4 w-4" />
-              Descargar plantilla
-            </Button>
-            <Button
-              type="submit"
-              disabled={!selectedFile || !form.watch('legalEntityId') || isImporting}
-              className="ml-auto"
-            >
-              {isImporting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Importando...
-                </>
-              ) : (
-                <>
-                  <Upload className="mr-2 h-4 w-4" />
-                  Importar
-                </>
-              )}
-            </Button>
-          </CardFooter>
-        </Card>
-      </form>
-    </Form>
-  </div>
-);
+                  {importResults.success && (
+                    <Alert>
+                      <CheckCircle2 className="h-4 w-4" />
+                      <AlertTitle>¡Importación completada!</AlertTitle>
+                      <AlertDescription>
+                        Se importaron {importResults.created} cuentas nuevas, se actualizaron {importResults.updated} y se omitieron {importResults.skipped}.
+                      </AlertDescription>
+                    </Alert>
+                  )}
+
+                  {importResults?.errors && importResults.errors.length > 0 && (
+                    <div className="space-y-2">
+                      <h4 className="text-sm font-medium">Errores de validación:</h4>
+                      <div className="max-h-60 overflow-auto rounded-md border">
+                        <table className="w-full text-sm">
+                          <thead className="sticky top-0 bg-muted">
+                            <tr>
+                              <th className="border-b px-4 py-2 text-left">Fila</th>
+                              <th className="border-b px-4 py-2 text-left">Mensaje</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {importResults.errors.map((error, index) => (
+                              <tr key={index} className="border-b">
+                                <td className="px-4 py-2">{error.row}</td>
+                                <td className="px-4 py-2">{error.message}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+                <CardFooter className="flex justify-between">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={downloadTemplate}
+                    disabled={isImporting}
+                  >
+                    <Download className="mr-2 h-4 w-4" />
+                    Descargar plantilla
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={!selectedFile || !form.watch('legalEntityId') || isImporting}
+                    className="ml-auto"
+                  >
+                    {isImporting ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Importando...
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="mr-2 h-4 w-4" />
+                        Importar
+                      </>
+                    )}
+                  </Button>
+                </CardFooter>
+              </Card>
+            </form>
+          </Form>
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
 }

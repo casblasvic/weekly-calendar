@@ -45,5 +45,129 @@
       "tabs": {
           "promotions": "Promotions"
       }
+  },
+  "accounting": {
+    "import": {
+      "title": "Import Chart of Accounts",
+      "tabs": {
+        "predefined": "Predefined Templates",
+        "csv": "Import CSV"
+      },
+      "legalEntity": {
+        "label": "Legal Entity",
+        "placeholder": "Select a legal entity...",
+        "searchPlaceholder": "Search entity...",
+        "emptyPlaceholder": "No entities found",
+        "createNew": "+ Create new legal entity"
+      },
+      "country": {
+        "label": "Country",
+        "placeholder": "Select the country for the chart of accounts",
+        "description": "Defines which standard chart of accounts will be applied"
+      },
+      "sector": {
+        "label": "Business Type",
+        "placeholder": "Select the business type",
+        "description": "Customize the chart of accounts for your specific sector",
+        "comingSoon": "(Coming soon)",
+        "generalPlan": {
+          "name": "General Plan (No specialization)",
+          "description": "Standard chart of accounts without sector customizations"
+        }
+      },
+      "template": {
+        "label": "Available Template",
+        "description": "Template adapted for {{country}} - {{sector}}"
+      },
+      "preview": {
+        "title": "Chart Preview",
+        "showingAccounts": "Showing {{count}} accounts",
+        "columns": {
+          "number": "Number",
+          "name": "Account Name",
+          "type": "Type",
+          "description": "Description"
+        },
+        "expandAll": "Expand All",
+        "collapseAll": "Collapse All"
+      },
+      "mode": {
+        "label": "Import Mode",
+        "options": {
+          "replace": "Replace existing chart",
+          "merge": "Merge with existing chart"
+        },
+        "descriptions": {
+          "merge": "New accounts will be added without deleting existing ones"
+        }
+      },
+      "warnings": {
+        "checkingMovements": "Checking accounting movements...",
+        "hasMovements": {
+          "title": "Chart with movements",
+          "description": "This entity has {{count}} journal entries recorded. Replacing the chart could affect data integrity.",
+          "confirmButton": "I understand the risks, continue"
+        },
+        "replace": {
+          "title": "Replace chart of accounts?",
+          "description": "This action will delete all existing accounts. Current customizations will be lost.",
+          "confirmReplace": "Delete existing plan and select a new one",
+          "warningWithMovements": "(WARNING: {{count}} journal entries will be deleted)"
+        }
+      },
+      "progress": {
+        "importing": "Importing chart of accounts...",
+        "checkingExisting": "Checking existing chart...",
+        "creatingAccounts": "Creating accounts...",
+        "applyingMappings": "Applying automatic mappings...",
+        "success": "Chart of accounts imported successfully",
+        "error": "Import error: {{error}}"
+      },
+      "actions": {
+        "import": "Import Chart",
+        "cancel": "Cancel",
+        "back": "Back"
+      },
+      "errors": {
+        "noLegalEntity": "You must select a legal entity",
+        "noCountry": "You must select a country",
+        "noSector": "You must select a business type",
+        "loadingTemplate": "Error loading template"
+      }
+    },
+    "sectors": {
+      "AESTHETIC_CLINIC": {
+        "name": "Aesthetic Clinic",
+        "description": "Specialized in aesthetic treatments, aesthetic medicine and non-invasive procedures"
+      },
+      "BEAUTY_CENTER": {
+        "name": "Beauty Center and Hair Salon",
+        "description": "Beauty services, hairdressing, aesthetics and personal care"
+      },
+      "SPA_WELLNESS": {
+        "name": "Spa and Wellness Center",
+        "description": "Spa services, wellness, holistic therapies and relaxation treatments"
+      },
+      "MEDICAL_CENTER": {
+        "name": "Private Medical Center",
+        "description": "Medical practices and private health centers"
+      },
+      "PHYSIOTHERAPY_CENTER": {
+        "name": "Physiotherapy Center",
+        "description": "Physiotherapy, rehabilitation and physical therapy services"
+      },
+      "DENTAL_CLINIC": {
+        "name": "Dental Clinic",
+        "description": "Dental services and oral care"
+      }
+    },
+    "accountTypes": {
+      "ASSET": "Asset",
+      "LIABILITY": "Liability",
+      "EQUITY": "Equity",
+      "REVENUE": "Revenue",
+      "EXPENSE": "Expense",
+      "COST_OF_GOODS_SOLD": "Cost of Goods Sold"
+    }
   }
 } 

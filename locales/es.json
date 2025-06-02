@@ -1701,5 +1701,178 @@
     },
     "delete_confirm_title": "¿Estás seguro?",
     "delete_confirm_desc": "Esta acción no se puede deshacer. Esto eliminará permanentemente la sociedad mercantil y desasociará todas sus clínicas. Las clínicas no serán eliminadas."
+  },
+  "accounting": {
+    "import": {
+      "title": "Importar Plan Contable",
+      "tabs": {
+        "predefined": "Plantillas Predefinidas",
+        "csv": "Importar CSV"
+      },
+      "legalEntity": {
+        "label": "Entidad Legal",
+        "placeholder": "Selecciona una entidad legal...",
+        "searchPlaceholder": "Buscar entidad...",
+        "emptyPlaceholder": "No se encontraron entidades",
+        "createNew": "+ Crear nueva entidad legal"
+      },
+      "country": {
+        "label": "País",
+        "placeholder": "Selecciona el país del plan contable",
+        "description": "Define qué plan contable estándar se aplicará"
+      },
+      "sector": {
+        "label": "Tipo de Negocio",
+        "placeholder": "Selecciona el tipo de negocio",
+        "description": "Personaliza el plan contable según tu sector específico",
+        "comingSoon": "(Próximamente)",
+        "generalPlan": {
+          "name": "Plan General (Sin especialización)",
+          "description": "Plan contable estándar sin personalizaciones por sector"
+        }
+      },
+      "template": {
+        "label": "Plantilla Disponible",
+        "description": "Plantilla adaptada para {{country}} - {{sector}}"
+      },
+      "preview": {
+        "title": "Vista Previa del Plan Contable",
+        "description": "Plan contable {country} - {sector}",
+        "accountsCount": "{count} cuentas",
+        "loading": "Cargando vista previa...",
+        "searchPlaceholder": "Buscar por código o nombre de cuenta...",
+        "expandAll": "Expandir todo",
+        "collapseAll": "Colapsar todo",
+        "columns": {
+          "account": "Cuenta",
+          "type": "Tipo",
+          "name": "Nombre"
+        },
+        "accountTypes": {
+          "ASSET": "Activo",
+          "LIABILITY": "Pasivo",
+          "EQUITY": "Patrimonio",
+          "REVENUE": "Ingresos",
+          "EXPENSE": "Gastos",
+          "COST_OF_GOODS_SOLD": "Costo de Ventas"
+        },
+        "noResults": "No se encontraron cuentas que coincidan con tu búsqueda"
+      },
+      "fiscalYear": {
+        "title": "Ejercicio Fiscal",
+        "configure": "Configurar ejercicio",
+        "hide": "Ocultar configuración",
+        "defaultInfo": "Se creará un ejercicio fiscal para el año natural {year} (1 enero - 31 diciembre)",
+        "name": "Nombre del ejercicio",
+        "namePlaceholder": "Ej: Ejercicio 2024, FY 2024-2025",
+        "startDate": "Fecha inicio",
+        "endDate": "Fecha fin",
+        "customInfo": "Algunos países o empresas usan ejercicios fiscales diferentes al año natural (ej: abril-marzo, julio-junio)"
+      },
+      "mode": {
+        "label": "Modo de Importación",
+        "options": {
+          "replace": "Reemplazar plan existente",
+          "merge": "Combinar con plan existente"
+        },
+        "descriptions": {
+          "merge": "Se añadirán las cuentas nuevas sin eliminar las existentes"
+        }
+      },
+      "warnings": {
+        "checkingMovements": "Verificando movimientos contables...",
+        "hasMovements": {
+          "title": "Plan contable con movimientos",
+          "description": "Esta entidad tiene {{count}} asientos contables registrados. Reemplazar el plan podría afectar la integridad de los datos.",
+          "confirmButton": "Entiendo los riesgos, continuar"
+        },
+        "replace": {
+          "title": "¿Reemplazar plan contable?",
+          "description": "Esta acción eliminará todas las cuentas existentes. Se perderán las personalizaciones actuales.",
+          "confirmReplace": "Eliminar plan existente y seleccionar uno nuevo",
+          "warningWithMovements": "(ADVERTENCIA: Se eliminarán {{count}} asientos contables)"
+        }
+      },
+      "progress": {
+        "importing": "Importando plan contable...",
+        "creating": "Creando cuentas contables...",
+        "mapping": "Configurando mapeos iniciales...",
+        "success": "Plan contable importado correctamente",
+        "error": "Error al importar: {{error}}"
+      },
+      "actions": {
+        "import": "Importar Plan",
+        "cancel": "Cancelar",
+        "back": "Volver"
+      },
+      "errors": {
+        "noLegalEntity": "Debes seleccionar una entidad legal",
+        "noCountry": "Debes seleccionar un país",
+        "noSector": "Debes seleccionar un tipo de negocio",
+        "loadingTemplate": "Error al cargar la plantilla"
+      },
+      "standardInfo": {
+        "accountingStandard": "Estándar contable:",
+        "currency": "Moneda:",
+        "fiscalYear": "Ejercicio fiscal:",
+        "sectorCustomization": "Personalización sectorial:"
+      }
+    },
+    "sectors": {
+      "AESTHETIC_CLINIC": {
+        "name": "Clínica Estética",
+        "description": "Especializado en tratamientos estéticos, medicina estética y procedimientos no invasivos"
+      },
+      "BEAUTY_CENTER": {
+        "name": "Centro de Belleza y Peluquería",
+        "description": "Servicios de belleza, peluquería, estética y cuidado personal"
+      },
+      "SPA_WELLNESS": {
+        "name": "Spa y Centro de Bienestar",
+        "description": "Servicios de spa, wellness, terapias holísticas y tratamientos de relajación"
+      },
+      "MEDICAL_CENTER": {
+        "name": "Centro Médico Privado",
+        "description": "Consultorios médicos y centros de salud privados"
+      },
+      "PHYSIOTHERAPY_CENTER": {
+        "name": "Centro de Fisioterapia",
+        "description": "Servicios de fisioterapia, rehabilitación y terapia física"
+      },
+      "DENTAL_CLINIC": {
+        "name": "Clínica Dental",
+        "description": "Servicios odontológicos y tratamientos dentales"
+      }
+    },
+    "accountTypes": {
+      "ASSET": "Activo",
+      "LIABILITY": "Pasivo",
+      "EQUITY": "Patrimonio",
+      "REVENUE": "Ingresos",
+      "EXPENSE": "Gastos",
+      "COST_OF_GOODS_SOLD": "Coste de Ventas"
+    }
+  },
+  "mapping": {
+    "title": "Configuración de Mapeos Contables",
+    "description": "Configure las relaciones entre sus datos y las cuentas contables",
+    "saved": "Mapeos guardados correctamente",
+    "error": "Error al guardar los mapeos",
+    "noMappings": "Seleccione al menos un mapeo antes de guardar",
+    "selectAccount": "Seleccionar cuenta...",
+    "useSuggestion": "Usar sugerencia",
+    "applyToSubcategories": "Aplicar a subcategorías",
+    "comingSoon": "Esta funcionalidad estará disponible próximamente",
+    "tabs": {
+      "categories": "Categorías",
+      "payments": "Métodos de Pago",
+      "vat": "Tipos de IVA",
+      "rules": "Reglas Especiales"
+    },
+    "categories": {
+      "info": "Asocie cada categoría de servicios/productos con la cuenta contable correspondiente para la generación automática de asientos.",
+      "hasSubcategories": "Tiene subcategorías",
+      "allMapped": "Todas las categorías están correctamente mapeadas"
+    }
   }
 } 
