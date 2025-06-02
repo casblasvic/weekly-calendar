@@ -260,6 +260,12 @@ export const menuItems: MenuItem[] = [
         href: "/configuracion/sociedades",
       },
       {
+        id: "contabilidad",
+        label: "Contabilidad",
+        icon: ClipboardList, 
+        href: "/configuracion/contabilidad",
+      },
+      {
         id: "usuarios",
         label: "Usuarios",
         icon: UserCog,

@@ -72,8 +72,12 @@ model System {
   documentSeries        DocumentSeries[]
 
   // Relación inversa para DebtLedger
-  debtLedgers DebtLedger[]
+  debtLedgers   DebtLedger[]
   legalEntities LegalEntity[] // <<< AÑADIR RELACIÓN INVERSA PARA LEGALENTITY
+
+  // Relations for Accounting
+  fiscalYears           FiscalYear[]
+  chartOfAccountEntries ChartOfAccountEntry[]
 
   changeLogs      EntityChangeLog[] @relation("SystemLogs")
   debtAdjustments DebtAdjustment[]  @relation("SystemDebtAdjustments") // Ajustes de deuda dentro de este sistema
@@ -84,6 +88,49 @@ model System {
 // --- Modelos de la Aplicación (Se definirán en Fase 1) ---
 
 // Modelo para los usuarios del sistema (empleados, administradores)
+// Base type of document for which a series can be generated.
+// This ENUM defines fundamental types understood by the system.
+// Internationalization or specific naming is handled by allowing multiple DocumentSeries
+// records for the same BaseDocumentType, with custom codes/prefixes.
+enum BaseDocumentType {
+  TICKET // Tickets de venta o servicio
+  INVOICE // Facturas emitidas
+  CREDIT_NOTE // Notas de crédito emitidas (abonos)
+  DELIVERY_NOTE // Albaranes de entrega
+  PURCHASE_ORDER // Órdenes de compra a proveedores
+  SALES_ORDER // Pedidos de venta de clientes
+  QUOTE // Presupuestos a clientes
+  PROFORMA_INVOICE // Facturas proforma
+  // Add other core document types as needed
+}
+
+// Defines how and when the document number sequence resets.
+enum ResetPolicy {
+  YEARLY // Resets at the beginning of each calendar year
+  MONTHLY // Resets at the beginning of each calendar month
+  NEVER // Never resets, sequence is continuous
+  FISCAL_YEAR // Resets at the beginning of each linked FiscalYear
+}
+
+// Defines the status of a Fiscal Year.
+enum FiscalYearStatus {
+  OPEN // Active and accepting new transactions
+  CLOSING_PROCESS // In the process of being closed, new transactions might be restricted
+  CLOSED // Closed, no new transactions allowed, reports generated
+}
+
+// Defines the fundamental types of accounts in a chart of accounts.
+// This helps categorize accounts for reporting and financial statements.
+enum AccountType {
+  ASSET // Activo: Recursos propiedad de la entidad (Caja, Bancos, Clientes, Inmovilizado)
+  LIABILITY // Pasivo: Obligaciones de la entidad con terceros (Proveedores, Préstamos)
+  EQUITY // Patrimonio Neto: Aportaciones de socios, Reservas, Resultados
+  REVENUE // Ingresos: Ventas, Prestación de servicios
+  EXPENSE // Gastos: Compras, Salarios, Alquileres, Suministros
+  COST_OF_GOODS_SOLD // Costo de Ventas: Costo de la mercadería vendida
+  // Add other specific types if necessary for advanced accounting
+}
+
 model User {
   id              String   @id @default(cuid())
   email           String   @unique // Email único global y obligatorio
@@ -165,13 +212,13 @@ model CountryInfo {
   updatedAt      DateTime @updatedAt
 
   // Relaciones inversas
-  users     User[]
-  clinics   Clinic[]
-  banks     Bank[] // Relación inversa con bancos
+  users              User[]
+  clinics            Clinic[]
+  banks              Bank[] // Relación inversa con bancos
   // <<< AÑADIR RELACIÓN INVERSA FALTANTE >>>
-  companies Company[] // Para Company.country
-  clients   Client[] // Para Client.country
-  legalEntities LegalEntity[] @relation(name: "LegalEntityJurisdictionCountry") // Jurisdicción fiscal
+  companies          Company[] // Para Company.country
+  clients            Client[] // Para Client.country
+  legalEntities      LegalEntity[] @relation(name: "LegalEntityJurisdictionCountry") // Jurisdicción fiscal
   legalEntitiesPhone LegalEntity[] @relation(name: "LegalEntityPhoneCountry") // LegalEntities que usan este país para su teléfono
 
   @@index([currencyCode]) // <-- Añadir índice para moneda
@@ -182,18 +229,18 @@ model CountryInfo {
 
 // Modelo para Sociedades Mercantiles (Entidades Legales)
 model LegalEntity {
-  id                  String   @id @default(cuid())
-  name                String   // Nombre de la razón social (ej: "Mi Empresa S.L.")
-  fullAddress         String?  // Dirección fiscal completa (ej: "Calle Falsa 123, Madrid, 28001, España")
-  
-  countryIsoCode      String   // Código ISO del país para la jurisdicción fiscal
-  country             CountryInfo @relation(name: "LegalEntityJurisdictionCountry", fields: [countryIsoCode], references: [isoCode])
-  
-  taxIdentifierFields Json?    // Almacena identificadores fiscales como {"CIF": "B12345678", "VAT_ID": "ESB12345678"} o {"RC": "123", "TP": "456", "ICE": "789"}
-  notes               String?  // Notas adicionales sobre la sociedad
-  email               String?  // Email de contacto de la sociedad
-  phone               String?  // Número de teléfono de contacto
-  phoneCountryIsoCode String?  // Código ISO del país para el prefijo telefónico
+  id          String  @id @default(cuid())
+  name        String // Nombre de la razón social (ej: "Mi Empresa S.L.")
+  fullAddress String? // Dirección fiscal completa (ej: "Calle Falsa 123, Madrid, 28001, España")
+
+  countryIsoCode String // Código ISO del país para la jurisdicción fiscal
+  country        CountryInfo @relation(name: "LegalEntityJurisdictionCountry", fields: [countryIsoCode], references: [isoCode])
+
+  taxIdentifierFields Json? // Almacena identificadores fiscales como {"CIF": "B12345678", "VAT_ID": "ESB12345678"} o {"RC": "123", "TP": "456", "ICE": "789"}
+  notes               String? // Notas adicionales sobre la sociedad
+  email               String? // Email de contacto de la sociedad
+  phone               String? // Número de teléfono de contacto
+  phoneCountryIsoCode String? // Código ISO del país para el prefijo telefónico
   phoneCountry        CountryInfo? @relation("LegalEntityPhoneCountry", fields: [phoneCountryIsoCode], references: [isoCode], onDelete: SetNull)
 
   systemId String
@@ -201,6 +248,11 @@ model LegalEntity {
 
   // Relación inversa: Una sociedad puede tener muchas clínicas
   clinics Clinic[]
+
+  // Relations for Accounting
+  fiscalYears           FiscalYear[]
+  chartOfAccountEntries ChartOfAccountEntry[]
+  documentSeries        DocumentSeries[] // Document series defined for this legal entity
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2698,6 +2750,76 @@ model DebtLedger {
   @@map("debt_ledgers")
 }
 
+// --- Modelos Contables ---
+
+// Represents a Fiscal Year for a specific Legal Entity.
+// All financial transactions and documents are typically bound to a fiscal year.
+model FiscalYear {
+  id        String           @id @default(cuid())
+  name      String // User-defined name, e.g., "Ejercicio Contable 2024", "FY 2024-2025"
+  startDate DateTime // Start date of the fiscal year
+  endDate   DateTime // End date of the fiscal year
+  status    FiscalYearStatus @default(OPEN) // Current status of the fiscal year
+
+  legalEntityId String
+  legalEntity   LegalEntity @relation(fields: [legalEntityId], references: [id], onDelete: Cascade) // The Legal Entity this fiscal year belongs to
+
+  systemId String
+  system   System @relation(fields: [systemId], references: [id], onDelete: Cascade) // System tenancy
+
+  // Document series that are specifically reset or defined for this fiscal year
+  documentSeries DocumentSeries[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([legalEntityId, name]) // Fiscal year name must be unique per legal entity
+  @@index([legalEntityId])
+  @@index([systemId])
+  @@map("fiscal_years")
+}
+
+// Represents an entry in the Chart of Accounts for a Legal Entity.
+// The Chart of Accounts is a structured list of all financial accounts used by a company.
+model ChartOfAccountEntry {
+  id            String      @id @default(cuid())
+  accountNumber String
+  name          String // Descriptive name of the account (e.g., "Clientes Nacionales", "Ventas de Mercaderías")
+  type          AccountType // Fundamental type of the account (Asset, Liability, etc.)
+  description   String? // Optional additional description
+
+  isSubAccount    Boolean               @default(false) // True if this account is a sub-account of another
+  parentAccountId String? // If isSubAccount is true, this links to the parent account's ID
+  parentAccount   ChartOfAccountEntry?  @relation("SubAccounts", fields: [parentAccountId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  subAccounts     ChartOfAccountEntry[] @relation("SubAccounts") // List of sub-accounts under this account
+
+  level             Int     @default(0) // Represents the hierarchy level, 0 for root accounts
+
+  isMonetary        Boolean @default(true) // True if the account typically holds monetary balances
+  allowsDirectEntry Boolean @default(true) // True if journal entries can be posted directly to this account (false for group/header accounts)
+  isActive          Boolean @default(true) // Whether the account is currently active and can be used
+
+  legalEntityId String
+  legalEntity   LegalEntity @relation(fields: [legalEntityId], references: [id], onDelete: Cascade) // The Legal Entity this account belongs to
+
+  systemId String
+  system   System @relation(fields: [systemId], references: [id], onDelete: Cascade) // System tenancy
+
+  // Future: Add relations to JournalEntryLine when accounting entries are implemented
+  // journalEntryLines JournalEntryLine[]
+
+  @@unique([legalEntityId, systemId, accountNumber]) // Ensures accountNumber is unique per combination
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([legalEntityId, accountNumber]) // Account number must be unique per legal entity
+  @@index([legalEntityId])
+  @@index([systemId])
+  @@index([parentAccountId])
+  @@map("chart_of_account_entries")
+}
+
 // --- Enum para Tipos de Ajuste de Deuda ---
 enum DebtAdjustmentType {
   CANCELLATION // Cancelación/condonación/descuento post-venta
@@ -2773,21 +2895,44 @@ enum DocumentType {
   DELIVERY_NOTE
 }
 
+// Defines a series for generating sequential document numbers (e.g., for tickets, invoices).
+// Series can be configured per Legal Entity, and optionally per Clinic within that Legal Entity.
 model DocumentSeries {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   System       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  clinicId       String? // opcional: serie global dentro de organización
-  clinic         Clinic?      @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  code           String
-  documentType   DocumentType
-  prefix         String?      @default("")
-  padding        Int          @default(6)
-  nextNumber     Int          @default(1)
-  resetPolicy    String       @default("NEVER") // simplificado; puede mapear a enum en app layer
-  lastResetAt    DateTime?
+  id String @id @default(cuid())
 
-  tickets Ticket[]
+  organizationId String // Link to the System (organization)
+  organization   System @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  @@unique([organizationId, clinicId, code, documentType])
+  legalEntityId String // The Legal Entity this series belongs to
+  legalEntity   LegalEntity @relation(fields: [legalEntityId], references: [id], onDelete: Cascade)
+
+  clinicId String? // Optional: if the series is specific to a Clinic
+  clinic   Clinic? @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  code         String // Unique code for the series within the legal entity (e.g., "INV-MAIN", "TKT-SHOP1")
+  documentType BaseDocumentType // Type of document this series is for (e.g., TICKET, INVOICE). Uses ENUM.
+  prefix       String? // Optional prefix for generated numbers (e.g., "F-")
+  padding      Int? // Optional zero-padding for the number (e.g., 5 for "00001")
+  nextNumber   Int              @default(1) // The next number to be used in the sequence
+
+  resetPolicy ResetPolicy? // How the numbering sequence resets (e.g., YEARLY, FISCAL_YEAR). Uses ENUM.
+  lastResetAt DateTime? // Timestamp of the last reset
+
+  fiscalYearId String? // Optional: if the series is tied to a specific FiscalYear (e.g., for yearly reset policy linked to fiscal year)
+  fiscalYear   FiscalYear? @relation(fields: [fiscalYearId], references: [id], onDelete: SetNull)
+
+  isActive Boolean @default(true) // Whether this series is currently active
+
+  // Relaciones Inversas
+  tickets Ticket[] // Tickets que usan esta serie
+  // Future: Add relations to Invoices, etc. when they use DocumentSeries
+  // invoices Invoice[] 
+
+  @@unique([legalEntityId, code]) // Series code must be unique per legal entity.
+  @@index([organizationId])
+  @@index([legalEntityId])
+  @@index([clinicId])
+  @@index([documentType])
+  @@index([fiscalYearId])
+  @@map("document_series")
 }

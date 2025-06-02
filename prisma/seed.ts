@@ -461,6 +461,177 @@ async function calculateVAT(price: number, vatTypeId: string | null, defaultVatT
 }
 
 async function main() {
+  console.log(`Start seeding ...`);
+
+  // --- 1. Asegurar/Crear System ---
+  let mainSystem = await prisma.system.findFirst({
+    // Podríamos buscar por un nombre específico si lo hubiera, o tomar el primero
+    // orderBy: { createdAt: 'asc' } // Opcional: tomar el más antiguo si hay varios
+  });
+
+  if (!mainSystem) {
+    mainSystem = await prisma.system.create({
+      data: {
+        name: 'Sistema Principal (Default)', // Nombre para el sistema de ejemplo
+        isActive: true,
+      },
+    });
+    console.log(`Created default system with id: ${mainSystem.id}`);
+  } else {
+    console.log(`Using existing system with id: ${mainSystem.id}`);
+  }
+  const systemId = mainSystem.id;
+
+  // --- Seed CountryInfo --- (Moved earlier)
+  console.log('Seeding countries...');
+  for (const country of countriesData) {
+    try {
+      await prisma.countryInfo.upsert({
+        where: { isoCode: country.isoCode },
+        update: { ...country },
+        create: { ...country },
+      });
+    } catch (error) {
+      console.error(`Error seeding country ${country.name}:`, error);
+    }
+  }
+  console.log('Countries seeded.');
+
+  // --- 2. Crear Legal Entities ---
+  const legalEntityData = [
+    {
+      id: 'le-demo-contabilidad-1', // ID único para el seed
+      name: 'Empresa Demo Contable S.L.',
+      taxIdentifierFields: { "ES_CIF": "B12345678" }, // Usar taxIdentifierFields
+      address: 'Calle Ficticia 123, Madrid',
+      systemId: systemId,
+    },
+    {
+      id: 'le-demo-contabilidad-2',
+      name: 'Servicios Avanzados Contables S.A.',
+      taxIdentifierFields: { "ES_CIF": "A87654321" }, // Usar taxIdentifierFields
+      address: 'Avenida Imaginaria 45, Barcelona',
+      systemId: systemId,
+    },
+  ];
+
+  const createdLegalEntities = [];
+  for (const leData of legalEntityData) {
+    const legalEntity = await prisma.legalEntity.upsert({
+      where: { id: leData.id }, // Usar el ID proporcionado en el seed para la unicidad
+      update: { 
+        name: leData.name, 
+        taxIdentifierFields: leData.taxIdentifierFields, // Usar taxIdentifierFields
+        fullAddress: leData.address, // Assuming 'address' from seed maps to 'fullAddress'
+        system: { connect: { id: leData.systemId } },
+        country: {
+          connect: { isoCode: 'ES' }, // Conectar a España por defecto si se actualiza
+        }
+      }, // Asegurarse de que todos los campos se actualicen si el ID existe
+      create: {
+        id: leData.id,
+        name: leData.name,
+        taxIdentifierFields: leData.taxIdentifierFields, // Usar taxIdentifierFields
+        fullAddress: leData.address, // Assuming 'address' from seed maps to 'fullAddress'
+        system: { connect: { id: leData.systemId } },
+        country: {
+          connect: { isoCode: 'ES' }, // Conectar a España por defecto
+        },
+        // Añadir cualquier otro campo obligatorio de LegalEntity con valores por defecto
+      },
+    });
+    createdLegalEntities.push(legalEntity);
+    console.log(`Upserted Legal Entity: ${legalEntity.name} (ID: ${legalEntity.id})`);
+  }
+
+  // --- 3. Crear Chart of Account Entries para la primera Legal Entity de contabilidad ---
+  if (createdLegalEntities.length > 0) {
+    const firstLegalEntityForChart = createdLegalEntities[0];
+    const legalEntityIdForChart = firstLegalEntityForChart.id;
+    console.log(`Seeding Chart of Accounts for Legal Entity: ${firstLegalEntityForChart.name} (ID: ${legalEntityIdForChart})`);
+
+    const chartOfAccountsSeed = [
+      // Nivel 0
+      { accountNumber: '1', name: 'ACTIVO', type: 'ASSET', level: 0, allowsDirectEntry: false },
+      { accountNumber: '2', name: 'PASIVO', type: 'LIABILITY', level: 0, allowsDirectEntry: false },
+      { accountNumber: '3', name: 'PATRIMONIO NETO', type: 'EQUITY', level: 0, allowsDirectEntry: false },
+      { accountNumber: '4', name: 'INGRESOS', type: 'REVENUE', level: 0, allowsDirectEntry: false },
+      { accountNumber: '5', name: 'GASTOS', type: 'EXPENSE', level: 0, allowsDirectEntry: false },
+    ];
+
+    const parentAccountsMap = new Map<string, string>(); // Map 'accountNumber' -> 'id'
+
+    for (const accountData of chartOfAccountsSeed) {
+      if (accountData.level === 0) {
+        try {
+          const entry = await prisma.chartOfAccountEntry.upsert({
+            where: { legalEntityId_systemId_accountNumber: { legalEntityId: legalEntityIdForChart, systemId, accountNumber: accountData.accountNumber } },
+            update: { name: accountData.name, type: accountData.type as any, allowsDirectEntry: accountData.allowsDirectEntry },
+            create: {
+              accountNumber: accountData.accountNumber,
+              name: accountData.name,
+              type: accountData.type as any, 
+              level: accountData.level,
+              allowsDirectEntry: accountData.allowsDirectEntry,
+              legalEntityId: legalEntityIdForChart,
+              systemId: systemId,
+            },
+          });
+          parentAccountsMap.set(accountData.accountNumber, entry.id);
+          console.log(`  Upserted L0 Account: ${entry.accountNumber} - ${entry.name}`);
+        } catch (e) {
+          console.error(`Error upserting L0 account ${accountData.accountNumber} - ${accountData.name}:`, e);
+        }
+      }
+    }
+
+    const activoParentId = parentAccountsMap.get('1');
+    if (activoParentId) {
+      const activoSubAccounts = [
+        { accountNumber: '10', name: 'ACTIVO CORRIENTE', type: 'ASSET', level: 1, parentAccountId: activoParentId, allowsDirectEntry: false },
+        { accountNumber: '11', name: 'ACTIVO NO CORRIENTE', type: 'ASSET', level: 1, parentAccountId: activoParentId, allowsDirectEntry: false },
+      ];
+      for (const accountData of activoSubAccounts) {
+        try {
+          const entry = await prisma.chartOfAccountEntry.upsert({
+            where: { legalEntityId_systemId_accountNumber: { legalEntityId: legalEntityIdForChart, systemId, accountNumber: accountData.accountNumber } },
+            update: { name: accountData.name, type: accountData.type as any, parentAccountId: accountData.parentAccountId, allowsDirectEntry: accountData.allowsDirectEntry },
+            create: { ...accountData, type: accountData.type as any, legalEntityId: legalEntityIdForChart, systemId: systemId },
+          });
+          parentAccountsMap.set(accountData.accountNumber, entry.id);
+          console.log(`    Upserted L1 Account: ${entry.accountNumber} - ${entry.name} (Parent: 1)`);
+        } catch (e) {
+          console.error(`Error upserting L1 account ${accountData.accountNumber} - ${accountData.name}:`, e);
+        }
+      }
+    }
+
+    const activoCorrienteParentId = parentAccountsMap.get('10');
+    if (activoCorrienteParentId) {
+      const activoCorrienteSubAccounts = [
+        { accountNumber: '100', name: 'CAJA', type: 'ASSET', level: 2, parentAccountId: activoCorrienteParentId, allowsDirectEntry: true },
+        { accountNumber: '101', name: 'BANCOS', type: 'ASSET', level: 2, parentAccountId: activoCorrienteParentId, allowsDirectEntry: true },
+        { accountNumber: '102', name: 'CLIENTES', type: 'ASSET', level: 2, parentAccountId: activoCorrienteParentId, allowsDirectEntry: true },
+      ];
+      for (const accountData of activoCorrienteSubAccounts) {
+        try {
+          await prisma.chartOfAccountEntry.upsert({
+            where: { legalEntityId_systemId_accountNumber: { legalEntityId: legalEntityIdForChart, systemId, accountNumber: accountData.accountNumber } },
+            update: { name: accountData.name, type: accountData.type as any, parentAccountId: accountData.parentAccountId, allowsDirectEntry: accountData.allowsDirectEntry },
+            create: { ...accountData, type: accountData.type as any, legalEntityId: legalEntityIdForChart, systemId: systemId },
+          });
+          console.log(`      Upserted L2 Account: ${accountData.accountNumber} - ${accountData.name} (Parent: 10)`);
+        } catch (e) {
+          console.error(`Error upserting L2 account ${accountData.accountNumber} - ${accountData.name}:`, e);
+        }
+      }
+    }
+  } else {
+    console.log('No Legal Entities created or found, skipping Chart of Accounts seeding for them.');
+  }
+
+  // ... (El resto del código de seed.ts existente comenzaría aquí)
+  // Asegúrate de que el console.log(`Start seeding ...`); original no se duplique.
   console.log(`[Diagnostic Seed] Start seeding ...`);
 
   // --- DIAGNOSTIC STEP 1: Log available models ---
