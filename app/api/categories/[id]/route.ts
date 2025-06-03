@@ -52,35 +52,29 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
  */
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = await params;
-  console.log('PUT /api/categories/[id] - params:', resolvedParams);
   
   // Validar ID
   const paramsValidation = ParamsSchema.safeParse(resolvedParams);
   if (!paramsValidation.success) {
-    console.log('Invalid category ID:', paramsValidation.error.errors);
     return NextResponse.json({ error: 'ID de categoría inválido.', details: paramsValidation.error.errors }, { status: 400 });
   }
   const { id: categoryId } = paramsValidation.data;
 
   try {
     const body = await request.json();
-    console.log('Request body:', body);
 
     // Validar body
     const validation = UpdateCategorySchema.safeParse(body);
     if (!validation.success) {
-      console.log('Validation failed:', validation.error.format());
       return NextResponse.json(
         { message: 'Datos inválidos.', details: validation.error.format() },
         { status: 400 }
       );
     }
     const updateData = validation.data;
-    console.log('Validated data:', updateData);
 
     // Verificar que se intenta actualizar algo
     if (Object.keys(updateData).length === 0) {
-        console.log('No data to update');
         return NextResponse.json({ error: 'No se proporcionaron datos para actualizar.' }, { status: 400 });
     }
     
