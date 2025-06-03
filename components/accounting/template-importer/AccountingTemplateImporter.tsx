@@ -46,7 +46,7 @@ import {
   type ChartOfAccountTemplate
 } from '@/config/accounting';
 import { BusinessSector } from '@/types/accounting';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
 import { Input } from '@/components/ui/input';
@@ -84,6 +84,7 @@ export default function AccountingTemplateImporter({
   const [showRisksConfirmation, setShowRisksConfirmation] = useState(false);
   const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(new Set());
   const [allowReplacePlan, setAllowReplacePlan] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
 
   // Estados para configuración del ejercicio fiscal
   const [showFiscalYearConfig, setShowFiscalYearConfig] = useState(false);
@@ -136,38 +137,6 @@ export default function AccountingTemplateImporter({
       return response.json();
     },
     enabled: !!legalEntityId
-  });
-
-  // Importar plantilla
-  const importMutation = useMutation({
-    mutationFn: async (data: {
-      templateCode: string;
-      country: SupportedCountry;
-      sector?: BusinessSector;
-      mode: 'replace' | 'merge';
-    }) => {
-      const response = await fetch('/api/chart-of-accounts/import-template', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...data,
-          systemId,
-          legalEntityId
-        })
-      });
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Import error');
-      }
-      return response.json();
-    },
-    onSuccess: () => {
-      toast.success(t('accounting.import.progress.success'));
-      onImportComplete?.();
-    },
-    onError: (error: Error) => {
-      toast.error(t('accounting.import.progress.error', { error: error.message }));
-    }
   });
 
   // Pre-seleccionar país si hay sociedad fiscal
@@ -230,48 +199,202 @@ export default function AccountingTemplateImporter({
       return;
     }
     
+    setIsImporting(true);
+    
     try {
-      // Primero crear o verificar el año fiscal
-      const fiscalYearResponse = await fetch('/api/fiscal-years', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: fiscalYearName,
-          startDate: new Date(fiscalYearStartDate),
-          endDate: new Date(fiscalYearEndDate),
-          legalEntityId: legalEntity?.id,
-          systemId
-        })
-      });
+      // Determinar las fechas del período fiscal
+      const startDateForFiscalYear = showFiscalYearConfig ? fiscalYearStartDate : `${new Date().getFullYear()}-01-01`;
+      const endDateForFiscalYear = showFiscalYearConfig ? fiscalYearEndDate : `${new Date().getFullYear()}-12-31`;
+      
+      toast.info('🔄 Verificando ejercicios fiscales...');
+      
+      // Verificar ejercicios fiscales existentes
+      const existingFiscalYearsResponse = await fetch(
+        `/api/fiscal-years?legalEntityId=${legalEntity?.id}`
+      );
+      
+      let fiscalYear = null;
+      let existingFiscalYears: any[] = [];
+      let wasExistingFiscalYear = false;
+      
+      if (existingFiscalYearsResponse.ok) {
+        existingFiscalYears = await existingFiscalYearsResponse.json();
+        
+        if (existingFiscalYears.length > 0) {
+          // Buscar si hay ejercicio fiscal que solape con las fechas del período
+          const startDate = new Date(startDateForFiscalYear);
+          const endDate = new Date(endDateForFiscalYear);
+          
+          fiscalYear = existingFiscalYears.find((fy: any) => {
+            const fyStart = new Date(fy.startDate);
+            const fyEnd = new Date(fy.endDate);
+            const startDate = new Date(startDateForFiscalYear);
+            const endDate = new Date(endDateForFiscalYear);
+            
+            // Verificar si hay solapamiento de fechas
+            const hasOverlap = (startDate <= fyEnd && endDate >= fyStart);
+            
+            if (hasOverlap) {
+              console.log(`📅 Ejercicio existente encontrado: ${fy.name} (${fyStart.toDateString()} - ${fyEnd.toDateString()})`);
+              console.log(`📅 Período solicitado: ${startDate.toDateString()} - ${endDate.toDateString()}`);
+              
+              // Calcular el solapamiento
+              const overlapStart = new Date(Math.max(startDate.getTime(), fyStart.getTime()));
+              const overlapEnd = new Date(Math.min(endDate.getTime(), fyEnd.getTime()));
+              const overlapDays = Math.max(0, Math.ceil((overlapEnd.getTime() - overlapStart.getTime()) / (1000 * 60 * 60 * 24)));
+              const requestedDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+              const overlapPercentage = (overlapDays / requestedDays) * 100;
+              
+              console.log(`📊 Solapamiento: ${overlapDays} días de ${requestedDays} (${overlapPercentage.toFixed(1)}%)`);
+              
+              // Si el solapamiento es mayor al 95% O el período está completamente dentro, lo usamos
+              if (overlapPercentage >= 95 || (startDate >= fyStart && endDate <= fyEnd)) {
+                console.log('✅ Solapamiento suficiente, usando ejercicio existente');
+                return true;
+              }
+              
+              // Si el período solicitado es un año natural estándar (1 ene - 31 dic)
+              // y el ejercicio existente incluye ese año, también lo usamos
+              const isStandardYear = startDate.getMonth() === 0 && startDate.getDate() === 1 &&
+                                   endDate.getMonth() === 11 && endDate.getDate() === 31;
+              const yearMatches = startDate.getFullYear() === endDate.getFullYear();
+              const endDateWithMargin = new Date(endDate.getTime() - (7 * 24 * 60 * 60 * 1000)); // 7 días de margen
+              const exerciseIncludesYear = fyStart <= startDate && fyEnd >= endDateWithMargin;
+              
+              if (isStandardYear && yearMatches && exerciseIncludesYear) {
+                console.log('✅ Período estándar anual con ejercicio compatible, usando ejercicio existente');
+                return true;
+              }
+            }
+            
+            return false;
+          });
+          
+          if (fiscalYear) {
+            // Ya existe un ejercicio fiscal que incluye el período
+            wasExistingFiscalYear = true;
+            console.log('✅ Usando ejercicio fiscal existente:', fiscalYear.name);
+            toast.success(`📅 Usando ejercicio fiscal existente: ${fiscalYear.name}`);
+          } else {
+            // Verificar que no haya solapamientos problemáticos (solo si es realmente problemático)
+            const hasProblematicOverlap = existingFiscalYears.some((fy: any) => {
+              const fyStart = new Date(fy.startDate);
+              const fyEnd = new Date(fy.endDate);
+              const startDate = new Date(startDateForFiscalYear);
+              const endDate = new Date(endDateForFiscalYear);
+              
+              // Solo es problemático si hay solapamiento pero es menor al 50%
+              const hasOverlap = (startDate <= fyEnd && endDate >= fyStart);
+              if (!hasOverlap) return false;
+              
+              const overlapStart = new Date(Math.max(startDate.getTime(), fyStart.getTime()));
+              const overlapEnd = new Date(Math.min(endDate.getTime(), fyEnd.getTime()));
+              const overlapDays = Math.max(0, Math.ceil((overlapEnd.getTime() - overlapStart.getTime()) / (1000 * 60 * 60 * 24)));
+              const requestedDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+              const overlapPercentage = (overlapDays / requestedDays) * 100;
+              
+              // Es problemático si hay solapamiento menor al 50% (ni muy poco ni suficiente)
+              return overlapPercentage > 10 && overlapPercentage < 50;
+            });
+            
+            if (hasProblematicOverlap) {
+              throw new Error('El período seleccionado tiene un solapamiento parcial con ejercicios fiscales existentes. Por favor, ajuste las fechas o use el ejercicio fiscal existente desde la configuración.');
+            }
+            
+            // No hay ejercicio que incluya el período, necesitamos crear uno nuevo
+            // Verificar que el nombre no esté duplicado
+            let proposedName = fiscalYearName;
+            let counter = 1;
+            
+            while (existingFiscalYears.some((fy: any) => fy.name === proposedName)) {
+              proposedName = `${fiscalYearName} (${counter})`;
+              counter++;
+            }
+            
+            toast.info(`📅 Creando nuevo ejercicio fiscal: ${proposedName}...`);
+            
+            // Crear el nuevo ejercicio fiscal con nombre único
+            const fiscalYearResponse = await fetch('/api/fiscal-years', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                name: proposedName,
+                startDate: new Date(startDateForFiscalYear),
+                endDate: new Date(endDateForFiscalYear),
+                legalEntityId: legalEntity?.id,
+                systemId
+              })
+            });
 
-      if (!fiscalYearResponse.ok) {
-        throw new Error('Error al crear el año fiscal');
+            if (!fiscalYearResponse.ok) {
+              const errorData = await fiscalYearResponse.json();
+              throw new Error(errorData.error || 'Error al crear el año fiscal');
+            }
+
+            fiscalYear = await fiscalYearResponse.json();
+            console.log('✅ Ejercicio fiscal creado:', fiscalYear.name);
+            toast.success(`📅 Ejercicio fiscal creado: ${fiscalYear.name}`);
+          }
+        } else {
+          // No hay ejercicios fiscales, crear el primero
+          toast.info(`📅 Creando primer ejercicio fiscal: ${fiscalYearName}...`);
+          
+          const fiscalYearResponse = await fetch('/api/fiscal-years', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: fiscalYearName,
+              startDate: new Date(startDateForFiscalYear),
+              endDate: new Date(endDateForFiscalYear),
+              legalEntityId: legalEntity?.id,
+              systemId
+            })
+          });
+
+          if (!fiscalYearResponse.ok) {
+            const errorData = await fiscalYearResponse.json();
+            throw new Error(errorData.error || 'Error al crear el año fiscal');
+          }
+
+          fiscalYear = await fiscalYearResponse.json();
+          console.log('✅ Primer ejercicio fiscal creado:', fiscalYear.name);
+          toast.success(`📅 Primer ejercicio fiscal creado: ${fiscalYear.name}`);
+        }
       }
 
-      const fiscalYear = await fiscalYearResponse.json();
-
-      // Luego importar la plantilla
+      // Luego importar la plantilla con los campos correctos
+      toast.info('📊 Importando plan contable...');
+      
       const response = await fetch('/api/chart-of-accounts/import-template', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           templateCode: fullTemplateCode,
+          country: selectedCountry, // ✅ Campo requerido
+          sector: selectedSector !== 'GENERAL' ? selectedSector : undefined, // ✅ Campo opcional
           legalEntityId: legalEntity?.id,
           systemId,
-          importMode,
-          fiscalYearId: fiscalYear.id
+          mode: importMode // ✅ Corregido: era 'importMode', ahora es 'mode'
+          // ❌ Eliminado: fiscalYearId (no existe en la API)
         })
       });
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.message || 'Import error');
+        throw new Error(error.error || error.message || 'Error al importar plantilla');
       }
 
-      toast.success(t('accounting.import.progress.success'));
+      const result = await response.json();
+      
+      toast.success(`✅ ${result.message || 'Plan contable importado correctamente'}`);
+      toast.success('🎉 ¡Configuración contable completada!');
+      
       onImportComplete?.();
     } catch (error) {
-      toast.error(t('accounting.import.progress.error', { error: error instanceof Error ? error.message : 'Unknown error' }));
+      console.error('Error en importación:', error);
+      toast.error(`❌ ${error instanceof Error ? error.message : 'Error desconocido'}`);
+    } finally {
+      setIsImporting(false);
     }
   };
 
@@ -685,7 +808,7 @@ export default function AccountingTemplateImporter({
                 <Button
                   variant="outline"
                   onClick={handlePreview}
-                  disabled={!selectedCountry || importMutation.isPending}
+                  disabled={!selectedCountry || isImporting}
                 >
                   <Eye className="w-4 h-4 mr-2" />
                   {t('accounting.import.preview.title')}
@@ -694,17 +817,17 @@ export default function AccountingTemplateImporter({
                   onClick={handleImport}
                   disabled={
                     !selectedCountry || 
-                    importMutation.isPending || 
+                    isImporting || 
                     checkingChart || 
                     checkingMovements ||
                     // Desactivar si existe plan y no se ha marcado el checkbox
                     (existingChart?.hasEntries && !allowReplacePlan)
                   }
                 >
-                  {importMutation.isPending ? (
+                  {isImporting ? (
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      {t('accounting.import.progress.importing')}
+                      Importando...
                     </>
                   ) : (
                     <>

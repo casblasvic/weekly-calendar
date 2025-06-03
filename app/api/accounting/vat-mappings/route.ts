@@ -11,12 +11,6 @@ import { getServerAuthSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { z } from 'zod';
 
-interface VATMapping {
-  vatTypeId: string;
-  accountId: string;
-  direction: 'INPUT' | 'OUTPUT';
-}
-
 // GET /api/accounting/vat-mappings
 export async function GET(request: NextRequest) {
   try {
@@ -35,20 +29,29 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Por ahora, dado que no tenemos una tabla específica para VAT mappings,
-    // devolvemos un array vacío. En producción, esto leería de una tabla VATAccountMapping
-    const mockMappings: VATMapping[] = [];
-
-    // TODO: Cuando se cree la tabla VATAccountMapping:
-    /*
-    const mappings = await prisma.vatAccountMapping.findMany({
+    // Obtener todos los mapeos de IVA para la entidad legal
+    const mappings = await prisma.vATTypeAccountMapping.findMany({
       where: {
         legalEntityId,
         systemId: session.user.systemId
       },
       include: {
-        vatType: true,
-        account: {
+        vatType: {
+          select: {
+            id: true,
+            name: true,
+            rate: true,
+            code: true
+          }
+        },
+        inputAccount: {
+          select: {
+            id: true,
+            accountNumber: true,
+            name: true
+          }
+        },
+        outputAccount: {
           select: {
             id: true,
             accountNumber: true,
@@ -57,9 +60,8 @@ export async function GET(request: NextRequest) {
         }
       }
     });
-    */
 
-    return NextResponse.json(mockMappings);
+    return NextResponse.json(mappings);
   } catch (error) {
     console.error('Error al obtener mapeos de IVA:', error);
     return NextResponse.json(
@@ -104,21 +106,87 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No autorizado para este sistema" }, { status: 403 });
     }
 
-    // TODO: Implementar modelo VATTypeAccountMapping en el schema
-    // Por ahora, almacenar en un campo JSON en la configuración del sistema o legal entity
-    
-    // Simulación temporal de guardado exitoso
-    console.log('VAT Mappings recibidos:', mappings);
+    // Iniciar transacción para guardar los mapeos
+    const result = await prisma.$transaction(async (tx) => {
+      const createdOrUpdatedMappings = [];
 
-    // En el futuro, esto debería:
-    // 1. Crear un modelo VATTypeAccountMapping similar a CategoryAccountMapping
-    // 2. Guardar los mapeos de cuentas de entrada (IVA soportado) y salida (IVA repercutido)
-    // 3. Permitir diferentes cuentas de IVA por entidad legal
+      for (const [vatTypeId, accounts] of Object.entries(mappings)) {
+        // Verificar que el tipo de IVA existe
+        const vatType = await tx.vATType.findFirst({
+          where: {
+            id: vatTypeId,
+            OR: [
+              { systemId }, // IVA global del sistema
+              { legalEntityId } // IVA específico de la entidad
+            ]
+          }
+        });
+
+        if (!vatType) {
+          throw new Error(`Tipo de IVA ${vatTypeId} no encontrado`);
+        }
+
+        // Verificar cuentas si se proporcionan
+        if (accounts.input) {
+          const inputAccount = await tx.chartOfAccountEntry.findFirst({
+            where: {
+              id: accounts.input,
+              legalEntityId,
+              systemId,
+              isActive: true
+            }
+          });
+
+          if (!inputAccount) {
+            throw new Error(`Cuenta de IVA soportado ${accounts.input} no encontrada o inactiva`);
+          }
+        }
+
+        if (accounts.output) {
+          const outputAccount = await tx.chartOfAccountEntry.findFirst({
+            where: {
+              id: accounts.output,
+              legalEntityId,
+              systemId,
+              isActive: true
+            }
+          });
+
+          if (!outputAccount) {
+            throw new Error(`Cuenta de IVA repercutido ${accounts.output} no encontrada o inactiva`);
+          }
+        }
+
+        // Crear o actualizar el mapeo
+        const mapping = await tx.vATTypeAccountMapping.upsert({
+          where: {
+            vatTypeId_legalEntityId: {
+              vatTypeId,
+              legalEntityId
+            }
+          },
+          update: {
+            inputAccountId: accounts.input || null,
+            outputAccountId: accounts.output || null
+          },
+          create: {
+            vatTypeId,
+            legalEntityId,
+            systemId,
+            inputAccountId: accounts.input || null,
+            outputAccountId: accounts.output || null
+          }
+        });
+
+        createdOrUpdatedMappings.push(mapping);
+      }
+
+      return createdOrUpdatedMappings;
+    });
 
     return NextResponse.json({
-      message: "Mapeos de IVA guardados correctamente (temporal)",
-      mappingsCreated: Object.keys(mappings).length,
-      note: "Implementación temporal - requiere migración de base de datos"
+      message: "Mapeos de IVA guardados correctamente",
+      mappingsCreated: result.length
     });
 
   } catch (error) {

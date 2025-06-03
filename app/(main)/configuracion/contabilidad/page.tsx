@@ -86,19 +86,9 @@ const FiscalYearManager = dynamic(
   { ssr: false }
 );
 
-const PaymentMethodAccountMapper = dynamic(
-  () => import('@/components/accounting/payment-method-mapping/PaymentMethodAccountMapper'),
-  { ssr: false }
-);
-
-const VATTypeAccountMapper = dynamic(
-  () => import('@/components/accounting/vat-mapping/VATTypeAccountMapper'),
-  { ssr: false }
-);
-
 const AccountingExporter = dynamic(
   () => import('@/components/accounting/reports/AccountingExporter'),
-  { ssr: false }
+  { loading: () => <p>Cargando exportador...</p> }
 );
 
 export default function AccountingConfigPage() {
@@ -476,38 +466,13 @@ export default function AccountingConfigPage() {
               </CardContent>
             </Card>
           ) : (
-            <Tabs defaultValue="categories" className="w-full">
-              <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="categories">Categorías</TabsTrigger>
-                <TabsTrigger value="payment-methods">Métodos de Pago</TabsTrigger>
-                <TabsTrigger value="vat-types">Tipos de IVA</TabsTrigger>
-              </TabsList>
-              
-              <TabsContent value="categories" className="mt-4">
-                <AccountingMappingConfigurator
-                  systemId={session?.user?.systemId || CURRENT_SYSTEM_ID}
-                  legalEntityId={selectedLegalEntityId}
-                  onComplete={() => {
-                    toast.success('Mapeos de categorías configurados correctamente');
-                  }}
-                />
-              </TabsContent>
-              
-              <TabsContent value="payment-methods" className="mt-4">
-                <PaymentMethodAccountMapper
-                  systemId={session?.user?.systemId || CURRENT_SYSTEM_ID}
-                  legalEntityId={selectedLegalEntityId}
-                />
-              </TabsContent>
-              
-              <TabsContent value="vat-types" className="mt-4">
-                <VATTypeAccountMapper
-                  systemId={session?.user?.systemId || CURRENT_SYSTEM_ID}
-                  legalEntityId={selectedLegalEntityId}
-                  currentLanguage="es"
-                />
-              </TabsContent>
-            </Tabs>
+            <AccountingMappingConfigurator
+              systemId={session?.user?.systemId || CURRENT_SYSTEM_ID}
+              legalEntityId={selectedLegalEntityId}
+              onComplete={() => {
+                toast.success('Mapeos configurados correctamente');
+              }}
+            />
           )}
         </TabsContent>
 

@@ -76,13 +76,18 @@ model System {
   legalEntities LegalEntity[] // <<< AÑADIR RELACIÓN INVERSA PARA LEGALENTITY
 
   // Relations for Accounting
-  fiscalYears           FiscalYear[]
-  chartOfAccountEntries ChartOfAccountEntry[]
-  journalEntries        JournalEntry[]
-  serviceAccountMappings ServiceAccountMapping[]
-  productAccountMappings ProductAccountMapping[]
-  categoryAccountMappings CategoryAccountMapping[]
+  fiscalYears                  FiscalYear[]
+  chartOfAccountEntries        ChartOfAccountEntry[]
+  journalEntries               JournalEntry[]
+  serviceAccountMappings       ServiceAccountMapping[]
+  productAccountMappings       ProductAccountMapping[]
+  categoryAccountMappings      CategoryAccountMapping[]
   paymentMethodAccountMappings PaymentMethodAccountMapping[]
+  vatTypeAccountMappings       VATTypeAccountMapping[] // Mapeos de cuentas de IVA
+  expenseTypeAccountMappings   ExpenseTypeAccountMapping[] // Mapeos de gastos
+  cashSessionAccountMappings   CashSessionAccountMapping[] // Mapeos de cajas
+  discountTypeAccountMappings  DiscountTypeAccountMapping[] // Mapeos de descuentos
+  expenseTypes                 ExpenseType[] // Tipos de gastos
 
   changeLogs      EntityChangeLog[] @relation("SystemLogs")
   debtAdjustments DebtAdjustment[]  @relation("SystemDebtAdjustments") // Ajustes de deuda dentro de este sistema
@@ -262,15 +267,19 @@ model LegalEntity {
   clinics Clinic[]
 
   // Relations for Accounting
-  fiscalYears           FiscalYear[]
-  chartOfAccountEntries ChartOfAccountEntry[]
-  documentSeries        DocumentSeries[] // Document series defined for this legal entity
-  journalEntries        JournalEntry[]
-  serviceAccountMappings ServiceAccountMapping[]
-  productAccountMappings ProductAccountMapping[]
-  categoryAccountMappings CategoryAccountMapping[]
+  fiscalYears                  FiscalYear[]
+  chartOfAccountEntries        ChartOfAccountEntry[]
+  documentSeries               DocumentSeries[] // Document series defined for this legal entity
+  journalEntries               JournalEntry[]
+  serviceAccountMappings       ServiceAccountMapping[]
+  productAccountMappings       ProductAccountMapping[]
+  categoryAccountMappings      CategoryAccountMapping[]
   paymentMethodAccountMappings PaymentMethodAccountMapping[]
-  vatTypes              VATType[] // Tipos de IVA específicos de esta entidad legal
+  vatTypes                     VATType[] // Tipos de IVA específicos de esta entidad legal
+  vatTypeAccountMappings       VATTypeAccountMapping[] // Mapeos de cuentas de IVA
+  expenseTypeAccountMappings   ExpenseTypeAccountMapping[] // Mapeos de gastos
+  cashSessionAccountMappings   CashSessionAccountMapping[] // Mapeos de cajas
+  discountTypeAccountMappings  DiscountTypeAccountMapping[] // Mapeos de descuentos
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -392,7 +401,8 @@ model Clinic {
   scheduleExceptions ClinicTemplateAssignment[]
 
   // Relación inversa con DocumentSeries
-  documentSeries DocumentSeries[]
+  documentSeries            DocumentSeries[]
+  CashSessionAccountMapping CashSessionAccountMapping[]
 
   @@unique([name, systemId], name: "Clinic_name_systemId_key")
   @@index([systemId])
@@ -894,8 +904,9 @@ model PosTerminal {
   applicableClinics PosTerminalClinicScope[]
 
   // >>> INICIO: Relación inversa con CashSession >>>
-  cashSessions CashSession[] // Sesiones de caja asociadas a este TPV
+  cashSessions              CashSession[] // Sesiones de caja asociadas a este TPV
   // <<< FIN: Relación inversa con CashSession >>>
+  CashSessionAccountMapping CashSessionAccountMapping[]
 
   // Constraints
   @@unique([name, systemId]) // Nombre único por sistema
@@ -1408,9 +1419,9 @@ model ServiceConsumption {
 
 model VATType {
   id        String  @id @default(cuid())
-  code      String  // Código único del tipo de IVA (ej: "VAT_STANDARD", "VAT_REDUCED")
-  name      String  // Nombre (ej: "General", "Reducido")
-  rate      Float   // Tasa porcentual (ej: 21.0, 10.0)
+  code      String // Código único del tipo de IVA (ej: "VAT_STANDARD", "VAT_REDUCED")
+  name      String // Nombre (ej: "General", "Reducido")
+  rate      Float // Tasa porcentual (ej: 21.0, 10.0)
   isDefault Boolean @default(false)
   systemId  String
   system    System  @relation(fields: [systemId], references: [id], onDelete: Cascade)
@@ -1436,6 +1447,9 @@ model VATType {
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
   BonoDefinition BonoDefinition[]
+
+  // Relación inversa para mapeos de cuentas de IVA
+  vatTypeAccountMappings VATTypeAccountMapping[]
 
   @@unique([code, systemId])
   @@index([systemId])
@@ -1597,7 +1611,7 @@ model Ticket {
   documentSeries   DocumentSeries? @relation(fields: [documentSeriesId], references: [id], onDelete: SetNull)
 
   // Relación inversa para JournalEntry
-  journalEntries   JournalEntry[]
+  journalEntries JournalEntry[]
 
   @@unique([ticketNumber, clinicId, systemId]) // Unicidad por clínica y sistema para evitar colisiones
   @@index([type]) // <<< AÑADIDO ÍNDICE
@@ -2546,9 +2560,9 @@ model Category {
   updatedAt   DateTime   @updatedAt
 
   // Relaciones Inversas
-  services           Service[]
-  products           Product[]
-  targetedPromotions Promotion[] @relation("TargetCategory")
+  services                Service[]
+  products                Product[]
+  targetedPromotions      Promotion[]              @relation("TargetCategory")
   categoryAccountMappings CategoryAccountMapping[]
 
   @@unique([name, systemId]) // Nombre único por sistema
@@ -2840,7 +2854,7 @@ model ChartOfAccountEntry {
   parentAccount   ChartOfAccountEntry?  @relation("SubAccounts", fields: [parentAccountId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   subAccounts     ChartOfAccountEntry[] @relation("SubAccounts") // List of sub-accounts under this account
 
-  level             Int     @default(0) // Represents the hierarchy level, 0 for root accounts
+  level Int @default(0) // Represents the hierarchy level, 0 for root accounts
 
   isMonetary        Boolean @default(true) // True if the account typically holds monetary balances
   allowsDirectEntry Boolean @default(true) // True if journal entries can be posted directly to this account (false for group/header accounts)
@@ -2855,30 +2869,38 @@ model ChartOfAccountEntry {
   // Future: Add relations to JournalEntryLine when accounting entries are implemented
   // journalEntryLines JournalEntryLine[]
 
-  @@unique([legalEntityId, systemId, accountNumber]) // Ensures accountNumber is unique per combination
-
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   // NUEVOS CAMPOS PARA INTERNACIONALIZACIÓN
-  names           Json?      // Multi-idioma {"es": "...", "fr": "...", "ar": "..."}
-  ifrsCode        String?    // Código IFRS de referencia
-  localCode       String?    // Código local del país
-  vatCategory     String?    // Categoría IVA aplicable
-  
+  names       Json? // Multi-idioma {"es": "...", "fr": "...", "ar": "..."}
+  ifrsCode    String? // Código IFRS de referencia
+  localCode   String? // Código local del país
+  vatCategory String? // Categoría IVA aplicable
+
   // Integración
-  defaultForServices  Boolean @default(false)
-  defaultForProducts  Boolean @default(false)
-  serviceCategories   String[] // Categorías de servicio que usan esta cuenta
-  productCategories   String[] // Categorías de producto que usan esta cuenta
-  
+  defaultForServices Boolean  @default(false)
+  defaultForProducts Boolean  @default(false)
+  serviceCategories  String[] // Categorías de servicio que usan esta cuenta
+  productCategories  String[] // Categorías de producto que usan esta cuenta
+
   // Relaciones contables
-  journalEntryLines  JournalEntryLine[]
-  serviceAccountMappings ServiceAccountMapping[]
-  productAccountMappings ProductAccountMapping[]
-  categoryAccountMappings CategoryAccountMapping[]
+  journalEntryLines            JournalEntryLine[]
+  serviceAccountMappings       ServiceAccountMapping[]
+  productAccountMappings       ProductAccountMapping[]
+  categoryAccountMappings      CategoryAccountMapping[]
   paymentMethodAccountMappings PaymentMethodAccountMapping[]
 
+  // Relaciones para mapeo de IVA (entrada y salida)
+  vatInputAccountMappings  VATTypeAccountMapping[] @relation("VATInputAccount")
+  vatOutputAccountMappings VATTypeAccountMapping[] @relation("VATOutputAccount")
+
+  // Relaciones para nuevos mapeos
+  expenseTypeAccountMappings  ExpenseTypeAccountMapping[]
+  cashSessionAccountMappings  CashSessionAccountMapping[]
+  discountTypeAccountMappings DiscountTypeAccountMapping[]
+
+  @@unique([legalEntityId, systemId, accountNumber]) // Ensures accountNumber is unique per combination
   @@unique([legalEntityId, accountNumber]) // Account number must be unique per legal entity
   @@index([legalEntityId])
   @@index([systemId])
@@ -2892,27 +2914,27 @@ model ChartOfAccountEntry {
 
 // Modelo para plantillas de plan contable reutilizables
 model ChartOfAccountTemplate {
-  id          String   @id @default(cuid())
-  code        String   // "IFRS_AESTHETIC_CLINIC", "PCG_MA_CLINIC"
-  names       Json     // {"es": "IFRS Clínicas", "fr": "IFRS Cliniques", "ar": "..."}
-  description Json?    // Descripciones multi-idioma
-  level       Int      // 1=IFRS, 2=GAAP País, 3=Fiscal, 4=Tenant
-  countryIso  String?  // NULL para IFRS nivel 1
-  version     String   // "2024.1"
-  isActive    Boolean  @default(true)
-  isSystem    Boolean  @default(false) // Si es plantilla del sistema
+  id               String  @id @default(cuid())
+  code             String // "IFRS_AESTHETIC_CLINIC", "PCG_MA_CLINIC"
+  names            Json // {"es": "IFRS Clínicas", "fr": "IFRS Cliniques", "ar": "..."}
+  description      Json? // Descripciones multi-idioma
+  level            Int // 1=IFRS, 2=GAAP País, 3=Fiscal, 4=Tenant
+  countryIso       String? // NULL para IFRS nivel 1
+  version          String // "2024.1"
+  isActive         Boolean @default(true)
+  isSystem         Boolean @default(false) // Si es plantilla del sistema
   baseTemplateCode String? // Para herencia de plantillas
-  
-  systemId    String
-  system      System   @relation(fields: [systemId], references: [id])
-  
+
+  systemId String
+  system   System @relation(fields: [systemId], references: [id])
+
   // Relaciones
-  entries     ChartOfAccountTemplateEntry[]
-  versions    ChartOfAccountTemplateVersion[]
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  
+  entries  ChartOfAccountTemplateEntry[]
+  versions ChartOfAccountTemplateVersion[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@unique([code, systemId])
   @@index([level, countryIso])
   @@map("chart_of_account_templates")
@@ -2920,30 +2942,30 @@ model ChartOfAccountTemplate {
 
 // Entradas individuales de una plantilla de plan contable
 model ChartOfAccountTemplateEntry {
-  id             String   @id @default(cuid())
-  templateId     String
-  template       ChartOfAccountTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
-  
-  accountNumber  String
-  names          Json     // {"es": "Caja", "fr": "Caisse", "ar": "الصندوق"}
-  type           AccountType
-  description    Json?    // Descripciones multi-idioma
-  isMonetary     Boolean  @default(true)
-  allowsDirectEntry Boolean @default(true)
-  level          Int      @default(0)
-  parentNumber   String?  // Número de cuenta padre (no ID)
-  
+  id         String                 @id @default(cuid())
+  templateId String
+  template   ChartOfAccountTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  accountNumber     String
+  names             Json // {"es": "Caja", "fr": "Caisse", "ar": "الصندوق"}
+  type              AccountType
+  description       Json? // Descripciones multi-idioma
+  isMonetary        Boolean     @default(true)
+  allowsDirectEntry Boolean     @default(true)
+  level             Int         @default(0)
+  parentNumber      String? // Número de cuenta padre (no ID)
+
   // Metadatos contables
-  ifrsCode       String?  // Código IFRS original
-  localCode      String?  // Código local del país
-  vatCategory    String?  // "STANDARD", "REDUCED", "EXEMPT"
-  
+  ifrsCode    String? // Código IFRS original
+  localCode   String? // Código local del país
+  vatCategory String? // "STANDARD", "REDUCED", "EXEMPT"
+
   // Integración automática
-  defaultForServices  Boolean @default(false)
-  defaultForProducts  Boolean @default(false)
-  serviceCategories   String[] // IDs de categorías que mapean aquí
-  productCategories   String[] // IDs de categorías que mapean aquí
-  
+  defaultForServices Boolean  @default(false)
+  defaultForProducts Boolean  @default(false)
+  serviceCategories  String[] // IDs de categorías que mapean aquí
+  productCategories  String[] // IDs de categorías que mapean aquí
+
   @@unique([templateId, accountNumber])
   @@index([templateId])
   @@map("chart_of_account_template_entries")
@@ -2951,48 +2973,48 @@ model ChartOfAccountTemplateEntry {
 
 // Control de versiones para plantillas
 model ChartOfAccountTemplateVersion {
-  id          String   @id @default(cuid())
-  templateId  String
-  template    ChartOfAccountTemplate @relation(fields: [templateId], references: [id])
-  version     String
-  changes     Json     // Registro de cambios
-  createdBy   String
-  user        User     @relation(fields: [createdBy], references: [id])
-  createdAt   DateTime @default(now())
-  
+  id         String                 @id @default(cuid())
+  templateId String
+  template   ChartOfAccountTemplate @relation(fields: [templateId], references: [id])
+  version    String
+  changes    Json // Registro de cambios
+  createdBy  String
+  user       User                   @relation(fields: [createdBy], references: [id])
+  createdAt  DateTime               @default(now())
+
   @@map("chart_of_account_template_versions")
 }
 
 // Modelo para asientos contables
 model JournalEntry {
-  id              String   @id @default(cuid())
-  entryNumber     String
-  date            DateTime
-  description     String
-  reference       String?  
-  
+  id          String   @id @default(cuid())
+  entryNumber String
+  date        DateTime
+  description String
+  reference   String?
+
   // Referencias automáticas a documentos origen
-  ticketId        String?
-  ticket          Ticket?  @relation(fields: [ticketId], references: [id])
-  invoiceId       String?
-  invoice         Invoice? @relation(fields: [invoiceId], references: [id])
-  cashSessionId   String?
-  cashSession     CashSession? @relation(fields: [cashSessionId], references: [id])
-  paymentId       String?
-  payment         Payment? @relation(fields: [paymentId], references: [id])
-  
-  lines           JournalEntryLine[]
-  legalEntityId   String
-  legalEntity     LegalEntity @relation(fields: [legalEntityId], references: [id])
-  
-  systemId        String
-  system          System   @relation(fields: [systemId], references: [id])
-  
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  createdBy       String?
-  user            User?    @relation(fields: [createdBy], references: [id])
-  
+  ticketId      String?
+  ticket        Ticket?      @relation(fields: [ticketId], references: [id])
+  invoiceId     String?
+  invoice       Invoice?     @relation(fields: [invoiceId], references: [id])
+  cashSessionId String?
+  cashSession   CashSession? @relation(fields: [cashSessionId], references: [id])
+  paymentId     String?
+  payment       Payment?     @relation(fields: [paymentId], references: [id])
+
+  lines         JournalEntryLine[]
+  legalEntityId String
+  legalEntity   LegalEntity        @relation(fields: [legalEntityId], references: [id])
+
+  systemId String
+  system   System @relation(fields: [systemId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  user      User?    @relation(fields: [createdBy], references: [id])
+
   @@unique([entryNumber, legalEntityId])
   @@index([date])
   @@index([ticketId])
@@ -3002,25 +3024,25 @@ model JournalEntry {
 
 // Líneas de asiento contable
 model JournalEntryLine {
-  id              String   @id @default(cuid())
-  journalEntryId  String
-  journalEntry    JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
-  
-  accountId       String
-  account         ChartOfAccountEntry @relation(fields: [accountId], references: [id])
-  
-  debit           Decimal  @db.Decimal(15, 2)
-  credit          Decimal  @db.Decimal(15, 2)
-  description     String?
-  
+  id             String       @id @default(cuid())
+  journalEntryId String
+  journalEntry   JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+
+  accountId String
+  account   ChartOfAccountEntry @relation(fields: [accountId], references: [id])
+
+  debit       Decimal @db.Decimal(15, 2)
+  credit      Decimal @db.Decimal(15, 2)
+  description String?
+
   // Información adicional
-  vatAmount       Decimal? @db.Decimal(15, 2)
-  vatRate         Decimal? @db.Decimal(5, 2)
-  costCenterId    String?
-  projectId       String?
-  
-  order           Int      @default(0)
-  
+  vatAmount    Decimal? @db.Decimal(15, 2)
+  vatRate      Decimal? @db.Decimal(5, 2)
+  costCenterId String?
+  projectId    String?
+
+  order Int @default(0)
+
   @@index([journalEntryId])
   @@index([accountId])
   @@map("journal_entry_lines")
@@ -3028,58 +3050,58 @@ model JournalEntryLine {
 
 // Mapeo de servicios a cuentas contables
 model ServiceAccountMapping {
-  id              String   @id @default(cuid())
-  serviceId       String
-  service         Service  @relation(fields: [serviceId], references: [id])
-  accountId       String
-  account         ChartOfAccountEntry @relation(fields: [accountId], references: [id])
-  legalEntityId   String
-  legalEntity     LegalEntity @relation(fields: [legalEntityId], references: [id])
-  
-  systemId        String
-  system          System   @relation(fields: [systemId], references: [id])
-  
+  id            String              @id @default(cuid())
+  serviceId     String
+  service       Service             @relation(fields: [serviceId], references: [id])
+  accountId     String
+  account       ChartOfAccountEntry @relation(fields: [accountId], references: [id])
+  legalEntityId String
+  legalEntity   LegalEntity         @relation(fields: [legalEntityId], references: [id])
+
+  systemId String
+  system   System @relation(fields: [systemId], references: [id])
+
   @@unique([serviceId, legalEntityId])
   @@map("service_account_mappings")
 }
 
 // Mapeo de productos a cuentas contables
 model ProductAccountMapping {
-  id              String   @id @default(cuid())
-  productId       String
-  product         Product  @relation(fields: [productId], references: [id])
-  accountId       String
-  account         ChartOfAccountEntry @relation(fields: [accountId], references: [id])
-  legalEntityId   String
-  legalEntity     LegalEntity @relation(fields: [legalEntityId], references: [id])
-  
-  systemId        String
-  system          System   @relation(fields: [systemId], references: [id])
-  
+  id            String              @id @default(cuid())
+  productId     String
+  product       Product             @relation(fields: [productId], references: [id])
+  accountId     String
+  account       ChartOfAccountEntry @relation(fields: [accountId], references: [id])
+  legalEntityId String
+  legalEntity   LegalEntity         @relation(fields: [legalEntityId], references: [id])
+
+  systemId String
+  system   System @relation(fields: [systemId], references: [id])
+
   @@unique([productId, legalEntityId])
   @@map("product_account_mappings")
 }
 
 // Mapeo de categorías a cuentas contables
 model CategoryAccountMapping {
-  id              String   @id @default(cuid())
-  categoryId      String
-  category        Category @relation(fields: [categoryId], references: [id])
-  accountId       String
-  account         ChartOfAccountEntry @relation(fields: [accountId], references: [id])
-  legalEntityId   String
-  legalEntity     LegalEntity @relation(fields: [legalEntityId], references: [id])
-  
+  id            String              @id @default(cuid())
+  categoryId    String
+  category      Category            @relation(fields: [categoryId], references: [id])
+  accountId     String
+  account       ChartOfAccountEntry @relation(fields: [accountId], references: [id])
+  legalEntityId String
+  legalEntity   LegalEntity         @relation(fields: [legalEntityId], references: [id])
+
   // Tipo de elementos que aplica (SERVICE, PRODUCT, o ambos)
   appliesToServices Boolean @default(true)
   appliesToProducts Boolean @default(true)
-  
-  systemId        String
-  system          System   @relation(fields: [systemId], references: [id])
-  
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  
+
+  systemId String
+  system   System @relation(fields: [systemId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@unique([categoryId, legalEntityId])
   @@index([legalEntityId])
   @@index([systemId])
@@ -3088,24 +3110,158 @@ model CategoryAccountMapping {
 
 // Mapeo de métodos de pago a cuentas contables
 model PaymentMethodAccountMapping {
-  id                        String   @id @default(cuid())
+  id                        String                  @id @default(cuid())
   paymentMethodDefinitionId String
   paymentMethodDefinition   PaymentMethodDefinition @relation(fields: [paymentMethodDefinitionId], references: [id])
   accountId                 String
-  account                   ChartOfAccountEntry @relation(fields: [accountId], references: [id])
+  account                   ChartOfAccountEntry     @relation(fields: [accountId], references: [id])
   legalEntityId             String
-  legalEntity               LegalEntity @relation(fields: [legalEntityId], references: [id])
-  
-  systemId                  String
-  system                    System   @relation(fields: [systemId], references: [id])
-  
-  createdAt                 DateTime @default(now())
-  updatedAt                 DateTime @updatedAt
-  
+  legalEntity               LegalEntity             @relation(fields: [legalEntityId], references: [id])
+
+  systemId String
+  system   System @relation(fields: [systemId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@unique([paymentMethodDefinitionId, legalEntityId])
   @@index([legalEntityId])
   @@index([systemId])
   @@map("payment_method_account_mappings")
+}
+
+// Mapeo de tipos de IVA a cuentas contables (Soportado/Repercutido)
+model VATTypeAccountMapping {
+  id        String  @id @default(cuid())
+  vatTypeId String
+  vatType   VATType @relation(fields: [vatTypeId], references: [id], onDelete: Cascade)
+
+  // Cuenta para IVA Soportado (compras)
+  inputAccountId String?
+  inputAccount   ChartOfAccountEntry? @relation("VATInputAccount", fields: [inputAccountId], references: [id], onDelete: SetNull)
+
+  // Cuenta para IVA Repercutido (ventas)
+  outputAccountId String?
+  outputAccount   ChartOfAccountEntry? @relation("VATOutputAccount", fields: [outputAccountId], references: [id], onDelete: SetNull)
+
+  legalEntityId String
+  legalEntity   LegalEntity @relation(fields: [legalEntityId], references: [id], onDelete: Cascade)
+  systemId      String
+  system        System      @relation(fields: [systemId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([vatTypeId, legalEntityId])
+  @@index([legalEntityId])
+  @@index([systemId])
+  @@index([inputAccountId])
+  @@index([outputAccountId])
+  @@map("vat_type_account_mappings")
+}
+
+// Mapeo de tipos de gastos a cuentas contables
+model ExpenseTypeAccountMapping {
+  id            String              @id @default(cuid())
+  expenseTypeId String
+  expenseType   ExpenseType         @relation(fields: [expenseTypeId], references: [id], onDelete: Cascade)
+  accountId     String
+  account       ChartOfAccountEntry @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  legalEntityId String
+  legalEntity   LegalEntity         @relation(fields: [legalEntityId], references: [id], onDelete: Cascade)
+  systemId      String
+  system        System              @relation(fields: [systemId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+ // VATType   VATType? @relation(fields: [vATTypeId], references: [id])
+ // vATTypeId String?
+
+  @@unique([expenseTypeId, legalEntityId])
+  @@index([legalEntityId])
+  @@index([systemId])
+  @@index([accountId])
+  @@map("expense_type_account_mappings")
+}
+
+// Mapeo de cajas/sesiones de caja a cuentas contables
+model CashSessionAccountMapping {
+  id String @id @default(cuid())
+
+  // Puede ser por clínica o por terminal POS específico
+  clinicId      String?
+  clinic        Clinic?      @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  posTerminalId String?
+  posTerminal   PosTerminal? @relation(fields: [posTerminalId], references: [id], onDelete: Cascade)
+
+  accountId     String
+  account       ChartOfAccountEntry @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  legalEntityId String
+  legalEntity   LegalEntity         @relation(fields: [legalEntityId], references: [id], onDelete: Cascade)
+  systemId      String
+  system        System              @relation(fields: [systemId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+ // VATType   VATType? @relation(fields: [vATTypeId], references: [id])
+// vATTypeId String?
+
+  @@unique([clinicId, posTerminalId, legalEntityId])
+  @@index([legalEntityId])
+  @@index([systemId])
+  @@index([accountId])
+  @@index([clinicId])
+  @@index([posTerminalId])
+  @@map("cash_session_account_mappings")
+}
+
+// Mapeo de tipos de descuento a cuentas contables
+model DiscountTypeAccountMapping {
+  id               String              @id @default(cuid())
+  discountTypeCode String // Código del tipo de descuento (ej: "PROMO", "LOYALTY", "MANUAL")
+  discountTypeName String // Nombre descriptivo
+  accountId        String
+  account          ChartOfAccountEntry @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  legalEntityId    String
+  legalEntity      LegalEntity         @relation(fields: [legalEntityId], references: [id], onDelete: Cascade)
+  systemId         String
+  system           System              @relation(fields: [systemId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  //VATType   VATType? @relation(fields: [vATTypeId], references: [id])
+  // vATTypeId String?
+
+  @@unique([discountTypeCode, legalEntityId])
+  @@index([legalEntityId])
+  @@index([systemId])
+  @@index([accountId])
+  @@map("discount_type_account_mappings")
+}
+
+// Modelo para tipos de gastos/compras
+model ExpenseType {
+  id          String  @id @default(cuid())
+  code        String // Código único (ej: "SUPPLIES", "RENT", "UTILITIES")
+  name        String // Nombre descriptivo
+  description String?
+  isActive    Boolean @default(true)
+  systemId    String
+  system      System  @relation(fields: [systemId], references: [id], onDelete: Cascade)
+
+  // Relación inversa para mapeos
+  accountMappings ExpenseTypeAccountMapping[]
+
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  //LegalEntity   LegalEntity? @relation(fields: [legalEntityId], references: [id])
+  //legalEntityId String?
+  //VATType       VATType?     @relation(fields: [vATTypeId], references: [id])
+  //vATTypeId     String?
+
+  @@unique([code, systemId])
+  @@index([systemId])
+  @@map("expense_types")
 }
 
 // --- Enum para Tipos de Ajuste de Deuda ---

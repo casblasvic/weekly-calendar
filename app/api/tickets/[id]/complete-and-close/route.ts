@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerAuthSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { z } from 'zod';
-import { TicketStatus, Prisma, Ticket, Payment } from '@prisma/client';
+import { TicketStatus, Ticket, Payment, Prisma, CashSessionStatus, DebtStatus } from '@prisma/client';
+import { JournalEntryService } from '@/services/accounting/journal-entry-service';
 
 const paramsSchema = z.object({
   id: z.string().cuid({ message: "ID de ticket inválido." }),
@@ -207,7 +208,7 @@ export async function POST(request: NextRequest, { params: paramsPromise }: { pa
         },
         include: { 
           client: true, company: true, sellerUser: true, cashierUser: true, 
-          clinic: {include: {tariff:true}}, items: {orderBy: {createdAt: 'asc'}}, 
+          clinic: {include: {tariff:true, legalEntity: true}}, items: {orderBy: {createdAt: 'asc'}}, 
           payments: {orderBy: {paymentDate: 'asc'}}, invoice: true, originalTicket: true, 
           returnTickets: true, cashSession: true, 
           relatedDebts: true // Incluir la deuda recién creada si aplica
@@ -216,6 +217,20 @@ export async function POST(request: NextRequest, { params: paramsPromise }: { pa
       console.log(`[API_TICKETS_COMPLETE_CLOSE] Ticket ${ticketId} actualizado correctamente a estado CLOSED. Transacción finalizada.`); // LOG
       return finalUpdatedTicket;
     });
+
+    // Generar asiento contable después de la transacción principal
+    if (updatedTicket.clinic?.legalEntityId) {
+      try {
+        await JournalEntryService.generateFromTicket(
+          updatedTicket.id,
+          updatedTicket.clinic.legalEntityId
+        );
+        console.log(`[API_TICKETS_COMPLETE_CLOSE] Asiento contable generado para ticket ${ticketId}`);
+      } catch (error) {
+        // No fallar el cierre si falla la generación del asiento
+        console.error(`[API_TICKETS_COMPLETE_CLOSE] Error generando asiento contable para ticket ${ticketId}:`, error);
+      }
+    }
 
     console.log(`[API_TICKETS_COMPLETE_CLOSE] Transacción completada para ticket ID: ${ticketId}. Enviando respuesta.`); // LOG RESPUESTA
     return NextResponse.json(updatedTicket);
