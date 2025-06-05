@@ -541,8 +541,25 @@ export default function EditLegalEntityPage() {
             </Button>
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button variant="destructive" type="button" disabled={updateLegalEntity.isPending || deleteLegalEntity.isPending}>
-                  <Trash2 className="w-4 h-4 mr-2" /> {t('common.delete', 'Eliminar')}
+                <Button 
+                  variant="destructive" 
+                  type="button" 
+                  disabled={
+                    updateLegalEntity.isPending || 
+                    deleteLegalEntity.isPending || 
+                    (legalEntityData?.clinics && legalEntityData.clinics.length > 0)
+                  }
+                  title={
+                    legalEntityData?.clinics && legalEntityData.clinics.length > 0 
+                      ? t('config_legal_entities.cannot_delete_has_clinics', 'No se puede eliminar porque tiene clínicas asociadas')
+                      : undefined
+                  }
+                >
+                  <Trash2 className="w-4 h-4 mr-2" /> 
+                  {legalEntityData?.clinics && legalEntityData.clinics.length > 0
+                    ? t('config_legal_entities.cannot_delete', 'No se puede eliminar')
+                    : t('common.delete', 'Eliminar')
+                  }
                   {deleteLegalEntity.isPending && <Loader2 className="ml-2 w-4 h-4 animate-spin" />}
                 </Button>
               </AlertDialogTrigger>

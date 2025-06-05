@@ -7,12 +7,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Category } from '@prisma/client';
 import { toast as sonnerToast } from "sonner";
 import { z } from 'zod';
+import { useTranslation } from 'react-i18next';
+import { CategoryType } from '@/app/(main)/configuracion/contabilidad/lib/auto-account-mapping';
 
 // Esquema Zod para validación del formulario
 const CategoryFormSchema = z.object({
   name: z.string().min(1, { message: "El nombre es obligatorio." }),
   description: z.string().optional().nullable(),
   parentId: z.string().cuid({ message: "ID de categoría padre inválido." }).optional().nullable(),
+  type: z.enum(['SERVICE', 'PRODUCT', 'MIXED']).default('MIXED'),
 });
 
 // Tipo simplificado para el estado del formulario
@@ -20,6 +23,7 @@ type CategoryFormData = {
     name?: string;
     description?: string | null;
     parentId?: string | null;
+    type?: CategoryType;
 }
 
 interface CategoryFormModalProps {
@@ -49,10 +53,11 @@ export default function CategoryFormModal({
         name: category.name,
         description: category.description,
         parentId: category.parentId,
+        type: (category as any).type || 'MIXED', // Temporalmente manejamos el campo como opcional
       });
     } else {
       // Resetear para nueva categoría
-      setFormData({ name: '', description: '', parentId: null });
+      setFormData({ name: '', description: '', parentId: null, type: 'MIXED' as CategoryType });
     }
     setErrors(null); // Limpiar errores al abrir/cambiar
   }, [category, isOpen]);
@@ -64,6 +69,10 @@ export default function CategoryFormModal({
 
   const handleParentChange = (value: string) => {
     setFormData(prev => ({ ...prev, parentId: value === 'none' ? null : value }));
+  };
+
+  const handleTypeChange = (value: CategoryType) => {
+    setFormData(prev => ({ ...prev, type: value }));
   };
 
   const handleSubmit = async () => {
@@ -191,6 +200,30 @@ export default function CategoryFormModal({
             {errors?.parentId?._errors && (
              <div className="col-start-2 col-span-3 text-red-600 text-sm -mt-2">
                 {errors.parentId._errors.join(', ')}
+            </div>
+           )}
+
+          {/* Tipo */}
+          <div className="grid grid-cols-4 items-center gap-4">
+            <Label htmlFor="type" className="text-right">Tipo</Label>
+            <Select 
+              value={formData.type} 
+              onValueChange={handleTypeChange}
+            >
+              <SelectTrigger className="col-span-3">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="SERVICE">Servicio</SelectItem>
+                <SelectItem value="PRODUCT">Producto</SelectItem>
+                <SelectItem value="MIXED">Mixto</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+           {/* Mostrar error de Zod para type */}
+            {errors?.type?._errors && (
+             <div className="col-start-2 col-span-3 text-red-600 text-sm -mt-2">
+                {errors.type._errors.join(', ')}
             </div>
            )}
         </div>

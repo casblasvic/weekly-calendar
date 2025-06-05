@@ -1,9 +1,9 @@
-import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/db';
-import { Prisma } from '@prisma/client'; // Importar tipos de Prisma si son necesarios para errores
+import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@/lib/db'
 import { z } from 'zod';
-import { DayOfWeek as PrismaDayOfWeek, PaymentMethodDefinition, PaymentMethodType } from '@prisma/client';
-import { getServerAuthSession } from "@/lib/auth"; // Corrected import path
+import { DayOfWeek as PrismaDayOfWeek, PaymentMethodDefinition, PaymentMethodType, Prisma } from '@prisma/client';
+import { getServerAuthSession } from "@/lib/auth";
+import { handleClinicLegalEntityChange, canChangeClinicPrefix } from '@/app/(main)/configuracion/contabilidad/lib/accounting-sync'
 
 /**
  * Esquema para validar el ID de la clínica en los parámetros
@@ -288,6 +288,9 @@ export async function PUT(request: Request, props: { params: Promise<{ id: strin
       countryIsoCode: countryIsoCodeFromInput,
       tariffId: tariffIdFromInput,
       linkedScheduleTemplateId: linkedScheduleTemplateIdFromInput,
+      openTime: openTimeFromInput, 
+      closeTime: closeTimeFromInput,
+      slotDuration: slotDurationFromInput,
       ...clinicScalarData
     } = validatedData;
 
@@ -298,6 +301,19 @@ export async function PUT(request: Request, props: { params: Promise<{ id: strin
     if (!existingClinic) {
       // CONSOLE LOG MANTENIDO COMO WARN: console.warn(`[API PUT /clinics] Clinic ${clinicId} not found or not owned by system ${systemId}`);
       return NextResponse.json({ message: 'Clínica no encontrada o no pertenece a este sistema.' }, { status: 404 });
+    }
+
+    // Guardar el legalEntityId anterior para comparar después
+    const previousLegalEntityId = existingClinic.legalEntityId;
+
+    // Si se está cambiando el prefijo, verificar que sea posible
+    if (validatedData.prefix && validatedData.prefix !== existingClinic.prefix) {
+      const canChange = await canChangeClinicPrefix(clinicId);
+      if (!canChange) {
+        return NextResponse.json({ 
+          error: 'No se puede cambiar el prefijo porque ya existen documentos emitidos (tickets o facturas) para esta clínica. El cambio de prefijo comprometería la integridad de la numeración fiscal.' 
+        }, { status: 400 });
+      }
     }
 
     const updatedClinic = await prisma.$transaction(async (tx) => {
@@ -368,9 +384,9 @@ export async function PUT(request: Request, props: { params: Promise<{ id: strin
           }
         }
         const clinicScheduleConfig = {
-            openTime: clinicScalarData.openTime, 
-            closeTime: clinicScalarData.closeTime,
-            slotDuration: clinicScalarData.slotDuration,
+            openTime: openTimeFromInput, 
+            closeTime: closeTimeFromInput,
+            slotDuration: slotDurationFromInput,
         };
         await tx.clinicSchedule.upsert({
             where: { clinicId: clinicId },
@@ -392,6 +408,15 @@ export async function PUT(request: Request, props: { params: Promise<{ id: strin
       }
       return resultClinic;
     });
+
+    // Si cambió la sociedad, crear series contables para la clínica
+    if (previousLegalEntityId !== updatedClinic.legalEntityId) {
+      await handleClinicLegalEntityChange(
+        clinicId,
+        previousLegalEntityId,
+        updatedClinic.legalEntityId
+      );
+    }
 
     return NextResponse.json(updatedClinic);
 

@@ -6,6 +6,7 @@ import {
   type LegalEntityResponse 
 } from '@/lib/schemas/legal-entity-schemas'; // LegalEntityResponse puede necesitar ajustes si GET devuelve más datos (ej. clínicas)
 import { auth } from '@/lib/auth';
+import { handleClinicLegalEntityChange } from '@/app/(main)/configuracion/contabilidad/lib/accounting-sync';
 
 export async function GET(request: Request, { params }: { params: { id: string } }) {
   const session = await auth();
@@ -99,6 +100,13 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
   const { clinicIds, ...legalEntityData } = validationResult.data as UpdateLegalEntityPayload; // Cast seguro después de validación
 
   try {
+    // Obtener las clínicas asociadas ANTES de la actualización
+    const previouslyAssociatedClinics = await prisma.clinic.findMany({
+      where: { legalEntityId: id },
+      select: { id: true },
+    });
+    const previouslyAssociatedClinicIds = previouslyAssociatedClinics.map(c => c.id);
+
     const updatedLegalEntity = await prisma.$transaction(async (tx) => {
       // 1. Verificar que la LegalEntity exista y pertenezca al systemId del usuario
       const existingLegalEntity = await tx.legalEntity.findUnique({
@@ -200,13 +208,28 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
           
           // Proceder a asociar
           await tx.clinic.updateMany({
-            where: { id: { in: clinicsToAssignIds } },
+            where: { 
+              id: { in: clinicsToAssignIds },
+              systemId: session.user.systemId,
+            },
             data: { legalEntityId: id },
           });
         }
       }
+
       return updatedEntity;
     });
+
+    // Sincronizar series contables para las clínicas nuevamente asociadas
+    if (clinicIds !== undefined) {
+      // Las clínicas recién asociadas son las que están en clinicIds pero no estaban antes
+      const newlyAssociatedClinicIds = (clinicIds || []).filter(id => !previouslyAssociatedClinicIds.includes(id));
+      
+      // Para cada clínica recién asociada, llamar a handleClinicLegalEntityChange
+      for (const clinicId of newlyAssociatedClinicIds) {
+        await handleClinicLegalEntityChange(clinicId, null, id);
+      }
+    }
 
     return NextResponse.json(updatedLegalEntity, { status: 200 });
 

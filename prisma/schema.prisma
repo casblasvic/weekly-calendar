@@ -777,7 +777,7 @@ model BankClinicScope {
   clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
 
   @@id([bankId, clinicId])
-  @@index([clinicId]) // Índice para buscar bancos por clínica
+  @@index([clinicId]) // Añadir índices es buena práctica
   @@map("bank_clinic_scopes")
 }
 
@@ -1448,7 +1448,7 @@ model VATType {
   updatedAt      DateTime         @updatedAt
   BonoDefinition BonoDefinition[]
 
-  // Relación inversa para mapeos de cuentas de IVA
+  // Relación inversa para mapeo de cuentas de IVA
   vatTypeAccountMappings VATTypeAccountMapping[]
 
   @@unique([code, systemId])
@@ -2262,7 +2262,7 @@ model Promotion {
   code        String? @unique
   isActive    Boolean @default(true)
   systemId    String
-  system      System  @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  system      System @relation(fields: [systemId], references: [id], onDelete: Cascade)
 
   // Tipo y Valor
   type            PromotionType
@@ -2437,8 +2437,8 @@ enum EntityType {
 
 model EntityImage {
   id               String     @id @default(cuid())
-  entityId         String // ID de la entidad relacionada (Client.id, User.id, etc.)
-  entityType       EntityType // Tipo de la entidad relacionada
+  entityId         String
+  entityType       EntityType
   imageUrl         String // URL de la imagen (ej: Supabase Storage)
   altText          String? // Texto alternativo para accesibilidad
   caption          String? // Leyenda o descripción corta
@@ -2459,8 +2459,8 @@ model EntityImage {
 
 model EntityDocument {
   id               String     @id @default(cuid())
-  entityId         String // ID de la entidad relacionada
-  entityType       EntityType // Tipo de la entidad relacionada
+  entityId         String
+  entityType       EntityType
   documentUrl      String // URL del documento (ej: Supabase Storage)
   fileName         String // Nombre original del archivo
   fileType         String? // Tipo MIME (ej: "application/pdf", "image/jpeg")
@@ -2479,7 +2479,7 @@ model EntityDocument {
   @@map("entity_documents")
 }
 
-// --- NUEVO MODELO PARA ASIGNACIÓN USUARIO-CLINICA ---
+// --- NUEVO MODELO PARA ASIGNACIÓN USUARIO-CLÍNICA ---
 model UserClinicAssignment {
   userId     String
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -2549,7 +2549,8 @@ model Category {
   id          String     @id @default(cuid())
   name        String // Nombre de la categoría/familia
   description String?
-  // type        CategoryType? // Podría ser un Enum si necesitamos diferenciar (SERVICE, PRODUCT)
+  // type        CategoryType @default(MIXED) // <<< AÑADIDO: Tipo de categoría para mapeo contable automático
+  //type        CategoryType @default(MIXED) // <<< AÑADIDO: Tipo de categoría para mapeo contable automático
   systemId    String // A qué sistema pertenece esta categoría
   system      System     @relation(fields: [systemId], references: [id], onDelete: Cascade)
   // Jerarquía
@@ -2770,7 +2771,7 @@ enum DebtStatus {
 model DebtLedger {
   id        String   @id @default(cuid())
   ticketId  String // FK al Ticket que originó la deuda
-  ticket    Ticket   @relation("TicketDebts", fields: [ticketId], references: [id], onDelete: Restrict) // <--- Nombre añadido y onDelete: Restrict
+  ticket    Ticket   @relation("TicketDebts", fields: [ticketId], references: [id], onDelete: Restrict) // <--- Nombre añadido
   invoiceId String? // FK opcional a la Invoice, si el ticket se facturó
   invoice   Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
   clientId  String // FK al Client responsable de la deuda
@@ -2947,7 +2948,7 @@ model ChartOfAccountTemplateEntry {
   template   ChartOfAccountTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
 
   accountNumber     String
-  names             Json // {"es": "Caja", "fr": "Caisse", "ar": "الصندوق"}
+  names             Json // {"es": "Caja", "fr": "Caisse", "ar": "..."}
   type              AccountType
   description       Json? // Descripciones multi-idioma
   isMonetary        Boolean     @default(true)

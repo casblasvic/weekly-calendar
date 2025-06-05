@@ -139,6 +139,20 @@
         "currency": "Devise :",
         "fiscalYear": "Exercice fiscal :",
         "sectorCustomization": "Personnalisation sectorielle :"
+      },
+      "businessFeatures": {
+        "title": "Caractéristiques de l'Entreprise",
+        "description": "Sélectionnez les caractéristiques de votre entreprise pour configurer automatiquement les catégories, produits et moyens de paiement",
+        "hasHairSalon": "Salon de Coiffure",
+        "hasSpa": "Spa / Hydrothérapie",
+        "hasMedicalTreatments": "Traitements Médicaux",
+        "sellsProducts": "Vente de Produits",
+        "hasMultipleLocations": "Sites Multiples",
+        "locations": {
+          "label": "Emplacements",
+          "placeholder": "Ex: Paris, Lyon, Marseille...",
+          "helper": "Entrez les emplacements séparés par des virgules"
+        }
       }
     },
     "sectors": {

@@ -132,4 +132,73 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       { status: 500 }
     );
   }
-} 
+}
+
+// DELETE /api/fiscal-years/[id]
+export async function DELETE(request: NextRequest, { params }: RouteParams) {
+  try {
+    const session = await getServerAuthSession();
+    if (!session?.user?.systemId) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+    }
+
+    const { id } = params;
+    const body = await request.json();
+    const { legalEntityId } = body;
+
+    // Verificar que el ejercicio existe y pertenece al sistema
+    const existing = await prisma.fiscalYear.findFirst({
+      where: {
+        id,
+        systemId: session.user.systemId,
+        legalEntityId
+      }
+    });
+
+    if (!existing) {
+      return NextResponse.json(
+        { error: 'Ejercicio fiscal no encontrado' },
+        { status: 404 }
+      );
+    }
+
+    // Solo se pueden eliminar ejercicios abiertos
+    if (existing.status !== 'OPEN') {
+      return NextResponse.json(
+        { error: 'Solo se pueden eliminar ejercicios fiscales abiertos' },
+        { status: 400 }
+      );
+    }
+
+    // Verificar que no tenga movimientos contables
+    const hasMovements = await prisma.journalEntry.count({
+      where: {
+        date: {
+          gte: existing.startDate,
+          lte: existing.endDate
+        },
+        legalEntityId
+      }
+    });
+
+    if (hasMovements > 0) {
+      return NextResponse.json(
+        { error: 'No se puede eliminar un ejercicio fiscal con movimientos contables' },
+        { status: 400 }
+      );
+    }
+
+    // Eliminar el ejercicio fiscal
+    await prisma.fiscalYear.delete({
+      where: { id }
+    });
+
+    return NextResponse.json({ 
+      message: 'Ejercicio fiscal eliminado correctamente' 
+    });
+
+  } catch (error: any) {
+    console.error('Error eliminando ejercicio fiscal:', error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}

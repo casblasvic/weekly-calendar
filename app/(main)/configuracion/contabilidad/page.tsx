@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { PlusCircle } from "lucide-react";
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { ChartOfAccountTable } from './components/plan-contable/chart-of-account-table';
 import { ChartOfAccountFormModal, AccountFormData } from './components/plan-contable/chart-of-account-form-modal';
 import { ChartOfAccountRow } from './components/plan-contable/columns';
@@ -33,7 +33,7 @@ import {
   updateChartOfAccountEntry, 
   getChartOfAccounts,
   getLegalEntitiesBySystem,
-  deleteChartOfAccountEntry // Nueva importación
+  deleteChartOfAccountEntry 
 } from './components/plan-contable/actions';
 import { toast } from "sonner";
 import { LegalEntity } from "@prisma/client";
@@ -48,6 +48,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { CSVImporterModal } from './components/csv-importer-modal';
+import { QuickSetup } from './components/quick-setup';
 import { 
   FileText, 
   Calendar, 
@@ -68,27 +70,42 @@ const CURRENT_SYSTEM_ID = "cmbbggjpe0000y2w74mjoqsbo";
 // Importar componentes dinámicamente para evitar problemas de SSR
 const AccountingTemplateImporter = dynamic(
   () => import('@/components/accounting/template-importer/AccountingTemplateImporter'),
-  { ssr: false }
+  { 
+    ssr: false,
+    loading: () => <div className="p-4">Cargando importador de plantillas...</div>
+  }
 );
 
 const AccountingMappingConfigurator = dynamic(
   () => import('@/components/accounting/mapping-configurator/AccountingMappingConfigurator'),
-  { ssr: false }
+  { 
+    ssr: false,
+    loading: () => <div className="p-4">Cargando configurador de mapeo...</div>
+  }
 );
 
 const DocumentSeriesConfigurator = dynamic(
   () => import('@/components/accounting/document-series/DocumentSeriesConfigurator'),
-  { ssr: false }
+  { 
+    ssr: false,
+    loading: () => <div className="p-4">Cargando configurador de series...</div>
+  }
 );
 
 const FiscalYearManager = dynamic(
   () => import('@/components/accounting/fiscal-years/FiscalYearManager'),
-  { ssr: false }
+  { 
+    ssr: false,
+    loading: () => <div className="p-4">Cargando gestor de ejercicios fiscales...</div>
+  }
 );
 
 const AccountingExporter = dynamic(
   () => import('@/components/accounting/reports/AccountingExporter'),
-  { loading: () => <p>Cargando exportador...</p> }
+  { 
+    ssr: false,
+    loading: () => <div className="p-4">Cargando exportador...</div> 
+  }
 );
 
 export default function AccountingConfigPage() {
@@ -108,17 +125,27 @@ export default function AccountingConfigPage() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [accountToDelete, setAccountToDelete] = useState<ChartOfAccountRow | null>(null);
 
+  const [isCSVImporterOpen, setIsCSVImporterOpen] = useState(false);
+
+  // Use systemId from session or fallback to CURRENT_SYSTEM_ID
+  const systemId = session?.user?.systemId || CURRENT_SYSTEM_ID;
+
+  useEffect(() => {
+    console.log('AccountingConfigPage - systemId:', systemId);
+    console.log('AccountingConfigPage - selectedLegalEntityId:', selectedLegalEntityId);
+  }, [systemId, selectedLegalEntityId]);
+
   // Cargar LegalEntities para el sistema actual
   useEffect(() => {
     const fetchLegalEntities = async () => {
-      if (!CURRENT_SYSTEM_ID) {
+      if (!systemId) {
         setIsLoadingLegalEntities(false);
         toast.error("ID de Sistema no configurado.");
         return;
       }
       setIsLoadingLegalEntities(true);
       try {
-        const response = await getLegalEntitiesBySystem(CURRENT_SYSTEM_ID);
+        const response = await getLegalEntitiesBySystem(systemId);
         if (response.success && response.data) {
           setLegalEntities(response.data);
           if (response.data.length > 0) {
@@ -142,40 +169,61 @@ export default function AccountingConfigPage() {
       }
     };
     fetchLegalEntities();
-  }, []); 
+  }, [systemId]); 
 
   // Función para cargar/recargar datos del plan contable
-  const fetchChartData = async () => {
-    if (!selectedLegalEntityId || !CURRENT_SYSTEM_ID) {
-      setChartData([]);
-      return;
-    }
-    setIsLoadingChart(true);
+  const fetchChartData = useCallback(async () => {
+    if (!selectedLegalEntityId || !systemId) return;
+    
     try {
-      const response = await getChartOfAccounts(selectedLegalEntityId, CURRENT_SYSTEM_ID);
-      if (response.success && response.data) {
-        setChartData(response.data);
+      const response = await fetch(
+        `/api/chart-of-accounts?systemId=${systemId}&legalEntityId=${selectedLegalEntityId}`
+      );
+      
+      if (!response.ok) throw new Error('Failed to fetch chart data');
+      
+      const data = await response.json();
+      console.log('Chart data response:', data); // Debug log
+      
+      // Si es un array directamente, son las cuentas
+      if (Array.isArray(data)) {
+        setChartData(data);
+      } else if (data && typeof data === 'object') {
+        // Si es un objeto, puede ser un wrapper con las cuentas o un resumen
+        if (data.accounts && Array.isArray(data.accounts)) {
+          // Si tiene una propiedad accounts con array
+          setChartData(data.accounts);
+        } else if (data.data && Array.isArray(data.data)) {
+          // Si tiene una propiedad data con array
+          setChartData(data.data);
+        } else if (data.hasEntries === false || data.count === 0) {
+          // Solo si explícitamente dice que no hay entradas
+          setChartData([]);
+        } else {
+          // En cualquier otro caso, asumimos array vacío pero con warning
+          console.warn('Unexpected chart data format:', data);
+          setChartData([]);
+        }
       } else {
-        toast.error(response.error || "Error al cargar datos del plan contable.");
+        // Formato inesperado
+        console.error('Invalid chart data format:', data);
         setChartData([]);
       }
     } catch (error) {
-      console.error("Error fetching chart of accounts:", error);
-      toast.error("Error al cargar el plan contable.");
-      setChartData([]);
-    } finally {
-      setIsLoadingChart(false);
+      console.error('Error fetching chart data:', error);
+      toast.error('Error al cargar el plan de cuentas');
     }
-  };
+  }, [selectedLegalEntityId, systemId]);
 
+  // Efecto para cargar datos cuando cambia la entidad legal seleccionada
   useEffect(() => {
+    console.log('useEffect triggered - selectedLegalEntityId:', selectedLegalEntityId);
     if (selectedLegalEntityId) {
-        fetchChartData();
-    } else if (!isLoadingLegalEntities) {
-        setChartData([]); 
+      fetchChartData();
+    } else {
+      setChartData([]);
     }
-  }, [selectedLegalEntityId, isLoadingLegalEntities]);
-
+  }, [selectedLegalEntityId, fetchChartData]);
 
   const handleOpenModal = (accountData?: Partial<ChartOfAccountRow> | null) => {
     setEditingAccount(accountData);
@@ -197,7 +245,7 @@ export default function AccountingConfigPage() {
   };
 
   const handleSubmitModal = async (formDataFromModal: AccountFormData) => {
-    if (!selectedLegalEntityId || !CURRENT_SYSTEM_ID) {
+    if (!selectedLegalEntityId || !systemId) {
       toast.error("Error: No hay una entidad legal o sistema seleccionado.");
       return;
     }
@@ -205,7 +253,7 @@ export default function AccountingConfigPage() {
     const payload = {
       ...formDataFromModal,
       legalEntityId: selectedLegalEntityId,
-      systemId: CURRENT_SYSTEM_ID,
+      systemId: systemId,
     };
 
     try {
@@ -235,7 +283,7 @@ export default function AccountingConfigPage() {
   };
 
   const handleConfirmDelete = async () => {
-    if (!accountToDelete || !selectedLegalEntityId || !CURRENT_SYSTEM_ID) {
+    if (!accountToDelete || !selectedLegalEntityId || !systemId) {
       toast.error("Error: No se puede determinar la cuenta a eliminar o falta información de la entidad/sistema.");
       setIsDeleteDialogOpen(false);
       setAccountToDelete(null);
@@ -243,7 +291,7 @@ export default function AccountingConfigPage() {
     }
 
     try {
-      const response = await deleteChartOfAccountEntry(accountToDelete.id, selectedLegalEntityId, CURRENT_SYSTEM_ID);
+      const response = await deleteChartOfAccountEntry(accountToDelete.id, selectedLegalEntityId, systemId);
       if (response.success) {
         toast.success(response.message || "Cuenta eliminada con éxito.");
         await fetchChartData();
@@ -265,12 +313,16 @@ export default function AccountingConfigPage() {
     setActiveTab('mapping');
   };
 
+  const refreshChart = async () => {
+    await fetchChartData();
+  };
+
   return (
     <div className="container mx-auto p-6 max-w-7xl">
       <div className="mb-6">
         <h1 className="text-3xl font-bold flex items-center gap-2">
           <BookOpen className="h-8 w-8" />
-          Configuración Contable
+          Contabilidad
         </h1>
         <p className="text-muted-foreground mt-2">
           Gestiona el plan contable, ejercicios fiscales y configuraciones de tu sistema contable
@@ -302,6 +354,23 @@ export default function AccountingConfigPage() {
             )}
           </SelectContent>
         </Select>
+      </div>
+
+      <div className="grid gap-6">
+        {/* Debug info - temporal */}
+        {selectedLegalEntityId && (
+          <div className="text-sm text-muted-foreground">
+            Debug: chartData tiene {chartData.length} cuentas
+          </div>
+        )}
+        
+        {/* Quick Setup para configuración inicial */}
+        {selectedLegalEntityId && chartData.length === 0 && (
+          <QuickSetup 
+            legalEntityId={selectedLegalEntityId}
+            onSetupComplete={refreshChart}
+          />
+        )}
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
@@ -336,8 +405,8 @@ export default function AccountingConfigPage() {
           <Tabs defaultValue="manual" className="w-full">
             <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="manual">Plan Manual</TabsTrigger>
-              <TabsTrigger value="import">Importar Plantilla</TabsTrigger>
-              <TabsTrigger value="templates">Gestión de Plantillas</TabsTrigger>
+              <TabsTrigger value="import">Importar Plan Contable</TabsTrigger>
+              <TabsTrigger value="templates">Personalización Sectorial</TabsTrigger>
             </TabsList>
             
             <TabsContent value="manual" className="space-y-4">
@@ -357,21 +426,39 @@ export default function AccountingConfigPage() {
                     <ChartOfAccountTable
                       data={chartData}
                       isLoading={isLoadingChart} 
-                      onEditAccount={handleEditAccount} 
-                      onAddSubAccount={handleAddSubAccount}
-                      onDeleteAccount={handleOpenDeleteDialog} 
+                      metadata={{
+                        onEditAccount: handleEditAccount,
+                        onAddSubAccount: handleAddSubAccount,
+                        onDeleteAccount: handleOpenDeleteDialog
+                      }}
                       onRefresh={fetchChartData}
                       legalEntityId={selectedLegalEntityId}
+                      systemId={systemId}
                     />
                   )}
                 </CardContent>
-                <CardFooter>
+                <CardFooter className="flex gap-2">
                   <Button 
                     onClick={() => handleOpenModal(null)} 
                     disabled={!selectedLegalEntityId || isLoadingChart || isLoadingLegalEntities}
                   >
                     <PlusCircle className="mr-2 h-4 w-4" /> Nueva Cuenta Raíz
                   </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => setIsCSVImporterOpen(true)}
+                  >
+                    <FileText className="mr-2 h-4 w-4" /> Importar CSV
+                  </Button>
+                  {selectedLegalEntityId && (
+                    <CSVImporterModal
+                      isOpen={isCSVImporterOpen}
+                      onClose={() => setIsCSVImporterOpen(false)}
+                      legalEntityId={selectedLegalEntityId}
+                      onImportComplete={refreshChart}
+                    />
+                  )}
                 </CardFooter>
               </Card>
             </TabsContent>
@@ -386,12 +473,14 @@ export default function AccountingConfigPage() {
                   </AlertDescription>
                 </Alert>
               )}
-              <AccountingTemplateImporter
-                systemId={session?.user?.systemId || CURRENT_SYSTEM_ID}
-                legalEntityId={selectedLegalEntityId}
-                currentLanguage="es"
-                onImportComplete={handleImportComplete}
-              />
+              
+              <div className="space-y-6">
+                <AccountingTemplateImporter 
+                  systemId={systemId}
+                  legalEntityId={selectedLegalEntityId}
+                  currentLanguage="es"
+                />
+              </div>
             </TabsContent>
             
             <TabsContent value="templates" className="space-y-4">
@@ -399,21 +488,26 @@ export default function AccountingConfigPage() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Sparkles className="h-5 w-5" />
-                    Gestión de Plantillas
+                    Personalización Sectorial
                   </CardTitle>
                   <CardDescription>
-                    Crea y gestiona plantillas personalizadas de planes contables
+                    Configura categorías de servicios, familias de productos e IVAs especiales según tu sector
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <Alert>
-                    <Info className="h-4 w-4" />
-                    <AlertDescription>
-                      Esta funcionalidad te permitirá crear plantillas personalizadas basadas 
-                      en tu plan contable actual para reutilizarlas en otras sociedades.
-                      Próximamente disponible.
-                    </AlertDescription>
-                  </Alert>
+                  {chartData.length > 0 ? (
+                    <AccountingMappingConfigurator 
+                      systemId={systemId}
+                      legalEntityId={selectedLegalEntityId}
+                    />
+                  ) : (
+                    <Alert>
+                      <Info className="h-4 w-4" />
+                      <AlertDescription>
+                        Primero debes importar un plan contable antes de configurar las personalizaciones sectoriales.
+                      </AlertDescription>
+                    </Alert>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>
@@ -440,7 +534,7 @@ export default function AccountingConfigPage() {
             </Card>
           ) : (
             <FiscalYearManager
-              systemId={session?.user?.systemId || CURRENT_SYSTEM_ID}
+              systemId={systemId}
               legalEntityId={selectedLegalEntityId}
             />
           )}
@@ -467,11 +561,8 @@ export default function AccountingConfigPage() {
             </Card>
           ) : (
             <AccountingMappingConfigurator
-              systemId={session?.user?.systemId || CURRENT_SYSTEM_ID}
+              systemId={systemId}
               legalEntityId={selectedLegalEntityId}
-              onComplete={() => {
-                toast.success('Mapeos configurados correctamente');
-              }}
             />
           )}
         </TabsContent>
@@ -496,7 +587,7 @@ export default function AccountingConfigPage() {
             </Card>
           ) : (
             <DocumentSeriesConfigurator
-              systemId={session?.user?.systemId || CURRENT_SYSTEM_ID}
+              systemId={systemId}
               legalEntityId={selectedLegalEntityId}
             />
           )}
@@ -522,7 +613,7 @@ export default function AccountingConfigPage() {
             </Card>
           ) : (
             <AccountingExporter
-              systemId={session?.user?.systemId || CURRENT_SYSTEM_ID}
+              systemId={systemId}
               legalEntityId={selectedLegalEntityId}
               currentLanguage="es"
             />

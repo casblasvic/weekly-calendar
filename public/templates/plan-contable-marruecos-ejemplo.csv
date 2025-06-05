@@ -1,0 +1,32 @@
+NumeroCuenta,NombreCuenta,TipoCuenta,Descripcion,EsMonetaria,PermiteAsientoDirecto,NumeroCuentaPadre
+1,FINANCEMENT PERMANENT,EQUITY,"Financement permanent de l'entreprise",FALSE,FALSE,
+11,Capitaux propres,EQUITY,"Capital et réserves",FALSE,FALSE,1
+111,Capital social ou personnel,EQUITY,"Capital social de l'entreprise",TRUE,TRUE,11
+112,Primes d'émission de fusion et d'apport,EQUITY,"Primes liées au capital",TRUE,TRUE,11
+2,ACTIF IMMOBILISE,ASSET,"Actifs immobilisés",FALSE,FALSE,
+21,Immobilisations en non valeurs,ASSET,"Frais préliminaires et charges",FALSE,FALSE,2
+211,Frais préliminaires,ASSET,"Frais de constitution",TRUE,TRUE,21
+212,Charges à répartir sur plusieurs exercices,ASSET,"Charges différées",TRUE,TRUE,21
+3,ACTIF CIRCULANT,ASSET,"Actifs circulants",FALSE,FALSE,
+31,Stocks,ASSET,"Stocks de marchandises et produits",FALSE,FALSE,3
+311,Marchandises,ASSET,"Stock de marchandises",TRUE,TRUE,31
+312,Matières et fournitures consommables,ASSET,"Stock de matières premières",TRUE,TRUE,31
+34,Créances de l'actif circulant,ASSET,"Créances clients et autres",FALSE,FALSE,3
+342,Clients et comptes rattachés,ASSET,"Comptes clients",TRUE,TRUE,34
+3421,Clients,ASSET,"Clients ordinaires",TRUE,TRUE,342
+4,PASSIF CIRCULANT,LIABILITY,"Passifs circulants",FALSE,FALSE,
+44,Dettes du passif circulant,LIABILITY,"Dettes à court terme",FALSE,FALSE,4
+441,Fournisseurs et comptes rattachés,LIABILITY,"Comptes fournisseurs",TRUE,TRUE,44
+4411,Fournisseurs,LIABILITY,"Fournisseurs ordinaires",TRUE,TRUE,441
+5,TRESORERIE,ASSET,"Comptes de trésorerie",FALSE,FALSE,
+51,Trésorerie actif,ASSET,"Disponibilités",FALSE,FALSE,5
+514,Banques trésorerie générale et chèques postaux débiteurs,ASSET,"Comptes bancaires",TRUE,TRUE,51
+516,Caisses régies d'avances et accréditifs,ASSET,"Caisses",TRUE,TRUE,51
+6,CHARGES,EXPENSE,"Comptes de charges",FALSE,FALSE,
+61,Charges d'exploitation,EXPENSE,"Charges opérationnelles",FALSE,FALSE,6
+611,Achats revendus de marchandises,EXPENSE,"Coût des marchandises vendues",TRUE,TRUE,61
+612,Achats consommés de matières et fournitures,EXPENSE,"Consommations",TRUE,TRUE,61
+7,PRODUITS,REVENUE,"Comptes de produits",FALSE,FALSE,
+71,Produits d'exploitation,REVENUE,"Produits opérationnels",FALSE,FALSE,7
+711,Ventes de marchandises,REVENUE,"Ventes de biens",TRUE,TRUE,71
+712,Ventes de biens et services produits,REVENUE,"Ventes de services",TRUE,TRUE,71

@@ -13,44 +13,55 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const systemId = searchParams.get('systemId') || session.user.systemId;
     const legalEntityId = searchParams.get('legalEntityId');
-    const allowsDirectEntry = searchParams.get('allowsDirectEntry') === 'true';
-    const isActive = searchParams.get('isActive') === 'true';
-    const type = searchParams.get('type') as AccountType | null; // Cast correcto para el tipo
+    
+    // Parámetros opcionales para filtrado (solo si se pasan explícitamente)
+    const type = searchParams.get('type') as AccountType | null;
+    const parentAccountId = searchParams.get('parentAccountId');
+    
+    console.log('API chart-of-accounts - params:', {
+      systemId,
+      legalEntityId,
+      type,
+      parentAccountId
+    });
 
     if (!legalEntityId) {
       return NextResponse.json({ error: "legalEntityId es requerido" }, { status: 400 });
     }
 
-    // Obtener las cuentas del plan contable con los filtros aplicados
+    // Construir el objeto where - siempre incluir systemId y legalEntityId
+    const whereClause: any = {
+      systemId,
+      legalEntityId
+    };
+    
+    // Solo agregar filtros opcionales si se pasan
+    if (type) {
+      whereClause.type = type;
+    }
+    
+    if (parentAccountId) {
+      whereClause.parentAccountId = parentAccountId;
+    }
+
+    // Obtener TODAS las cuentas del plan contable para esta entidad
     const accounts = await prisma.chartOfAccountEntry.findMany({
-      where: {
-        systemId,
-        legalEntityId,
-        ...(allowsDirectEntry !== undefined && { allowsDirectEntry }),
-        ...(isActive !== undefined && { isActive }),
-        ...(type && { type })
-      },
+      where: whereClause,
       orderBy: [
         { accountNumber: 'asc' }
       ]
     });
+    
+    console.log(`API chart-of-accounts - found ${accounts.length} accounts`);
 
-    // Si no se solicita una lista específica, devolver información resumida
-    if (!allowsDirectEntry && !isActive && !type) {
-      return NextResponse.json({
-        hasEntries: accounts.length > 0,
-        count: accounts.length
-      });
-    }
-
-    // Devolver la lista completa de cuentas
+    // Siempre devolver la lista completa de cuentas
     return NextResponse.json(accounts);
 
   } catch (error) {
-    console.error('Error fetching chart of accounts:', error);
+    console.error("Error fetching chart of accounts:", error);
     return NextResponse.json(
-      { error: "Error al obtener plan contable" },
+      { error: "Error al obtener el plan de cuentas" },
       { status: 500 }
     );
   }
-} 
+}

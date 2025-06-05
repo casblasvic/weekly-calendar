@@ -549,10 +549,6 @@
         "products": {
              "title": "Productos",
              "description": "Administra el catálogo de productos."
-        },
-         "packages": {
-             "title": "Paquetes",
-             "description": "Define y gestiona paquetes de servicios/productos."
         }
     },
     "client": {
@@ -1300,9 +1296,6 @@
             "isGlobal_label": "Global (disponible para todas las clínicas)",
             "isGlobal_description": "Si se desmarca, deberá seleccionar clínicas específicas.",
             "clinics_label": "Clínicas Específicas",
-            "global": "Global (disponible para todas las clínicas)",
-            "specific_clinics": "Clínicas Específicas",
-            "select_clinics": "Selecciona clínicas",
             "clinics_placeholder": "Seleccionar clínicas...",
             "clinics_search_placeholder": "Buscar clínicas...",
             "clinics_empty_placeholder": "No se encontraron clínicas activas.",
@@ -1702,7 +1695,43 @@
     "delete_confirm_title": "¿Estás seguro?",
     "delete_confirm_desc": "Esta acción no se puede deshacer. Esto eliminará permanentemente la sociedad mercantil y desasociará todas sus clínicas. Las clínicas no serán eliminadas."
   },
+  "accountingImport": {
+    "features": {
+      "consultationServices": "Servicios de consulta",
+      "medicalTreatments": "Tratamientos médicos",
+      "hairSalon": "Peluquería",
+      "spa": "Spa",
+      "sellsProducts": "Venta de productos",
+      "multiCenter": "Múltiples Centros/Clínicas"
+    }
+  },
   "accounting": {
+    "sectors": {
+      "AESTHETIC_CLINIC": {
+        "name": "Clínica Estética",
+        "description": "Especializado en tratamientos estéticos, medicina estética y procedimientos no invasivos"
+      },
+      "BEAUTY_CENTER": {
+        "name": "Centro de Belleza y Peluquería",
+        "description": "Servicios de belleza, peluquería, estética y cuidado personal"
+      },
+      "SPA_WELLNESS": {
+        "name": "Spa y Centro de Bienestar",
+        "description": "Servicios de spa, wellness, terapias holísticas y tratamientos de relajación"
+      },
+      "MEDICAL_CENTER": {
+        "name": "Centro Médico Privado",
+        "description": "Consultorios médicos y centros de salud privados"
+      },
+      "PHYSIOTHERAPY_CENTER": {
+        "name": "Centro de Fisioterapia",
+        "description": "Servicios de fisioterapia, rehabilitación y terapia física"
+      },
+      "DENTAL_CLINIC": {
+        "name": "Clínica Dental",
+        "description": "Servicios odontológicos y tratamientos dentales"
+      }
+    },
     "import": {
       "title": "Importar Plan Contable",
       "tabs": {
@@ -1754,7 +1783,7 @@
           "EQUITY": "Patrimonio",
           "REVENUE": "Ingresos",
           "EXPENSE": "Gastos",
-          "COST_OF_GOODS_SOLD": "Costo de Ventas"
+          "COST_OF_GOODS_SOLD": "Coste de Ventas"
         },
         "noResults": "No se encontraron cuentas que coincidan con tu búsqueda"
       },
@@ -1768,6 +1797,13 @@
         "startDate": "Fecha inicio",
         "endDate": "Fecha fin",
         "customInfo": "Algunos países o empresas usan ejercicios fiscales diferentes al año natural (ej: abril-marzo, julio-junio)"
+      },
+      "replacementOption": {
+        "title": "Opción de Importación",
+        "replaceExisting": "Reemplazar plan contable existente",
+        "replaceDescription": "Se eliminará completamente el plan contable actual y se importará el nuevo. Esta acción no se puede deshacer.",
+        "mergeDescription": "Se mantendrá el plan contable actual y se añadirán las cuentas nuevas que no existan.",
+        "warning": "¡Atención! Esta opción eliminará permanentemente todas las cuentas contables existentes y sus asociaciones."
       },
       "mode": {
         "label": "Modo de Importación",
@@ -1816,63 +1852,99 @@
         "currency": "Moneda:",
         "fiscalYear": "Ejercicio fiscal:",
         "sectorCustomization": "Personalización sectorial:"
+      },
+      "businessFeatures": {
+        "title": "Características del Negocio",
+        "description": "Selecciona las características de tu negocio para configurar automáticamente categorías, productos y métodos de pago",
+        "consultationServices": "Servicios de Consultas",
+        "medicalTreatments": "Tratamientos Médicos",
+        "hairSalon": "Peluquería",
+        "spa": "Spa / Hidroterapia",
+        "sellsProducts": "Venta de Productos",
+        "locations": {
+          "label": "Ubicaciones del negocio",
+          "placeholder": "Ej: Madrid, Barcelona, Valencia...",
+          "helper": "Ingresa las ubicaciones separadas por comas"
+        },
+        "multiCenter": "Múltiples Centros/Clínicas",
+        "configInfo": "Estas opciones generarán automáticamente familias de servicios y productos genéricos que podrás personalizar más adelante.",
+        "hide": "Ocultar opciones",
+        "configure": "Configurar características",
+        "defaultInfo": "Se aplicará una configuración estándar basada en el tipo de negocio seleccionado.",
+        "customInfo": "Podrás añadir tus propios servicios y productos específicos después de la importación.",
+        "features": {
+          "consultationServices": "Servicios de consulta",
+          "medicalTreatments": "Tratamientos médicos",
+          "hairSalon": "Peluquería",
+          "spa": "Spa",
+          "sellsProducts": "Venta de productos",
+          "multiCenter": "Múltiples Centros/Clínicas"
+        }
+      },
+      "accountTypes": {
+        "ASSET": "Activo",
+        "LIABILITY": "Pasivo",
+        "EQUITY": "Patrimonio",
+        "REVENUE": "Ingresos",
+        "EXPENSE": "Gastos",
+        "COST_OF_GOODS_SOLD": "Coste de Ventas"
       }
     },
-    "sectors": {
-      "AESTHETIC_CLINIC": {
-        "name": "Clínica Estética",
-        "description": "Especializado en tratamientos estéticos, medicina estética y procedimientos no invasivos"
+    "mapping": {
+        "title": "Configuración de Mapeos Contables",
+        "description": "Configure las relaciones entre sus datos y las cuentas contables",
+        "saved": "Mapeos guardados correctamente",
+        "error": "Error al guardar los mapeos",
+        "noMappings": "Seleccione al menos un mapeo antes de guardar",
+        "selectAccount": "Seleccionar cuenta...",
+        "useSuggestion": "Usar sugerencia",
+        "applyToSubcategories": "Aplicar a subcategorías",
+        "comingSoon": "Esta funcionalidad estará disponible próximamente",
+        "tabs": {
+          "categories": "Categorías",
+          "payments": "Métodos de Pago",
+          "vat": "Tipos de IVA",
+          "rules": "Reglas Especiales"
+        },
+        "categories": {
+          "info": "Asocie cada categoría de servicios/productos con la cuenta contable correspondiente para la generación automática de asientos.",
+          "hasSubcategories": "Tiene subcategorías",
+          "allMapped": "Todas las categorías están correctamente mapeadas"
+        }
       },
-      "BEAUTY_CENTER": {
-        "name": "Centro de Belleza y Peluquería",
-        "description": "Servicios de belleza, peluquería, estética y cuidado personal"
-      },
-      "SPA_WELLNESS": {
-        "name": "Spa y Centro de Bienestar",
-        "description": "Servicios de spa, wellness, terapias holísticas y tratamientos de relajación"
-      },
-      "MEDICAL_CENTER": {
-        "name": "Centro Médico Privado",
-        "description": "Consultorios médicos y centros de salud privados"
-      },
-      "PHYSIOTHERAPY_CENTER": {
-        "name": "Centro de Fisioterapia",
-        "description": "Servicios de fisioterapia, rehabilitación y terapia física"
-      },
-      "DENTAL_CLINIC": {
-        "name": "Clínica Dental",
-        "description": "Servicios odontológicos y tratamientos dentales"
+      "fiscalYears": {
+        "title": "Ejercicios Fiscales",
+        "description": "Gestiona los períodos contables de tu empresa",
+        "newFiscalYear": "Nuevo Ejercicio Fiscal",
+        "editFiscalYear": "Editar Ejercicio Fiscal",
+        "deleteFiscalYear": "Eliminar Ejercicio Fiscal",
+        "confirmDelete": "¿Está seguro de eliminar el ejercicio fiscal \"{{name}}\"?\n\nEsta acción solo es posible si el ejercicio no tiene movimientos contables asociados.",
+        "deleteSuccess": "Ejercicio fiscal eliminado correctamente",
+        "deleteError": "Error al eliminar el ejercicio fiscal",
+        "onlyOpenCanDelete": "Solo se pueden eliminar ejercicios fiscales abiertos",
+        "hasMovements": "No se puede eliminar un ejercicio fiscal con movimientos contables",
+        "status": {
+          "open": "Abierto",
+          "closingProcess": "En proceso de cierre",
+          "closed": "Cerrado"
+        }
       }
     },
-    "accountTypes": {
-      "ASSET": "Activo",
-      "LIABILITY": "Pasivo",
-      "EQUITY": "Patrimonio",
-      "REVENUE": "Ingresos",
-      "EXPENSE": "Gastos",
-      "COST_OF_GOODS_SOLD": "Coste de Ventas"
-    }
-  },
-  "mapping": {
-    "title": "Configuración de Mapeos Contables",
-    "description": "Configure las relaciones entre sus datos y las cuentas contables",
-    "saved": "Mapeos guardados correctamente",
-    "error": "Error al guardar los mapeos",
-    "noMappings": "Seleccione al menos un mapeo antes de guardar",
-    "selectAccount": "Seleccionar cuenta...",
-    "useSuggestion": "Usar sugerencia",
-    "applyToSubcategories": "Aplicar a subcategorías",
-    "comingSoon": "Esta funcionalidad estará disponible próximamente",
-    "tabs": {
-      "categories": "Categorías",
-      "payments": "Métodos de Pago",
-      "vat": "Tipos de IVA",
-      "rules": "Reglas Especiales"
-    },
-    "categories": {
-      "info": "Asocie cada categoría de servicios/productos con la cuenta contable correspondiente para la generación automática de asientos.",
-      "hasSubcategories": "Tiene subcategorías",
-      "allMapped": "Todas las categorías están correctamente mapeadas"
+    "chartOfAccounts": {
+      "title": "Plan Contable",
+      "loading": "Cargando plan contable...",
+      "noResults": "No hay resultados para la entidad legal seleccionada o no hay plan contable definido.",
+      "filterPlaceholder": "Filtrar por nombre o número...",
+      "confirmDeleteSelected": "¿Está seguro de eliminar las cuentas seleccionadas? Esta acción eliminará también todas sus asociaciones.",
+      "errorDeletingAccounts": "Error al eliminar las cuentas seleccionadas",
+      "bulkActions": {
+        "actions": "Acciones",
+        "exportSelected": "Exportar seleccionadas",
+        "deleteSelected": "Eliminar seleccionadas"
+      },
+      "pagination": {
+        "itemType": "cuentas",
+        "rowsSelected": "fila(s) seleccionadas"
+      }
     }
   }
-} 

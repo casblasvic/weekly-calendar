@@ -149,9 +149,33 @@ export default function FiscalYearManager({
       return response.json();
     },
     onSuccess: () => {
-      toast.success(editingFiscalYear ? 'Ejercicio fiscal actualizado' : 'Ejercicio fiscal creado');
       queryClient.invalidateQueries({ queryKey: ['fiscal-years'] });
+      toast.success(editingFiscalYear ? 'Ejercicio fiscal actualizado' : 'Ejercicio fiscal creado');
       handleCloseModal();
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    }
+  });
+
+  // Eliminar ejercicio fiscal
+  const deleteMutation = useMutation({
+    mutationFn: async (fiscalYearId: string) => {
+      const response = await fetch(`/api/fiscal-years/${fiscalYearId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ legalEntityId })
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Error eliminando ejercicio fiscal');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['fiscal-years'] });
+      toast.success('Ejercicio fiscal eliminado correctamente');
     },
     onError: (error: Error) => {
       toast.error(error.message);
@@ -231,6 +255,20 @@ export default function FiscalYearManager({
       id: fiscalYear.id,
       status: newStatus
     });
+  };
+
+  const handleDeleteFiscalYear = async (fiscalYear: FiscalYear) => {
+    if (fiscalYear.status !== 'OPEN') {
+      toast.error('Solo se pueden eliminar ejercicios fiscales abiertos');
+      return;
+    }
+
+    const confirmMessage = `¿Está seguro de eliminar el ejercicio fiscal "${fiscalYear.name}"?\n\nEsta acción solo es posible si el ejercicio no tiene movimientos contables asociados.`;
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    deleteMutation.mutate(fiscalYear.id);
   };
 
   const getStatusIcon = (status: FiscalYearStatus) => {
@@ -351,6 +389,17 @@ export default function FiscalYearManager({
                             Cerrar
                           </Button>
                         </>
+                      )}
+                      {fiscalYear.status === 'OPEN' && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDeleteFiscalYear(fiscalYear)}
+                          className="text-destructive hover:text-destructive"
+                          title="Eliminar ejercicio fiscal"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       )}
                     </div>
                   </TableCell>

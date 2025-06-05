@@ -36,13 +36,7 @@ export type ChartOfAccountRow = {
 export const columns: ColumnDef<ChartOfAccountRow>[] = [
   {
     id: "select",
-    header: ({ table }) => (
-      <Checkbox
-        checked={table.getIsAllPageRowsSelected() ? true : table.getIsSomePageRowsSelected() ? "indeterminate" : false}
-        onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-        aria-label="Select all"
-      />
-    ),
+    header: ({ table }) => null,  // Se maneja en el componente padre
     cell: ({ row }) => (
       <Checkbox
         checked={row.getIsSelected()}
@@ -86,10 +80,10 @@ export const columns: ColumnDef<ChartOfAccountRow>[] = [
     cell: ({ row, table }) => { 
       const account = row.original;
       // Actualizamos la interfaz meta para incluir onDeleteAccount
-      const meta = table.options.meta as {
-        onEditAccount: (account: ChartOfAccountRow) => void;
-        onAddSubAccount: (parentId: string | null, newAccountBase?: Partial<ChartOfAccountRow>) => void;
-        onDeleteAccount: (account: ChartOfAccountRow) => void; // Nueva función
+      const actions = table.options.meta as {
+        onEditAccount?: (account: ChartOfAccountRow) => void;
+        onAddSubAccount?: (parentId: string | null, newAccountBase?: Partial<ChartOfAccountRow>) => void;
+        onDeleteAccount?: (account: ChartOfAccountRow) => void;
       };
 
       return (
@@ -105,7 +99,7 @@ export const columns: ColumnDef<ChartOfAccountRow>[] = [
             <DropdownMenuItem
               onClick={() => {
                 console.log("Edit action triggered for:", account.name);
-                meta.onEditAccount(account); 
+                actions.onEditAccount?.(account); 
               }}
             >
               <Pencil className="mr-2 h-4 w-4" />
@@ -117,7 +111,7 @@ export const columns: ColumnDef<ChartOfAccountRow>[] = [
                 const newAccountBase = { 
                   accountNumber: `${account.accountNumber}.` 
                 };
-                meta.onAddSubAccount(account.id, newAccountBase); 
+                actions.onAddSubAccount?.(account.id, newAccountBase); 
               }}
             >
               <PlusCircle className="mr-2 h-4 w-4" />
@@ -127,7 +121,7 @@ export const columns: ColumnDef<ChartOfAccountRow>[] = [
             <DropdownMenuItem
               onClick={() => {
                 // Llamamos a la nueva función onDeleteAccount del meta
-                meta.onDeleteAccount(account);
+                actions.onDeleteAccount?.(account);
               }}
               className="text-red-600 focus:text-red-700 focus:bg-red-50"
             >

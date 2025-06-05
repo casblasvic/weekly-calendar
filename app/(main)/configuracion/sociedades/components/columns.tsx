@@ -88,13 +88,15 @@ export const columns: ColumnDef<LegalEntity>[] = [
   {
     id: "actions",
     cell: ({ row }) => {
-      const legalEntity = row.original
+      const legalEntity = row.original;
+      const hasAssociatedClinics = legalEntity.clinics && legalEntity.clinics.length > 0;
+
       return (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="w-8 h-8 p-0">
+            <Button variant="ghost" className="h-8 w-8 p-0">
               <span className="sr-only">Abrir menú</span>
-              <MoreHorizontal className="w-4 h-4" />
+              <MoreHorizontal className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
@@ -106,10 +108,18 @@ export const columns: ColumnDef<LegalEntity>[] = [
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              className="text-red-600 hover:!text-red-700"
-              onClick={() => alert("Función eliminar no implementada")}
+              className={hasAssociatedClinics 
+                ? "text-gray-400 cursor-not-allowed" 
+                : "text-red-600 hover:!text-red-700"
+              }
+              disabled={hasAssociatedClinics}
+              onClick={() => !hasAssociatedClinics && alert("Función eliminar no implementada")}
             >
-              <Trash2 className="w-4 h-4 mr-2" /> Eliminar (TODO)
+              <Trash2 className="w-4 h-4 mr-2" /> 
+              {hasAssociatedClinics 
+                ? "No se puede eliminar (tiene clínicas asociadas)" 
+                : "Eliminar (TODO)"
+              }
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

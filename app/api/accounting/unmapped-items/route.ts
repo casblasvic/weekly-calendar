@@ -218,47 +218,11 @@ export async function GET(request: NextRequest) {
         });
 
       case 'payment':
-        // Obtener métodos de pago configurados en las clínicas
-        const clinicPaymentSettings = await prisma.clinicPaymentSetting.findMany({
-          where: {
-            clinicId: { in: clinicIds },
-            systemId
-          },
-          include: {
-            paymentMethodDefinition: true
-          }
-        });
-
-        if (clinicPaymentSettings.length === 0) {
-          return NextResponse.json({
-            hasData: false,
-            reason: 'no_payment_methods_configured',
-            items: []
-          });
-        }
-
-        // Filtrar solo los que tienen paymentMethodDefinition activo
-        const activePaymentSettings = clinicPaymentSettings.filter(cps => 
-          cps.paymentMethodDefinition && cps.paymentMethodDefinition.isActive
-        );
-
-        if (activePaymentSettings.length === 0) {
-          return NextResponse.json({
-            hasData: false,
-            reason: 'no_active_payment_methods',
-            items: []
-          });
-        }
-
-        // Obtener IDs únicos de métodos de pago
-        const paymentMethodIds = [...new Set(
-          activePaymentSettings.map(cps => cps.paymentMethodDefinitionId)
-        )];
-
-        // Obtener métodos de pago con sus mapeos
+        // SIMPLIFICADO: Obtener TODOS los métodos de pago activos del sistema
+        // Los métodos globales son simplemente todos los que están activos
         const paymentMethods = await prisma.paymentMethodDefinition.findMany({
           where: {
-            id: { in: paymentMethodIds },
+            systemId,
             isActive: true
           },
           include: {
@@ -269,6 +233,15 @@ export async function GET(request: NextRequest) {
             }
           }
         });
+
+        // Si no hay métodos de pago en absoluto
+        if (paymentMethods.length === 0) {
+          return NextResponse.json({
+            hasData: false,
+            reason: 'no_payment_methods_available',
+            items: []
+          });
+        }
 
         // Filtrar solo los que no tienen mapeo
         const unmappedPaymentMethods = paymentMethods.filter(pm => 

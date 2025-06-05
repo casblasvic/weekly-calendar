@@ -10,6 +10,7 @@ import {
   UpdateChartOfAccountEntryInput,
   UpdateChartOfAccountEntrySchema
 } from "./schemas";
+import { auth } from "@/lib/auth"; // Añadir importación de auth
 
 interface ChartOfAccountEntryWithSubAccountsPrisma extends ChartOfAccountEntry {
   subAccounts?: ChartOfAccountEntryWithSubAccountsPrisma[];
@@ -328,153 +329,135 @@ export async function getLegalEntitiesBySystem(systemId: string) {
   }
 }
 
-// Función para importar el plan de cuentas desde un CSV
+// Función simplificada para importar plan de cuentas desde CSV
 export async function importChartOfAccountsFromCSV(
-  rows: any[],
   legalEntityId: string,
-  systemId: string,
-  updateExisting: boolean = false
+  rows: Array<{
+    accountNumber: string;
+    name: string;
+    type: 'ASSET' | 'LIABILITY' | 'EQUITY' | 'REVENUE' | 'EXPENSE';
+    parentNumber?: string;
+    isMonetary?: boolean;
+    allowDirectEntry?: boolean;
+  }>
 ) {
+  const user = await auth();
+  if (!user) {
+    throw new Error('Usuario no autenticado');
+  }
+
   const errors: { row: number; accountNumber?: string; message: string }[] = [];
-  let created = 0;
-  let updated = 0;
-  let skipped = 0;
+  let accountsCreated = 0;
+  let accountsSkipped = 0;
 
   try {
-    // Validar entidad legal
+    // Verificar que la entidad legal existe
     const legalEntity = await prisma.legalEntity.findUnique({
       where: { id: legalEntityId },
+      include: { system: true }
     });
 
     if (!legalEntity) {
-      return {
-        success: false,
-        error: 'Entidad legal no encontrada',
-        created: 0,
-        updated: 0,
-        skipped: 0,
-        errors: [{ row: 0, message: 'Entidad legal no encontrada' }]
-      };
+      throw new Error('Entidad legal no encontrada');
     }
 
-    // Procesar cada fila
+    const systemId = legalEntity.systemId;
+
+    // Procesar cada fila del CSV
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
-      const rowNumber = i + 2; // +2 porque la fila 1 es el encabezado
+      const rowNumber = i + 1;
 
       try {
-        // Validar datos mínimos
-        if (!row.NumeroCuenta || !row.NombreCuenta) {
-          errors.push({
-            row: rowNumber,
-            accountNumber: row.NumeroCuenta,
-            message: 'Faltan campos requeridos: NumeroCuenta y NombreCuenta son obligatorios'
-          });
-          skipped++;
-          continue;
-        }
-
-        // Buscar cuenta existente
+        // Verificar si la cuenta ya existe
         const existingAccount = await prisma.chartOfAccountEntry.findFirst({
           where: {
-            accountNumber: row.NumeroCuenta,
+            accountNumber: row.accountNumber,
             legalEntityId,
-            systemId,
-          },
+            systemId
+          }
         });
 
-        // Si la cuenta existe y no se debe actualizar, saltar
-        if (existingAccount && !updateExisting) {
-          skipped++;
+        if (existingAccount) {
+          errors.push({
+            row: rowNumber,
+            accountNumber: row.accountNumber,
+            message: 'Cuenta ya existe'
+          });
+          accountsSkipped++;
           continue;
         }
 
-        // Preparar datos para crear/actualizar
-        const accountData = {
-          name: row.NombreCuenta,
-          type: row.TipoCuenta,
-          description: row.Descripcion || null,
-          isMonetary: Boolean(row.EsMonetaria),
-          isActive: row.EstaActiva !== undefined ? Boolean(row.EstaActiva) : true,
-          allowsDirectEntry: row.PermiteAsientoDirecto !== undefined ? Boolean(row.PermiteAsientoDirecto) : true,
-          parentAccountId: null as string | null,
-          legalEntityId,
-          systemId,
-          accountNumber: row.NumeroCuenta,
-        };
-
-        // Si hay cuenta padre, buscarla
-        if (row.NumeroCuentaPadre) {
+        // Determinar el ID de la cuenta padre si se proporciona
+        let parentAccountId: string | null = null;
+        if (row.parentNumber) {
           const parentAccount = await prisma.chartOfAccountEntry.findFirst({
             where: {
-              accountNumber: row.NumeroCuentaPadre,
+              accountNumber: row.parentNumber,
               legalEntityId,
-              systemId,
-            },
+              systemId
+            }
           });
 
-          if (parentAccount) {
-            accountData.parentAccountId = parentAccount.id;
-          } else {
+          if (!parentAccount) {
             errors.push({
               row: rowNumber,
-              accountNumber: row.NumeroCuenta,
-              message: `No se encontró la cuenta padre con número: ${row.NumeroCuentaPadre}`
+              accountNumber: row.accountNumber,
+              message: `Cuenta padre ${row.parentNumber} no encontrada`
             });
-            skipped++;
+            accountsSkipped++;
             continue;
           }
+          parentAccountId = parentAccount.id;
         }
 
-        // Crear o actualizar la cuenta
-        if (existingAccount && updateExisting) {
-          await prisma.chartOfAccountEntry.update({
-            where: { id: existingAccount.id },
-            data: accountData,
-          });
-          updated++;
-        } else {
-          await prisma.chartOfAccountEntry.create({
-            data: accountData,
-          });
-          created++;
-        }
+        // Crear la cuenta
+        await prisma.chartOfAccountEntry.create({
+          data: {
+            accountNumber: row.accountNumber,
+            name: row.name,
+            type: row.type,
+            isMonetary: row.isMonetary ?? false,
+            allowsDirectEntry: row.allowDirectEntry ?? true,
+            isActive: true,
+            parentAccountId,
+            legalEntityId,
+            systemId,
+            level: 0 // Se calculará según la jerarquía
+          }
+        });
+
+        accountsCreated++;
       } catch (error) {
         console.error(`Error procesando fila ${rowNumber}:`, error);
         errors.push({
           row: rowNumber,
-          accountNumber: row.NumeroCuenta,
-          message: `Error al procesar la cuenta: ${error instanceof Error ? error.message : 'Error desconocido'}`
+          accountNumber: row.accountNumber,
+          message: error instanceof Error ? error.message : 'Error desconocido'
         });
-        skipped++;
+        accountsSkipped++;
       }
     }
 
+    revalidatePath('/configuracion/contabilidad');
+    
     return {
       success: true,
-      created,
-      updated,
-      skipped,
-      errors: errors.length > 0 ? errors : undefined,
+      accountsCreated,
+      accountsSkipped,
+      errors,
       message: errors.length > 0 
-        ? 'Importación completada con algunos errores' 
-        : 'Importación completada con éxito'
+        ? `Importación completada con advertencias: ${accountsCreated} cuentas creadas, ${accountsSkipped} omitidas`
+        : `Importación exitosa: ${accountsCreated} cuentas creadas`
     };
   } catch (error) {
-    console.error('Error en importChartOfAccountsFromCSV:', error);
+    console.error('Error en importación CSV:', error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Error desconocido durante la importación',
-      created,
-      updated,
-      skipped,
-      errors: [
-        ...errors,
-        {
-          row: 0,
-          message: `Error general: ${error instanceof Error ? error.message : 'Error desconocido'}`
-        }
-      ]
+      accountsCreated: 0,
+      accountsSkipped: 0,
+      errors: [],
+      message: error instanceof Error ? error.message : 'Error desconocido durante la importación'
     };
   }
 }

@@ -133,6 +133,20 @@
         "noCountry": "You must select a country",
         "noSector": "You must select a business type",
         "loadingTemplate": "Error loading template"
+      },
+      "businessFeatures": {
+        "title": "Business Features",
+        "description": "Select your business features to automatically configure categories, products and payment methods",
+        "hasHairSalon": "Hair Salon",
+        "hasSpa": "Spa / Hydrotherapy",
+        "hasMedicalTreatments": "Medical Treatments",
+        "sellsProducts": "Product Sales",
+        "hasMultipleLocations": "Multiple Locations",
+        "locations": {
+          "label": "Locations",
+          "placeholder": "E.g., Madrid, Barcelona, Valencia...",
+          "helper": "Enter locations separated by commas"
+        }
       }
     },
     "sectors": {

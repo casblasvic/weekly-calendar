@@ -18,12 +18,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
 import { 
   FileText, 
   Globe, 
   Building2, 
   CheckCircle2, 
   AlertCircle, 
+  AlertTriangle,
   Download,
   Eye,
   Sparkles,
@@ -49,7 +51,6 @@ import { BusinessSector } from '@/types/accounting';
 import { useQuery } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
-import { Input } from '@/components/ui/input';
 
 interface AccountingTemplateImporterProps {
   systemId: string;
@@ -95,6 +96,19 @@ export default function AccountingTemplateImporter({
   const [fiscalYearEndDate, setFiscalYearEndDate] = useState(
     new Date(new Date().getFullYear(), 11, 31).toISOString().split('T')[0]
   );
+
+  // Estados para características del negocio
+  const [businessFeatures, setBusinessFeatures] = useState({
+    hasConsultationServices: false,
+    hasMedicalTreatments: false,
+    hasHairSalon: false,
+    hasSpa: false,
+    sellsProducts: false,
+    isMultiCenter: false
+  });
+
+  // Estados para ubicaciones
+  const [locations, setLocations] = useState([]);
 
   // Verificar si ya existe un plan contable
   const { data: existingChart, isLoading: checkingChart } = useQuery({
@@ -173,8 +187,8 @@ export default function AccountingTemplateImporter({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           templateCode: fullTemplateCode,
-          country: selectedCountry,
-          sector: selectedSector === 'GENERAL' ? undefined : selectedSector
+          country: selectedCountry, // ✅ Campo requerido
+          sector: selectedSector === 'GENERAL' ? undefined : selectedSector // ✅ Campo opcional
         })
       });
       
@@ -374,8 +388,11 @@ export default function AccountingTemplateImporter({
           sector: selectedSector !== 'GENERAL' ? selectedSector : undefined, // ✅ Campo opcional
           legalEntityId: legalEntity?.id,
           systemId,
-          mode: importMode // ✅ Corregido: era 'importMode', ahora es 'mode'
-          // ❌ Eliminado: fiscalYearId (no existe en la API)
+          mode: importMode, // ✅ Corregido: era 'importMode', ahora es 'mode'
+          // Nuevas características del negocio
+          businessFeatures,
+          locations: businessFeatures.isMultiCenter ? locations : undefined,
+          allowReplacePlan
         })
       });
 
@@ -664,7 +681,7 @@ export default function AccountingTemplateImporter({
                   <TabsTrigger value="merge">{t('accounting.import.mode.options.merge')}</TabsTrigger>
                 </TabsList>
                 <TabsContent value="replace" className="mt-2">
-                  <Alert variant={movements?.count > 0 ? "destructive" : "default"}>
+                  <Alert variant="destructive">
                     <AlertCircle className="w-4 h-4" />
                     <AlertDescription>
                       {t('accounting.import.warnings.replace.description')}
@@ -801,6 +818,168 @@ export default function AccountingTemplateImporter({
                     </Alert>
                   </Card>
                 )}
+              </div>
+
+              {/* Opción de reemplazo del plan contable */}
+              <div className="space-y-4">
+                <Label className="text-base font-medium">
+                  {t('accounting.import.replacementOption.title')}
+                </Label>
+                
+                <Card className="p-4 space-y-3">
+                  <div className="flex items-start space-x-2">
+                    <Checkbox
+                      checked={allowReplacePlan}
+                      onCheckedChange={(checked) => setAllowReplacePlan(checked as boolean)}
+                      id="replace-plan"
+                    />
+                    <div className="space-y-2">
+                      <label 
+                        htmlFor="replace-plan" 
+                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                      >
+                        {t('accounting.import.replacementOption.replaceExisting')}
+                      </label>
+                      <p className="text-sm text-muted-foreground">
+                        {allowReplacePlan 
+                          ? t('accounting.import.replacementOption.replaceDescription')
+                          : t('accounting.import.replacementOption.mergeDescription')
+                        }
+                      </p>
+                    </div>
+                  </div>
+                  
+                  {allowReplacePlan && (
+                    <Alert variant="destructive">
+                      <AlertTriangle className="w-4 h-4" />
+                      <AlertDescription>
+                        {t('accounting.import.replacementOption.warning')}
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                </Card>
+              </div>
+
+              {/* Características del negocio */}
+              <div className="space-y-4">
+                <Label className="text-base font-medium">
+                  {t('accounting.import.businessFeatures.title')}
+                </Label>
+                
+                <Card className="p-4 space-y-3">
+                  <div className="grid grid-cols-1 gap-4">
+                    {/* Características del negocio - Primera fila */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <label className="flex items-center space-x-2">
+                        <Checkbox
+                          checked={businessFeatures.hasConsultationServices}
+                          onCheckedChange={(checked) =>
+                            setBusinessFeatures((prev) => ({
+                              ...prev,
+                              hasConsultationServices: checked as boolean
+                            }))
+                          }
+                        />
+                        <span>{t('accountingImport.features.consultationServices')}</span>
+                      </label>
+                      <label className="flex items-center space-x-2">
+                        <Checkbox
+                          checked={businessFeatures.hasMedicalTreatments}
+                          onCheckedChange={(checked) =>
+                            setBusinessFeatures((prev) => ({
+                              ...prev,
+                              hasMedicalTreatments: checked as boolean
+                            }))
+                          }
+                        />
+                        <span>{t('accountingImport.features.medicalTreatments')}</span>
+                      </label>
+                    </div>
+                    {/* Segunda fila */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <label className="flex items-center space-x-2">
+                        <Checkbox
+                          checked={businessFeatures.hasHairSalon}
+                          onCheckedChange={(checked) =>
+                            setBusinessFeatures((prev) => ({
+                              ...prev,
+                              hasHairSalon: checked as boolean
+                            }))
+                          }
+                        />
+                        <span>{t('accountingImport.features.hairSalon')}</span>
+                      </label>
+                      <label className="flex items-center space-x-2">
+                        <Checkbox
+                          checked={businessFeatures.hasSpa}
+                          onCheckedChange={(checked) =>
+                            setBusinessFeatures((prev) => ({
+                              ...prev,
+                              hasSpa: checked as boolean
+                            }))
+                          }
+                        />
+                        <span>{t('accountingImport.features.spa')}</span>
+                      </label>
+                    </div>
+                    {/* Tercera fila */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <label className="flex items-center space-x-2">
+                        <Checkbox
+                          checked={businessFeatures.sellsProducts}
+                          onCheckedChange={(checked) =>
+                            setBusinessFeatures((prev) => ({
+                              ...prev,
+                              sellsProducts: checked as boolean
+                            }))
+                          }
+                        />
+                        <span>{t('accountingImport.features.sellsProducts')}</span>
+                      </label>
+                      <label className="flex items-center space-x-2">
+                        <Checkbox
+                          checked={businessFeatures.isMultiCenter}
+                          onCheckedChange={(checked) =>
+                            setBusinessFeatures((prev) => ({
+                              ...prev,
+                              isMultiCenter: checked as boolean
+                            }))
+                          }
+                        />
+                        <span>{t('accountingImport.features.multiCenter')}</span>
+                      </label>
+                    </div>
+                  </div>
+                  
+                  {/* Campo de ubicaciones si es multi-centro */}
+                  {businessFeatures.isMultiCenter && (
+                    <div className="space-y-2 mt-4 p-4 bg-muted rounded-lg">
+                      <Label htmlFor="locations">
+                        {t('accounting.import.businessFeatures.locationsLabel')}
+                      </Label>
+                      <Input
+                        id="locations"
+                        placeholder={t('accounting.import.businessFeatures.locationsPlaceholder')}
+                        value={locations.join(', ')}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          const locs = value.split(',').map(loc => loc.trim()).filter(loc => loc);
+                          setLocations(locs);
+                        }}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        {t('accounting.import.businessFeatures.locationsHelp')}
+                      </p>
+                    </div>
+                  )}
+                  
+                  <Alert className="mt-4">
+                    <Info className="w-4 h-4" />
+                    <AlertDescription>
+                      {t('accounting.import.businessFeatures.configInfo')}
+                    </AlertDescription>
+                  </Alert>
+                </Card>
               </div>
 
               {/* Botones de acción */}
