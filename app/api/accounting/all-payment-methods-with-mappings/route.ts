@@ -37,6 +37,9 @@ export async function GET(req: NextRequest) {
         paymentMethodAccountMappings: {
           where: {
             legalEntityId
+          },
+          include: {
+            account: true
           }
         }
       }
@@ -70,53 +73,68 @@ export async function GET(req: NextRequest) {
     });
 
     // 4. Formatear la respuesta
-    const globalMethods = allPaymentMethods.map(method => ({
-      id: method.id,
-      name: method.name,
-      code: method.code,
-      type: method.type,
-      isGlobal: true,
-      isMapped: method.paymentMethodAccountMappings.length > 0,
-      currentAccountId: method.paymentMethodAccountMappings[0]?.accountId || null,
-      isActive: method.isActive
-    }));
+    const globalMethods = allPaymentMethods.map(method => {
+      // Para métodos globales, buscar solo mapeos sin clinicId
+      const globalMapping = method.paymentMethodAccountMappings.find(m => !m.clinicId);
+      
+      return {
+        id: method.id,
+        name: method.name,
+        code: method.code,
+        type: method.type,
+        isGlobal: true,
+        isMapped: !!globalMapping,
+        currentAccountId: globalMapping?.accountId || null,
+        currentAccountCode: globalMapping?.account?.accountNumber || null,
+        currentAccountName: globalMapping?.account?.name || null,
+        mappingClinicId: null,
+        isActive: method.isActive
+      };
+    });
 
-    // 5. Agrupar por clínica
+    // 5. Agrupar por clínica - INCLUIR TODOS los métodos de pago para cada clínica
     const clinicGroups: any[] = [];
     
-    // Obtener información de las clínicas
-    const clinicIds = Array.from(clinicMethodsMap.keys());
-    if (clinicIds.length > 0) {
-      const clinics = await prisma.clinic.findMany({
-        where: {
-          id: { in: clinicIds }
-        }
+    // Obtener información de las clínicas de la entidad legal
+    const clinics = await prisma.clinic.findMany({
+      where: {
+        legalEntityId
+      }
+    });
+
+    console.log('[API] Found', clinics.length, 'clinics for legal entity');
+
+    clinics.forEach(clinic => {
+      // Para cada clínica, incluir TODOS los métodos de pago con sus mapeos
+      const clinicMethods = allPaymentMethods.map(method => {
+        // Buscar mapeo específico de clínica primero, luego global
+        const clinicMapping = method.paymentMethodAccountMappings.find(m => m.clinicId === clinic.id);
+        const globalMapping = method.paymentMethodAccountMappings.find(m => !m.clinicId);
+        const mapping = clinicMapping || globalMapping;
+        
+        return {
+          id: method.id,
+          name: method.name,
+          code: method.code,
+          type: method.type,
+          isGlobal: false,
+          isMapped: !!mapping,
+          currentAccountId: mapping?.accountId || null,
+          currentAccountCode: mapping?.account?.accountNumber || null,
+          currentAccountName: mapping?.account?.name || null,
+          mappingClinicId: clinic.id,
+          isActive: method.isActive,
+          // Indicar si el mapeo es heredado del global
+          isInheritedFromGlobal: !!globalMapping && !clinicMapping
+        };
       });
 
-      clinics.forEach(clinic => {
-        const methodIds = clinicMethodsMap.get(clinic.id) || new Set();
-        const clinicMethods = allPaymentMethods
-          .filter(method => methodIds.has(method.id))
-          .map(method => ({
-            id: method.id,
-            name: method.name,
-            code: method.code,
-            type: method.type,
-            isGlobal: false,
-            isMapped: method.paymentMethodAccountMappings.length > 0,
-            currentAccountId: method.paymentMethodAccountMappings[0]?.accountId || null,
-            isActive: method.isActive
-          }));
-
-        if (clinicMethods.length > 0) {
-          clinicGroups.push({
-            clinicId: clinic.id,
-            clinicName: clinic.name,
-            paymentMethods: clinicMethods
-          });
-        }
+      clinicGroups.push({
+        clinicId: clinic.id,
+        clinicName: clinic.name,
+        methods: clinicMethods
       });
-    }
+    });
 
     const response = {
       global: globalMethods,

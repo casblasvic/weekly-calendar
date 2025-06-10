@@ -1,0 +1,1990 @@
+{
+    "common": {
+        "loading": "Cargando...",
+        "save": "Guardar",
+        "cancel": "Volver",
+        "delete": "Eliminar",
+        "remove": "Eliminar",
+        "confirm_delete": "Sí, eliminar",
+        "edit": "Editar",
+        "add": "Añadir",
+        "actions": "Acciones",
+        "confirm": "Confirmar",
+        "retry": "Reintentar",
+        "saving": "Guardando...",
+        "error": "Error",
+        "back": "Volver",
+        "saveChanges": "Guardar Cambios",
+        "create": "Crear",
+        "close": "Cerrar",
+        "name": "Nombre",
+        "description": "Descripción",
+        "status": {
+            "title": "Estado",
+            "active": "Activo",
+            "inactive": "Inactivo",
+            "all": "Todos"
+        },
+        "active": "Activo",
+        "inactive": "Inactivo",
+        "code": "Código",
+        "category": "Categoría",
+        "duration": "Duración (min)",
+        "price": "Precio",
+        "details": "Detalles",
+        "yes": "Sí",
+        "no": "No",
+        "optional": "Opcional",
+        "required": "Requerido",
+        "backToList": "Volver a Lista",
+        "deleting": "Eliminando {{item}}...",
+        "deletedSuccess": "{{item}} eliminado correctamente.",
+        "filterByName": "Filtrar por nombre",
+        "unknown": "Desconocido",
+        "confirmTitle": "¿Estás seguro?",
+        "help": "Ayuda",
+        "table": {
+            "columns": "Columnas",
+            "toggleColumns": "Mostrar/Ocultar Columnas"
+        },
+        "pagination": {
+            "previous": "Anterior",
+            "next": "Siguiente"
+        },
+        "errors": {
+            "loadingTitle": "Error al Cargar",
+            "deleteTitle": "Error al Eliminar",
+            "unexpectedTitle": "Error Inesperado",
+            "deleteFailed": "No se pudo eliminar el/la {{item}}.",
+            "auxDataLoadError": "Error al cargar datos auxiliares.",
+            "formProcessingDesc": "Ocurrió un error al procesar el formulario.",
+            "dataLoading": "Error cargando {{context}}",
+            "unknownError": "Error desconocido",
+            "loadingDesc": "No se pudieron cargar los datos necesarios.",
+            "savingTitle": "Error al guardar",
+            "savingDesc": "No se pudieron guardar los cambios.",
+            "unexpectedDesc": "Ocurrió un error inesperado. Inténtalo de nuevo.",
+            "error_title": "Error",
+            "validation_failed": "Error de validación en el formulario.",
+            "loading_clinic_settings": "Error al cargar las configuraciones específicas de la clínica.",
+            "loadingError": "Error al cargar los datos"
+        },
+        "navigationNotImplemented": "Navegación a {{section}} no implementada.",
+        "select_placeholder": "Selecciona una opción...",
+        "search_placeholder": "Buscar...",
+        "not_found": "No encontrado",
+        "noResults": "No se encontraron resultados",
+        "buttons": {
+            "save": "Guardar",
+            "cancel": "Volver",
+            "delete": "Eliminar",
+            "create": "Crear",
+            "edit": "Editar",
+            "back": "Volver",
+            "confirm": "Confirmar",
+            "close": "Cerrar",
+            "add": "Añadir"
+        },
+        "none": "Ninguno/a",
+        "all": "Todos",
+        "featureNotImplementedYetShort": "Próximamente",
+        "clinic": "Clínica",
+        "type": "Tipo",
+        "family": "Familia",
+        "app_name": "Gestión Clínica",
+        "new": "Nuevo",
+        "columns": "Columnas",
+        "open_menu": "Abrir menú",
+        "copy_id": "Copiar ID",
+        "copy_to_clipboard": "Copiar al portapapeles",
+        "copy": "Copiar",
+        "data_table_placeholder": "Aún no hay datos para mostrar.",
+        "previous": "Anterior",
+        "next": "Siguiente",
+        "success": "Éxito",
+        "showing": "Mostrando",
+        "of": "de",
+        "copied": "¡Copiado!",
+        "not_applicable_short": "N/A",
+        "actions_menu_label": "Abrir menú de acciones",
+        "save_changes": "Guardar Cambios",
+        "optional_short": "(Opc.)",
+        "default": "Predet.",
+        "default_updated": "Predeterminado Actualizado",
+        "status_updated": "Estado Actualizado",
+        "delete_success_title": "Eliminado Correctamente",
+        "delete_error_title": "Error al Eliminar",
+        "success_edit_title": "Guardado Correctamente",
+        "success_create_title": "Creado Correctamente",
+        "error_edit_title": "Error al Guardar",
+        "error_create_title": "Error al Crear",
+        "error_general_desc": "Ocurrió un error inesperado.",
+        "iban_not_available": "IBAN no disp.",
+        "scope_global": "Global",
+        "scope_specific": "Clínicas Específicas",
+        "filterByStatus": "Filtrar por estado",
+        "select": "Seleccionar",
+        "backToTariff": "Volver a Tarifa",
+        "selectedCount": "{{count}} seleccionados",
+        "addSelected": "Añadir Seleccionados",
+        "adding": "Añadiendo...",
+        "clearFilters": "Limpiar Filtros",
+        "clearSelection": "Limpiar selección",
+        "help_not_implemented": "Funcionalidad de ayuda aún no implementada.",
+        "rowsPerPage": "Filas:",
+        "searchByNameOrDesc": "Buscar por nombre o descripción...",
+        "allServices": "Todos los servicios",
+        "searchService": "Buscar servicio...",
+        "noServiceFound": "Ningún servicio encontrado.",
+        "allProducts": "Todos los productos",
+        "searchProduct": "Buscar producto...",
+        "noProductFound": "Ningún producto encontrado.",
+        "allStates": "Todos los estados",
+        "selectedInfo": "{{selected}} de {{total}} seleccionado(s)",
+        "selectAll": "Seleccionar todo",
+        "selectRow": "Seleccionar fila",
+        "openMenu": "Abrir menú",
+        "more_other": "más",
+        "statusPlaceholder": "Estado",
+        "allStatuses": "Todos los estados",
+        "goBack": "Volver",
+        "loadingData": "Cargando datos...",
+        "errorLoadingData": "Error al cargar los datos",
+        "paymentDeletedError": "Error al eliminar el pago.",
+        "localPaymentRemovedSuccess": "Pago local eliminado correctamente.",
+        "reopen": "Reabrir",
+        "reopening": "Reabriendo...",
+        "confirmAndClose": "Sí, aplazar y cerrar",
+        "continueEditing": "No, seguir editando",
+        "view": "Ver",
+        "information": "Información",
+        "reopenSelected": "Reabrir seleccionados",
+        "selectClinicToViewData": "Por favor, selecciona una clínica para ver los datos.",
+        "noSelection": "Sin selección",
+        "redirectingAfterClose": "Guardando y cerrando el ticket...",
+    "dateRange": "Rango de Fechas",
+    "selectStatus": "Seleccionar estado",
+    "export": "Exportar",
+    "search": "Buscar",
+        "print": "Imprimir",
+        "comments": "Comentarios",
+        "viewAll": "Ver todos",
+        "viewDetails": "Ver desglose"
+    },
+    "sidebar": {
+        "dashboard": "Inicio",
+        "calendar": "Agenda",
+        "clients": "Clientes",
+        "services": "Servicios",
+        "products": "Productos",
+        "packages": "Paquetes",
+        "reports": "Informes",
+        "settings": "Configuración",
+        "logout": "Cerrar Sesión",
+        "errorSavingTicket": "Error al guardar el ticket.",
+        "reopenConfirmTitle": "Confirmar Reapertura de Ticket",
+        "reopenConfirmDescription": "¿Estás seguro de que quieres reabrir este ticket? Esta acción lo devolverá al estado 'Abierto' y permitirá su modificación.",
+        "completeAndCloseTicket": "Completar y Cerrar Ticket",
+        "closingTicket": "Cerrando ticket...",
+        "reopening": "Reabriendo ticket...",
+        "confirmDelayedPaymentTitle": "Confirmar Pago Aplazado",
+        "confirmDelayedPaymentDesc": "El ticket tiene un saldo pendiente de {{amount}} €. ¿Deseas registrar este importe como un pago aplazado y cerrar el ticket?",
+        "notifications": {
+            "addItemsBeforePayment": "Por favor, añade conceptos al ticket antes de registrar un pago.",
+            "ticketAlreadyPaid": "Este ticket ya ha sido pagado en su totalidad.",
+            "paymentDeletedSuccess": "Pago eliminado del ticket.",
+            "paymentNotFoundAnymore": "El pago ya no se encontró en la base de datos (posiblemente eliminado previamente). Se ha quitado de la vista actual.",
+            "clientRequired": "Cliente requerido para el ticket",
+            "clientRequiredDesc": "Por favor, seleccione un cliente antes de continuar.",
+            "itemsRequired": "El ticket debe contener al menos un producto o servicio.",
+            "ticketClosedSuccessTitle": "Ticket Cerrado con Éxito",
+            "mustBeFullyPaidTitle": "Ticket No Pagado Completamente",
+            "mustBeFullyPaidDesc": "El ticket tiene un saldo pendiente de {{amount}} €. Por favor, registra todos los pagos necesarios antes de proceder al cierre.",
+            "delayedPaymentWillBeRegistered": "Se registrará un pago aplazado por {{amount}} €."
+        }
+    },
+    "tickets": {
+        "newCreditNote": "Nuevo Abono",
+        "newTicket": "Nuevo Ticket",
+        "pageTitle": "Tickets",
+        "new": "Nuevo Ticket",
+        "edit": "Editar Ticket",
+        "client": "Cliente",
+        "date": "Fecha",
+        "number": "Número",
+        "totalAmount": "Importe Total",
+        "pendingAmount": "Pendiente",
+        "items": "Conceptos",
+        "payments": "Pagos",
+        "searchClientPlaceholder": "Buscar cliente por nombre, NIF, email...",
+        "clientNotFound": "Cliente no encontrado.",
+        "selectClient": "Seleccionar Cliente",
+        "ticketDetails": "Detalles del Ticket",
+        "clientDetails": "Datos del Cliente",
+        "item": "Concepto",
+        "quantity": "Cantidad",
+        "unitPrice": "Precio Unitario",
+        "discount": "Descuento",
+        "vat": "IVA",
+        "total": "Total",
+        "addItem": "Añadir Concepto",
+        "paymentMethod": "Método de Pago",
+        "amount": "Importe",
+        "addPayment": "Añadir Pago",
+        "removePayment": "Eliminar Pago",
+        "confirmRemovePayment": "¿Eliminar este pago?",
+        "subtotal": "Subtotal",
+        "totalVat": "Total IVA",
+        "saveTicket": "Guardar Ticket",
+        "saveTicketAndPrint": "Guardar e Imprimir",
+        "printTicket": "Imprimir Ticket",
+        "loadingTicket": "Cargando ticket...",
+        "ticketNotFound": "Ticket no encontrado.",
+        "errorLoadingTicket": "Error al cargar el ticket.",
+        "ticketSavedSuccess": "Ticket guardado correctamente.",
+        "errorSavingTicket": "Error al guardar el ticket.",
+        "reopenConfirmTitle": "Confirmar Reapertura de Ticket",
+        "reopenConfirmDescription": "¿Estás seguro de que quieres reabrir este ticket? Esta acción lo devolverá al estado 'Abierto' y permitirá su modificación.",
+        "completeAndCloseTicket": "Completar y Cerrar Ticket",
+        "closeTicket": "Cerrar Ticket",
+        "addItemModal": {
+            "title": "Añadir Concepto",
+            "searchPlaceholder": "Buscar servicio, producto, bono o paquete...",
+            "type": "Tipo",
+            "name": "Nombre",
+            "price": "Precio",
+            "selectItem": "Seleccionar",
+            "noResults": "No se encontraron resultados.",
+            "service": "Servicio",
+            "product": "Producto",
+            "bono": "Bono",
+            "package": "Paquete",
+            "quantity": "Cantidad",
+            "unitPrice": "PVP",
+            "discount": "Descuento (%)",
+            "vat": "IVA (%)",
+            "finalPrice": "Importe",
+            "cancel": "Cancelar",
+            "add": "Añadir",
+            "loading": "Cargando..."
+        },
+        "applyDiscountModal": {
+            "title": "Aplicar Descuento/Promoción a {{item}}",
+            "description": "Modal para aplicar descuentos, promociones o fijar un precio final para el ítem {{item}}.",
+            "vatTypeLabel": "Tipo de IVA",
+            "vatTypePlaceholder": "Seleccionar IVA...",
+            "useCurrentVat": "IVA Actual ({{vatRate}}%)",
+            "selectedVatInfo": "IVA seleccionado: {{vatRate}}%",
+            "discountOptionsLabel": "Opciones de Descuento",
+            "finalPriceLabel": "Importe Final (€)",
+            "percentageLabel": "Descuento (%)",
+            "promotionLabel": "Promoción",
+            "promotionPlaceholder": "Seleccionar promoción...",
+            "noPromotionsAvailable": "No hay promociones aplicables",
+            "accumulatedDiscountLabel": "Descuento acumulado",
+            "commentsLabel": "Comentarios",
+            "commentsPlaceholder": "Añade notas sobre el descuento...",
+            "cancelButton": "Cancelar",
+            "saveButton": "Aplicar Descuento",
+            "maxAmountInfo": "Máximo: {{amount}} €",
+            "finalPriceIncVATLabel": "Precio Final (IVA Incl.)",
+            "fixedAmountLabel": "Descuento Fijo (€)"
+        },
+        "addPaymentModal": {
+            "title": "Añadir Pago",
+            "paymentMethodLabel": "Método de Pago",
+            "paymentMethodPlaceholder": "Seleccionar método...",
+            "amountLabel": "Importe a Pagar (€)",
+            "notesLabel": "Notas (Opcional)",
+            "notesPlaceholder": "Añade una nota...",
+            "cancelButton": "Cancelar",
+            "addButton": "Añadir Pago",
+            "maxAmountInfo": "Máximo: {{amount}} €",
+            "paymentMethodRequiredTitle": "Método de pago requerido",
+            "paymentMethodRequiredDesc": "Por favor, selecciona un método de pago.",
+            "invalidAmountTitle": "Importe inválido",
+            "invalidAmountDesc": "El importe a pagar debe ser mayor que cero.",
+            "pendingInfo": "Pendiente por pagar:",
+            "loadingMethods": "Cargando...",
+            "referenceLabel": "Referencia (Opcional)",
+            "referencePlaceholder": "Ej: ID Transferencia, Nº Cheque...",
+            "confirmButton": "Confirmar Pago"
+        },
+        "itemsTable": {
+            "title": "Conceptos",
+            "action": "Acc.",
+            "concept": "Concepto",
+            "quantity": "Uds.",
+            "unitPrice": "PVP",
+            "discountPercent": "Dto. %",
+            "discountAmount": "Dto. (€)",
+            "vat": "IVA %",
+            "total": "Total",
+            "noItems": "No hay conceptos en este ticket.",
+            "applyDiscountTooltip": "Aplicar descuento o promoción",
+            "promotionAppliedTooltip": "Promoción aplicada",
+            "actions": "Acciones",
+            "deleteItemAriaLabel": "Eliminar ítem",
+            "deleteItemTooltip": "Eliminar este ítem",
+            "applyBonoAriaLabel": "Aplicar bono al servicio",
+            "applyBonoTooltip": "Aplicar bono"
+        },
+        "paymentsTable": {
+            "paymentMethod": "Método Pago",
+            "date": "Fecha",
+            "amount": "Importe",
+            "notes": "Notas",
+            "noPayments": "No hay pagos registrados."
+        },
+        "summary": {
+            "subtotal": "Subtotal",
+            "totalVat": "Total IVA",
+            "totalDiscount": "Total Descuento",
+            "total": "TOTAL",
+            "paid": "Pagado",
+            "pending": "Pendiente"
+        },
+        "table": {
+            "headers": {
+                "number": "Número",
+                "date": "Fecha",
+                "client": "Cliente",
+                "total": "Total",
+                "pending": "Pendiente"
+            },
+            "noTickets": "No se encontraron tickets.",
+            "ticketNumber": "Nº Ticket",
+            "nif": "NIF/CIF",
+            "date": "Fecha",
+            "client": "Cliente",
+            "total": "Total",
+            "noTicketsFound": "No se encontraron tickets para los criterios seleccionados."
+        },
+        "noTicketsFound": "No se encontraron tickets para los criterios seleccionados.",
+        "concept": "Concepto",
+        "pvp": "PVP",
+        "dto": "Dto.",
+        "importe": "Importe",
+        "selectClinicMessage": "Por favor, selecciona una clínica para ver los tickets.",
+        "pendingTicketsTitle": "Tickets Pendientes/Abiertos",
+        "closedTicketsTitle": "Tickets Cerrados/Histórico",
+        "pendingTickets": "Tickets Pendientes",
+        "closedTickets": "Tickets Cerrados",
+        "footer": {
+            "viewCashRegister": "Ver Caja del Día",
+            "newTicket": "Nuevo Ticket"
+        },
+        "actions": {
+            "viewTooltip": "Ver Detalles",
+            "editTooltip": "Editar Ticket",
+            "deleteTooltip": "Eliminar Ticket",
+            "closedTooltip": "Ticket Cerrado (No editable)",
+            "voidTooltip": "Anular Ticket",
+            "reopenTooltip": "Reabrir este ticket. Estará disponible si el ticket está cerrado y su caja asociada (si existe) está abierta.",
+            "closedAndSessionNotOpenTooltip": "No se puede reabrir: La sesión de caja asociada está cerrada/conciliada. Reabra primero la sesión de caja.",
+            "accountedOrVoidTooltip": "No se puede reabrir: El ticket está contabilizado o anulado."
+        },
+        "entityName": "Ticket",
+        "entityNamePlural": "Tickets",
+        "noClient": "Sin cliente asignado",
+        "seller": "Vendedor/a",
+        "selectSellerPlaceholder": "Seleccionar un vendedor...",
+        "noSellersAvailable": "No hay vendedores disponibles",
+        "notifications": {
+            "createdSuccess": "Ticket {{ticketNumber}} creado con éxito.",
+            "updatedSuccess": "Ticket {{ticketNumber}} actualizado con éxito.",
+            "deletedSuccess": "Ticket eliminado con éxito.",
+            "paymentAddedSuccess": "Pago añadido correctamente.",
+            "paymentDeletedSuccess": "Pago eliminado permanentemente.",
+            "paymentDeletedError": "Error al eliminar el pago.",
+            "localPaymentRemovedSuccess": "Pago local eliminado correctamente.",
+            "paymentNotFoundAnymore": "El pago ya no se encontró en la base de datos.",
+            "addItemsBeforePayment": "Añada al menos un producto o servicio antes de realizar un pago.",
+            "ticketAlreadyPaid": "El ticket ya está completamente pagado.",
+            "mustBeFullyPaidTitle": "Pago Requerido",
+            "mustBeFullyPaidDesc": "El ticket tiene un saldo pendiente de {{amount}}. Debe estar completamente pagado para cerrarse.",
+            "clinicNoDelayedPayment": "Esta clínica no permite pagos aplazados.",
+            "ticketVoidedSuccess": "Ticket {{ticketNumber}} anulado con éxito.",
+            "ticketVoidedError": "Error al anular el ticket {{ticketNumber}}.",
+            "noEffectiveChanges": "No se han realizado cambios efectivos en el ticket."
+        },
+        "sellerStatus": {
+            "inactiveInClinic": "(Inactivo en esta clínica)",
+            "differentClinic": "(Clínica: {{clinicName}})",
+            "inactiveSystem": "(Usuario inactivo)",
+            "notFoundInClinicList": "(No en lista activa de esta clínica)",
+            "activeInOtherClinic": "(Activo en otra clínica)"
+        },
+        "currentSellerInfo": "Vendedor asignado: {{name}} {{status}}",
+        "sellerInfoOriginal": "Vendedor original: {{name}} {{status}}",
+        "cashier": "Cajero/a",
+        "cashierInfoNotAvailable": "Información del cajero no disponible",
+        "creationDate": "Fecha Creación",
+        "reopenTicket": "Reabrir Ticket",
+        "confirmDelayedPaymentTitle": "Confirmar Pago Aplazado",
+        "confirmDelayedPaymentDesc": "El ticket tiene un saldo pendiente de {{amount}} €. ¿Deseas registrar este importe como un pago aplazado y cerrar el ticket?",
+        "reopenSuccessTitle": "Ticket Reabierto",
+        "reopenSuccessDescription": "El ticket {{ticketId}} ha sido reabierto y ahora está en estado 'Abierto'.",
+        "reopenSelected": "Reabrir seleccionados",
+        "selectTicketsToReopen": "Por favor, selecciona uno o más tickets cerrados para reabrir.",
+        "reopeningInProgressTitle": "Reapertura en curso",
+        "reopeningInProgressDesc": "Reabriendo {{count}} ticket(s)...",
+        "bulkReopenSummaryErrorTitle": "Resultado de la reapertura (con errores)",
+        "bulkReopenSummaryErrorDesc": "{{success}} ticket(s) reabiertos con éxito, {{error}} ticket(s) fallaron.",
+        "bulkReopenSummarySuccessTitle": "Reapertura completada",
+        "bulkReopenSummarySuccessDesc": "{{count}} ticket(s) han sido reabiertos con éxito.",
+        "reopenSingleSuccessDesc": "El ticket {{ticketNumberOrId}} se ha reabierto correctamente.",
+        "reopeningSingleTitle": "Reabriendo ticket",
+        "reopeningSingleDesc": "El ticket {{ticketId}} se está reabriendo...",
+        "reopenErrorDesc": "No se pudo reabrir el ticket {{ticketId}}.",
+        "tabs": {
+            "directPayments": "Pagos Directos",
+            "deferredPayments": "Pagos Aplazados",
+            "noDeferredPayments": "Sin pagos aplazados registrados"
+        }
+    },
+    "cash": {
+        "loadingSessions": "Cargando cajas del día...",
+        "status": {
+            "OPEN": "Abierta",
+            "CLOSED": "Cerrada",
+            "RECONCILED": "Conciliada"
+        },
+        "finder": {
+            "title": "Buscador de cajas",
+            "date": "Fecha",
+            "clinic": "Clínica",
+            "billed": "Facturado",
+            "difference": "Diferencia",
+            "initialCash": "Caja Inicial",
+            "withdrawn": "Retirado",
+            "finalCash": "Caja Final",
+            "status": "Estado",
+            "viewSession": "Ver Caja",
+            "totalBilled": "Total Facturado",
+            "totalDifference": "Total Diferencia",
+            "totalWithdrawn": "Total Retirado",
+        "totalInitialCash": "Total Caja Inicial",
+        "totalFinalCash": "Total Caja Final",
+            "noResults": "No se encontraron cajas para los filtros seleccionados."
+        },
+        "viewCash": "Ver Caja",
+        "dayCashTitle": "Caja del Día {{date}}",
+        "tabs": {
+            "summary": "Resumen",
+            "tickets": "Tickets",
+            "ticketsInSection": "Tickets en esta Sesión"
+        },
+        "summary": {
+            "totalCash": "Total efectivo",
+            "ticketsDay": "Tickets del día",
+            "debtPayments": "Cobros Aplazados",
+            "counted": "Contado",
+            "bankTransfer": "Transferencia",
+            "check": "Cheque",
+            "internalCredit": "Bono/Paquete",
+            "deferredTotal": "Pagos Aplazados",
+            "terminal": "TPV",
+            "totalCard": "Total tarjeta",
+            "totalBilled": "Total Facturado"
+        },
+        "logs": {
+            "title": "Historial de cambios",
+            "none": "Sin cambios",
+            "event": "Evento",
+            "when": "Fecha",
+            "who": "Usuario"
+        },
+        "sidebar": {
+            "title": "Cierre de Caja",
+            "initialCash": "Caja inicial",
+            "manualCashInput": "Efectivo añadido manualmente",
+            "expectedCash": "Total efectivo (Calculado)",
+            "countedCash": "Efectivo contado en caja",
+            "cashExpenses": "Pagos por caja (Gastos)",
+            "difference": "DIFERENCIA EFECTIVO",
+            "finalCount": "RECUENTO CAJA FINAL EFECTIVO",
+            "cashWithdrawal": "Cantidad retirada",
+            "totalFacturado": "Total facturado",
+            "totalDifference": "Diferencia efectiva",
+            "totalWithdrawn": "Total retirado",
+            "nextDayOpening": "Caja final"
+        },
+        "comments": "Comentario supervisor",
+        "reconcileSession": "Conciliar Caja",
+        "reopenSession": "Reabrir Caja",
+        "closeSession": "Cerrar Caja",
+        "verifyDrawer": {
+            "title": "Pagos pendientes",
+            "date": "Fecha",
+            "method": "Método",
+            "actions": "Acciones",
+            "description": "Revisa y confirma transferencias y cheques.",
+            "noPending": "No hay pagos pendientes",
+            "amount": "Importe"
+        },
+        "ticketSummary": {
+            "totalTicket": "Total Ticket",
+            "paid": "Pagado",
+            "deferred": "Aplazado"
+        },
+        "paymentMethods": {
+            "deferredPayment": "Pago Aplazado"
+        }
+    },
+    "settings": {
+        "title": "Configuración",
+        "categories": {
+            "title": "Categorías",
+            "description": "Gestiona las categorías para servicios y productos."
+        },
+        "vatTypes": {
+            "title": "Tipos de IVA",
+            "description": "Define los tipos de IVA aplicables."
+        },
+        "services": {
+            "title": "Servicios",
+            "description": "Administra el catálogo de servicios."
+        },
+        "products": {
+             "title": "Productos",
+             "description": "Administra el catálogo de productos."
+        }
+    },
+    "client": {
+        "companyName": "Empresa",
+        "taxId": "NIF/CIF",
+        "phone": "Teléfono",
+        "email": "Email",
+        "address": "Dirección"
+    },
+    "services": {
+        "title": "Servicios",
+        "description": "Gestiona los servicios ofrecidos.",
+        "new": "Nuevo Servicio",
+        "item": "Servicio",
+        "edit": {
+            "title": "Editando Servicio: {{serviceName}}",
+            "loadError": "Servicio no encontrado",
+            "loadDataError": "No se pudieron cargar los datos del servicio.",
+            "idError": "ID de servicio no encontrado en la URL."
+        },
+        "form": {
+            "basicInfo": "Información Básica",
+            "name": "Nombre del Servicio",
+            "code": "Código (opcional)",
+            "category": "Categoría",
+            "selectCategory": "Selecciona una categoría...",
+            "vatType": "Tipo de IVA por defecto",
+            "selectVatType": "Selecciona un tipo de IVA...",
+            "pricingAndDuration": "Precio y Duración",
+            "duration": "Duración (minutos)",
+            "color": "Color en Agenda",
+            "price": "Precio Base (€)",
+            "advancedOptions": "Opciones Avanzadas",
+            "equipment": "Equipo Requerido (opcional)",
+            "selectEquipment": "Selecciona equipo...",
+            "commission": "Comisión",
+            "commissionType": "Tipo Comisión",
+            "selectCommissionType": "Selecciona tipo...",
+            "percentage": "Porcentaje",
+            "fixedAmount": "Cantidad Fija",
+            "commissionValue": "Valor Comisión",
+            "requiresParams": "Requiere Parámetros",
+            "isValuationVisit": "Es Visita de Valoración",
+            "showInApp": "Mostrar en App Clientes",
+            "allowAutoDiscounts": "Permitir Descuentos Automáticos",
+            "allowManualDiscounts": "Permitir Descuentos Manuales",
+            "acceptsPromotions": "Acepta Promociones",
+            "allowPvpEditing": "Permitir Editar PVP en Venta",
+            "affectsStats": "Afecta a Estadísticas",
+            "isActive": "Servicio Activo",
+            "validation": {
+                "nameRequired": "El nombre del servicio es obligatorio.",
+                "durationRequired": "La duración debe ser un número positivo.",
+                "priceFormat": "El precio debe ser un número válido."
+            }
+        },
+        "table": {
+            "headers": {
+                "name": "Nombre",
+                "code": "Código",
+                "category": "Categoría",
+                "duration": "Duración",
+                "price": "Precio",
+                "active": "Activo"
+            },
+            "noServices": "No se encontraron servicios. Crea uno nuevo para empezar."
+        },
+        "updateSuccess": "Servicio \"{{name}}\" actualizado correctamente.",
+        "updateError": "Error al actualizar el servicio",
+        "pageTitle": "Gestión Global de Servicios",
+        "pageTitleSelectionMode": "Seleccionar Servicios para Tarifa: {{tariffName}}",
+        "newServiceButton": "Nuevo Servicio",
+        "searchPlaceholder": "Buscar por nombre, código o descripción...",
+        "filters": {
+            "allCategories": "Todas las Categorías",
+            "selectCategory": "Seleccionar Categoría...",
+            "searchCategory": "Buscar categoría...",
+            "noCategoryFound": "No se encontró la categoría.",
+            "statusPlaceholder": "Filtrar por Estado...",
+            "allStatuses": "Todos los Estados",
+            "assignmentPlaceholder": "Filtrar por Asignación...",
+            "allAssignments": "Todas las Asignaciones",
+            "notAssignedShort": "No Asignados"
+        },
+        "columns": {
+            "name": "Nombre",
+            "code": "Código",
+            "categoryId": "Categoría",
+            "durationMinutes": "Duración (min)",
+            "price": "Precio Base",
+            "vatRate": "IVA (%)",
+            "rowIsActive": "Estado",
+            "assignedTariffNames": "Asignado a Tarifas",
+            "actions": "Acciones"
+        },
+        "actions": {
+            "addSelectedToTariff": "Añadir Seleccionados a Tarifa",
+            "associateToTariff": "Asociar a Tarifa"
+        },
+        "deleteDialog": {
+            "title": "Confirmar Eliminación de Servicio",
+            "description": "¿Estás seguro de que quieres eliminar el servicio \"{{serviceName}}\"? Esta acción no se puede deshacer."
+        },
+        "noServicesFound": "No se encontraron servicios."
+    },
+    "products": {
+        "title": "Productos",
+        "description": "Gestiona los productos disponibles.",
+        "new": "Nuevo Producto",
+        "item": "Producto",
+        "edit": {
+            "title": "Editando Producto: {{productName}}",
+            "loadError": "Producto no encontrado",
+            "loadDataError": "No se pudieron cargar los datos del producto.",
+            "idError": "Error: No se pudo obtener el ID del producto actual."
+        },
+        "form": {
+            "basicInfo": "Información Básica",
+            "name": "Nombre del Producto",
+            "sku": "SKU (opcional)",
+            "barcode": "Código de Barras (opcional)",
+            "category": "Categoría",
+            "selectCategory": "Selecciona una categoría...",
+            "vatType": "Tipo de IVA por defecto",
+            "selectVatType": "Selecciona un tipo de IVA...",
+            "pricingAndStock": "Precio y Stock",
+            "costPrice": "Precio de Coste (€)",
+            "price": "Precio de Venta (€)",
+            "currentStock": "Stock Actual",
+            "minStockThreshold": "Umbral Mínimo Stock",
+            "options": "Opciones",
+            "isForSale": "Para la Venta",
+            "isInternalUse": "Uso Interno",
+            "isActive": "Producto Activo",
+            "validation": {
+                "nameRequired": "El nombre del producto es obligatorio.",
+                "priceFormat": "El precio de venta debe ser un número válido.",
+                "costPriceFormat": "El precio de coste debe ser un número válido.",
+                "stockFormat": "El stock actual debe ser un número entero.",
+                "minStockFormat": "El umbral mínimo debe ser un número entero."
+            }
+        },
+        "table": {
+            "headers": {
+                "name": "Nombre",
+                "sku": "SKU",
+                "category": "Categoría",
+                "price": "Precio",
+                "stock": "Stock",
+                "active": "Activo"
+            },
+            "noProducts": "No se encontraron productos. Crea uno nuevo para empezar."
+        },
+        "updateSuccess": "Producto \"{{name}}\" actualizado correctamente.",
+        "updateError": "Error al actualizar el producto",
+        "notFound": "Producto no encontrado."
+    },
+    "packages": {
+        "title": "Paquetes",
+        "description": "Define y administra paquetes de servicios y productos.",
+        "new": "Nuevo Paquete",
+        "edit": {
+            "title": "Editando Paquete: {{packageName}}",
+            "title_simple_variant": "Edición: {{packageName}}",
+            "loadError": "Paquete no encontrado",
+            "loadDataError": "No se pudieron cargar los datos del paquete.",
+            "idError": "ID de paquete no encontrado en la URL."
+        },
+        "item": "Paquete",
+        "relatedSectionTitle": "Incluido en Paquetes",
+        "form": {
+            "basicInfo": "Información Básica del Paquete",
+            "labels": {
+                "name": "Nombre del Paquete",
+                "description": "Descripción (Opcional)",
+                "price": "Precio Total del Paquete",
+                "isActive": "Paquete Activo",
+                "pointsAwarded": "Puntos Otorgados al Comprar",
+                "linesSum": "Suma de líneas (base):"
+            },
+            "placeholders": {
+                "name": "Ej: Pack Bienestar Total",
+                "description": "Describe el contenido y beneficios del paquete...",
+                "priceOptional": "(opcional)"
+            },
+            "items": {
+                "title": "Contenido del Paquete",
+                "description": "Define los servicios y productos que incluye este paquete.",
+                "typeService": "Servicio",
+                "typeProduct": "Producto",
+                "quantityLabel": "Cantidad",
+                "lineTotalLabel": "Total Línea",
+                "deleteItemTitle": "Eliminar ítem del paquete",
+                "empty": "Aún no has añadido ningún ítem al paquete."
+            },
+            "addItem": {
+                "typeLabel": "Tipo de Ítem",
+                "typePlaceholder": "Selecciona un tipo",
+                "itemLabel": "Servicio/Producto a añadir",
+                "itemPlaceholder": "Selecciona un ítem",
+                "itemLoading": "Cargando ítems...",
+                "searchService": "Buscar servicio...",
+                "searchProduct": "Buscar producto...",
+                "searchEmpty": "No se encontraron resultados.",
+                "quantityLabel": "Cantidad",
+                "priceLabel": "Precio en Paquete",
+                "addButton": "Añadir Ítem al Paquete"
+            },
+            "buttons": {
+                "create": "Crear Paquete",
+                "update": "Actualizar Paquete"
+            },
+            "toasts": {
+                "loadItemsError": "Error al cargar servicios/productos",
+                "invalidSelectionTitle": "Selección Inválida",
+                "invalidSelectionDesc": "Debes seleccionar un ítem y una cantidad mayor a cero.",
+                "duplicateItemTitle": "Ítem Duplicado",
+                "duplicateItemDesc": "Este ítem ya ha sido añadido al paquete.",
+                "invalidPriceTitle": "Precio Inválido",
+                "invalidPriceDesc": "El precio del ítem debe ser un número válido si se especifica."
+            }
+        },
+        "table": {
+            "filterByService": "Filtrar por servicio...",
+            "filterByProduct": "Filtrar por producto...",
+            "filterByAssignedTariff": "Filtrar por tarifa asignada...",
+            "headers": {
+                "name": "Nombre",
+                "description": "Descripción",
+                "price": "Precio",
+                "itemsCount": "Nº Items",
+                "assignedToTariffs": "Tarifas Asignadas",
+                "points": "Puntos",
+                "status": "Estado",
+                "active": "Activo",
+                "pointsAwarded": "Puntos Otorgados"
+            },
+            "name": "Nombre",
+            "description": "Descripción",
+            "price": "Precio",
+            "itemsCount": "Nº Items",
+            "active": "Activo",
+            "points": "Puntos",
+            "assignedToTariffs": "Asignado a Tarifas",
+            "assignedToFullList": "Lista completa de tarifas asignadas"
+        },
+        "assignedToFullList": "Asignado a:",
+        "filterNoAssignment": "Sin asignación",
+        "finishSelection": "Finalizar Selección",
+        "associateToTariffButton": "Asociar a Tarifa",
+        "associateToTariffButtonWithCount": "Asociar ({{count}}) a Tarifa",
+        "addToTariff": "Añadir a Tarifa",
+        "alreadyAssigned": "Ya en tarifa",
+        "alreadyInThisTariff": "Ya en esta tarifa",
+        "addToThisTariff": "Añadir a esta tarifa",
+        "assignedToCurrentTariff": "Asignado a tarifa actual",
+        "notAssignedToCurrentTariff": "No asignado a tarifa actual",
+        "searchPlaceholder": "Buscar paquetes...",
+        "newPackageButton": "Nuevo Paquete",
+        "filters": {
+            "assignmentFilterPlaceholder": "Filtrar paquetes por asignación...",
+            "allAssignments": "Todas las asignaciones",
+            "notAssignedShort": "No asignados"
+        },
+        "actions": {
+            "addSelectedToTariff": "Añadir seleccionados a tarifa",
+            "associateToTariff": "Asociar a Tarifa"
+        },
+        "deleteDialog": {
+            "title": "Eliminar Paquete",
+            "description": "¿Estás seguro de que deseas eliminar este paquete? Esta acción no se puede deshacer."
+        }
+    },
+    "promotions": {
+        "title": "Promociones",
+        "description": "Gestiona las promociones y descuentos aplicables a servicios, productos, bonos o paquetes.",
+        "page_title": "Promociones",
+        "promotion_singular": "Promoción",
+        "create_title": "Crear Nueva Promoción",
+        "edit_title": "Editando Promoción: {{name}}",
+        "list_title": "Lista de Promociones",
+        "add_button": "Añadir Promoción",
+        "table": {
+            "name": "Nombre",
+            "code": "Código",
+            "type": "Tipo",
+            "value": "Valor",
+            "scope": "Alcance",
+            "active": "Activa",
+            "start_date": "Fecha Inicio",
+            "end_date": "Fecha Fin",
+            "actions": "Acciones",
+            "no_results": "No se encontraron promociones.",
+            "loading": "Cargando promociones...",
+            "active_filter_placeholder": "Filtrar por estado...",
+            "active_true": "Activas",
+            "active_false": "Inactivas",
+            "filter_name_placeholder": "Filtrar por nombre...",
+            "loading_compatible": "Cargando compatibles...",
+            "no_compatible_options": "No hay otras promociones disponibles.",
+            "apply_to_all_clinics": "Aplicar a todas las clínicas"
+        },
+        "form": {
+            "sections": {
+                "basic_info": "Información Básica",
+                "type_and_value": "Tipo y Valor de la Promoción",
+                "target": "Objetivo de la Promoción",
+                "bogo_details": "Detalles del Regalo (Compra X, Llévate Y)",
+                "conditions": "Condiciones y Límites",
+                "scope": "Alcance Geográfico"
+            },
+            "name": {
+                "label": "Nombre de la Promoción",
+                "placeholder": "Ej: Descuento Verano 10%",
+                "description": "Nombre interno para identificar la promoción."
+            },
+            "description": {
+                "label": "Descripción Corta (Opcional)",
+                "placeholder": "Ej: 10% de descuento en todos los masajes durante agosto.",
+                "description": "Descripción breve para referencia interna."
+            },
+            "code": {
+                "label": "Código (Opcional)",
+                "placeholder": "Ej: VERANO10",
+                "description": "Código único que el cliente puede usar (si aplica)."
+            },
+            "isActive": {
+                "label": "Promoción Activa",
+                "description": "Desmarca para desactivar la promoción temporalmente."
+            },
+            "type": {
+                "label": "Tipo de Promoción",
+                "placeholder": "Selecciona el tipo de beneficio",
+                "description": "Define cómo se aplicará el beneficio de la promoción."
+            },
+            "value": {
+                "label": "Valor",
+                "placeholder_percentage": "Ej: 10 para 10%",
+                "placeholder_fixed": "Ej: 5 para 5.00€",
+                "placeholder_multiplier": "Ej: 2 para 2x Puntos",
+                "description_percentage": "Introduce el porcentaje de descuento (sin %).",
+                "description_fixed": "Introduce el importe fijo de descuento.",
+                "description_multiplier": "Introduce el multiplicador de puntos (ej: 2 para doble)."
+            },
+            "targetScope": {
+                "label": "Objetivo Principal",
+                "placeholder": "Selecciona a qué aplica la promoción",
+                "description": "Define el item o grupo principal al que se dirige la promoción."
+            },
+            "targetServiceId": {
+                "label": "Servicio Específico",
+                "placeholder": "Selecciona un servicio...",
+                "searchPlaceholder": "Buscar servicio...",
+                "emptyPlaceholder": "No se encontraron servicios."
+            },
+            "targetProductId": {
+                "label": "Producto Específico",
+                "placeholder": "Selecciona un producto...",
+                "searchPlaceholder": "Buscar producto...",
+                "emptyPlaceholder": "No se encontraron productos."
+            },
+            "targetCategoryId": {
+                "label": "Categoría/Familia Específica",
+                "placeholder": "Selecciona una categoría...",
+                "searchPlaceholder": "Buscar categoría...",
+                "emptyPlaceholder": "No se encontraron categorías."
+            },
+            "targetTariffId": {
+                "label": "Tarifa Específica",
+                "placeholder": "Selecciona una tarifa...",
+                "searchPlaceholder": "Buscar tarifa...",
+                "emptyPlaceholder": "No se encontraron tarifas.",
+                "preselectedDesc": "Aplicará a la tarifa \"{{tariffName}}\" asignada a la clínica actual."
+            },
+            "targetBonoDefinitionId": {
+                "label": "Definición de Bono Específica",
+                "placeholder": "Selecciona un bono...",
+                "searchPlaceholder": "Buscar bono...",
+                "emptyPlaceholder": "No se encontraron bonos."
+            },
+            "targetPackageDefinitionId": {
+                "label": "Definición de Paquete Específica",
+                "placeholder": "Selecciona un paquete...",
+                "searchPlaceholder": "Buscar paquete...",
+                "emptyPlaceholder": "No se encontraron paquetes."
+            },
+            "bogoBuyQuantity": {
+                "label": "Cantidad Requerida (Compra X)",
+                "placeholder": "Ej: 2",
+                "description": "Número de items objetivo que se deben comprar para activar el regalo."
+            },
+            "bogoGetServiceId": {
+                "label": "Servicio de Regalo (Llévate Y)",
+                "placeholder": "Selecciona el servicio a regalar...",
+                "searchPlaceholder": "Buscar servicio...",
+                "emptyPlaceholder": "No se encontraron servicios."
+            },
+            "bogoGetProductId": {
+                "label": "Producto de Regalo (Llévate Y)",
+                "placeholder": "Selecciona el producto a regalar...",
+                "searchPlaceholder": "Buscar producto...",
+                "emptyPlaceholder": "No se encontraron productos."
+            },
+            "bogoGetQuantity": {
+                "label": "Cantidad de Regalo",
+                "placeholder": "Ej: 1",
+                "description": "Número de unidades del item de regalo."
+            },
+            "bogoGetValue": {
+                "label": "Descuento en Regalo (€ o %)",
+                "placeholder_percentage": "Ej: 50 para 50% dto.",
+                "placeholder_fixed": "Ej: 10 para 10€ dto.",
+                "description": "Opcional: Aplica un descuento fijo o porcentual sobre el item regalado (si no es gratis)."
+            },
+            "minPurchaseAmount": {
+                "label": "Importe Mínimo de Compra (Opcional)",
+                "placeholder": "Ej: 50.00",
+                "description": "La promoción solo se aplicará si el total del ticket alcanza este importe."
+            },
+            "maxDiscountAmount": {
+                "label": "Importe Máximo de Descuento (Opcional)",
+                "placeholder": "Ej: 20.00",
+                "description": "El descuento total aplicado por esta promoción no superará esta cantidad."
+            },
+            "startDate": {
+                "label": "Fecha de Inicio (Opcional)",
+                "description": "La promoción estará activa a partir de esta fecha."
+            },
+            "endDate": {
+                "label": "Fecha de Fin (Opcional)",
+                "description": "La promoción dejará de estar activa después de esta fecha."
+            },
+            "maxTotalUses": {
+                "label": "Número Máximo de Usos Totales (Opcional)",
+                "placeholder": "Ej: 100",
+                "description": "Límite de veces que esta promoción puede ser usada en total por todos los clientes."
+            },
+            "maxUsesPerClient": {
+                "label": "Usos Máximos por Cliente",
+                "description": "Límite de veces que un mismo cliente puede usar la promo.",
+                "placeholder": "Ej: 1"
+            },
+            "clinicId": {
+                "label": "Clínica Específica (Opcional)",
+                "placeholder": "Selecciona una clínica...",
+                "searchPlaceholder": "Buscar clínica...",
+                "emptyPlaceholder": "No se encontraron clínicas.",
+                "description": "Si se selecciona, la promoción solo será válida en esta clínica."
+            },
+            "applicableClinics": {
+                "label": "Clínicas Aplicables",
+                "description": "Selecciona las clínicas donde esta promoción estará activa. Déjalo vacío para que aplique en todas.",
+                "placeholder": "Selecciona clínicas...",
+                "searchPlaceholder": "Buscar clínicas...",
+                "applyToAllLabel": "Aplicar a todas las clínicas",
+                "applyToAllDescription": "Marca esta opción si la promoción es válida en todas las clínicas.",
+                "appliesToAll": "Aplica a todas las clínicas"
+            },
+            "accumulation": {
+                "title": "Reglas de Acumulación",
+                "modeLabel": "Modo de Acumulación",
+                "compatibleLabel": "Promociones Compatibles",
+                "compatiblePlaceholder": "Seleccionar promociones compatibles...",
+                "compatibleSearchPlaceholder": "Buscar promoción...",
+                "compatibleEmptyPlaceholder": "No se encontraron promociones acumulables.",
+                "noCompatibleOptions": "No hay otras promociones disponibles para compatibilidad.",
+                "apply_to_all_clinics": "Aplicar a todas las clínicas"
+            },
+            "apply_to_all_clinics": "Aplicar a todas las clínicas"
+        },
+        "columns": {
+            "name": "Nombre",
+            "code": "Código",
+            "type": "Tipo",
+            "targetScope": "Objetivo",
+            "accumulationCompatibilities": "Acumulación",
+            "applicableClinics": "Clínicas Aplic.",
+            "isActive": "Activa",
+            "startDate": "F. Inicio",
+            "endDate": "F. Fin",
+            "accumulationMode": "Modo Acum."
+        },
+        "delete_confirmation_title": "¿Eliminar Promoción?",
+        "delete_confirmation_message": "¿Estás seguro de que quieres eliminar la promoción \"{{name}}\"? Esta acción no se puede deshacer.",
+        "delete_success": "Promoción \"{{name}}\" eliminada correctamente.",
+        "delete_error": "Error al eliminar la promoción.",
+        "delete_error_detailed": "Error al eliminar: {{error}}",
+        "fetch_error": "Error al cargar las promociones.",
+        "create_error_default": "Error al crear la promoción",
+        "create_success": "Promoción creada correctamente",
+        "update_success": "Promoción actualizada correctamente",
+        "update_error": "Error al actualizar la promoción",
+        "submit_error": "Error al guardar la promoción",
+        "edit": {
+            "success": "Promoción \"{{name}}\" actualizada correctamente.",
+            "error": "Error al actualizar la promoción \"{{name}}\".",
+            "notFound": "Promoción no encontrada.",
+            "loadingError": "Error cargando la promoción: {{message}}",
+            "noData": "No se encontraron datos para esta promoción."
+        },
+        "accumulationModes": {
+            "EXCLUSIVE": "Exclusiva",
+            "EXCLUSIVE_desc": "No se puede combinar con ninguna otra promoción.",
+            "ALL": "Acumulable con Todas",
+            "ALL_desc": "Se puede combinar con cualquier otra promoción acumulable.",
+            "SPECIFIC": "Acumulable con Específicas",
+            "SPECIFIC_desc": "Solo se puede combinar con las promociones seleccionadas manualmente."
+        },
+        "compatibilitiesCount": "{{count}} Compatibles",
+        "clinicsCount": "{{count}} Clínicas"
+    },
+    "enums": {
+        "PromotionType": {
+            "PERCENTAGE_DISCOUNT": "Descuento Porcentual",
+            "FIXED_AMOUNT_DISCOUNT": "Descuento Fijo",
+            "BUY_X_GET_Y_SERVICE": "Compra X Servicio, Llévate Y Servicio",
+            "BUY_X_GET_Y_PRODUCT": "Compra X Producto, Llévate Y Producto",
+            "POINTS_MULTIPLIER": "Multiplicador de Puntos",
+            "FREE_SHIPPING": "Envío Gratis"
+        },
+        "PromotionTargetScope": {
+            "SPECIFIC_SERVICE": "Servicio Específico",
+            "SPECIFIC_PRODUCT": "Producto Específico",
+            "SPECIFIC_BONO": "Bono Específico",
+            "SPECIFIC_PACKAGE": "Paquete Específico",
+            "CATEGORY": "Categoría/Familia",
+            "TARIFF": "Tarifa"
+        },
+        "BogoDiscountType": {
+            "FREE": "Gratis",
+            "PERCENTAGE": "Descuento Porcentual",
+            "FIXED": "Descuento Fijo"
+        },
+        "PromotionAccumulationMode": {
+            "EXCLUSIVE": "Exclusiva",
+            "ALL": "Todas",
+            "SPECIFIC": "Específica"
+        },
+        "PaymentMethodType": {
+            "CASH": "Efectivo",
+            "CARD": "Tarjeta Bancaria",
+            "BANK_TRANSFER": "Transferencia Bancaria",
+            "ONLINE_GATEWAY": "Pasarela Online",
+            "CHECK": "Cheque",
+            "INTERNAL_CREDIT": "Crédito Interno (Bono/Paquete)",
+            "OTHER": "Otro"
+        }
+    },
+    "configuracion": {
+        "title": "Configuración",
+        "description": "Gestiona la configuración general de la aplicación."
+    },
+    "data_table": {
+        "select_all": "Seleccionar todo",
+        "select_row": "Seleccionar fila",
+        "open_menu": "Abrir menú",
+        "actions": "Acciones",
+        "previous": "Anterior",
+        "next": "Siguiente",
+        "rows_selected": "{{count}} fila(s) seleccionadas.",
+        "page": "Página",
+        "of": "de",
+        "rows_per_page": "Filas por página:",
+        "toggle_columns": "Columnas Visibles"
+    },
+    "users": {
+        "manageUsersTitle": "Gestión de Usuarios",
+        "searchPlaceholder": "Buscar usuarios por nombre, apellido o email...",
+        "showInactiveLabel": "Mostrar inactivos",
+        "loadingUsers": "usuarios",
+        "lastNameHeader": "Apellidos",
+        "firstNameHeader": "Nombre",
+        "emailHeader": "Email",
+        "statusHeader": "Estado",
+        "actionsHeader": "Acciones",
+        "noUsersFound": "No se encontraron usuarios.",
+        "statusActive": "Activo",
+        "statusInactive": "Inactivo",
+        "deactivateAction": "Desactivar usuario",
+        "activateAction": "Activar usuario",
+        "editAction": "Editar usuario",
+        "addUserButton": "Nuevo Usuario",
+        "addUserDialogTitle": "Crear Nuevo Usuario",
+        "addUserDialogDescription": "Completa los campos para crear un nuevo usuario en el sistema.",
+        "firstNameLabel": "Nombre",
+        "lastNameLabel": "Apellidos",
+        "emailLabel": "Email",
+        "confirmEmailLabel": "Confirmar Email",
+        "passwordLabel": "Contraseña",
+        "phoneLabelOptional": "Teléfono (Opcional)",
+        "createUserButton": "Crear Usuario",
+        "statusUpdateSuccessTitle": "Estado actualizado",
+        "statusUpdateDeactivateSuccessDesc": "El usuario ha sido desactivado correctamente.",
+        "statusUpdateActivateSuccessDesc": "El usuario ha sido activado correctamente.",
+        "statusUpdateErrorContext": "No se pudo actualizar el estado del usuario desde el contexto.",
+        "statusUpdateErrorGeneric": "No se pudo actualizar el estado del usuario.",
+        "createUserSuccessTitle": "Usuario creado",
+        "createUserSuccessDesc": "Usuario creado correctamente.",
+        "createUserErrorContext": "No se pudo crear el usuario (desde contexto).",
+        "createUserErrorGeneric": "No se pudo crear el usuario.",
+        "validation": {
+            "firstNameRequired": "El nombre es obligatorio",
+            "lastNameRequired": "El apellido es obligatorio",
+            "emailRequired": "El email es obligatorio",
+            "emailsDontMatch": "Los emails no coinciden",
+            "passwordRequired": "La contraseña es obligatoria"
+        },
+        "firstNamePlaceholder": "Introduce el nombre",
+        "lastNamePlaceholder": "Introduce los apellidos",
+        "emailPlaceholder": "Introduce el email",
+        "confirmEmailPlaceholder": "Confirma el email",
+        "dniLabel": "DNI/NIE",
+        "dobLabel": "Fecha de Nacimiento",
+        "sexLabel": "Sexo",
+        "sexPlaceholder": "Selecciona sexo...",
+        "sexMale": "Masculino",
+        "sexFemale": "Femenino",
+        "sexOther": "Otro",
+        "mainPhoneLabel": "Teléfono Principal",
+        "prefixPlaceholder": "Prefijo...",
+        "prefixNoResults": "No hay resultados",
+        "altPhoneLabel": "Teléfono Alternativo",
+        "loginLabel": "Login (Usuario)",
+        "loginPlaceholder": "Introduce el nombre de usuario",
+        "passwordPlaceholder": "Introduce la contraseña (dejar vacío para no cambiar)",
+        "languageLabel": "Idioma Preferido",
+        "languagePlaceholder": "Selecciona idioma...",
+        "settingExportCsvLabel": "Permitir exportar CSV"
+    },
+    "userProfile": {
+        "personalData": "Datos Personales",
+        "permissions": "Permisos",
+        "schedule": "Horario",
+        "skills": "Habilidades",
+        "laborConditions": "Condiciones Laborales",
+        "presenceControl": "Control de Presencia",
+        "addressTitle": "Dirección",
+        "configurationTitle": "Configuración",
+        "permissionsTitle": "Permisos de Usuario",
+        "skillsTitle": "Habilidades del Usuario",
+        "searchSkillsPlaceholder": "Buscar habilidades...",
+        "noSkillsAssigned": "No hay habilidades asignadas.",
+        "selectClinicPlaceholder": "Selecciona una clínica...",
+        "selectFamilyPlaceholder": "Selecciona una familia...",
+        "addSkillButton": "Añadir Habilidad",
+        "laborConditionsTitle": "Condiciones Laborales",
+        "presenceControlTitle": "Control de Presencia"
+    },
+    "schedule": {
+        "selectClinicLabel": "Seleccionar Clínica",
+        "selectClinicPlaceholder": "Selecciona clínica para ver horario...",
+        "hoursSummaryTitle": "Resumen de Horas",
+        "globalTotalLabel": "Total Global",
+        "currentClinicTotalLabel": "Total Clínica Actual",
+        "recommendedHours": "(Recomendado: 40h)",
+        "activeDaysLabel": "Días Activos",
+        "totalByAssignedClinicLabel": "Total por Clínica Asignada",
+        "detailByDayLabel": "Detalle por Día",
+        "statusPending": "Pendiente",
+        "editableWeeklyScheduleTitle": "Horario Semanal Editable",
+        "activateDay": "Activar {{day}}",
+        "inactiveDay": "Día Inactivo",
+        "centerClosedToday": "Centro cerrado este día",
+        "exceptionsTitle": "Excepciones de Horario",
+        "newExceptionButton": "Nueva Excepción",
+        "noExceptionsFound": "No se encontraron excepciones para esta clínica.",
+        "consolidatedViewTitle": "Vista Consolidada"
+    },
+    "days": {
+        "monday": "Lunes",
+        "tuesday": "Martes",
+        "wednesday": "Miércoles",
+        "thursday": "Jueves",
+        "friday": "Viernes",
+        "saturday": "Sábado",
+        "sunday": "Domingo"
+    },
+    "perfil": {
+        "title": "Mi Perfil",
+        "datosPersonalesTitle": "Datos Personales",
+        "suscripcionTitle": "Mi Suscripción",
+        "facturacionTitle": "Datos de Facturación",
+        "serviciosTitle": "Servicios Contratados",
+        "facturasTitle": "Mis Facturas"
+    },
+    "config_banks": {
+        "page_title": "Gestión de Bancos",
+        "filter_placeholder": "Filtrar bancos por nombre...",
+        "add_button": "Añadir Banco",
+        "edit_title": "Editando Banco: {{name}}",
+        "new_title": "Nuevo Banco",
+        "form_section_title": "Información del Banco",
+        "accounts": {
+            "section_title": "Cuentas Bancarias",
+            "add_button": "Añadir Cuenta Bancaria",
+            "no_data": "No hay cuentas bancarias asociadas a este banco."
+        },
+        "pos_terminals": {
+            "section_title": "Terminales POS",
+            "add_button": "Añadir Terminal POS",
+            "no_data": "No hay terminales POS asociados a este banco."
+        },
+        "table": {
+            "name": "Nombre",
+            "code": "Código",
+            "address": "Dirección",
+            "actions": "Acciones",
+            "countryName": "País",
+            "phone": "Teléfono",
+            "scope": "Ámbito",
+            "search_placeholder": "Buscar bancos...",
+            "columns_button": "Columnas",
+            "headers": {
+            "name": "Nombre Banco",
+                "code": "Código",
+                "countryName": "País",
+                "phone": "Teléfono",
+                "scope": "Ámbito"
+            },
+            "selected_rows": "{{count}} fila(s) seleccionada(s)."
+        },
+        "form": {
+            "name_label": "Nombre del Banco",
+            "name_placeholder": "Ingrese el nombre del banco",
+            "code_label": "Código",
+            "code_placeholder": "Ingrese el código del banco",
+            "edit_title": "Editar Banco",
+            "new_title": "Nuevo Banco",
+            "general_section_title": "Información General",
+            "phone_section_title": "Contacto Telefónico",
+            "code_description": "Código numérico de identificación del banco (1-4 dígitos)",
+            "country_label": "País",
+            "country_placeholder": "Seleccione el país",
+            "phone1_label": "Teléfono Principal",
+            "phone_placeholder": "Ingrese el teléfono",
+            "phone2_label": "Teléfono Alternativo",
+            "phone2_placeholder": "Ingrese el teléfono alternativo",
+            "prefix_search_placeholder": "Buscar prefijo...",
+            "email_label": "Email",
+            "email_placeholder": "Ingrese el email de contacto",
+            "address_label": "Dirección",
+            "address_placeholder": "Ingrese la dirección",
+            "scope": "Ámbito",
+            "scope_section_title": "Alcance de Disponibilidad",
+            "isGlobal_label": "Global (disponible para todas las clínicas)",
+            "isGlobal_description": "Si se desmarca, deberá seleccionar clínicas específicas.",
+            "clinics_label": "Clínicas Específicas",
+            "clinics_placeholder": "Seleccionar clínicas...",
+            "clinics_search_placeholder": "Buscar clínicas...",
+            "clinics_empty_placeholder": "No se encontraron clínicas activas.",
+            "clinics_description": "Seleccione las clínicas donde este banco estará disponible.",
+            "error_no_clinic_selected": "Debes seleccionar al menos una clínica si el ámbito no es global.",
+            "loading_clinics": "Cargando clínicas..."
+        },
+        "notifications": {
+            "copy_success": "Código de banco copiado al portapapeles.",
+            "create_success": "Banco creado correctamente.",
+            "create_error": "Error al crear el banco.",
+            "update_success": "Banco actualizado correctamente.",
+            "update_error": "Error al actualizar el banco."
+        }
+    },
+    "config_bank_accounts": {
+        "page_title": "Gestión de Cuentas Bancarias",
+        "add_button": "Añadir Cuenta Bancaria",
+        "edit_title": "Editar Cuenta Bancaria",
+        "new_title": "Nueva Cuenta Bancaria",
+        "table": {
+            "accountName": "Nombre Cuenta",
+            "iban": "IBAN",
+            "bankName": "Banco",
+            "swiftBic": "SWIFT/BIC",
+            "bank": {
+                "name": "Nombre Banco"
+            },
+            "currency": "Moneda",
+            "clinicName": "Clínica Asociada",
+            "status": "Estado",
+            "isActive": "Estado",
+            "actions": "Acciones",
+            "no_results": "No se encontraron cuentas bancarias.",
+            "filter_accountName_placeholder": "Filtrar por nombre de cuenta...",
+            "filter_bankName_placeholder": "Filtrar por nombre de banco...",
+            "scope": "Ámbito"
+        },
+        "form": {
+            "accountName_label": "Nombre de la Cuenta",
+            "accountName_placeholder": "Ej: Cuenta Principal EUR",
+            "iban_label": "IBAN",
+            "iban_placeholder": "ESXX...",
+            "swiftBic_label": "SWIFT/BIC (Opcional)",
+            "swiftBic_placeholder": "Ej: BSCHESMMXXX",
+            "currency_label": "Moneda",
+            "currency_placeholder": "Selecciona moneda",
+            "currency_description": "Código ISO 4217 (ej: EUR).",
+            "bank_label": "Banco",
+            "bank_placeholder": "Selecciona un banco...",
+            "clinic_label": "Clínica Asociada (Opcional)",
+            "clinic_placeholder": "Selecciona una clínica...",
+            "clinic_description": "Asocia esta cuenta a una clínica específica si es necesario.",
+            "notes_label": "Notas (Opcional)",
+            "notes_placeholder": "Añade notas internas...",
+            "isActive_label": "Cuenta Activa",
+            "account_details_title": "Detalles de la Cuenta",
+            "scope_section_title": "Ámbito de Disponibilidad",
+            "currency_search_placeholder": "Buscar moneda...",
+            "bankId_label": "Banco Asociado",
+            "bankId_placeholder": "Selecciona el banco al que pertenece esta cuenta",
+            "isActive_description": "Indica si la cuenta bancaria está activa y puede ser utilizada.",
+            "isGlobal_label": "Global (disponible para todas las clínicas)",
+            "isGlobal_description": "Si se desmarca, deberá seleccionar clínicas específicas.",
+            "loading_bank_scope": "Cargando configuración de ámbito del banco...",
+            "clinics_label": "Clínicas Específicas",
+            "clinics_placeholder": "Seleccionar clínicas...",
+            "clinics_search_placeholder": "Buscar clínicas...",
+            "clinics_empty_placeholder": "No se encontraron clínicas activas.",
+            "clinics_description": "Seleccione las clínicas donde esta cuenta estará disponible."
+        },
+        "toast": {
+            "create_success": "Cuenta bancaria creada correctamente.",
+            "create_error": "Error al crear la cuenta bancaria.",
+            "update_success": "Cuenta bancaria actualizada correctamente.",
+            "update_error": "Error al actualizar la cuenta bancaria.",
+            "delete_confirm_title": "¿Eliminar Cuenta Bancaria?",
+            "delete_confirm_message": "Esta acción no se puede deshacer. ¿Estás seguro?",
+            "delete_success": "Cuenta bancaria eliminada correctamente.",
+            "delete_error": "Error al eliminar la cuenta bancaria. Asegúrate de que no tenga TPVs asociados.",
+            "not_found_error": "Cuenta bancaria no encontrada o no pertenece a este sistema."
+        }
+    },
+    "config_pos_terminals": {
+        "title": "Terminales Punto de Venta (TPV)",
+        "description": "Configura y gestiona los terminales TPV para el cobro con tarjeta.",
+        "page_title": "Terminales Punto de Venta (TPV)",
+        "add_button": "Añadir TPV",
+        "item_singular": "Terminal POS",
+        "edit_title": "Editando Terminal: {{name}}",
+        "new_title": "Nuevo Terminal POS",
+        "table": {
+            "name": "Nombre",
+            "terminal_id": "ID Terminal (Prov.)",
+            "provider": "Proveedor",
+            "bank_account": "Cuenta Liquidación",
+            "clinics": "Clínicas Aplicables",
+            "status": "Estado",
+            "actions": "Acciones",
+            "no_results": "No se encontraron terminales POS.",
+            "filter_name_placeholder": "Filtrar por nombre...",
+            "scope": "Ámbito",
+            "applicableClinics": "Clínicas Aplicables",
+            "active": "Activo"
+        },
+        "form": {
+            "new_title": "Nuevo Terminal POS",
+            "edit_title": "Editando Terminal: {{name}}",
+            "basic_info": "Información Básica",
+            "name": "Nombre del Terminal",
+            "name_placeholder": "Ej: TPV Mostrador Principal",
+            "terminal_id": "ID del Terminal (Proveedor)",
+            "terminal_id_placeholder": "ID asignado por el proveedor (opcional)",
+            "provider": "Proveedor",
+            "provider_placeholder": "Ej: Redsys, Stripe, Adyen (opcional)",
+            "modelNumber_label": "Modelo (Opcional)",
+            "modelNumber_placeholder": "Ej: Verifone V400m",
+            "serialNumber_label": "Nº Serie (Opcional)",
+            "serialNumber_placeholder": "Número de serie del dispositivo",
+            "ipAddress_label": "Dirección IP (Opcional)",
+            "ipAddress_placeholder": "Ej: 192.168.1.100",
+            "connection_info": "Información de Conexión",
+            "bank": "Banco Asociado",
+            "select_bank_placeholder": "Selecciona un banco...",
+            "bank_account": "Cuenta Bancaria de Liquidación",
+            "select_account_placeholder": "Selecciona una cuenta...",
+            "account_no_results": "No hay cuentas activas para este banco.",
+            "status": "Estado",
+            "isActive_label": "Terminal Activo",
+            "status_desc": "Indica si el terminal está operativo.",
+            "scope_settings": "Configuración de Ámbito",
+            "is_global": "Disponible Globalmente",
+            "is_global_desc": "Si está activo, el TPV está disponible en todas las clínicas. Desactívalo para seleccionar clínicas específicas.",
+            "applicable_clinics": "Clínicas Aplicables",
+            "select_clinics_placeholder": "Selecciona clínicas...",
+            "search_clinic_placeholder": "Buscar clínica...",
+            "no_clinics_found": "No se encontraron clínicas.",
+            "clinics_selected_count": "{{count}} clínicas seleccionadas",
+            "applicable_clinics_desc": "Selecciona las clínicas donde este TPV estará disponible.",
+            "notes_label": "Notas (Opcional)",
+            "notes_placeholder": "Añade notas internas sobre el terminal...",
+            "confirm_delete": "¿Estás seguro de que quieres eliminar este terminal TPV?",
+            "loading_banks": "Cargando bancos...",
+            "loading_accounts": "Cargando cuentas bancarias...",
+            "loading_clinics": "Cargando clínicas...",
+            "no_banks_found": "No se encontraron bancos activos.",
+            "validation": {
+                "name_required": "El nombre del terminal es obligatorio.",
+                "bank_account_required": "Debes seleccionar una cuenta bancaria.",
+                "clinics_required": "Debes seleccionar al menos una clínica si el ámbito no es global.",
+                "bank_required": "Debes seleccionar un banco asociado."
+            },
+            "loadError": "Terminal no encontrado.",
+            "idError": "ID de terminal no válido."
+        },
+        "toast": {
+            "create_success": "Terminal TPV creado correctamente.",
+            "create_error": "Error al crear el terminal TPV.",
+            "update_success": "Terminal TPV actualizado correctamente.",
+            "update_error": "Error al actualizar el terminal TPV.",
+            "delete_confirm_title": "¿Eliminar Terminal TPV?",
+            "delete_confirm_message": "¿Estás seguro de que quieres eliminar el terminal \"{{name}}\"? Esta acción no se puede deshacer.",
+            "delete_success": "Terminal TPV eliminado correctamente.",
+            "delete_error": "Error al eliminar el terminal TPV."
+        }
+    },
+    "config_payment_methods": {
+        "page_title": "Métodos de Pago",
+        "table_title": "Definiciones Globales de Métodos de Pago",
+        "create_page_title": "Nuevo Método de Pago",
+        "edit_page_title": "Editar Método de Pago: {{name}}",
+        "add_button": "Añadir Método de Pago",
+        "form_title": "Detalles del Método de Pago",
+        "form_description": "Define las propiedades generales de este método de pago.",
+        "edit_form_description": "Modifica las propiedades generales de este método de pago. Los cambios pueden afectar a todas las clínicas.",
+        "create_success_message": "Método de pago creado correctamente.",
+        "update_success_message": "Método de pago actualizado correctamente.",
+        "delete_dialog_title": "¿Eliminar Método de Pago?",
+        "delete_dialog_description": "Esta acción no se puede deshacer. Esto eliminará permanentemente la definición global del método de pago '{{name}}' y todas sus configuraciones asociadas en las clínicas.",
+        "delete_success_message": "Método de pago eliminado correctamente.",
+        "delete_error_message": "Error al eliminar el método de pago.",
+        "errors": {
+            "loading_clinic_settings": "Error al cargar las configuraciones específicas de la clínica."
+        },
+        "form_labels": {
+            "name": "Nombre Identificativo",
+            "type": "Tipo de Método",
+            "details": "Detalles Adicionales",
+            "isActive": "Activo Globalmente"
+        },
+        "form_placeholders": {
+            "name": "Ej: Tarjeta Visa/MC (TPV Banco X)",
+            "type": "Selecciona un tipo",
+            "details": "Introduce notas o detalles relevantes..."
+        },
+        "form_descriptions": {
+            "details": "Descripción interna o información útil sobre cómo usar este método.",
+            "isActive": "Si está inactivo, no se podrá seleccionar globalmente ni configurar en nuevas clínicas."
+        },
+        "clinic_settings_title": "Configuración por Clínica",
+        "add_clinic_setting": "Añadir Configuración Clínica",
+        "clinic_settings_description": "Define cómo se comporta este método de pago en cada clínica (activación, cuentas, TPVs...).",
+        "tooltips": {
+            "type_disabled": "El tipo no se puede cambiar si ya existen configuraciones específicas por clínica."
+        },
+        "table": {
+            "name": "Nombre",
+            "type": "Tipo",
+            "details": "Detalles",
+            "isActive": "Globalmente Activo",
+            "status": "Estado",
+            "actions": "Acciones",
+            "no_results": "No se encontraron métodos de pago.",
+            "filter_name_placeholder": "Filtrar por nombre..."
+        },
+        "add_new_method_button": "Añadir Método de Pago"
+    },
+    "config_clinic_payment_settings": {
+        "section_title": "Configuración Específica por Clínica",
+        "table_title": "Clínicas con Configuración Específica",
+        "add_button": "Añadir Configuración Clínica",
+        "edit_modal_title": "Editar Configuración para Clínica",
+        "create_modal_title": "Añadir Configuración para Clínica",
+        "edit_modal_desc": "Ajusta cómo funciona este método de pago en la clínica seleccionada.",
+        "create_modal_desc": "Define cómo funcionará este método de pago en una clínica específica.",
+        "success_edit_desc": "Configuración para {{clinicName}} actualizada.",
+        "success_create_desc": "Configuración para {{clinicName}} creada.",
+        "columns": {
+            "clinic": "Clínica",
+            "isActive": "Activo en Clínica",
+            "bankAccount": "Cuenta Bancaria Receptora",
+            "posTerminal": "TPV Asociado",
+            "paymentMethod": "Método de Pago",
+            "associated_account": "Cuenta Receptora",
+            "isDefaultPos": "TPV Predet.",
+            "isDefaultReceivingBankAccount": "Cuenta Predet.",
+            "isActive_aria": "Activar/Desactivar método en esta clínica"
+        },
+        "actions": {
+            "set_default_account": "Marcar cuenta como predeterminada",
+            "set_default_pos": "Marcar TPV como predeterminado"
+        },
+        "form_labels": {
+            "clinicId": "Clínica",
+            "isActiveInClinic": "Activo para esta Clínica",
+            "receivingBankAccountId": "Cuenta Bancaria Receptora (Opcional)",
+            "isDefaultReceivingBankAccount": "Es la cuenta predeterminada para esta clínica",
+            "posTerminalId": "TPV Físico Asociado (Opcional)",
+            "isDefaultPosTerminal": "Es el TPV predeterminado para esta clínica"
+        },
+        "form_placeholders": {
+            "clinicId": "Selecciona una clínica",
+            "receivingBankAccountId": "Selecciona una cuenta bancaria",
+            "posTerminalId": "Selecciona un TPV"
+        },
+        "form_descriptions": {
+            "isActiveInClinic": "Permite usar este método de pago en la caja de esta clínica.",
+            "receivingBankAccountId": "Si se especifica, los ingresos por este método (ej. Transferencia) se asignarán a esta cuenta. Si no, usarán la configuración global.",
+            "isDefaultReceivingBankAccount": "Marca esta como la cuenta por defecto para los ingresos genéricos en esta clínica.",
+            "posTerminalId": "Vincula un TPV físico a este método de pago (solo tipo Tarjeta) para esta clínica.",
+            "isDefaultPosTerminal": "Marca este como el TPV por defecto para los pagos con tarjeta en esta clínica."
+        },
+        "form_validation": {
+            "clinic_required": "Debes seleccionar una clínica.",
+            "account_or_pos_required": "Debes seleccionar una cuenta bancaria o un TPV según el tipo.",
+            "pos_for_card_only": "Solo puedes asociar un TPV a métodos de tipo Tarjeta.",
+            "account_not_for_card": "No puedes asociar una cuenta bancaria directamente a métodos de tipo Tarjeta (se asocia al TPV)."
+        },
+        "tooltips": {
+            "account_used": "Esta cuenta ya está configurada para otro método en esta clínica.",
+            "pos_used": "Este TPV ya está configurado para otro método en esta clínica.",
+            "pos_needs_account": "Este TPV no tiene una cuenta bancaria asociada en su configuración global.",
+            "loading": "Cargando datos..."
+        },
+        "select_clinic_first": "Selecciona primero una clínica",
+        "associated_account": "Cuenta asociada al TPV:",
+        "already_assigned": "Ya asignada a esta clínica",
+        "description": "Gestiona los métodos de pago específicos y sus configuraciones para la clínica seleccionada.",
+        "add_method_button": "Añadir configuración",
+        "edit_setting_title": "Editar Configuración de Pago en Clínica",
+        "create_setting_title": "Añadir Método de Pago a Clínica",
+        "delete_success": "Configuración de pago eliminada",
+        "delete_error": "Error al eliminar configuración",
+        "delete_confirm_message": "¿Seguro que quieres eliminar la configuración del método \"{{paymentMethodName}}\" para la clínica \"{{clinicName}}\"?",
+        "status_update_success": "Estado actualizado para la clínica {{clinicName}}. Ahora está {{status}}.",
+        "default_updated": "Predeterminado actualizado",
+        "default_pos_update_success": "TPV predeterminado actualizado para la clínica {{clinicName}}.",
+        "default_account_update_success": "Cuenta receptora predeterminada actualizada para la clínica {{clinicName}}."
+    },
+    "config_bonuses": {
+        "title": "Definiciones de Bonos",
+        "description": "Gestiona los bonos disponibles en el sistema.",
+        "page_title": "Configuración de Bonos",
+        "item": "Bono",
+        "new": "Nuevo Bono",
+        "edit": {
+            "title": "Editando Bono: {{name}}",
+            "loadError": "Bono no encontrado",
+            "loadDataError": "No se pudieron cargar los datos del bono.",
+            "idError": "ID de bono no encontrado en la URL."
+        },
+        "table": {
+            "name": "Nombre Bono",
+            "associatedItem": "Asociado a (Servicio/Producto)",
+            "quantity": "Cantidad (Usos)",
+            "validityDays": "Validez",
+            "pointsAwarded": "Puntos Otorgados",
+            "filterByService": "Filtrar por servicio...",
+            "filterByProduct": "Filtrar por producto...",
+            "filterPlaceholder": "Buscar por nombre...",
+            "tariffAssignment": "Asignación",
+            "filterByTariff": "Filtrar por Tarifa"
+        },
+        "assignment": {
+            "filterLabel": "Filtro de asignación",
+            "none": "Ninguna asignación"
+        },
+        "delete_confirmation": "¿Seguro que quieres eliminar el bono \"{{name}}\"?",
+        "delete_success": "Bono \"{{name}}\" eliminado.",
+        "delete_error": "Error al eliminar bono: {{error}}",
+        "add_button": "Nuevo Bono"
+    },
+    "config_clinics": {
+        "page_title": "Configuración de Clínicas",
+        "tabs": {
+            "datos": "Datos de la clínica",
+            "horarios": "Horarios",
+            "usuarios": "Usuarios",
+            "tarifa": "Tarifa",
+            "entidades": "Entidades bancarias",
+            "pagos": "Métodos de Pago",
+            "integraciones": "Integraciones",
+            "descuentos": "Descuentos",
+            "promotions": "Promociones",
+            "sms": "SMS/Push",
+            "email": "Notificaciones e-mail",
+            "whatsapp": "Notificaciones WhatsApp",
+            "otros": "Otros APIs",
+            "sedes": "Sedes",
+            "cabinas": "Cabinas",
+            "equipamiento": "Equipamiento",
+            "almacenamiento": "Almacenamiento",
+            "depuracion": "Depuración"
+        },
+        "banks": {
+            "title": "Bancos Asociados",
+            "description": "Gestiona las entidades bancarias asociadas a esta clínica.",
+            "add_button": "Añadir Entidad"
+        },
+        "payments": {
+            "description": "Configura los métodos de pago disponibles para esta clínica.",
+            "add_button": "Añadir Método"
+        }
+    },
+    "clinics": {
+        "edit": {
+            "promotions": {
+                "description": "Gestiona las promociones globales y las específicas para esta clínica.",
+                "add": "Añadir Promoción"
+            }
+        }
+    },
+  "config_legal_entities": {
+    "form": {
+      "tax_identifiers_title": "Identificadores Fiscales",
+      "add_tax_identifier": "Añadir Identificador Fiscal",
+      "associated_clinics_title": "Clínicas Asociadas",
+      "associated_clinics_description": "Selecciona las clínicas que pertenecerán a esta sociedad mercantil.",
+      "clinic_not_associated": "Sin sociedad asignada",
+      "notes_title": "Notas Adicionales",
+      "name": "Nombre de la Sociedad",
+      "name_placeholder": "Ej: Mi Empresa S.L.",
+      "country": "País (Jurisdicción Fiscal)",
+      "country_select_placeholder": "Selecciona un país",
+      "fullAddress": "Dirección Fiscal Completa",
+      "fullAddress_placeholder": "Ej: Calle Falsa 123, Ciudad, Provincia, CP, País",
+      "tax_identifier_name": "Nombre del Identificador",
+      "tax_identifier_name_placeholder": "Ej: CIF, NIF, VAT ID",
+      "tax_identifier_value": "Valor del Identificador",
+      "tax_identifier_value_placeholder": "Ej: B12345678",
+      "email": "Email de Contacto",
+      "email_placeholder": "Ej: contacto@empresa.com",
+      "phone_country": "Prefijo Telefónico",
+      "phone_country_select_placeholder": "País",
+      "phone_number": "Número de Teléfono",
+      "phone_number_placeholder": "Ej: 912345678",
+      "notes_label": "Contenido de las notas",
+      "notes_placeholder": "Cualquier información relevante..."
+    },
+    "edit_page_title": "Editar Sociedad Mercantil",
+    "clinics_table": {
+      "clinic_name": "Clínica",
+      "association_status": "Estado Asociación",
+      "associate": "Asociar",
+      "associate_aria_label": "Asociar clínica"
+    },
+    "delete_confirm_title": "¿Estás seguro?",
+    "delete_confirm_desc": "Esta acción no se puede deshacer. Esto eliminará permanentemente la sociedad mercantil y desasociará todas sus clínicas. Las clínicas no serán eliminadas."
+  },
+  "accountingImport": {
+    "features": {
+      "consultationServices": "Servicios de consulta",
+      "medicalTreatments": "Tratamientos médicos",
+      "hairSalon": "Peluquería",
+      "spa": "Spa",
+      "sellsProducts": "Venta de productos",
+      "multiCenter": "Múltiples Centros/Clínicas"
+    }
+  },
+  "accounting": {
+    "sectors": {
+      "AESTHETIC_CLINIC": {
+        "name": "Clínica Estética",
+        "description": "Especializado en tratamientos estéticos, medicina estética y procedimientos no invasivos"
+      },
+      "BEAUTY_CENTER": {
+        "name": "Centro de Belleza y Peluquería",
+        "description": "Servicios de belleza, peluquería, estética y cuidado personal"
+      },
+      "SPA_WELLNESS": {
+        "name": "Spa y Centro de Bienestar",
+        "description": "Servicios de spa, wellness, terapias holísticas y tratamientos de relajación"
+      },
+      "MEDICAL_CENTER": {
+        "name": "Centro Médico Privado",
+        "description": "Consultorios médicos y centros de salud privados"
+      },
+      "PHYSIOTHERAPY_CENTER": {
+        "name": "Centro de Fisioterapia",
+        "description": "Servicios de fisioterapia, rehabilitación y terapia física"
+      },
+      "DENTAL_CLINIC": {
+        "name": "Clínica Dental",
+        "description": "Servicios odontológicos y tratamientos dentales"
+      }
+    },
+    "import": {
+      "title": "Importar Plan Contable",
+      "tabs": {
+        "predefined": "Plantillas Predefinidas",
+        "csv": "Importar CSV"
+      },
+      "legalEntity": {
+        "label": "Entidad Legal",
+        "placeholder": "Selecciona una entidad legal...",
+        "searchPlaceholder": "Buscar entidad...",
+        "emptyPlaceholder": "No se encontraron entidades",
+        "createNew": "+ Crear nueva entidad legal"
+      },
+      "country": {
+        "label": "País",
+        "placeholder": "Selecciona el país del plan contable",
+        "description": "Define qué plan contable estándar se aplicará"
+      },
+      "sector": {
+        "label": "Tipo de Negocio",
+        "placeholder": "Selecciona el tipo de negocio",
+        "description": "Personaliza el plan contable según tu sector específico",
+        "comingSoon": "(Próximamente)",
+        "generalPlan": {
+          "name": "Plan General (Sin especialización)",
+          "description": "Plan contable estándar sin personalizaciones por sector"
+        }
+      },
+      "template": {
+        "label": "Plantilla Disponible",
+        "description": "Plantilla adaptada para {{country}} - {{sector}}"
+      },
+      "preview": {
+        "title": "Vista Previa del Plan Contable",
+        "description": "Plan contable {country} - {sector}",
+        "accountsCount": "{count} cuentas",
+        "loading": "Cargando vista previa...",
+        "searchPlaceholder": "Buscar por código o nombre de cuenta...",
+        "expandAll": "Expandir todo",
+        "collapseAll": "Colapsar todo",
+        "columns": {
+          "account": "Cuenta",
+          "type": "Tipo",
+          "name": "Nombre"
+        },
+        "accountTypes": {
+          "ASSET": "Activo",
+          "LIABILITY": "Pasivo",
+          "EQUITY": "Patrimonio",
+          "REVENUE": "Ingresos",
+          "EXPENSE": "Gastos",
+          "COST_OF_GOODS_SOLD": "Coste de Ventas"
+        },
+        "noResults": "No se encontraron cuentas que coincidan con tu búsqueda"
+      },
+      "fiscalYear": {
+        "title": "Ejercicio Fiscal",
+        "configure": "Configurar ejercicio",
+        "hide": "Ocultar configuración",
+        "defaultInfo": "Se creará un ejercicio fiscal para el año natural {year} (1 enero - 31 diciembre)",
+        "name": "Nombre del ejercicio",
+        "namePlaceholder": "Ej: Ejercicio 2024, FY 2024-2025",
+        "startDate": "Fecha inicio",
+        "endDate": "Fecha fin",
+        "customInfo": "Algunos países o empresas usan ejercicios fiscales diferentes al año natural (ej: abril-marzo, julio-junio)"
+      },
+      "replacementOption": {
+        "title": "Opción de Importación",
+        "replaceExisting": "Reemplazar plan contable existente",
+        "replaceDescription": "Se eliminará completamente el plan contable actual y se importará el nuevo. Esta acción no se puede deshacer.",
+        "mergeDescription": "Se mantendrá el plan contable actual y se añadirán las cuentas nuevas que no existan.",
+        "warning": "¡Atención! Esta opción eliminará permanentemente todas las cuentas contables existentes y sus asociaciones."
+      },
+      "mode": {
+        "label": "Modo de Importación",
+        "options": {
+          "replace": "Reemplazar plan existente",
+          "merge": "Combinar con plan existente"
+        },
+        "descriptions": {
+          "merge": "Se añadirán las cuentas nuevas sin eliminar las existentes"
+        }
+      },
+      "warnings": {
+        "checkingMovements": "Verificando movimientos contables...",
+        "hasMovements": {
+          "title": "Plan contable con movimientos",
+          "description": "Esta entidad tiene {{count}} asientos contables registrados. Reemplazar el plan podría afectar la integridad de los datos.",
+          "confirmButton": "Entiendo los riesgos, continuar"
+        },
+        "replace": {
+          "title": "¿Reemplazar plan contable?",
+          "description": "Esta acción eliminará todas las cuentas existentes. Se perderán las personalizaciones actuales.",
+          "confirmReplace": "Eliminar plan existente y seleccionar uno nuevo",
+          "warningWithMovements": "(ADVERTENCIA: Se eliminarán {{count}} asientos contables)"
+        }
+      },
+      "progress": {
+        "importing": "Importando plan contable...",
+        "creating": "Creando cuentas contables...",
+        "mapping": "Configurando mapeos iniciales...",
+        "success": "Plan contable importado correctamente",
+        "error": "Error al importar: {{error}}"
+      },
+      "actions": {
+        "import": "Importar Plan",
+        "cancel": "Cancelar",
+        "back": "Volver"
+      },
+      "errors": {
+        "noLegalEntity": "Debes seleccionar una entidad legal",
+        "noCountry": "Debes seleccionar un país",
+        "noSector": "Debes seleccionar un tipo de negocio",
+        "loadingTemplate": "Error al cargar la plantilla"
+      },
+      "standardInfo": {
+        "accountingStandard": "Estándar contable:",
+        "currency": "Moneda:",
+        "fiscalYear": "Ejercicio fiscal:",
+        "sectorCustomization": "Personalización sectorial:"
+      },
+      "businessFeatures": {
+        "title": "Características del Negocio",
+        "description": "Selecciona las características de tu negocio para configurar automáticamente categorías, productos y métodos de pago",
+        "consultationServices": "Servicios de Consultas",
+        "medicalTreatments": "Tratamientos Médicos",
+        "hairSalon": "Peluquería",
+        "spa": "Spa / Hidroterapia",
+        "sellsProducts": "Venta de Productos",
+        "locations": {
+          "label": "Ubicaciones del negocio",
+          "placeholder": "Ej: Madrid, Barcelona, Valencia...",
+          "helper": "Ingresa las ubicaciones separadas por comas"
+        },
+        "multiCenter": "Múltiples Centros/Clínicas",
+        "configInfo": "Estas opciones generarán automáticamente familias de servicios y productos genéricos que podrás personalizar más adelante.",
+        "hide": "Ocultar opciones",
+        "configure": "Configurar características",
+        "defaultInfo": "Se aplicará una configuración estándar basada en el tipo de negocio seleccionado.",
+        "customInfo": "Podrás añadir tus propios servicios y productos específicos después de la importación.",
+        "features": {
+          "consultationServices": "Servicios de consulta",
+          "medicalTreatments": "Tratamientos médicos",
+          "hairSalon": "Peluquería",
+          "spa": "Spa",
+          "sellsProducts": "Venta de productos",
+          "multiCenter": "Múltiples Centros/Clínicas"
+        }
+      },
+      "accountTypes": {
+        "ASSET": "Activo",
+        "LIABILITY": "Pasivo",
+        "EQUITY": "Patrimonio",
+        "REVENUE": "Ingresos",
+        "EXPENSE": "Gastos",
+        "COST_OF_GOODS_SOLD": "Coste de Ventas"
+      }
+    },
+    "mapping": {
+        "title": "Configuración de Mapeos Contables",
+        "description": "Configure las relaciones entre sus datos y las cuentas contables",
+        "saved": "Mapeos guardados correctamente",
+        "error": "Error al guardar los mapeos",
+        "noMappings": "Seleccione al menos un mapeo antes de guardar",
+        "selectAccount": "Seleccionar cuenta...",
+        "useSuggestion": "Usar sugerencia",
+        "applyToSubcategories": "Aplicar a subcategorías",
+        "comingSoon": "Esta funcionalidad estará disponible próximamente",
+        "tabs": {
+          "categories": "Categorías",
+          "payments": "Métodos de Pago",
+          "vat": "Tipos de IVA",
+          "rules": "Reglas Especiales"
+        },
+        "categories": {
+          "info": "Asocie cada categoría de servicios/productos con la cuenta contable correspondiente para la generación automática de asientos.",
+          "hasSubcategories": "Tiene subcategorías",
+          "allMapped": "Todas las categorías están correctamente mapeadas"
+        }
+      },
+      "fiscalYears": {
+        "title": "Ejercicios Fiscales",
+        "description": "Gestiona los períodos contables de tu empresa",
+        "newFiscalYear": "Nuevo Ejercicio Fiscal",
+        "editFiscalYear": "Editar Ejercicio Fiscal",
+        "deleteFiscalYear": "Eliminar Ejercicio Fiscal",
+        "confirmDelete": "¿Está seguro de eliminar el ejercicio fiscal \"{{name}}\"?\n\nEsta acción solo es posible si el ejercicio no tiene movimientos contables asociados.",
+        "deleteSuccess": "Ejercicio fiscal eliminado correctamente",
+        "deleteError": "Error al eliminar el ejercicio fiscal",
+        "onlyOpenCanDelete": "Solo se pueden eliminar ejercicios fiscales abiertos",
+        "hasMovements": "No se puede eliminar un ejercicio fiscal con movimientos contables",
+        "status": {
+          "open": "Abierto",
+          "closingProcess": "En proceso de cierre",
+          "closed": "Cerrado"
+        }
+      }
+    },
+    "chartOfAccounts": {
+      "title": "Plan Contable",
+      "loading": "Cargando plan contable...",
+      "noResults": "No hay resultados para la entidad legal seleccionada o no hay plan contable definido.",
+      "filterPlaceholder": "Filtrar por nombre o número...",
+      "confirmDeleteSelected": "¿Está seguro de eliminar las cuentas seleccionadas? Esta acción eliminará también todas sus asociaciones.",
+      "errorDeletingAccounts": "Error al eliminar las cuentas seleccionadas",
+      "bulkActions": {
+        "actions": "Acciones",
+        "exportSelected": "Exportar seleccionadas",
+        "deleteSelected": "Eliminar seleccionadas"
+      },
+      "pagination": {
+        "itemType": "cuentas",
+        "rowsSelected": "fila(s) seleccionadas"
+      }
+    }
+  },
+  "invoiceConversion": {
+    "title": "Conversión a Factura",
+    "subtitle": "Ticket #{{ticketNumber}}",
+    "senderData": "Datos del Emisor",
+    "recipientData": "Datos del Receptor",
+    "invoiceLines": "Líneas de Factura",
+    "seriesAndDate": "Configuración de Factura",
+    "invoiceSeries": "Serie de Facturación",
+    "issueDate": "Fecha de Emisión",
+    "centerSeries": "Serie del centro: {{centerName}}",
+    "invoiceWillBeGenerated": "La factura se generará en: {{entityName}}",
+    "dateMustMatchOperation": "La fecha debe coincidir con la operación real",
+    "dateWarning": "Atención: La fecha difiere del ticket original ({{ticketDate}}). Esto puede tener implicaciones fiscales.",
+    "ticketInfo": "Información del Ticket",
+    "paymentInfo": "Información de Pago",
+    "includePaymentInfo": "Incluir información de pago en la factura",
+    "paymentStatus": "Estado del pago",
+    "paid": "Pagado",
+    "pending": "Pendiente",
+    "paymentMethods": "Métodos de pago",
+    "totalPaid": "Total pagado",
+    "pendingAmount": "Pendiente",
+    "concept": "Concepto",
+    "quantity": "Cantidad",
+    "unitPriceWithVat": "P.Unit (IVA inc.)",
+    "vatRate": "IVA %",
+    "subtotal": "Subtotal",
+    "invoiceNotes": "Notas de la factura",
+    "notesPlaceholder": "Añadir notas que aparecerán en la factura (opcional)",
+    "generateInvoice": "Generar Factura",
+    "generatingInvoice": "Generando factura...",
+    "recipientWarning": "Los datos del receptor son incompletos.",
+    "recipientWarningDescription": "Nombre y NIF/CIF son requeridos para generar la factura.",
+    "invoiceGenerated": "Factura generada correctamente",
+    "errorGeneratingInvoice": "Error al generar la factura",
+    "noVATNumber": "Sin NIF/CIF",
+    "center": "Centro",
+    "sinSerie": "Sin serie"
+  }
+}

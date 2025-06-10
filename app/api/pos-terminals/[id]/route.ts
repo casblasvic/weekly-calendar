@@ -8,7 +8,7 @@ import { posTerminalFormSchema } from '@/lib/schemas/pos-terminal';
 // const updatePosTerminalSchema = z.object({ ... });
 
 // GET /api/pos-terminals/[id] - Obtener un terminal POS específico
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerAuthSession();
 
   if (!session?.user?.systemId) {
@@ -17,7 +17,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const systemId = session.user.systemId;
 
   try {
-    const { id } = params;
+    const { id } = await params;
 
     // Obtener el terminal POS con sus relaciones
     const posTerminal = await prisma.posTerminal.findUnique({
@@ -71,7 +71,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 }
 
 // PUT /api/pos-terminals/[id] - Actualizar un terminal POS
-export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerAuthSession();
 
   if (!session?.user?.systemId) {
@@ -80,7 +80,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   const systemId = session.user.systemId;
 
   try {
-    const { id } = params;
+    const { id } = await params;
 
     const body = await req.json();
     console.log("Received data for PUT:", body);
@@ -195,7 +195,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 }
 
 // DELETE /api/pos-terminals/[id] - Eliminar un terminal POS
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerAuthSession();
 
   if (!session?.user?.systemId) {
@@ -204,7 +204,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   const systemId = session.user.systemId;
 
   try {
-    const { id } = params;
+    const { id } = await params;
 
     // Verificar que el terminal existe y pertenece al sistema
     const posTerminal = await prisma.posTerminal.findUnique({

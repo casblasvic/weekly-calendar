@@ -11,7 +11,10 @@ import { Prisma } from '@prisma/client'; // Importar Prisma para manejo de error
 export async function GET(request: Request) {
   try {
     const session = await getServerAuthSession();
+    console.log('[API Banks GET] Session:', session?.user?.id, 'SystemId:', session?.user?.systemId);
+    
     if (!session?.user?.systemId) {
+      console.log('[API Banks GET] No session or systemId found');
       return NextResponse.json({ message: 'No autorizado' }, { status: 401 });
     }
     const systemId = session.user.systemId;
@@ -19,6 +22,7 @@ export async function GET(request: Request) {
     // <<< LEER clinicId de los parámetros de búsqueda de la URL >>>
     const { searchParams } = new URL(request.url);
     const clinicId = searchParams.get('clinicId');
+    console.log('[API Banks GET] Request params - clinicId:', clinicId);
 
     // <<< CONSTRUIR WHERE condicional >>>
     let whereCondition: Prisma.BankWhereInput = {
@@ -47,6 +51,8 @@ export async function GET(request: Request) {
     }
     // <<< FIN CONSTRUIR WHERE >>>
 
+    console.log('[API Banks GET] Where condition:', JSON.stringify(whereCondition, null, 2));
+
     // Obtener los bancos según la condición
     const banks = await prisma.bank.findMany({
       // <<< Usar la condición construida >>>
@@ -54,18 +60,29 @@ export async function GET(request: Request) {
       orderBy: {
         name: 'asc',
       },
-      // <<< Seleccionar más campos si son necesarios >>>
-      select: {
-        id: true,
-        name: true,
-        code: true,
-        // <<< INCLUIR applicableClinics para determinar el ámbito >>>
+      // <<< Incluir todos los campos necesarios >>>
+      include: {
         applicableClinics: { 
-          select: { clinicId: true } // Solo necesitamos saber si existe alguna relación
-        } 
+          include: {
+            clinic: true
+          }
+        },
+        bankAccounts: {
+          where: {
+            isActive: true
+          },
+          include: {
+            applicableClinics: {
+              include: {
+                clinic: true
+              }
+            }
+          }
+        }
       },
     });
 
+    console.log('[API Banks GET] Returning banks:', banks.length);
     return NextResponse.json(banks);
   } catch (error) {
     console.error('[API Banks GET] Error:', error);

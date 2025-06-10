@@ -320,9 +320,17 @@ export async function getLegalEntitiesBySystem(systemId: string) {
   try {
     const legalEntities = await prisma.legalEntity.findMany({
       where: { systemId: systemId }, 
-      orderBy: { name: "asc" },
+      include: {
+        _count: {
+          select: { clinics: true }
+        }
+      }
     });
-    return { data: legalEntities, success: true };
+    
+    // Ordenar por número de clínicas descendente
+    const sortedEntities = legalEntities.sort((a, b) => b._count.clinics - a._count.clinics);
+    
+    return { data: sortedEntities, success: true };
   } catch (error) {
     console.error(`Error fetching legal entities for system ${systemId}:`, error);
     return { data: [], error: "Error al obtener las entidades legales.", success: false };

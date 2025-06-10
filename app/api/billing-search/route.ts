@@ -103,7 +103,11 @@ export async function GET(request: NextRequest) {
         where,
         include: {
           client: true, // To get clientName
-          clinic: true, // To get clinicName
+          clinic: {
+            include: {
+              legalEntity: true // To check if clinic has a legal entity
+            }
+          },
           cashSession: true, // To determine canReopen status
           // invoice: true, // If you need invoice details directly linked
         },
@@ -118,7 +122,7 @@ export async function GET(request: NextRequest) {
 
     const formattedResults = tickets.map(ticket => ({
       id: ticket.id,
-      type: 'Ticket',
+      type: 'Ticket' as const,
       number: ticket.ticketNumber,
       clinicName: ticket.clinic?.name || 'N/A',
       clientName: ticket.client ? `${ticket.client.firstName || ''} ${ticket.client.lastName || ''}`.trim() : 'N/A',
@@ -132,6 +136,8 @@ export async function GET(request: NextRequest) {
       canReopen: ticket.status === TicketStatus.CLOSED && 
                  (!ticket.cashSessionId || (ticket.cashSession?.status === CashSessionStatus.OPEN)),
       ticketId: ticket.id,
+      hasLegalEntity: !!ticket.clinic?.legalEntity,
+      finalAmount: ticket.finalAmount || 0,
     }));
 
     return NextResponse.json({

@@ -71,12 +71,30 @@ export const BASIC_ACCOUNT_TEMPLATES = Object.entries(BASIC_ACCOUNTS_BY_COUNTRY)
   accounts: accounts
 }));
 
-// Función stub para sectores (para evitar errores)
+// Función para obtener sectores disponibles
 export function getAvailableSectors() {
   return [
-    { id: 'AESTHETIC_CLINIC', name: 'Clínica Estética' },
-    { id: 'MEDICAL_CLINIC', name: 'Clínica Médica' },
-    { id: 'SPA', name: 'Spa / Centro de Bienestar' }
+    { 
+      id: 'AESTHETIC_CLINIC', 
+      name: 'Clínica Estética',
+      sector: 'AESTHETIC_CLINIC',
+      description: 'Plan contable optimizado para clínicas de estética y belleza',
+      isAvailable: true
+    },
+    { 
+      id: 'MEDICAL_CLINIC', 
+      name: 'Clínica Médica',
+      sector: 'MEDICAL_CLINIC', 
+      description: 'Plan contable para clínicas médicas y consultorios',
+      isAvailable: true
+    },
+    { 
+      id: 'SPA', 
+      name: 'Spa / Centro de Bienestar',
+      sector: 'SPA',
+      description: 'Plan contable para spas y centros de bienestar',
+      isAvailable: true
+    }
   ];
 }
 

@@ -65,3 +65,10 @@ export function capitalizeWords(text: string): string {
     .join(' ');
 }
 
+// Función para trabajar con decimales de forma segura
+export function decimal(value: number | string): number {
+  if (typeof value === 'string') {
+    return parseFloat(value)
+  }
+  return value
+}

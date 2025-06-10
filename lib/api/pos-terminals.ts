@@ -1,5 +1,5 @@
-import axios from "axios";
 import { z } from "zod";
+import apiClient from "@/lib/axios"; // Usar el cliente configurado
 
 // Tipos para los terminales POS
 export interface PosTerminal {
@@ -64,17 +64,29 @@ export async function getPosTerminals(
     if (options?.isActive !== undefined) {
       params.append('isActive', String(options.isActive));
     }
-    if (options?.includeBankAccount !== undefined) {
-      params.append('includeBankAccount', String(options.includeBankAccount));
-    }
     
     const queryString = params.toString();
     const apiUrl = `/api/pos-terminals${queryString ? `?${queryString}` : ''}`;
     
     console.log(`[getPosTerminals] Fetching from: ${apiUrl}`); // Log para depuración
     
-    const response = await axios.get(apiUrl);
-    return response.data;
+    // El interceptor ya devuelve response.data
+    const data = await apiClient.get<PosTerminal[]>(apiUrl);
+    
+    console.log('[getPosTerminals] Response received:', {
+      dataType: typeof data,
+      isArray: Array.isArray(data),
+      dataLength: Array.isArray(data) ? data.length : 'not array',
+      firstItem: Array.isArray(data) && data.length > 0 ? data[0] : null,
+    });
+    
+    // Asegurarnos de devolver siempre un array
+    if (!Array.isArray(data)) {
+      console.error('[getPosTerminals] Data is not an array:', data);
+      return [];
+    }
+    
+    return data;
   } catch (error) {
     console.error("Error al obtener terminales POS:", error);
     throw new Error("No se pudieron cargar los terminales POS");
@@ -84,10 +96,13 @@ export async function getPosTerminals(
 // Obtener un terminal POS específico por ID
 export async function getPosTerminal(id: string): Promise<PosTerminal> {
   try {
-    const response = await axios.get(`/api/pos-terminals/${id}`);
-    return response.data;
+    console.log(`[getPosTerminal] Fetching POS terminal with ID: ${id}`);
+    // El interceptor ya devuelve response.data
+    const data = await apiClient.get(`/api/pos-terminals/${id}`);
+    console.log('[getPosTerminal] Response received:', data);
+    return data as PosTerminal;
   } catch (error) {
-    console.error(`Error al obtener terminal POS ${id}:`, error);
+    console.error("Error al obtener terminal POS:", error);
     throw new Error("No se pudo cargar el terminal POS");
   }
 }
@@ -95,35 +110,27 @@ export async function getPosTerminal(id: string): Promise<PosTerminal> {
 // Crear un nuevo terminal POS
 export async function createPosTerminal(data: PosTerminalFormValues): Promise<PosTerminal> {
   try {
-    const response = await axios.post("/api/pos-terminals", data);
-    return response.data;
+    console.log('[createPosTerminal] Creating with data:', data);
+    // El interceptor ya devuelve response.data
+    const response = await apiClient.post('/api/pos-terminals', data);
+    console.log('[createPosTerminal] Response received:', response);
+    return response as PosTerminal;
   } catch (error) {
     console.error("Error al crear terminal POS:", error);
-    if (axios.isAxiosError(error) && error.response) {
-      // Si el servidor devuelve un mensaje de error, lo usamos
-      throw new Error(
-        error.response.data.error || "No se pudo crear el terminal POS"
-      );
-    }
     throw new Error("No se pudo crear el terminal POS");
   }
 }
 
 // Actualizar un terminal POS existente
-export async function updatePosTerminal(
-  id: string, 
-  data: PosTerminalFormValues
-): Promise<PosTerminal> {
+export async function updatePosTerminal(id: string, data: PosTerminalFormValues): Promise<PosTerminal> {
   try {
-    const response = await axios.put(`/api/pos-terminals/${id}`, data);
-    return response.data;
+    console.log(`[updatePosTerminal] Updating POS terminal ${id} with data:`, data);
+    // El interceptor ya devuelve response.data
+    const response = await apiClient.put(`/api/pos-terminals/${id}`, data);
+    console.log('[updatePosTerminal] Response received:', response);
+    return response as PosTerminal;
   } catch (error) {
-    console.error(`Error al actualizar terminal POS ${id}:`, error);
-    if (axios.isAxiosError(error) && error.response) {
-      throw new Error(
-        error.response.data.error || "No se pudo actualizar el terminal POS"
-      );
-    }
+    console.error("Error al actualizar terminal POS:", error);
     throw new Error("No se pudo actualizar el terminal POS");
   }
 }
@@ -131,14 +138,9 @@ export async function updatePosTerminal(
 // Eliminar un terminal POS
 export async function deletePosTerminal(id: string): Promise<void> {
   try {
-    await axios.delete(`/api/pos-terminals/${id}`);
+    await apiClient.delete(`/api/pos-terminals/${id}`);
   } catch (error) {
-    console.error(`Error al eliminar terminal POS ${id}:`, error);
-    if (axios.isAxiosError(error) && error.response) {
-      throw new Error(
-        error.response.data.error || "No se pudo eliminar el terminal POS"
-      );
-    }
+    console.error("Error al eliminar terminal POS:", error);
     throw new Error("No se pudo eliminar el terminal POS");
   }
 } 

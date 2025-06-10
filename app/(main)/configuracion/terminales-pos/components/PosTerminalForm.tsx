@@ -100,22 +100,39 @@ export function PosTerminalForm({
     },
   });
 
-  const { data: banks, isLoading: isLoadingBanks } = useQuery<
-    Bank[],
-    Error,
-    Bank[]
-  >({
+  // Query para obtener bancos - ahora sin parámetros por defecto
+  const { data: banks, isLoading: isLoadingBanks, error: banksError } = useQuery<Bank[]>({
     queryKey: ['banks'],
-    queryFn: async (): Promise<Bank[] | undefined> => {
+    queryFn: async () => {
         try {
+            console.log('[PosTerminalForm] Fetching banks...');
             const result = await getBanks();
-            return Array.isArray(result) ? result : undefined;
+            console.log('[PosTerminalForm] Banks fetched:', result);
+            console.log('[PosTerminalForm] Banks type:', typeof result);
+            console.log('[PosTerminalForm] Is array?:', Array.isArray(result));
+            return Array.isArray(result) ? result : [];
         } catch (error) {
-            console.error("Error fetching banks:", error);
-            return undefined; 
+            console.error("[PosTerminalForm] Error fetching banks:", error);
+            toast({
+              title: t('common.error'),
+              description: t('pos-terminals.errors.fetchBanksFailed'),
+              variant: 'destructive',
+            });
+            return []; 
         }
     },
   });
+
+  // Log del estado de banks después de cada render
+  React.useEffect(() => {
+    console.log('[PosTerminalForm] Banks state:', {
+      banks,
+      isLoadingBanks,
+      banksError,
+      selectedBankId,
+      initialData
+    });
+  }, [banks, isLoadingBanks, banksError, selectedBankId, initialData]);
 
   const { data: bankAccounts, isLoading: isLoadingBankAccounts } = useQuery<
     BankAccount[],
@@ -123,16 +140,16 @@ export function PosTerminalForm({
     BankAccount[]
   >({
     queryKey: ['bankAccounts', selectedBankId],
-    queryFn: async (): Promise<BankAccount[] | undefined> => {
+    queryFn: async (): Promise<BankAccount[]> => {
         console.log(`[Query bankAccounts] Running for bankId: ${selectedBankId}`);
-        if (!selectedBankId) return undefined;
+        if (!selectedBankId) return [];
         try {
             const result = await getBankAccounts({ bankId: selectedBankId });
             console.log(`[Query bankAccounts] API Result for bankId ${selectedBankId}:`, result);
-            return Array.isArray(result) ? result : undefined;
+            return Array.isArray(result) ? result : [];
         } catch (error) {
             console.error("Error fetching bank accounts:", error);
-            return undefined;
+            return [];
         }
     },
     enabled: !!selectedBankId,
@@ -144,16 +161,31 @@ export function PosTerminalForm({
     Clinic[]
   >({
     queryKey: ['activeClinics'],
-    queryFn: async (): Promise<Clinic[] | undefined> => {
+    queryFn: async (): Promise<Clinic[]> => {
         try {
             const result = await getActiveClinics();
-            return Array.isArray(result) ? result : undefined;
+            return Array.isArray(result) ? result : [];
         } catch (error) {
             console.error("Error fetching clinics:", error);
-            return undefined;
+            toast({
+              title: t('common.error'),
+              description: t('pos-terminals.errors.fetchClinicsFailed'),
+              variant: 'destructive',
+            });
+            return [];
         }
     },
   });
+
+  // Debug useEffect
+  useEffect(() => {
+    console.log('[PosTerminalForm Debug] Banks state:', {
+      isLoading: isLoadingBanks,
+      data: banks,
+      length: banks?.length,
+      error: banks === undefined ? 'Data is undefined' : null
+    });
+  }, [banks, isLoadingBanks]);
 
   useEffect(() => {
     console.log('[Effect SetBankId] Running. initialData exists:', !!initialData, 'preselectedBankId:', preselectedBankId, 'current selectedBankId:', selectedBankId);

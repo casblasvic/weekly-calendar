@@ -247,6 +247,7 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
         paymentMethodDefinitionId: p.paymentMethodDefinition?.id,
         paymentMethodName: p.paymentMethodDefinition?.name || t('common.unknown'),
         paymentMethodCode: p.paymentMethodDefinition?.code || null,
+        paymentMethodType: p.paymentMethodDefinition?.type || null,
         amount: p.amount,
         paymentDate: p.paymentDate ? new Date(p.paymentDate) : new Date(),
         transactionReference: p.transactionReference || '',
@@ -256,6 +257,14 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
       // 3. Calculate initial summary totals based on processed items and payments
       const subtotalInit = processedItemsForForm.reduce((sum, itm) => sum + (itm.finalPrice || 0), 0);
       const totalIVAInit = processedItemsForForm.reduce((sum, itm) => sum + (itm.vatAmount || 0), 0);
+
+      // Calcular pagos aplazados para restarlos del cálculo del IVA
+      const deferredPayments = processedPaymentsForForm.filter((p: any) => 
+        p.paymentMethodCode === 'SYS_DEFERRED_PAYMENT' || 
+        (ticketData.payments?.find((tp: any) => tp.id === p.id)?.paymentMethodDefinition?.type === 'DEFERRED_PAYMENT')
+      );
+      const deferredAmount = deferredPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+      const nonDeferredAmount = processedPaymentsForForm.reduce((sum, p) => sum + (p.amount || 0), 0) - deferredAmount;
 
       let effectiveGlobalDiscountInit = 0;
       const globalDiscountTypeInit = ticketData.discountType || null;
@@ -270,7 +279,14 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
 
       const taxableBaseInit = subtotalInit - effectiveGlobalDiscountInit;
       const totalGeneralInit = taxableBaseInit + totalIVAInit;
-      const amountPaidInit = processedPaymentsForForm.reduce((sum, p) => sum + (p.amount || 0), 0);
+      
+      // Calcular el porcentaje pagado (sin incluir aplazados) para ajustar el IVA
+      const paidPercentage = totalGeneralInit > 0 ? nonDeferredAmount / totalGeneralInit : 0;
+      const adjustedBase = taxableBaseInit * paidPercentage; // Base ajustada
+      const adjustedIVA = totalIVAInit * paidPercentage; // IVA ajustado
+      const adjustedTotal = adjustedBase + adjustedIVA; // Total ajustado
+      
+      const amountPaidInit = adjustedBase; // "Pagado" es la base imponible sin IVA
 
       // 4. Construct the complete formValues object for reset
       const formValues: Partial<TicketFormValues> = {
@@ -291,8 +307,8 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
         globalDiscountReason: ticketData.discountReason || null,
         subtotalAmount: parseFloat(subtotalInit.toFixed(2)),
         taxableBaseAmount: parseFloat(taxableBaseInit.toFixed(2)),
-        taxAmount: parseFloat(totalIVAInit.toFixed(2)),
-        totalAmount: parseFloat(totalGeneralInit.toFixed(2)),
+        taxAmount: parseFloat(adjustedIVA.toFixed(2)),
+        totalAmount: parseFloat(adjustedTotal.toFixed(2)),
         amountPaid: parseFloat(amountPaidInit.toFixed(2)),
         amountDeferred: ticketData.dueAmount && ticketData.dueAmount > 0 ? ticketData.dueAmount : 0,
       };
@@ -465,12 +481,12 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
       // Ítems
       if (formData.items && formData.items.length > 0) {
         batchPayload.itemsToAdd = formData.items.map((itm) => {
-          const { id: localId, concept, finalPrice, vatAmount, type, discountNotes, ...rest } = itm;
+          const { id: localId, concept, finalPrice, vatAmount, type, discountNotes, ...itemDataRest } = itm;
           return {
-            ...rest,
+            ...itemDataRest, 
             itemType: (type || 'CUSTOM') as any,
             discountNotes,
-            tempId: localId,
+            tempId: localId 
           };
         });
       }
@@ -584,7 +600,7 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
         itemsToAddForBackend.push({ 
           ...itemDataRest, 
           itemType: type as 'SERVICE' | 'PRODUCT' | 'BONO_DEFINITION' | 'PACKAGE_DEFINITION' | 'CUSTOM',
-          discountNotes: discountNotes,
+          discountNotes,
           tempId: localId 
         });
       } else { 
@@ -1101,14 +1117,28 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
   // Total general del ticket
   const totalGeneralTicket = taxableBaseFinalTicket + totalIVADeLineas;
   
-  const amountPaid = watchedPayments.reduce((sum, payment) => sum + (payment.amount || 0), 0);
-  const currentPending = Math.max(0, totalGeneralTicket - amountPaid);
+  // Calcular pagos aplazados
+  const deferredPayments = watchedPayments.filter((p: any) => 
+    p.paymentMethodCode === 'SYS_DEFERRED_PAYMENT' || 
+    p.paymentMethodType === 'DEFERRED_PAYMENT'
+  );
+  const deferredAmount = deferredPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+  const nonDeferredAmount = watchedPayments.reduce((sum, p) => sum + (p.amount || 0), 0) - deferredAmount;
+  
+  // Calcular el porcentaje pagado (sin incluir aplazados) para ajustar el IVA
+  const paidPercentage = totalGeneralTicket > 0 ? nonDeferredAmount / totalGeneralTicket : 0;
+  const adjustedBase = taxableBaseFinalTicket * paidPercentage; // Base imponible de lo pagado
+  const adjustedIVA = totalIVADeLineas * paidPercentage; // IVA de lo pagado
+  const adjustedTotal = adjustedBase + adjustedIVA; // Total ajustado = Base + IVA
+  
+  const amountPaid = adjustedBase; // "Pagado" es la base imponible sin IVA
+  const currentPending = Math.max(0, totalGeneralTicket - (nonDeferredAmount + deferredAmount));
 
   useEffect(() => {
     form.setValue('subtotalAmount', parseFloat(subtotalNetoDeLineas.toFixed(2)), { shouldDirty: false }); 
     form.setValue('taxableBaseAmount', parseFloat(taxableBaseFinalTicket.toFixed(2)), { shouldDirty: false }); 
-    form.setValue('taxAmount', parseFloat(totalIVADeLineas.toFixed(2)), { shouldDirty: false });
-    form.setValue('totalAmount', parseFloat(totalGeneralTicket.toFixed(2)), { shouldDirty: false }); 
+    form.setValue('taxAmount', parseFloat(adjustedIVA.toFixed(2)), { shouldDirty: false });
+    form.setValue('totalAmount', parseFloat(adjustedTotal.toFixed(2)), { shouldDirty: false }); 
     form.setValue('amountPaid', parseFloat(amountPaid.toFixed(2)), { shouldDirty: false });
     // El campo 'amountDeferred' se actualiza con ticketData.dueAmount en el useEffect de inicialización
     // y el resumen de "Aplazado" lo calcula dinámicamente de watchedPayments.
@@ -1658,6 +1688,38 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
                         currentTicketId={ticketData?.id}
                       />
                       
+                      {/* Resumen de conceptos (sin considerar pagos) */}
+                      <div className="p-3 mt-4 rounded-lg bg-gray-50">
+                        <div className="flex flex-wrap gap-x-8 gap-y-2">
+                          {totalsReady ? (
+                          <div className="min-w-[140px]">
+                             <span className="block mb-1 text-xs text-gray-500">{t('tickets.summary.base')}:</span>
+                             <span className="text-sm font-medium">{formatCurrency(subtotalNetoDeLineas, currencySymbol)}</span>
+                           </div>
+                          ) : (
+                            <Skeleton className="w-24 h-6" />
+                          )}
+                          {totalsReady ? (
+                          <div className="min-w-[90px]">
+                            <span className="block mb-1 text-xs text-gray-500">{t('tickets.summary.discount')}:</span>
+                            <span className="text-sm font-medium text-red-600">{formatCurrency(totalDescuentosDeLineas + effectiveGlobalDiscount, currencySymbol)}</span>
+                          </div>
+                          ) : <Skeleton className="w-20 h-6" />}
+                          {totalsReady ? (
+                          <div className="min-w-[90px]">
+                            <span className="block mb-1 text-xs text-gray-500">{t('tickets.summary.vat')}:</span>
+                            <span className="text-sm font-medium">{formatCurrency(totalIVADeLineas, currencySymbol)}</span>
+                          </div>
+                          ) : <Skeleton className="w-16 h-6" />}
+                          {totalsReady ? (
+                          <div className="min-w-[100px]">
+                            <span className="block mb-1 text-xs text-gray-500">{t('tickets.summary.total')}:</span>
+                            <span className="text-sm font-semibold text-purple-700">{formatCurrency(totalGeneralTicket, currencySymbol)}</span>
+                          </div>
+                          ) : <Skeleton className="w-20 h-6" />}
+                        </div>
+                      </div>
+                      
                       <div className="py-3 border-t border-b">
                         {/* Tabs de pagos */}
                         {(() => {
@@ -1722,44 +1784,25 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
                         })()}
                       </div>
                       
-                      <div className="p-3 mt-4 rounded-lg bg-gray-50">
+                      {/* Resumen aplicando pagos (con IVA ajustado) */}
+                      <div className="p-3 mt-2 rounded-lg bg-blue-50 border border-blue-200">
                         <div className="flex flex-wrap gap-x-8 gap-y-2">
                           {totalsReady ? (
-                          <div className="min-w-[140px]">
-                             <span className="block mb-1 text-xs text-gray-500">Base Imponible:</span>
-                             <span className="text-sm font-medium">{formatCurrency(subtotalNetoDeLineas, currencySymbol)}</span>
-                           </div>
-                          ) : (
-                            <Skeleton className="w-24 h-6" />
-                          )}
-                          {totalsReady ? (
-                          <div className="min-w-[90px]">
-                            <span className="block mb-1 text-xs text-gray-500">Dto.:</span>
-                            <span className="text-sm font-medium text-red-600">{formatCurrency(totalDescuentosDeLineas + effectiveGlobalDiscount, currencySymbol)}</span>
-                          </div>
-                          ) : <Skeleton className="w-20 h-6" />}
-                          {totalsReady ? (
-                          <div className="min-w-[90px]">
-                            <span className="block mb-1 text-xs text-gray-500">IVA:</span>
-                            <span className="text-sm font-medium">{formatCurrency(totalIVADeLineas, currencySymbol)}</span>
-                          </div>
-                          ) : <Skeleton className="w-16 h-6" />}
-                          {totalsReady ? (
-                          <div className="min-w-[100px]">
-                            <span className="block mb-1 text-xs text-gray-500">Total:</span>
-                            <span className="text-sm font-semibold text-purple-700">{formatCurrency(totalGeneralTicket, currencySymbol)}</span>
-                          </div>
-                          ) : <Skeleton className="w-20 h-6" />}
-                          {totalsReady ? (
                           <div className="min-w-[110px]">
-                            <span className="block mb-1 text-xs text-gray-500">Pagado:</span>
+                            <span className="block mb-1 text-xs text-gray-500">{t('tickets.summary.paid')}:</span>
                             <span className="text-sm font-medium text-green-600">{formatCurrency(amountPaid, currencySymbol)}</span>
                           </div>
                           ) : <Skeleton className="w-20 h-6" />}
                           {totalsReady ? (
-                          <div className="min-w-[110px]">
-                            <span className="block mb-1 text-xs text-gray-500">Pendiente:</span>
-                            <span className="text-sm font-medium text-amber-600">{formatCurrency(currentPending, currencySymbol)}</span>
+                          <div className="min-w-[90px]">
+                            <span className="block mb-1 text-xs text-gray-500">{t('tickets.summary.adjustedVat')}:</span>
+                            <span className="text-sm font-medium">{formatCurrency(adjustedIVA, currencySymbol)}</span>
+                          </div>
+                          ) : <Skeleton className="w-16 h-6" />}
+                          {totalsReady ? (
+                          <div className="min-w-[100px]">
+                            <span className="block mb-1 text-xs text-gray-500">{t('tickets.summary.adjustedTotal')}:</span>
+                            <span className="text-sm font-semibold text-blue-700">{formatCurrency(adjustedTotal, currencySymbol)}</span>
                           </div>
                           ) : <Skeleton className="w-20 h-6" />}
                           
@@ -1780,16 +1823,20 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
 
                             if (showDeferredSection) {
                               return totalsReady ? (
-                          <div className="min-w-[100px]">
-                                  <span className="block mb-1 text-xs text-gray-500">Aplazado:</span>
-                                  <span className="text-sm font-medium text-blue-600">
-                                    {formatCurrency(explicitlyDeferredInForm > 0 ? explicitlyDeferredInForm : (watch('amountDeferred') || 0), currencySymbol)}
-                                  </span>
-                          </div>
+                              <div className="min-w-[100px]">
+                                <span className="block mb-1 text-xs text-gray-500">{t('tickets.summary.deferred')}:</span>
+                                <span className="text-sm font-medium text-red-600">-{formatCurrency(explicitlyDeferredInForm || watch('amountDeferred') || 0, currencySymbol)}</span>
+                              </div>
                               ) : <Skeleton className="w-20 h-6" />;
                             }
                             return null;
                           })()}
+                          {totalsReady ? (
+                          <div className="min-w-[110px]">
+                            <span className="block mb-1 text-xs text-gray-500">{t('tickets.summary.pending')}:</span>
+                            <span className="text-sm font-medium text-amber-600">{formatCurrency(currentPending, currencySymbol)}</span>
+                          </div>
+                          ) : <Skeleton className="w-20 h-6" />}
                         </div>
                       </div>
                     </div>

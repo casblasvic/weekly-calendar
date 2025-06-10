@@ -11,7 +11,11 @@
     "find-unused": "ts-prune",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "seed": "ts-node --project tsconfig.json prisma/seed.ts"
+    "seed": "ts-node --project tsconfig.json prisma/seed.ts",
+    "db:seed": "npx tsx prisma/seed.ts",
+    "db:seed:debug": "node --inspect-brk -r tsx/cjs prisma/seed.ts",
+    "test:seed:simple": "npx tsx scripts/test-seed-simple.ts",
+    "db:studio": "npx prisma studio"
   },
   "dependencies": {
     "@auth/core": "^0.39.1",

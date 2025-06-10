@@ -108,6 +108,12 @@ export function TicketPayments({
               // Verificar si es la línea de pago aplazado usando la propiedad 'isDeferred'
               const isDeferredLine = !!(payment as any).isDeferred;
               
+              // Verificar si es un pago aplazado por el tipo o código
+              const isDeferredPayment = payment.paymentMethodCode === 'SYS_DEFERRED_PAYMENT' || 
+                                       payment.paymentMethodType === 'DEFERRED_PAYMENT' ||
+                                       paymentMethodInfo?.type === 'DEFERRED_PAYMENT' ||
+                                       paymentMethodInfo?.code === 'SYS_DEFERRED_PAYMENT';
+              
               return (
                 <TableRow 
                   key={payment.id || payment.tempId || `payment-${index}`}
@@ -118,16 +124,16 @@ export function TicketPayments({
                 >
                   <TableCell className="font-medium">
                     <div className="flex items-center">
-                      <PaymentIcon className="w-4 h-4 mr-2 text-gray-500" />
-                      <span>
+                      <PaymentIcon className={cn("w-4 h-4 mr-2", isDeferredPayment ? "text-red-500" : "text-gray-500")} />
+                      <span className={isDeferredPayment ? "text-red-600" : ""}>
                         {isDeferredLine 
                           ? payment.paymentMethodName // Muestra "Pago Aplazado"
                           : (paymentMethodInfo?.name || payment?.paymentMethodName || 'Método de pago')}
                       </span>
                     </div>
                   </TableCell>
-                  <TableCell className="text-right font-medium">
-                    {formatAmount(payment?.amount || 0)}
+                  <TableCell className={cn("text-right font-medium", isDeferredPayment && "text-red-600")}>
+                    {isDeferredPayment ? `-${formatAmount(payment?.amount || 0)}` : formatAmount(payment?.amount || 0)}
                   </TableCell>
                   <TableCell className="text-right text-gray-600 text-sm">
                     {payment?.paymentDate && !isDeferredLine // No mostrar fecha para la línea aplazada

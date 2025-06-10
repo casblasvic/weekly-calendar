@@ -6,12 +6,13 @@ import {
   CategoryType,
   getAutoCategoryMapping, 
   getAutoProductMapping, 
-  getAutoServiceMapping 
+  getAutoServiceMapping,
+  getAutoPaymentMethodMapping
 } from '@/app/(main)/configuracion/contabilidad/lib/auto-account-mapping';
 
 // Schema de validación
 const AutoMapSingleSchema = z.object({
-  entityType: z.enum(['category', 'product', 'service']),
+  entityType: z.enum(['category', 'product', 'service', 'paymentMethod']),
   entityId: z.string(),
   legalEntityId: z.string(),
 });
@@ -64,27 +65,31 @@ export async function POST(request: NextRequest) {
         }
 
         const categoryType = (category as any).type || CategoryType.MIXED;
-        const accountId = getAutoCategoryMapping(
-          { id: category.id, name: category.name, type: categoryType },
+        const mapping = getAutoCategoryMapping(
+          { 
+            id: category.id, 
+            name: category.name, 
+            appliesToServices: true, // Por defecto asumimos que aplica a ambos
+            appliesToProducts: true
+          },
           chartOfAccounts
         );
 
-        if (accountId) {
-          const appliesToServices = categoryType === CategoryType.SERVICE || categoryType === CategoryType.MIXED;
-          const appliesToProducts = categoryType === CategoryType.PRODUCT || categoryType === CategoryType.MIXED;
-
+        if (mapping && mapping.accountNumber) {
           await prisma.categoryAccountMapping.create({
             data: {
               categoryId: category.id,
-              accountId,
+              accountId: mapping.accountNumber,
               legalEntityId,
-              appliesToServices,
-              appliesToProducts,
-              systemId: session.user.systemId
+              systemId: session.user.systemId,
+              appliesToServices: true,
+              appliesToProducts: true,
+              subaccountPattern: mapping.subaccountPattern,
+              analyticalDimensions: mapping.analyticalDimensions
             }
           });
 
-          const account = chartOfAccounts.find(a => a.id === accountId);
+          const account = chartOfAccounts.find(a => a.id === mapping.accountNumber);
           result = {
             entityType: 'category',
             entityId: category.id,
@@ -106,19 +111,21 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: 'Producto no encontrado' }, { status: 404 });
         }
 
-        const accountId = getAutoProductMapping(product as any, chartOfAccounts);
+        const mapping = getAutoProductMapping(product as any, chartOfAccounts);
 
-        if (accountId) {
+        if (mapping && mapping.accountNumber) {
           await prisma.productAccountMapping.create({
             data: {
               productId: product.id,
-              accountId,
+              accountId: mapping.accountNumber,
               legalEntityId,
-              systemId: session.user.systemId
+              systemId: session.user.systemId,
+              subaccountPattern: mapping.subaccountPattern,
+              analyticalDimensions: mapping.analyticalDimensions
             }
           });
 
-          const account = chartOfAccounts.find(a => a.id === accountId);
+          const account = chartOfAccounts.find(a => a.id === mapping.accountNumber);
           result = {
             entityType: 'product',
             entityId: product.id,
@@ -140,23 +147,60 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: 'Servicio no encontrado' }, { status: 404 });
         }
 
-        const accountId = getAutoServiceMapping(service as any, chartOfAccounts);
+        const mapping = getAutoServiceMapping(service as any, chartOfAccounts);
 
-        if (accountId) {
+        if (mapping && mapping.accountNumber) {
           await prisma.serviceAccountMapping.create({
             data: {
               serviceId: service.id,
-              accountId,
+              accountId: mapping.accountNumber,
               legalEntityId,
-              systemId: session.user.systemId
+              systemId: session.user.systemId,
+              subaccountPattern: mapping.subaccountPattern,
+              analyticalDimensions: mapping.analyticalDimensions
             }
           });
 
-          const account = chartOfAccounts.find(a => a.id === accountId);
+          const account = chartOfAccounts.find(a => a.id === mapping.accountNumber);
           result = {
             entityType: 'service',
             entityId: service.id,
             entityName: service.name,
+            accountNumber: account?.accountNumber,
+            accountName: account?.name
+          };
+        }
+        break;
+      }
+
+      case 'paymentMethod': {
+        const paymentMethod = await prisma.paymentMethodDefinition.findUnique({
+          where: { id: entityId }
+        });
+
+        if (!paymentMethod) {
+          return NextResponse.json({ error: 'Método de pago no encontrado' }, { status: 404 });
+        }
+
+        const mapping = getAutoPaymentMethodMapping(paymentMethod.type, chartOfAccounts);
+
+        if (mapping && mapping.accountNumber) {
+          await prisma.paymentMethodAccountMapping.create({
+            data: {
+              paymentMethodDefinitionId: paymentMethod.id,
+              accountId: mapping.accountNumber,
+              legalEntityId,
+              systemId: session.user.systemId,
+              subaccountPattern: mapping.subaccountPattern,
+              analyticalDimensions: mapping.analyticalDimensions
+            }
+          });
+
+          const account = chartOfAccounts.find(a => a.id === mapping.accountNumber);
+          result = {
+            entityType: 'paymentMethod',
+            entityId: paymentMethod.id,
+            entityName: paymentMethod.name,
             accountNumber: account?.accountNumber,
             accountName: account?.name
           };

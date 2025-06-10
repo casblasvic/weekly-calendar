@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -38,6 +38,17 @@ export default function EditPosTerminalPage() {
     queryFn: () => getPosTerminal(terminalId),
     enabled: !!terminalId, // Solo ejecutar si hay ID
   });
+
+  // Log para depurar
+  useEffect(() => {
+    console.log('[EditPosTerminalPage] Query state:', {
+      terminalId,
+      initialData,
+      isLoadingData,
+      isLoadError,
+      loadError: loadError?.message
+    });
+  }, [terminalId, initialData, isLoadingData, isLoadError, loadError]);
 
   const mutation = useMutation({
     mutationFn: (data: PosTerminalFormValues) => updatePosTerminal(terminalId, data),

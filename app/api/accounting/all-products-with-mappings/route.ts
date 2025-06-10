@@ -23,11 +23,11 @@ export async function GET(request: Request) {
       );
     }
 
-    // Obtener todas las clínicas de esta entidad legal
+    // Obtener clínicas con productos y sus mapeos
     const clinics = await prisma.clinic.findMany({
       where: {
         legalEntityId,
-        ...(systemId && { id: systemId }),
+        ...(systemId && { systemId })
       },
       include: {
         tariff: {
@@ -60,7 +60,10 @@ export async function GET(request: Request) {
     const productsByClinic = clinics.map(clinic => {
       const products = clinic.tariff?.productPrices.map(priceItem => {
         const product = priceItem.product;
-        const mapping = product.productAccountMappings[0];
+        // Filtrar mapeos: primero específico de clínica, luego global
+        const clinicMapping = product.productAccountMappings.find(m => m.clinicId === clinic.id);
+        const globalMapping = product.productAccountMappings.find(m => m.clinicId === null);
+        const mapping = clinicMapping || globalMapping;
         
         return {
           id: product.id,
@@ -68,11 +71,18 @@ export async function GET(request: Request) {
           categoryId: product.categoryId,
           categoryName: product.category?.name || null,
           isActive: product.settings?.isActive ?? true,
+          isForSale: product.settings?.isForSale ?? true,
+          isInternalUse: product.settings?.isInternalUse ?? false,
           price: priceItem.price,
           hasMapping: !!mapping,
           accountId: mapping?.accountId || null,
           accountCode: mapping?.account?.accountNumber || null,
           accountName: mapping?.account?.name || null,
+          mappingClinicId: mapping?.clinicId || null,
+          settings: product.settings ? {
+            isForSale: product.settings.isForSale,
+            isInternalUse: product.settings.isInternalUse
+          } : undefined,
         };
       }) || [];
 
@@ -94,7 +104,8 @@ export async function GET(request: Request) {
         productAccountMappings: {
           where: {
             legalEntityId,
-            ...(systemId && { systemId })
+            ...(systemId && { systemId }),
+            clinicId: null // Mapeo global
           },
           include: {
             account: true
@@ -120,10 +131,17 @@ export async function GET(request: Request) {
           categoryId: product.categoryId,
           categoryName: product.category?.name || null,
           isActive: product.settings?.isActive ?? true,
+          isForSale: product.settings?.isForSale ?? true,
+          isInternalUse: product.settings?.isInternalUse ?? false,
           hasMapping: !!mapping,
           accountId: mapping?.accountId || null,
           accountCode: mapping?.account?.accountNumber || null,
           accountName: mapping?.account?.name || null,
+          mappingClinicId: mapping?.clinicId || null,
+          settings: product.settings ? {
+            isForSale: product.settings.isForSale,
+            isInternalUse: product.settings.isInternalUse
+          } : undefined,
         };
       });
 

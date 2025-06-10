@@ -19,10 +19,16 @@ import { DateRangePickerPopover } from '@/components/date-range-picker-popover';
 import type { DateRange } from 'react-day-picker'; // Import DateRange from react-day-picker
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { SlidersHorizontal, Search, X, FileText, RotateCcw, Trash2, Eye, Download, ChevronDown, Lock, LockOpen } from 'lucide-react'; // Added Lock, LockOpen
+import { SlidersHorizontal, Search, X, FileText, RotateCcw, Trash2, Eye, Download, ChevronDown, Lock, LockOpen, FileCheck, FileX } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation'; 
 import { useClinicsQuery } from '@/lib/hooks/use-clinic-query'; 
 import { cn } from '@/lib/utils'; // Added cn import
+import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
+import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger, AlertDialogAction, AlertDialogCancel } from '@/components/ui/alert-dialog';
+import InvoiceConversionModal from '@/components/invoicing/invoice-conversion-modal-new';
+import { useCanInvoice } from '@/lib/hooks/use-can-invoice';
+import { toast } from 'sonner';
 
 interface Clinic {
   id: string;
@@ -41,7 +47,9 @@ interface SearchResultItem {
   isInvoiceGenerated: boolean;
   canReopen: boolean;
   ticketId?: string; 
-  clinicName: string; // Added clinicName property
+  clinicName: string;
+  hasLegalEntity?: boolean;
+  finalAmount?: number;
 }
 
 export default function BusquedaFacturacionPage() {
@@ -58,6 +66,8 @@ export default function BusquedaFacturacionPage() {
   const [totalPages, setTotalPages] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
   const [isInitialFilterLoadDone, setIsInitialFilterLoadDone] = useState(false);
+  const [showInvoiceModal, setShowInvoiceModal] = useState(false);
+  const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
 
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -76,7 +86,9 @@ export default function BusquedaFacturacionPage() {
       isInvoiceGenerated: type === 'Factura' || (type === 'Ticket' && Math.random() > 0.5),
       canReopen: type === 'Ticket' && Math.random() > 0.3,
       ticketId: 'tkt123',
-      clinicName: 'Clinica 1', // Added clinicName property
+      clinicName: 'Clinica 1', 
+      hasLegalEntity: true,
+      finalAmount: 150.75,
     },
     {
       id: '2',
@@ -89,7 +101,9 @@ export default function BusquedaFacturacionPage() {
       isInvoiceGenerated: type === 'Factura' || (type === 'Ticket' && Math.random() > 0.2),
       canReopen: type === 'Ticket' && Math.random() > 0.6,
       ticketId: 'tkt456',
-      clinicName: 'Clinica 2', // Added clinicName property
+      clinicName: 'Clinica 2', 
+      hasLegalEntity: false,
+      finalAmount: 85.00,
     },
   ];
 
@@ -409,8 +423,32 @@ export default function BusquedaFacturacionPage() {
                   <TableCell className="text-right py-3">
                     <div className="flex items-center justify-end space-x-2">
                       {item.type === 'Ticket' && !item.isInvoiceGenerated && (
-                        <Button variant="outline" size="sm" className="h-8 text-xs border-purple-600 text-purple-600 hover:bg-purple-50 hover:text-purple-700"
-                          onClick={() => console.log('Generate invoice for', item.id)} // TODO: Implement
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="h-8 text-xs border-purple-600 text-purple-600 hover:bg-purple-50 hover:text-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                          onClick={() => {
+                            setSelectedTicketId(item.id);
+                            setShowInvoiceModal(true);
+                          }}
+                          disabled={
+                            item.status === 'VOID' || 
+                            item.status === 'Anulado' ||
+                            (item.status !== 'CLOSED' && item.status !== 'ACCOUNTED' && item.status !== 'Cerrado' && item.status !== 'Contabilizado') ||
+                            !item.hasLegalEntity ||
+                            (item.finalAmount !== undefined && item.finalAmount === 0)
+                          }
+                          title={
+                            item.status === 'VOID' || item.status === 'Anulado' 
+                              ? 'No se puede facturar un ticket anulado' 
+                              : (item.status !== 'CLOSED' && item.status !== 'ACCOUNTED' && item.status !== 'Cerrado' && item.status !== 'Contabilizado')
+                                ? 'El ticket debe estar cerrado o contabilizado para facturarse'
+                                : !item.hasLegalEntity 
+                                  ? 'La clínica no está asignada a una sociedad'
+                                  : (item.finalAmount !== undefined && item.finalAmount === 0)
+                                    ? 'No se puede facturar un ticket con importe 0'
+                                    : 'Generar factura desde este ticket'
+                          }
                         >
                           <FileText size={14} className="mr-1.5" /> Generar Factura
                         </Button>
@@ -486,7 +524,11 @@ export default function BusquedaFacturacionPage() {
           itemType={searchType === 'Ticket' ? 'tickets' : 'facturas'}
         />
       )}
+      <InvoiceConversionModal
+        isOpen={showInvoiceModal}
+        onClose={() => setShowInvoiceModal(false)}
+        ticketId={selectedTicketId}
+      />
     </div>
   );
 }
- 

@@ -15,34 +15,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Badge } from "@/components/ui/badge"
+import { type PosTerminal } from '@/lib/api/pos-terminals'; // Importar el tipo de la API
 
-// Tipo de datos esperado para cada fila
-// Ajustado para coincidir con PosTerminal de la API
-export type PosTerminalData = {
-  id: string;
-  name: string;
-  terminalIdProvider?: string | null; // <<< HECHO OPCIONAL >>>
-  provider?: string | null; // <<< HECHO OPCIONAL >>>
-  isActive: boolean;
-  isGlobal: boolean;
-  applicableClinics?: Array<{ 
-    clinic: { 
-      id: string; 
-      name: string; 
-    }; 
-  }> | null; // Puede ser null o array
-  bankAccount: { 
-    id: string;
-    accountName: string;
-    // Añadir banco aquí para referencia si es necesario para filtros o display
-    bank?: {
-      id: string;
-      name: string;
-    };
-  };
-  // clinic ya no es necesario aquí si usamos applicableClinics
-  // clinic: { id: string; name: string; } | null; 
-};
+// Usar el tipo de la API directamente
+export type PosTerminalData = PosTerminal;
 
 // <<< AÑADIR TIPO PARA EL HANDLER DE BORRADO >>>
 type DeleteHandler = (terminal: PosTerminalData) => void;

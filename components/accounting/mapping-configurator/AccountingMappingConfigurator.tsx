@@ -1,3 +1,58 @@
+'use client';
+
+import React, { useState, useEffect, useMemo } from 'react';
+import { useSession } from 'next-auth/react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from '@/components/ui/tabs';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  SelectSeparator
+} from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Skeleton } from '@/components/ui/skeleton';
+import { useToast } from '@/hooks/use-toast';
+import { 
+  Package, 
+  FileText, 
+  CreditCard, 
+  Percent, 
+  Receipt, 
+  Banknote,
+  Sparkles,
+  Check,
+  X,
+  AlertCircle,
+  Info,
+  Tag,
+  ChevronRight,
+  Building,
+  Wand2,
+  Loader2,
+  Save,
+  Briefcase,
+  Calculator,
+  Building2,
+  AlertTriangle,
+  CheckCircle2,
+  Settings,
+  Settings2,
+  Globe,
+  Trash2
+} from 'lucide-react';
+import AutoMappingsViewer from './AutoMappingsViewer';
+
 /**
  * Configurador de Mapeos Contables
  * 
@@ -8,56 +63,13 @@
  * - Reglas automáticas de mapeo
  */
 
-import React, { useState, useMemo, useEffect } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
 import {
-  Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
-import {
-  Save,
-  Package,
-  CreditCard,
-  Percent,
-  Receipt,
-  Settings,
-  Briefcase,
-  CheckCircle2,
-  Info,
-  Wand2,
-  Calculator,
-  ChevronRight,
-  ChevronDown,
-  Loader2,
-  AlertCircle,
-  Building2,
-  Sparkles,
-  Tag,
-  AlertTriangle
-} from "lucide-react";
-import { cn } from "@/lib/utils";
-import { api } from "@/utils/api-client";
-import { useSession } from "next-auth/react";
-import { useToast } from "@/components/ui/use-toast";
 import {
   Accordion,
   AccordionContent,
@@ -67,6 +79,12 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from 'sonner';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger, DropdownMenuCheckboxItem } from "@/components/ui/dropdown-menu";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
+import { cn } from "@/lib/utils";
+import { api } from "@/utils/api-client";
 
 interface AccountingMappingConfiguratorProps {
   systemId: string;
@@ -81,12 +99,15 @@ interface ServiceMapping {
   categoryId?: string;
   categoryName?: string;
   currentAccountId?: string;
+  currentAccountCode?: string;
+  currentAccountName?: string;
   suggestedAccountId?: string;
   hasChildren: boolean;
   level?: number;
   path?: string;
   clinicName?: string;
   clinicId?: string;
+  mappingClinicId?: string;
   isGlobal?: boolean;
   price?: number;
   hasMapping?: boolean;
@@ -101,6 +122,8 @@ interface ProductMapping {
   categoryId?: string;
   categoryName?: string;
   currentAccountId?: string;
+  currentAccountCode?: string;
+  currentAccountName?: string;
   suggestedAccountId?: string;
   hasChildren: boolean;
   level?: number;
@@ -109,6 +132,7 @@ interface ProductMapping {
   clinicId?: string;
   isGlobal?: boolean;
   price?: number;
+  hasMapping?: boolean;
   accountId?: string;
   accountCode?: string;
   accountName?: string;
@@ -118,6 +142,11 @@ interface ProductMapping {
   purchaseAccountId?: string;
   purchaseAccountCode?: string;
   purchaseAccountName?: string;
+  settings?: {
+    isForSale: boolean;
+    isInternalUse: boolean;
+  };
+  mappingClinicId?: string;
 }
 
 interface PaymentMethodMapping {
@@ -128,6 +157,9 @@ interface PaymentMethodMapping {
   isGlobal: boolean;
   isMapped: boolean;
   currentAccountId?: string | null;
+  currentAccountCode?: string | null;
+  currentAccountName?: string | null;
+  mappingClinicId?: string | null;
   isActive: boolean;
   clinicName?: string;
   clinicId?: string;
@@ -150,6 +182,23 @@ interface ChartAccount {
   type: string;
   level: number;
   allowsDirectEntry: boolean;
+  parentAccountId?: string | null;
+}
+
+interface PromotionMapping {
+  discountTypeCode: string;
+  discountTypeName: string;
+  promotionId?: string;
+  isFixed: boolean;
+  isGlobal: boolean;
+  isInheritedFromGlobal: boolean;
+  isMapped: boolean;
+  currentAccountId?: string | null;
+  currentAccountNumber?: string | null;
+  currentAccountName?: string | null;
+  mappingClinicId?: string | null;
+  clinicName?: string;
+  clinicId?: string;
 }
 
 // Traducciones en español
@@ -157,11 +206,17 @@ const translations = {
   title: 'Configuración de Mapeos Contables',
   description: 'Configure las cuentas contables para cada elemento del centro de negocio',
   tabs: {
+    mappings: 'Mapeos',
     services: 'Servicios',
     products: 'Productos',
     payments: 'Métodos de Pago',
     vat: 'Tipos de IVA',
-    rules: 'Reglas Automáticas'
+    expenses: 'Gastos',
+    cash: 'Cajas',
+    discounts: 'Promociones',
+    rules: 'Reglas Automáticas',
+    categories: 'Categorías',
+    banks: 'Bancos'
   },
   services: {
     info: 'Asigne cuentas contables a los servicios. Las subcategorías heredarán la cuenta de su categoría padre si no se especifica una diferente.',
@@ -185,6 +240,24 @@ const translations = {
     outputAccount: 'Cuenta IVA Repercutido',
     noMappings: 'Todos los tipos de IVA están correctamente mapeados'
   },
+  expenses: {
+    info: 'Configure las cuentas contables para los diferentes tipos de gastos de la clínica.',
+    noMappings: 'Todos los tipos de gastos están correctamente mapeados'
+  },
+  cash: {
+    info: 'Configure las cuentas de tesorería para cada caja o terminal POS.',
+    noMappings: 'Todas las cajas están correctamente mapeadas'
+  },
+  discounts: {
+    info: 'Configure las cuentas para registrar los diferentes tipos de descuentos y promociones aplicados.',
+    noMappings: 'Todos los tipos de descuentos y promociones están correctamente mapeados'
+  },
+  banks: {
+    info: 'Configure las cuentas contables para bancos y sus cuentas bancarias. Las cuentas bancarias y tarjetas se mapearán como subcuentas del banco correspondiente.',
+    noMappings: 'Todos los bancos están correctamente mapeados',
+    bankAccounts: 'Cuentas Bancarias',
+    noBankAccounts: 'Este banco no tiene cuentas bancarias asociadas'
+  },
   rules: {
     info: 'Configure reglas automáticas para asignar cuentas contables basadas en criterios específicos.',
     comingSoon: 'Esta funcionalidad estará disponible próximamente'
@@ -198,6 +271,7 @@ const translations = {
     noMappings: 'No hay mapeos para configurar',
     mappingSaved: 'Mapeos guardados correctamente',
     mappingError: 'Error al guardar los mapeos',
+    mappingDeleted: 'Mapeo eliminado correctamente',
     noChanges: 'No hay cambios para guardar'
   }
 };
@@ -208,9 +282,11 @@ export default function AccountingMappingConfigurator({
   currentLanguage = 'es',
   onComplete
 }: AccountingMappingConfiguratorProps) {
-  const [activeTab, setActiveTab] = useState('services');
+  const queryClient = useQueryClient();
+  const [activeTab, setActiveTab] = useState('mappings');
   const [hasChanges, setHasChanges] = useState(false);
   const [applyToSubcategories, setApplyToSubcategories] = useState(true);
+  const [selectedClinicFilter, setSelectedClinicFilter] = useState<string>('all');
 
   // PRIMERO: Verificar si la sociedad fiscal tiene centros asociados
   const { data: clinicsCheckData, isLoading: checkingClinics } = useQuery({
@@ -228,14 +304,56 @@ export default function AccountingMappingConfigurator({
   const hasClinics = clinicsCheckData?.hasClinics || false;
   const clinicsWithoutTariffs = clinicsCheckData?.clinicsWithoutTariffs || [];
 
+  // Query para obtener los mapeos automáticos
+  const { data: autoMappingsData } = useQuery({
+    queryKey: ['accounting-auto-mappings', legalEntityId, systemId],
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        legalEntityId,
+        ...(systemId && { systemId })
+      });
+      
+      const response = await fetch(`/api/accounting/auto-mappings?${params}`);
+      if (!response.ok) {
+        throw new Error('Error al obtener mapeos automáticos');
+      }
+      return response.json();
+    },
+    enabled: !!legalEntityId && !!systemId
+  });
+
   // Mapeos locales
   const [serviceMappings, setServiceMappings] = useState<Record<string, string>>({});
-  const [productMappings, setProductMappings] = useState<Record<string, string>>({});
-  const [paymentMappings, setPaymentMappings] = useState<Record<string, string>>({});
-  const [vatMappings, setVatMappings] = useState<Record<string, { input?: string; output?: string }>>({});
+  const [productMappings, setProductMappings] = useState<Record<string, { accountId: string; clinicId?: string }>>({});
+  const [paymentMappings, setPaymentMappings] = useState<Record<string, { accountId: string; clinicId?: string }>>({});
+  const [vatMappings, setVatMappings] = useState<Record<string, { 
+    input?: string; 
+    output?: string;
+    vatTypeId?: string;
+    clinicId?: string | null;
+  }>>({});
   const [expenseMappings, setExpenseMappings] = useState<Record<string, string>>({});
   const [cashSessionMappings, setCashSessionMappings] = useState<Record<string, string>>({});
   const [discountMappings, setDiscountMappings] = useState<Record<string, string>>({});
+  const [promotionMappings, setPromotionMappings] = useState<Record<string, { accountId: string; clinicId?: string }>>({});
+  const [categoryMappings, setCategoryMappings] = useState<Record<string, string>>({});
+  const [bankMappings, setBankMappings] = useState<Record<string, string>>({});
+  const [bankAccountMappings, setBankAccountMappings] = useState<Record<string, string>>({});
+  const [expandedBanks, setExpandedBanks] = useState<Set<string>>(new Set());
+  const [expandedPaymentClinics, setExpandedPaymentClinics] = useState<Set<string>>(new Set());
+  const [expandedVatClinics, setExpandedVatClinics] = useState<Set<string>>(new Set());
+
+  // Query para obtener las clínicas asociadas a la sociedad fiscal
+  const { data: clinicsData } = useQuery({
+    queryKey: ['legal-entity-clinics', legalEntityId],
+    queryFn: async () => {
+      const response = await fetch(`/api/clinics?legalEntityId=${legalEntityId}`);
+      if (!response.ok) throw new Error('Error fetching clinics');
+      const data = await response.json();
+      return data || [];
+    },
+    enabled: !!legalEntityId && hasClinics
+  });
 
   // Mutation para ejecutar el mapeo automático
   const executeAutoMapping = useMutation({
@@ -252,18 +370,39 @@ export default function AccountingMappingConfigurator({
       
       // Si forceRemap es true, incluir todos los tipos con elementos
       if (forceRemap) {
-        if (allServices.length > 0) availableTypes.push('services');
-        if (allProducts.length > 0) availableTypes.push('products');
-        if (allPaymentMethods.length > 0) availableTypes.push('paymentMethods');
-        if (allVatTypes && allVatTypes.length > 0) availableTypes.push('vat');
-        if (expenseTypesResponse?.hasData && expenseTypesResponse.items.length > 0) availableTypes.push('expenseTypes');
-        if (cashSessionsResponse?.hasData && cashSessionsResponse.items.length > 0) availableTypes.push('cashEntities');
-        if (discountTypesResponse?.hasData && discountTypesResponse.items.length > 0) availableTypes.push('promotions');
+        // Para forceRemap, solo incluir los tipos específicos solicitados
+        if (types?.includes('all') || !types) {
+          // Si es 'all' o no hay tipos específicos, incluir todo
+          if (allServices.length > 0) availableTypes.push('services');
+          if (allProducts.length > 0) availableTypes.push('products');
+          if (allPaymentMethods.length > 0) availableTypes.push('paymentMethods');
+          if (allVatTypes && allVatTypes.length > 0) availableTypes.push('vat');
+          if (allExpenseTypesResponse?.hasData && allExpenseTypesResponse.items.length > 0) availableTypes.push('expenseTypes');
+          if (allCashEntitiesResponse?.hasData && allCashEntitiesResponse.items.length > 0) availableTypes.push('cash-session');
+          if (allDiscountTypesResponse?.hasData && allDiscountTypesResponse.items.length > 0) availableTypes.push('discountTypes');
+          if (allBanks.length > 0) availableTypes.push('banks');
+        } else {
+          // Si hay tipos específicos, solo incluir esos
+          types.forEach(type => {
+            if (type === 'services' && allServices.length > 0) availableTypes.push('services');
+            if (type === 'products' && allProducts.length > 0) availableTypes.push('products');
+            if (type === 'paymentMethods' && allPaymentMethods.length > 0) availableTypes.push('paymentMethods');
+            if (type === 'vat' && allVatTypes && allVatTypes.length > 0) availableTypes.push('vat');
+            if (type === 'expenseTypes' && allExpenseTypesResponse?.hasData && allExpenseTypesResponse.items.length > 0) availableTypes.push('expenseTypes');
+            if (type === 'cash-session' && allCashEntitiesResponse?.hasData && allCashEntitiesResponse.items.length > 0) availableTypes.push('cash-session');
+            if (type === 'discountTypes' && allDiscountTypesResponse?.hasData && allDiscountTypesResponse.items.length > 0) availableTypes.push('discountTypes');
+            if (type === 'banks' && allBanks.length > 0) availableTypes.push('banks');
+          });
+        }
       } else {
         // Filtrar solo los items no mapeados
         const unmappedServicesFiltered = allServices.filter(s => !s.currentAccountId);
         const unmappedProductsFiltered = allProducts.filter(p => !p.currentAccountId);
         const unmappedPaymentMethodsFiltered = allPaymentMethods.filter(p => !p.currentAccountId);
+        const unmappedExpenseTypesFiltered = allExpenseTypes.filter(e => !e.currentAccountId);
+        const unmappedCashEntitiesFiltered = allCashEntities.filter(e => !e.currentAccountId);
+        const unmappedDiscountTypesFiltered = allDiscountTypes.filter(d => !d.currentAccountId);
+        const unmappedBanksFiltered = allBanks.filter(b => !b.accountId);
         
         if (types?.includes('all') || !types) {
           // Si es 'all', verificar qué elementos existen sin mapear
@@ -271,19 +410,21 @@ export default function AccountingMappingConfigurator({
           if (unmappedProductsFiltered.length > 0) availableTypes.push('products');
           if (unmappedPaymentMethodsFiltered.length > 0) availableTypes.push('paymentMethods');
           if (unmappedVatTypes.length > 0) availableTypes.push('vat');
-          if (unmappedExpenseTypes.length > 0) availableTypes.push('expenseTypes');
-          if (unmappedCashEntities.length > 0) availableTypes.push('cashEntities');
-          if (unmappedDiscountTypes.length > 0) availableTypes.push('promotions');
+          if (unmappedExpenseTypesFiltered.length > 0) availableTypes.push('expenseTypes');
+          if (unmappedCashEntitiesFiltered.length > 0) availableTypes.push('cash-session');
+          if (unmappedDiscountTypesFiltered.length > 0) availableTypes.push('discountTypes');
+          if (unmappedBanksFiltered.length > 0) availableTypes.push('banks');
         } else {
-          // Si son tipos específicos, verificar cada uno
+          // Si hay tipos específicos, verificar cada uno
           types.forEach(type => {
             if (type === 'services' && unmappedServicesFiltered.length > 0) availableTypes.push('services');
             if (type === 'products' && unmappedProductsFiltered.length > 0) availableTypes.push('products');
             if (type === 'paymentMethods' && unmappedPaymentMethodsFiltered.length > 0) availableTypes.push('paymentMethods');
             if (type === 'vat' && unmappedVatTypes.length > 0) availableTypes.push('vat');
-            if (type === 'expenseTypes' && unmappedExpenseTypes.length > 0) availableTypes.push('expenseTypes');
-            if (type === 'cashEntities' && unmappedCashEntities.length > 0) availableTypes.push('cashEntities');
-            if (type === 'promotions' && unmappedDiscountTypes.length > 0) availableTypes.push('promotions');
+            if (type === 'expenseTypes' && unmappedExpenseTypesFiltered.length > 0) availableTypes.push('expenseTypes');
+            if (type === 'cash-session' && unmappedCashEntitiesFiltered.length > 0) availableTypes.push('cash-session');
+            if (type === 'discountTypes' && unmappedDiscountTypesFiltered.length > 0) availableTypes.push('discountTypes');
+            if (type === 'banks' && unmappedBanksFiltered.length > 0) availableTypes.push('banks');
           });
         }
       }
@@ -295,6 +436,13 @@ export default function AccountingMappingConfigurator({
                 services: { mapped: 0, errors: 0 }, paymentMethods: { mapped: 0, errors: 0 } };
       }
       
+      console.log('[AutoMapping] Iniciando mapeo con:', {
+        legalEntityId,
+        systemId,
+        types: availableTypes,
+        forceRemap
+      });
+      
       const response = await fetch('/api/accounting/auto-map-all', {
         method: 'POST',
         headers: {
@@ -304,12 +452,15 @@ export default function AccountingMappingConfigurator({
           legalEntityId,
           systemId,
           types: availableTypes.length > 0 ? availableTypes : ['all'],
-          forceRemap // Pasar el parámetro al backend
+          forceRemap, // Pasar el parámetro al backend
+          clinicId: selectedClinicFilter !== 'all' ? selectedClinicFilter : undefined // Añadir clinicId solo si hay una clínica específica seleccionada
         })
       });
       
       if (!response.ok) {
-        throw new Error('Error al ejecutar mapeo automático');
+        const errorData = await response.json().catch(() => null);
+        console.error('[AutoMapping] Error:', response.status, errorData);
+        throw new Error(errorData?.error || 'Error al ejecutar mapeo automático');
       }
       
       return response.json();
@@ -319,31 +470,40 @@ export default function AccountingMappingConfigurator({
       let successful = 0;
       
       if (data.results) {
-        Object.values(data.results).forEach((result: any) => {
-          if (result.mapped) {
-            successful += result.mapped;
-          }
-        });
+        successful = (data.results.categories?.mapped || 0) +
+                    (data.results.products?.mapped || 0) +
+                    (data.results.services?.mapped || 0) +
+                    (data.results.paymentMethods?.mapped || 0) +
+                    (data.results.banks?.mapped || 0) +
+                    (data.results.discounts?.mapped || 0);
       }
       
       if (successful > 0) {
-        toast.success(`Se mapearon ${successful} elementos correctamente`);
+        toast.success(`Se mapearon ${successful} elementos automáticamente`);
+        
+        // Refrescar todos los datos después del mapeo exitoso
+        await Promise.all([
+          refetchAllCategories(),
+          refetchServices(),
+          refetchProducts(),
+          refetchPaymentMethods(),
+          refetchUnmappedVat(),
+          refetchAllExpenses(),
+          refetchAllDiscounts(),
+          refetchUnmappedCashSessions(),
+          refetchBanks(),
+          refetchChartOfAccounts(),
+          queryClient.invalidateQueries({ queryKey: ['all-services-with-mappings'] }),
+          queryClient.invalidateQueries({ queryKey: ['all-products-with-mappings'] }),
+          queryClient.invalidateQueries({ queryKey: ['all-payment-methods-with-mappings'] }),
+          queryClient.invalidateQueries({ queryKey: ['all-categories-with-mappings'] }),
+          queryClient.invalidateQueries({ queryKey: ['all-banks-with-mappings'] }),
+          queryClient.invalidateQueries({ queryKey: ['accounting-auto-mappings'] }),
+          queryClient.invalidateQueries({ queryKey: ['unmapped-items'] })
+        ]);
       } else {
         toast.info('No se encontraron elementos para mapear');
       }
-      
-      // Refrescar TODAS las queries relacionadas para actualizar tanto elementos sin mapear como mapeados
-      await Promise.all([
-        refetchServices(),
-        refetchProducts(),
-        refetchPaymentMethods(),
-        refetchUnmappedVat(),
-        refetchUnmappedExpenses(),
-        refetchUnmappedDiscounts(),
-        refetchUnmappedCashSessions(),
-        // También refrescar las queries de todos los elementos con mapeos
-        refetchAllVat && refetchAllVat(),
-      ]);
       
       // También mostrar el mensaje general del servidor si existe
       if (data.message) {
@@ -438,7 +598,10 @@ export default function AccountingMappingConfigurator({
           ...service,
           clinicName: clinic.clinicName,
           clinicId: clinic.clinicId,
-          isGlobal: false
+          isGlobal: false,
+          currentAccountId: service.accountId,
+          currentAccountCode: service.accountCode,
+          currentAccountName: service.accountName
         });
       });
     });
@@ -448,7 +611,10 @@ export default function AccountingMappingConfigurator({
       services.push({
         ...service,
         clinicName: 'Global',
-        isGlobal: true
+        isGlobal: true,
+        currentAccountId: service.accountId,
+        currentAccountCode: service.accountCode,
+        currentAccountName: service.accountName
       });
     });
     
@@ -481,7 +647,11 @@ export default function AccountingMappingConfigurator({
           ...product,
           clinicName: clinic.clinicName,
           clinicId: clinic.clinicId,
-          isGlobal: false
+          isGlobal: false,
+          currentAccountId: product.accountId,
+          currentAccountCode: product.accountCode,
+          currentAccountName: product.accountName,
+          mappingClinicId: product.mappingClinicId
         });
       });
     });
@@ -491,7 +661,11 @@ export default function AccountingMappingConfigurator({
       products.push({
         ...product,
         clinicName: 'Global',
-        isGlobal: true
+        isGlobal: true,
+        currentAccountId: product.accountId,
+        currentAccountCode: product.accountCode,
+        currentAccountName: product.accountName,
+        mappingClinicId: product.mappingClinicId
       });
     });
     
@@ -525,21 +699,14 @@ export default function AccountingMappingConfigurator({
     
     const methods: PaymentMethodMapping[] = [];
     
-    // Métodos globales
-    paymentMethodsResponse.global?.forEach((method: any) => {
-      methods.push({
-        ...method,
-        clinicName: 'Global'
-      });
-    });
-    
     // Métodos por clínica
     paymentMethodsResponse.clinics?.forEach((clinic: any) => {
-      clinic.paymentMethods?.forEach((method: any) => {
+      clinic.methods?.forEach((method: any) => {
         methods.push({
           ...method,
           clinicName: clinic.clinicName,
-          clinicId: clinic.clinicId
+          clinicId: clinic.clinicId,
+          mappingClinicId: method.clinicId
         });
       });
     });
@@ -566,43 +733,40 @@ export default function AccountingMappingConfigurator({
 
   const unmappedVatTypes = vatTypesResponse?.hasData ? vatTypesResponse.items : [];
 
-  // Cargar TODOS los tipos de IVA (para mostrar siempre la tabla completa)
-  const { data: allVatTypes, isLoading: loadingAllVat, refetch: refetchAllVat } = useQuery({
-    queryKey: ['all-vat-types', legalEntityId],
+  // Cargar TODOS los tipos de IVA con mapeos (globales y por clínica)
+  const { data: vatTypesWithMappingsResponse, isLoading: loadingAllVatTypes, refetch: refetchAllVat } = useQuery({
+    queryKey: ['all-vat-types-with-mappings', legalEntityId],
     queryFn: async () => {
-      // Primero obtener todos los tipos de IVA
-      const vatResponse = await fetch(
-        `/api/vat-types?legalEntityId=${legalEntityId}`
+      const response = await fetch(
+        `/api/accounting/all-vat-types-with-mappings?legalEntityId=${legalEntityId}`
       );
-      if (!vatResponse.ok) throw new Error('Error loading all VAT types');
-      const vatTypes = await vatResponse.json();
-      
-      // Luego obtener los mapeos existentes
-      const mappingsResponse = await fetch(
-        `/api/accounting/vat-mappings?legalEntityId=${legalEntityId}`
-      );
-      const mappings = mappingsResponse.ok ? await mappingsResponse.json() : [];
-      
-      // Crear un mapa de mapeos por vatTypeId para búsqueda rápida
-      const mappingsByVatType = mappings.reduce((acc: any, mapping: any) => {
-        acc[mapping.vatTypeId] = mapping;
-        return acc;
-      }, {});
-      
-      // Combinar los tipos de IVA con sus mapeos
-      return vatTypes.map((vat: any) => {
-        const mapping = mappingsByVatType[vat.id];
-        return {
-          vatTypeId: vat.id,
-          vatTypeName: vat.name,
-          vatRate: vat.rate,
-          currentInputAccountId: mapping?.inputAccountId || null,
-          currentOutputAccountId: mapping?.outputAccountId || null
-        };
-      });
+      if (!response.ok) throw new Error('Error loading all VAT types');
+      return response.json();
     },
     enabled: !!legalEntityId && !!systemId && hasClinics
   });
+
+  // Procesar tipos de IVA con mapeos
+  const allVatTypes = useMemo(() => {
+    if (!vatTypesWithMappingsResponse) return [];
+    
+    const vatTypes: any[] = [];
+    
+    // Solo tipos de IVA de clínicas
+    vatTypesWithMappingsResponse.clinics?.forEach((clinic: any) => {
+      clinic.vatTypes?.forEach((vatType: any) => {
+        vatTypes.push({
+          ...vatType,
+          clinicName: clinic.clinic.name,
+          clinicId: clinic.clinic.id,
+          isGlobal: false,
+          isClinicSpecific: vatType.isClinicSpecific
+        });
+      });
+    });
+    
+    return vatTypes;
+  }, [vatTypesWithMappingsResponse]);
 
   // Cargar tipos de gastos sin mapear
   const { data: expenseTypesResponse, isLoading: loadingExpenses, refetch: refetchUnmappedExpenses } = useQuery({
@@ -618,12 +782,27 @@ export default function AccountingMappingConfigurator({
         items: any[];
       }>;
     },
-    enabled: !!legalEntityId && !!systemId && hasClinics
+    enabled: !!legalEntityId && !!systemId
   });
 
   const unmappedExpenseTypes = expenseTypesResponse?.hasData ? expenseTypesResponse.items : [];
 
-  // Cargar cajas/terminales sin mapear
+  // Cargar TODOS los tipos de gastos (mapeados y no mapeados)
+  const { data: allExpenseTypesResponse, isLoading: loadingAllExpenses, refetch: refetchAllExpenses } = useQuery({
+    queryKey: ['all-expense-types-with-mappings', legalEntityId],
+    queryFn: async () => {
+      const response = await fetch(
+        `/api/accounting/all-expense-types-with-mappings?legalEntityId=${legalEntityId}`
+      );
+      if (!response.ok) throw new Error('Error loading all expense types');
+      return response.json();
+    },
+    enabled: !!legalEntityId && !!systemId
+  });
+
+  const allExpenseTypes = allExpenseTypesResponse?.items || [];
+
+  // Cargar cajas sin mapear
   const { data: cashSessionsResponse, isLoading: loadingCashSessions, refetch: refetchUnmappedCashSessions } = useQuery({
     queryKey: ['unmapped-cash-sessions', legalEntityId],
     queryFn: async () => {
@@ -641,6 +820,27 @@ export default function AccountingMappingConfigurator({
   });
 
   const unmappedCashEntities = cashSessionsResponse?.hasData ? cashSessionsResponse.items : [];
+
+  // Cargar TODAS las entidades de caja con sus mapeos actuales
+  const { data: allCashEntitiesResponse, isLoading: loadingAllCashEntities, refetch: refetchAllCashEntities } = useQuery({
+    queryKey: ['all-cash-entities-with-mappings', legalEntityId],
+    queryFn: async () => {
+      const response = await fetch(
+        `/api/accounting/all-cash-entities-with-mappings?legalEntityId=${legalEntityId}`
+      );
+      if (!response.ok) throw new Error('Error loading all cash entities');
+      return response.json() as Promise<{
+        hasData: boolean;
+        reason?: string;
+        items: any[];
+        mappedCount: number;
+        totalCount: number;
+      }>;
+    },
+    enabled: !!legalEntityId && !!systemId && hasClinics
+  });
+
+  const allCashEntities = allCashEntitiesResponse?.items || [];
 
   // Cargar tipos de descuento sin mapear
   const { data: discountTypesResponse, isLoading: loadingDiscounts, refetch: refetchUnmappedDiscounts } = useQuery({
@@ -661,15 +861,78 @@ export default function AccountingMappingConfigurator({
 
   const unmappedDiscountTypes = discountTypesResponse?.hasData ? discountTypesResponse.items : [];
 
+  // Cargar TODOS los tipos de descuento (mapeados y no mapeados)
+  const { data: allDiscountTypesResponse, isLoading: loadingAllDiscounts, refetch: refetchAllDiscounts } = useQuery({
+    queryKey: ['all-discount-types-with-mappings', legalEntityId],
+    queryFn: async () => {
+      const response = await fetch(
+        `/api/accounting/all-discount-types-with-mappings?legalEntityId=${legalEntityId}`
+      );
+      if (!response.ok) throw new Error('Error loading all discount types');
+      return response.json();
+    },
+    enabled: !!legalEntityId && !!systemId && hasClinics
+  });
+
+  const allDiscountTypes = allDiscountTypesResponse?.items || [];
+
+  // Cargar promociones y descuentos agrupados por clínica
+  const {
+    data: allPromotionsResponse,
+    isLoading: loadingAllPromotions,
+    refetch: refetchAllPromotions
+  } = useQuery({
+    queryKey: ['all-promotions-with-mappings', legalEntityId],
+    queryFn: async () => {
+      const response = await fetch(
+        `/api/accounting/all-promotions-with-mappings?legalEntityId=${legalEntityId}`
+      );
+      if (!response.ok) throw new Error('Error loading all promotions');
+      return response.json();
+    },
+    enabled: !!legalEntityId && hasClinics
+  });
+
+  // Cargar bancos con sus mapeos
+  const { data: banksResponse, isLoading: loadingBanks, refetch: refetchBanks } = useQuery({
+    queryKey: ['all-banks-with-mappings', legalEntityId],
+    queryFn: async () => {
+      const response = await fetch(
+        `/api/accounting/all-banks?legalEntityId=${legalEntityId}`
+      );
+      if (!response.ok) throw new Error('Error loading banks');
+      return response.json();
+    },
+    enabled: !!legalEntityId && !!systemId && hasClinics
+  });
+
+  const allBanks = banksResponse?.banks || [];
+
   // Cargar plan de cuentas
   const { data: chartOfAccounts, isLoading: loadingChartOfAccounts, refetch: refetchChartOfAccounts } = useQuery({
     queryKey: ['chart-of-accounts', legalEntityId],
     queryFn: async () => {
       const response = await fetch(
-        `/api/chart-of-accounts?legalEntityId=${legalEntityId}`
+        `/api/chart-of-accounts?legalEntityId=${legalEntityId}`,
+        {
+          headers: {
+            'x-from-mapping': 'true' // Indicar que viene del configurador de mapeos
+          }
+        }
       );
       if (!response.ok) throw new Error('Error loading chart of accounts');
-      return response.json();
+      const data = await response.json();
+      // Si el endpoint devuelve estructura con flat y hierarchical, usar flat
+      const accounts = data.flat || data;
+      console.log('[ChartOfAccounts] Total accounts:', accounts.length);
+      console.log('[ChartOfAccounts] Sample accounts:', accounts.slice(0, 5).map(a => ({
+        number: a.accountNumber,
+        name: a.name,
+        isSubAccount: a.isSubAccount,
+        parentId: a.parentAccountId
+      })));
+      console.log('[ChartOfAccounts] Subaccounts found:', accounts.filter(a => a.isSubAccount || a.accountNumber.includes('.')).length);
+      return accounts;
     },
     enabled: !!legalEntityId && !!systemId && hasClinics
   });
@@ -692,9 +955,9 @@ export default function AccountingMappingConfigurator({
     },
     onSuccess: () => {
       toast.success(translations.common.mappingSaved);
-      if (activeTab === 'services') {
-        setActiveTab('products');
-      }
+      refetchServices();
+      refetchChartOfAccounts();
+      setServiceMappings({});
     },
     onError: () => {
       toast.error(translations.common.mappingError);
@@ -703,15 +966,23 @@ export default function AccountingMappingConfigurator({
 
   // Mutación para guardar mapeos de productos
   const saveProductMappings = useMutation({
-    mutationFn: async (mappings: Record<string, string>) => {
-      const response = await fetch('/api/accounting/product-mappings', {
+    mutationFn: async (mappings: Record<string, { accountId: string; clinicId?: string }>) => {
+      // Convertir el objeto de mapeos a array para la API
+      const mappingsArray = Object.entries(mappings)
+        .filter(([_, mapping]) => mapping.accountId)
+        .map(([productId, mapping]) => ({
+          productId,
+          accountId: mapping.accountId,
+          clinicId: mapping.clinicId
+        }));
+
+      const response = await fetch('/api/accounting/save-product-mappings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           legalEntityId,
           systemId,
-          mappings,
-          applyToSubcategories
+          mappings: mappingsArray
         })
       });
       if (!response.ok) throw new Error('Error saving mappings');
@@ -719,9 +990,9 @@ export default function AccountingMappingConfigurator({
     },
     onSuccess: () => {
       toast.success(translations.common.mappingSaved);
-      if (activeTab === 'products') {
-        setActiveTab('payments');
-      }
+      refetchProducts();
+      refetchChartOfAccounts();
+      setProductMappings({});
     },
     onError: () => {
       toast.error(translations.common.mappingError);
@@ -730,14 +1001,23 @@ export default function AccountingMappingConfigurator({
 
   // Mutación para guardar mapeos de métodos de pago
   const savePaymentMappings = useMutation({
-    mutationFn: async (mappings: Record<string, string>) => {
+    mutationFn: async (mappings: Record<string, { accountId: string; clinicId?: string }>) => {
+      // Convertir el objeto de mapeos a array para la API
+      const mappingsArray = Object.entries(mappings)
+        .filter(([_, mapping]) => mapping.accountId)
+        .map(([paymentMethodId, mapping]) => ({
+          paymentMethodId,
+          accountId: mapping.accountId,
+          clinicId: mapping.clinicId
+        }));
+
       const response = await fetch('/api/accounting/payment-method-mappings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           legalEntityId,
           systemId,
-          mappings
+          mappings: mappingsArray
         })
       });
       if (!response.ok) throw new Error('Error saving mappings');
@@ -745,9 +1025,9 @@ export default function AccountingMappingConfigurator({
     },
     onSuccess: () => {
       toast.success(translations.common.mappingSaved);
-      if (activeTab === 'payments') {
-        setActiveTab('vat');
-      }
+      refetchPaymentMethods();
+      refetchChartOfAccounts();
+      setPaymentMappings({});
     },
     onError: () => {
       toast.error(translations.common.mappingError);
@@ -756,22 +1036,30 @@ export default function AccountingMappingConfigurator({
 
   // Mutación para guardar mapeos de IVA
   const saveVatMappings = useMutation({
-    mutationFn: async (mappings: Record<string, { input?: string; output?: string }>) => {
-      const response = await fetch('/api/accounting/vat-mappings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          legalEntityId,
-          systemId,
-          mappings
+    mutationFn: async (mappings: any[]) => {
+      // Guardar cada mapeo individualmente
+      const promises = mappings.map(mapping => 
+        fetch('/api/accounting/save-vat-mapping', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...mapping,
+            legalEntityId,
+            systemId
+          })
+        }).then(res => {
+          if (!res.ok) throw new Error('Error al guardar mapeo de IVA');
+          return res.json();
         })
-      });
-      if (!response.ok) throw new Error('Error saving mappings');
-      return response.json();
+      );
+      
+      return Promise.all(promises);
     },
     onSuccess: () => {
       toast.success(translations.common.mappingSaved);
-      onComplete?.();
+      setVatMappings({});
+      refetchAllVat();
+      refetchUnmappedVat();
     },
     onError: () => {
       toast.error(translations.common.mappingError);
@@ -798,9 +1086,10 @@ export default function AccountingMappingConfigurator({
     },
     onSuccess: () => {
       toast.success(translations.common.mappingSaved);
-      if (activeTab === 'expenses') {
-        setActiveTab('cash-sessions');
-      }
+      refetchUnmappedExpenses();
+      refetchAllExpenses();
+      refetchChartOfAccounts();
+      setExpenseMappings({});
     },
     onError: () => {
       toast.error(translations.common.mappingError);
@@ -818,7 +1107,7 @@ export default function AccountingMappingConfigurator({
           systemId,
           mappings: Object.entries(mappings).map(([id, accountId]) => {
             // Determinar si es clínica o terminal
-            const item = unmappedCashEntities?.find((cs: any) => cs.id === id);
+            const item = allCashEntities?.find((cs: any) => (cs.clinicId === id || cs.posTerminalId === id));
             return item?.type === 'clinic' 
               ? { clinicId: id, accountId }
               : { posTerminalId: id, accountId };
@@ -830,9 +1119,10 @@ export default function AccountingMappingConfigurator({
     },
     onSuccess: () => {
       toast.success(translations.common.mappingSaved);
-      if (activeTab === 'cash-sessions') {
-        setActiveTab('discounts');
-      }
+      refetchUnmappedCashSessions();
+      refetchAllCashEntities();
+      refetchChartOfAccounts();
+      setCashSessionMappings({});
     },
     onError: () => {
       toast.error(translations.common.mappingError);
@@ -841,21 +1131,14 @@ export default function AccountingMappingConfigurator({
 
   // Mutación para guardar mapeos de descuentos
   const saveDiscountMappings = useMutation({
-    mutationFn: async (mappings: Record<string, string>) => {
+    mutationFn: async (mappings: Array<{ discountTypeCode: string; accountId: string; clinicId: string | null }>) => {
       const response = await fetch('/api/accounting/discount-mappings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           legalEntityId,
           systemId,
-          mappings: Object.entries(mappings).map(([discountTypeCode, accountId]) => {
-            const discount = unmappedDiscountTypes?.find((d: any) => d.discountTypeCode === discountTypeCode);
-            return {
-              discountTypeCode,
-              discountTypeName: discount?.discountTypeName || discountTypeCode,
-              accountId
-            };
-          })
+          mappings
         })
       });
       if (!response.ok) throw new Error('Error saving mappings');
@@ -863,17 +1146,77 @@ export default function AccountingMappingConfigurator({
     },
     onSuccess: () => {
       toast.success(translations.common.mappingSaved);
-      onComplete?.();
+      refetchUnmappedDiscounts();
+      refetchAllDiscounts();
+      refetchAllPromotions();
+      refetchChartOfAccounts();
+      setDiscountMappings({});
     },
     onError: () => {
       toast.error(translations.common.mappingError);
     }
   });
 
+  // Mutación para guardar mapeos de categorías
+  const saveCategoryMappings = useMutation({
+    mutationFn: async (mappings: Record<string, string>) => {
+      const response = await fetch('/api/accounting/category-mappings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          legalEntityId,
+          systemId,
+          mappings: Object.entries(mappings).map(([categoryId, accountId]) => ({
+            categoryId,
+            accountId
+          }))
+        })
+      });
+      if (!response.ok) throw new Error('Error saving mappings');
+      return response.json();
+    },
+    onSuccess: () => {
+      toast.success(translations.common.mappingSaved);
+      refetchAllCategories();
+      refetchChartOfAccounts();
+      setCategoryMappings({});
+    },
+    onError: () => {
+      toast.error(translations.common.mappingError);
+    }
+  });
+
+  // Mutación para guardar mapeos de bancos
+  const saveBankMappings = useMutation({
+    mutationFn: async (params: { bankMappings: Record<string, string>, bankAccountMappings: Record<string, string> }) => {
+      const response = await fetch('/api/accounting/bank-mappings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          legalEntityId,
+          systemId,
+          ...params
+        })
+      });
+      if (!response.ok) throw new Error('Error saving bank mappings');
+      return response.json();
+    },
+    onSuccess: () => {
+      toast.success('Mapeos de bancos guardados correctamente');
+      refetchBanks();
+      refetchChartOfAccounts();
+      setBankMappings({});
+      setBankAccountMappings({});
+    },
+    onError: () => {
+      toast.error('Error al guardar mapeos de bancos');
+    }
+  });
+
   const unmappedServicesCount = allServices.filter(service => !service.currentAccountId).length;
   const unmappedProductsCount = allProducts.filter(product => !product.currentAccountId).length;
-  const unmappedPaymentsCount = allPaymentMethods.filter(payment => !payment.currentAccountId).length;
-  const unmappedVatCount = unmappedVatTypes.filter(vat => 
+  const unmappedPaymentsCount = allPaymentMethods.filter(payment => !payment.isMapped).length;
+  const unmappedVatCount = allVatTypes.filter(vat => 
     !vat.currentInputAccountId && !vat.currentOutputAccountId
   ).length;
   const unmappedExpensesCount = unmappedExpenseTypes.length;
@@ -888,7 +1231,7 @@ export default function AccountingMappingConfigurator({
     servicesResponse?.reason,
     productsResponse?.reason,
     paymentMethodsResponse?.reason,
-    vatTypesResponse?.reason,
+    vatTypesWithMappingsResponse?.reason,
     expenseTypesResponse?.reason,
     cashSessionsResponse?.reason,
     discountTypesResponse?.reason
@@ -900,6 +1243,7 @@ export default function AccountingMappingConfigurator({
   const renderServiceItem = (service: ServiceMapping) => {
     const indentLevel = service.level || 0;
     const hasMapping = serviceMappings[service.id] || service.currentAccountId;
+    const isClinicSpecific = service.mappingClinicId && service.mappingClinicId === service.clinicId;
     
     return (
       <div
@@ -929,39 +1273,77 @@ export default function AccountingMappingConfigurator({
               </>
             )}
           </div>
+          {service.hasMapping && service.currentAccountId && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <span>Mapeado a:</span>
+              <Badge variant="outline" className="font-mono">
+                {service.currentAccountCode}
+              </Badge>
+              <span>{service.currentAccountName}</span>
+              {isClinicSpecific && (
+                <Badge variant="secondary" className="text-xs">
+                  Específico de clínica
+                </Badge>
+              )}
+            </div>
+          )}
         </div>
-        <Select
-          value={serviceMappings[service.id] || service.currentAccountId || ''}
-          onValueChange={(value) => 
-            setServiceMappings(prev => ({
-              ...prev,
-              [service.id]: value
-            }))
-          }
-        >
-          <SelectTrigger className="w-[350px]">
-            <SelectValue placeholder={translations.common.selectAccount} />
-          </SelectTrigger>
-          <SelectContent>
-            {chartOfAccounts?.map((account) => (
-              <SelectItem key={account.id} value={account.id}>
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-sm">
-                    {account.accountNumber}
-                  </span>
-                  <span className="text-sm">{account.name}</span>
-                </div>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-2">
+          <Select
+            value={serviceMappings[service.id] || service.currentAccountId || ''}
+            onValueChange={(value) => 
+              setServiceMappings(prev => ({
+                ...prev,
+                [service.id]: value
+              }))
+            }
+          >
+            <SelectTrigger className="w-[350px]">
+              <SelectValue placeholder={translations.common.selectAccount} />
+            </SelectTrigger>
+            <SelectContent>
+              {chartOfAccounts && (() => {
+                // Eliminar duplicados usando Map con accountNumber como clave
+                const uniqueAccounts = Array.from(
+                  new Map(chartOfAccounts.map((acc: ChartAccount) => [acc.id, acc])).values()
+                ) as ChartAccount[];
+                return uniqueAccounts.map((account) => (
+                  <SelectItem key={account.id} value={account.id}>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-sm">
+                        {account.accountNumber}
+                      </span>
+                      <span className="text-sm">{account.name}</span>
+                    </div>
+                  </SelectItem>
+                ));
+              })()}
+            </SelectContent>
+          </Select>
+          {isClinicSpecific && service.currentAccountId && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => deleteMapping.mutate({ 
+                type: 'service', 
+                id: service.id, 
+                clinicId: service.clinicId || undefined 
+              })}
+              disabled={deleteMapping.isPending}
+              title="Eliminar mapeo específico de clínica"
+            >
+              <Trash2 className="h-4 w-4 text-destructive" />
+            </Button>
+          )}
+        </div>
       </div>
     );
   };
 
   const renderProductItem = (product: ProductMapping) => {
     const indentLevel = product.level || 0;
-    const hasMapping = productMappings[product.id] || product.currentAccountId;
+    const hasMapping = productMappings[product.id]?.accountId || product.currentAccountId;
+    const isClinicSpecific = product.mappingClinicId && product.mappingClinicId === product.clinicId;
     
     return (
       <div
@@ -978,52 +1360,105 @@ export default function AccountingMappingConfigurator({
               {product.name || 'Sin nombre'}
             </span>
           </div>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            {product.categoryName && <span>{product.categoryName}</span>}
+            {product.categoryName && product.price !== undefined && <span>•</span>}
+            {product.price !== undefined && (
+              <span>
+                {new Intl.NumberFormat(currentLanguage === 'es' ? 'es-ES' : 'fr-FR', {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2
+                }).format(product.price)}
+              </span>
+            )}
+          </div>
           {product.hasChildren && (
             <div className="text-sm text-muted-foreground">
               {translations.products.hasSubcategories}
             </div>
           )}
+          {product.hasMapping && product.currentAccountId && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <span>Mapeado a:</span>
+              <Badge variant="outline" className="font-mono">
+                {product.currentAccountCode}
+              </Badge>
+              <span>{product.currentAccountName}</span>
+              {isClinicSpecific && (
+                <Badge variant="secondary" className="text-xs">
+                  Específico de clínica
+                </Badge>
+              )}
+            </div>
+          )}
         </div>
-        <Select
-          value={productMappings[product.id] || product.currentAccountId || ''}
-          onValueChange={(value) => 
-            setProductMappings(prev => ({
-              ...prev,
-              [product.id]: value
-            }))
-          }
-        >
-          <SelectTrigger className="w-[350px]">
-            <SelectValue placeholder={translations.common.selectAccount} />
-          </SelectTrigger>
-          <SelectContent>
-            {chartOfAccounts?.map((account) => (
-              <SelectItem key={account.id} value={account.id}>
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-sm">
-                    {account.accountNumber}
-                  </span>
-                  <span className="text-sm">{account.name}</span>
-                </div>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {product.suggestedAccountId && !productMappings[product.id] && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => 
-              setProductMappings(prev => ({
-                ...prev,
-                [product.id]: product.suggestedAccountId!
-              }))
-            }
-          >
-            <Sparkles className="w-4 h-4 mr-1" />
-            {translations.common.useSuggestion}
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          <div className="flex-1">
+            <Select
+              value={productMappings[product.id]?.accountId || product.currentAccountId || ''}
+              onValueChange={(value) => 
+                setProductMappings(prev => ({
+                  ...prev,
+                  [product.id]: { accountId: value, clinicId: product.clinicId }
+                }))
+              }
+            >
+              <SelectTrigger className="w-[350px]">
+                <SelectValue placeholder={translations.common.selectAccount} />
+              </SelectTrigger>
+              <SelectContent>
+                {chartOfAccounts && (() => {
+                  // Eliminar duplicados usando Map con accountNumber como clave
+                  const uniqueAccounts = Array.from(
+                    new Map(chartOfAccounts.map((acc: ChartAccount) => [acc.id, acc])).values()
+                  ) as ChartAccount[];
+                  return uniqueAccounts.map((account) => (
+                    <SelectItem key={account.id} value={account.id}>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-sm">
+                          {account.accountNumber}
+                        </span>
+                        <span className="text-sm">{account.name}</span>
+                      </div>
+                    </SelectItem>
+                  ));
+                })()}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-center gap-2">
+            {product.suggestedAccountId && !productMappings[product.id] && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => 
+                  setProductMappings(prev => ({
+                    ...prev,
+                    [product.id]: { accountId: product.suggestedAccountId!, clinicId: product.clinicId }
+                  }))
+                }
+              >
+                <Sparkles className="w-4 h-4 mr-1" />
+                {translations.common.useSuggestion}
+              </Button>
+            )}
+            {isClinicSpecific && product.currentAccountId && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => deleteMapping.mutate({ 
+                  type: 'product', 
+                  id: product.id, 
+                  clinicId: product.clinicId || undefined 
+                })}
+                disabled={deleteMapping.isPending}
+                title="Eliminar mapeo específico de clínica"
+              >
+                <Trash2 className="h-4 w-4 text-destructive" />
+              </Button>
+            )}
+          </div>
+        </div>
       </div>
     );
   };
@@ -1046,10 +1481,10 @@ export default function AccountingMappingConfigurator({
 
   const handleSaveProducts = () => {
     const validMappings = Object.entries(productMappings)
-      .filter(([_, accountId]) => accountId)
-      .reduce((acc, [id, accountId]) => ({
+      .filter(([_, mapping]) => mapping.accountId)
+      .reduce((acc, [id, mapping]) => ({
         ...acc,
-        [id]: accountId
+        [id]: mapping.accountId
       }), {});
 
     if (Object.keys(validMappings).length === 0) {
@@ -1057,19 +1492,26 @@ export default function AccountingMappingConfigurator({
       return;
     }
 
-    saveProductMappings.mutate(validMappings);
+    saveProductMappings.mutate(productMappings);
   };
 
   const handleSavePayments = () => {
     // Detectar cambios: comparar los valores actuales con los nuevos
-    const changedMappings: Record<string, string> = {};
+    const changedMappings: Record<string, { accountId: string; clinicId?: string }> = {};
     
     allPaymentMethods.forEach(payment => {
-      const newValue = paymentMappings[payment.id] || '';
+      const newMapping = paymentMappings[payment.id];
       const currentValue = payment.currentAccountId || '';
       
-      if (newValue !== currentValue) {
-        changedMappings[payment.id] = newValue;
+      // Tratar "none" como vacío
+      const normalizedNewValue = newMapping?.accountId === 'none' ? '' : (newMapping?.accountId || '');
+      const normalizedCurrentValue = currentValue === 'none' ? '' : currentValue;
+      
+      if (normalizedNewValue !== normalizedCurrentValue) {
+        changedMappings[payment.id] = {
+          accountId: normalizedNewValue,
+          clinicId: payment.mappingClinicId
+        };
       }
     });
 
@@ -1082,19 +1524,25 @@ export default function AccountingMappingConfigurator({
   };
 
   const handleSaveVat = () => {
-    const validMappings = Object.entries(vatMappings)
-      .filter(([_, accounts]) => accounts.input || accounts.output)
-      .reduce((acc, [vatTypeId, accounts]) => ({
-        ...acc,
-        [vatTypeId]: accounts
-      }), {});
+    const mappingsToSave: any[] = [];
+    
+    Object.entries(vatMappings).forEach(([key, mapping]) => {
+      if (!mapping.input && !mapping.output) return;
+      
+      mappingsToSave.push({
+        vatTypeId: mapping.vatTypeId,
+        clinicId: mapping.clinicId || null,
+        inputAccountId: mapping.input || null,
+        outputAccountId: mapping.output || null
+      });
+    });
 
-    if (Object.keys(validMappings).length === 0) {
+    if (mappingsToSave.length === 0) {
       toast.warning(translations.common.noChanges);
       return;
     }
 
-    saveVatMappings.mutate(validMappings);
+    saveVatMappings.mutate(mappingsToSave);
   };
 
   const handleSaveExpenses = () => {
@@ -1130,20 +1578,302 @@ export default function AccountingMappingConfigurator({
   };
 
   const handleSaveDiscounts = () => {
-    const validMappings = Object.entries(discountMappings)
-      .filter(([_, accountId]) => accountId)
-      .reduce((acc, [discountTypeCode, accountId]) => ({
-        ...acc,
-        [discountTypeCode]: accountId
-      }), {});
+    // Preparar mapeos para enviar al backend
+    const mappingsToSave: any[] = [];
+    
+    Object.entries(discountMappings).forEach(([key, accountId]) => {
+      if (!accountId || accountId === '' || accountId === 'none') return;
+      
+      // El key tiene formato "clinicId:discountTypeCode"
+      const [clinicId, discountTypeCode] = key.split(':');
+      
+      mappingsToSave.push({
+        discountTypeCode,
+        accountId,
+        clinicId: clinicId || null
+      });
+    });
 
-    if (Object.keys(validMappings).length === 0) {
+    if (mappingsToSave.length === 0) {
       toast.warning(translations.common.noChanges);
       return;
     }
 
-    saveDiscountMappings.mutate(validMappings);
+    saveDiscountMappings.mutate(mappingsToSave);
   };
+
+  const handleSaveCategoryMappings = () => {
+    if (Object.keys(categoryMappings).length === 0) return;
+    
+    // Filtrar solo los mapeos que han cambiado
+    const changedMappings = Object.entries(categoryMappings).reduce((acc, [categoryId, accountId]) => {
+      const category = allCategories?.find((c: any) => c.categoryId === categoryId);
+      if (category && category.currentAccountId !== accountId) {
+        acc[categoryId] = accountId;
+      }
+      return acc;
+    }, {} as Record<string, string>);
+
+    if (Object.keys(changedMappings).length > 0) {
+      saveCategoryMappings.mutate(changedMappings);
+    }
+  };
+
+  const handleSaveBankMappings = () => {
+    console.log('[Banks] Guardando mapeos de bancos:', bankMappings);
+    console.log('[Banks] Guardando mapeos de cuentas bancarias:', bankAccountMappings);
+    
+    const validMappings = Object.entries(bankMappings)
+      .filter(([_, accountId]) => accountId && accountId !== 'none')
+      .reduce((acc, [bankId, accountId]) => ({
+        ...acc,
+        [bankId]: accountId
+      }), {});
+    
+    const validAccountMappings = Object.entries(bankAccountMappings)
+      .filter(([_, accountId]) => accountId && accountId !== 'none')
+      .reduce((acc, [accountId, mappedAccountId]) => ({
+        ...acc,
+        [accountId]: mappedAccountId
+      }), {});
+    
+    saveBankMappings.mutate({ 
+      bankMappings: validMappings, 
+      bankAccountMappings: validAccountMappings 
+    });
+  };
+
+  // Función helper para obtener la información de la cuenta
+  const getAccountInfo = (accountId: string | null | undefined): string => {
+    if (!accountId || accountId === 'none') return 'Sin asignar';
+    const account = chartOfAccounts?.find(acc => acc.id === accountId);
+    return account ? `${account.accountNumber} - ${account.name}` : accountId;
+  };
+
+  // Función helper para obtener el nivel de indentación de una cuenta
+  const getAccountLevel = (account: ChartAccount): number => {
+    // Si la cuenta tiene parentAccountId, calcular su nivel basado en el número de cuenta
+    if (account.parentAccountId || account.level) {
+      return account.level || 1;
+    }
+    // Las cuentas raíz (primer dígito) tienen nivel 0
+    const firstDotIndex = account.accountNumber.indexOf('.');
+    return firstDotIndex === -1 ? 0 : account.accountNumber.split('.').length - 1;
+  };
+
+  // Función helper para renderizar una opción de cuenta con indentación
+  const renderAccountOption = (account: ChartAccount) => {
+    const level = getAccountLevel(account);
+    const isSubaccount = level > 0;
+    
+    return (
+      <div 
+        className="flex items-center gap-2"
+        style={{ paddingLeft: `${level * 1.5}rem` }}
+      >
+        {isSubaccount && (
+          <span className="text-gray-400">↳</span>
+        )}
+        <span className={cn(
+          "font-mono text-sm",
+          isSubaccount && "text-gray-600"
+        )}>
+          {account.accountNumber}
+        </span>
+        <span className={cn(
+          "text-sm",
+          isSubaccount && "text-gray-600"
+        )}>
+          {account.name}
+        </span>
+        {account.parentAccountId && (
+          <Badge variant="outline" className="text-xs ml-2">
+            Subcuenta
+          </Badge>
+        )}
+      </div>
+    );
+  };
+
+  // Query para obtener todas las categorías con sus mapeos
+  const { data: allCategories, refetch: refetchAllCategories, isLoading: loadingAllCategories } = useQuery({
+    queryKey: ['all-categories-with-mappings', legalEntityId],
+    queryFn: async () => {
+      const response = await fetch(`/api/accounting/all-categories-with-mappings?legalEntityId=${legalEntityId}`);
+      if (!response.ok) throw new Error('Error fetching all categories with mappings');
+      const data = await response.json();
+      return data?.items || [];
+    },
+    enabled: !!legalEntityId && activeTab === 'categories'
+  });
+
+  useEffect(() => {
+    if (allBanks && allBanks.length > 0) {
+      const initialMappings: Record<string, string> = {};
+      const initialAccountMappings: Record<string, string> = {};
+      
+      allBanks.forEach((bank: any) => {
+        if (bank.accountId) {
+          initialMappings[bank.id] = bank.accountId;
+        }
+        
+        // Inicializar mapeos de cuentas bancarias
+        if (bank.bankAccounts) {
+          bank.bankAccounts.forEach((account: any) => {
+            if (account.accountId) {
+              initialAccountMappings[account.id] = account.accountId;
+            }
+          });
+        }
+      });
+      
+      setBankMappings(initialMappings);
+      setBankAccountMappings(initialAccountMappings);
+    }
+  }, [allBanks]);
+
+  // Función de filtrado por clínica
+  const filterByClinic = <T extends { clinicId?: string | null }>(items: T[]): T[] => {
+    if (selectedClinicFilter === 'all') return items;
+    if (selectedClinicFilter === 'global') {
+      return items.filter(item => !item.clinicId);
+    }
+    return items.filter(item => item.clinicId === selectedClinicFilter);
+  };
+
+  // Aplicar filtros a los datos
+  const filteredServices = filterByClinic(allServices || []);
+  const filteredProducts = filterByClinic(allProducts || []);
+  const filteredPaymentMethods = filterByClinic(allPaymentMethods || []);
+  const filteredExpenseTypes = filterByClinic(allExpenseTypesResponse?.items || []);
+  const filteredCashEntities = filterByClinic(allCashEntitiesResponse?.items || []);
+  const filteredBanks = filterByClinic(allBanks || []);
+
+  // Mutation para eliminar mapeos
+  const deleteMapping = useMutation({
+    mutationFn: async (params: { 
+      type: 'service' | 'product' | 'paymentMethod' | 'vat' | 'expense' | 'bank', 
+      id: string, 
+      clinicId?: string 
+    }) => {
+      const response = await fetch('/api/accounting/delete-mapping', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...params,
+          legalEntityId
+        })
+      });
+      if (!response.ok) throw new Error('Error deleting mapping');
+      return response.json();
+    },
+    onSuccess: (data, variables) => {
+      toast.success(data.message || 'Mapeo eliminado correctamente');
+      
+      // Refrescar los datos según el tipo
+      switch (variables.type) {
+        case 'service':
+          refetchServices();
+          break;
+        case 'product':
+          refetchProducts();
+          break;
+        case 'paymentMethod':
+          refetchPaymentMethods();
+          break;
+        case 'vat':
+          refetchAllVat();
+          break;
+        case 'expense':
+          refetchAllExpenses();
+          break;
+        case 'bank':
+          refetchBanks();
+          break;
+      }
+    },
+    onError: () => {
+      toast.error('Error al eliminar el mapeo');
+    }
+  });
+
+  // Mutación para guardar mapeos de promociones
+  const savePromotionMappings = useMutation({
+    mutationFn: async (mappings: Record<string, { accountId: string; clinicId?: string }>) => {
+      const response = await fetch('/api/accounting/promotion-mappings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          legalEntityId,
+          systemId,
+          mappings: Object.entries(mappings).map(([promotionKey, mapping]) => {
+            const [discountTypeCode, clinicId] = promotionKey.split('|');
+            const promotion = allPromotions.find(p => 
+              p.discountTypeCode === discountTypeCode && 
+              (p.clinicId === clinicId || (!p.clinicId && !clinicId))
+            );
+            return {
+              discountTypeCode,
+              discountTypeName: promotion?.discountTypeName || promotion?.discountTypeName || discountTypeCode,
+              accountId: mapping.accountId,
+              clinicId: mapping.clinicId || null
+            };
+          })
+        })
+      });
+      if (!response.ok) throw new Error('Error saving promotion mappings');
+      return response.json();
+    },
+    onSuccess: () => {
+      toast.success(translations.common.mappingSaved);
+      refetchAllPromotions();
+      refetchChartOfAccounts();
+      setPromotionMappings({});
+    },
+    onError: () => {
+      toast.error(translations.common.mappingError);
+    }
+  });
+
+  // Mutación para eliminar mapeos de promociones
+  const deletePromotionMapping = useMutation({
+    mutationFn: async ({ discountTypeCode, clinicId }: { discountTypeCode: string; clinicId?: string }) => {
+      const response = await fetch('/api/accounting/promotion-mappings', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          legalEntityId,
+          discountTypeCode,
+          clinicId: clinicId || null
+        })
+      });
+      if (!response.ok) throw new Error('Error deleting promotion mapping');
+      return response.json();
+    },
+    onSuccess: () => {
+      toast.success(translations.common.mappingDeleted);
+      refetchAllPromotions();
+      refetchChartOfAccounts();
+    },
+    onError: () => {
+      toast.error(translations.common.mappingError);
+    }
+  });
+
+  // Estructurar promociones similar a métodos de pago
+  const allPromotions: PromotionMapping[] = [];
+  
+  if (allPromotionsResponse?.hasData) {
+    allPromotionsResponse.clinics?.forEach((clinic: any) => {
+      clinic.promotions?.forEach((promotion: any) => {
+        allPromotions.push({
+          ...promotion,
+          clinicName: clinic.clinicName,
+          clinicId: clinic.clinicId
+        });
+      });
+    });
+  }
 
   return (
     <Card className="w-full">
@@ -1160,6 +1890,36 @@ export default function AccountingMappingConfigurator({
           </div>
           {totalUnmapped > 0 && (
             <div className="flex items-center gap-2">
+              {clinicsData && clinicsData.length > 0 && (
+                <Select value={selectedClinicFilter} onValueChange={setSelectedClinicFilter}>
+                  <SelectTrigger className="w-[200px]">
+                    <SelectValue placeholder="Filtrar por clínica" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">
+                      <div className="flex items-center gap-2">
+                        <Building2 className="w-4 h-4" />
+                        Todas las clínicas
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="global">
+                      <div className="flex items-center gap-2">
+                        <Globe className="w-4 h-4" />
+                        Solo mapeos globales
+                      </div>
+                    </SelectItem>
+                    <SelectSeparator />
+                    {clinicsData.map((clinic: any) => (
+                      <SelectItem key={clinic.id} value={clinic.id}>
+                        <div className="flex items-center gap-2">
+                          <Building2 className="w-4 h-4" />
+                          {clinic.name}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
               <Badge variant="outline" className="text-sm">
                 {totalUnmapped} sin mapear
               </Badge>
@@ -1206,7 +1966,6 @@ export default function AccountingMappingConfigurator({
                       </div>
                     </div>
                   </DropdownMenuItem>
-                  <DropdownMenuSeparator />
                   <DropdownMenuItem
                     onClick={() => executeAutoMapping.mutate({ types: ['services'] })}
                     disabled={unmappedServicesCount === 0}
@@ -1220,7 +1979,7 @@ export default function AccountingMappingConfigurator({
                     </div>
                   </DropdownMenuItem>
                   <DropdownMenuItem
-                    onClick={() => executeAutoMapping.mutate({ types: ['products'] })}
+                    onClick={() => executeAutoMapping.mutate({ types: ['products'], forceRemap: true })}
                     disabled={unmappedProductsCount === 0}
                   >
                     <Package className="mr-2 h-4 w-4" />
@@ -1268,7 +2027,7 @@ export default function AccountingMappingConfigurator({
                     </div>
                   </DropdownMenuItem>
                   <DropdownMenuItem
-                    onClick={() => executeAutoMapping.mutate({ types: ['cashEntities'] })}
+                    onClick={() => executeAutoMapping.mutate({ types: ['cash-session'] })}
                     disabled={unmappedCashEntitiesCount === 0}
                   >
                     <Calculator className="mr-2 h-4 w-4" />
@@ -1280,14 +2039,26 @@ export default function AccountingMappingConfigurator({
                     </div>
                   </DropdownMenuItem>
                   <DropdownMenuItem
-                    onClick={() => executeAutoMapping.mutate({ types: ['promotions'] })}
+                    onClick={() => executeAutoMapping.mutate({ types: ['discountTypes'] })}
                     disabled={unmappedDiscountsCount === 0}
                   >
                     <Tag className="mr-2 h-4 w-4" />
                     <div>
-                      <div className="font-medium">Solo descuentos</div>
+                      <div className="font-medium">Solo promociones</div>
                       <div className="text-xs text-muted-foreground">
                         {unmappedDiscountsCount} sin mapear
+                      </div>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => executeAutoMapping.mutate({ types: ['banks'] })}
+                    disabled={allBanks.filter(b => !b.accountId).length === 0}
+                  >
+                    <Banknote className="mr-2 h-4 w-4" />
+                    <div>
+                      <div className="font-medium">Solo bancos</div>
+                      <div className="text-xs text-muted-foreground">
+                        {allBanks.filter(b => !b.accountId).length} sin mapear
                       </div>
                     </div>
                   </DropdownMenuItem>
@@ -1298,76 +2069,113 @@ export default function AccountingMappingConfigurator({
         </div>
       </CardHeader>
       <CardContent>
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-8">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="grid w-full grid-cols-9">
+            <TabsTrigger value="mappings">
+              {translations.tabs.mappings}
+            </TabsTrigger>
             <TabsTrigger value="services">
-              <Briefcase className="w-4 h-4 mr-2" />
               {translations.tabs.services}
-              {allServices.filter(s => !s.currentAccountId).length > 0 && (
-                <Badge variant="secondary" className="ml-1">
-                  {allServices.filter(s => !s.currentAccountId).length}
+              {unmappedServicesCount > 0 && (
+                <Badge variant="secondary" className="ml-2">
+                  {unmappedServicesCount}
                 </Badge>
               )}
             </TabsTrigger>
             <TabsTrigger value="products">
-              <Package className="w-4 h-4 mr-2" />
               {translations.tabs.products}
-              {allProducts.filter(p => !p.currentAccountId).length > 0 && (
-                <Badge variant="secondary" className="ml-1">
-                  {allProducts.filter(p => !p.currentAccountId).length}
+              {unmappedProductsCount > 0 && (
+                <Badge variant="secondary" className="ml-2">
+                  {unmappedProductsCount}
                 </Badge>
               )}
             </TabsTrigger>
             <TabsTrigger value="payments">
-              <CreditCard className="w-4 h-4 mr-2" />
               {translations.tabs.payments}
-              {allPaymentMethods.filter(p => !p.currentAccountId).length > 0 && (
-                <Badge variant="secondary" className="ml-1">
-                  {allPaymentMethods.filter(p => !p.currentAccountId).length}
+              {unmappedPaymentsCount > 0 && (
+                <Badge variant="secondary" className="ml-2">
+                  {unmappedPaymentsCount}
                 </Badge>
               )}
             </TabsTrigger>
             <TabsTrigger value="vat">
-              <Receipt className="w-4 h-4 mr-2" />
               {translations.tabs.vat}
               {unmappedVatCount > 0 && (
-                <Badge variant="secondary" className="ml-1">
+                <Badge variant="secondary" className="ml-2">
                   {unmappedVatCount}
                 </Badge>
               )}
             </TabsTrigger>
             <TabsTrigger value="expenses">
-              <Receipt className="w-4 h-4 mr-2" />
-              Gastos
+              {translations.tabs.expenses}
               {unmappedExpensesCount > 0 && (
-                <Badge variant="secondary" className="ml-1">
+                <Badge variant="secondary" className="ml-2">
                   {unmappedExpensesCount}
                 </Badge>
               )}
             </TabsTrigger>
             <TabsTrigger value="cash-sessions">
-              <Calculator className="w-4 h-4 mr-2" />
-              Cajas
+              {translations.tabs.cash}
               {unmappedCashEntitiesCount > 0 && (
-                <Badge variant="secondary" className="ml-1">
+                <Badge variant="secondary" className="ml-2">
                   {unmappedCashEntitiesCount}
                 </Badge>
               )}
             </TabsTrigger>
             <TabsTrigger value="discounts">
-              <Tag className="w-4 h-4 mr-2" />
-              Descuentos
+              {translations.tabs.discounts}
               {unmappedDiscountsCount > 0 && (
-                <Badge variant="secondary" className="ml-1">
+                <Badge variant="secondary" className="ml-2">
                   {unmappedDiscountsCount}
                 </Badge>
               )}
             </TabsTrigger>
-            <TabsTrigger value="rules">
-              <Wand2 className="w-4 h-4 mr-2" />
-              {translations.tabs.rules}
+            <TabsTrigger value="banks">
+              Bancos
             </TabsTrigger>
           </TabsList>
+
+          {/* Nueva pestaña de mapeos que contiene sub-pestañas */}
+          <TabsContent value="mappings" className="mt-4 space-y-4">
+            <Tabs defaultValue="auto-mappings" className="w-full">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="auto-mappings">Mapeos Automáticos</TabsTrigger>
+                <TabsTrigger value="rules">Reglas Automáticas</TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="auto-mappings" className="mt-4">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Mapeos Automáticos</CardTitle>
+                    <CardDescription>
+                      Vista de todos los mapeos generados automáticamente
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <AutoMappingsViewer 
+                      systemId={systemId}
+                      legalEntityId={legalEntityId}
+                    />
+                  </CardContent>
+                </Card>
+              </TabsContent>
+              
+              <TabsContent value="rules" className="mt-4">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Configuración de Reglas Automáticas</CardTitle>
+                    <CardDescription>
+                      Define las reglas para la generación automática de mapeos
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {/* Aquí iría el componente de configuración de reglas */}
+                    <p className="text-muted-foreground">Configuración de reglas en desarrollo...</p>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            </Tabs>
+          </TabsContent>
 
           {/* Pestaña de Servicios */}
           <TabsContent value="services" className="mt-4 space-y-4">
@@ -1377,24 +2185,7 @@ export default function AccountingMappingConfigurator({
               </div>
             ) : !hasClinics ? (
               getReasonMessage('no_clinics_assigned', 'servicios')
-            ) : clinicsWithoutTariffs.length > 0 ? (
-              // Mostrar mensaje si hay clínicas sin tarifa
-              <Alert className="border-yellow-200 bg-yellow-50">
-                <AlertTriangle className="h-4 w-4 text-yellow-600" />
-                <AlertTitle className="text-yellow-800">Centros sin Tarifa Asignada</AlertTitle>
-                <AlertDescription className="text-yellow-700">
-                  Los siguientes centros no tienen una tarifa asignada y no mostrarán servicios:
-                  <ul className="mt-2 list-disc pl-5">
-                    {clinicsWithoutTariffs.map((clinic: any) => (
-                      <li key={clinic.id}>{clinic.name}</li>
-                    ))}
-                  </ul>
-                  <p className="mt-2">
-                    Por favor, asigne una tarifa a estos centros desde la configuración de centros de negocio.
-                  </p>
-                </AlertDescription>
-              </Alert>
-            ) : allServices && allServices.length > 0 ? (
+            ) : filteredServices && filteredServices.length > 0 ? (
               <>
                 <div className="flex items-center justify-between mb-4">
                   <Alert className="flex-1 mr-4">
@@ -1403,24 +2194,42 @@ export default function AccountingMappingConfigurator({
                       {translations.services.info}
                     </AlertDescription>
                   </Alert>
-                  <Button
-                    variant="secondary"
+                  <Button 
+                    className="ml-auto"
+                    variant={autoMappingsData?.directMappings?.services?.length > 0 ? "destructive" : "default"}
                     size="sm"
-                    onClick={() => executeAutoMapping.mutate({ types: ['services'] })}
-                    disabled={executeAutoMapping.isPending || allServices.filter(s => !s.currentAccountId).length === 0}
+                    onClick={() => {
+                      console.log('[Services] Iniciando mapeo de servicios...');
+                      if (autoMappingsData?.directMappings?.services?.length > 0) {
+                        if (confirm('¿Estás seguro de que deseas remapear? Esto sobrescribirá los mapeos existentes de servicios.')) {
+                          console.log('[Services] Ejecutando remapeo forzado...');
+                          executeAutoMapping.mutate({ types: ['services'], forceRemap: true });
+                        }
+                      } else {
+                        console.log('[Services] Ejecutando mapeo inicial...');
+                        executeAutoMapping.mutate({ types: ['services'], forceRemap: false });
+                      }
+                    }}
+                    disabled={executeAutoMapping.isPending}
                   >
                     {executeAutoMapping.isPending ? (
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Mapeando...
+                      </>
                     ) : (
-                      <Wand2 className="w-4 h-4 mr-2" />
+                      <>
+                        <Wand2 className="w-4 h-4 mr-2" />
+                        {autoMappingsData?.directMappings?.services?.length > 0 ? 'Remapear Servicios' : 'Mapear Servicios'}
+                      </>
                     )}
-                    Mapear Servicios
                   </Button>
                 </div>
 
                 <Accordion type="multiple" className="w-full">
                   {(() => {
-                    const servicesByClinic = allServices.reduce((acc, service) => {
+                    // Agrupar servicios por clínica
+                    const servicesByClinic = filteredServices.reduce((acc, service) => {
                       const key = service.clinicName || 'Sin Centro de Negocio';
                       if (!acc[key]) acc[key] = [];
                       acc[key].push(service);
@@ -1428,6 +2237,14 @@ export default function AccountingMappingConfigurator({
                     }, {} as Record<string, ServiceMapping[]>);
 
                     return Object.entries(servicesByClinic).map(([clinicName, clinicServices]) => {
+                      // Agrupar los servicios de esta clínica por categoría
+                      const servicesByCategory = clinicServices.reduce((acc, service) => {
+                        const categoryKey = service.categoryName || 'Sin Categoría';
+                        if (!acc[categoryKey]) acc[categoryKey] = [];
+                        acc[categoryKey].push(service);
+                        return acc;
+                      }, {} as Record<string, ServiceMapping[]>);
+
                       const unmappedCount = clinicServices.filter((s: ServiceMapping) => !s.currentAccountId).length;
                       const mappedCount = clinicServices.filter((s: ServiceMapping) => s.currentAccountId).length;
                       
@@ -1454,42 +2271,82 @@ export default function AccountingMappingConfigurator({
                             </div>
                           </AccordionTrigger>
                           <AccordionContent>
-                            <div className="pt-4">
-                              {/* Servicios no mapeados de este centro */}
-                              {unmappedCount > 0 && (
-                                <div className="mb-4">
-                                  <h4 className="text-sm font-medium mb-2 text-red-600">
-                                    Sin mapear ({unmappedCount})
-                                  </h4>
-                                  <div className="space-y-2">
-                                    {clinicServices
-                                      .filter((service: ServiceMapping) => !service.currentAccountId)
-                                      .map((service) => (
-                                        <div key={service.id}>
-                                          {renderServiceItem(service)}
-                                        </div>
-                                      ))}
-                                  </div>
-                                </div>
-                              )}
+                            <div className="pt-4 space-y-4">
+                              {/* Renderizar servicios agrupados por categoría */}
+                              {Object.entries(servicesByCategory).map(([categoryName, categoryServices]) => {
+                                const categoryUnmapped = categoryServices.filter(s => !s.currentAccountId).length;
+                                const categoryMapped = categoryServices.filter(s => s.currentAccountId).length;
+                                
+                                // Obtener la cuenta de la categoría si existe
+                                const categoryAccount = categoryServices[0]?.categoryId && 
+                                  autoMappingsData?.directMappings?.categories?.find(
+                                    (cat: any) => cat.id === categoryServices[0].categoryId
+                                  )?.accountCode;
 
-                              {/* Servicios mapeados de este centro */}
-                              {mappedCount > 0 && (
-                                <div className="mb-4">
-                                  <h4 className="text-sm font-medium mb-2 text-green-600">
-                                    Mapeados ({mappedCount})
-                                  </h4>
-                                  <div className="space-y-2">
-                                    {clinicServices
-                                      .filter((service: ServiceMapping) => service.currentAccountId)
-                                      .map((service) => (
-                                        <div key={service.id}>
-                                          {renderServiceItem(service)}
+                                return (
+                                  <div key={`${clinicName}-${categoryName}`} className="border rounded-lg p-4">
+                                    <div className="flex items-center justify-between mb-3">
+                                      <div className="flex items-center gap-2">
+                                        <Tag className="w-4 h-4 text-muted-foreground" />
+                                        <span className="font-medium">{categoryName}</span>
+                                        {categoryAccount && (
+                                          <Badge variant="outline" className="ml-2 font-mono text-xs">
+                                            {categoryAccount}
+                                          </Badge>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center gap-2 text-sm">
+                                        {categoryUnmapped > 0 && (
+                                          <Badge variant="destructive" className="h-5 text-xs">
+                                            {categoryUnmapped} sin mapear
+                                          </Badge>
+                                        )}
+                                        {categoryMapped > 0 && (
+                                          <Badge variant="default" className="h-5 bg-green-500 text-white hover:bg-green-600 text-xs">
+                                            {categoryMapped} mapeados
+                                          </Badge>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {/* Servicios no mapeados de esta categoría */}
+                                    {categoryUnmapped > 0 && (
+                                      <div className="mb-3">
+                                        <h5 className="text-xs font-medium mb-2 text-red-600">
+                                          Sin mapear ({categoryUnmapped})
+                                        </h5>
+                                        <div className="space-y-2">
+                                          {categoryServices
+                                            .filter((service: ServiceMapping) => !service.currentAccountId)
+                                            .map((service) => (
+                                              <div key={`${clinicName}-${categoryName}-${service.id}`}>
+                                                {renderServiceItem(service)}
+                                              </div>
+                                            ))}
                                         </div>
-                                      ))}
+                                      </div>
+                                    )}
+
+                                    {/* Servicios mapeados de esta categoría */}
+                                    {categoryMapped > 0 && (
+                                      <div>
+                                        <h5 className="text-xs font-medium mb-2 text-green-600">
+                                          Mapeados ({categoryMapped})
+                                        </h5>
+                                        <div className="space-y-2">
+                                          {categoryServices
+                                            .filter((service: ServiceMapping) => service.currentAccountId)
+                                            .map((service) => (
+                                              <div key={`${clinicName}-${categoryName}-${service.id}`}>
+                                                {renderServiceItem(service)}
+                                              </div>
+                                            ))}
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
-                                </div>
-                              )}
+                                );
+                              })}
                             </div>
                           </AccordionContent>
                         </AccordionItem>
@@ -1550,7 +2407,7 @@ export default function AccountingMappingConfigurator({
               // Mostrar mensaje si hay clínicas sin tarifa
               <Alert className="border-yellow-200 bg-yellow-50">
                 <AlertTriangle className="h-4 w-4 text-yellow-600" />
-                <AlertTitle className="text-yellow-800">Centros sin Tarifa Asignada</AlertTitle>
+                <AlertTitle>Centros sin Tarifa Asignada</AlertTitle>
                 <AlertDescription className="text-yellow-700">
                   Los siguientes centros no tienen una tarifa asignada y no mostrarán productos:
                   <ul className="mt-2 list-disc pl-5">
@@ -1563,7 +2420,7 @@ export default function AccountingMappingConfigurator({
                   </p>
                 </AlertDescription>
               </Alert>
-            ) : allProducts && allProducts.length > 0 ? (
+            ) : filteredProducts && filteredProducts.length > 0 ? (
               <>
                 <div className="flex items-center justify-between mb-4">
                   <Alert className="flex-1 mr-4">
@@ -1572,24 +2429,42 @@ export default function AccountingMappingConfigurator({
                       {translations.products.info}
                     </AlertDescription>
                   </Alert>
-                  <Button
-                    variant="secondary"
+                  <Button 
+                    className="ml-auto"
+                    variant={autoMappingsData?.directMappings?.products?.length > 0 ? "destructive" : "default"}
                     size="sm"
-                    onClick={() => executeAutoMapping.mutate({ types: ['products'] })}
-                    disabled={executeAutoMapping.isPending || allProducts.filter(p => !p.currentAccountId).length === 0}
+                    onClick={() => {
+                      console.log('[Products] Iniciando mapeo de productos...');
+                      if (autoMappingsData?.directMappings?.products?.length > 0) {
+                        if (confirm('¿Estás seguro de que deseas remapear? Esto sobrescribirá los mapeos existentes de productos.')) {
+                          console.log('[Products] Ejecutando remapeo forzado...');
+                          executeAutoMapping.mutate({ types: ['products'], forceRemap: true });
+                        }
+                      } else {
+                        console.log('[Products] Ejecutando mapeo inicial...');
+                        executeAutoMapping.mutate({ types: ['products'], forceRemap: false });
+                      }
+                    }}
+                    disabled={executeAutoMapping.isPending}
                   >
                     {executeAutoMapping.isPending ? (
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Mapeando...
+                      </>
                     ) : (
-                      <Wand2 className="w-4 h-4 mr-2" />
+                      <>
+                        <Wand2 className="w-4 h-4 mr-2" />
+                        {autoMappingsData?.directMappings?.products?.length > 0 ? 'Remapear Productos' : 'Mapear Productos'}
+                      </>
                     )}
-                    Mapear Productos
                   </Button>
                 </div>
 
                 <Accordion type="multiple" className="w-full">
                   {(() => {
-                    const productsByClinic = allProducts.reduce((acc, product) => {
+                    // Agrupar productos por clínica
+                    const productsByClinic = filteredProducts.reduce((acc, product) => {
                       const key = product.clinicName || 'Sin Centro de Negocio';
                       if (!acc[key]) acc[key] = [];
                       acc[key].push(product);
@@ -1597,6 +2472,14 @@ export default function AccountingMappingConfigurator({
                     }, {} as Record<string, ProductMapping[]>);
 
                     return Object.entries(productsByClinic).map(([clinicName, clinicProducts]) => {
+                      // Agrupar los productos de esta clínica por categoría
+                      const productsByCategory = clinicProducts.reduce((acc, product) => {
+                        const categoryKey = product.categoryName || 'Sin Categoría';
+                        if (!acc[categoryKey]) acc[categoryKey] = [];
+                        acc[categoryKey].push(product);
+                        return acc;
+                      }, {} as Record<string, ProductMapping[]>);
+
                       const unmappedCount = clinicProducts.filter((p: ProductMapping) => !p.currentAccountId).length;
                       const mappedCount = clinicProducts.filter((p: ProductMapping) => p.currentAccountId).length;
                       
@@ -1623,42 +2506,131 @@ export default function AccountingMappingConfigurator({
                             </div>
                           </AccordionTrigger>
                           <AccordionContent>
-                            <div className="pt-4">
-                              {/* Productos no mapeados de este centro */}
-                              {unmappedCount > 0 && (
-                                <div className="mb-4">
-                                  <h4 className="text-sm font-medium mb-2 text-red-600">
-                                    Sin mapear ({unmappedCount})
-                                  </h4>
-                                  <div className="space-y-2">
-                                    {clinicProducts
-                                      .filter((product: ProductMapping) => !product.currentAccountId)
-                                      .map((product) => (
-                                        <div key={product.id}>
-                                          {renderProductItem(product)}
-                                        </div>
-                                      ))}
-                                  </div>
-                                </div>
-                              )}
+                            <div className="pt-4 space-y-4">
+                              {/* Renderizar productos agrupados por categoría */}
+                              {Object.entries(productsByCategory).map(([categoryName, categoryProducts]) => {
+                                // Primero separar por estado de mapeo
+                                const mappedProducts = categoryProducts.filter(p => p.currentAccountId);
+                                const unmappedProducts = categoryProducts.filter(p => !p.currentAccountId);
+                                
+                                // Luego, separar los productos MAPEADOS por tipo basándose en los campos isForSale e isInternalUse
+                                const productsForSale = mappedProducts.filter(p => {
+                                  // Si tiene el campo settings, usarlo; si no, inferir del número de cuenta
+                                  if (p.settings) {
+                                    return p.settings.isForSale;
+                                  }
+                                  // Fallback: inferir del número de cuenta
+                                  const accountNumber = p.currentAccountCode || '';
+                                  return accountNumber.startsWith('7');
+                                });
+                                const productsForConsumption = mappedProducts.filter(p => {
+                                  // Si tiene el campo settings, usarlo; si no, inferir del número de cuenta
+                                  if (p.settings) {
+                                    return p.settings.isInternalUse;
+                                  }
+                                  // Fallback: inferir del número de cuenta
+                                  const accountNumber = p.currentAccountCode || '';
+                                  return accountNumber.startsWith('6');
+                                });
+                                
+                                const categoryUnmapped = unmappedProducts.length;
+                                const categoryMapped = mappedProducts.length;
+                                
+                                // Obtener la cuenta de la categoría si existe
+                                const categoryAccount = categoryProducts[0]?.categoryId && 
+                                  autoMappingsData?.directMappings?.categories?.find(
+                                    (cat: any) => cat.id === categoryProducts[0].categoryId
+                                  )?.accountCode;
 
-                              {/* Productos mapeados de este centro */}
-                              {mappedCount > 0 && (
-                                <div className="mb-4">
-                                  <h4 className="text-sm font-medium mb-2 text-green-600">
-                                    Mapeados ({mappedCount})
-                                  </h4>
-                                  <div className="space-y-2">
-                                    {clinicProducts
-                                      .filter((product: ProductMapping) => product.currentAccountId)
-                                      .map((product) => (
-                                        <div key={product.id}>
-                                          {renderProductItem(product)}
+                                return (
+                                  <div key={`${clinicName}-${categoryName}`} className="border rounded-lg p-4">
+                                    <div className="flex items-center justify-between mb-3">
+                                      <div className="flex items-center gap-2">
+                                        <Tag className="w-4 h-4 text-muted-foreground" />
+                                        <span className="font-medium">{categoryName}</span>
+                                        {categoryAccount && (
+                                          <Badge variant="outline" className="ml-2 font-mono text-xs">
+                                            {categoryAccount}
+                                          </Badge>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center gap-2 text-sm">
+                                        {categoryUnmapped > 0 && (
+                                          <Badge variant="destructive" className="h-5 text-xs">
+                                            {categoryUnmapped} sin mapear
+                                          </Badge>
+                                        )}
+                                        {categoryMapped > 0 && (
+                                          <Badge variant="default" className="h-5 bg-green-500 text-white hover:bg-green-600 text-xs">
+                                            {categoryMapped} mapeados
+                                          </Badge>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {/* Productos sin mapear */}
+                                    {unmappedProducts.length > 0 && (
+                                      <div className="mb-4">
+                                        <h5 className="text-sm font-medium mb-3 text-destructive">
+                                          Sin Mapear ({unmappedProducts.length})
+                                        </h5>
+                                        <div className="space-y-2 ml-6">
+                                          {unmappedProducts
+                                            .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+                                            .map((product) => (
+                                              <div key={`${clinicName}-${categoryName}-unmapped-${product.id}`}>
+                                                {renderProductItem(product)}
+                                              </div>
+                                            ))}
                                         </div>
-                                      ))}
+                                      </div>
+                                    )}
+
+                                    {/* Productos para venta (cuentas 7xx) */}
+                                    {productsForSale.length > 0 && (
+                                      <div className="mb-4">
+                                        <h5 className="text-sm font-medium mb-3 text-blue-600">
+                                          Productos para Venta ({productsForSale.length})
+                                        </h5>
+                                        <div className="space-y-2 ml-6">
+                                          {productsForSale
+                                            .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+                                            .map((product) => (
+                                              <div key={`${clinicName}-${categoryName}-sale-${product.id}`}>
+                                                {renderProductItem(product)}
+                                              </div>
+                                            ))}
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {/* Productos de consumo interno (cuentas 6xx) */}
+                                    {productsForConsumption.length > 0 && (
+                                      <div className="mb-4">
+                                        <h5 className="text-sm font-medium mb-3 text-orange-600">
+                                          Productos de Consumo Interno ({productsForConsumption.length})
+                                        </h5>
+                                        <div className="space-y-2 ml-6">
+                                          {productsForConsumption
+                                            .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+                                            .map((product) => (
+                                              <div key={`${clinicName}-${categoryName}-consumption-${product.id}`}>
+                                                {renderProductItem(product)}
+                                              </div>
+                                            ))}
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {/* Si no hay productos en ninguna categoría */}
+                                    {categoryProducts.length === 0 && (
+                                      <div className="text-sm text-muted-foreground text-center py-2">
+                                        No hay productos en esta categoría
+                                      </div>
+                                    )}
                                   </div>
-                                </div>
-                              )}
+                                );
+                              })}
                             </div>
                           </AccordionContent>
                         </AccordionItem>
@@ -1715,7 +2687,7 @@ export default function AccountingMappingConfigurator({
               </div>
             ) : !hasClinics ? (
               getReasonMessage('no_clinics_assigned', 'métodos de pago')
-            ) : allPaymentMethods && allPaymentMethods.length > 0 ? (
+            ) : filteredPaymentMethods && filteredPaymentMethods.length > 0 ? (
               <>
                 <div className="flex items-center justify-between mb-4">
                   <Alert className="flex-1 mr-4">
@@ -1724,132 +2696,277 @@ export default function AccountingMappingConfigurator({
                       {translations.payments.info}
                     </AlertDescription>
                   </Alert>
-                  <Button
-                    variant="secondary"
+                  <Button 
+                    className="ml-auto"
+                    variant={autoMappingsData?.directMappings?.paymentMethods?.length > 0 ? "destructive" : "default"}
                     size="sm"
-                    onClick={() => executeAutoMapping.mutate({ types: ['paymentMethods'] })}
-                    disabled={executeAutoMapping.isPending || allPaymentMethods.filter(p => !p.currentAccountId).length === 0}
+                    onClick={() => {
+                      console.log('[Payments] Iniciando mapeo de métodos de pago...');
+                      if (autoMappingsData?.directMappings?.paymentMethods?.length > 0) {
+                        if (confirm('¿Estás seguro de que deseas remapear? Esto sobrescribirá los mapeos existentes de métodos de pago.')) {
+                          console.log('[Payments] Ejecutando remapeo forzado...');
+                          executeAutoMapping.mutate({ types: ['paymentMethods'] });
+                        }
+                      } else {
+                        console.log('[Payments] Ejecutando mapeo inicial...');
+                        executeAutoMapping.mutate({ types: ['paymentMethods'] });
+                      }
+                    }}
+                    disabled={executeAutoMapping.isPending}
                   >
                     {executeAutoMapping.isPending ? (
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Mapeando...
+                      </>
                     ) : (
-                      <Wand2 className="w-4 h-4 mr-2" />
+                      <>
+                        <Wand2 className="w-4 h-4 mr-2" />
+                        {autoMappingsData?.directMappings?.paymentMethods?.length > 0 ? 'Remapear Métodos de Pago' : 'Mapear Métodos de Pago'}
+                      </>
                     )}
-                    Mapear Métodos de Pago
                   </Button>
                 </div>
 
-                {/* Métodos de pago no mapeados */}
-                {allPaymentMethods.filter(payment => !payment.currentAccountId).length > 0 && (
-                  <div className="mb-6">
-                    <h4 className="text-sm font-medium mb-3">Sin mapear ({allPaymentMethods.filter(payment => !payment.currentAccountId).length})</h4>
-                    <div className="space-y-3">
-                      {allPaymentMethods.filter(payment => !payment.currentAccountId).map((payment) => (
-                        <div
-                          key={payment.id}
-                          className="flex items-center gap-3 p-3 border rounded-lg"
-                        >
-                          <div className="flex-1">
-                            <div className="font-medium">{payment.name}</div>
-                            <div className="text-sm text-muted-foreground">
-                              Código: {payment.code}
-                            </div>
-                          </div>
-                          <Select
-                            value={paymentMappings[payment.id] || ''}
-                            onValueChange={(value) => 
-                              setPaymentMappings(prev => ({
-                                ...prev,
-                                [payment.id]: value
-                              }))
-                            }
-                          >
-                            <SelectTrigger className="w-[350px]">
-                              <SelectValue placeholder={translations.common.selectAccount} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {chartOfAccounts?.map((account) => (
-                                <SelectItem key={account.id} value={account.id}>
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-mono text-sm">
-                                      {account.accountNumber}
-                                    </span>
-                                    <span className="text-sm">{account.name}</span>
-                                  </div>
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                {/* Agrupación de métodos de pago por clínica */}
+                {(() => {
+                  // Agrupar métodos de pago por clínica
+                  const paymentsByClinic = new Map<string, any[]>();
+                  
+                  filteredPaymentMethods.forEach(payment => {
+                    const clinicKey = payment.clinicId || 'ALL_CLINICS';
+                    if (!paymentsByClinic.has(clinicKey)) {
+                      paymentsByClinic.set(clinicKey, []);
+                    }
+                    paymentsByClinic.get(clinicKey)!.push(payment);
+                  });
 
-                {/* Métodos de pago mapeados */}
-                {allPaymentMethods.filter(payment => payment.currentAccountId).length > 0 && (
-                  <div className="mb-6">
-                    <h4 className="text-sm font-medium mb-3">Mapeados ({allPaymentMethods.filter(payment => payment.currentAccountId).length})</h4>
-                    <div className="space-y-3">
-                      {allPaymentMethods.filter(payment => payment.currentAccountId).map((payment) => (
-                        <div
-                          key={payment.id}
-                          className="flex items-center gap-3 p-3 border rounded-lg bg-muted/20"
+                  return Array.from(paymentsByClinic.entries()).map(([clinicKey, payments]) => {
+                    const isGlobal = clinicKey === 'ALL_CLINICS';
+                    const clinic = isGlobal ? null : clinicsData?.find(c => c.id === clinicKey);
+                    const clinicName = isGlobal ? 'Métodos Globales' : clinic?.name || 'Clínica Desconocida';
+                    const clinicPrefix = isGlobal ? 'GLOBAL' : clinic?.prefix || 'UNK';
+                    
+                    const unmappedCount = payments.filter(p => !p.isMapped).length;
+                    const mappedCount = payments.filter(p => p.isMapped).length;
+
+                    return (
+                      <Card key={clinicKey} className="mb-4">
+                        <CardHeader 
+                          className="cursor-pointer"
+                          onClick={() => {
+                            const newExpanded = new Set(expandedPaymentClinics);
+                            if (newExpanded.has(clinicKey)) {
+                              newExpanded.delete(clinicKey);
+                            } else {
+                              newExpanded.add(clinicKey);
+                            }
+                            setExpandedPaymentClinics(newExpanded);
+                          }}
                         >
-                          <div className="flex-1">
-                            <div className="font-medium">{payment.name}</div>
-                            <div className="text-sm text-muted-foreground">
-                              Código: {payment.code} | 
-                              Cuenta actual: {payment.currentAccountId}
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <ChevronRight 
+                                  className={cn(
+                                    "w-4 h-4 text-muted-foreground transition-transform",
+                                    expandedPaymentClinics.has(clinicKey) && "rotate-90"
+                                  )}
+                                />
+                                <div>
+                                  <CardTitle className="text-base font-medium">{clinicName}</CardTitle>
+                                  <div className="flex items-center gap-2 mt-1">
+                                    <Badge variant="outline" className="text-xs">
+                                      {clinicPrefix}
+                                    </Badge>
+                                    <span className="text-sm text-muted-foreground">
+                                      {payments.length} método{payments.length !== 1 ? 's' : ''}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {mappedCount > 0 && (
+                                <Badge variant="default" className="bg-green-100 text-green-700">
+                                  {mappedCount} mapeado{mappedCount !== 1 ? 's' : ''}
+                                </Badge>
+                              )}
+                              {unmappedCount > 0 && (
+                                <Badge variant="destructive">
+                                  {unmappedCount} sin mapear
+                                </Badge>
+                              )}
                             </div>
                           </div>
-                          <Select
-                            value={paymentMappings[payment.id] || payment.currentAccountId || ''}
-                            onValueChange={(value) => 
-                              setPaymentMappings(prev => ({
-                                ...prev,
-                                [payment.id]: value
-                              }))
-                            }
-                          >
-                            <SelectTrigger className="w-[350px]">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="">
-                                <span className="text-muted-foreground">Sin asignar</span>
-                              </SelectItem>
-                              {chartOfAccounts?.map((account) => (
-                                <SelectItem key={account.id} value={account.id}>
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-mono text-sm">
-                                      {account.accountNumber}
-                                    </span>
-                                    <span className="text-sm">{account.name}</span>
-                                  </div>
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                        </CardHeader>
+                        
+                        {expandedPaymentClinics.has(clinicKey) && (
+                          <CardContent className="pt-0">
+                            {/* Métodos de pago sin mapear */}
+                            {payments.filter(payment => !payment.isMapped).length > 0 && (
+                              <div className="mb-6">
+                                <h5 className="text-sm font-medium mb-3 text-orange-700">
+                                  Pendientes ({payments.filter(payment => !payment.isMapped).length})
+                                </h5>
+                                <div className="space-y-3">
+                                  {payments.filter(payment => !payment.isMapped).map((payment) => (
+                                    <div
+                                      key={`${payment.id}-${payment.clinicId || 'global'}`}
+                                      className="flex items-center gap-3 p-3 border rounded-lg"
+                                    >
+                                      <div className="flex-1">
+                                        <div className="flex items-center gap-2 font-medium">
+                                          <span className="text-gray-900 dark:text-gray-100">{payment.name}</span>
+                                          {payment.mappingClinicId && payment.mappingClinicId === payment.clinicId && (
+                                            <Badge variant="secondary" className="text-xs">
+                                              Específico de clínica
+                                            </Badge>
+                                          )}
+                                        </div>
+                                        <div className="text-sm text-muted-foreground">
+                                          Código: {payment.code}
+                                        </div>
+                                      </div>
+                                      <Select
+                                        value={paymentMappings[payment.id]?.accountId || payment.currentAccountId || 'none'}
+                                        onValueChange={(value) => 
+                                          setPaymentMappings(prev => ({
+                                            ...prev,
+                                            [payment.id]: { accountId: value, clinicId: payment.mappingClinicId }
+                                          }))
+                                        }
+                                      >
+                                        <SelectTrigger className="w-[350px]">
+                                          <SelectValue placeholder={translations.common.selectAccount}>
+                                            {getAccountInfo(payment.currentAccountId)}
+                                          </SelectValue>
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="none">
+                                            <span className="text-muted-foreground">Sin asignar</span>
+                                          </SelectItem>
+                                          {chartOfAccounts && (() => {
+                                            const uniqueAccounts = Array.from(
+                                              new Map(chartOfAccounts.map((acc: ChartAccount) => [acc.id, acc])).values()
+                                            ) as ChartAccount[];
+                                            return uniqueAccounts.map((account) => (
+                                              <SelectItem key={account.id} value={account.id}>
+                                                {renderAccountOption(account)}
+                                              </SelectItem>
+                                            ));
+                                          })()}
+                                        </SelectContent>
+                                      </Select>
+                                      {payment.mappingClinicId && payment.mappingClinicId === payment.clinicId && payment.currentAccountId && (
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          onClick={() => deleteMapping.mutate({ 
+                                            type: 'paymentMethod', 
+                                            id: payment.id, 
+                                            clinicId: payment.clinicId || undefined 
+                                          })}
+                                          disabled={deleteMapping.isPending}
+                                          title="Eliminar mapeo específico de clínica"
+                                        >
+                                          <Trash2 className="h-4 w-4 text-destructive" />
+                                        </Button>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Métodos de pago mapeados */}
+                            {payments.filter(payment => payment.isMapped).length > 0 && (
+                              <div className="mb-6">
+                                <h5 className="text-sm font-medium mb-3 text-green-700">
+                                  Mapeados ({payments.filter(payment => payment.isMapped).length})
+                                </h5>
+                                <div className="space-y-3">
+                                  {payments.filter(payment => payment.isMapped).map((payment) => (
+                                    <div
+                                      key={`${payment.id}-${payment.clinicId || 'global'}`}
+                                      className="flex items-center gap-3 p-3 border rounded-lg bg-muted/20"
+                                    >
+                                      <div className="flex-1">
+                                        <div className="flex items-center gap-2 font-medium">
+                                          <span className="text-gray-900 dark:text-gray-100">{payment.name}</span>
+                                          {payment.mappingClinicId && payment.mappingClinicId === payment.clinicId && (
+                                            <Badge variant="secondary" className="text-xs">
+                                              Específico de clínica
+                                            </Badge>
+                                          )}
+                                        </div>
+                                        <div className="text-sm text-muted-foreground">
+                                          Código: {payment.code} | 
+                                          Cuenta actual: {getAccountInfo(payment.currentAccountId)}
+                                        </div>
+                                      </div>
+                                      <Select
+                                        value={paymentMappings[payment.id]?.accountId || payment.currentAccountId || 'none'}
+                                        onValueChange={(value) => 
+                                          setPaymentMappings(prev => ({
+                                            ...prev,
+                                            [payment.id]: { accountId: value, clinicId: payment.mappingClinicId }
+                                          }))
+                                        }
+                                      >
+                                        <SelectTrigger>
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="none">
+                                            <span className="text-muted-foreground">Sin asignar</span>
+                                          </SelectItem>
+                                          {chartOfAccounts && (() => {
+                                            const uniqueAccounts = Array.from(
+                                              new Map(chartOfAccounts.map((acc: ChartAccount) => [acc.id, acc])).values()
+                                            ) as ChartAccount[];
+                                            return uniqueAccounts.map((account) => (
+                                              <SelectItem key={account.id} value={account.id}>
+                                                {renderAccountOption(account)}
+                                              </SelectItem>
+                                            ));
+                                          })()}
+                                        </SelectContent>
+                                      </Select>
+                                      {payment.mappingClinicId && payment.mappingClinicId === payment.clinicId && payment.currentAccountId && (
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          onClick={() => deleteMapping.mutate({ 
+                                            type: 'paymentMethod', 
+                                            id: payment.id, 
+                                            clinicId: payment.clinicId || undefined 
+                                          })}
+                                          disabled={deleteMapping.isPending}
+                                          title="Eliminar mapeo específico de clínica"
+                                        >
+                                          <Trash2 className="h-4 w-4 text-destructive" />
+                                        </Button>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </CardContent>
+                        )}
+                      </Card>
+                    );
+                  });
+                })()}
+
                 <div className="flex justify-end gap-3 pt-4">
                   <Button variant="outline" onClick={() => setActiveTab('products')}>
                     Volver
                   </Button>
                   <Button 
                     onClick={handleSavePayments}
-                    disabled={
-                      savePaymentMappings.isPending || 
-                      !allPaymentMethods.some(payment => {
-                        const newValue = paymentMappings[payment.id] || '';
-                        const currentValue = payment.currentAccountId || '';
-                        return newValue !== currentValue;
-                      })
-                    }
+                    disabled={savePaymentMappings.isPending || Object.keys(paymentMappings).length === 0}
                   >
                     {savePaymentMappings.isPending ? (
                       <>
@@ -1866,216 +2983,302 @@ export default function AccountingMappingConfigurator({
                 </div>
               </>
             ) : (
-              <NoDataMessage reason="all_payment_methods_mapped" type="payments" />
+              <NoDataMessage reason="no_payment_methods_available" type="métodos de pago" />
             )}
           </TabsContent>
 
           {/* Pestaña de IVA */}
           <TabsContent value="vat" className="mt-4 space-y-4">
-            {checkingClinics || loadingVat || loadingChartOfAccounts ? (
+            {loadingAllVatTypes || loadingChartOfAccounts ? (
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="w-6 h-6 animate-spin" />
               </div>
-            ) : !hasClinics ? (
-              getReasonMessage('no_clinics_assigned', 'tipos de IVA')
-            ) : vatTypesResponse ? (
+            ) : vatTypesWithMappingsResponse ? (
               <>
-                <div className="flex items-center justify-between mb-4">
-                  <Alert className="flex-1 mr-4">
-                    <Info className="w-4 h-4" />
-                    <AlertDescription>
-                      {translations.vat.info}
-                    </AlertDescription>
-                  </Alert>
-                </div>
+                <Alert>
+                  <Info className="w-4 h-4" />
+                  <AlertDescription>
+                    Los tipos de IVA pueden configurarse de forma global o específica por clínica. Configure las cuentas de IVA soportado (compras) y repercutido (ventas).
+                  </AlertDescription>
+                </Alert>
 
-                {/* Mensaje más pequeño cuando todo está mapeado */}
-                {unmappedVatCount === 0 && (
-                  <div className="flex items-center gap-2 mb-4 text-sm text-green-600">
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>{translations.vat.noMappings}</span>
-                  </div>
+                {/* Tipos de IVA por Clínica */}
+                {vatTypesWithMappingsResponse.clinics && vatTypesWithMappingsResponse.clinics.length > 0 && (
+                  <Accordion type="single" collapsible>
+                    {vatTypesWithMappingsResponse.clinics.map((clinicData: any) => {
+                      const mappedCount = clinicData.vatTypes.filter((vat: any) => 
+                        vat.inputAccountId && vat.outputAccountId
+                      ).length;
+                      
+                      return (
+                        <AccordionItem key={clinicData.clinic.id} value={clinicData.clinic.id}>
+                          <AccordionTrigger>
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium">{clinicData.clinic.name}</span>
+                              <Badge variant={mappedCount === clinicData.vatTypes.length ? "default" : "secondary"}>
+                                {mappedCount} / {clinicData.vatTypes.length} mapeados
+                              </Badge>
+                            </div>
+                          </AccordionTrigger>
+                          <AccordionContent>
+                            <div className="space-y-4 pt-4">
+                              {clinicData.vatTypes.map((vat: any) => (
+                                <Card key={`${clinicData.clinic.id}-${vat.id}`} className="p-4">
+                                  <div className="space-y-4">
+                                    <div className="flex items-center justify-between">
+                                      <div>
+                                        <div className="font-medium">{vat.name}</div>
+                                        <div className="text-sm text-muted-foreground">
+                                          Tasa: {vat.rate}% • Código: {vat.code}
+                                          {vat.isClinicSpecific && (
+                                            <Badge variant="outline" className="ml-2">
+                                              Específico de clínica
+                                            </Badge>
+                                          )}
+                                        </div>
+                                      </div>
+                                      <div className="flex gap-2">
+                                        <Badge variant={vat.inputAccountId && vat.outputAccountId ? "default" : "secondary"}>
+                                          {vat.inputAccountId && vat.outputAccountId ? "Completo" : "Pendiente"}
+                                        </Badge>
+                                      </div>
+                                    </div>
+                                    
+                                    <Separator />
+                                    
+                                    <div className="grid grid-cols-2 gap-4">
+                                      {/* IVA Soportado (Compras) */}
+                                      <div className="space-y-2">
+                                        <Label>IVA Soportado (Compras)</Label>
+                                        <Select
+                                          value={vatMappings[`${clinicData.clinic.id}-${vat.id}`]?.input || vat.inputAccountId || 'none'}
+                                          onValueChange={(value) => 
+                                            setVatMappings(prev => ({
+                                              ...prev,
+                                              [`${clinicData.clinic.id}-${vat.id}`]: {
+                                                ...prev[`${clinicData.clinic.id}-${vat.id}`],
+                                                input: value === 'none' ? null : value,
+                                                vatTypeId: vat.id,
+                                                clinicId: clinicData.clinic.id
+                                              }
+                                            }))
+                                          }
+                                        >
+                                          <SelectTrigger>
+                                            <SelectValue placeholder="Seleccionar cuenta IVA soportado">
+                                              {getAccountInfo(vatMappings[`${clinicData.clinic.id}-${vat.id}`]?.input || vat.inputAccountId)}
+                                            </SelectValue>
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value="none">
+                                              <span className="text-muted-foreground">Sin asignar</span>
+                                            </SelectItem>
+                                            {chartOfAccounts
+                                              ?.filter((account: ChartAccount) => 
+                                                account.accountNumber.startsWith('472') || 
+                                                account.accountNumber.startsWith('3455')
+                                              )
+                                              .map((account: ChartAccount) => (
+                                                <SelectItem key={account.id} value={account.id}>
+                                                  {renderAccountOption(account)}
+                                                </SelectItem>
+                                              ))}
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+
+                                      {/* IVA Repercutido (Ventas) */}
+                                      <div className="space-y-2">
+                                        <Label>IVA Repercutido (Ventas)</Label>
+                                        <Select
+                                          value={vatMappings[`${clinicData.clinic.id}-${vat.id}`]?.output || vat.outputAccountId || 'none'}
+                                          onValueChange={(value) => 
+                                            setVatMappings(prev => ({
+                                              ...prev,
+                                              [`${clinicData.clinic.id}-${vat.id}`]: {
+                                                ...prev[`${clinicData.clinic.id}-${vat.id}`],
+                                                output: value === 'none' ? null : value,
+                                                vatTypeId: vat.id,
+                                                clinicId: clinicData.clinic.id
+                                              }
+                                            }))
+                                          }
+                                        >
+                                          <SelectTrigger>
+                                            <SelectValue placeholder="Seleccionar cuenta IVA repercutido">
+                                              {getAccountInfo(vatMappings[`${clinicData.clinic.id}-${vat.id}`]?.output || vat.outputAccountId)}
+                                            </SelectValue>
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value="none">
+                                              <span className="text-muted-foreground">Sin asignar</span>
+                                            </SelectItem>
+                                            {chartOfAccounts
+                                              ?.filter((account: ChartAccount) => 
+                                                account.accountNumber.startsWith('477') || 
+                                                account.accountNumber.startsWith('4455')
+                                              )
+                                              .map((account: ChartAccount) => (
+                                                <SelectItem key={account.id} value={account.id}>
+                                                  {renderAccountOption(account)}
+                                                </SelectItem>
+                                              ))}
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </Card>
+                              ))}
+                            </div>
+                          </AccordionContent>
+                        </AccordionItem>
+                      );
+                    })}
+                  </Accordion>
                 )}
 
-                <div className="space-y-4">
-                  {allVatTypes && allVatTypes.map((vat) => (
-                    <div
-                      key={vat.vatTypeId}
-                      className="p-4 space-y-3 border rounded-lg"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <div className="font-medium">{vat.vatTypeName}</div>
-                          <div className="text-sm text-muted-foreground">
-                            Tasa: {vat.vatRate}%
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <Separator />
-                      
-                      <div className="grid grid-cols-2 gap-4">
-                        {/* IVA Soportado (Compras) */}
-                        <div className="space-y-2">
-                          <Label>{translations.vat.inputAccount}</Label>
-                          <Select
-                            value={vatMappings[vat.vatTypeId]?.input || vat.currentInputAccountId || ''}
-                            onValueChange={(value) => 
-                              setVatMappings(prev => ({
-                                ...prev,
-                                [vat.vatTypeId]: {
-                                  ...prev[vat.vatTypeId],
-                                  input: value
-                                }
-                              }))
-                            }
-                            disabled={unmappedVatCount === 0 && !vatMappings[vat.vatTypeId]}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder={translations.common.selectAccount} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {chartOfAccounts?.map((account) => (
-                                <SelectItem key={account.id} value={account.id}>
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-mono text-sm">
-                                      {account.accountNumber}
-                                    </span>
-                                    <span className="text-sm">{account.name}</span>
-                                  </div>
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-
-                        {/* IVA Repercutido (Ventas) */}
-                        <div className="space-y-2">
-                          <Label>{translations.vat.outputAccount}</Label>
-                          <Select
-                            value={vatMappings[vat.vatTypeId]?.output || vat.currentOutputAccountId || ''}
-                            onValueChange={(value) => 
-                              setVatMappings(prev => ({
-                                ...prev,
-                                [vat.vatTypeId]: {
-                                  ...prev[vat.vatTypeId],
-                                  output: value
-                                }
-                              }))
-                            }
-                            disabled={unmappedVatCount === 0 && !vatMappings[vat.vatTypeId]}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder={translations.common.selectAccount} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {chartOfAccounts?.map((account) => (
-                                <SelectItem key={account.id} value={account.id}>
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-mono text-sm">
-                                      {account.accountNumber}
-                                    </span>
-                                    <span className="text-sm">{account.name}</span>
-                                  </div>
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                <div className="flex justify-end gap-3 pt-4">
+                  <Button variant="outline" onClick={() => setActiveTab('payments')}>
+                    Volver
+                  </Button>
+                  <Button 
+                    onClick={handleSaveVat}
+                    disabled={saveVatMappings.isPending || Object.keys(vatMappings).length === 0}
+                  >
+                    {saveVatMappings.isPending ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Guardando...
+                      </>
+                    ) : (
+                      'Guardar Mapeos de IVA'
+                    )}
+                  </Button>
                 </div>
-
-                {unmappedVatCount > 0 && (
-                  <div className="flex justify-end gap-3 pt-4">
-                    <Button variant="outline" onClick={() => setActiveTab('payments')}>
-                      Volver
-                    </Button>
-                    <Button 
-                      onClick={handleSaveVat}
-                      disabled={saveVatMappings.isPending || Object.keys(vatMappings).length === 0}
-                    >
-                      {saveVatMappings.isPending ? (
-                        <>
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          {translations.common.saving}
-                        </>
-                      ) : (
-                        <>
-                          <Save className="w-4 h-4 mr-2" />
-                          {translations.common.save}
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                )}
               </>
             ) : (
-              <NoDataMessage reason="all_vat_types_mapped" type="vat" />
+              <Alert>
+                <AlertCircle className="w-4 w-4" />
+                <AlertDescription>
+                  No se encontraron tipos de IVA. Asegúrese de haber configurado los tipos de IVA en el sistema.
+                </AlertDescription>
+              </Alert>
             )}
           </TabsContent>
 
           {/* Pestaña de Gastos */}
           <TabsContent value="expenses" className="mt-4 space-y-4">
-            {checkingClinics || loadingExpenses || loadingChartOfAccounts ? (
+            {loadingAllExpenses || loadingChartOfAccounts ? (
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="w-6 h-6 animate-spin" />
               </div>
-            ) : !hasClinics ? (
-              getReasonMessage('no_clinics_assigned', 'tipos de gastos')
-            ) : expenseTypesResponse ? (
+            ) : allExpenseTypes.length > 0 ? (
               <>
                 <div className="flex items-center justify-between mb-4">
                   <Alert className="flex-1 mr-4">
-                    <Info className="w-4 h-4" />
+                    <Info className="w-4 w-4" />
                     <AlertDescription>
                       Configure las cuentas contables para los diferentes tipos de gastos de la clínica.
                     </AlertDescription>
                   </Alert>
-                </div>
-
-                <div className="space-y-3">
-                  {unmappedExpenseTypes.map((expense: any) => (
-                    <div
-                      key={expense.expenseTypeId}
-                      className="flex items-center gap-3 p-3 border rounded-lg"
-                    >
-                      <div className="flex-1">
-                        <div className="font-medium">{expense.expenseTypeName}</div>
-                        <div className="text-sm text-muted-foreground">
-                          Código: {expense.expenseTypeCode}
-                        </div>
-                      </div>
-                      <Select
-                        value={expenseMappings[expense.expenseTypeId] || expense.account || ''}
-                        onValueChange={(value) => 
-                          setExpenseMappings(prev => ({
-                            ...prev,
-                            [expense.expenseTypeId]: value
-                          }))
+                  <Button 
+                    className="ml-auto"
+                    variant={allExpenseTypes.some(e => e.currentAccountId) ? "destructive" : "default"}
+                    size="sm"
+                    onClick={() => {
+                      console.log('[Expenses] Iniciando mapeo de gastos...');
+                      if (allExpenseTypes.some(e => e.currentAccountId)) {
+                        if (confirm('¿Estás seguro de que deseas remapear? Esto sobrescribirá los mapeos existentes de gastos.')) {
+                          console.log('[Expenses] Ejecutando remapeo forzado...');
+                          executeAutoMapping.mutate({ types: ['expenseTypes'] });
                         }
-                      >
-                        <SelectTrigger className="w-[350px]">
-                          <SelectValue placeholder={translations.common.selectAccount} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {chartOfAccounts?.map((account) => (
-                            <SelectItem key={account.id} value={account.id}>
-                              <div className="flex items-center gap-2">
-                                <span className="font-mono text-sm">
-                                  {account.accountNumber}
-                                </span>
-                                <span className="text-sm">{account.name}</span>
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  ))}
+                      } else {
+                        console.log('[Expenses] Ejecutando mapeo inicial...');
+                        executeAutoMapping.mutate({ types: ['expenseTypes'] });
+                      }
+                    }}
+                    disabled={executeAutoMapping.isPending}
+                  >
+                    {executeAutoMapping.isPending ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Mapeando...
+                      </>
+                    ) : (
+                      <>
+                        <Wand2 className="w-4 h-4 mr-2" />
+                        {allExpenseTypes.some(e => e.currentAccountId) ? 'Remapear Gastos' : 'Mapear Gastos'}
+                      </>
+                    )}
+                  </Button>
                 </div>
 
+                {/* Tabla de todos los tipos de gastos */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Tipos de Gasto del Sistema</CardTitle>
+                    <CardDescription>
+                      {allExpenseTypes.filter(e => e.currentAccountId).length} de {allExpenseTypes.length} tipos de gasto mapeados
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      {allExpenseTypes.map((expense: any) => (
+                        <div
+                          key={expense.expenseTypeId}
+                          className="flex items-center gap-3 p-3 border rounded-lg"
+                        >
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-gray-900 dark:text-gray-100">{expense.expenseTypeName}</span>
+                              {expense.mappingClinicId && expense.mappingClinicId === expense.clinicId && (
+                                <Badge variant="secondary" className="text-xs">
+                                  Específico de clínica
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="text-sm text-muted-foreground">
+                              Código: {expense.expenseTypeCode}
+                            </div>
+                          </div>
+                          <Select
+                            value={expenseMappings[expense.expenseTypeId] || expense.currentAccountId || 'none'}
+                            onValueChange={(value) => 
+                              setExpenseMappings(prev => ({
+                                ...prev,
+                                [expense.expenseTypeId]: value
+                              }))
+                            }
+                          >
+                            <SelectTrigger className="w-[350px]">
+                              <SelectValue placeholder={translations.common.selectAccount}>
+                                {getAccountInfo(expense.currentAccountId)}
+                              </SelectValue>
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">
+                                <span className="text-muted-foreground">Sin asignar</span>
+                              </SelectItem>
+                              {chartOfAccounts
+                                ?.filter((account: ChartAccount) => 
+                                  account.accountNumber.startsWith('472') || 
+                                  account.accountNumber.startsWith('3455')
+                                )
+                                .map((account: ChartAccount) => (
+                                  <SelectItem key={account.id} value={account.id}>
+                                    {renderAccountOption(account)}
+                                  </SelectItem>
+                                ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Botón guardar siempre visible */}
                 <div className="flex justify-end gap-3 pt-4">
                   <Button variant="outline" onClick={() => setActiveTab('vat')}>
                     Volver
@@ -2099,77 +3302,131 @@ export default function AccountingMappingConfigurator({
                 </div>
               </>
             ) : (
-              <NoDataMessage reason="all_expense_types_mapped" type="expenses" />
+              <NoDataMessage reason="no_expense_types_available" type="tipos de gasto" />
             )}
           </TabsContent>
 
           {/* Pestaña de Cajas */}
           <TabsContent value="cash-sessions" className="mt-4 space-y-4">
-            {checkingClinics || loadingCashSessions || loadingChartOfAccounts ? (
+            {checkingClinics || loadingAllCashEntities || loadingChartOfAccounts ? (
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="w-6 h-6 animate-spin" />
               </div>
             ) : !hasClinics ? (
               getReasonMessage('no_clinics_assigned', 'cajas')
-            ) : cashSessionsResponse ? (
+            ) : allCashEntities.length > 0 ? (
               <>
                 <div className="flex items-center justify-between mb-4">
                   <Alert className="flex-1 mr-4">
-                    <Info className="w-4 h-4" />
+                    <Info className="w-4 w-4" />
                     <AlertDescription>
                       Configure las cuentas de tesorería para cada caja o terminal POS.
                     </AlertDescription>
                   </Alert>
-                </div>
-
-                <div className="space-y-3">
-                  {unmappedCashEntities.map((item: any) => (
-                    <div
-                      key={item.id}
-                      className="flex items-center gap-3 p-3 border rounded-lg"
-                    >
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 font-medium">
-                          {item.type === 'clinic' ? (
-                            <Building2 className="w-4 h-4 text-muted-foreground" />
-                          ) : (
-                            <CreditCard className="w-4 h-4 text-muted-foreground" />
-                          )}
-                          {item.name}
-                        </div>
-                        <div className="text-sm text-muted-foreground">
-                          {item.type === 'clinic' ? 'Clínica' : 'Terminal POS'}
-                        </div>
-                      </div>
-                      <Select
-                        value={cashSessionMappings[item.id] || item.account || ''}
-                        onValueChange={(value) => 
-                          setCashSessionMappings(prev => ({
-                            ...prev,
-                            [item.id]: value
-                          }))
+                  <Button 
+                    className="ml-auto"
+                    variant={allCashEntities.some(e => e.currentAccountId) ? "destructive" : "default"}
+                    size="sm"
+                    onClick={() => {
+                      console.log('[CashSessions] Iniciando mapeo de cajas...');
+                      if (allCashEntities.some(e => e.currentAccountId)) {
+                        if (confirm('¿Estás seguro de que deseas remapear? Esto sobrescribirá los mapeos existentes de cajas.')) {
+                          console.log('[CashSessions] Ejecutando remapeo forzado...');
+                          executeAutoMapping.mutate({ types: ['cash-session'] });
                         }
-                      >
-                        <SelectTrigger className="w-[350px]">
-                          <SelectValue placeholder={translations.common.selectAccount} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {chartOfAccounts?.map((account) => (
-                            <SelectItem key={account.id} value={account.id}>
-                              <div className="flex items-center gap-2">
-                                <span className="font-mono text-sm">
-                                  {account.accountNumber}
-                                </span>
-                                <span className="text-sm">{account.name}</span>
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  ))}
+                      } else {
+                        console.log('[CashSessions] Ejecutando mapeo inicial...');
+                        executeAutoMapping.mutate({ types: ['cash-session'] });
+                      }
+                    }}
+                    disabled={executeAutoMapping.isPending}
+                  >
+                    {executeAutoMapping.isPending ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Mapeando...
+                      </>
+                    ) : (
+                      <>
+                        <Wand2 className="w-4 h-4 mr-2" />
+                        {allCashEntities.some(e => e.currentAccountId) ? 'Remapear Cajas' : 'Mapear Cajas'}
+                      </>
+                    )}
+                  </Button>
                 </div>
 
+                {/* Tabla de todas las entidades de caja */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Cajas y Terminales POS</CardTitle>
+                    <CardDescription>
+                      {allCashEntities.filter(e => e.currentAccountId).length} de {allCashEntities.length} entidades mapeadas
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      {allCashEntities.map((entity: any) => (
+                        <div
+                          key={entity.clinicId || entity.posTerminalId}
+                          className="flex items-center gap-3 p-3 border rounded-lg"
+                        >
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              {entity.type === 'clinic' ? (
+                                <Building2 className="w-4 h-4 text-muted-foreground" />
+                              ) : (
+                                <CreditCard className="w-4 h-4 text-muted-foreground" />
+                              )}
+                              <span className="text-gray-900 dark:text-gray-100">{entity.name}</span>
+                              {entity.mappingClinicId && entity.mappingClinicId === entity.clinicId && (
+                                <Badge variant="secondary" className="text-xs">
+                                  Específico de clínica
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="text-sm text-muted-foreground">
+                              {entity.type === 'clinic' ? 'Caja de Clínica' : 'Terminal POS'}
+                            </div>
+                          </div>
+                          <Select
+                            value={cashSessionMappings[entity.clinicId || entity.posTerminalId] || entity.currentAccountId || 'none'}
+                            onValueChange={(value) => 
+                              setCashSessionMappings(prev => ({
+                                ...prev,
+                                [entity.clinicId || entity.posTerminalId]: value
+                              }))
+                            }
+                          >
+                            <SelectTrigger className="w-[350px]">
+                              <SelectValue placeholder={translations.common.selectAccount}>
+                                {getAccountInfo(entity.currentAccountId)}
+                              </SelectValue>
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">
+                                <span className="text-muted-foreground">Sin asignar</span>
+                              </SelectItem>
+                              {chartOfAccounts
+                                ?.filter((account: ChartAccount) => 
+                                  account.accountNumber.startsWith('570') || 
+                                  account.accountNumber.startsWith('571') ||
+                                  account.accountNumber.startsWith('516') ||
+                                  account.accountNumber.startsWith('514')
+                                )
+                                .map((account: ChartAccount) => (
+                                  <SelectItem key={account.id} value={account.id}>
+                                    {renderAccountOption(account)}
+                                  </SelectItem>
+                                ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Botón guardar siempre visible */}
                 <div className="flex justify-end gap-3 pt-4">
                   <Button variant="outline" onClick={() => setActiveTab('expenses')}>
                     Volver
@@ -2193,73 +3450,172 @@ export default function AccountingMappingConfigurator({
                 </div>
               </>
             ) : (
-              <NoDataMessage reason="all_cash_entities_mapped" type="cash-sessions" />
+              <NoDataMessage reason="no_cash_entities_available" type="cajas" />
             )}
           </TabsContent>
 
-          {/* Pestaña de Descuentos */}
+          {/* Pestaña de Promociones */}
           <TabsContent value="discounts" className="mt-4 space-y-4">
-            {checkingClinics || loadingDiscounts || loadingChartOfAccounts ? (
+            {checkingClinics || loadingAllPromotions || loadingChartOfAccounts ? (
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="w-6 h-6 animate-spin" />
               </div>
             ) : !hasClinics ? (
-              getReasonMessage('no_clinics_assigned', 'descuentos')
-            ) : discountTypesResponse ? (
+              getReasonMessage('no_clinics_assigned', 'promociones')
+            ) : allPromotionsResponse?.hasData ? (
               <>
                 <div className="flex items-center justify-between mb-4">
                   <Alert className="flex-1 mr-4">
                     <Info className="w-4 h-4" />
                     <AlertDescription>
-                      Configure las cuentas para registrar los diferentes tipos de descuentos aplicados.
+                      Configure las cuentas para registrar los diferentes tipos de descuentos y promociones aplicados.
                     </AlertDescription>
                   </Alert>
+                  <Button 
+                    className="ml-auto"
+                    variant={allPromotionsResponse?.totalMapped > 0 ? "destructive" : "default"}
+                    size="sm"
+                    onClick={() => {
+                      console.log('[Promociones] Iniciando mapeo de promociones...');
+                      if (allPromotionsResponse?.totalMapped > 0) {
+                        if (confirm('¿Estás seguro de que deseas remapear? Esto sobrescribirá los mapeos existentes de promociones.')) {
+                          console.log('[Promociones] Ejecutando remapeo forzado...');
+                          executeAutoMapping.mutate({ types: ['discountTypes'], forceRemap: true });
+                        }
+                      } else {
+                        console.log('[Promociones] Ejecutando mapeo inicial...');
+                        executeAutoMapping.mutate({ types: ['discountTypes'], forceRemap: false });
+                      }
+                    }}
+                    disabled={executeAutoMapping.isPending}
+                  >
+                    {executeAutoMapping.isPending ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Mapeando...
+                      </>
+                    ) : (
+                      <>
+                        <Wand2 className="w-4 h-4 mr-2" />
+                        {allPromotionsResponse?.totalMapped > 0 ? 'Remapear Promociones' : 'Mapear Promociones'}
+                      </>
+                    )}
+                  </Button>
                 </div>
 
-                <div className="space-y-3">
-                  {unmappedDiscountTypes.map((discount: any) => (
-                    <div
-                      key={discount.discountTypeCode}
-                      className="flex items-center gap-3 p-3 border rounded-lg"
-                    >
-                      <div className="flex-1">
-                        <div className="font-medium">{discount.discountTypeName}</div>
-                        <div className="text-sm text-muted-foreground">
-                          Código: {discount.discountTypeCode}
-                        </div>
-                      </div>
-                      <Select
-                        value={discountMappings[discount.discountTypeCode] || discount.account || ''}
-                        onValueChange={(value) => 
-                          setDiscountMappings(prev => ({
-                            ...prev,
-                            [discount.discountTypeCode]: value
-                          }))
-                        }
-                      >
-                        <SelectTrigger className="w-[350px]">
-                          <SelectValue placeholder={translations.common.selectAccount} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {chartOfAccounts?.map((account) => (
-                            <SelectItem key={account.id} value={account.id}>
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Tipos de Promociones del Sistema</CardTitle>
+                    <CardDescription>
+                      {allPromotionsResponse.totalMapped} de {allPromotionsResponse.totalItems} tipos mapeados
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <Accordion type="multiple" className="w-full">
+                      {/* Promociones por Clínica */}
+                      {allPromotionsResponse.clinics?.map((clinic: any) => {
+                        const unmappedTypes = clinic.promotionTypes.filter((p: any) => !p.hasMapping).length;
+                        const mappedTypes = clinic.promotionTypes.filter((p: any) => p.hasMapping).length;
+                        const totalPromotions = clinic.promotions.length;
+                        
+                        return (
+                          <AccordionItem key={clinic.clinicId} value={clinic.clinicId}>
+                            <AccordionTrigger>
                               <div className="flex items-center gap-2">
-                                <span className="font-mono text-sm">
-                                  {account.accountNumber}
-                                </span>
-                                <span className="text-sm">{account.name}</span>
+                                <span className="font-medium">{clinic.clinicName}</span>
+                                <Badge variant="outline" className="h-5">
+                                  {clinic.promotionTypes.length} tipos
+                                </Badge>
+                                {totalPromotions > 0 && (
+                                  <Badge variant="secondary" className="h-5">
+                                    {totalPromotions} promociones creadas
+                                  </Badge>
+                                )}
+                                {unmappedTypes > 0 && (
+                                  <Badge variant="destructive" className="h-5">
+                                    {unmappedTypes} sin mapear
+                                  </Badge>
+                                )}
+                                {mappedTypes > 0 && (
+                                  <Badge variant="default" className="h-5 bg-green-500 text-white hover:bg-green-600">
+                                    {mappedTypes} mapeados
+                                  </Badge>
+                                )}
                               </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  ))}
-                </div>
+                            </AccordionTrigger>
+                            <AccordionContent>
+                              <div className="pt-4 space-y-4">
+                                {/* Tipos de Promociones del Sistema */}
+                                <div>
+                                  <h5 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                                    <Package className="w-4 h-4" />
+                                    Tipos de Promociones del Sistema
+                                  </h5>
+                                  <div className="space-y-2">
+                                    {clinic.promotionTypes.map((promType: any) => (
+                                      <div key={promType.id} className="border rounded-lg p-4">
+                                        <div className="flex items-center gap-3">
+                                          <div className="flex-1">
+                                            <div className="flex items-center gap-2">
+                                              <div className="font-medium">
+                                                {promType.name}
+                                              </div>
+                                              <Badge variant="secondary" className="text-xs">
+                                                Sistema
+                                              </Badge>
+                                              {promType.mappingIsGlobal && promType.hasMapping && (
+                                                <Badge variant="outline" className="text-xs">
+                                                  Heredado de Global
+                                                </Badge>
+                                              )}
+                                            </div>
+                                            <div className="text-sm text-muted-foreground">
+                                              Código: {promType.code}
+                                            </div>
+                                          </div>
+                                          <Select
+                                            value={discountMappings[`${clinic.clinicId}:${promType.code}`] || promType.accountId || 'none'}
+                                            onValueChange={(value) => 
+                                              setDiscountMappings(prev => ({
+                                                ...prev,
+                                                [`${clinic.clinicId}:${promType.code}`]: value
+                                              }))
+                                            }
+                                          >
+                                            <SelectTrigger className="w-[300px]">
+                                              <SelectValue placeholder="Seleccionar cuenta">
+                                                {promType.accountCode ? `${promType.accountCode} - ${promType.accountName}` : 'Sin asignar'}
+                                              </SelectValue>
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              <SelectItem value="none">
+                                                <span className="text-muted-foreground">Sin asignar</span>
+                                              </SelectItem>
+                                              {chartOfAccounts
+                                                ?.map((account: ChartAccount) => (
+                                                  <SelectItem key={account.id} value={account.id}>
+                                                    {renderAccountOption(account)}
+                                                  </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                          </Select>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+                            </AccordionContent>
+                          </AccordionItem>
+                        );
+                      })}
+                    </Accordion>
+                  </CardContent>
+                </Card>
 
                 <div className="flex justify-end gap-3 pt-4">
-                  <Button variant="outline" onClick={() => setActiveTab('cash-sessions')}>
-                    Volver
+                  <Button variant="outline" onClick={onComplete}>
+                    {translations.common.cancel}
                   </Button>
                   <Button 
                     onClick={handleSaveDiscounts}
@@ -2280,21 +3636,292 @@ export default function AccountingMappingConfigurator({
                 </div>
               </>
             ) : (
-              <NoDataMessage reason="all_promotions_mapped" type="discounts" />
+              <NoDataMessage reason="all_promotions_mapped" type="promotions" />
             )}
           </TabsContent>
 
           {/* Pestaña de Reglas */}
           <TabsContent value="rules" className="mt-4">
             <Alert>
-              <AlertCircle className="w-4 h-4" />
+              <AlertCircle className="w-4 w-4" />
               <AlertDescription>
                 {translations.rules.comingSoon}
               </AlertDescription>
             </Alert>
           </TabsContent>
+
+          {/* Pestaña de Bancos */}
+          <TabsContent value="banks" className="mt-4 space-y-4">
+            {checkingClinics || loadingBanks || loadingChartOfAccounts ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin" />
+              </div>
+            ) : !hasClinics ? (
+              getReasonMessage('no_clinics_assigned', 'bancos')
+            ) : allBanks.length > 0 ? (
+              <>
+                <div className="flex items-center justify-between mb-4">
+                  <Alert className="flex-1 mr-4">
+                    <Info className="w-4 h-4" />
+                    <AlertDescription>
+                      {translations.banks.info}
+                    </AlertDescription>
+                  </Alert>
+                  <Button 
+                    className="ml-auto"
+                    variant={allBanks.some(b => b.accountId) ? "destructive" : "default"}
+                    size="sm"
+                    onClick={() => {
+                      console.log('[Banks] Iniciando mapeo de bancos...');
+                      if (allBanks.some(b => b.accountId)) {
+                        if (confirm('¿Estás seguro de que deseas remapear? Esto sobrescribirá los mapeos existentes de bancos.')) {
+                          console.log('[Banks] Ejecutando remapeo forzado...');
+                          executeAutoMapping.mutate({ types: ['banks'] });
+                        }
+                      } else {
+                        console.log('[Banks] Ejecutando mapeo inicial...');
+                        executeAutoMapping.mutate({ types: ['banks'] });
+                      }
+                    }}
+                    disabled={executeAutoMapping.isPending}
+                  >
+                    {executeAutoMapping.isPending ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Mapeando...
+                      </>
+                    ) : (
+                      <>
+                        <Wand2 className="w-4 h-4 mr-2" />
+                        {allBanks.some(b => b.accountId) ? 'Remapear Bancos' : 'Mapear Bancos'}
+                      </>
+                    )}
+                  </Button>
+                </div>
+
+                {/* Lista de bancos */}
+                <div className="space-y-4">
+                  {allBanks.map((bank: any) => (
+                    <Card key={bank.id}>
+                      <CardHeader 
+                        className="cursor-pointer"
+                        onClick={() => {
+                          const newExpanded = new Set(expandedBanks);
+                          if (newExpanded.has(bank.id)) {
+                            newExpanded.delete(bank.id);
+                          } else {
+                            newExpanded.add(bank.id);
+                          }
+                          setExpandedBanks(newExpanded);
+                        }}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <ChevronRight 
+                                className={cn(
+                                  "w-4 h-4 text-muted-foreground transition-transform",
+                                  expandedBanks.has(bank.id) && "rotate-90"
+                                )}
+                              />
+                              <Building2 className="w-5 h-5 text-muted-foreground" />
+                              <CardTitle className="text-base">{bank.name}</CardTitle>
+                              {bank.code && (
+                                <Badge variant="secondary">{bank.code}</Badge>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {bank.isGlobal ? (
+                              <Badge variant="outline">Global</Badge>
+                            ) : (
+                              <Badge variant="outline">
+                                {bank.clinics.map((c: any) => c.name).join(', ')}
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                      </CardHeader>
+                      
+                      {expandedBanks.has(bank.id) && (
+                        <CardContent className="space-y-4">
+                          {/* Mapeo del banco principal */}
+                          <div className="flex items-center gap-3">
+                            <Label className="w-32">Cuenta banco:</Label>
+                            <Select
+                              value={bankMappings[bank.id] || bank.accountId || 'none'}
+                              onValueChange={(value) => 
+                                setBankMappings(prev => ({
+                                  ...prev,
+                                  [bank.id]: value === 'none' ? '' : value
+                                }))
+                              }
+                            >
+                              <SelectTrigger className="flex-1">
+                                <SelectValue placeholder={translations.common.selectAccount}>
+                                  {getAccountInfo(bankMappings[bank.id] || bank.accountId)}
+                                </SelectValue>
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">
+                                  <span className="text-muted-foreground">Sin asignar</span>
+                                </SelectItem>
+                                {chartOfAccounts
+                                  ?.filter((account: ChartAccount) => 
+                                    account.accountNumber.startsWith('572') || 
+                                    account.accountNumber.startsWith('514') ||
+                                    account.accountNumber.startsWith('516')
+                                  )
+                                  .map((account: ChartAccount) => (
+                                    <SelectItem key={account.id} value={account.id}>
+                                      {renderAccountOption(account)}
+                                    </SelectItem>
+                                  ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          {/* Cuentas bancarias del banco */}
+                          {bank.bankAccounts && bank.bankAccounts.length > 0 ? (
+                            <div className="space-y-3 mt-4">
+                              <Label className="text-sm font-medium text-muted-foreground">
+                                {translations.banks.bankAccounts}
+                              </Label>
+                              {bank.bankAccounts.map((account: any) => (
+                                <div key={account.id} className="ml-4 p-3 border rounded-lg bg-muted/30">
+                                  <div className="flex items-center gap-3">
+                                    <div className="flex-1">
+                                      <div className="font-medium">{account.name}</div>
+                                      <div className="text-sm text-muted-foreground">
+                                        IBAN: {account.iban} {account.currency && `(${account.currency})`}
+                                      </div>
+                                      {!account.isGlobal && account.clinics && account.clinics.length > 0 && (
+                                        <div className="text-xs text-muted-foreground mt-1">
+                                          Clínicas: {account.clinics.map((c: any) => c.name).join(', ')}
+                                        </div>
+                                      )}
+                                    </div>
+                                    <Badge variant={account.isActive ? "default" : "secondary"}>
+                                      {account.isActive ? 'Activa' : 'Inactiva'}
+                                    </Badge>
+                                  </div>
+                                  
+                                  {/* Mapeo de subcuenta */}
+                                  <div className="flex items-center gap-3 mt-3">
+                                    <Label className="w-32 text-sm">Subcuenta:</Label>
+                                    <Select
+                                      value={bankAccountMappings[account.id] || account.accountId || 'none'}
+                                      onValueChange={(value) => 
+                                        setBankAccountMappings(prev => ({
+                                          ...prev,
+                                          [account.id]: value === 'none' ? '' : value
+                                        }))
+                                      }
+                                    >
+                                      <SelectTrigger className="flex-1">
+                                        <SelectValue placeholder="Seleccionar subcuenta">
+                                          {getAccountInfo(bankAccountMappings[account.id] || account.accountId)}
+                                        </SelectValue>
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="none">
+                                          <span className="text-muted-foreground">Sin asignar</span>
+                                        </SelectItem>
+                                        {chartOfAccounts
+                                          ?.filter((acc: ChartAccount) => 
+                                            acc.accountNumber.startsWith('572') || 
+                                            acc.accountNumber.startsWith('514') ||
+                                            acc.accountNumber.startsWith('516')
+                                          )
+                                          .map((account: ChartAccount) => (
+                                            <SelectItem key={account.id} value={account.id}>
+                                              {renderAccountOption(account)}
+                                            </SelectItem>
+                                          ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+
+                                  {/* Clínicas que usan esta cuenta bancaria */}
+                                  {account.assignedClinics && account.assignedClinics.length > 0 && (
+                                    <div className="mt-3 pl-4 border-l-2 border-primary/20">
+                                      <div className="text-xs font-medium text-muted-foreground mb-2">
+                                        Clínicas asignadas:
+                                      </div>
+                                      {account.assignedClinics.map((clinic: any) => (
+                                        <div key={clinic.id} className="flex items-center gap-2 text-sm py-1">
+                                          <Building2 className="h-3 w-3 text-primary/60" />
+                                          <span>{clinic.name}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                  {/* POS Terminals de esta cuenta bancaria */}
+                                  {account.posTerminals && account.posTerminals.length > 0 && (
+                                    <div className="mt-3 pl-4 border-l-2 border-muted">
+                                      <div className="text-xs font-medium text-muted-foreground mb-2">
+                                        Terminales POS asociados:
+                                      </div>
+                                      {account.posTerminals.map((pos: any) => (
+                                        <div key={pos.id} className="flex items-center gap-2 text-sm py-1">
+                                          <div className="w-2 h-2 bg-primary rounded-full" />
+                                          <span>{pos.name}</span>
+                                          {pos.isActive ? (
+                                            <Badge variant="outline" className="text-xs">
+                                              Activo
+                                            </Badge>
+                                          ) : (
+                                            <Badge variant="secondary" className="text-xs">
+                                              Inactivo
+                                            </Badge>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="ml-8 text-sm text-muted-foreground">
+                              {translations.banks.noBankAccounts}
+                            </div>
+                          )}
+                        </CardContent>
+                      )}
+                    </Card>
+                  ))}
+                </div>
+
+                {/* Botón guardar */}
+                <div className="flex justify-end gap-3 pt-4">
+                  <Button variant="outline" onClick={() => setActiveTab('discounts')}>
+                    Volver
+                  </Button>
+                  <Button 
+                    onClick={handleSaveBankMappings}
+                    disabled={saveBankMappings.isPending || Object.keys(bankMappings).length === 0}
+                  >
+                    {saveBankMappings.isPending ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        {translations.common.saving}
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-4 h-4 mr-2" />
+                        {translations.common.save}
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <NoDataMessage reason="no_banks_available" type="bancos" />
+            )}
+          </TabsContent>
         </Tabs>
       </CardContent>
     </Card>
   );
-} 
+}

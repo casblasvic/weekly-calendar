@@ -1,0 +1,156 @@
+{
+  "es": {
+    "title": "Cómo funciona el Sistema de Mapeo Contable",
+    "subtitle": "Guía completa para entender la estructura automática de tu contabilidad",
+    "intro": {
+      "title": "Introducción al Mapeo Contable",
+      "description": "El sistema de mapeo contable automatiza la creación de subcuentas analíticas para proporcionar un análisis detallado de tu negocio. Esta automatización garantiza coherencia y facilita el seguimiento financiero por categorías, productos, servicios y más."
+    },
+    "structure": {
+      "title": "Estructura Jerárquica de Cuentas",
+      "description": "El sistema organiza las cuentas siguiendo el Plan General Contable con subcuentas analíticas:",
+      "levels": {
+        "parent": "Cuenta Padre",
+        "parentDesc": "Cuentas principales del plan contable (ej: 70100 - Ventas)",
+        "sub": "Subcuenta Analítica",
+        "subDesc": "Cuentas detalladas creadas automáticamente (ej: 70100001 - Ventas Categoría X)",
+        "mapping": "Mapeo",
+        "mappingDesc": "Relación entre elementos del negocio y cuentas contables"
+      }
+    },
+    "autoProcess": {
+      "title": "Proceso de Automatización",
+      "steps": {
+        "1": {
+          "title": "Detección de Elementos",
+          "desc": "El sistema identifica categorías, productos, servicios, métodos de pago, etc."
+        },
+        "2": {
+          "title": "Agrupación Inteligente",
+          "desc": "Los elementos se agrupan por tipo y naturaleza contable"
+        },
+        "3": {
+          "title": "Creación de Subcuentas",
+          "desc": "Se generan subcuentas analíticas con numeración secuencial"
+        },
+        "4": {
+          "title": "Establecimiento de Mapeos",
+          "desc": "Se vincula cada elemento con su subcuenta correspondiente"
+        }
+      }
+    },
+    "benefits": {
+      "title": "Ventajas del Sistema",
+      "items": {
+        "1": "Análisis detallado por categorías de negocio",
+        "2": "Informes automáticos por tipo de ingreso/gasto",
+        "3": "Control exhaustivo de márgenes por producto/servicio",
+        "4": "Trazabilidad completa de transacciones",
+        "5": "Cumplimiento normativo facilitado"
+      }
+    },
+    "customization": {
+      "title": "Personalización",
+      "description": "Aunque el sistema genera mapeos automáticamente, puedes:",
+      "options": {
+        "1": "Modificar asignaciones de cuentas manualmente",
+        "2": "Crear nuevas subcuentas personalizadas",
+        "3": "Reorganizar la estructura según necesidades específicas",
+        "4": "Establecer reglas personalizadas de mapeo"
+      }
+    },
+    "stats": {
+      "title": "Estado Actual del Sistema",
+      "totalAccounts": "Total de subcuentas analíticas",
+      "byCategory": "Subcuentas por categoría",
+      "byProduct": "Subcuentas por producto",
+      "byService": "Subcuentas por servicio",
+      "mappingCoverage": "Cobertura de mapeo",
+      "unmapped": "Elementos sin mapear"
+    },
+    "help": {
+      "needHelp": "¿Necesitas ayuda adicional?",
+      "contact": "Contacta con soporte",
+      "manual": "Ver manual completo"
+    }
+  },
+  "en": {
+    "title": "How the Accounting Mapping System Works",
+    "subtitle": "Complete guide to understanding your automatic accounting structure",
+    "intro": {
+      "title": "Introduction to Accounting Mapping",
+      "description": "The accounting mapping system automates the creation of analytical sub-accounts to provide detailed business analysis. This automation ensures consistency and facilitates financial tracking by categories, products, services and more."
+    },
+    "structure": {
+      "title": "Hierarchical Account Structure",
+      "description": "The system organizes accounts following the General Accounting Plan with analytical sub-accounts:",
+      "levels": {
+        "parent": "Parent Account",
+        "parentDesc": "Main accounts from the accounting plan (e.g.: 70100 - Sales)",
+        "sub": "Analytical Sub-account",
+        "subDesc": "Detailed accounts created automatically (e.g.: 70100001 - Category X Sales)",
+        "mapping": "Mapping",
+        "mappingDesc": "Relationship between business elements and accounting accounts"
+      }
+    },
+    "autoProcess": {
+      "title": "Automation Process",
+      "steps": {
+        "1": {
+          "title": "Element Detection",
+          "desc": "The system identifies categories, products, services, payment methods, etc."
+        },
+        "2": {
+          "title": "Smart Grouping",
+          "desc": "Elements are grouped by type and accounting nature"
+        },
+        "3": {
+          "title": "Sub-account Creation",
+          "desc": "Analytical sub-accounts are generated with sequential numbering"
+        },
+        "4": {
+          "title": "Mapping Establishment",
+          "desc": "Each element is linked to its corresponding sub-account"
+        }
+      }
+    },
+    "benefits": {
+      "title": "System Benefits",
+      "items": {
+        "1": "Detailed analysis by business categories",
+        "2": "Automatic reports by income/expense type",
+        "3": "Comprehensive margin control by product/service",
+        "4": "Complete transaction traceability",
+        "5": "Facilitated regulatory compliance"
+      }
+    },
+    "customization": {
+      "title": "Customization",
+      "description": "While the system generates mappings automatically, you can:",
+      "options": {
+        "1": "Modify account assignments manually",
+        "2": "Create new custom sub-accounts",
+        "3": "Reorganize the structure according to specific needs",
+        "4": "Establish custom mapping rules"
+      }
+    },
+    "stats": {
+      "title": "Current System Status",
+      "totalAccounts": "Total analytical sub-accounts",
+      "byCategory": "Sub-accounts by category",
+      "byProduct": "Sub-accounts by product",
+      "byService": "Sub-accounts by service",
+      "mappingCoverage": "Mapping coverage",
+      "unmapped": "Unmapped elements"
+    },
+    "help": {
+      "needHelp": "Need additional help?",
+      "contact": "Contact support",
+      "manual": "View complete manual"
+    }
+  },
+  "fr": {
+    "title": "Comment fonctionne le système de mappage comptable",
+    "subtitle": "Guide complet pour comprendre la structure automatique de votre comptabilité"
+  }
+}

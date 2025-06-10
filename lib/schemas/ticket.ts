@@ -42,6 +42,7 @@ export const ticketPaymentSchema = z.object({
   paymentMethodDefinitionId: z.string().optional().nullable(),
   paymentMethodName: z.string().optional().nullable(),
   paymentMethodCode: z.string().optional().nullable(),
+  paymentMethodType: z.string().optional().nullable(), // Tipo del método de pago
   amount: z.number().positive("El importe debe ser positivo"),
   paymentDate: z.date(),
   transactionReference: z.string().optional().nullable(),

@@ -23,7 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { PlusCircle } from "lucide-react";
+import { PlusCircle, Loader2 } from "lucide-react";
 import React, { useState, useEffect, useCallback } from 'react';
 import { ChartOfAccountTable } from './components/plan-contable/chart-of-account-table';
 import { ChartOfAccountFormModal, AccountFormData } from './components/plan-contable/chart-of-account-form-modal';
@@ -58,7 +58,9 @@ import {
   BookOpen,
   Info,
   Sparkles,
-  Settings
+  Settings,
+  Trash2,
+  AlertTriangle
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useSession } from 'next-auth/react';
@@ -126,6 +128,10 @@ export default function AccountingConfigPage() {
   const [accountToDelete, setAccountToDelete] = useState<ChartOfAccountRow | null>(null);
 
   const [isCSVImporterOpen, setIsCSVImporterOpen] = useState(false);
+  const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
+
+  const [isQuickSetupOpen, setIsQuickSetupOpen] = useState(false);
 
   // Use systemId from session or fallback to CURRENT_SYSTEM_ID
   const systemId = session?.user?.systemId || CURRENT_SYSTEM_ID;
@@ -183,21 +189,30 @@ export default function AccountingConfigPage() {
       if (!response.ok) throw new Error('Failed to fetch chart data');
       
       const data = await response.json();
-      console.log('Chart data response:', data); // Debug log
+      console.log('Chart data received:', data);
+      console.log('Chart data type:', typeof data);
+      console.log('Is array?', Array.isArray(data));
       
-      // Si es un array directamente, son las cuentas
       if (Array.isArray(data)) {
+        // Si es directamente un array
+        console.log('Setting chart data as array:', data.length);
+        if (data.length > 0 && data[0].subRows) {
+          console.log('First item has subRows:', data[0].subRows);
+        }
         setChartData(data);
       } else if (data && typeof data === 'object') {
         // Si es un objeto, puede ser un wrapper con las cuentas o un resumen
         if (data.accounts && Array.isArray(data.accounts)) {
           // Si tiene una propiedad accounts con array
+          console.log('Setting chart data from accounts property:', data.accounts.length);
           setChartData(data.accounts);
         } else if (data.data && Array.isArray(data.data)) {
           // Si tiene una propiedad data con array
+          console.log('Setting chart data from data property:', data.data.length);
           setChartData(data.data);
         } else if (data.hasEntries === false || data.count === 0) {
           // Solo si explícitamente dice que no hay entradas
+          console.log('No chart data available');
           setChartData([]);
         } else {
           // En cualquier otro caso, asumimos array vacío pero con warning
@@ -317,6 +332,38 @@ export default function AccountingConfigPage() {
     await fetchChartData();
   };
 
+  const handleResetMappings = async () => {
+    setIsResetting(true);
+    try {
+      const response = await fetch(`/api/accounting/reset-mappings?legalEntityId=${selectedLegalEntityId}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        toast.success(data.message || 'Mapeos y plan de cuentas eliminados correctamente');
+        
+        // Limpiar el estado local
+        setChartData([]);
+        
+        // Cambiar a la pestaña del plan contable
+        setActiveTab('plan');
+        
+        // Recargar datos (debería estar vacío)
+        await fetchChartData();
+      } else {
+        const error = await response.json();
+        toast.error(error.error || 'Error al resetear los mapeos');
+      }
+    } catch (error) {
+      console.error('Error resetting mappings:', error);
+      toast.error('Error crítico al resetear los mapeos');
+    } finally {
+      setIsResetting(false);
+      setIsResetDialogOpen(false);
+    }
+  };
+
   return (
     <div className="container mx-auto p-6 max-w-7xl">
       <div className="mb-6">
@@ -332,28 +379,44 @@ export default function AccountingConfigPage() {
       {/* Selector de Entidad Legal */}
       <div className="mb-6">
         <Label htmlFor="legalEntitySelect">Entidad Legal</Label>
-        <Select
-          value={selectedLegalEntityId}
-          onValueChange={(value) => setSelectedLegalEntityId(value)}
-          disabled={isLoadingLegalEntities || legalEntities.length === 0}
-        >
-          <SelectTrigger id="legalEntitySelect" className="w-full md:w-1/2">
-            <SelectValue placeholder={isLoadingLegalEntities ? "Cargando..." : (legalEntities.length === 0 ? "No hay entidades" : "Seleccione Entidad Legal")} />
-          </SelectTrigger>
-          <SelectContent>
-            {isLoadingLegalEntities ? (
-              <SelectItem value="loading" disabled>Cargando...</SelectItem>
-            ) : legalEntities.length === 0 ? (
-              <SelectItem value="no-entities" disabled>No hay entidades legales para este sistema</SelectItem>
-            ) : (
-              legalEntities.map((entity) => (
-                <SelectItem key={entity.id} value={entity.id}>
-                  {entity.name}
-                </SelectItem>
-              ))
-            )}
-          </SelectContent>
-        </Select>
+        <div className="flex gap-2">
+          <Select
+            value={selectedLegalEntityId}
+            onValueChange={(value) => setSelectedLegalEntityId(value)}
+            disabled={isLoadingLegalEntities || legalEntities.length === 0}
+          >
+            <SelectTrigger id="legalEntitySelect" className="w-full md:w-1/2">
+              <SelectValue placeholder={isLoadingLegalEntities ? "Cargando..." : (legalEntities.length === 0 ? "No hay entidades" : "Seleccione Entidad Legal")} />
+            </SelectTrigger>
+            <SelectContent>
+              {isLoadingLegalEntities ? (
+                <SelectItem value="loading" disabled>Cargando...</SelectItem>
+              ) : legalEntities.length === 0 ? (
+                <SelectItem value="no-entities" disabled>No hay entidades legales para este sistema</SelectItem>
+              ) : (
+                legalEntities.map((entity) => (
+                  <SelectItem key={entity.id} value={entity.id}>
+                    {entity.name}
+                  </SelectItem>
+                ))
+              )}
+            </SelectContent>
+          </Select>
+          {/* Botón de Reset - Solo mostrar si hay una entidad legal seleccionada */}
+          {selectedLegalEntityId && (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => setIsResetDialogOpen(true)}
+              disabled={isResetting || !chartData.length}
+              className="flex items-center gap-2"
+              title="Eliminar todos los mapeos y el plan contable"
+            >
+              <Trash2 className="h-4 w-4" />
+              <span className="hidden sm:inline">Reset Mapeos</span>
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="grid gap-6">
@@ -658,6 +721,55 @@ export default function AccountingConfigPage() {
           initialData={editingAccount}
         />
       )}
+
+      {/* Diálogo de confirmación para reset */}
+      <AlertDialog open={isResetDialogOpen} onOpenChange={setIsResetDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-red-600" />
+              ¿Resetear toda la configuración contable?
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                <span className="block">Esta acción eliminará PERMANENTEMENTE:</span>
+                <ul className="list-disc list-inside space-y-1 ml-4 text-sm">
+                  <li>Todos los mapeos de categorías, servicios y productos</li>
+                  <li>Todos los mapeos de métodos de pago</li>
+                  <li>Todos los mapeos de tipos de IVA</li>
+                  <li>Todos los mapeos de sesiones de caja</li>
+                  <li>Todos los mapeos de descuentos y promociones</li>
+                  <li>Todos los mapeos de bancos y cuentas bancarias</li>
+                  <li>Todo el plan de cuentas importado</li>
+                  <li>Todos los ejercicios fiscales configurados</li>
+                  <li>Todos los asientos contables existentes</li>
+                  <li>Todas las series documentales</li>
+                </ul>
+                <div className="font-semibold text-red-600 mt-4">
+                  ⚠️ Esta acción NO se puede deshacer. Tendrás que volver a importar el plan de cuentas y configurar todos los mapeos desde cero.
+                </div>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isResetting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleResetMappings}
+              disabled={isResetting}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {isResetting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Eliminando...
+                </>
+              ) : (
+                'Eliminar Todo'
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

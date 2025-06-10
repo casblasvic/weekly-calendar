@@ -500,14 +500,12 @@ async function main() {
   // --- 2. Crear Legal Entities ---
   const legalEntityData = [
     {
-      id: 'le-demo-contabilidad-1', // ID único para el seed
       name: 'Empresa Demo Contable S.L.',
       taxIdentifierFields: { "ES_CIF": "B12345678" }, // Usar taxIdentifierFields
       address: 'Calle Ficticia 123, Madrid',
       systemId: systemId,
     },
     {
-      id: 'le-demo-contabilidad-2',
       name: 'Servicios Avanzados Contables S.A.',
       taxIdentifierFields: { "ES_CIF": "A87654321" }, // Usar taxIdentifierFields
       address: 'Avenida Imaginaria 45, Barcelona',
@@ -517,29 +515,38 @@ async function main() {
 
   const createdLegalEntities = [];
   for (const leData of legalEntityData) {
-    const legalEntity = await prisma.legalEntity.upsert({
-      where: { id: leData.id }, // Usar el ID proporcionado en el seed para la unicidad
-      update: { 
-        name: leData.name, 
-        taxIdentifierFields: leData.taxIdentifierFields, // Usar taxIdentifierFields
-        fullAddress: leData.address, // Assuming 'address' from seed maps to 'fullAddress'
-        system: { connect: { id: leData.systemId } },
-        country: {
-          connect: { isoCode: 'ES' }, // Conectar a España por defecto si se actualiza
-        }
-      }, // Asegurarse de que todos los campos se actualicen si el ID existe
-      create: {
-        id: leData.id,
+    // Como no hay índice único name_systemId, primero buscamos si existe
+    const existingLegalEntity = await prisma.legalEntity.findFirst({
+      where: {
         name: leData.name,
-        taxIdentifierFields: leData.taxIdentifierFields, // Usar taxIdentifierFields
-        fullAddress: leData.address, // Assuming 'address' from seed maps to 'fullAddress'
-        system: { connect: { id: leData.systemId } },
-        country: {
-          connect: { isoCode: 'ES' }, // Conectar a España por defecto
-        },
-        // Añadir cualquier otro campo obligatorio de LegalEntity con valores por defecto
-      },
+        systemId: leData.systemId
+      }
     });
+
+    let legalEntity;
+    if (existingLegalEntity) {
+      legalEntity = await prisma.legalEntity.update({
+        where: { id: existingLegalEntity.id },
+        data: {
+          taxIdentifierFields: leData.taxIdentifierFields,
+          fullAddress: leData.address,
+          country: {
+            connect: { isoCode: 'ES' },
+          }
+        }
+      });
+    } else {
+      legalEntity = await prisma.legalEntity.create({
+        data: {
+          name: leData.name,
+          taxIdentifierFields: leData.taxIdentifierFields,
+          fullAddress: leData.address,
+          system: { connect: { id: leData.systemId } },
+          country: { connect: { isoCode: 'ES' } },
+        }
+      });
+    }
+    
     createdLegalEntities.push(legalEntity);
     console.log(`Upserted Legal Entity: ${legalEntity.name} (ID: ${legalEntity.id})`);
   }
@@ -630,6 +637,37 @@ async function main() {
     console.log('No Legal Entities created or found, skipping Chart of Accounts seeding for them.');
   }
 
+  // --- 4. Crear Legal Entity para las clínicas ---
+  const clinicLegalEntity = await prisma.legalEntity.findFirst({
+    where: {
+      name: 'Entidad Demo SaaS',
+      systemId: systemId
+    }
+  });
+
+  let legalEntityForClinics;
+  if (clinicLegalEntity) {
+    legalEntityForClinics = await prisma.legalEntity.update({
+      where: { id: clinicLegalEntity.id },
+      data: {
+        taxIdentifierFields: { "ES_CIF": "B98765432" },
+        fullAddress: 'Calle Principal 456, Madrid',
+        country: { connect: { isoCode: 'ES' } }
+      }
+    });
+  } else {
+    legalEntityForClinics = await prisma.legalEntity.create({
+      data: {
+        name: 'Entidad Demo SaaS',
+        taxIdentifierFields: { "ES_CIF": "B98765432" },
+        fullAddress: 'Calle Principal 456, Madrid',
+        system: { connect: { id: systemId } },
+        country: { connect: { isoCode: 'ES' } }
+      }
+    });
+  }
+  console.log(`Legal Entity for clinics: ${legalEntityForClinics.name} (ID: ${legalEntityForClinics.id})`);
+
   // ... (El resto del código de seed.ts existente comenzaría aquí)
   // Asegúrate de que el console.log(`Start seeding ...`); original no se duplique.
   console.log(`[Diagnostic Seed] Start seeding ...`);
@@ -662,7 +700,7 @@ async function main() {
   const createdUsersMap = new Map<string, pkg.User>(); 
   
   // <<< Variables para IDs globales (CORREGIDO: Inicialización correcta) >>>
-  let system: pkg.System | null = null;
+  let system: pkg.System | null = mainSystem;
   let adminRole: pkg.Role | null = null;
   let staffRole: pkg.Role | null = null;
   let vatGeneral: pkg.VATType | null = null;
@@ -678,26 +716,9 @@ async function main() {
 
   // --- Crear Entidades Base (System, Permissions, Roles) --- 
   console.log('Creating base entities...');
-  // <<< CORREGIDO: Cambiado upsert a findFirst/update/create >>>
-  let systemFound = await prisma.system.findFirst({ 
-      where: { name: 'Sistema Ejemplo Avatar' } 
-  });
-  if (systemFound) {
-    system = await prisma.system.update({ 
-        where: { id: systemFound.id }, 
-        data: { isActive: true } 
-    });
-  } else {
-    system = await prisma.system.create({ 
-        data: { name: 'Sistema Ejemplo Avatar', isActive: true } 
-    });
-  }
-  // system = await prisma.system.upsert({ 
-  //     where: { name: 'Sistema Ejemplo Avatar' }, // <<< ERROR LINTER: 'name' no es único
-  //     update: { isActive: true }, 
-  //     create: { name: 'Sistema Ejemplo Avatar', isActive: true },
-  // });
-  console.log(`Using system: ${system.name} (ID: ${system.id})`);
+  // No necesitamos crear otro sistema, ya tenemos mainSystem/systemId
+  // Usar el sistema que ya creamos al inicio
+  console.log(`Using existing system: ${mainSystem.name} (ID: ${systemId})`);
 
   // --- Crear Países (si no existen) --- 
   console.log('Creating countries...');
@@ -839,16 +860,18 @@ async function main() {
   // --- Crear Tipos de IVA --- 
   console.log('Creating VAT types...');
   vatGeneral = await prisma.vATType.upsert({ 
-    where: { name_systemId: { name: 'IVA General (21%)', systemId: system!.id } },
-    update: { rate: 21.0, isDefault: true }, create: { name: 'IVA General (21%)', rate: 21.0, isDefault: true, systemId: system!.id },
+    where: { code_systemId: { code: 'VAT_STANDARD', systemId: system!.id } },
+    update: { name: 'IVA General (21%)', rate: 21.0, isDefault: true }, 
+    create: { code: 'VAT_STANDARD', name: 'IVA General (21%)', rate: 21.0, isDefault: true, systemId: system!.id },
   });
   defaultVatTypeIdFromDB = vatGeneral.id; 
   const vatTypesData = initialMockData.tiposIVA || [];
   for (const vatData of vatTypesData) {
+      const vatCode = `VAT_${vatData.descripcion.replace(/[^A-Z0-9]/gi, '_').toUpperCase()}`;
       const vatType = await prisma.vATType.upsert({
-          where: { name_systemId: { name: vatData.descripcion, systemId: system!.id } },
-          update: { rate: vatData.porcentaje }, 
-          create: { name: vatData.descripcion, rate: vatData.porcentaje, systemId: system!.id },
+          where: { code_systemId: { code: vatCode, systemId: system!.id } },
+          update: { name: vatData.descripcion, rate: vatData.porcentaje }, 
+          create: { code: vatCode, name: vatData.descripcion, rate: vatData.porcentaje, systemId: system!.id },
       });
       if (typeof vatData.id === 'string') createdVatTypesMap.set(vatData.id, vatType);
   }
@@ -931,6 +954,7 @@ async function main() {
             languageIsoCode: clinicData.languageIsoCode,
             phone1CountryIsoCode: clinicData.phone1CountryIsoCode,
             currency: clinicData.currency || 'EUR', // Asegurar moneda
+            legalEntityId: legalEntityForClinics.id, // Usar la legal entity para clínicas
          }, 
           create: {
             name: clinicData.name, 
@@ -961,6 +985,7 @@ async function main() {
             blockPersonalData: clinicData.config?.blockPersonalData,
             professionalSkills: clinicData.config?.professionalSkills,
             notes: clinicData.config?.notes,
+            legalEntityId: legalEntityForClinics.id, // Usar la legal entity para clínicas
           }
          });
          createdClinicsMap.set(clinicData.id, clinic); // clinicData.id es el mock ID (string)
@@ -1079,7 +1104,7 @@ async function main() {
          update: { code: serviceData.codigo, description: serviceData.descripcion, durationMinutes: serviceData.duracion, price: Number(serviceData.precio), categoryId: categoryId, vatTypeId: vatTypeId, colorCode: serviceData.color }, 
          create: { name: serviceData.nombre, code: serviceData.codigo, description: serviceData.descripcion, durationMinutes: serviceData.duracion, price: Number(serviceData.precio), categoryId: categoryId, vatTypeId: vatTypeId!, systemId: system!.id, colorCode: serviceData.color }
      });
-      await prisma.serviceSetting.upsert({
+     await prisma.serviceSetting.upsert({
         where: { serviceId: service.id },
          update: { isActive: serviceData.activo !== false },
          create: { serviceId: service.id, isActive: serviceData.activo !== false }
@@ -1174,7 +1199,7 @@ async function main() {
       const product = await prisma.product.upsert({
           where: { name_systemId: { name: productData.name, systemId: system!.id } }, 
           update: { sku: productData.sku, description: productData.description, costPrice: productData.costPrice, price: productData.price, barcode: productData.barcode, categoryId: finalCategoryId, vatTypeId: productData.vatTypeId },
-          create: { name: productData.name, sku: productData.sku, description: productData.description, costPrice: productData.costPrice, price: productData.price, barcode: productData.barcode, categoryId: finalCategoryId, vatTypeId: productData.vatTypeId!, systemId: system!.id }
+          create: { name: productData.name, sku: productData.sku, description: productData.description, costPrice: productData.costPrice, price: productData.price, barcode: productData.barcode, categoryId: finalCategoryId, vatTypeId: productData.vatTypeId!, systemId: system!.id },
       });
       await prisma.productSetting.upsert({
         where: { productId: product.id },
@@ -1498,7 +1523,7 @@ async function main() {
     const serviceMasajeId = serviceMap.get('Masaje Relajante');
     const productCremaId = productMap.get('Crema Hidratante Facial');
 
-    const bonoDefMasajeId = createdBonoDefsMap.get('Bono 5 Masajes Relajantes');
+    const bonoMasajeDefId = createdBonoDefsMap.get('Bono 5 Masajes Relajantes');
     // const packageDefRelaxId = createdPackageDefsMap.get('Pack Relax Total'); // Ya no se usa en los tickets de ejemplo directamente
 
     const paymentMethodCashId = paymentMethodCash?.id;
@@ -1509,7 +1534,7 @@ async function main() {
     const defaultVatId = defaultVatTypeIdFromDB;
     const tarifaGeneralId = tarifaGeneral?.id;
 
-    if (!cashierUser1 || !cashierUser2 || !sellerUser1 || !adminUser || !client1 || !client2 || !clinic1 || !clinic2 || !serviceLimpiezaFacialId || !serviceMasajeId || !productCremaId || !paymentMethodCashId || !paymentMethodCardId || !paymentMethodBonoId || !defaultVatId || !tarifaGeneralId || !bonoDefMasajeId /*|| !packageDefRelaxId*/) {
+    if (!cashierUser1 || !cashierUser2 || !sellerUser1 || !adminUser || !client1 || !client2 || !clinic1 || !clinic2 || !serviceLimpiezaFacialId || !serviceMasajeId || !productCremaId || !paymentMethodCashId || !paymentMethodCardId || !paymentMethodBonoId || !defaultVatId || !tarifaGeneralId || !bonoMasajeDefId /*|| !packageDefRelaxId*/) {
       console.error("Missing prerequisite data for Seeding. Check maps and variables.");
       throw new Error("Missing prerequisite data for Seeding.");
     }
@@ -1695,8 +1720,7 @@ async function main() {
     const ticket2_taxAmount = ticket2_item1_vatDetails.vatAmount;
     // El finalAmount es el que se paga después de descuentos e impuestos.
     const ticket2_finalAmount = ticket2_item1_finalPrice;
-    const ticket2_number = '2025-000002';
-
+    const ticket2_number = '2025-000002-BONO';
 
     if (cashSessionClinic2_Open) { // Solo crear si la sesión de caja abierta existe
     const ticket2 = await prisma.ticket.upsert({

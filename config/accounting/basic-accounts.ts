@@ -17,6 +17,7 @@ export const BASIC_ACCOUNTS_BY_COUNTRY: Record<string, BasicAccount[]> = {
     { accountNumber: "700", name: "Ventas de mercaderías", type: "REVENUE", isMonetary: true, allowDirectEntry: true },
     { accountNumber: "705", name: "Prestaciones de servicios", type: "REVENUE", isMonetary: true, allowDirectEntry: true },
     { accountNumber: "708", name: "Devoluciones de ventas", type: "REVENUE", isMonetary: true, allowDirectEntry: true },
+    { accountNumber: "709", name: "Rappels y otros descuentos", type: "REVENUE", isMonetary: true, allowDirectEntry: true },
     
     // CAJA Y BANCOS (57X)
     { accountNumber: "570", name: "Caja", type: "ASSET", isMonetary: true, allowDirectEntry: false },
@@ -47,13 +48,14 @@ export const BASIC_ACCOUNTS_BY_COUNTRY: Record<string, BasicAccount[]> = {
     
     // PERSONAL (64X)
     { accountNumber: "640", name: "Sueldos y salarios", type: "EXPENSE", isMonetary: true, allowDirectEntry: true },
-    { accountNumber: "642", name: "Seguridad Social a cargo empresa", type: "EXPENSE", isMonetary: true, allowDirectEntry: true },
+    { accountNumber: "642", name: "Seguridad Social a cargo de la empresa", type: "EXPENSE", isMonetary: true, allowDirectEntry: true },
     { accountNumber: "465", name: "Remuneraciones pendientes de pago", type: "LIABILITY", isMonetary: true, allowDirectEntry: true },
     { accountNumber: "476", name: "Organismos de la Seguridad Social", type: "LIABILITY", isMonetary: true, allowDirectEntry: true },
+    { accountNumber: "665", name: "Descuentos sobre ventas por pronto pago", type: "EXPENSE", isMonetary: true, allowDirectEntry: true },
     
     // IVA (47X)
-    { accountNumber: "472", name: "IVA soportado", type: "ASSET", isMonetary: true, allowDirectEntry: true },
-    { accountNumber: "477", name: "IVA repercutido", type: "LIABILITY", isMonetary: true, allowDirectEntry: true },
+    { accountNumber: "472", name: "IVA soportado", type: "ASSET", isMonetary: false, allowDirectEntry: false },
+    { accountNumber: "477", name: "IVA repercutido", type: "LIABILITY", isMonetary: false, allowDirectEntry: false },
   ],
 
   // FRANCIA
@@ -104,8 +106,10 @@ export const BASIC_ACCOUNTS_BY_COUNTRY: Record<string, BasicAccount[]> = {
   MA: [
     // PRODUITS (71X)
     { accountNumber: "711", name: "Ventes de marchandises", type: "REVENUE", isMonetary: true, allowDirectEntry: true },
-    { accountNumber: "712", name: "Ventes de biens et services", type: "REVENUE", isMonetary: true, allowDirectEntry: true },
+    { accountNumber: "712", name: "Production vendue - services", type: "REVENUE", isMonetary: true, allowDirectEntry: true },
     { accountNumber: "718", name: "Autres produits d'exploitation", type: "REVENUE", isMonetary: true, allowDirectEntry: true },
+    { accountNumber: "7129", name: "Rabais, remises et ristournes accordés", type: "REVENUE", isMonetary: true, allowDirectEntry: true },
+    { accountNumber: "713", name: "Variation des stocks", type: "REVENUE", isMonetary: false, allowDirectEntry: true },
     
     // TRÉSORERIE (51X)
     { accountNumber: "514", name: "Banques", type: "ASSET", isMonetary: true, allowDirectEntry: true },
@@ -115,22 +119,30 @@ export const BASIC_ACCOUNTS_BY_COUNTRY: Record<string, BasicAccount[]> = {
     { accountNumber: "5163", name: "Caisse virements", type: "ASSET", parentNumber: "516", isMonetary: true, allowDirectEntry: true },
     
     // CLIENTS (342X)
-    { accountNumber: "3421", name: "Clients", type: "ASSET", isMonetary: true, allowDirectEntry: true },
-    { accountNumber: "3423", name: "Clients - Retenues de garantie", type: "ASSET", isMonetary: true, allowDirectEntry: true },
-    { accountNumber: "3424", name: "Clients douteux", type: "ASSET", isMonetary: true, allowDirectEntry: true },
-    { accountNumber: "3427", name: "Clients - Factures à établir", type: "ASSET", isMonetary: true, allowDirectEntry: true },
+    { accountNumber: "342", name: "Clients et comptes rattachés", type: "ASSET", isMonetary: true, allowDirectEntry: false },
+    { accountNumber: "3421", name: "Clients", type: "ASSET", parentNumber: "342", isMonetary: true, allowDirectEntry: true },
+    { accountNumber: "3423", name: "Clients - Retenues de garantie", type: "ASSET", parentNumber: "342", isMonetary: true, allowDirectEntry: true },
+    { accountNumber: "3424", name: "Clients douteux", type: "ASSET", parentNumber: "342", isMonetary: true, allowDirectEntry: true },
+    { accountNumber: "3427", name: "Clients - Factures à établir", type: "ASSET", parentNumber: "342", isMonetary: true, allowDirectEntry: true },
     
-    // FOURNISSEURS (441X)
+    // ÉTAT (345X)
+    { accountNumber: "345", name: "État créditeur", type: "ASSET", isMonetary: true, allowDirectEntry: true },
+    
+    // FOURNISSEURS (40X et 441X)
+    { accountNumber: "401", name: "Fournisseurs", type: "LIABILITY", isMonetary: true, allowDirectEntry: true },
     { accountNumber: "4411", name: "Fournisseurs", type: "LIABILITY", isMonetary: true, allowDirectEntry: true },
     { accountNumber: "4415", name: "Fournisseurs - Effets à payer", type: "LIABILITY", isMonetary: true, allowDirectEntry: true },
     
-    // CHARGES (61X)
+    // CHARGES (60X et 61X)
+    { accountNumber: "606", name: "Achats non stockés", type: "EXPENSE", isMonetary: false, allowDirectEntry: true },
+    { accountNumber: "607", name: "Achats de marchandises", type: "EXPENSE", isMonetary: false, allowDirectEntry: false },
     { accountNumber: "611", name: "Achats revendus de marchandises", type: "EXPENSE", isMonetary: true, allowDirectEntry: true },
     { accountNumber: "612", name: "Achats consommés", type: "EXPENSE", isMonetary: true, allowDirectEntry: true },
     { accountNumber: "613", name: "Locations et charges locatives", type: "EXPENSE", isMonetary: true, allowDirectEntry: true },
     { accountNumber: "614", name: "Charges d'entretien", type: "EXPENSE", isMonetary: true, allowDirectEntry: true },
     { accountNumber: "616", name: "Primes d'assurances", type: "EXPENSE", isMonetary: true, allowDirectEntry: true },
     { accountNumber: "617", name: "Charges du personnel", type: "EXPENSE", isMonetary: true, allowDirectEntry: true },
+    { accountNumber: "618", name: "Remises et ristournes obtenus (sur achats)", type: "EXPENSE", isMonetary: true, allowDirectEntry: true },
     
     // PERSONNEL (44X)
     { accountNumber: "4432", name: "Rémunérations dues au personnel", type: "LIABILITY", isMonetary: true, allowDirectEntry: true },
@@ -141,45 +153,29 @@ export const BASIC_ACCOUNTS_BY_COUNTRY: Record<string, BasicAccount[]> = {
     { accountNumber: "4455", name: "État - TVA facturée", type: "LIABILITY", isMonetary: true, allowDirectEntry: true },
   ],
 
-  // MÉXICO
+  // MÉXICO - Actualizado según catálogo SAT 2024
   MX: [
     // INGRESOS (4XX)
-    { accountNumber: "401", name: "Ingresos por servicios", type: "REVENUE", isMonetary: true, allowDirectEntry: true },
-    { accountNumber: "402", name: "Ingresos por ventas", type: "REVENUE", isMonetary: true, allowDirectEntry: true },
-    { accountNumber: "403", name: "Devoluciones y descuentos", type: "REVENUE", isMonetary: true, allowDirectEntry: true },
+    { accountNumber: "401", name: "Ingresos por ventas y servicios", type: "REVENUE", isMonetary: true, allowDirectEntry: true },
+    { accountNumber: "402", name: "Devoluciones y descuentos sobre ingresos", type: "REVENUE", isMonetary: true, allowDirectEntry: true },
     
-    // EFECTIVO Y BANCOS (10X)
-    { accountNumber: "101", name: "Caja", type: "ASSET", isMonetary: true, allowDirectEntry: false },
-    { accountNumber: "1011", name: "Caja efectivo", type: "ASSET", parentNumber: "101", isMonetary: true, allowDirectEntry: true },
-    { accountNumber: "1012", name: "Caja tarjetas", type: "ASSET", parentNumber: "101", isMonetary: true, allowDirectEntry: true },
-    { accountNumber: "1013", name: "Caja transferencias", type: "ASSET", parentNumber: "101", isMonetary: true, allowDirectEntry: true },
+    // TESORERÍA (1XX)
+    { accountNumber: "101", name: "Caja", type: "ASSET", isMonetary: true, allowDirectEntry: true },
     { accountNumber: "102", name: "Bancos", type: "ASSET", isMonetary: true, allowDirectEntry: true },
     
-    // CLIENTES (11X)
-    { accountNumber: "113", name: "Clientes", type: "ASSET", isMonetary: true, allowDirectEntry: true },
-    { accountNumber: "114", name: "Documentos por cobrar", type: "ASSET", isMonetary: true, allowDirectEntry: true },
-    { accountNumber: "115", name: "Clientes de dudosa recuperación", type: "ASSET", isMonetary: true, allowDirectEntry: true },
-    { accountNumber: "116", name: "Anticipo de clientes", type: "LIABILITY", isMonetary: true, allowDirectEntry: true },
+    // CLIENTES (105)
+    { accountNumber: "105", name: "Clientes", type: "ASSET", isMonetary: true, allowDirectEntry: true },
     
-    // PROVEEDORES (20X)
+    // PROVEEDORES (201)
     { accountNumber: "201", name: "Proveedores", type: "LIABILITY", isMonetary: true, allowDirectEntry: true },
-    { accountNumber: "202", name: "Acreedores diversos", type: "LIABILITY", isMonetary: true, allowDirectEntry: true },
     
-    // GASTOS (50X/60X)
-    { accountNumber: "501", name: "Compras", type: "EXPENSE", isMonetary: true, allowDirectEntry: true },
-    { accountNumber: "601", name: "Gastos de venta", type: "EXPENSE", isMonetary: true, allowDirectEntry: true },
-    { accountNumber: "602", name: "Gastos de administración", type: "EXPENSE", isMonetary: true, allowDirectEntry: true },
-    { accountNumber: "603", name: "Gastos financieros", type: "EXPENSE", isMonetary: true, allowDirectEntry: true },
+    // GASTOS (5XX)
+    { accountNumber: "501", name: "Costo de venta y/o servicio", type: "EXPENSE", isMonetary: true, allowDirectEntry: true },
+    { accountNumber: "502", name: "Gastos de operación", type: "EXPENSE", isMonetary: true, allowDirectEntry: true },
     
-    // PERSONAL
-    { accountNumber: "510", name: "Sueldos y salarios", type: "EXPENSE", isMonetary: true, allowDirectEntry: true },
-    { accountNumber: "511", name: "Cuotas patronales IMSS", type: "EXPENSE", isMonetary: true, allowDirectEntry: true },
-    { accountNumber: "213", name: "Sueldos por pagar", type: "LIABILITY", isMonetary: true, allowDirectEntry: true },
-    { accountNumber: "214", name: "IMSS por pagar", type: "LIABILITY", isMonetary: true, allowDirectEntry: true },
-    
-    // IVA
-    { accountNumber: "118", name: "IVA acreditable", type: "ASSET", isMonetary: true, allowDirectEntry: true },
-    { accountNumber: "216", name: "IVA por pagar", type: "LIABILITY", isMonetary: true, allowDirectEntry: true },
+    // IVA (1XX y 2XX)
+    { accountNumber: "118.01", name: "IVA acreditable pagado", type: "ASSET", isMonetary: true, allowDirectEntry: true },
+    { accountNumber: "213.01", name: "IVA por pagar", type: "LIABILITY", isMonetary: true, allowDirectEntry: true },
   ]
 };
 
@@ -216,13 +212,13 @@ export const PAYMENT_METHOD_MAPPINGS: Record<string, Record<string, string>> = {
     OTHER: "514"
   },
   MX: {
-    CASH: "1011",
-    CARD: "1012",
-    BANK_TRANSFER: "1013",
+    CASH: "101",
+    CARD: "102",
+    BANK_TRANSFER: "102",
     ONLINE_GATEWAY: "102",
     CHECK: "102",
-    INTERNAL_CREDIT: "116",
-    DEFERRED_PAYMENT: "113",
+    INTERNAL_CREDIT: "401",
+    DEFERRED_PAYMENT: "105",
     OTHER: "102"
   }
 };

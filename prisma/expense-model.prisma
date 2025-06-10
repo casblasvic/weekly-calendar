@@ -1,0 +1,92 @@
+// --- NUEVO MODELO: Gastos Operativos ---
+model Expense {
+  id            String   @id @default(cuid())
+  expenseNumber String   // Número de gasto (ej: "GTO-2024-001")
+  date          DateTime // Fecha del gasto
+  
+  // Tipo de gasto
+  expenseTypeId String
+  expenseType   ExpenseType @relation(fields: [expenseTypeId], references: [id])
+  
+  // Proveedor (opcional, puede ser un gasto sin proveedor formal)
+  supplierId String?
+  supplier   Company? @relation("SupplierExpenses", fields: [supplierId], references: [id], onDelete: SetNull)
+  
+  // Importes
+  currencyCode   String  @default("EUR")
+  subtotalAmount Decimal @db.Decimal(15, 2)
+  vatAmount      Decimal @db.Decimal(15, 2)
+  totalAmount    Decimal @db.Decimal(15, 2)
+  
+  // Detalles
+  description String
+  reference   String? // Número de factura del proveedor, etc.
+  
+  // Estado y pago
+  status    String   @default("PENDING") // PENDING, APPROVED, PAID, CANCELLED
+  paymentId String?
+  payment   Payment? @relation(fields: [paymentId], references: [id])
+  
+  // IVA
+  vatTypeId String?
+  vatType   VATType? @relation(fields: [vatTypeId], references: [id])
+  
+  // Asignación organizacional
+  clinicId String?
+  clinic   Clinic? @relation(fields: [clinicId], references: [id])
+  
+  // Sistema y entidad legal
+  systemId      String
+  system        System      @relation(fields: [systemId], references: [id])
+  legalEntityId String
+  legalEntity   LegalEntity @relation(fields: [legalEntityId], references: [id])
+  
+  // Relación con asientos contables
+  journalEntries JournalEntry[]
+  
+  // Auditoría
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  createdByUser User? @relation("ExpenseCreatedBy", fields: [createdBy], references: [id])
+  
+  @@unique([expenseNumber, systemId])
+  @@index([date])
+  @@index([expenseTypeId])
+  @@index([supplierId])
+  @@index([status])
+  @@index([clinicId])
+  @@index([systemId])
+  @@index([legalEntityId])
+  @@map("expenses")
+}
+
+// Relaciones inversas que hay que añadir a otros modelos:
+// 
+// En ExpenseType:
+//   expenses Expense[]
+//
+// En Company:
+//   expenses Expense[] @relation("SupplierExpenses")
+//
+// En Payment:
+//   expense Expense?
+//
+// En VATType:
+//   expenses Expense[]
+//
+// En Clinic:
+//   expenses Expense[]
+//
+// En System:
+//   expenses Expense[]
+//
+// En LegalEntity:
+//   expenses Expense[]
+//
+// En User:
+//   createdExpenses Expense[] @relation("ExpenseCreatedBy")
+//
+// En JournalEntry:
+//   expenseId String?
+//   expense   Expense? @relation(fields: [expenseId], references: [id])

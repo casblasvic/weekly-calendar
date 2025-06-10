@@ -162,9 +162,8 @@ export default function AccountingTemplateImporter({
 
   // Obtener sectores disponibles
   const availableSectors = useMemo(() => {
-    const lang = currentLanguage === 'ar' ? 'es' : currentLanguage;
-    return getAvailableSectors(lang).filter(sector => sector.isAvailable);
-  }, [currentLanguage]);
+    return getAvailableSectors().filter(sector => sector.isAvailable);
+  }, []);
 
   // Construir código de plantilla completo
   const fullTemplateCode = useMemo(() => {

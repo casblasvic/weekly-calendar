@@ -8,7 +8,7 @@ import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 
 // GET /api/pos-terminals - Obtener todos los terminales POS
-export async function GET() {
+export async function GET(request: Request) {
   try {
     // Verificar sesión y obtener systemId
     const session = await getServerAuthSession();
@@ -17,9 +17,38 @@ export async function GET() {
     }
     const systemId = session.user.systemId;
 
+    // Obtener parámetros de query
+    const { searchParams } = new URL(request.url);
+    const bankId = searchParams.get('bankId');
+
+    // Construir condición where
+    let whereCondition: Prisma.PosTerminalWhereInput = { systemId };
+
+    // Si se proporciona bankId, filtrar por las cuentas bancarias de ese banco
+    if (bankId) {
+      // Primero obtenemos todas las cuentas del banco
+      const bankAccounts = await prisma.bankAccount.findMany({
+        where: {
+          bankId: bankId,
+          systemId: systemId
+        },
+        select: {
+          id: true
+        }
+      });
+
+      // Extraemos los IDs de las cuentas
+      const bankAccountIds = bankAccounts.map(account => account.id);
+
+      // Añadimos el filtro por bankAccountId
+      whereCondition.bankAccountId = {
+        in: bankAccountIds
+      };
+    }
+
     // Obtener terminales con información relacionada
     const posTerminals = await prisma.posTerminal.findMany({
-      where: { systemId },
+      where: whereCondition,
       include: {
         bankAccount: {
           select: {

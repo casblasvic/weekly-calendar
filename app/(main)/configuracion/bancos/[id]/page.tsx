@@ -97,8 +97,14 @@ async function fetchBankAccountsByBankId(bankId: string): Promise<BankAccountDat
 interface PosTerminalData {
     id: string;
     name: string;
-    bankAccountName: string; // Nombre de la cuenta asociada (para mostrar)
-    provider: string | null;
+    terminalIdProvider: string;
+    provider: string;
+    isActive: boolean;
+    bankAccount?: {
+        id: string;
+        accountName: string;
+        iban: string;
+    };
     // Añadir más campos
 }
 
@@ -435,6 +441,28 @@ export default function EditBankPage() {
                   <Skeleton className="w-2/5 h-5" />
                   <Skeleton className="w-4/5 h-4" />
                   <Skeleton className="w-3/5 h-4" />
+              </div>
+          ) : posTerminalsData.length > 0 ? (
+              <div className="divide-y">
+                  {posTerminalsData.map((terminal) => (
+                      <div key={terminal.id} className="flex items-center justify-between p-4 hover:bg-muted/50">
+                          <div>
+                              <div className="font-medium">{terminal.name}</div>
+                              <div className="text-sm text-muted-foreground">
+                                  {terminal.bankAccount?.accountName} {terminal.provider && `• ${terminal.provider}`}
+                              </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                              <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => router.push(`/configuracion/terminales-pos/${terminal.id}`)}
+                              >
+                                  {t('common.edit')}
+                              </Button>
+                          </div>
+                      </div>
+                  ))}
               </div>
           ) : (
               <div className="p-4 text-sm text-center text-muted-foreground">

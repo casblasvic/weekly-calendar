@@ -21,6 +21,7 @@ type ProductWithRelations = Product & {
     settings?: {
         id: string;
         isForSale: boolean;
+        isInternalUse: boolean;
         isActive: boolean;
     } | null;
     // Añadir otras relaciones si fueran necesarias para el form
@@ -49,6 +50,7 @@ interface ProductFormData {
     commissionType: 'Global' | 'Percentage' | 'Fixed'; // Asumiendo estos tipos
     commissionValue: number | string | null;
     isForSale: boolean;
+    isInternalUse: boolean;
     automaticDiscounts: boolean;
     manualDiscounts: boolean;
     acceptsPromotions: boolean;
@@ -73,6 +75,7 @@ const defaultProductFormData: ProductFormData = {
     commissionType: 'Global',
     commissionValue: null,
     isForSale: true,
+    isInternalUse: false,
     automaticDiscounts: false,
     manualDiscounts: true,
     acceptsPromotions: true,
@@ -132,6 +135,7 @@ export function ProductForm({ initialData, isSaving, onSubmit }: ProductFormProp
                 commissionType: defaultProductFormData.commissionType, // Usar default o mapear si initialData lo tiene
                 commissionValue: defaultProductFormData.commissionValue, // Usar default o mapear si initialData lo tiene
                 isForSale: initialData.settings?.isForSale ?? defaultProductFormData.isForSale,
+                isInternalUse: initialData.settings?.isInternalUse ?? defaultProductFormData.isInternalUse,
                 automaticDiscounts: defaultProductFormData.automaticDiscounts, // Usar default o mapear si initialData lo tiene
                 manualDiscounts: defaultProductFormData.manualDiscounts, // Usar default o mapear si initialData lo tiene
                 acceptsPromotions: defaultProductFormData.acceptsPromotions, // Usar default o mapear si initialData lo tiene
@@ -159,7 +163,25 @@ export function ProductForm({ initialData, isSaving, onSubmit }: ProductFormProp
     };
     
     const handleCheckboxChange = (checked: boolean, name: keyof ProductFormData) => {
-         setFormData(prev => ({ ...prev, [name]: checked }));
+        // Validación especial para isForSale e isInternalUse
+        if (name === 'isForSale' || name === 'isInternalUse') {
+            setFormData(prev => {
+                const newData = { ...prev, [name]: checked };
+                
+                // Si se está desmarcando, verificar que el otro esté marcado
+                if (!checked) {
+                    const otherField = name === 'isForSale' ? 'isInternalUse' : 'isForSale';
+                    if (!prev[otherField]) {
+                        sonnerToast.error("El producto debe estar disponible para venta o uso interno");
+                        return prev; // No permitir el cambio
+                    }
+                }
+                
+                return newData;
+            });
+        } else {
+            setFormData(prev => ({ ...prev, [name]: checked }));
+        }
     };
 
     const handleSubmitForm = (e: React.FormEvent) => {
@@ -167,6 +189,12 @@ export function ProductForm({ initialData, isSaving, onSubmit }: ProductFormProp
         // TODO: Validaciones más robustas
         if (!formData.name) {
             sonnerToast.error("El nombre es obligatorio.");
+            return;
+        }
+        
+        // Validar que al menos isForSale o isInternalUse esté seleccionado
+        if (!formData.isForSale && !formData.isInternalUse) {
+            sonnerToast.error("El producto debe estar disponible para venta o uso interno");
             return;
         }
         
@@ -329,9 +357,37 @@ export function ProductForm({ initialData, isSaving, onSubmit }: ProductFormProp
                          <div className="space-y-2 pt-6"> {/* Añadir padding top para alinear mejor */} 
                             <div className="flex items-center space-x-2">
                                 <Checkbox id="isForSale" name="isForSale" checked={formData.isForSale} onCheckedChange={(c) => handleCheckboxChange(!!c, 'isForSale')} />
-                                <Label htmlFor="isForSale">Está a la venta</Label>
+                                <Label htmlFor="isForSale" className="flex items-center gap-1">
+                                    Está a la venta
+                                </Label>
+                                <TooltipProvider>
+                                    <Tooltip>
+                                        <TooltipTrigger>
+                                            <HelpCircle className="w-3 h-3 text-muted-foreground cursor-help" />
+                                        </TooltipTrigger>
+                                        <TooltipContent className="max-w-xs">
+                                            <p>Producto disponible para venta directa a clientes. Se mapeará a cuentas de ingresos (7xx)</p>
+                                        </TooltipContent>
+                                    </Tooltip>
+                                </TooltipProvider>
                             </div>
                              <div className="flex items-center space-x-2">
+                                <Checkbox id="isInternalUse" name="isInternalUse" checked={formData.isInternalUse} onCheckedChange={(c) => handleCheckboxChange(!!c, 'isInternalUse')} />
+                                <Label htmlFor="isInternalUse" className="flex items-center gap-1">
+                                    Uso interno
+                                </Label>
+                                <TooltipProvider>
+                                    <Tooltip>
+                                        <TooltipTrigger>
+                                            <HelpCircle className="w-3 h-3 text-muted-foreground cursor-help" />
+                                        </TooltipTrigger>
+                                        <TooltipContent className="max-w-xs">
+                                            <p>Producto para consumo interno en servicios. Se mapeará a cuentas de consumo (6xx)</p>
+                                        </TooltipContent>
+                                    </Tooltip>
+                                </TooltipProvider>
+                            </div>
+                            <div className="flex items-center space-x-2">
                                 <Checkbox id="automaticDiscounts" name="automaticDiscounts" checked={formData.automaticDiscounts} onCheckedChange={(c) => handleCheckboxChange(!!c, 'automaticDiscounts')} />
                                 <Label htmlFor="automaticDiscounts">Descuentos automáticos</Label>
                             </div>

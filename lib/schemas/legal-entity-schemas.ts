@@ -36,6 +36,12 @@ export const apiCreateLegalEntityPayloadSchema = createLegalEntitySchema.omit({ 
 // Esquema Zod para la actualización de una LegalEntity (para el formulario)
 export const updateLegalEntitySchema = createLegalEntitySchema.partial();
 
+// Esquema Zod para el payload que la API de actualización espera
+// Similar a updateLegalEntitySchema, pero con taxIdentifierFields (objeto) en lugar de taxIdentifiers (array)
+export const apiUpdateLegalEntityPayloadSchema = updateLegalEntitySchema.omit({ taxIdentifiers: true }).extend({
+  taxIdentifierFields: z.record(z.string().min(1, {message: 'validation.tax_identifier.name_not_empty'}), z.string().min(1, {message: 'validation.tax_identifier.value_not_empty'})).optional(),
+});
+
 // Tipo para el payload de actualización que se envía a la API/mutación
 export type UpdateLegalEntityPayload = Omit<z.infer<typeof updateLegalEntitySchema>, 'taxIdentifiers'> & {
   taxIdentifierFields?: { [key: string]: string };

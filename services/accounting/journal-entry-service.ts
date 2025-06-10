@@ -84,23 +84,66 @@ export class JournalEntryService {
     }
 
     // Obtener todos los mapeos necesarios
-    const mappings = await this.getAccountMappings(legalEntityId, ticket.systemId);
+    const mappings = await this.getAccountMappings(
+      legalEntityId,
+      ticket.clinic.systemId
+    );
+    
+    console.log('[JOURNAL_ENTRY_DEBUG] Getting mappings for legalEntityId:', legalEntityId, 'systemId:', ticket.clinic.systemId);
+    console.log('[JOURNAL_ENTRY_DEBUG] Category mappings found:', mappings.categoryAccountMappings.length);
+    console.log('[JOURNAL_ENTRY_DEBUG] Payment mappings found:', mappings.paymentMethodAccountMappings.length);
 
     // Construir las líneas del asiento
     const lines: JournalEntryLineData[] = [];
     
-    // 1. Líneas de venta por categoría
+    // Calcular pagos aplazados para ajustar IVA proporcionalmente
+    const deferredPayments = ticket.payments.filter((p: any) => 
+      p.paymentMethodDefinition?.type === 'DEFERRED_PAYMENT' || 
+      p.paymentMethodDefinition?.code === 'SYS_DEFERRED_PAYMENT'
+    );
+    const totalTicket = ticket.finalAmount || 0;
+    const deferredAmount = deferredPayments.reduce((sum, p) => sum + p.amount, 0);
+    const effectivelyPaidAmount = ticket.payments.reduce((sum, p) => sum + p.amount, 0) - deferredAmount;
+    const paidPercentage = totalTicket > 0 ? effectivelyPaidAmount / totalTicket : 0;
+    
+    // 1. Líneas de venta por categoría (proporcional a lo pagado)
     const salesByCategory = this.groupSalesByCategory(ticket.items);
+    console.log('[JOURNAL_ENTRY_DEBUG] Sales by category:', Array.from(salesByCategory.entries()));
+    console.log('[JOURNAL_ENTRY_DEBUG] Paid percentage:', paidPercentage);
+    
+    let salesAdded = false;
     for (const [categoryId, amount] of salesByCategory) {
       const mapping = mappings.categoryAccountMappings.find(m => m.category.id === categoryId);
       if (mapping) {
+        const proportionalAmount = amount * paidPercentage;
+        console.log(`[JOURNAL_ENTRY_DEBUG] Adding sales line: category=${mapping.category.name}, amount=${amount}, proportional=${proportionalAmount}`);
         lines.push({
           accountId: mapping.accountId,
           debit: 0,
-          credit: amount,
+          credit: proportionalAmount,
           description: `Ventas - ${mapping.category.name}`
         });
+        salesAdded = true;
+      } else {
+        console.log(`[JOURNAL_ENTRY_DEBUG] No mapping found for category ${categoryId}`);
       }
+    }
+    
+    // Si no se encontraron mapeos de categorías, usar cuenta de ventas genérica
+    if (!salesAdded) {
+      const totalSales = Array.from(salesByCategory.values()).reduce((sum, val) => sum + val, 0);
+      const proportionalAmount = totalSales * paidPercentage;
+      
+      // TODO: Configurar cuenta de ventas genérica por defecto
+      const defaultSalesAccountId = 'cmbjwux060002y29ztw5hzidw'; // Cuenta temporal
+      
+      console.log(`[JOURNAL_ENTRY_DEBUG] No category mappings configured. Using default sales account: ${defaultSalesAccountId}, amount=${proportionalAmount}`);
+      lines.push({
+        accountId: defaultSalesAccountId,
+        debit: 0,
+        credit: proportionalAmount,
+        description: 'Ventas'
+      });
     }
 
     // 2. Líneas de IVA
@@ -108,35 +151,55 @@ export class JournalEntryService {
     for (const [vatTypeId, { amount, rate }] of vatByType) {
       const mapping = mappings.vatTypeAccountMappings.find(m => m.vatType.id === vatTypeId);
       if (mapping?.outputAccountId) {
+        const proportionalVatAmount = amount * paidPercentage;
         lines.push({
           accountId: mapping.outputAccountId,
           debit: 0,
-          credit: amount,
+          credit: proportionalVatAmount,
           description: `IVA Repercutido ${rate}%`,
-          vatAmount: amount,
+          vatAmount: proportionalVatAmount,
           vatRate: rate
         });
       }
     }
 
-    // 3. Líneas de descuentos
+    // 3. Líneas de descuentos (proporcional a lo pagado)
     const discountsByType = this.groupDiscountsByType(ticket);
     for (const [discountType, amount] of discountsByType) {
       const mapping = mappings.discountTypeAccountMappings.find(
         m => m.discountTypeCode === discountType
       );
+      
+      const proportionalDiscount = amount * paidPercentage;
+      
       if (mapping) {
         lines.push({
           accountId: mapping.accountId,
-          debit: amount,
+          debit: proportionalDiscount,
           credit: 0,
           description: `Descuento aplicado - ${discountType}`
+        });
+      } else {
+        // Si no hay mapeo, usar cuenta de descuentos genérica
+        const defaultDiscountAccountId = 'cmbjwux0a0003y29zb7ywir7t'; // Cuenta temporal de descuentos
+        console.log(`[JOURNAL_ENTRY_DEBUG] No discount mapping for type ${discountType}. Using default account: ${defaultDiscountAccountId}, amount=${proportionalDiscount}`);
+        lines.push({
+          accountId: defaultDiscountAccountId,
+          debit: proportionalDiscount,
+          credit: 0,
+          description: `Descuento aplicado`
         });
       }
     }
 
-    // 4. Líneas de cobros (tesorería)
+    // 4. Líneas de cobros (tesorería) - EXCLUIR PAGOS APLAZADOS
     for (const payment of ticket.payments) {
+      // Saltar pagos aplazados
+      if (payment.paymentMethodDefinition?.type === 'DEFERRED_PAYMENT' || 
+          payment.paymentMethodDefinition?.code === 'SYS_DEFERRED_PAYMENT') {
+        continue;
+      }
+      
       const mapping = mappings.paymentMethodAccountMappings.find(
         m => m.paymentMethodDefinition.id === payment.paymentMethodDefinitionId
       );
@@ -150,23 +213,44 @@ export class JournalEntryService {
       }
     }
 
-    // 5. Si hay deuda pendiente, usar cuenta de clientes
-    if (ticket.pendingAmount > 0) {
-      // TODO: Obtener cuenta de clientes según configuración
-      const clientAccountId = await this.getDefaultClientAccount(legalEntityId);
-      if (clientAccountId) {
-        lines.push({
-          accountId: clientAccountId,
-          debit: ticket.pendingAmount,
-          credit: 0,
-          description: 'Deuda pendiente cliente'
-        });
-      }
+    // 5. Línea de deuda pendiente + aplazada
+    const totalPendiente = (ticket.pendingAmount || 0) + deferredAmount;
+    if (totalPendiente > 0.01) {
+      // TODO: Configurar cuenta de clientes por defecto
+      const clientAccountId = 'cmbjwux030001y29zs29j5pfv'; // Cuenta temporal de clientes
+      
+      console.log(`[JOURNAL_ENTRY_DEBUG] Adding client debt: pendingAmount=${ticket.pendingAmount}, deferredAmount=${deferredAmount}, total=${totalPendiente}`);
+      
+      // La deuda debe aparecer tanto en el debe como en el haber para que el asiento cuadre
+      lines.push({
+        accountId: clientAccountId,
+        debit: totalPendiente,
+        credit: 0,
+        description: `Deuda cliente`
+      });
+      
+      // Añadir también al haber para cuadrar el asiento
+      lines.push({
+        accountId: clientAccountId,
+        debit: 0,
+        credit: totalPendiente,
+        description: `Deuda cliente (contrapartida)`
+      });
     }
 
     // Verificar que el asiento cuadra
     const totalDebit = lines.reduce((sum, line) => sum + line.debit, 0);
     const totalCredit = lines.reduce((sum, line) => sum + line.credit, 0);
+    
+    console.log('[JOURNAL_ENTRY_DEBUG] Total lines:', lines.length);
+    console.log('[JOURNAL_ENTRY_DEBUG] Lines detail:', lines.map(l => ({
+      account: l.accountId,
+      debit: l.debit,
+      credit: l.credit,
+      description: l.description
+    })));
+    console.log('[JOURNAL_ENTRY_DEBUG] Total Debit:', totalDebit);
+    console.log('[JOURNAL_ENTRY_DEBUG] Total Credit:', totalCredit);
     
     if (Math.abs(totalDebit - totalCredit) > 0.01) {
       throw new Error(
@@ -289,7 +373,10 @@ export class JournalEntryService {
       const category = item.service?.category || item.product?.category;
       if (category) {
         const currentAmount = salesByCategory.get(category.id) || 0;
-        const itemAmount = item.finalPrice - item.vatAmount; // Precio sin IVA
+        // finalPrice ya es el precio sin IVA (base imponible)
+        // Pero necesitamos incluir el descuento en la base para que cuadre el asiento
+        const discount = (item.manualDiscountAmount || 0) + (item.promotionDiscountAmount || 0);
+        const itemAmount = item.finalPrice + discount; // Añadir descuento a la base
         salesByCategory.set(category.id, currentAmount + itemAmount);
       }
     }

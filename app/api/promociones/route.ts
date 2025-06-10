@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db';
 import { z } from 'zod';
 import { PromotionSchema } from '@/lib/schemas/promotion';
 import { Prisma, PromotionAccumulationMode, PromotionTargetScope, PromotionType } from '@prisma/client';
+import { autoMapPromotion } from '@/lib/accounting/auto-mapping-helpers';
 
 /**
  * GET /api/promociones
@@ -369,6 +370,9 @@ export async function POST(req: NextRequest) {
              applicableClinicIds: finalPromotion.applicableClinics.map(ac => ac.clinicId),
              compatiblePromotionIds: finalPromotion.definedCompatibilities.map(dc => dc.compatiblePromotionId),
          };
+
+        // Llamar a la función de mapeo automático
+        await autoMapPromotion(tx, finalPromotion.id, session.user.systemId);
 
         return responseData; // Devolver la promoción creada y mapeada
       });

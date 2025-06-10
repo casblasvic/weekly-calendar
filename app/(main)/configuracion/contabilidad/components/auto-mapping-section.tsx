@@ -15,9 +15,20 @@ import {
   AlertCircle,
   CheckCircle,
   ArrowRight,
-  Loader2
+  Loader2,
+  ChevronRight,
+  Building2
 } from 'lucide-react';
 import { toast } from 'sonner';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
 
 interface AutoMappingSectionProps {
   legalEntityId: string;
@@ -39,6 +50,8 @@ export function AutoMappingSection({
   const [activeTab, setActiveTab] = useState('overview');
   const [processing, setProcessing] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
+  const [mappingResults, setMappingResults] = useState<any>(null);
+  const [showResultsDialog, setShowResultsDialog] = useState(false);
 
   const totalUnmapped = Object.values(unmappedCounts).reduce((a, b) => a + b, 0);
 
@@ -66,6 +79,13 @@ export function AutoMappingSection({
       
       setProgress(100);
       toast.success(data.message || 'Mapeo automático completado');
+      
+      // Guardar resultados para mostrar
+      if (data.createdSubaccounts && data.createdSubaccounts.length > 0) {
+        setMappingResults(data);
+        setShowResultsDialog(true);
+      }
+      
       onRefresh?.();
     } catch (error) {
       toast.error('Error al aplicar mapeo automático');
@@ -118,6 +138,13 @@ export function AutoMappingSection({
       const data = await response.json();
       
       toast.success(data.message || `Mapeo automático completado para ${type}`);
+      
+      // Guardar resultados para mostrar
+      if (data.createdSubaccounts && data.createdSubaccounts.length > 0) {
+        setMappingResults(data);
+        setShowResultsDialog(true);
+      }
+      
       onRefresh?.();
     } catch (error) {
       toast.error(`Error al mapear ${type}`);
@@ -367,6 +394,100 @@ export function AutoMappingSection({
             })}
           </TabsContent>
         </Tabs>
+        
+        {/* Diálogo para mostrar resultados del mapeo */}
+        <Dialog open={showResultsDialog} onOpenChange={setShowResultsDialog}>
+          <DialogContent className="max-w-3xl max-h-[80vh]">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <CheckCircle className="h-5 w-5 text-green-600" />
+                Mapeo Automático Completado
+              </DialogTitle>
+              <DialogDescription>
+                Se han creado las siguientes subcuentas analíticas
+              </DialogDescription>
+            </DialogHeader>
+            
+            <ScrollArea className="h-[400px] mt-4">
+              <div className="space-y-4">
+                {mappingResults?.mappings && (
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+                    <div className="bg-blue-50 p-3 rounded-lg">
+                      <p className="text-sm text-gray-600">Categorías</p>
+                      <p className="text-2xl font-semibold text-blue-600">
+                        {mappingResults.mappings.categories}
+                      </p>
+                    </div>
+                    <div className="bg-green-50 p-3 rounded-lg">
+                      <p className="text-sm text-gray-600">Productos</p>
+                      <p className="text-2xl font-semibold text-green-600">
+                        {mappingResults.mappings.products}
+                      </p>
+                    </div>
+                    <div className="bg-purple-50 p-3 rounded-lg">
+                      <p className="text-sm text-gray-600">Servicios</p>
+                      <p className="text-2xl font-semibold text-purple-600">
+                        {mappingResults.mappings.services}
+                      </p>
+                    </div>
+                    <div className="bg-orange-50 p-3 rounded-lg">
+                      <p className="text-sm text-gray-600">Métodos de Pago</p>
+                      <p className="text-2xl font-semibold text-orange-600">
+                        {mappingResults.mappings.paymentMethods}
+                      </p>
+                    </div>
+                    <div className="bg-yellow-50 p-3 rounded-lg">
+                      <p className="text-sm text-gray-600">Tipos de IVA</p>
+                      <p className="text-2xl font-semibold text-yellow-600">
+                        {mappingResults.mappings.vatTypes}
+                      </p>
+                    </div>
+                    <div className="bg-indigo-50 p-3 rounded-lg">
+                      <p className="text-sm text-gray-600">Subcuentas Creadas</p>
+                      <p className="text-2xl font-semibold text-indigo-600">
+                        {mappingResults.mappings.subaccountsCreated}
+                      </p>
+                    </div>
+                  </div>
+                )}
+                
+                <Separator />
+                
+                <div className="space-y-2">
+                  <h3 className="font-semibold text-sm flex items-center gap-2">
+                    <Building2 className="h-4 w-4" />
+                    Subcuentas Analíticas Creadas
+                  </h3>
+                  {mappingResults?.createdSubaccounts?.map((sub: any, index: number) => (
+                    <div key={index} className="bg-gray-50 p-3 rounded-lg space-y-1">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-xs">
+                          {sub.type === 'category' ? 'Categoría' :
+                           sub.type === 'product' ? 'Producto' :
+                           sub.type === 'service' ? 'Servicio' :
+                           sub.type === 'payment-method' ? 'Método de Pago' :
+                           sub.type}
+                        </Badge>
+                        <span className="text-sm font-medium">{sub.subaccountCode}</span>
+                        <ChevronRight className="h-3 w-3 text-gray-400" />
+                        <span className="text-sm">{sub.subaccountName}</span>
+                      </div>
+                      <p className="text-xs text-gray-500">
+                        Cuenta padre: {sub.parentAccount}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </ScrollArea>
+            
+            <div className="flex justify-end mt-4">
+              <Button onClick={() => setShowResultsDialog(false)}>
+                Cerrar
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </CardContent>
     </Card>
   );

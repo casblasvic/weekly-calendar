@@ -264,12 +264,32 @@ export const menuItems: MenuItem[] = [
         label: "Contabilidad",
         icon: ClipboardList, 
         href: "/configuracion/contabilidad",
+        submenu: [
+          {
+            id: "plan-cuentas",
+            label: "Plan de Cuentas",
+            icon: Landmark,
+            href: "/configuracion/contabilidad",
+          },
+          {
+            id: "gastos",
+            label: "Gastos",
+            icon: Receipt,
+            href: "/configuracion/contabilidad/gastos",
+          },
+        ],
       },
       {
         id: "usuarios",
         label: "Usuarios",
         icon: UserCog,
         href: "/configuracion/usuarios",
+      },
+      {
+        id: "proveedores",
+        label: "Proveedores",
+        icon: Building2,
+        href: "/configuracion/proveedores",
       },
       {
         id: "tarifas",
@@ -432,4 +452,3 @@ export const menuItems: MenuItem[] = [
     ],
   },
 ]
-

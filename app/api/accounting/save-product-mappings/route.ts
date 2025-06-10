@@ -8,6 +8,7 @@ const ProductMappingSchema = z.object({
   mappings: z.array(z.object({
     productId: z.string(),
     accountId: z.string(),
+    clinicId: z.string().optional().nullable(),
   })),
   legalEntityId: z.string(),
   systemId: z.string().optional().nullable(),
@@ -63,6 +64,7 @@ export async function POST(request: Request) {
               productId: mapping.productId,
               legalEntityId: legalEntityId,
               systemId: systemId || null,
+              clinicId: mapping.clinicId || null,
             },
           });
 
@@ -74,6 +76,7 @@ export async function POST(request: Request) {
                 accountId: mapping.accountId,
                 legalEntityId: legalEntityId,
                 systemId: systemId || null,
+                clinicId: mapping.clinicId || null,
               },
               include: {
                 product: true,

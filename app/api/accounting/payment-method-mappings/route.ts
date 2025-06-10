@@ -65,7 +65,11 @@ export async function GET(request: NextRequest) {
 const PaymentMethodMappingSchema = z.object({
   legalEntityId: z.string(),
   systemId: z.string(),
-  mappings: z.record(z.string()) // { paymentMethodId: accountId }
+  mappings: z.array(z.object({
+    paymentMethodId: z.string(),
+    accountId: z.string(),
+    clinicId: z.string().optional()
+  }))
 });
 
 // POST /api/accounting/payment-method-mappings
@@ -95,9 +99,19 @@ export async function POST(request: NextRequest) {
 
     // Iniciar transacción
     const result = await prisma.$transaction(async (tx) => {
+      // Primero eliminar todos los mapeos existentes para esta entidad legal
+      await tx.paymentMethodAccountMapping.deleteMany({
+        where: {
+          legalEntityId,
+          systemId
+        }
+      });
+
       const createdMappings = [];
 
-      for (const [paymentMethodId, accountId] of Object.entries(mappings)) {
+      for (const mapping of mappings) {
+        const { paymentMethodId, accountId, clinicId } = mapping;
+        
         // Verificar que el método de pago existe y pertenece al sistema
         const paymentMethod = await tx.paymentMethodDefinition.findFirst({
           where: {
@@ -124,26 +138,37 @@ export async function POST(request: NextRequest) {
           throw new Error(`Cuenta ${accountId} no encontrada o inactiva`);
         }
 
-        // Crear o actualizar el mapeo
-        const mapping = await tx.paymentMethodAccountMapping.upsert({
-          where: {
-            paymentMethodDefinitionId_legalEntityId: {
-              paymentMethodDefinitionId: paymentMethodId,
-              legalEntityId
+        // Si se especifica clinicId, verificar que existe
+        if (clinicId) {
+          const clinic = await tx.clinic.findFirst({
+            where: {
+              id: clinicId,
+              legalEntityId,
+              systemId
             }
-          },
-          update: {
-            accountId
-          },
-          create: {
+          });
+
+          if (!clinic) {
+            throw new Error(`Clínica ${clinicId} no encontrada`);
+          }
+        }
+
+        // Crear el mapeo
+        const createdMapping = await tx.paymentMethodAccountMapping.create({
+          data: {
             paymentMethodDefinitionId: paymentMethodId,
             legalEntityId,
             accountId,
-            systemId
+            systemId,
+            clinicId
+          },
+          include: {
+            paymentMethodDefinition: true,
+            account: true
           }
         });
 
-        createdMappings.push(mapping);
+        createdMappings.push(createdMapping);
       }
 
       return createdMappings;

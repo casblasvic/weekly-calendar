@@ -33,9 +33,22 @@ export default function PosTerminalsPage() {
     error 
   } = useQuery<PosTerminal[], Error>({
     queryKey: ['posTerminals'], // Clave única para esta query
-    queryFn: getPosTerminals, // <<< USAR LA FUNCIÓN IMPORTADA >>>
+    queryFn: () => getPosTerminals(), // Llamar sin argumentos
     // staleTime: 1000 * 60 * 1, // 1 minuto
   });
+
+  // Depuración: mostrar datos recibidos
+  React.useEffect(() => {
+    console.log('[PosTerminalsPage] Query state:', {
+      isLoading,
+      isError,
+      error,
+      dataReceived: posTerminalsData,
+      dataLength: posTerminalsData?.length,
+      dataType: typeof posTerminalsData,
+      isArray: Array.isArray(posTerminalsData),
+    });
+  }, [posTerminalsData, isLoading, isError, error]);
 
   return (
     <div className="container mx-auto px-4 py-8 relative min-h-screen flex flex-col">

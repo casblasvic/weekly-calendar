@@ -313,7 +313,7 @@ export async function GET(request: NextRequest) {
           where: {
             OR: [
               { id: { in: allVatIds } }, // IVA usado en las tarifas
-              { legalEntityId, systemId } // IVA específico de la entidad
+              { systemId, legalEntityId: null } // IVA global del sistema
             ]
           },
           include: {

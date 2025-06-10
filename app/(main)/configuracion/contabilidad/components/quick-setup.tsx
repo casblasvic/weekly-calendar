@@ -80,9 +80,26 @@ export function QuickSetup({ legalEntityId, onSetupComplete }: QuickSetupProps) 
           <div className="space-y-1">
             <p>✓ {result.accountsCreated} cuentas creadas</p>
             <p>✓ {result.paymentMethodsCreated} métodos de pago configurados</p>
+            {result.fiscalYearCreated && (
+              <p>✓ Ejercicio fiscal {result.fiscalYearCreated} creado</p>
+            )}
             <p>✓ {result.seriesCreated} series contables generadas</p>
             {result.clinicsProcessed > 0 && (
               <p>✓ {result.clinicsProcessed} clínicas procesadas</p>
+            )}
+            {result.mappingsCreated && (
+              <>
+                <p className="font-semibold mt-2">Mapeos automáticos:</p>
+                {result.mappingsCreated.categories > 0 && <p className="ml-2">• {result.mappingsCreated.categories} categorías</p>}
+                {result.mappingsCreated.services > 0 && <p className="ml-2">• {result.mappingsCreated.services} servicios</p>}
+                {result.mappingsCreated.products > 0 && <p className="ml-2">• {result.mappingsCreated.products} productos</p>}
+                {result.mappingsCreated.paymentMethods > 0 && <p className="ml-2">• {result.mappingsCreated.paymentMethods} métodos de pago</p>}
+                {result.mappingsCreated.vat > 0 && <p className="ml-2">• {result.mappingsCreated.vat} tipos de IVA</p>}
+                {result.mappingsCreated.banks > 0 && <p className="ml-2">• {result.mappingsCreated.banks} cuentas bancarias</p>}
+                {result.mappingsCreated.cashes > 0 && <p className="ml-2">• {result.mappingsCreated.cashes} cajas</p>}
+                {result.mappingsCreated.expenses > 0 && <p className="ml-2">• {result.mappingsCreated.expenses} categorías de gastos</p>}
+                {result.mappingsCreated.promotions > 0 && <p className="ml-2">• {result.mappingsCreated.promotions} promociones</p>}
+              </>
             )}
           </div>
         ),

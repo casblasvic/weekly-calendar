@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import {
-  updateLegalEntitySchema,
+  apiUpdateLegalEntityPayloadSchema,
   type UpdateLegalEntityPayload,
   type LegalEntityResponse 
 } from '@/lib/schemas/legal-entity-schemas'; // LegalEntityResponse puede necesitar ajustes si GET devuelve más datos (ej. clínicas)
@@ -92,7 +92,7 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
     return NextResponse.json({ message: 'Invalid JSON payload' }, { status: 400 });
   }
 
-  const validationResult = updateLegalEntitySchema.safeParse(body);
+  const validationResult = apiUpdateLegalEntityPayloadSchema.safeParse(body);
   if (!validationResult.success) {
     return NextResponse.json({ message: 'Invalid request data', errors: validationResult.error.format() }, { status: 400 });
   }

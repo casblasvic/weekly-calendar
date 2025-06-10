@@ -1,14 +1,14 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getServerAuthSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
-import { z } from 'zod'; // z puede ser útil para validar params si es necesario
-import { Prisma } from '@prisma/client'; // <<< Importar Prisma
-import { bankFormSchema } from '@/lib/schemas/bank'; // <<< Importar schema Zod
+import { bankFormSchema } from '@/lib/schemas/bank';
+import { Prisma } from '@prisma/client';
+import { getRemappingService } from '@/lib/accounting/remapping-service';
 
 // Handler para GET /api/banks/[id]
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerAuthSession();
@@ -27,6 +27,24 @@ export async function GET(
         id: bankId,
         systemId: systemId, // Asegurar pertenencia al sistema
       },
+      include: {
+        country: true,
+        account: true,
+        applicableClinics: {
+          include: {
+            clinic: true
+          }
+        },
+        bankAccounts: {
+          include: {
+            applicableClinics: {
+              include: {
+                clinic: true
+              }
+            }
+          }
+        }
+      }
     });
 
     if (!bank) {
@@ -39,7 +57,8 @@ export async function GET(
     return NextResponse.json(bank);
 
   } catch (error) {
-    console.error(`[API Banks GET /${params.id}] Error:`, error);
+    const { id } = await params;
+    console.error(`[API Banks GET /${id}] Error:`, error);
     return NextResponse.json(
       { message: 'Error interno del servidor al obtener el banco.' },
       { status: 500 }
@@ -50,7 +69,7 @@ export async function GET(
 // Handler para PUT /api/banks/[id] (Funciona como PATCH)
 export async function PUT(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerAuthSession();
@@ -58,7 +77,7 @@ export async function PUT(
       return NextResponse.json({ message: 'No autorizado' }, { status: 401 });
     }
     const systemId = session.user.systemId;
-    const { id: bankId } = params;
+    const { id: bankId } = await params;
 
     if (!bankId) {
       return NextResponse.json({ message: 'ID de banco no proporcionado.' }, { status: 400 });
@@ -94,6 +113,17 @@ export async function PUT(
           : { disconnect: true }, // Desconectar si no se proporciona countryIsoCode
       };
 
+      // Obtener estado previo del banco para comparación
+      const previousBank = await tx.bank.findUnique({
+        where: {
+          id: bankId,
+          systemId: systemId,
+        },
+        include: {
+          applicableClinics: true
+        }
+      });
+
       // 1. Actualizar los datos del banco
       const bank = await tx.bank.update({
       where: {
@@ -119,13 +149,49 @@ export async function PUT(
         });
       }
 
-      return bank; // Devolver el banco actualizado
+      return { bank, previousBank }; // Devolver el banco actualizado y el estado previo
     });
 
-    return NextResponse.json(updatedBank);
+    // Ejecutar remapeo si cambió el alcance del banco
+    const remappingService = getRemappingService(prisma);
+    
+    // Detectar si hubo cambios en el alcance
+    const clinicsChanged = 
+      updatedBank.previousBank?.applicableClinics.length !== applicableClinicIds?.length ||
+      updatedBank.previousBank?.isGlobal !== updatedBank.bank.isGlobal;
+    
+    if (clinicsChanged) {
+      const remappingResult = await remappingService.executeRemapping({
+        entityType: 'bank',
+        entityId: bankId,
+        changeType: updatedBank.bank.isGlobal !== updatedBank.previousBank?.isGlobal ? 'globalStatus' : 'clinicAssignment',
+        previousState: {
+          isGlobal: updatedBank.previousBank?.isGlobal,
+          clinicIds: updatedBank.previousBank?.applicableClinics.map(ac => ac.clinicId)
+        },
+        newState: {
+          isGlobal: updatedBank.bank.isGlobal,
+          clinicIds: applicableClinicIds
+        },
+        systemId: systemId,
+        userId: session.user.id
+      });
+
+      // Log del resultado del remapeo
+      if (!remappingResult.success) {
+        console.warn('[Bank Update] Remapping warnings:', remappingResult.warnings);
+      }
+      
+      if (remappingResult.changes.length > 0) {
+        console.log('[Bank Update] Remapping changes:', remappingResult.changes);
+      }
+    }
+
+    return NextResponse.json(updatedBank.bank);
 
   } catch (error) {
-    console.error(`[API Banks PUT /${params.id}] Error:`, error);
+    const { id } = await params;
+    console.error(`[API Banks PUT /${id}] Error:`, error);
     
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
       if (error.code === 'P2002') {
@@ -136,8 +202,9 @@ export async function PUT(
       }
       if (error.code === 'P2025') {
         // Puede ocurrir si el banco no existe, o si el countryIsoCode o clinicId no existen
+        const { id } = await params;
         return NextResponse.json(
-          { message: `Error al actualizar: Banco con ID ${params.id} no encontrado, o país/clínica referenciada inválida.` },
+          { message: `Error al actualizar: Banco con ID ${id} no encontrado, o país/clínica referenciada inválida.` },
           { status: 404 }
         );
       }
@@ -153,7 +220,7 @@ export async function PUT(
 // Handler para DELETE /api/banks/[id] (Sin cambios necesarios por ahora)
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerAuthSession();
@@ -161,7 +228,7 @@ export async function DELETE(
       return NextResponse.json({ message: 'No autorizado' }, { status: 401 });
     }
     const systemId = session.user.systemId;
-    const { id: bankId } = params;
+    const { id: bankId } = await params;
 
     if (!bankId) {
       return NextResponse.json({ message: 'ID de banco no proporcionado.' }, { status: 400 });
@@ -184,13 +251,15 @@ export async function DELETE(
     return NextResponse.json({ message: 'Banco eliminado correctamente.' }, { status: 200 });
 
   } catch (error) {
-    console.error(`[API Banks DELETE /${params.id}] Error:`, error);
+    const { id } = await params;
+    console.error(`[API Banks DELETE /${id}] Error:`, error);
 
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
       if (error.code === 'P2025') {
         // Error porque el where (id + systemId) no encontró el registro
+        const { id } = await params;
         return NextResponse.json(
-          { message: `Banco con ID ${params.id} no encontrado o no pertenece a este sistema para eliminar.` },
+          { message: `Banco con ID ${id} no encontrado o no pertenece a este sistema para eliminar.` },
           { status: 404 }
         );
       }

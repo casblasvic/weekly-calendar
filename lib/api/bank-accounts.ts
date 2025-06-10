@@ -32,23 +32,21 @@ export async function getBankAccounts(
   options?: GetBankAccountsOptions
 ): Promise<BankAccount[]> {
   try {
-    // Construir parámetros de consulta
+    // <<< CONSTRUIR query string usando URLSearchParams >>>
     const params = new URLSearchParams();
     if (options?.isActive !== undefined) {
-      params.append('isActive', String(options.isActive));
+      params.append("isActive", String(options.isActive));
     }
     if (options?.bankId) {
-      params.append('bankId', options.bankId);
+      params.append("bankId", options.bankId);
     }
-    // Añadir otros parámetros si se definen en GetBankAccountsOptions
-
     const queryString = params.toString();
-    const apiUrl = `/api/bank-accounts${queryString ? `?${queryString}` : ''}`;
+    const url = queryString ? `/api/bank-accounts?${queryString}` : "/api/bank-accounts";
+    // <<< FIN CONSTRUIR query string >>>
 
-    console.log(`[getBankAccounts] Fetching from: ${apiUrl}`); // Log para depuración
-
-    const response = await axios.get(apiUrl);
-    return response.data;
+    // El interceptor ya devuelve response.data
+    const data = await axios.get(url);
+    return data;
   } catch (error) {
     console.error("Error al obtener cuentas bancarias:", error);
     throw new Error("No se pudieron cargar las cuentas bancarias");
@@ -58,8 +56,8 @@ export async function getBankAccounts(
 // Obtener una cuenta bancaria específica por ID
 export async function getBankAccount(id: string): Promise<BankAccount> {
   try {
-    const response = await axios.get(`/api/bank-accounts/${id}`);
-    return response.data;
+    const data = await axios.get(`/api/bank-accounts/${id}`);
+    return data;
   } catch (error) {
     console.error(`Error al obtener cuenta bancaria ${id}:`, error);
     throw new Error("No se pudo cargar la cuenta bancaria");
@@ -67,18 +65,18 @@ export async function getBankAccount(id: string): Promise<BankAccount> {
 }
 
 // Crear una nueva cuenta bancaria
-export const createBankAccount = async (data: Omit<BankAccount, "id" | "bank" | "clinic">): Promise<BankAccount> => {
-  const response = await axios.post("/api/bank-accounts", data);
-  return response.data;
-};
+export async function createBankAccount(data: Omit<BankAccount, "id" | "bank" | "clinic">): Promise<BankAccount> {
+  const result = await axios.post("/api/bank-accounts", data);
+  return result;
+}
 
 // Actualizar una cuenta bancaria existente
-export const updateBankAccount = async (id: string, data: Partial<Omit<BankAccount, "id" | "bank" | "clinic">>): Promise<BankAccount> => {
-  const response = await axios.patch(`/api/bank-accounts/${id}`, data);
-  return response.data;
-};
+export async function updateBankAccount(id: string, data: Partial<Omit<BankAccount, "id" | "bank" | "clinic">>): Promise<BankAccount> {
+  const result = await axios.put(`/api/bank-accounts/${id}`, data);
+  return result;
+}
 
 // Eliminar una cuenta bancaria
-export const deleteBankAccount = async (id: string): Promise<void> => {
+export async function deleteBankAccount(id: string): Promise<void> {
   await axios.delete(`/api/bank-accounts/${id}`);
-}; 
+}
