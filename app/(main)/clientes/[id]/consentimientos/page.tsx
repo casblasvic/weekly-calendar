@@ -36,45 +36,46 @@ export default function ConsentimientosPage() {
   const filteredForms = consentForms.filter((form) => form.name.toLowerCase().includes(searchTerm.toLowerCase()))
 
   return (
-    <div className="space-y-6">
-      {/* Search Bar */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
-        <Input
-          placeholder="Buscador"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="pl-10"
-        />
-      </div>
+    <div className="max-w-7xl mx-auto px-4 py-6">
+      <div className="space-y-6">
+        {/* Search Bar */}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+          <Input
+            placeholder="Buscador"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-10"
+          />
+        </div>
 
-      {/* Consent Forms Table */}
-      <Card>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-[200px] font-medium">Nombre</TableHead>
-              <TableHead className="w-[100px]"></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredForms.map((form) => (
-              <TableRow key={form.id}>
-                <TableCell className="font-medium">{form.name}</TableCell>
-                <TableCell className="text-right">
-                  <IconButton icon={<Search className="h-4 w-4" />} />
-                </TableCell>
+        {/* Consent Forms Table */}
+        <Card>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[200px] font-medium">Nombre</TableHead>
+                <TableHead className="w-[100px]"></TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </Card>
+            </TableHeader>
+            <TableBody>
+              {filteredForms.map((form) => (
+                <TableRow key={form.id}>
+                  <TableCell className="font-medium">{form.name}</TableCell>
+                  <TableCell className="text-right">
+                    <IconButton icon={<Search className="h-4 w-4" />} />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </Card>
 
-      {/* Fixed buttons */}
-      <div className="fixed bottom-4 right-4 flex items-center gap-2">
-        <Button className="rounded-full bg-black text-white hover:bg-gray-800">Ayuda</Button>
+        {/* Fixed buttons */}
+        <div className="fixed bottom-4 right-4 flex items-center gap-2">
+          <Button className="rounded-full bg-black text-white hover:bg-gray-800">Ayuda</Button>
+        </div>
       </div>
     </div>
   )
 }
-

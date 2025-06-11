@@ -2058,7 +2058,7 @@ export default function ClinicaDetailPage() {
 
                     <div className="space-y-4">
                       <div className="space-y-2">
-                        <Label className="text-sm">¿Desea bloquear el área de firma electrónica en flowww.me?</Label>
+                        <Label className="text-sm">¿Desea bloquear el área de firma electrónica en Qleven?</Label>
                         <RadioGroup
                           name="blockSignArea" // <<< Añadir name
                           value={formData?.blockSignArea ? 'yes' : 'no'} // <<< Usar formData
@@ -2081,7 +2081,7 @@ export default function ClinicaDetailPage() {
                       </div>
 
                       <div className="space-y-2">
-                        <Label className="text-sm">¿Desea bloquear las áreas de datos personales en flowww.me?</Label>
+                        <Label className="text-sm">¿Desea bloquear las áreas de datos personales en Qleven?</Label>
                         <RadioGroup
                           name="blockPersonalData" // <<< Añadir name
                           value={formData?.blockPersonalData ? 'yes' : 'no'} // <<< Usar formData

@@ -1,43 +1,50 @@
 import NextAuth from "next-auth";
-import type { AuthConfig, User as AuthUser, Session as AuthSession, DefaultSession } from "@auth/core/types";
+import type { NextAuthConfig } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { prisma } from "@/lib/db";
-import bcrypt from "bcrypt";
-import { authConfig } from "./auth.config";
-// import { PrismaAdapter } from "@auth/prisma-adapter"; // <-- Adapter quitado
+import { comparePassword } from "@/lib/hash";
 
 /**
  * Extender el tipo Session para incluir las propiedades personalizadas.
- * En v5, se recomienda hacerlo en un archivo auth.d.ts
- * pero por ahora lo dejamos aquí para mantener la estructura.
  */
-declare module "@auth/core/types" {
-  interface Session extends DefaultSession {
-    user?: {
+declare module "next-auth" {
+  interface Session {
+    user: {
       id: string;
       systemId: string;
       firstName?: string;
       lastName?: string;
-    } & DefaultSession["user"];
+      email?: string;
+      name?: string;
+      image?: string;
+    }
   }
 
-  // Simplificar la extensión de User para evitar recursión
-  // Definir aquí SOLO los campos ADICIONALES que `authorize` devuelve
-  // y que quieres que estén disponibles en el objeto `user` de los callbacks.
   interface User {
-    systemId?: string; 
+    id: string;
+    systemId: string;
     firstName?: string;
     lastName?: string;
-    // email e id ya vienen por defecto
+    email?: string;
   }
 }
 
-export const authOptions: AuthConfig = {
-  ...authConfig,
-  // adapter: PrismaAdapter(prisma), // <-- Adapter quitado
+declare module "@auth/core/jwt" {
+  interface JWT {
+    id?: string;
+    systemId?: string;
+    firstName?: string;
+    lastName?: string;
+  }
+}
+
+export const authOptions: NextAuthConfig = {
+  session: {
+    strategy: "jwt",
+  },
   providers: [
     CredentialsProvider({
-      name: "Credentials",
+      name: "credentials",
       credentials: {
         email: { label: "Email", type: "email", placeholder: "tu@email.com" },
         password: { label: "Contraseña", type: "password" },
@@ -59,7 +66,7 @@ export const authOptions: AuthConfig = {
             return null;
           }
 
-          const passwordMatch = await bcrypt.compare(password, user.passwordHash);
+          const passwordMatch = await comparePassword(password, user.passwordHash);
 
           if (passwordMatch) {
             return {
@@ -73,7 +80,7 @@ export const authOptions: AuthConfig = {
             return null;
           }
         } catch (error) {
-          console.error('[Auth v5 Authorize] Error during authorization:', error);
+          console.error('[Auth] Error during authorization:', error);
           return null;
         }
       },
@@ -82,15 +89,37 @@ export const authOptions: AuthConfig = {
   pages: {
     signIn: '/login',
     signOut: '/login',
-    error: '/login', // Redirige los errores de autenticación a la página de login
+    error: '/login',
+  },
+  callbacks: {
+    async jwt({ token, user }) {
+      if (user) {
+        token.id = user.id;
+        token.systemId = user.systemId;
+        token.firstName = user.firstName;
+        token.lastName = user.lastName;
+      }
+      return token;
+    },
+    async session({ session, token }) {
+      if (token && session.user) {
+        session.user.id = token.id as string;
+        session.user.systemId = token.systemId as string;
+        session.user.firstName = token.firstName as string | undefined;
+        session.user.lastName = token.lastName as string | undefined;
+      }
+      return session;
+    },
   },
   secret: process.env.NEXTAUTH_SECRET,
 };
 
-// Inicializar NextAuth con las opciones y exportar handlers y función auth
-export const { handlers: { GET, POST }, auth } = NextAuth(authOptions);
+// Inicializar NextAuth con las opciones y exportar handlers
+const nextAuth = NextAuth(authOptions);
+
+export const { handlers: { GET, POST }, auth } = nextAuth;
 
 // Helper para sesiones del lado del servidor
 export const getServerAuthSession = async () => {
   return await auth();
-}; 
+};

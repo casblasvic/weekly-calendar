@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { Prisma } from '@prisma/client';
-import bcrypt from 'bcrypt'; // Necesario para hashear contraseñas
+import { hashPassword } from '@/lib/hash'; // Necesario para hashear contraseñas
 import { getServerAuthSession } from "@/lib/auth"; // Importar helper
 import { z } from 'zod'; // Importar Zod para validación
 
@@ -105,7 +105,7 @@ export async function POST(request: Request) {
     const { email, firstName, lastName, password, profileImageUrl, isActive } = validation.data;
 
     // Hashear la contraseña
-    const hashedPassword = await bcrypt.hash(password, saltRounds);
+    const hashedPassword = await hashPassword(password);
 
     // Crear el nuevo usuario
     const newUser = await prisma.user.create({

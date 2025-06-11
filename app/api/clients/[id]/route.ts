@@ -67,6 +67,33 @@ export async function GET(request: NextRequest, { params: paramsPromise }: { par
             fiscalName: true,
           },
         },
+        appointments: {
+          select: {
+            id: true,
+            startTime: true,
+            endTime: true,
+            durationMinutes: true,
+            status: true,
+            notes: true,
+            clientNotes: true,
+            createdAt: true,
+            updatedAt: true,
+            professionalUser: {
+              select: {
+                firstName: true,
+                lastName: true,
+              }
+            },
+            clinic: {
+              select: {
+                name: true,
+              }
+            }
+          },
+          orderBy: {
+            startTime: 'desc'
+          }
+        },
       },
     });
 

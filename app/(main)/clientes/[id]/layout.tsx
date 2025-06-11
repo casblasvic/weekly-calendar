@@ -1,24 +1,34 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, use } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { useLastClient } from "@/contexts/last-client-context"
 import { useClientCard } from "@/contexts/client-card-context"
-import { use } from "react"
-import { Client } from "@/types"
-import { getMockClient } from "@/lib/mock-data"
-import { useClient } from "@/contexts/client-context"
 
 interface Client {
   id: string
-  name: string
-  clientNumber: string
-  phone: string
+  firstName: string
+  lastName: string
   email: string
-  clinic: string
-  avatar?: string
+  primaryPhone: string
+  profileImage?: string
+}
+
+// API para obtener cliente por ID
+async function getClientById(id: string) {
+  try {
+    const response = await fetch(`/api/clients/${id}`)
+    if (!response.ok) {
+      throw new Error("Error al obtener el cliente")
+    }
+    const data = await response.json()
+    return data
+  } catch (error) {
+    console.error("Error fetching client:", error)
+    return null
+  }
 }
 
 const tabs = [
@@ -31,31 +41,43 @@ const tabs = [
   { label: "AVISOS", path: "/avisos" },
 ]
 
-export default function ClientLayout({ children, params }: { children: React.ReactNode; params: { id: string } }) {
+export default function ClientLayout({ children, params }: { children: React.ReactNode; params: Promise<{ id: string }> }) {
   const resolvedParams = use(params)
   const clientId = resolvedParams.id
   
   const [client, setClient] = useState<Client | null>(null)
   const [isMobile, setIsMobile] = useState(false)
   const [activeTab, setActiveTab] = useState("")
+  
   const pathname = usePathname()
   const router = useRouter()
   const { setLastClient } = useLastClient()
   const { setHideMainCard } = useClientCard()
   const tabsRef = useRef<HTMLDivElement>(null)
-  const { getClientById } = useClient()
 
   // Determinar la pestaña activa basada en la ruta
   useEffect(() => {
-    const currentTabPath = pathname.replace(`/clientes/${clientId}`, "") || ""
-    setActiveTab(currentTabPath)
+    const currentPath = pathname.split('/').pop()
+    const currentTab = tabs.find(tab => {
+      if (tab.path === "" && (currentPath === clientId || pathname.endsWith(`/${clientId}`))) {
+        return true
+      }
+      return tab.path !== "" && pathname.includes(tab.path.substring(1))
+    })
+    
+    if (currentTab) {
+      setActiveTab(currentTab.path)
+    }
   }, [pathname, clientId])
 
   useEffect(() => {
-    setHideMainCard(true)
-    const checkMobile = () => setIsMobile(window.innerWidth < 768)
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768)
+    }
+    
     checkMobile()
     window.addEventListener("resize", checkMobile)
+    
     return () => {
       setHideMainCard(false)
       window.removeEventListener("resize", checkMobile)
@@ -78,50 +100,73 @@ export default function ClientLayout({ children, params }: { children: React.Rea
     }
     
     loadClient()
-  }, [clientId, setLastClient, getClientById])
+  }, [clientId, setLastClient])
 
   // Función para cambiar de pestaña sin forzar recarga completa
   const handleTabChange = (tabPath: string) => {
-    router.push(`/clientes/${clientId}${tabPath}`, { shallow: true })
+    const newPath = `/clientes/${clientId}${tabPath}`
+    router.push(newPath)
   }
 
-  if (!client) return null
+  if (!client) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <p>Cargando cliente...</p>
+      </div>
+    )
+  }
 
   return (
-    <div className="min-h-screen flex flex-col">
-      {/* Tabs como menú principal */}
-      <div className={`border-b ${isMobile ? "sticky top-0 bg-white z-10" : "bg-white"}`}>
-        <div className="container mx-auto px-4 md:px-8">
-          <div
-            ref={tabsRef}
-            className={`flex ${isMobile ? "overflow-x-auto scrollbar-hide" : "flex-wrap"} space-x-2 md:space-x-4 py-3`}
-          >
-            {tabs.map((tab) => {
-              const isActive = pathname === `/clientes/${client.id}${tab.path}`
-              return (
-                <button
-                  key={tab.path}
-                  onClick={() => handleTabChange(tab.path)}
-                  className={`flex-shrink-0 px-4 py-2 text-sm font-medium rounded-full transition-colors duration-200 ${
-                    isActive ? "bg-purple-600 text-white" : "text-gray-500 hover:text-purple-600 hover:bg-purple-100"
-                  } ${isMobile ? "whitespace-nowrap" : ""}`}
-                  aria-current={isActive ? "page" : undefined}
-                >
-                  {tab.label}
-                </button>
-              )
-            })}
+    <div className="flex flex-col h-full">
+      {/* Header con navegación por pestañas */}
+      <div className="bg-white border-b">
+        <div className="container mx-auto">
+          <div className="flex items-center justify-between py-4">
+            <div className="flex items-center space-x-4">
+              <div className="w-10 h-10 bg-gray-300 rounded-full flex items-center justify-center">
+                {client.profileImage ? (
+                  <img 
+                    src={client.profileImage} 
+                    alt="Cliente" 
+                    className="w-full h-full rounded-full object-cover"
+                  />
+                ) : (
+                  <span className="text-gray-600 text-sm font-medium">
+                    {client.firstName?.[0]}{client.lastName?.[0]}
+                  </span>
+                )}
+              </div>
+              <div>
+                <h1 className="text-lg font-semibold">
+                  {client.firstName} {client.lastName}
+                </h1>
+                <p className="text-sm text-gray-500">{client.email}</p>
+              </div>
+            </div>
+          </div>
+          
+          <div className="flex overflow-x-auto" ref={tabsRef}>
+            {tabs.map((tab) => (
+              <button
+                key={tab.path}
+                onClick={() => handleTabChange(tab.path)}
+                className={`px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
+                  activeTab === tab.path
+                    ? "border-purple-600 text-purple-600"
+                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
         </div>
       </div>
 
-      {/* Page content */}
-      <div className="flex-1 container mx-auto px-4 md:px-8 py-6">
-        <div className="rounded-lg bg-white p-4 md:p-6 shadow-sm">
-          {children}
-        </div>
+      {/* Contenido principal */}
+      <div className="flex-1 overflow-auto bg-gray-50">
+        {children}
       </div>
     </div>
   )
 }
-

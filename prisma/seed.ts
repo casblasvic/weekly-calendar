@@ -24,7 +24,7 @@ import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library'; 
 // Ya no necesitamos importar Permission aquí
 // import { Permission } from '@prisma/client'; // Comentar o eliminar si estaba duplicada
 
-import bcrypt from 'bcrypt';
+import { hashPassword } from '../lib/hash';
 import path from 'path'; // Importar path
 import { fileURLToPath } from 'url'; // Importar fileURLToPath
 // <<< ELIMINAR Importación dinámica de mockData >>>
@@ -802,7 +802,7 @@ async function main() {
 
   const saltRounds = 10;
   const defaultPassword = 'password123';
-  const hashedPassword = await bcrypt.hash(defaultPassword, saltRounds);
+  const hashedPassword = await hashPassword(defaultPassword);
   console.log(`Hashed default password.`);
 
   // --- Crear Usuarios ---
