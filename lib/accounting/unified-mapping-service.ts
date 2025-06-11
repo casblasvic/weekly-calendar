@@ -623,6 +623,16 @@ export async function mapPromotions(
       throw new Error(`No se encontró la cuenta base ${baseAccountNumber} para descuentos`);
     }
 
+    // Mapeo de tipos de promoción a códigos únicos
+    const promotionTypeMapping: Record<string, string> = {
+      'PERCENTAGE_DISCOUNT': '001',
+      'FIXED_AMOUNT_DISCOUNT': '001',
+      'BUY_X_GET_Y_SERVICE': '002',
+      'BUY_X_GET_Y_PRODUCT': '003',
+      'POINTS_MULTIPLIER': '004',
+      'FREE_SHIPPING': '005'
+    };
+
     // Obtener todas las clínicas
     let clinicsToMap = [];
     if (options.clinicId) {
@@ -661,7 +671,7 @@ export async function mapPromotions(
           // Verificar si ya existe mapeo
           const existingMapping = await db.discountTypeAccountMapping.findFirst({
             where: {
-              discountTypeId: promotion.id,
+              discountTypeCode: `PROMO_${promotion.code}`,
               legalEntityId: options.legalEntityId,
               clinicId: clinic.id
             }
@@ -671,14 +681,49 @@ export async function mapPromotions(
             continue;
           }
 
-          // Generar código de subcuenta
+          // Obtener el código del tipo de promoción
+          const typeCode = promotionTypeMapping[promotion.type];
+          if (!typeCode) {
+            throw new Error(`Tipo de promoción no reconocido: ${promotion.type}`);
+          }
+
+          // Generar código de subcuenta para la promoción específica
           const clinicCode = clinic.prefix || generateClinicCode(clinic.name);
-          const promoCode = promotion.name.substring(0, 3).toUpperCase();
-          const subaccountCode = generateSubaccountCode({
-            baseAccount: baseAccount.accountNumber,
-            clinicCode,
-            itemCode: promoCode
+          
+          // Buscar la cuenta del tipo de promoción correspondiente
+          const typeAccountNumber = `${baseAccount.accountNumber}.${clinicCode}.${typeCode}`;
+          const typeAccount = await db.chartOfAccountEntry.findFirst({
+            where: {
+              accountNumber: typeAccountNumber,
+              legalEntityId: options.legalEntityId
+            }
           });
+
+          if (!typeAccount) {
+            throw new Error(`No se encontró la cuenta del tipo de promoción: ${typeAccountNumber}`);
+          }
+
+          // Generar número secuencial para esta promoción dentro del tipo
+          const existingPromotions = await db.discountTypeAccountMapping.findMany({
+            where: {
+              legalEntityId: options.legalEntityId,
+              clinicId: clinic.id,
+              discountTypeCode: {
+                startsWith: 'PROMO_'
+              }
+            },
+            include: {
+              account: true
+            }
+          });
+
+          // Filtrar las promociones que pertenecen al mismo tipo
+          const sameTypePromotions = existingPromotions.filter(mapping => {
+            return mapping.account?.accountNumber?.startsWith(typeAccountNumber);
+          });
+
+          const nextNumber = String(sameTypePromotions.length + 1).padStart(3, '0');
+          const subaccountCode = `${typeAccountNumber}.${nextNumber}`;
 
           // Buscar o crear subcuenta
           let subaccount = await db.chartOfAccountEntry.findFirst({
@@ -696,7 +741,7 @@ export async function mapPromotions(
                 type: baseAccount.type || 'EXPENSE',
                 description: `Subcuenta de descuentos para ${promotion.name} en ${clinic.name}`,
                 isSubAccount: true,
-                parentAccountId: baseAccount.id,
+                parentAccountId: typeAccount.id,
                 isMonetary: true,
                 allowsDirectEntry: true,
                 isActive: true,
@@ -721,7 +766,7 @@ export async function mapPromotions(
               discountTypeId: promotion.id,
               accountId: subaccount.id,
               name: `Mapeo ${promotion.name} - ${clinic.name}`,
-              subaccountPattern: '{base}.{clinic}.{promotion}'
+              subaccountPattern: '{base}.{clinic}.{type}.{promotion}'
             }
           });
 

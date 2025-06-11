@@ -18,11 +18,10 @@ import {
   getAutoProductMapping,
   getAutoCategoryMapping,
   getAutoPaymentMethodMapping,
-  getAutoVATMapping,
+  getAutoVATMapping
 } from '@/app/(main)/configuracion/contabilidad/lib/auto-account-mapping';
 import { generateClinicCode, generateNextSubaccountNumber } from '@/lib/accounting/clinic-utils';
 import { UnifiedMappingService } from '@/lib/accounting/unified-mapping-service';
-import { getCountrySpecificAccounts } from '@/lib/accounting/country-accounts';
 
 // Tipos de métodos de pago del enum de Prisma
 const PAYMENT_METHOD_TYPES = [
@@ -435,11 +434,6 @@ async function executeAutoMappings(
   chartOfAccounts: Array<{ id: string; accountNumber: string; name: string; level: number; isActive: boolean; type?: string }>,
   session: any
 ) {
-  console.log('[executeAutoMappings] Iniciando mapeos automáticos...');
-  console.log(`[executeAutoMappings] LegalEntity: ${legalEntity.id}`);
-  console.log(`[executeAutoMappings] País: ${countryCode}`);
-  console.log(`[executeAutoMappings] Cuentas disponibles: ${chartOfAccounts.length}`);
-  
   const mappingsCreated = {
     categories: 0,
     services: 0,
@@ -454,7 +448,6 @@ async function executeAutoMappings(
 
   try {
     // 1. Mapear categorías
-    console.log('[executeAutoMappings] 1. Mapeando categorías...');
     const categories = await tx.category.findMany({
       where: { systemId: legalEntity.systemId },
       include: {
@@ -462,20 +455,16 @@ async function executeAutoMappings(
         services: { select: { id: true } }
       }
     });
-    console.log(`[executeAutoMappings] Categorías encontradas: ${categories.length}`);
     
-    const countryAccounts = getCountrySpecificAccounts(countryCode);
+    const countryAccounts = await getCountrySpecificAccounts(countryCode);
     
     for (const category of categories) {
       // Determinar si la categoría tiene productos y/o servicios
       const hasProducts = category.products.length > 0;
       const hasServices = category.services.length > 0;
       
-      console.log(`[executeAutoMappings] Categoría ${category.name}: hasProducts=${hasProducts}, hasServices=${hasServices}`);
-      
       // Solo mapear si la categoría tiene productos o servicios
       if (!hasProducts && !hasServices) {
-        console.log(`[executeAutoMappings] Categoría ${category.name} no tiene productos ni servicios, saltando...`);
         continue;
       }
       
@@ -522,19 +511,16 @@ async function executeAutoMappings(
             }
           });
           mappingsCreated.categories++;
-          console.log(`[executeAutoMappings] Creado mapeo para categoría ${category.name} -> cuenta ${parentAccount.accountNumber} (servicios: ${appliesToServices}, productos: ${appliesToProducts})`);
         } else {
-          console.warn(`[executeAutoMappings] No se encontró cuenta ${accountNumber} para categoría ${category.name}`);
+          console.warn(`No se encontró cuenta ${accountNumber} para categoría ${category.name}`);
         }
       }
     }
 
     // 2. Mapear servicios
-    console.log('[executeAutoMappings] 2. Mapeando servicios...');
     const services = await tx.service.findMany({
       where: { systemId: legalEntity.systemId }
     });
-    console.log(`[executeAutoMappings] Servicios encontrados: ${services.length}`);
     
     // Usar el servicio unificado para mapear servicios
     const serviceResults = await UnifiedMappingService.mapServices(
@@ -550,15 +536,12 @@ async function executeAutoMappings(
     );
 
     mappingsCreated.services = serviceResults.mapped;
-    console.log(`[executeAutoMappings] Mapeos de servicios creados: ${serviceResults.mapped}`);
 
     // 3. Mapear productos
-    console.log('[executeAutoMappings] 3. Mapeando productos...');
     const products = await tx.product.findMany({
       where: { systemId: legalEntity.systemId },
       include: { settings: true }  // Incluir settings para tener isForSale
     });
-    console.log(`[executeAutoMappings] Productos encontrados: ${products.length}`);
     
     // Usar el servicio unificado para mapear productos
     const productResults = await UnifiedMappingService.mapProducts(
@@ -574,14 +557,11 @@ async function executeAutoMappings(
     );
 
     mappingsCreated.products = productResults.mapped;
-    console.log(`[executeAutoMappings] Mapeos de productos creados: ${productResults.mapped}`);
 
     // 4. Mapear métodos de pago
-    console.log('[executeAutoMappings] 4. Mapeando métodos de pago...');
     const paymentMethods = await tx.paymentMethodDefinition.findMany({
       where: { systemId: legalEntity.systemId }
     });
-    console.log(`[executeAutoMappings] Métodos de pago encontrados: ${paymentMethods.length}`);
     
     // Usar el servicio unificado para mapear métodos de pago
     const paymentMethodResults = await UnifiedMappingService.mapPaymentMethods(
@@ -597,26 +577,23 @@ async function executeAutoMappings(
     );
 
     mappingsCreated.paymentMethods = paymentMethodResults.mapped;
-    console.log(`[executeAutoMappings] Mapeos de métodos de pago creados: ${paymentMethodResults.mapped}`);
 
     // 5. Mapear cajas y sesiones de caja
-    console.log('[executeAutoMappings] 5. Mapeando cajas y sesiones de caja...');
-    
-    // Obtener las clínicas de la entidad legal
-    const clinics = await tx.clinic.findMany({
-      where: { 
-        legalEntityId: legalEntity.id
-      }
-    });
-    
     const cashAccount = await tx.chartOfAccountEntry.findFirst({
       where: {
         legalEntityId: legalEntity.id,
-        accountNumber: getCountrySpecificAccounts(countryCode).cash || (countryCode === 'ES' ? '570' : '521')
+        accountNumber: (await getCountrySpecificAccounts(countryCode)).cash || (countryCode === 'ES' ? '570' : '521')
       }
     });
     
     if (cashAccount) {
+      // Obtener las clínicas de la entidad legal
+      const clinics = await tx.clinic.findMany({
+        where: { 
+          legalEntityId: legalEntity.id
+        }
+      });
+      
       // Mapear cajas físicas por clínica
       for (const clinic of clinics) {
         // Verificar si ya existe un mapeo para esta clínica
@@ -667,7 +644,6 @@ async function executeAutoMappings(
                   systemId: legalEntity.systemId
                 }
               });
-              console.log(`[executeAutoMappings] Creada subcuenta de caja ${subaccountCode} para clínica ${clinic.name}`);
             }
             
             // Crear mapeo para la caja de la clínica
@@ -679,7 +655,7 @@ async function executeAutoMappings(
                 systemId: legalEntity.systemId
               }
             });
-            console.log(`[executeAutoMappings] Creado mapeo de caja para clínica ${clinic.name} -> cuenta ${subaccountCode}`);
+            mappingsCreated.cashSessions++;
           } else {
             // Solo una clínica, usar la cuenta de caja principal
             await tx.cashSessionAccountMapping.create({
@@ -690,10 +666,8 @@ async function executeAutoMappings(
                 systemId: legalEntity.systemId
               }
             });
-            console.log(`[executeAutoMappings] Creado mapeo de caja para clínica ${clinic.name} -> cuenta ${cashAccount.accountNumber}`);
+            mappingsCreated.cashSessions++;
           }
-          
-          mappingsCreated.cashSessions++;
         }
       }
       
@@ -701,8 +675,6 @@ async function executeAutoMappings(
       const posTerminals = await tx.posTerminal.findMany({
         where: { systemId: legalEntity.systemId }
       });
-      
-      console.log(`[executeAutoMappings] TPV encontrados: ${posTerminals.length}`);
       
       for (const terminal of posTerminals) {
         const existingTerminalMapping = await tx.cashSessionAccountMapping.findFirst({
@@ -729,17 +701,15 @@ async function executeAutoMappings(
                 posTerminalId: terminal.id
               }
             });
-            console.log(`[executeAutoMappings] Creado mapeo para TPV ${terminal.name} -> cuenta bancaria ${bankAccount.accountNumber}`);
             mappingsCreated.cashSessions++;
           }
         }
       }
     } else {
-      console.warn('[executeAutoMappings] No se encontró cuenta de caja en el plan contable');
+      console.warn('No se encontró cuenta de caja en el plan contable');
     }
 
     // 6. Mapear bancos y cuentas bancarias
-    console.log('[executeAutoMappings] 6. Mapeando bancos y cuentas bancarias...');
     const banks = await tx.bank.findMany({
       where: { systemId: legalEntity.systemId },
       include: {
@@ -749,8 +719,7 @@ async function executeAutoMappings(
       }
     });
     
-    console.log(`[executeAutoMappings] Bancos encontrados: ${banks.length}`);
-    const bankAccountNumber = getCountrySpecificAccounts(countryCode).banks;
+    const bankAccountNumber = (await getCountrySpecificAccounts(countryCode)).banks;
     const bankAccount = chartOfAccounts.find(acc => acc.accountNumber === bankAccountNumber);
     
     if (bankAccount) {
@@ -766,7 +735,6 @@ async function executeAutoMappings(
           data: { accountId: bankAccount.id }
         });
         mappingsCreated.banks += banksToMap.length;
-        console.log(`[executeAutoMappings] Mapeados ${banksToMap.length} bancos a la cuenta ${bankAccountNumber}`);
       }
       
       // Ahora procesar las cuentas bancarias
@@ -808,7 +776,6 @@ async function executeAutoMappings(
                   systemId: legalEntity.systemId
                 }
               });
-              console.log(`[executeAutoMappings] Creada subcuenta bancaria ${subaccountNumber}`);
             }
             
             if (subaccount) {
@@ -817,22 +784,18 @@ async function executeAutoMappings(
                 data: { accountId: subaccount.id }
               });
               mappingsCreated.banks++;
-              console.log(`[executeAutoMappings] Creado mapeo para cuenta bancaria ${bankAccountItem.accountNumber} -> cuenta ${subaccount.accountNumber}`);
             }
           }
         }
       }
     } else {
-      console.warn(`[executeAutoMappings] No se encontró cuenta ${bankAccountNumber} para bancos`);
+      console.warn(`No se encontró cuenta ${bankAccountNumber} para bancos`);
     }
 
     // 7. Mapear tipos de IVA
-    console.log('[executeAutoMappings] 7. Mapeando tipos de IVA...');
+    const vatTypesDefinitions = VAT_TYPES_BY_COUNTRY[countryCode] || [];
     
     // Primero crear los tipos de IVA si no existen
-    const vatTypesDefinitions = VAT_TYPES_BY_COUNTRY[countryCode] || [];
-    console.log(`[executeAutoMappings] Creando tipos de IVA para país ${countryCode}: ${vatTypesDefinitions.length} tipos`);
-    
     for (const vatDef of vatTypesDefinitions) {
       const existingVat = await tx.vATType.findFirst({
         where: {
@@ -851,7 +814,6 @@ async function executeAutoMappings(
             isDefault: vatDef.isDefault || false
           }
         });
-        console.log(`[executeAutoMappings] Creado tipo de IVA ${vatDef.name} (${vatDef.code})`);
       }
     }
     
@@ -859,10 +821,9 @@ async function executeAutoMappings(
     const vatTypes = await tx.vATType.findMany({
       where: { systemId: legalEntity.systemId },
     });
-    console.log(`[executeAutoMappings] Tipos de IVA encontrados: ${vatTypes.length}`);
     
     // Obtener el mapeo de cuentas para IVA
-    const vatMapping = getAutoVATMapping(chartOfAccounts, countryCode);
+    const vatMapping = await getAutoVATMapping(chartOfAccounts, countryCode);
     
     if (vatMapping && vatMapping.inputAccount && vatMapping.outputAccount) {
       // Buscar cuentas de IVA soportado y repercutido
@@ -902,26 +863,23 @@ async function executeAutoMappings(
             }
           });
           mappingsCreated.vat++;
-          console.log(`[executeAutoMappings] Creado mapeo para tipo de IVA ${vat.name} -> soportado: ${inputAccount?.accountNumber || 'N/A'}, repercutido: ${outputAccount?.accountNumber || 'N/A'}`);
         }
       }
       
       if (!inputAccount) {
-        console.warn(`[executeAutoMappings] No se encontró cuenta ${vatMapping.inputAccount} para IVA soportado`);
+        console.warn(`No se encontró cuenta ${vatMapping.inputAccount} para IVA soportado`);
       }
       if (!outputAccount) {
-        console.warn(`[executeAutoMappings] No se encontró cuenta ${vatMapping.outputAccount} para IVA repercutido`);
+        console.warn(`No se encontró cuenta ${vatMapping.outputAccount} para IVA repercutido`);
       }
     } else {
-      console.warn(`[executeAutoMappings] No se encontró configuración de mapeo de IVA para el país ${countryCode}`);
+      console.warn(`No se encontró configuración de mapeo de IVA para el país ${countryCode}`);
     }
     
     // 8. Mapear categorías de gastos
-    console.log('[executeAutoMappings] 8. Mapeando categorías de gastos...');
     const expenseCategories = await tx.expenseType.findMany({
       where: { systemId: legalEntity.systemId }
     });
-    console.log(`[executeAutoMappings] Categorías de gastos encontradas: ${expenseCategories.length}`);
     
     for (const expense of expenseCategories) {
       const existingMapping = await tx.expenseTypeAccountMapping.findFirst({
@@ -976,7 +934,6 @@ async function executeAutoMappings(
                   systemId: legalEntity.systemId
                 }
               });
-              console.log(`[executeAutoMappings] Creada subcuenta de gastos ${subaccountNumber} para ${expense.name}`);
             }
             
             await tx.expenseTypeAccountMapping.create({
@@ -988,73 +945,64 @@ async function executeAutoMappings(
               }
             });
             mappingsCreated.expenses++;
-            console.log(`[executeAutoMappings] Creado mapeo para categoría de gastos ${expense.name} -> cuenta ${subaccount.accountNumber}`);
           } else {
-            console.warn(`[executeAutoMappings] No se encontró cuenta ${expenseAccount.accountNumber} para categoría de gastos ${expense.name}`);
+            console.warn(`No se encontró cuenta ${expenseAccount.accountNumber} para categoría de gastos ${expense.name}`);
           }
         }
       }
     }
 
     // 9. Mapear tipos de promoción
-    console.log('[executeAutoMappings] 9. Mapeando tipos de promoción...');
-    
-    // Definir los tipos de promoción que existen en el sistema
-    // Unificamos MANUAL_DISCOUNT, PERCENTAGE_DISCOUNT y FIXED_AMOUNT_DISCOUNT en uno solo
-    const promotionTypes = [
-      { code: 'MANUAL_DISCOUNT', name: 'Descuentos Manuales' }, // Unifica todos los descuentos monetarios
-      { code: 'BUY_X_GET_Y_SERVICE', name: 'Compra X Lleva Y Servicios' },
-      { code: 'BUY_X_GET_Y_PRODUCT', name: 'Compra X Lleva Y Productos' },
-      { code: 'POINTS_MULTIPLIER', name: 'Multiplicador de Puntos' },
-      { code: 'FREE_SHIPPING', name: 'Envío Gratuito' }
-    ];
-    
-    // Buscar cuenta de descuentos según el país
-    const discountAccountNumber = countryCode === 'ES' ? '708' : 
-                                  countryCode === 'FR' ? '709' : 
-                                  countryCode === 'MA' ? '7129' : '708';
-    
-    const discountAccount = chartOfAccounts.find(acc => acc.accountNumber === discountAccountNumber);
+    const discountAccountNumber = getDiscountAccountByCountry(countryCode);
+    const discountAccount = chartOfAccounts.find(a => a.accountNumber === discountAccountNumber);
+    const clinics = await tx.clinic.findMany({
+      where: { 
+        legalEntityId: legalEntity.id
+      }
+    });
+    const promotionTypes = getDiscountTypesByCountry(countryCode);
     
     if (discountAccount) {
-      // Mapear tipos de promoción para cada clínica
+      // Crear subcuentas para cada tipo de promoción en cada clínica
       for (const clinic of clinics) {
-        for (const promotionType of promotionTypes) {
-          // Verificar si ya existe mapeo para este tipo y clínica
+        const clinicCode = clinic.prefix || clinic.name.substring(0, 4).toUpperCase();
+        
+        // Contar las subcuentas existentes del tipo para esta clínica
+        const existingSubaccounts = chartOfAccounts.filter(account => 
+          account.accountNumber.startsWith(`${discountAccountNumber}.${clinicCode}.`)
+        );
+        
+        let nextNumber = existingSubaccounts.length + 1;
+        
+        for (const type of promotionTypes) {
+          // Verificar si ya existe mapeo
           const existingMapping = await tx.discountTypeAccountMapping.findFirst({
             where: {
-              legalEntityId: legalEntity.id,
-              discountTypeCode: promotionType.code,
-              clinicId: clinic.id
+              discountTypeCode: type.code,
+              clinicId: clinic.id,
+              legalEntityId: legalEntity.id
             }
           });
           
           if (!existingMapping) {
-            // Crear subcuenta específica para la clínica
-            const clinicCode = clinic.prefix || clinic.name.substring(0, 4).toUpperCase();
-            const subaccountNumber = `${discountAccount.accountNumber}.${clinicCode}`;
+            const accountNumber = `${discountAccountNumber}.${clinicCode}.${String(nextNumber).padStart(3, '0')}`;
+            nextNumber++;
             
-            // Verificar si la subcuenta ya existe
-            let subaccount = chartOfAccounts.find(acc => acc.accountNumber === subaccountNumber);
-            
-            if (!subaccount) {
-              // Buscar en la base de datos por si fue creada recientemente
-              subaccount = await tx.chartOfAccountEntry.findFirst({
-                where: {
-                  accountNumber: subaccountNumber,
-                  legalEntityId: legalEntity.id,
-                  systemId: legalEntity.systemId
-                }
-              });
-            }
+            // Crear subcuenta
+            let subaccount = await tx.chartOfAccountEntry.findFirst({
+              where: {
+                accountNumber,
+                legalEntityId: legalEntity.id
+              }
+            });
             
             if (!subaccount) {
               subaccount = await tx.chartOfAccountEntry.create({
                 data: {
-                  accountNumber: subaccountNumber,
-                  name: `${promotionType.name} - ${clinic.name}`,
+                  accountNumber,
+                  name: `${type.name} - ${clinic.name}`,
                   type: discountAccount.type,
-                  description: `Subcuenta de ${promotionType.name} para ${clinic.name}`,
+                  description: `Subcuenta para ${type.name} en ${clinic.name}`,
                   isSubAccount: true,
                   parentAccountId: discountAccount.id,
                   isMonetary: true,
@@ -1064,79 +1012,174 @@ async function executeAutoMappings(
                   systemId: legalEntity.systemId
                 }
               });
-              console.log(`[executeAutoMappings] Creada subcuenta ${subaccountNumber} para ${promotionType.name} en ${clinic.name}`);
             }
             
+            // Crear mapeo
             await tx.discountTypeAccountMapping.create({
               data: {
-                legalEntityId: legalEntity.id,
-                discountTypeId: promotionType.code,
-                discountTypeCode: promotionType.code,
-                discountTypeName: promotionType.name,
-                clinicId: clinic.id,
+                discountTypeCode: type.code,
+                discountTypeName: type.name, // Agregar el nombre del tipo de descuento
                 accountId: subaccount.id,
-                systemId: legalEntity.systemId
-              }
-            });
-            mappingsCreated.promotions++;
-            console.log(`[executeAutoMappings] Creado mapeo para ${promotionType.name} en ${clinic.name} -> cuenta ${subaccount.accountNumber}`);
-          }
-        
-          // Mapear también los tipos legacy para compatibilidad
-          const legacyTypes = ['PERCENTAGE_DISCOUNT', 'FIXED_AMOUNT_DISCOUNT'];
-          for (const legacyType of legacyTypes) {
-            const existingLegacyMapping = await tx.discountTypeAccountMapping.findFirst({
-              where: {
+                systemId: legalEntity.systemId,
                 legalEntityId: legalEntity.id,
-                discountTypeCode: legacyType,
                 clinicId: clinic.id
               }
             });
+            mappingsCreated.promotions++;
             
-            if (!existingLegacyMapping) {
-              // Usar la misma subcuenta que MANUAL_DISCOUNT
-              const clinicCode = clinic.prefix || clinic.name.substring(0, 4).toUpperCase();
-              const subaccountNumber = `${discountAccount.accountNumber}.${clinicCode}`;
-              let subaccount = chartOfAccounts.find(acc => acc.accountNumber === subaccountNumber);
-              
-              if (!subaccount) {
-                // Buscar en la base de datos por si fue creada recientemente
-                subaccount = await tx.chartOfAccountEntry.findFirst({
+            // Crear mapeos de compatibilidad para tipos legacy
+            if (type.legacyCodes && type.legacyCodes.length > 0) {
+              for (const legacyCode of type.legacyCodes) {
+                const existingLegacyMapping = await tx.discountTypeAccountMapping.findFirst({
                   where: {
-                    accountNumber: subaccountNumber,
-                    legalEntityId: legalEntity.id,
-                    systemId: legalEntity.systemId
-                  }
-                });
-              }
-              
-              if (subaccount) {
-                await tx.discountTypeAccountMapping.create({
-                  data: {
-                    legalEntityId: legalEntity.id,
-                    discountTypeId: legacyType,
-                    discountTypeCode: legacyType,
-                    discountTypeName: 'Descuentos Manuales',
+                    discountTypeCode: legacyCode,
                     clinicId: clinic.id,
-                    accountId: subaccount.id,
-                    systemId: legalEntity.systemId
+                    legalEntityId: legalEntity.id
                   }
                 });
-                console.log(`[executeAutoMappings] Creado mapeo de compatibilidad para ${legacyType} en ${clinic.name} -> cuenta ${subaccount.accountNumber}`);
+                
+                if (!existingLegacyMapping) {
+                  await tx.discountTypeAccountMapping.create({
+                    data: {
+                      discountTypeCode: legacyCode,
+                      discountTypeName: type.name, // Agregar el nombre del tipo de descuento
+                      accountId: subaccount.id,
+                      systemId: legalEntity.systemId,
+                      legalEntityId: legalEntity.id,
+                      clinicId: clinic.id
+                    }
+                  });
+                  mappingsCreated.promotions++;
+                }
               }
             }
           }
         }
       }
+      
+      // 10. Mapear promociones creadas por usuarios
+      // Obtener todas las promociones creadas
+      const userPromotions = await tx.promotion.findMany({
+        where: {
+          systemId: legalEntity.systemId,
+          isActive: true
+        },
+        include: {
+          applicableClinics: {
+            include: {
+              clinic: true
+            }
+          }
+        }
+      });
+      
+      for (const promotion of userPromotions) {
+        // Determinar el tipo de promoción para encontrar su cuenta padre
+        const promotionTypeCode = promotionTypes.find(pt => pt.code === promotion.type)?.uniqueCode;
+        if (!promotionTypeCode) {
+          continue;
+        }
+        
+        // Determinar las clínicas para esta promoción
+        const isGlobalPromotion = promotion.applicableClinics.length === 0;
+        const promotionClinics = isGlobalPromotion 
+          ? clinics 
+          : clinics.filter(clinic => 
+              promotion.applicableClinics.some(scope => scope.clinicId === clinic.id)
+            );
+        
+        for (const clinic of promotionClinics) {
+          // Verificar si ya existe mapeo
+          const existingMapping = await tx.promotionAccountMapping.findFirst({
+            where: {
+              promotionId: promotion.id,
+              clinicId: clinic.id
+            }
+          });
+          
+          if (!existingMapping) {
+            const clinicCode = clinic.prefix || clinic.name.substring(0, 4).toUpperCase();
+            
+            // Buscar la cuenta del tipo de promoción
+            const typeAccountNumber = `${discountAccount.accountNumber}.${clinicCode}.${promotionTypeCode}`;
+            const typeAccount = await tx.chartOfAccountEntry.findFirst({
+              where: {
+                accountNumber: typeAccountNumber,
+                legalEntityId: legalEntity.id
+              }
+            });
+            
+            if (!typeAccount) {
+              continue;
+            }
+            
+            // Contar promociones existentes de este tipo para generar número secuencial
+            const existingPromotionsOfType = await tx.promotionAccountMapping.findMany({
+              where: {
+                legalEntityId: legalEntity.id,
+                clinicId: clinic.id
+              },
+              include: {
+                account: true
+              }
+            });
+            
+            const sameTypePromotions = existingPromotionsOfType.filter(mapping => {
+              return mapping.account?.accountNumber?.startsWith(typeAccountNumber);
+            });
+            
+            const nextNumber = String(sameTypePromotions.length + 1).padStart(3, '0');
+            const subaccountNumber = `${typeAccountNumber}.${nextNumber}`;
+            
+            // Crear subcuenta para la promoción
+            let promotionSubaccount = await tx.chartOfAccountEntry.findFirst({
+              where: {
+                accountNumber: subaccountNumber,
+                legalEntityId: legalEntity.id
+              }
+            });
+            
+            if (!promotionSubaccount) {
+              promotionSubaccount = await tx.chartOfAccountEntry.create({
+                data: {
+                  accountNumber: subaccountNumber,
+                  name: `${promotion.name} - ${clinic.name}`,
+                  type: discountAccount.type,
+                  description: `Subcuenta para promoción ${promotion.name} en ${clinic.name}`,
+                  isSubAccount: true,
+                  parentAccountId: typeAccount.id,
+                  isMonetary: true,
+                  allowsDirectEntry: true,
+                  isActive: true,
+                  legalEntityId: legalEntity.id,
+                  systemId: legalEntity.systemId
+                }
+              });
+            }
+            
+            // Crear mapeo en la tabla correcta
+            await tx.promotionAccountMapping.create({
+              data: {
+                promotionId: promotion.id,
+                accountId: promotionSubaccount.id,
+                legalEntityId: legalEntity.id,
+                clinicId: clinic.id,
+                systemId: legalEntity.systemId
+              }
+            });
+            mappingsCreated.promotions++;
+          }
+        }
+      }
     } else {
-      console.warn(`[executeAutoMappings] No se encontró cuenta ${discountAccountNumber} para promociones`);
+      console.warn(`No se encontró cuenta ${discountAccountNumber} para promociones`);
     }
     
-    console.log('[executeAutoMappings] Mapeos finales creados:', mappingsCreated);
+    console.log('Mapeos finales creados:', mappingsCreated);
     return mappingsCreated;
   } catch (error) {
-    console.error('[executeAutoMappings] Error ejecutando mapeos automáticos:', error);
-    console.error('[executeAutoMappings] Mapeos creados hasta el error:', mappingsCreated);
+    console.error('Error ejecutando mapeos automáticos:', error);
+    console.error('Mapeos creados hasta el error:', mappingsCreated);
     // No lanzamos el error para que no falle toda la configuración
   }
 }
@@ -1234,4 +1277,106 @@ export async function checkExistingAccountingSetup(legalEntityId: string) {
     accountsCount: accounts,
     seriesCount: series
   };
+}
+
+export async function getCountrySpecificAccounts(countryCode: string) {
+  switch (countryCode) {
+    case 'ES':
+      return {
+        services: '712',
+        products: '711',
+        cash: '570',
+        banks: '572',
+        expenses: '610'
+      };
+    case 'FR':
+      return {
+        services: '712',
+        products: '711',
+        cash: '521',
+        banks: '512',
+        expenses: '610'
+      };
+    case 'MA':
+      return {
+        services: '712',
+        products: '711',
+        cash: '516',  // Corregir: cuenta de caja para Marruecos
+        banks: '514',  // Corregir: cuenta de bancos para Marruecos
+        expenses: '610'
+      };
+    case 'PT':
+      return {
+        services: '712',
+        products: '711',
+        cash: '521',
+        banks: '512',
+        expenses: '610'
+      };
+    case 'IT':
+      return {
+        services: '712',
+        products: '711',
+        cash: '521',
+        banks: '512',
+        expenses: '610'
+      };
+    case 'DE':
+      return {
+        services: '712',
+        products: '711',
+        cash: '521',
+        banks: '512',
+        expenses: '610'
+      };
+    case 'GB':
+      return {
+        services: '712',
+        products: '711',
+        cash: '521',
+        banks: '512',
+        expenses: '610'
+      };
+    case 'US':
+      return {
+        services: '712',
+        products: '711',
+        cash: '521',
+        banks: '512',
+        expenses: '610'
+      };
+    default:
+      return {};
+  }
+}
+
+// Función auxiliar para obtener la cuenta de descuentos según el país
+function getDiscountAccountByCountry(country: string): string {
+  switch (country) {
+    case 'ES':
+      return '708';
+    case 'FR':
+      return '709';
+    case 'MA':
+      return '7129';
+    default:
+      return '708';
+  }
+}
+
+// Función auxiliar para obtener los tipos de promoción según el país
+function getDiscountTypesByCountry(country: string) {
+  // Por ahora todos los países usan los mismos tipos
+  return [
+    { 
+      code: 'MANUAL_DISCOUNT', 
+      name: 'Descuentos Manuales', 
+      uniqueCode: '001',
+      legacyCodes: ['PERCENTAGE_DISCOUNT', 'FIXED_AMOUNT_DISCOUNT']
+    },
+    { code: 'BUY_X_GET_Y_SERVICE', name: 'Compra X Obtén Y (Servicios)', uniqueCode: '002' },
+    { code: 'BUY_X_GET_Y_PRODUCT', name: 'Compra X Obtén Y (Productos)', uniqueCode: '003' },
+    { code: 'POINTS_MULTIPLIER', name: 'Multiplicador de Puntos', uniqueCode: '004' },
+    { code: 'FREE_SHIPPING', name: 'Envío Gratuito', uniqueCode: '005' }
+  ];
 }

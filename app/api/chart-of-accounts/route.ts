@@ -17,13 +17,6 @@ export async function GET(request: NextRequest) {
     // Parámetros opcionales para filtrado (solo si se pasan explícitamente)
     const type = searchParams.get('type') as AccountType | null;
     const parentAccountId = searchParams.get('parentAccountId');
-    
-    console.log('API chart-of-accounts - params:', {
-      systemId,
-      legalEntityId,
-      type,
-      parentAccountId
-    });
 
     if (!legalEntityId) {
       return NextResponse.json({ error: "legalEntityId es requerido" }, { status: 400 });
@@ -66,21 +59,6 @@ export async function GET(request: NextRequest) {
         }
       }
     });
-    
-    console.log(`API chart-of-accounts - found ${accounts.length} accounts`);
-    
-    // Log de algunas cuentas con subcuentas para debug
-    const accountsWithSubaccounts = accounts.filter(a => a.subAccounts && a.subAccounts.length > 0);
-    console.log(`Accounts with subaccounts: ${accountsWithSubaccounts.length}`);
-    if (accountsWithSubaccounts.length > 0) {
-      console.log('Example account with subaccounts:', {
-        id: accountsWithSubaccounts[0].id,
-        accountNumber: accountsWithSubaccounts[0].accountNumber,
-        name: accountsWithSubaccounts[0].name,
-        subAccountsCount: accountsWithSubaccounts[0].subAccounts.length,
-        subAccountNumbers: accountsWithSubaccounts[0].subAccounts.map(s => s.accountNumber)
-      });
-    }
 
     // Si se especifica parentAccountId, devolver la lista plana
     if (parentAccountId) {
@@ -89,7 +67,6 @@ export async function GET(request: NextRequest) {
 
     // Construir estructura jerárquica solo con cuentas raíz (sin padre)
     const rootAccounts = accounts.filter(account => !account.parentAccountId);
-    console.log(`Root accounts: ${rootAccounts.length}`);
     
     // Función para recolectar todas las cuentas de forma plana (incluyendo subcuentas)
     const collectAllAccounts = (accountList: any[]): any[] => {
@@ -119,9 +96,7 @@ export async function GET(request: NextRequest) {
     
     // Recolectar todas las cuentas de forma plana
     const flatAccounts = collectAllAccounts(accounts);
-    console.log(`[ChartOfAccounts] Total flat accounts: ${flatAccounts.length}`);
-    console.log(`[ChartOfAccounts] Subaccounts in flat list: ${flatAccounts.filter(a => a.isSubAccount || a.parentAccountId).length}`);
-    
+
     // Crear un mapa de cuentas para acceso rápido
     const accountMap = new Map();
     accounts.forEach(account => {
@@ -153,11 +128,6 @@ export async function GET(request: NextRequest) {
 
     // Construir la jerarquía completa
     const hierarchicalAccounts = rootAccounts.map(account => buildHierarchy(account.id)).filter(Boolean);
-    
-    console.log('Hierarchical accounts sample:', {
-      totalRoot: hierarchicalAccounts.length,
-      firstAccountWithSubs: hierarchicalAccounts.find(a => a.subRows && a.subRows.length > 0)
-    });
 
     // Para mantener compatibilidad:
     // - Si no se pide un tipo específico ni parentAccountId, devolver el array directo para la tabla

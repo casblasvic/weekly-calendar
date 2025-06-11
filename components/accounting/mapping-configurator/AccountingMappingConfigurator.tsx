@@ -2189,7 +2189,7 @@ export default function AccountingMappingConfigurator({
               <>
                 <div className="flex items-center justify-between mb-4">
                   <Alert className="flex-1 mr-4">
-                    <Info className="w-4 h-4" />
+                    <Info className="w-4 w-4" />
                     <AlertDescription>
                       {translations.services.info}
                     </AlertDescription>
@@ -2424,7 +2424,7 @@ export default function AccountingMappingConfigurator({
               <>
                 <div className="flex items-center justify-between mb-4">
                   <Alert className="flex-1 mr-4">
-                    <Info className="w-4 h-4" />
+                    <Info className="w-4 w-4" />
                     <AlertDescription>
                       {translations.products.info}
                     </AlertDescription>
@@ -2691,7 +2691,7 @@ export default function AccountingMappingConfigurator({
               <>
                 <div className="flex items-center justify-between mb-4">
                   <Alert className="flex-1 mr-4">
-                    <Info className="w-4 h-4" />
+                    <Info className="w-4 w-4" />
                     <AlertDescription>
                       {translations.payments.info}
                     </AlertDescription>
@@ -2996,7 +2996,7 @@ export default function AccountingMappingConfigurator({
             ) : vatTypesWithMappingsResponse ? (
               <>
                 <Alert>
-                  <Info className="w-4 h-4" />
+                  <Info className="w-4 w-4" />
                   <AlertDescription>
                     Los tipos de IVA pueden configurarse de forma global o específica por clínica. Configure las cuentas de IVA soportado (compras) y repercutido (ventas).
                   </AlertDescription>
@@ -3514,9 +3514,9 @@ export default function AccountingMappingConfigurator({
                     <Accordion type="multiple" className="w-full">
                       {/* Promociones por Clínica */}
                       {allPromotionsResponse.clinics?.map((clinic: any) => {
-                        const unmappedTypes = clinic.promotionTypes.filter((p: any) => !p.hasMapping).length;
-                        const mappedTypes = clinic.promotionTypes.filter((p: any) => p.hasMapping).length;
-                        const totalPromotions = clinic.promotions.length;
+                        const unmappedTypes = clinic.totalTypes - clinic.mappedTypes;
+                        const unmappedPromotions = clinic.totalPromotions - clinic.mappedPromotions;
+                        const totalUnmapped = unmappedTypes + unmappedPromotions;
                         
                         return (
                           <AccordionItem key={clinic.clinicId} value={clinic.clinicId}>
@@ -3524,86 +3524,145 @@ export default function AccountingMappingConfigurator({
                               <div className="flex items-center gap-2">
                                 <span className="font-medium">{clinic.clinicName}</span>
                                 <Badge variant="outline" className="h-5">
-                                  {clinic.promotionTypes.length} tipos
+                                  {clinic.clinicPrefix}
                                 </Badge>
-                                {totalPromotions > 0 && (
+                                <Badge variant="secondary" className="h-5">
+                                  {clinic.totalTypes} tipos
+                                </Badge>
+                                {clinic.totalPromotions > 0 && (
                                   <Badge variant="secondary" className="h-5">
-                                    {totalPromotions} promociones creadas
+                                    {clinic.totalPromotions} promociones
                                   </Badge>
                                 )}
-                                {unmappedTypes > 0 && (
+                                {totalUnmapped > 0 && (
                                   <Badge variant="destructive" className="h-5">
-                                    {unmappedTypes} sin mapear
+                                    {totalUnmapped} sin mapear
                                   </Badge>
                                 )}
-                                {mappedTypes > 0 && (
+                                {(clinic.mappedTypes > 0 || clinic.mappedPromotions > 0) && (
                                   <Badge variant="default" className="h-5 bg-green-500 text-white hover:bg-green-600">
-                                    {mappedTypes} mapeados
+                                    {clinic.mappedTypes + clinic.mappedPromotions} mapeados
                                   </Badge>
                                 )}
                               </div>
                             </AccordionTrigger>
                             <AccordionContent>
                               <div className="pt-4 space-y-4">
-                                {/* Tipos de Promociones del Sistema */}
-                                <div>
-                                  <h5 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                                    <Package className="w-4 h-4" />
-                                    Tipos de Promociones del Sistema
-                                  </h5>
-                                  <div className="space-y-2">
-                                    {clinic.promotionTypes.map((promType: any) => (
-                                      <div key={promType.id} className="border rounded-lg p-4">
-                                        <div className="flex items-center gap-3">
-                                          <div className="flex-1">
-                                            <div className="flex items-center gap-2">
-                                              <div className="font-medium">
-                                                {promType.name}
-                                              </div>
-                                              <Badge variant="secondary" className="text-xs">
-                                                Sistema
+                                {/* Tipos de Promoción con sus promociones anidadas */}
+                                {clinic.promotionTypes.map((promType: any) => (
+                                  <div key={promType.id} className="border rounded-lg">
+                                    {/* Header del tipo de promoción */}
+                                    <div className="p-4 bg-muted/50">
+                                      <div className="flex items-center gap-3">
+                                        <div className="flex-1">
+                                          <div className="flex items-center gap-2">
+                                            <Package className="w-4 h-4 text-muted-foreground" />
+                                            <div className="font-medium">
+                                              {promType.name}
+                                            </div>
+                                            <Badge variant="secondary" className="text-xs">
+                                              Tipo de Promoción
+                                            </Badge>
+                                            {promType.promotions.length > 0 && (
+                                              <Badge variant="outline" className="text-xs">
+                                                {promType.promotions.length} promociones
                                               </Badge>
-                                              {promType.mappingIsGlobal && promType.hasMapping && (
-                                                <Badge variant="outline" className="text-xs">
-                                                  Heredado de Global
-                                                </Badge>
-                                              )}
-                                            </div>
-                                            <div className="text-sm text-muted-foreground">
-                                              Código: {promType.code}
-                                            </div>
+                                            )}
+                                            {promType.mappingIsGlobal && promType.hasMapping && (
+                                              <Badge variant="outline" className="text-xs">
+                                                Heredado de Global
+                                              </Badge>
+                                            )}
                                           </div>
-                                          <Select
-                                            value={discountMappings[`${clinic.clinicId}:${promType.code}`] || promType.accountId || 'none'}
-                                            onValueChange={(value) => 
-                                              setDiscountMappings(prev => ({
-                                                ...prev,
-                                                [`${clinic.clinicId}:${promType.code}`]: value
-                                              }))
-                                            }
-                                          >
-                                            <SelectTrigger className="w-[300px]">
-                                              <SelectValue placeholder="Seleccionar cuenta">
-                                                {promType.accountCode ? `${promType.accountCode} - ${promType.accountName}` : 'Sin asignar'}
-                                              </SelectValue>
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                              <SelectItem value="none">
-                                                <span className="text-muted-foreground">Sin asignar</span>
-                                              </SelectItem>
-                                              {chartOfAccounts
-                                                ?.map((account: ChartAccount) => (
-                                                  <SelectItem key={account.id} value={account.id}>
-                                                    {renderAccountOption(account)}
-                                                  </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                          </Select>
+                                          {promType.accountCode && (
+                                            <div className="text-sm text-muted-foreground mt-1">
+                                              Cuenta actual: {promType.accountCode} - {promType.accountName}
+                                            </div>
+                                          )}
                                         </div>
+                                        <Select
+                                          value={discountMappings[`${clinic.clinicId}:${promType.code}`] || promType.accountId || 'none'}
+                                          onValueChange={(value) => 
+                                            setDiscountMappings(prev => ({
+                                              ...prev,
+                                              [`${clinic.clinicId}:${promType.code}`]: value
+                                            }))
+                                          }
+                                        >
+                                          <SelectTrigger className="w-[300px]">
+                                            <SelectValue placeholder="Seleccionar cuenta">
+                                              {promType.accountCode ? `${promType.accountCode} - ${promType.accountName}` : 'Sin asignar'}
+                                            </SelectValue>
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value="none">
+                                              <span className="text-muted-foreground">Sin asignar</span>
+                                            </SelectItem>
+                                            {chartOfAccounts
+                                              ?.map((account: ChartAccount) => (
+                                                <SelectItem key={account.id} value={account.id}>
+                                                  {renderAccountOption(account)}
+                                                </SelectItem>
+                                              ))}
+                                          </SelectContent>
+                                        </Select>
                                       </div>
-                                    ))}
+                                    </div>
+
+                                    {/* Promociones de este tipo */}
+                                    {promType.promotions.length > 0 && (
+                                      <div className="p-4 space-y-2 border-t">
+                                        <table className="w-full">
+                                          <thead>
+                                            <tr className="border-b bg-muted/30">
+                                              <th className="text-left p-3 text-sm font-medium">Promoción</th>
+                                              <th className="text-left p-3 text-sm font-medium">Código</th>
+                                              <th className="text-left p-3 text-sm font-medium">Alcance</th>
+                                              <th className="text-left p-3 text-sm font-medium">Cuenta Asignada</th>
+                                              <th className="text-center p-3 text-sm font-medium">Estado</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {promType.promotions.map((promotion: any, index: number) => (
+                                              <tr key={promotion.id} className={index !== promType.promotions.length - 1 ? 'border-b' : ''}>
+                                                <td className="p-3">
+                                                  <div className="flex items-center gap-2">
+                                                    <Tag className="w-3 h-3 text-muted-foreground" />
+                                                    <span className="text-sm font-medium">{promotion.name}</span>
+                                                  </div>
+                                                </td>
+                                                <td className="p-3">
+                                                  <span className="text-sm text-muted-foreground">{promotion.code}</span>
+                                                </td>
+                                                <td className="p-3">
+                                                  <Badge variant={promotion.isGlobal ? "secondary" : "outline"} className="text-xs">
+                                                    {promotion.isGlobal ? 'Global' : 'Específica'}
+                                                  </Badge>
+                                                </td>
+                                                <td className="p-3">
+                                                  <span className="text-sm text-muted-foreground">
+                                                    {promotion.accountCode || 'Hereda del tipo'}
+                                                  </span>
+                                                </td>
+                                                <td className="p-3 text-center">
+                                                  {promotion.hasMapping ? (
+                                                    <Badge variant="default" className="text-xs bg-green-100 text-green-700">
+                                                      Mapeado
+                                                    </Badge>
+                                                  ) : (
+                                                    <Badge variant="outline" className="text-xs">
+                                                      Hereda
+                                                    </Badge>
+                                                  )}
+                                                </td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    )}
                                   </div>
-                                </div>
+                                ))}
                               </div>
                             </AccordionContent>
                           </AccordionItem>

@@ -78,6 +78,7 @@ model System {
   analyticalDimensions         AnalyticalDimension[]
   entitySegmentConfigs         EntitySegmentConfig[]
   expenses                     Expense[]
+  promotionAccountMappings     PromotionAccountMapping[]
 
   @@map("systems")
 }
@@ -192,6 +193,7 @@ model LegalEntity {
   discountTypeAccountMappings  DiscountTypeAccountMapping[]
   debts                        DebtLedger[]
   Expense                      Expense[]
+  promotionAccountMappings     PromotionAccountMapping[]
 
   @@index([systemId])
   @@index([countryIsoCode])
@@ -269,6 +271,7 @@ model Clinic {
   vatTypeAccountMappings       VATTypeAccountMapping[]
   ExpenseTypeAccountMapping    ExpenseTypeAccountMapping[]
   DiscountTypeAccountMapping   DiscountTypeAccountMapping[]
+  promotionAccountMappings     PromotionAccountMapping[]
 
   @@unique([name, systemId], name: "Clinic_name_systemId_key")
   @@index([systemId])
@@ -1558,6 +1561,7 @@ model Promotion {
   definedCompatibilities    PromotionCompatibility[]  @relation("DefinedCompatibility")
   compatibleWith            PromotionCompatibility[]  @relation("CompatibleWith")
   appliedToTicketItems      TicketItem[]
+  promotionAccountMappings  PromotionAccountMapping[]
 
   @@unique([name, systemId])
   @@index([systemId])
@@ -1999,6 +2003,7 @@ model ChartOfAccountEntry {
   expenseTypes                 ExpenseType[]
   vatInputAccountMappings      VATTypeAccountMapping[]       @relation("VATInputAccount")
   vatOutputAccountMappings     VATTypeAccountMapping[]       @relation("VATOutputAccount")
+  promotionAccountMappings     PromotionAccountMapping[]
 
   @@unique([legalEntityId, systemId, accountNumber])
   @@index([legalEntityId])
@@ -2513,6 +2518,37 @@ model Expense {
   @@index([systemId])
   @@index([legalEntityId])
   @@map("expenses")
+}
+
+model PromotionAccountMapping {
+  id                String              @id @default(cuid())
+  promotionId       String              @map("promotion_id")
+  accountId         String              @map("account_id")
+  legalEntityId     String              @map("legal_entity_id")
+  clinicId          String              @map("clinic_id")
+  systemId          String              @map("system_id")
+  targetRevenue     Decimal?            @map("target_revenue") @db.Decimal(10, 2)
+  targetNewClients  Int?                @map("target_new_clients")
+  budgetedDiscount  Decimal?            @map("budgeted_discount") @db.Decimal(10, 2)
+  actualRevenue     Decimal?            @map("actual_revenue") @db.Decimal(10, 2)
+  actualNewClients  Int?                @map("actual_new_clients") @default(0)
+  actualDiscount    Decimal?            @map("actual_discount") @db.Decimal(10, 2)
+  createdAt         DateTime            @default(now()) @map("created_at")
+  updatedAt         DateTime            @updatedAt @map("updated_at")
+  
+  promotion         Promotion           @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+  account           ChartOfAccountEntry @relation(fields: [accountId], references: [id])
+  legalEntity       LegalEntity         @relation(fields: [legalEntityId], references: [id], onDelete: Cascade)
+  clinic            Clinic              @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  system            System              @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  
+  @@unique([promotionId, clinicId], map: "uq_promotion_clinic")
+  @@index([promotionId], map: "idx_promotion_account_mapping_promotion_id")
+  @@index([accountId], map: "idx_promotion_account_mapping_account_id")
+  @@index([legalEntityId], map: "idx_promotion_account_mapping_legal_entity_id")
+  @@index([clinicId], map: "idx_promotion_account_mapping_clinic_id")
+  @@index([systemId], map: "idx_promotion_account_mapping_system_id")
+  @@map("promotion_account_mappings")
 }
 
 enum BaseDocumentType {

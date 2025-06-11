@@ -372,7 +372,7 @@ export async function POST(req: NextRequest) {
          };
 
         // Llamar a la función de mapeo automático
-        await autoMapPromotion(tx, finalPromotion.id, session.user.systemId);
+        await autoMapPromotion(responseData);
 
         return responseData; // Devolver la promoción creada y mapeada
       });

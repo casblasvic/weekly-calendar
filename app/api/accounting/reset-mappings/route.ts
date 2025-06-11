@@ -37,7 +37,18 @@ export async function DELETE(request: Request) {
       );
     }
 
-    // Ejecutar todo en una transacción
+    // TRANSACCIÓN 1: Eliminar asientos contables
+    const deletedJournalEntries = await prisma.$transaction(async (tx) => {
+      // Primero eliminar asientos contables (esto eliminará en cascada JournalEntryLine)
+      const result = await tx.journalEntry.deleteMany({
+        where: { legalEntityId }
+      });
+      return result.count;
+    }, {
+      timeout: 30000 // 30 segundos
+    });
+
+    // TRANSACCIÓN 2: Eliminar mapeos contables
     await prisma.$transaction(async (tx) => {
       // 1. Eliminar mapeos de categorías
       await tx.categoryAccountMapping.deleteMany({
@@ -59,69 +70,77 @@ export async function DELETE(request: Request) {
         where: { legalEntityId }
       });
 
-      // 5. Eliminar mapeos de tipos de IVA
+      // 5. Eliminar mapeos de IVA
       await tx.vATTypeAccountMapping.deleteMany({
         where: { legalEntityId }
       });
 
-      // 6. Eliminar mapeos de tipos de descuento/promociones
-      await tx.discountTypeAccountMapping.deleteMany({
-        where: { legalEntityId }
-      });
-
-      // 7. Eliminar mapeos de tipos de gastos
-      await tx.expenseTypeAccountMapping.deleteMany({
-        where: { legalEntityId }
-      });
-
-      // 8. Eliminar mapeos de sesiones de caja
+      // 6. Eliminar mapeos de sesiones de caja
       await tx.cashSessionAccountMapping.deleteMany({
         where: { legalEntityId }
       });
 
-      // 9. Limpiar referencias de accountId en banks
-      // Primero obtener todos los bancos del sistema
-      const banks = await tx.bank.findMany({
-        where: { systemId }
-      });
-
-      // Actualizar cada banco para limpiar su accountId
-      for (const bank of banks) {
-        await tx.bank.update({
-          where: { id: bank.id },
-          data: { accountId: null }
-        });
-      }
-
-      // 10. Limpiar accountId de cuentas bancarias
-      // Obtener todas las cuentas bancarias del sistema
-      const bankAccounts = await tx.bankAccount.findMany({
-        where: { systemId }
-      });
-
-      // Actualizar cada cuenta bancaria para limpiar su accountId
-      for (const bankAccount of bankAccounts) {
-        await tx.bankAccount.update({
-          where: { id: bankAccount.id },
-          data: { accountId: null }
-        });
-      }
-
-      // 11. Eliminar primero las líneas de asientos contables
-      await tx.journalEntryLine.deleteMany({
-        where: {
-          journalEntry: {
-            legalEntityId
-          }
-        }
-      });
-
-      // 12. Eliminar los asientos contables
-      await tx.journalEntry.deleteMany({
+      // 7. Eliminar mapeos de tipos de descuento/promociones
+      await tx.discountTypeAccountMapping.deleteMany({
         where: { legalEntityId }
       });
 
-      // 13. Ahora sí podemos eliminar el plan de cuentas
+      // 8. Eliminar mapeos de promociones (tienen FK explícita a chart_of_account_entries)
+      await tx.promotionAccountMapping.deleteMany({
+        where: { legalEntityId }
+      });
+
+      // 9. Eliminar mapeos de tipos de gastos
+      await tx.expenseTypeAccountMapping.deleteMany({
+        where: { legalEntityId }
+      });
+    }, {
+      timeout: 30000 // 30 segundos
+    });
+
+    // TRANSACCIÓN 3: Limpiar referencias directas
+    await prisma.$transaction(async (tx) => {
+      // 1. Limpiar referencias de accountId en banks
+      await tx.bank.updateMany({
+        where: { 
+          systemId,
+          accountId: { not: null }
+        },
+        data: { accountId: null }
+      });
+
+      // 2. Limpiar accountId de cuentas bancarias
+      await tx.bankAccount.updateMany({
+        where: { 
+          systemId,
+          accountId: { not: null }
+        },
+        data: { accountId: null }
+      });
+
+      // 3. Limpiar referencias adicionales en VATTypeAccountMapping
+      await tx.vATTypeAccountMapping.updateMany({
+        where: { 
+          legalEntityId,
+          chartOfAccountEntryId: { not: null }
+        },
+        data: { chartOfAccountEntryId: null }
+      });
+
+      // 4. Limpiar referencias en ExpenseType
+      await tx.expenseType.updateMany({
+        where: { 
+          systemId,
+          chartOfAccountEntryId: { not: null }
+        },
+        data: { chartOfAccountEntryId: null }
+      });
+    }, {
+      timeout: 20000 // 20 segundos
+    });
+
+    // TRANSACCIÓN 4: Eliminar plan de cuentas
+    await prisma.$transaction(async (tx) => {
       // Primero, desconectamos todas las relaciones parent-child
       await tx.chartOfAccountEntry.updateMany({
         where: { 
@@ -131,36 +150,76 @@ export async function DELETE(request: Request) {
         data: { parentAccountId: null }
       });
       
-      // Ahora podemos eliminar todas las cuentas de una vez
-      await tx.chartOfAccountEntry.deleteMany({
+      // Eliminar cuentas en lotes para evitar timeout
+      const totalAccounts = await tx.chartOfAccountEntry.count({
         where: { legalEntityId }
       });
 
-      // 14. Eliminar los ejercicios fiscales
-      await tx.fiscalYear.deleteMany({
-        where: { legalEntityId }
-      });
-      
-      // 15. Eliminar las series documentales
+      if (totalAccounts > 0) {
+        const batchSize = 100; // Eliminar de 100 en 100
+        let deletedTotal = 0;
+        
+        while (deletedTotal < totalAccounts) {
+          // Obtener IDs del siguiente lote
+          const accountsToDelete = await tx.chartOfAccountEntry.findMany({
+            where: { legalEntityId },
+            select: { id: true },
+            take: batchSize
+          });
+          
+          if (accountsToDelete.length === 0) break;
+          
+          // Eliminar el lote
+          await tx.chartOfAccountEntry.deleteMany({
+            where: {
+              id: { in: accountsToDelete.map(a => a.id) }
+            }
+          });
+          
+          deletedTotal += accountsToDelete.length;
+        }
+      }
+    }, {
+      timeout: 60000 // 60 segundos para el plan de cuentas
+    });
+
+    // TRANSACCIÓN 5: Eliminar ejercicios fiscales y series documentales
+    await prisma.$transaction(async (tx) => {
+      // 1. Eliminar series documentales
       await tx.documentSeries.deleteMany({
         where: { legalEntityId }
       });
 
-      console.log(`[RESET] Eliminados todos los mapeos, plan de cuentas, ejercicios fiscales y series documentales para sociedad ${legalEntityId}`);
+      // 2. Eliminar ejercicios fiscales
+      await tx.fiscalYear.deleteMany({
+        where: { legalEntityId }
+      });
     }, {
-      timeout: 20000 // 20 segundos de timeout para la transacción
+      timeout: 20000 // 20 segundos
     });
 
     return NextResponse.json({
       success: true,
-      message: 'Todos los mapeos contables y el plan de cuentas han sido eliminados'
+      message: 'Mapeos contables reseteados correctamente'
     });
 
-  } catch (error) {
-    console.error('Error reseteando mapeos contables:', error);
-    return NextResponse.json(
-      { error: 'Error al resetear mapeos contables' },
-      { status: 500 }
-    );
+  } catch (error: any) {
+    console.error('Error al resetear mapeos contables:', error);
+    let errorMeta = null;
+    if (error && typeof error === 'object' && 'meta' in error) {
+      errorMeta = error.meta;
+      console.error('Error meta:', errorMeta);
+    }
+    
+    let errorMessage = 'Error desconocido al resetear mapeos contables.';
+    if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
+      errorMessage = error.message;
+    }
+
+    return NextResponse.json({
+      error: 'Error al resetear mapeos contables',
+      details: errorMessage,
+      errorMeta: errorMeta
+    }, { status: 500 });
   }
 }

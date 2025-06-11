@@ -948,7 +948,20 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
                     "font-semibold truncate transition-all duration-300", 
                     isCollapsed ? "text-sm w-4" : "text-lg"
                   )}>
-                    {isCollapsed ? "•" : "LOGO"}
+                    {isCollapsed ? "•" : (
+                      <div className="h-6">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 100" className="h-full w-auto">
+                          <defs>
+                            <linearGradient id="qGradMain" x1="0%" y1="0%" x2="100%" y2="0%">
+                              <stop offset="0%" stopColor="#8029c5"/>
+                              <stop offset="100%" stopColor="#2dd0f8"/>
+                            </linearGradient>
+                          </defs>
+                          <text x="10" y="70" fontFamily="Inter, sans-serif" fontSize="60" fill="url(#qGradMain)">Q</text>
+                          <text x="70" y="70" fontFamily="Inter, sans-serif" fontSize="60" fill="white">leven</text>
+                        </svg>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1267,4 +1280,3 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
     </div>
   )
 }
-
