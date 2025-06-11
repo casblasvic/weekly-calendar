@@ -105,76 +105,38 @@ div[class*="sticky"][class*="left-0"][class*="top-0"] {
 */
 /* --- Fin Sección Sticky Comentada --- */
 
-/* Indicador de tiempo actual (mantener por ahora, ajustar z-index si es necesario) */
+/* Indicador de tiempo actual */
 .current-time-indicator {
-  position: absolute !important;
-  left: 0 !important;
-  right: 0 !important;
-  width: 100% !important;
-  height: 2px !important;
-  background-color: #ef4444 !important;
-  /* z-index: 120 !important; */ /* Usar nueva variable */
-  z-index: var(--z-time-indicator-new) !important;
-  pointer-events: none !important;
-  min-width: 100% !important;
-  box-shadow: 0 0 4px rgba(239, 68, 68, 0.4) !important;
-  display: block !important;
-  visibility: visible !important;
-  opacity: 1 !important;
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent 0, transparent 80px, #ef4444 80px, #ef4444 100%);
+  z-index: 15;
+  pointer-events: none;
+  box-shadow: 0 1px 3px rgba(239, 68, 68, 0.4);
 }
 
-/* Garantizar que el pseudoelemento se vea sobre la columna de horas - AJUSTADO */
-.current-time-indicator::before {
-  content: '' !important;
-  position: absolute !important;
-  left: 0 !important;
-  width: 80px !important; /* Ancho de la columna de hora */
-  height: 2px !important;
-  background-color: #ef4444 !important;
-  /* z-index: 125 !important; */ /* Ajustar relativo a la nueva base */
-  z-index: calc(var(--z-time-indicator-new) + 1) !important; /* Un poco por encima del indicador base */
-  pointer-events: none !important;
+/* Específico para vista semanal - ya no necesitamos el clip-path tan agresivo */
+.weekly-agenda .current-time-indicator,
+.agenda-container .current-time-indicator,
+.weekly-agenda .agenda-body .current-time-indicator {
+  /* Mantener un clip-path mínimo como respaldo */
+  clip-path: inset(0 0 0 0);
 }
 
-/* Etiqueta de hora con posicionamiento absoluto para que se mueva con la columna */
-.current-time-indicator span {
-  position: absolute !important;
-  left: 40px !important; /* Centrado en la columna de hora */
-  top: 50% !important;
-  transform: translate(-50%, -50%) !important;
-  /* z-index: 130 !important; */ /* Usar nueva variable */
-  z-index: var(--z-time-indicator-label-new) !important;
-  background-color: #ef4444 !important;
-  color: white !important;
-  padding: 2px 6px !important;
-  border-radius: 2px !important;
-  font-size: 11px !important;
-  white-space: nowrap !important;
-  display: inline-block !important;
-  font-weight: 500 !important;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2) !important;
-  pointer-events: none !important;
+/* Ajustes para móvil si es necesario */
+@media (max-width: 768px) {
+  .weekly-agenda .current-time-indicator {
+    background: linear-gradient(90deg, transparent 0, transparent 60px, #ef4444 60px, #ef4444 100%);
+  }
+  
+  .mobile-agenda .current-time-indicator {
+    background: linear-gradient(90deg, transparent 0, transparent 70px, #ef4444 70px, #ef4444 100%);
+  }
 }
 
-/* Eliminar estilos fixed que ya no necesitamos */
-body:has(.current-time-indicator) .current-time-indicator span {
-  position: absolute !important;
-  /* z-index: var(--z-time-indicator-label) !important; */ /* Usar nueva variable */
-  z-index: var(--z-time-indicator-label-new) !important;
-}
-
-/* Eliminar estilos obsoletos */
-.current-time-indicator-portal {
-  display: none;
-}
-
-/* Asegurar que el indicador tenga menor z-index que todas las cabeceras */
-.agenda-body .current-time-indicator {
-  /* z-index: var(--z-time-indicator) !important; */
-  z-index: var(--z-time-indicator-new) !important;
-}
-
-/* Asegurar que la etiqueta no sea ocultada por la columna de horas */
+/* Garantizar que la etiqueta no sea ocultada por la columna de horas */
 /* Esta regla podría ser problemática si la etiqueta tiene z-index < columna */
 /* Vamos a comentarla temporalmente para ver el efecto del z-index */
 /*
@@ -191,4 +153,4 @@ body:has(.current-time-indicator) .current-time-indicator span {
   .day-header { position: -webkit-sticky; z-index: var(--z-day-headers) !important; }
   .hour-column { position: -webkit-sticky; z-index: var(--z-hour-column); }
 } 
-*/ 
+*/

@@ -69,7 +69,7 @@ interface WeeklyAgendaProps {
   onAppointmentClick?: (appointmentId: string) => void
 }
 
-// Asegurar que el tipo Client incluye id
+// Asegurar que el tipo Client incluya id
 interface Client { 
   id: string; 
   name: string; 
@@ -842,19 +842,28 @@ export default function WeeklyAgenda({
               />
             ))}
 
-            {/* Indicador de tiempo actual RENDERIZADO AQUÍ */}
-            <CurrentTimeIndicator
-              key="desktop-week-indicator"
-              timeSlots={timeSlots}
-              rowHeight={AGENDA_CONFIG.ROW_HEIGHT}
-              isMobile={false}
-              className="current-time-indicator"
-              agendaRef={agendaRef}
-              // Pass calculated earliest/latest times if available, otherwise defaults
-              clinicOpenTime={timeSlots.length > 0 ? timeSlots[0] : "09:00"} 
-              clinicCloseTime={timeSlots.length > 0 ? timeSlots[timeSlots.length - 1] : "20:00"}
-              config={{ slotDuration: slotDuration }}
-            />
+            {/* Indicador de tiempo actual */}
+            <div 
+              className="absolute inset-0 pointer-events-none"
+              style={{ 
+                top: '80px', // Compensar por la altura de la cabecera fija
+                overflow: 'hidden',
+                zIndex: 15 // Por debajo de las cabeceras fijas (z-index: 20)
+              }}
+            >
+              <CurrentTimeIndicator
+                key="desktop-week-indicator"
+                timeSlots={timeSlots}
+                rowHeight={AGENDA_CONFIG.ROW_HEIGHT}
+                isMobile={false}
+                className="current-time-indicator"
+                agendaRef={agendaRef}
+                // Pass calculated earliest/latest times if available, otherwise defaults
+                clinicOpenTime={timeSlots.length > 0 ? timeSlots[0] : "09:00"} 
+                clinicCloseTime={timeSlots.length > 0 ? timeSlots[timeSlots.length - 1] : "20:00"}
+                config={{ slotDuration: slotDuration }}
+              />
+            </div>
           </div>
         </div>
       </DragDropContext>

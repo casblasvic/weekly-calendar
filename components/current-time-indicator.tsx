@@ -48,19 +48,41 @@ export const CurrentTimeIndicator: React.FC<CurrentTimeIndicatorProps> = ({
   const isWithinClinicHours = useCallback(() => {
     if (!clinicOpenTime || !clinicCloseTime) return true // Si no hay horario configurado, mostrar siempre
 
-    const now = currentTime
-    const currentHour = now.getHours()
-    const currentMinute = now.getMinutes()
-    const currentTimeMinutes = currentHour * 60 + currentMinute
+    const currentTimeString = format(currentTime, "HH:mm")
+    const currentMinutes = parseTime(currentTimeString)
+    const openMinutes = parseTime(clinicOpenTime)
+    const closeMinutes = parseTime(clinicCloseTime)
 
-    const [openHour, openMinute] = clinicOpenTime.split(":").map(Number)
-    const [closeHour, closeMinute] = clinicCloseTime.split(":").map(Number)
-
-    const openTimeMinutes = openHour * 60 + openMinute
-    const closeTimeMinutes = closeHour * 60 + closeMinute
-
-    return currentTimeMinutes >= openTimeMinutes && currentTimeMinutes <= closeTimeMinutes
+    return currentMinutes >= openMinutes && currentMinutes <= closeMinutes
   }, [currentTime, clinicOpenTime, clinicCloseTime])
+
+  // Nueva función para verificar si está dentro del rango de timeSlots renderizados
+  const isWithinRenderedTimeRange = useCallback(() => {
+    if (!timeSlots.length) return false
+    
+    const currentTimeString = format(currentTime, "HH:mm")
+    const currentMinutes = parseTime(currentTimeString)
+    
+    // Obtener el primer y último slot renderizado
+    const firstSlot = timeSlots[0]
+    const lastSlot = timeSlots[timeSlots.length - 1]
+    
+    const firstSlotMinutes = parseTime(firstSlot)
+    const lastSlotMinutes = parseTime(lastSlot)
+    
+    // IMPORTANTE: El indicador debe mostrarse hasta el último slot + duración del slot
+    // Si el último slot es 20:00 y los slots son de 30 min, debe mostrarse hasta 20:30
+    const slotDurationMinutes = timeSlots.length > 1 ? 
+      parseTime(timeSlots[1]) - parseTime(timeSlots[0]) : 30 // Default 30 min si no se puede calcular
+    
+    const effectiveEndMinutes = lastSlotMinutes + slotDurationMinutes
+    
+    // Solo mostrar si está entre el primer slot y el último slot + duración (inclusive)
+    return currentMinutes >= firstSlotMinutes && currentMinutes <= effectiveEndMinutes
+  }, [currentTime, timeSlots])
+
+  // Verificar si mostrar - ahora incluye ambas validaciones
+  const shouldShow = isWithinTimeRange && isVisible && isWithinClinicHours() && isWithinRenderedTimeRange() && position !== null
 
   // Asegurar que el indicador sea visible si hay slots de tiempo
   useEffect(() => {
@@ -300,9 +322,6 @@ export const CurrentTimeIndicator: React.FC<CurrentTimeIndicatorProps> = ({
     return () => observer.disconnect();
   }, [agendaRef, updatePosition]);
 
-  // Verificar si mostrar
-  const shouldShow = isWithinTimeRange && isVisible && isWithinClinicHours() && position !== null;
-
   // Actualizar las referencias solo después de un renderizado completo
   useEffect(() => {
     prevPositionRef.current = position;
@@ -404,6 +423,26 @@ export const CurrentTimeIndicator: React.FC<CurrentTimeIndicatorProps> = ({
   // --- FIN: useEffect con window.resize --- 
 
   console.log('[CurrentTimeIndicator] debug:', { position, isVisible });
+
+  // Logging detallado para debugging
+  console.log('[CurrentTimeIndicator] horario debug:', {
+    currentTime: format(currentTime, "HH:mm"),
+    clinicOpenTime,
+    clinicCloseTime,
+    timeSlots: timeSlots.length > 0 ? `${timeSlots[0]} - ${timeSlots[timeSlots.length - 1]}` : 'none',
+    effectiveEndTime: timeSlots.length > 0 ? 
+      (() => {
+        const lastSlot = timeSlots[timeSlots.length - 1]
+        const slotDuration = timeSlots.length > 1 ? parseTime(timeSlots[1]) - parseTime(timeSlots[0]) : 30
+        const endMinutes = parseTime(lastSlot) + slotDuration
+        const hours = Math.floor(endMinutes / 60)
+        const minutes = endMinutes % 60
+        return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`
+      })() : 'none',
+    isWithinClinicHours: isWithinClinicHours(),
+    isWithinRenderedTimeRange: isWithinRenderedTimeRange(),
+    shouldShow
+  })
 
   // Forzar el indicador a mostrarse si isVisible es true, usando effectivePosition
   const effectivePosition = (position !== null ? Math.max(position, 0) : 0);

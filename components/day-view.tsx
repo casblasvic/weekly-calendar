@@ -593,10 +593,7 @@ export default function DayView({
                       {/* Celda de Hora */}
                       <div 
                         data-time={time}
-                        className={cn(
-                          "flex items-center justify-center px-1 py-1 text-xs font-medium text-center text-gray-500 border-r",
-                          timeIndex % 2 === 0 ? ZEBRA_LIGHT : ZEBRA_DARK // Aplicar zebra aquí también
-                        )}>
+                        className="sticky left-0 z-10 p-2 text-sm font-medium text-purple-600 bg-white border-b border-r border-gray-300">
                         {time}
                       </div>
                       {/* Celdas de Cabinas */}
