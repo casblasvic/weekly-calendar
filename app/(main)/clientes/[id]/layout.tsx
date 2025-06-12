@@ -104,7 +104,7 @@ export default function PersonLayout({ children, params }: { children: React.Rea
 
   // Función para cambiar de pestaña sin forzar recarga completa
   const handleTabChange = (tabPath: string) => {
-    const newPath = `/personas/${personId}${tabPath}`
+    const newPath = `/clientes/${personId}${tabPath}`
     router.push(newPath)
   }
 

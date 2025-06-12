@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { db } from "@/lib/db"
+import { prisma } from "@/lib/db"
 
 export async function GET(request: NextRequest) {
   try {
@@ -17,23 +17,23 @@ export async function GET(request: NextRequest) {
     }
 
     // Buscar empresas por nombre o NIF
-    const companies = await db.company.findMany({
+    const companies = await prisma.company.findMany({
       where: {
         systemId,
         OR: [
-          { name: { contains: search, mode: 'insensitive' } },
+          { fiscalName: { contains: search, mode: 'insensitive' } },
           { taxId: { contains: search, mode: 'insensitive' } }
         ]
       },
       select: {
         id: true,
-        name: true,
+        fiscalName: true,
         taxId: true,
         email: true,
         phone: true
       },
       take: limit,
-      orderBy: { name: 'asc' }
+      orderBy: { fiscalName: 'asc' }
     })
 
     return NextResponse.json({ results: companies })

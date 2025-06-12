@@ -11,7 +11,7 @@ import { useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { AGENDA_CONFIG } from "@/config/agenda-config"
 import { CurrentTimeIndicator } from "@/components/current-time-indicator"
-import { ClientSearchDialog } from "@/components/client-search-dialog"
+import { PersonSearchDialog } from "@/components/client-search-dialog"
 import { AppointmentDialog } from "@/components/appointment-dialog"
 import { NewClientDialog } from "@/components/new-client-dialog"
 import { AppointmentItem } from "./appointment-item"
@@ -1151,10 +1151,10 @@ export default function WeeklyAgenda({
 
             {/* Diálogos y modales */}
             {isSearchDialogOpen && (
-              <ClientSearchDialog
+              <PersonSearchDialog
                 isOpen={isSearchDialogOpen}
                 onClose={() => setIsSearchDialogOpen(false)}
-                onClientSelect={handleClientSelect}
+                onPersonSelect={handleClientSelect}
               />
             )}
 
@@ -1224,10 +1224,10 @@ export default function WeeklyAgenda({
         
         {/* Renderizar diálogos aquí, no afectan el layout principal */}
         {isSearchDialogOpen && (
-          <ClientSearchDialog
+          <PersonSearchDialog
             isOpen={isSearchDialogOpen}
             onClose={() => setIsSearchDialogOpen(false)}
-            onClientSelect={handleClientSelect}
+            onPersonSelect={handleClientSelect}
           />
         )}
 

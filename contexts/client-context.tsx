@@ -1,13 +1,11 @@
 "use client"
 
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react"
-// QUITAR: import { useInterfaz } from "./interfaz-Context"
-// QUITAR: import { Client as ClientModel } from "@/services/data/data-service" // Usaremos Prisma.Client
-import { Client as PrismaClient } from '@prisma/client';
+import { Person } from '@prisma/client';
 import { useSession } from "next-auth/react";
 
 // Usar tipo de Prisma directamente
-export type Client = PrismaClient;
+export type Client = Person; // Alias temporal para compatibilidad
 
 // Interfaz del contexto
 interface ClientContextType {
@@ -46,7 +44,7 @@ export function ClientProvider({ children }: { children: ReactNode }) {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetch('/api/clients');
+      const response = await fetch('/api/persons');
       if (!response.ok) {
         let errorText = response.statusText;
         if (response.status === 401) {
@@ -89,7 +87,7 @@ export function ClientProvider({ children }: { children: ReactNode }) {
 
     setIsLoading(true);
     try {
-      const response = await fetch(`/api/clients/${id}`);
+      const response = await fetch(`/api/persons/${id}`);
       if (response.status === 404) return null;
       if (!response.ok) throw new Error(`Error ${response.status}: ${response.statusText}`);
       const client: Client = await response.json();
@@ -110,7 +108,7 @@ export function ClientProvider({ children }: { children: ReactNode }) {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetch('/api/clients', {
+      const response = await fetch('/api/persons', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(clientData),
@@ -137,7 +135,7 @@ export function ClientProvider({ children }: { children: ReactNode }) {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetch(`/api/clients/${id}`, {
+      const response = await fetch(`/api/persons/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(clientUpdate),
@@ -166,7 +164,7 @@ export function ClientProvider({ children }: { children: ReactNode }) {
     setIsLoading(true);
     setError(null);
     try {
-       const response = await fetch(`/api/clients/${id}`, {
+       const response = await fetch(`/api/persons/${id}`, {
         method: 'DELETE',
       });
        if (!response.ok) {

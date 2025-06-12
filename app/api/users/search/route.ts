@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { db } from "@/lib/db"
+import { prisma } from "@/lib/db"
 
 export async function GET(request: NextRequest) {
   try {
@@ -18,18 +18,13 @@ export async function GET(request: NextRequest) {
     }
 
     // Buscar usuarios (empleados) por nombre, apellido o email
-    const users = await db.user.findMany({
+    const users = await prisma.user.findMany({
       where: {
         systemId,
-        AND: [
-          role ? { role: { not: 'ADMIN' } } : {}, // Si se especifica role=employee, excluir admins
-          {
-            OR: [
-              { firstName: { contains: search, mode: 'insensitive' } },
-              { lastName: { contains: search, mode: 'insensitive' } },
-              { email: { contains: search, mode: 'insensitive' } }
-            ]
-          }
+        OR: [
+          { firstName: { contains: search, mode: 'insensitive' } },
+          { lastName: { contains: search, mode: 'insensitive' } },
+          { email: { contains: search, mode: 'insensitive' } }
         ]
       },
       select: {
@@ -37,8 +32,7 @@ export async function GET(request: NextRequest) {
         firstName: true,
         lastName: true,
         email: true,
-        role: true,
-        avatar: true
+        profileImageUrl: true
       },
       take: limit,
       orderBy: [

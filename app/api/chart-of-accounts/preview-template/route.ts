@@ -6,7 +6,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { 
   COUNTRY_TEMPLATES, 
-  SECTOR_TEMPLATES,
   type SupportedCountry
 } from '@/config/accounting';
 import { BusinessSector, type ChartOfAccountTemplateEntry } from '@/types/accounting';
@@ -43,38 +42,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Copiar las cuentas base
-    let accounts: ChartOfAccountTemplateEntry[] = [...countryTemplate.entries];
-    const accountMap = new Map(accounts.map(acc => [acc.accountNumber, acc]));
-
-    // Si hay sector, aplicar personalizaciones
-    if (sector) {
-      const sectorTemplate = SECTOR_TEMPLATES[sector as BusinessSector];
-      if (sectorTemplate && sectorTemplate.accountCustomizations) {
-        // 1. Añadir cuentas adicionales del sector
-        if (sectorTemplate.accountCustomizations.additionalAccounts) {
-          sectorTemplate.accountCustomizations.additionalAccounts.forEach(newAccount => {
-            // Solo añadir si no existe ya
-            if (!accountMap.has(newAccount.accountNumber)) {
-              accounts.push(newAccount);
-              accountMap.set(newAccount.accountNumber, newAccount);
-            }
-          });
-        }
-
-        // 2. Aplicar modificaciones a cuentas existentes
-        if (sectorTemplate.accountCustomizations.accountModifications) {
-          Object.entries(sectorTemplate.accountCustomizations.accountModifications).forEach(
-            ([accountNumber, modifications]) => {
-              const existingAccount = accountMap.get(accountNumber);
-              if (existingAccount) {
-                // Aplicar modificaciones (merge)
-                Object.assign(existingAccount, modifications);
-              }
-            }
-          );
-        }
-      }
-    }
+    let accounts = [...countryTemplate.accounts];
+    
+    // Por ahora no aplicamos personalizaciones de sector
+    // TODO: Implementar cuando se defina SECTOR_TEMPLATES
 
     // Ordenar cuentas por número
     accounts.sort((a, b) => {
@@ -88,8 +59,8 @@ export async function POST(request: NextRequest) {
       templateCode,
       country,
       sector,
-      version: countryTemplate.version,
-      names: countryTemplate.names,
+      name: countryTemplate.name,
+      description: countryTemplate.description,
       accountsCount: accounts.length,
       accounts
     });

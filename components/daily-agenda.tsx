@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Calendar, ChevronLeft, ChevronRight, Lock, Printer, Settings, SkipBack, SkipForward } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import React, { useCallback } from "react"
-import { ClientSearchDialog } from "./client-search-dialog"
+import { PersonSearchDialog } from "./client-search-dialog"
 import { AppointmentDialog } from "./appointment-dialog"
 import { NewClientDialog } from "./new-client-dialog"
 import { DragDropContext, Droppable } from "react-beautiful-dnd"
@@ -44,6 +44,7 @@ export default function DailyAgenda({
     roomId: string
   } | null>(null)
   const [selectedClient, setSelectedClient] = React.useState<{
+    id: string
     name: string
     phone: string
   } | null>(null)
@@ -226,33 +227,33 @@ export default function DailyAgenda({
     <DragDropContext onDragEnd={onDragEnd}>
       <div className="flex flex-col h-screen bg-white">
         <header className="px-4 py-3">
-          <h1 className="text-2xl font-medium mb-4">Agenda diaria</h1>
-          <div className="flex items-center gap-3 border-b pb-3">
+          <h1 className="mb-4 text-2xl font-medium">Agenda diaria</h1>
+          <div className="flex items-center gap-3 pb-3 border-b">
             <Button variant="ghost" size="icon" onClick={() => changeMonth("prev")}>
-              <SkipBack className="h-4 w-4" />
+              <SkipBack className="w-4 h-4" />
             </Button>
             <Button variant="ghost" size="icon" onClick={() => changeDay("prev")}>
-              <ChevronLeft className="h-4 w-4" />
+              <ChevronLeft className="w-4 h-4" />
             </Button>
             <span className="text-sm text-gray-500">Anterior</span>
             <Button variant="ghost" size="icon" onClick={handleViewChange} className="text-purple-600">
-              <Calendar className="h-4 w-4" />
+              <Calendar className="w-4 h-4" />
             </Button>
             <span className="text-sm text-gray-500">Siguiente</span>
             <Button variant="ghost" size="icon" onClick={() => changeDay("next")}>
-              <ChevronRight className="h-4 w-4" />
+              <ChevronRight className="w-4 h-4" />
             </Button>
             <Button variant="ghost" size="icon" onClick={() => changeMonth("next")}>
-              <SkipForward className="h-4 w-4" />
+              <SkipForward className="w-4 h-4" />
             </Button>
             <Button variant="ghost" size="icon" className="text-purple-600">
-              <Settings className="h-4 w-4" />
+              <Settings className="w-4 h-4" />
             </Button>
             <Button variant="ghost" size="icon">
-              <Lock className="h-4 w-4" />
+              <Lock className="w-4 h-4" />
             </Button>
             <Button variant="ghost" size="icon">
-              <Printer className="h-4 w-4" />
+              <Printer className="w-4 h-4" />
             </Button>
             <Select defaultValue="todos">
               <SelectTrigger className="w-[180px]">
@@ -269,13 +270,13 @@ export default function DailyAgenda({
           <div className="min-w-[1200px]">
             <div className="grid grid-cols-[auto_1fr]">
               {/* Header */}
-              <div className="sticky top-0 z-20 bg-white border-b p-4">
+              <div className="sticky top-0 z-20 p-4 bg-white border-b">
                 <div className="text-sm text-purple-600">Hora</div>
               </div>
-              <div className="sticky top-0 z-20 bg-white border-b p-4">
+              <div className="sticky top-0 z-20 p-4 bg-white border-b">
                 <div className="flex items-baseline gap-2">
                   <h2 className="text-xl capitalize">{dayName}</h2>
-                  <button onClick={handleViewChange} className="text-purple-600 text-sm hover:underline">
+                  <button onClick={handleViewChange} className="text-sm text-purple-600 hover:underline">
                     (Ver semana completa)
                   </button>
                 </div>
@@ -295,16 +296,16 @@ export default function DailyAgenda({
               {/* Time slots */}
               {timeSlots.map((time) => (
                 <React.Fragment key={time}>
-                  <div className="border-r border-b p-2 text-sm text-purple-600">{time}</div>
+                  <div className="p-2 text-sm text-purple-600 border-b border-r">{time}</div>
                   <div className="border-b">
-                    <div className="grid grid-cols-6 h-16">
+                    <div className="grid h-16 grid-cols-6">
                       {serviceRooms.map((room) => (
                         <Droppable droppableId={`${room.id}-${time}`} key={`${room.id}-${time}`} type="appointment">
                           {(provided, snapshot) => (
                             <div
                               ref={provided.innerRef}
                               {...provided.droppableProps}
-                              className="border-r relative bg-gray-50/50 cursor-pointer hover:bg-purple-50"
+                              className="relative border-r cursor-pointer bg-gray-50/50 hover:bg-purple-50"
                               style={{
                                 minHeight: "4rem",
                                 height: "100%",
@@ -341,17 +342,17 @@ export default function DailyAgenda({
         </div>
 
         <div className="fixed bottom-4 right-4">
-          <Button className="rounded-full bg-black text-white hover:bg-gray-800">Ayuda</Button>
+          <Button className="text-white bg-black rounded-full hover:bg-gray-800">Ayuda</Button>
         </div>
 
         {/* Diálogos - Asegurarnos de que estén correctamente renderizados */}
-        <ClientSearchDialog
+        <PersonSearchDialog
           isOpen={isSearchDialogOpen}
           onClose={() => {
             console.log("📆 DailyAgenda - Cerrando diálogo de búsqueda")
             setIsSearchDialogOpen(false)
           }}
-          onClientSelect={handleClientSelect}
+          onPersonSelect={handleClientSelect}
           selectedTime={selectedSlot?.time}
         />
 

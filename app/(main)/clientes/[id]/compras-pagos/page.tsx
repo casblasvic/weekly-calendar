@@ -129,13 +129,13 @@ export default function ComprasPagosPage({ params }: { params: Promise<{ id: str
 
   if (loading) {
     return (
-      <div className="max-w-7xl mx-auto px-4 py-6">
+      <div className="px-4 py-6 mx-auto max-w-7xl">
         <div className="animate-pulse">
-          <div className="h-6 bg-gray-200 rounded w-1/4 mb-6"></div>
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="h-4 bg-gray-200 rounded w-3/4 mb-4"></div>
-            <div className="h-4 bg-gray-200 rounded w-1/2 mb-4"></div>
-            <div className="h-4 bg-gray-200 rounded w-2/3"></div>
+          <div className="w-1/4 h-6 mb-6 bg-gray-200 rounded"></div>
+          <div className="p-6 bg-white rounded-lg shadow">
+            <div className="w-3/4 h-4 mb-4 bg-gray-200 rounded"></div>
+            <div className="w-1/2 h-4 mb-4 bg-gray-200 rounded"></div>
+            <div className="w-2/3 h-4 bg-gray-200 rounded"></div>
           </div>
         </div>
       </div>
@@ -143,7 +143,7 @@ export default function ComprasPagosPage({ params }: { params: Promise<{ id: str
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-6">
+    <div className="px-4 py-6 mx-auto max-w-7xl">
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-medium">Compras y Pagos</h2>
@@ -152,15 +152,15 @@ export default function ComprasPagosPage({ params }: { params: Promise<{ id: str
         <Tabs defaultValue="como-receptor" className="space-y-6">
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="como-receptor" className="flex items-center gap-2">
-              <ShoppingBag className="h-4 w-4" />
+              <ShoppingBag className="w-4 h-4" />
               Como Receptor
             </TabsTrigger>
             <TabsTrigger value="como-pagador" className="flex items-center gap-2">
-              <CreditCard className="h-4 w-4" />
+              <CreditCard className="w-4 h-4" />
               Como Pagador
             </TabsTrigger>
             <TabsTrigger value="pagos-realizados" className="flex items-center gap-2">
-              <User className="h-4 w-4" />
+              <User className="w-4 h-4" />
               Pagos Realizados
             </TabsTrigger>
           </TabsList>
@@ -169,7 +169,7 @@ export default function ComprasPagosPage({ params }: { params: Promise<{ id: str
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <ShoppingBag className="h-5 w-5" />
+                  <ShoppingBag className="w-5 h-5" />
                   Compras como Receptor
                 </CardTitle>
                 <p className="text-sm text-gray-600">
@@ -178,7 +178,7 @@ export default function ComprasPagosPage({ params }: { params: Promise<{ id: str
               </CardHeader>
               <CardContent>
                 {ticketsAsReceiver.length === 0 ? (
-                  <p className="text-gray-500 text-center py-8">No hay compras registradas como receptor</p>
+                  <p className="py-8 text-center text-gray-500">No hay compras registradas como receptor</p>
                 ) : (
                   <Table>
                     <TableHeader>
@@ -199,7 +199,7 @@ export default function ComprasPagosPage({ params }: { params: Promise<{ id: str
                           <TableCell>
                             {ticket.payerPerson ? (
                               <div className="flex items-center gap-1">
-                                <User className="h-4 w-4 text-gray-400" />
+                                <User className="w-4 h-4 text-gray-400" />
                                 <span>{ticket.payerPerson.firstName} {ticket.payerPerson.lastName}</span>
                               </div>
                             ) : (
@@ -210,7 +210,7 @@ export default function ComprasPagosPage({ params }: { params: Promise<{ id: str
                           <TableCell>{getStatusBadge(ticket.status)}</TableCell>
                           <TableCell>
                             <Button variant="outline" size="sm">
-                              <FileText className="h-4 w-4 mr-1" />
+                              <FileText className="w-4 h-4 mr-1" />
                               Ver Detalle
                             </Button>
                           </TableCell>
@@ -227,7 +227,7 @@ export default function ComprasPagosPage({ params }: { params: Promise<{ id: str
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <CreditCard className="h-5 w-5" />
+                  <CreditCard className="w-5 h-5" />
                   Compras como Pagador
                 </CardTitle>
                 <p className="text-sm text-gray-600">
@@ -236,7 +236,7 @@ export default function ComprasPagosPage({ params }: { params: Promise<{ id: str
               </CardHeader>
               <CardContent>
                 {ticketsAsPayer.length === 0 ? (
-                  <p className="text-gray-500 text-center py-8">No hay compras registradas como pagador</p>
+                  <p className="py-8 text-center text-gray-500">No hay compras registradas como pagador</p>
                 ) : (
                   <Table>
                     <TableHeader>
@@ -257,7 +257,7 @@ export default function ComprasPagosPage({ params }: { params: Promise<{ id: str
                           <TableCell>
                             {ticket.person ? (
                               <div className="flex items-center gap-1">
-                                <User className="h-4 w-4 text-gray-400" />
+                                <User className="w-4 h-4 text-gray-400" />
                                 <span>{ticket.person.firstName} {ticket.person.lastName}</span>
                               </div>
                             ) : (
@@ -268,7 +268,7 @@ export default function ComprasPagosPage({ params }: { params: Promise<{ id: str
                           <TableCell>{getStatusBadge(ticket.status)}</TableCell>
                           <TableCell>
                             <Button variant="outline" size="sm">
-                              <FileText className="h-4 w-4 mr-1" />
+                              <FileText className="w-4 h-4 mr-1" />
                               Ver Detalle
                             </Button>
                           </TableCell>
@@ -285,7 +285,7 @@ export default function ComprasPagosPage({ params }: { params: Promise<{ id: str
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <User className="h-5 w-5" />
+                  <User className="w-5 h-5" />
                   Pagos Realizados
                 </CardTitle>
                 <p className="text-sm text-gray-600">
@@ -294,7 +294,7 @@ export default function ComprasPagosPage({ params }: { params: Promise<{ id: str
               </CardHeader>
               <CardContent>
                 {paymentsAsPayer.length === 0 ? (
-                  <p className="text-gray-500 text-center py-8">No hay pagos registrados</p>
+                  <p className="py-8 text-center text-gray-500">No hay pagos registrados</p>
                 ) : (
                   <Table>
                     <TableHeader>

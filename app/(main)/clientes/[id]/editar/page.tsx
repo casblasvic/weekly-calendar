@@ -61,14 +61,14 @@ export default function EditPersonPage() {
     await new Promise((resolve) => setTimeout(resolve, 1000))
     console.log("Saving person data:", data)
     setSaving(false)
-    router.push(`/personas/${params.id}`)
+    router.push(`/clientes/${params.id}`)
   }
 
   const handleBack = () => {
-    router.push(`/personas/${params.id}`)
+    router.push(`/clientes/${params.id}`)
   }
 
-  const handleDateChange = (date: Date | undefined) => {
+  const handleDateChange = (date: Date | null) => {
     setValue("birthDate", date)
   }
 
@@ -131,10 +131,10 @@ export default function EditPersonPage() {
                   Fecha de Nacimiento
                 </label>
                 <CustomDatePicker
-                  date={birthDate}
-                  onDateChange={handleDateChange}
-                  calendarHeaderColor="#8a70d6"
-                  showClearButton={true}
+                  value={birthDate}
+                  onChange={handleDateChange}
+                  onBlur={() => {}}
+                  name="birthDate"
                 />
               </div>
 

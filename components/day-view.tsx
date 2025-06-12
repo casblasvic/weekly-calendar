@@ -15,7 +15,7 @@ import { useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { AGENDA_CONFIG } from "@/config/agenda-config"
 import { CurrentTimeIndicator } from "@/components/current-time-indicator"
-import { ClientSearchDialog } from "./client-search-dialog"
+import { PersonSearchDialog } from "./client-search-dialog"
 import { AppointmentDialog } from "@/components/appointment-dialog"
 import { NewClientDialog } from "@/components/new-client-dialog"
 import { AppointmentItem } from "./appointment-item"
@@ -717,7 +717,7 @@ export default function DayView({
   const renderModals = () => {
     return (
       <>
-        <ClientSearchDialog
+        <PersonSearchDialog
           isOpen={isSearchDialogOpen}
           onClose={() => setIsSearchDialogOpen(false)}
           onPersonSelect={handlePersonSelect}
@@ -730,7 +730,7 @@ export default function DayView({
             setIsAppointmentDialogOpen(false)
             setSelectedAppointment(null)
           }}
-          person={selectedPerson}
+          client={selectedPerson}
           selectedTime={selectedSlot?.time}
           appointmentToEdit={selectedAppointment}
           onSearchClick={() => {
