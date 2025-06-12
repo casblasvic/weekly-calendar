@@ -35,6 +35,7 @@ const tabs = [
   { label: "DATOS DEL CLIENTE", path: "" },
   { label: "HISTORIAL", path: "/historial" },
   { label: "CONSENTIMIENTOS", path: "/consentimientos" },
+  { label: "COMPRAS Y PAGOS", path: "/compras-pagos" },
   { label: "APLAZADO", path: "/aplazado" },
   { label: "BONOS", path: "/bonos" },
   { label: "FOTOGRAFÍAS", path: "/fotografias" },

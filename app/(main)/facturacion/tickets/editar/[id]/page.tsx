@@ -7,6 +7,7 @@ import { ticketFormSchema, defaultTicketFormValues, type TicketFormValues, type 
 import { Button } from "@/components/ui/button";
 import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage, FormDescription } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label"; // Agregado Label
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ArrowLeft, HelpCircle, Printer, Save, AlertTriangle, PlusCircle, RotateCcw, CheckCircle, Info } from 'lucide-react';
@@ -40,7 +41,7 @@ import {
   useSaveTicketBatchMutation,
   type BatchUpdateTicketPayload,
   ticketKeys,
-  useCreateTicketMutation // << añadimos import
+  useCreateTicketMutation 
 } from '@/lib/hooks/use-ticket-query';
 import { useUsersByClinicQuery, type UserForSelector } from "@/lib/hooks/use-user-query";
 import { TicketStatus, DiscountType, type Client, type User, PaymentMethodDefinition, Prisma, CashSessionStatus } from '@prisma/client';
@@ -59,6 +60,8 @@ import { prefetchCommonData } from '@/lib/hooks/use-api-query';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { ChangeLogsAccordion } from '@/components/tickets/change-logs-accordion';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { Checkbox } from '@/components/ui/checkbox';
+import { User as UserIcon, Phone, Mail, MapPin, Building2 } from 'lucide-react';
 
 // Define o importa la constante para el código del método de pago aplazado
 const DEFERRED_PAYMENT_METHOD_CODE = "SYS_DEFERRED_PAYMENT";
@@ -96,6 +99,8 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
   const [showPaymentRequiredModal, setShowPaymentRequiredModal] = useState(false);
   const [pendingAmountForModal, setPendingAmountForModal] = useState<number>(0);
   const [isReopenConfirmModalOpen, setIsReopenConfirmModalOpen] = useState(false); // <<< NUEVO ESTADO
+  const [hasServiceReceiver, setHasServiceReceiver] = useState(false);
+  const [serviceReceiverClient, setServiceReceiverClient] = useState<Client | null>(null);
   
   const { id } = use(params);
   const isNewTicket = id === 'new'; // << NUEVO
@@ -118,9 +123,6 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
   const [activeTab, setActiveTab] = useState('items');
   const [isSavingBeforeClose, setIsSavingBeforeClose] = useState(false);
   // <<< FIN: Variables para control de reapertura >>>
-
-  console.log("[EditarTicketPage] Active Clinic:", activeClinic);
-  console.log("[EditarTicketPage] Active Clinic ID:", activeClinic?.id);
 
   const {
     data: ticketData, 
@@ -150,9 +152,6 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
     { enabled: !!activeClinic?.id }
   );
 
-  console.log("[EditarTicketPage] isLoadingSellers:", isLoadingSellers);
-  console.log("[EditarTicketPage] Sellers:", sellers);
-
   const form = useForm<TicketFormValues>({
     resolver: zodResolver(ticketFormSchema),
     defaultValues: defaultTicketFormValues,
@@ -171,8 +170,6 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
 
   useEffect(() => {
     if (isSuccessTicket && ticketData && activeClinic) {
-      console.log("[DEBUG page.tsx useEffect] INICIO. activeClinic DISPONIBLE:", JSON.parse(JSON.stringify(activeClinic)));
-      console.log("[DEBUG page.tsx useEffect] INICIO. ticketData para resetear form:", JSON.parse(JSON.stringify(ticketData)));
       const currentTicketStatus = ticketData.status as TicketStatus;
       const readOnlyCalc = currentTicketStatus !== TicketStatus.OPEN;
       setIsReadOnly(readOnlyCalc);
@@ -326,6 +323,21 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
       dirtyFields: form.formState.dirtyFields,
     });
   }, [form.formState.isDirty, form.formState.dirtyFields]);
+
+  useEffect(() => {
+    if (ticketData?.serviceReceiverClientId) {
+      setHasServiceReceiver(true);
+      // Buscar el cliente receptor
+      fetch(`/api/clients/${ticketData.serviceReceiverClientId}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data) {
+            setServiceReceiverClient(data);
+          }
+        })
+        .catch(err => console.error('Error cargando cliente receptor:', err));
+    }
+  }, [ticketData?.serviceReceiverClientId]);
 
   const watchedItems = watch("items");
   const watchedPayments = watch("payments");
@@ -763,6 +775,15 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
     }
   };
 
+  const handleServiceReceiverSelect = (client: Client | null) => {
+    setServiceReceiverClient(client);
+    if (client) {
+      setValue('serviceReceiverClientId', client.id, { shouldDirty: true });
+    } else {
+      setValue('serviceReceiverClientId', null, { shouldDirty: true });
+    }
+  };
+
   const handleOpenAddItemModal = () => setIsAddItemModalOpen(true);
   const handleCloseAddItemModal = () => setIsAddItemModalOpen(false);
   
@@ -1127,9 +1148,9 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
   
   // Calcular el porcentaje pagado (sin incluir aplazados) para ajustar el IVA
   const paidPercentage = totalGeneralTicket > 0 ? nonDeferredAmount / totalGeneralTicket : 0;
-  const adjustedBase = taxableBaseFinalTicket * paidPercentage; // Base imponible de lo pagado
-  const adjustedIVA = totalIVADeLineas * paidPercentage; // IVA de lo pagado
-  const adjustedTotal = adjustedBase + adjustedIVA; // Total ajustado = Base + IVA
+  const adjustedBase = taxableBaseFinalTicket * paidPercentage; // Base ajustada
+  const adjustedIVA = totalIVADeLineas * paidPercentage; // IVA ajustado
+  const adjustedTotal = adjustedBase + adjustedIVA; // Total ajustado
   
   const amountPaid = adjustedBase; // "Pagado" es la base imponible sin IVA
   const currentPending = Math.max(0, totalGeneralTicket - (nonDeferredAmount + deferredAmount));
@@ -1375,6 +1396,60 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
                               }}
                               disabled={isReadOnly}
                             />
+                          </div>
+                        </MagicCard>
+                      </div>
+
+                      {/* Checkbox y selector de cliente receptor diferente */}
+                      <div className="relative">
+                        <MagicCard 
+                          gradientFrom="#8b5cf6" 
+                          gradientTo="#ec4899" 
+                          gradientSize={180}
+                          gradientOpacity={0.05}
+                          className="rounded-lg"
+                        >
+                          <div className="p-4 space-y-4 rounded-lg">
+                            {/* Checkbox para activar cliente receptor diferente */}
+                            <div className="flex items-center space-x-2">
+                              <Checkbox
+                                id="hasServiceReceiver"
+                                checked={hasServiceReceiver}
+                                onCheckedChange={(checked) => {
+                                  setHasServiceReceiver(checked as boolean);
+                                  if (!checked) {
+                                    handleServiceReceiverSelect(null);
+                                  }
+                                }}
+                                disabled={isReadOnly}
+                              />
+                              <Label
+                                htmlFor="hasServiceReceiver"
+                                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                              >
+                                El receptor del servicio es diferente al pagador
+                              </Label>
+                            </div>
+
+                            {/* Selector de cliente receptor */}
+                            {hasServiceReceiver && (
+                              <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
+                                <div>
+                                  <Label className="text-sm font-medium mb-2 block">
+                                    Cliente receptor del servicio
+                                  </Label>
+                                  <ClientSelectorSearch 
+                                    selectedClientId={serviceReceiverClient?.id || null}
+                                    onClientSelect={(client) => handleServiceReceiverSelect(client)}
+                                    setFormValue={(field, value, options) => {
+                                      // No necesario aquí
+                                    }}
+                                    disabled={isReadOnly}
+                                    isServiceReceiver={true}
+                                  />
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </MagicCard>
                       </div>

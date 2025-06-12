@@ -58,6 +58,7 @@ model System {
   debtLedgers                  DebtLedger[]
   legalEntities                LegalEntity[]
   fiscalYears                  FiscalYear[]
+  chartOfAccountTemplates      ChartOfAccountTemplate[]
   chartOfAccountEntries        ChartOfAccountEntry[]
   journalEntries               JournalEntry[]
   serviceAccountMappings       ServiceAccountMapping[]
@@ -71,7 +72,6 @@ model System {
   expenseTypes                 ExpenseType[]
   changeLogs                   EntityChangeLog[]             @relation("SystemLogs")
   debtAdjustments              DebtAdjustment[]              @relation("SystemDebtAdjustments")
-  chartOfAccountTemplates      ChartOfAccountTemplate[]
   clinicPaymentSettings        ClinicPaymentSetting[]
   documentSeries               DocumentSeries[]
   accountMappingTemplates      AccountMappingTemplate[]
@@ -79,9 +79,7 @@ model System {
   entitySegmentConfigs         EntitySegmentConfig[]
   expenses                     Expense[]
   promotionAccountMappings     PromotionAccountMapping[]
-  persons                      Person[]
-  personFunctionalRoles        PersonFunctionalRole[]
-  opportunities                Opportunity[]
+  entityRelations              EntityRelation[]
 
   @@map("systems")
 }
@@ -130,7 +128,6 @@ model User {
   userExpenses                   Expense[]                       @relation("UserExpenses")
   chartOfAccountTemplateVersions ChartOfAccountTemplateVersion[]
   journalEntries                 JournalEntry[]
-  personLeadData                 PersonLeadData[]
 
   @@index([systemId])
   @@index([countryIsoCode])
@@ -276,7 +273,6 @@ model Clinic {
   ExpenseTypeAccountMapping    ExpenseTypeAccountMapping[]
   DiscountTypeAccountMapping   DiscountTypeAccountMapping[]
   promotionAccountMappings     PromotionAccountMapping[]
-  opportunities               Opportunity[]
 
   @@unique([name, systemId], name: "Clinic_name_systemId_key")
   @@index([systemId])
@@ -387,8 +383,6 @@ model Company {
   saleInvoices     Invoice[]       @relation("SaleInvoices")
   tickets          Ticket[]
   supplierExpenses Expense[]       @relation("SupplierExpenses")
-  personLeadData   PersonLeadData[]
-  personContactData PersonContactData[]
 
   @@unique([taxId, systemId])
   @@index([systemId])
@@ -507,6 +501,27 @@ model ClientRelation {
   @@index([clientAId])
   @@index([clientBId])
   @@map("client_relations")
+}
+
+model EntityRelation {
+  id            String   @id @default(cuid())
+  entityAType   String   // 'client' | 'lead' | 'contact' | 'user' | 'company'
+  entityAId     String   // CUID de cualquier entidad
+  entityBType   String   // 'client' | 'lead' | 'contact' | 'user' | 'company'
+  entityBId     String   // CUID de cualquier entidad
+  relationType  String   // 'madre', 'padre', 'tutor', 'empresa', 'empleado', etc
+  direction     String?  // 'bidirectional' | 'a_to_b' | 'b_to_a'
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  systemId      String
+  system        System   @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  
+  @@unique([entityAType, entityAId, entityBType, entityBId, relationType])
+  @@index([entityAId])
+  @@index([entityBId])
+  @@index([systemId])
+  @@map("entity_relations")
 }
 
 model EmploymentContract {
@@ -2113,6 +2128,7 @@ model JournalEntry {
   @@index([ticketId])
   @@index([invoiceId])
   @@index([expenseId])
+  @@map("journal_entries")
 }
 
 model JournalEntryLine {
@@ -2795,138 +2811,4 @@ enum ExpenseStatus {
   APPROVED
   PAID
   CANCELLED
-}
-
-// ==========================================
-// NUEVOS MODELOS - FASE 1 MIGRACIÓN PERSON
-// ==========================================
-
-model Person {
-  id                      String                   @id @default(cuid())
-  firstName               String
-  lastName                String
-  email                   String?
-  phone                   String?
-  birthDate               DateTime?
-  gender                  String?
-  address                 String?
-  city                    String?
-  postalCode              String?
-  stateProvince           String?
-  countryIsoCode          String?
-  nationalId              String?
-  nationalIdType          String?
-  passportNumber          String?
-  passportCountry         String?
-  taxId                   String?
-  notes                   String?
-  createdAt               DateTime                 @default(now())
-  updatedAt               DateTime                 @updatedAt
-  systemId                String
-
-  // Relaciones
-  system                  System                   @relation(fields: [systemId], references: [id], onDelete: Cascade)
-  functionalRoles         PersonFunctionalRole[]
-
-  @@index([systemId])
-  @@index([email])
-  @@index([phone])
-  @@map("persons")
-}
-
-model PersonFunctionalRole {
-  id              String                @id @default(cuid())
-  personId        String
-  roleType        String                // 'CLIENT', 'LEAD', 'CONTACT', 'EMPLOYEE'
-  isActive        Boolean               @default(true)
-  startDate       DateTime              @default(now())
-  endDate         DateTime?
-  createdAt       DateTime              @default(now())
-  updatedAt       DateTime              @updatedAt
-  systemId        String
-
-  // Relaciones
-  person          Person                @relation(fields: [personId], references: [id], onDelete: Cascade)
-  system          System                @relation(fields: [systemId], references: [id], onDelete: Cascade)
-  leadData        PersonLeadData?
-  contactData     PersonContactData?
-
-  @@unique([personId, roleType])
-  @@index([personId])
-  @@index([systemId])
-  @@map("person_functional_roles")
-}
-
-model PersonLeadData {
-  id                      String                @id @default(cuid())
-  functionalRoleId        String                @unique
-  status                  String                @default("NEW")
-  source                  String?
-  companyName             String?
-  assignedToUserId        String?
-  companyId               String?
-  conversionDate          DateTime?
-  conversionToRole        String?
-  lastContactDate         DateTime?
-  nextFollowUpDate        DateTime?
-  priority                String?
-  estimatedValue          Float?
-  interests               String?
-  
-  // Relaciones
-  functionalRole          PersonFunctionalRole  @relation(fields: [functionalRoleId], references: [id], onDelete: Cascade)
-  assignedToUser          User?                 @relation(fields: [assignedToUserId], references: [id], onDelete: SetNull)
-  company                 Company?              @relation(fields: [companyId], references: [id], onDelete: SetNull)
-  opportunities           Opportunity[]
-
-  @@index([functionalRoleId])
-  @@index([assignedToUserId])
-  @@index([companyId])
-  @@map("person_lead_data")
-}
-
-model PersonContactData {
-  id                      String                @id @default(cuid())
-  functionalRoleId        String                @unique
-  position                String?
-  department              String?
-  companyId               String
-  isPrimary               Boolean               @default(false)
-  preferredContactMethod  String?
-  
-  // Relaciones
-  functionalRole          PersonFunctionalRole  @relation(fields: [functionalRoleId], references: [id], onDelete: Cascade)
-  company                 Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
-
-  @@index([functionalRoleId])
-  @@index([companyId])
-  @@map("person_contact_data")
-}
-
-model Opportunity {
-  id                      String                @id @default(cuid())
-  name                    String
-  description             String?
-  leadDataId              String
-  stage                   String                @default("PROSPECTING")
-  probability             Float?
-  estimatedValue          Float?
-  estimatedCloseDate      DateTime?
-  actualCloseDate         DateTime?
-  wonLostReason           String?
-  notes                   String?
-  clinicId                String
-  createdAt               DateTime              @default(now())
-  updatedAt               DateTime              @updatedAt
-  systemId                String
-
-  // Relaciones
-  leadData                PersonLeadData        @relation(fields: [leadDataId], references: [id], onDelete: Restrict)
-  clinic                  Clinic                @relation(fields: [clinicId], references: [id], onDelete: Restrict)
-  system                  System                @relation(fields: [systemId], references: [id], onDelete: Cascade)
-
-  @@index([leadDataId])
-  @@index([clinicId])
-  @@index([systemId])
-  @@map("opportunities")
 }

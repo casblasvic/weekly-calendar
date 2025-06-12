@@ -24,9 +24,11 @@ import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library'; 
 // Ya no necesitamos importar Permission aquí
 // import { Permission } from '@prisma/client'; // Comentar o eliminar si estaba duplicada
 
-import { hashPassword } from '../lib/hash';
+import { hashPassword } from '../lib/hash'; // Cambiado a hash sin extensión
 import path from 'path'; // Importar path
 import { fileURLToPath } from 'url'; // Importar fileURLToPath
+import { seedPersons } from './seed-persons'; // Importar función de seed de personas
+import { seedCountries } from './seed-countries';
 // <<< ELIMINAR Importación dinámica de mockData >>>
 // import seedCountries from './seed-countries'; // <<< ELIMINAR Importación (ya integrada)
 
@@ -318,68 +320,8 @@ const initialMockData = {
 // --- FIN: Definición de Datos Iniciales ---
 
 
-// --- DATOS DE PAÍSES (Movido desde seed-countries.ts) ---
-// Lista ampliada de países con sus datos
-// Fuentes de datos ejemplo - verificar/completar con datos precisos y relevantes
-// Códigos ISO 3166-1 alpha-2, Nombres comunes, Zonas Horarias IANA, Códigos Telefónicos Internacionales
-const countriesData = [
-  // Europa
-  { isoCode: 'ES', name: 'España', timezone: 'Europe/Madrid', phoneCode: '+34', languageCode: 'es', languageName: 'Español', currencyCode: 'EUR', currencyName: 'Euro', currencySymbol: '€' },
-  { isoCode: 'FR', name: 'Francia', timezone: 'Europe/Paris', phoneCode: '+33', languageCode: 'fr', languageName: 'Francés', currencyCode: 'EUR', currencyName: 'Euro', currencySymbol: '€' },
-  { isoCode: 'DE', name: 'Alemania', timezone: 'Europe/Berlin', phoneCode: '+49', languageCode: 'de', languageName: 'Alemán', currencyCode: 'EUR', currencyName: 'Euro', currencySymbol: '€' },
-  { isoCode: 'IT', name: 'Italia', timezone: 'Europe/Rome', phoneCode: '+39', languageCode: 'it', languageName: 'Italiano', currencyCode: 'EUR', currencyName: 'Euro', currencySymbol: '€' },
-  { isoCode: 'GB', name: 'Reino Unido', timezone: 'Europe/London', phoneCode: '+44', languageCode: 'en', languageName: 'Inglés', currencyCode: 'GBP', currencyName: 'Pound Sterling', currencySymbol: '£' },
-  { isoCode: 'PT', name: 'Portugal', timezone: 'Europe/Lisbon', phoneCode: '+351', languageCode: 'pt', languageName: 'Portugués', currencyCode: 'EUR', currencyName: 'Euro', currencySymbol: '€' },
-  { isoCode: 'IE', name: 'Irlanda', timezone: 'Europe/Dublin', phoneCode: '+353', languageCode: 'en', languageName: 'Inglés', currencyCode: 'EUR', currencyName: 'Euro', currencySymbol: '€' },
-  { isoCode: 'NL', name: 'Países Bajos', timezone: 'Europe/Amsterdam', phoneCode: '+31', languageCode: 'nl', languageName: 'Neerlandés', currencyCode: 'EUR', currencyName: 'Euro', currencySymbol: '€' },
-  { isoCode: 'BE', name: 'Bélgica', timezone: 'Europe/Brussels', phoneCode: '+32', languageCode: 'nl', languageName: 'Neerlandés', currencyCode: 'EUR', currencyName: 'Euro', currencySymbol: '€' }, // Note: Multiple official languages
-  { isoCode: 'LU', name: 'Luxemburgo', timezone: 'Europe/Luxembourg', phoneCode: '+352', languageCode: 'lb', languageName: 'Luxemburgués', currencyCode: 'EUR', currencyName: 'Euro', currencySymbol: '€' }, // Note: Multiple languages
-  { isoCode: 'CH', name: 'Suiza', timezone: 'Europe/Zurich', phoneCode: '+41', languageCode: 'de', languageName: 'Alemán', currencyCode: 'CHF', currencyName: 'Swiss Franc', currencySymbol: 'CHF' }, // Note: Multiple languages
-  { isoCode: 'AT', name: 'Austria', timezone: 'Europe/Vienna', phoneCode: '+43', languageCode: 'de', languageName: 'Alemán', currencyCode: 'EUR', currencyName: 'Euro', currencySymbol: '€' },
-  { isoCode: 'PL', name: 'Polonia', timezone: 'Europe/Warsaw', phoneCode: '+48', languageCode: 'pl', languageName: 'Polaco', currencyCode: 'PLN', currencyName: 'Polish Złoty', currencySymbol: 'zł' },
-  { isoCode: 'SE', name: 'Suecia', timezone: 'Europe/Stockholm', phoneCode: '+46', languageCode: 'sv', languageName: 'Sueco', currencyCode: 'SEK', currencyName: 'Swedish Krona', currencySymbol: 'kr' },
-  { isoCode: 'NO', name: 'Noruega', timezone: 'Europe/Oslo', phoneCode: '+47', languageCode: 'no', languageName: 'Noruego', currencyCode: 'NOK', currencyName: 'Norwegian Krone', currencySymbol: 'kr' },
-  { isoCode: 'DK', name: 'Dinamarca', timezone: 'Europe/Copenhagen', phoneCode: '+45', languageCode: 'da', languageName: 'Danés', currencyCode: 'DKK', currencyName: 'Danish Krone', currencySymbol: 'kr' },
-  { isoCode: 'FI', name: 'Finlandia', timezone: 'Europe/Helsinki', phoneCode: '+358', languageCode: 'fi', languageName: 'Finlandés', currencyCode: 'EUR', currencyName: 'Euro', currencySymbol: '€' },
-  { isoCode: 'GR', name: 'Grecia', timezone: 'Europe/Athens', phoneCode: '+30', languageCode: 'el', languageName: 'Griego', currencyCode: 'EUR', currencyName: 'Euro', currencySymbol: '€' },
-
-  // América del Norte
-  { isoCode: 'US', name: 'Estados Unidos', timezone: 'America/New_York', phoneCode: '+1', languageCode: 'en', languageName: 'Inglés', currencyCode: 'USD', currencyName: 'US Dollar', currencySymbol: '$' }, // Note: Multiple timezones
-  { isoCode: 'CA', name: 'Canadá', timezone: 'America/Toronto', phoneCode: '+1', languageCode: 'en', languageName: 'Inglés', currencyCode: 'CAD', currencyName: 'Canadian Dollar', currencySymbol: '$' }, // Note: Multiple timezones, bilingual
-  { isoCode: 'MX', name: 'México', timezone: 'America/Mexico_City', phoneCode: '+52', languageCode: 'es', languageName: 'Español', currencyCode: 'MXN', currencyName: 'Mexican Peso', currencySymbol: '$' }, // Note: Multiple timezones
-
-  // América Latina
-  { isoCode: 'BR', name: 'Brasil', timezone: 'America/Sao_Paulo', phoneCode: '+55', languageCode: 'pt', languageName: 'Portugués', currencyCode: 'BRL', currencyName: 'Brazilian Real', currencySymbol: 'R$' }, // Note: Multiple timezones
-  { isoCode: 'AR', name: 'Argentina', timezone: 'America/Argentina/Buenos_Aires', phoneCode: '+54', languageCode: 'es', languageName: 'Español', currencyCode: 'ARS', currencyName: 'Argentine Peso', currencySymbol: '$' },
-  { isoCode: 'CO', name: 'Colombia', timezone: 'America/Bogota', phoneCode: '+57', languageCode: 'es', languageName: 'Español', currencyCode: 'COP', currencyName: 'Colombian Peso', currencySymbol: '$' },
-  { isoCode: 'CL', name: 'Chile', timezone: 'America/Santiago', phoneCode: '+56', languageCode: 'es', languageName: 'Español', currencyCode: 'CLP', currencyName: 'Chilean Peso', currencySymbol: '$' },
-  { isoCode: 'PE', name: 'Perú', timezone: 'America/Lima', phoneCode: '+51', languageCode: 'es', languageName: 'Español', currencyCode: 'PEN', currencyName: 'Peruvian Sol', currencySymbol: 'S/' },
-  { isoCode: 'VE', name: 'Venezuela', timezone: 'America/Caracas', phoneCode: '+58', languageCode: 'es', languageName: 'Español', currencyCode: 'VES', currencyName: 'Venezuelan Bolívar Soberano', currencySymbol: 'Bs.' }, // Official VES
-  { isoCode: 'EC', name: 'Ecuador', timezone: 'America/Guayaquil', phoneCode: '+593', languageCode: 'es', languageName: 'Español', currencyCode: 'USD', currencyName: 'US Dollar', currencySymbol: '$' }, // Ecuador uses USD
-  { isoCode: 'UY', name: 'Uruguay', timezone: 'America/Montevideo', phoneCode: '+598', languageCode: 'es', languageName: 'Español', currencyCode: 'UYU', currencyName: 'Uruguayan Peso', currencySymbol: '$U' },
-  { isoCode: 'PY', name: 'Paraguay', timezone: 'America/Asuncion', phoneCode: '+595', languageCode: 'es', languageName: 'Español', currencyCode: 'PYG', currencyName: 'Paraguayan Guaraní', currencySymbol: '₲' }, // Note: Guarani also official
-  { isoCode: 'BO', name: 'Bolivia', timezone: 'America/La_Paz', phoneCode: '+591', languageCode: 'es', languageName: 'Español', currencyCode: 'BOB', currencyName: 'Bolivian Boliviano', currencySymbol: 'Bs.' }, // Note: Multiple indigenous languages
-  { isoCode: 'CR', name: 'Costa Rica', timezone: 'America/Costa_Rica', phoneCode: '+506', languageCode: 'es', languageName: 'Español', currencyCode: 'CRC', currencyName: 'Costa Rican Colón', currencySymbol: '₡' },
-  { isoCode: 'PA', name: 'Panamá', timezone: 'America/Panama', phoneCode: '+507', languageCode: 'es', languageName: 'Español', currencyCode: 'USD', currencyName: 'US Dollar', currencySymbol: '$' }, // Panama uses USD primarily
-  { isoCode: 'DO', name: 'República Dominicana', timezone: 'America/Santo_Domingo', phoneCode: '+1-809', languageCode: 'es', languageName: 'Español', currencyCode: 'DOP', currencyName: 'Dominican Peso', currencySymbol: 'RD$' }, // Shared code
-  { isoCode: 'GT', name: 'Guatemala', timezone: 'America/Guatemala', phoneCode: '+502', languageCode: 'es', languageName: 'Español', currencyCode: 'GTQ', currencyName: 'Guatemalan Quetzal', currencySymbol: 'Q' }, // Note: Multiple Mayan languages
-
-  // Oceanía
-  { isoCode: 'AU', name: 'Australia', timezone: 'Australia/Sydney', phoneCode: '+61', languageCode: 'en', languageName: 'Inglés', currencyCode: 'AUD', currencyName: 'Australian Dollar', currencySymbol: '$' }, // Note: Multiple timezones
-  { isoCode: 'NZ', name: 'Nueva Zelanda', timezone: 'Pacific/Auckland', phoneCode: '+64', languageCode: 'en', languageName: 'Inglés', currencyCode: 'NZD', currencyName: 'New Zealand Dollar', currencySymbol: '$' }, // Note: Maori also official
-
-  // Asia (Ejemplos)
-  { isoCode: 'JP', name: 'Japón', timezone: 'Asia/Tokyo', phoneCode: '+81', languageCode: 'ja', languageName: 'Japonés', currencyCode: 'JPY', currencyName: 'Japanese Yen', currencySymbol: '¥' },
-  { isoCode: 'KR', name: 'Corea del Sur', timezone: 'Asia/Seoul', phoneCode: '+82', languageCode: 'ko', languageName: 'Coreano', currencyCode: 'KRW', currencyName: 'South Korean Won', currencySymbol: '₩' },
-  { isoCode: 'SG', name: 'Singapur', timezone: 'Asia/Singapore', phoneCode: '+65', languageCode: 'en', languageName: 'Inglés', currencyCode: 'SGD', currencyName: 'Singapore Dollar', currencySymbol: '$' }, // Note: Multiple languages
-  { isoCode: 'AE', name: 'Emiratos Árabes Unidos', timezone: 'Asia/Dubai', phoneCode: '+971', languageCode: 'ar', languageName: 'Árabe', currencyCode: 'AED', currencyName: 'UAE Dirham', currencySymbol: 'د.إ' },
-
-  // África (Ejemplos)
-  { isoCode: 'ZA', name: 'Sudáfrica', timezone: 'Africa/Johannesburg', phoneCode: '+27', languageCode: 'en', languageName: 'Inglés', currencyCode: 'ZAR', currencyName: 'South African Rand', currencySymbol: 'R' }, // Note: Multiple languages
-  { isoCode: 'MA', name: 'Marruecos', timezone: 'Africa/Casablanca', phoneCode: '+212', languageCode: 'ar', languageName: 'Árabe', currencyCode: 'MAD', currencyName: 'Moroccan Dirham', currencySymbol: 'د.م.' },
-
-  // ... Añadir más países si es necesario ...
-];
+// --- DATOS DE PAÍSES ---
+// Movido a seed-countries.ts
 // --- FIN DATOS DE PAÍSES ---
 
 const prisma = new PrismaClient();
@@ -484,17 +426,7 @@ async function main() {
 
   // --- Seed CountryInfo --- (Moved earlier)
   console.log('Seeding countries...');
-  for (const country of countriesData) {
-    try {
-      await prisma.countryInfo.upsert({
-        where: { isoCode: country.isoCode },
-        update: { ...country },
-        create: { ...country },
-      });
-    } catch (error) {
-      console.error(`Error seeding country ${country.name}:`, error);
-    }
-  }
+  await seedCountries();
   console.log('Countries seeded.');
 
   // --- 2. Crear Legal Entities ---
@@ -722,25 +654,8 @@ async function main() {
 
   // --- Crear Países (si no existen) --- 
   console.log('Creating countries...');
-  for (const country of countriesData) {
-    const existingCountry = await prisma.countryInfo.findUnique({
-      where: { isoCode: country.isoCode },
-    });
-
-    if (existingCountry) {
-        console.log(`Country ${country.isoCode} already exists, updating...`);
-        await prisma.countryInfo.update({
-            where: { isoCode: country.isoCode },
-            data: country,
-        });
-    } else {
-        console.log(`Creating country ${country.isoCode} - ${country.name}...`);
-        await prisma.countryInfo.create({
-            data: country,
-        });
-    }
-  }
-  console.log('Countries ensured.');
+  await seedCountries();
+  console.log('Countries seeded.');
 
   // --- Crear Permisos --- 
   console.log('Creating base permissions...');
@@ -818,7 +733,6 @@ async function main() {
         firstName: userData.nombre,
         lastName: userData.apellidos,
         phone: userData.telefono,
-        isActive: userData.activo !== false,
         passwordHash: hashedPassword,
       },
       create: {
@@ -826,7 +740,6 @@ async function main() {
         firstName: userData.nombre,
         lastName: userData.apellidos,
         phone: userData.telefono,
-        isActive: userData.activo !== false,
         passwordHash: hashedPassword,
         systemId: system!.id,
       },
@@ -948,7 +861,6 @@ async function main() {
             city: clinicData.city, 
             phone: clinicData.telefono, 
             email: clinicData.email, 
-            isActive: clinicData.isActive !== false, 
             tariffId: targetTariffId,
             countryIsoCode: clinicData.countryIsoCode, // Añadido desde tu schema y datos previos
             languageIsoCode: clinicData.languageIsoCode,
@@ -964,7 +876,6 @@ async function main() {
             currency: clinicData.currency || 'EUR', 
             phone: clinicData.telefono, 
             email: clinicData.email, 
-            isActive: clinicData.isActive !== false, 
             systemId: system!.id, 
             tariffId: targetTariffId!,
             countryIsoCode: clinicData.countryIsoCode,
@@ -1000,7 +911,6 @@ async function main() {
               update: { 
                 name: cabinData.name, 
                 color: cabinData.color, 
-                isActive: cabinData.isActive, 
                 order: cabinData.order 
               },
               create: {
@@ -1008,7 +918,6 @@ async function main() {
                 code: String(cabinData.code),
                 color: cabinData.color,
                 order: cabinData.order,
-                isActive: cabinData.isActive,
                 clinicId: clinic.id, // Usar el ID real de la clínica creada
                 systemId: system!.id,
               },
@@ -1106,8 +1015,8 @@ async function main() {
      });
      await prisma.serviceSetting.upsert({
         where: { serviceId: service.id },
-         update: { isActive: serviceData.activo !== false },
-         create: { serviceId: service.id, isActive: serviceData.activo !== false }
+         update: {},
+         create: { serviceId: service.id }
      });
      if (!serviceMap.has(service.name)) serviceMap.set(service.name, service.id);
   }
@@ -1203,8 +1112,8 @@ async function main() {
       });
       await prisma.productSetting.upsert({
         where: { productId: product.id },
-          update: { currentStock: productData.currentStock, minStockThreshold: productData.minStockThreshold, isForSale: productData.isForSale, isInternalUse: productData.isInternalUse, isActive: productData.activo, pointsAwarded: productData.pointsAwarded },
-          create: { productId: product.id, currentStock: productData.currentStock, minStockThreshold: productData.minStockThreshold, isForSale: productData.isForSale, isInternalUse: productData.isInternalUse, isActive: productData.activo, pointsAwarded: productData.pointsAwarded }
+          update: { currentStock: productData.currentStock, minStockThreshold: productData.minStockThreshold, isForSale: productData.isForSale, isInternalUse: productData.isInternalUse, pointsAwarded: productData.pointsAwarded },
+          create: { productId: product.id, currentStock: productData.currentStock, minStockThreshold: productData.minStockThreshold, isForSale: productData.isForSale, isInternalUse: productData.isInternalUse, pointsAwarded: productData.pointsAwarded }
       });
       if (!productMap.has(product.name)) productMap.set(product.name, product.id);
       console.log(`Ensured product: ${product.name}`);
@@ -1219,7 +1128,7 @@ async function main() {
           const bonoMasaje = await prisma.bonoDefinition.upsert({
           where: { name_systemId: { name: 'Bono 5 Masajes Relajantes', systemId: system!.id } }, 
               update: { price: 200, validityDays: 90 },
-          create: { name: 'Bono 5 Masajes Relajantes', serviceId: masajeRelajanteId, quantity: 5, price: 200, validityDays: 90, vatTypeId: defaultVatTypeIdFromDB!, systemId: system!.id, settings: { create: { isActive: true, pointsAwarded: 50 } } }
+          create: { name: 'Bono 5 Masajes Relajantes', serviceId: masajeRelajanteId, quantity: 5, price: 200, validityDays: 90, vatTypeId: defaultVatTypeIdFromDB!, systemId: system!.id, settings: { create: {} } }
           });
           createdBonoDefsMap.set(bonoMasaje.name, bonoMasaje.id);
   }
@@ -1235,7 +1144,7 @@ async function main() {
           const packRelax = await prisma.packageDefinition.upsert({
           where: { name_systemId: { name: 'Pack Relax Total', systemId: system!.id } }, 
               update: { price: 75 },
-          create: { name: 'Pack Relax Total', description: 'Un masaje relajante y una crema hidratante.', price: 75, systemId: system!.id, settings: { create: { isActive: true, pointsAwarded: 80 } }, items: { create: [ { itemType: 'SERVICE', serviceId: masajeIdForPack, quantity: 1, price: serviceMap.get('Masaje Relajante') ? (await prisma.service.findUnique({where: {id: serviceMap.get('Masaje Relajante')!}}))?.price ?? 50 : 50 }, { itemType: 'PRODUCT', productId: cremaIdForPack, quantity: 1, price: productMap.get('Crema Hidratante Facial') ? (await prisma.product.findUnique({where: {id: productMap.get('Crema Hidratante Facial')!}}))?.price ?? 25 : 25 } ] } }
+          create: { name: 'Pack Relax Total', description: 'Un masaje relajante y una crema hidratante.', price: 75, systemId: system!.id, settings: { create: {} }, items: { create: [ { itemType: 'SERVICE', serviceId: masajeIdForPack, quantity: 1, price: serviceMap.get('Masaje Relajante') ? (await prisma.service.findUnique({where: {id: serviceMap.get('Masaje Relajante')!}}))?.price ?? 50 : 50 }, { itemType: 'PRODUCT', productId: cremaIdForPack, quantity: 1, price: productMap.get('Crema Hidratante Facial') ? (await prisma.product.findUnique({where: {id: productMap.get('Crema Hidratante Facial')!}}))?.price ?? 25 : 25 } ] } }
           });
           createdPackageDefsMap.set(packRelax.name, packRelax.id);
           console.log(`Ensured package: ${packRelax.name}`);
@@ -1254,7 +1163,7 @@ async function main() {
         description: 'Depilación láser en piernas y axilas, más un protector solar.',
         price: 160, // Precio total del paquete
         systemId: system!.id,
-        settings: { create: { isActive: true, pointsAwarded: 150 } },
+        settings: { create: {} },
         items: {
           create: [
             { itemType: 'SERVICE', serviceId: depilacionPiernasId, quantity: 1, price: serviceMap.get('Depilación Láser Piernas') ? (await prisma.service.findUnique({where: {id: serviceMap.get('Depilación Láser Piernas')!}}))?.price ?? 120 : 120 },
@@ -1477,7 +1386,6 @@ async function main() {
   } catch (error) { console.error("Error creating example clients:", error); }
   console.log(`Example Clients ensured. Created ${createdClientsMap.size} clients.`);
   // <<< --- FIN Crear Clientes --- >>>
-
 
   // --- Crear Instancias de Bonos y Paquetes para Clientes --- 
   console.log('Creating Bono/Package Instances for clients...');
@@ -1939,7 +1847,7 @@ async function main() {
   console.log('Comprehensive example Tickets, Items, and Payments creation attempt finished.');
   // <<< --- FIN: SEEDING DE TICKETS Y PAGOS --- >>>
 
-
+  await seedPersons(prisma);
   console.log('Seeding completed.');
 } // Fin función main()
 

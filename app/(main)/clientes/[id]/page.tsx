@@ -2,7 +2,7 @@
 
 import { useState, useEffect, use } from "react"
 import { useRouter, useParams } from "next/navigation"
-import { ArrowLeft, Save, Trash2, User, MapPin, Phone, Building, FileText, Settings } from "lucide-react"
+import { ArrowLeft, Save, Trash2, User, MapPin, Phone, Building, FileText, Settings, UserPlus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -17,6 +17,10 @@ import { CustomDatePicker } from "@/components/custom-date-picker"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import type { CountryInfo } from "@prisma/client"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Badge } from '@/components/ui/badge'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { EntityRelationsManager } from '@/components/entity-relations/EntityRelationsManager'
 
 // API para obtener cliente por ID
 async function getClientById(id: string) {
@@ -63,12 +67,62 @@ function SectionTitle({ icon: Icon, title }: { icon: any; title: string }) {
   )
 }
 
+interface ClientRelation {
+  id: string
+  relationType: string
+  notes?: string
+  createdAt: string
+  relatedClient?: {
+    id: string
+    firstName: string
+    lastName: string
+    email?: string
+  }
+  relatedCompany?: {
+    id: string
+    name: string
+  }
+  relatedUser?: {
+    id: string
+    firstName: string
+    lastName: string
+    email: string
+  }
+  direction: 'outgoing' | 'incoming'
+  entityType: 'client' | 'company' | 'user'
+}
+
+interface Client {
+  id: string
+  firstName: string
+  lastName: string
+  email?: string
+  primaryPhone?: string
+  primaryPhoneCountryCode?: string
+  secondaryPhone?: string
+  secondaryPhoneCountryCode?: string
+  gender?: string
+  dni?: string
+  notes?: string
+  address?: string
+  city?: string
+  postalCode?: string
+  country?: string
+  acceptsMarketing?: boolean
+  acceptsDataProcessing?: boolean
+  birthDate?: string
+  profileImage?: string
+  createdAt: string
+  relations?: ClientRelation[]
+  systemId: string
+}
+
 export default function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params)
   const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [client, setClient] = useState<any>(null)
+  const [client, setClient] = useState<Client | null>(null)
   const [birthDate, setBirthDate] = useState<Date | null>(null)
   
   // Estados para países
@@ -98,9 +152,6 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
       city: "",
       postalCode: "",
       country: "ES",
-      fiscalName: "",
-      fiscalId: "",
-      isFiscalClient: false,
       acceptsMarketing: false,
       acceptsDataProcessing: false
     }
@@ -154,9 +205,6 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
         setValue("city", data.city || "")
         setValue("postalCode", data.postalCode || "")
         setValue("country", data.country || "ES")
-        setValue("fiscalName", data.fiscalName || "")
-        setValue("fiscalId", data.fiscalId || "")
-        setValue("isFiscalClient", data.isFiscalClient || false)
         setValue("acceptsMarketing", data.acceptsMarketing || false)
         setValue("acceptsDataProcessing", data.acceptsDataProcessing || false)
         
@@ -231,7 +279,7 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
             <div className="flex items-center gap-4">
               <ClientProfileImage 
                 clientId={client.id}
-                clinicId="default"
+                clinicId={client.systemId}
                 initialImage={client.profileImage}
                 size="lg"
                 editable={false}
@@ -460,45 +508,6 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
               </div>
             </div>
 
-            {/* Sección: Datos fiscales */}
-            <div>
-              <SectionTitle icon={Building} title="Datos fiscales" />
-              <div className="space-y-4">
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="isFiscalClient"
-                    checked={watch("isFiscalClient")}
-                    onCheckedChange={(checked) => setValue("isFiscalClient", checked as boolean)}
-                  />
-                  <Label htmlFor="isFiscalClient" className="text-sm">
-                    Cliente con datos fiscales
-                  </Label>
-                </div>
-                
-                {watch("isFiscalClient") && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-gray-200">
-                    <div className="space-y-2">
-                      <Label htmlFor="fiscalName">Razón social</Label>
-                      <Input
-                        id="fiscalName"
-                        {...register("fiscalName")}
-                        placeholder="Nombre de la empresa"
-                      />
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <Label htmlFor="fiscalId">CIF/NIF</Label>
-                      <Input
-                        id="fiscalId"
-                        {...register("fiscalId")}
-                        placeholder="A12345678"
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
             {/* Sección: Configuración */}
             <div>
               <SectionTitle icon={Settings} title="Configuración" />
@@ -540,6 +549,18 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
                 />
               </div>
             </div>
+
+            {/* Sección: Relaciones */}
+            <div>
+              <SectionTitle icon={UserPlus} title="Relaciones" />
+              <EntityRelationsManager
+                entityType="client"
+                entityId={client.id}
+                systemId={client.systemId}
+              />
+            </div>
+
+            {/* Sección: Marketing y Consentimiento */}
           </CardContent>
         </Card>
 

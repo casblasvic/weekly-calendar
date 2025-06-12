@@ -30,9 +30,10 @@ interface ClientSelectorSearchProps {
   onClientSelect: (client: ClientForSelector | null) => void;
   setFormValue: <T extends string>(field: T, value: any, options?: object) => void;
   disabled?: boolean;
+  isServiceReceiver?: boolean;
 }
 
-export function ClientSelectorSearch({ selectedClientId, onClientSelect, setFormValue, disabled = false }: ClientSelectorSearchProps) {
+export function ClientSelectorSearch({ selectedClientId, onClientSelect, setFormValue, disabled = false, isServiceReceiver = false }: ClientSelectorSearchProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
@@ -227,13 +228,19 @@ export function ClientSelectorSearch({ selectedClientId, onClientSelect, setForm
         <Collapsible
           open={isDetailsOpen}
           onOpenChange={setIsDetailsOpen}
-          className="border rounded-md bg-gray-50/50"
+          className={cn(
+            "border rounded-md transition-colors",
+            isServiceReceiver ? "bg-red-50/50 border-red-200" : "bg-gray-50/50"
+          )}
         >
           <CollapsibleTrigger asChild>
-            <div className="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-100/80 transition-colors rounded-t-md">
+            <div className={cn(
+              "flex items-center justify-between p-3 cursor-pointer transition-colors rounded-t-md",
+              isServiceReceiver ? "hover:bg-red-100/80" : "hover:bg-gray-100/80"
+            )}>
               <h3 className="text-sm font-medium flex items-center text-gray-700">
                 <User className="mr-2 h-4 w-4 text-gray-500" />
-                {t('tickets.clientDetails')}
+                {isServiceReceiver ? t('tickets.serviceReceiverDetails', 'Detalles del receptor del servicio') : t('tickets.clientDetails')}
               </h3>
               <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
                 <ChevronsUpDown className="h-4 w-4" />

@@ -1,0 +1,132 @@
+// Nuevos modelos para la migración de Person - Fase 1
+// IMPORTANTE: Estos modelos se agregarán al final del schema.prisma principal
+
+model Person {
+  id                      String                   @id @default(cuid())
+  firstName               String
+  lastName                String
+  email                   String?
+  phone                   String?
+  birthDate               DateTime?
+  gender                  String?
+  address                 String?
+  city                    String?
+  postalCode              String?
+  stateProvince           String?
+  countryIsoCode          String?
+  nationalId              String?
+  nationalIdType          String?
+  passportNumber          String?
+  passportCountry         String?
+  taxId                   String?
+  notes                   String?
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  systemId                String
+
+  // Relaciones
+  system                  System                   @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  functionalRoles         PersonFunctionalRole[]
+
+  @@index([systemId])
+  @@index([email])
+  @@index([phone])
+  @@map("persons")
+}
+
+model PersonFunctionalRole {
+  id              String                @id @default(cuid())
+  personId        String
+  roleType        String                // 'CLIENT', 'LEAD', 'CONTACT', 'EMPLOYEE'
+  isActive        Boolean               @default(true)
+  startDate       DateTime              @default(now())
+  endDate         DateTime?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  systemId        String
+
+  // Relaciones
+  person          Person                @relation(fields: [personId], references: [id], onDelete: Cascade)
+  system          System                @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  leadData        PersonLeadData?
+  contactData     PersonContactData?
+
+  @@unique([personId, roleType])
+  @@index([personId])
+  @@index([systemId])
+  @@map("person_functional_roles")
+}
+
+model PersonLeadData {
+  id                      String                @id @default(cuid())
+  functionalRoleId        String                @unique
+  status                  String                @default("NEW")
+  source                  String?
+  companyName             String?
+  assignedToUserId        String?
+  companyId               String?
+  conversionDate          DateTime?
+  conversionToRole        String?
+  lastContactDate         DateTime?
+  nextFollowUpDate        DateTime?
+  priority                String?
+  estimatedValue          Float?
+  interests               String?
+  
+  // Relaciones
+  functionalRole          PersonFunctionalRole  @relation(fields: [functionalRoleId], references: [id], onDelete: Cascade)
+  assignedToUser          User?                 @relation(fields: [assignedToUserId], references: [id], onDelete: SetNull)
+  company                 Company?              @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  opportunities           Opportunity[]
+
+  @@index([functionalRoleId])
+  @@index([assignedToUserId])
+  @@index([companyId])
+  @@map("person_lead_data")
+}
+
+model PersonContactData {
+  id                      String                @id @default(cuid())
+  functionalRoleId        String                @unique
+  position                String?
+  department              String?
+  companyId               String
+  isPrimary               Boolean               @default(false)
+  preferredContactMethod  String?
+  
+  // Relaciones
+  functionalRole          PersonFunctionalRole  @relation(fields: [functionalRoleId], references: [id], onDelete: Cascade)
+  company                 Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([functionalRoleId])
+  @@index([companyId])
+  @@map("person_contact_data")
+}
+
+model Opportunity {
+  id                      String                @id @default(cuid())
+  name                    String
+  description             String?
+  leadDataId              String
+  stage                   String                @default("PROSPECTING")
+  probability             Float?
+  estimatedValue          Float?
+  estimatedCloseDate      DateTime?
+  actualCloseDate         DateTime?
+  wonLostReason           String?
+  notes                   String?
+  clinicId                String
+  createdAt               DateTime              @default(now())
+  updatedAt               DateTime              @updatedAt
+  systemId                String
+
+  // Relaciones
+  leadData                PersonLeadData        @relation(fields: [leadDataId], references: [id], onDelete: Restrict)
+  clinic                  Clinic                @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  system                  System                @relation(fields: [systemId], references: [id], onDelete: Cascade)
+
+  @@index([leadDataId])
+  @@index([clinicId])
+  @@index([systemId])
+  @@map("opportunities")
+}

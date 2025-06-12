@@ -2009,5 +2009,110 @@
     "Guardando...": "Guardando...",
     "Cant.": "Cant.",
     "Notas de descuento...": "Notas de descuento..."
+  },
+  "clients": {
+    "title": "Clientes",
+    "pageTitle": "Gestión de Clientes",
+    "new": "Nuevo Cliente",
+    "edit": "Editar Cliente",
+    "details": "Detalles del Cliente",
+    "notFound": "No se encontró el cliente con ID",
+    "loading": "Cargando cliente...",
+    "saving": "Guardando cambios...",
+    "sections": {
+      "personalData": "Datos Personales",
+      "contactData": "Datos de Contacto",
+      "address": "Dirección",
+      "configuration": "Configuración",
+      "relations": "Relaciones",
+      "marketing": "Marketing y Consentimiento"
+    },
+    "fields": {
+      "firstName": "Nombre",
+      "lastName": "Apellidos",
+      "email": "Email",
+      "phone": "Teléfono",
+      "prefix": "Prefijo",
+      "birthDate": "Fecha de nacimiento",
+      "dni": "DNI/NIF",
+      "address": "Dirección",
+      "city": "Ciudad",
+      "postalCode": "Código postal",
+      "country": "País",
+      "gender": "Género",
+      "howDidYouFindUs": "¿Cómo nos conociste?",
+      "notes": "Notas",
+      "createdAt": "Fecha de alta",
+      "allowSms": "Permitir SMS",
+      "allowCalls": "Permitir llamadas",
+      "allowNotifications": "Permitir notificaciones"
+    },
+    "placeholders": {
+      "firstName": "Nombre del cliente",
+      "lastName": "Apellidos del cliente",
+      "email": "correo@ejemplo.com",
+      "phone": "612345678",
+      "dni": "12345678A",
+      "address": "Calle, número, piso...",
+      "city": "Ciudad",
+      "postalCode": "28001",
+      "selectCountry": "Seleccionar país",
+      "selectGender": "Seleccionar género",
+      "howDidYouFindUs": "¿Cómo conociste la clínica?",
+      "notes": "Notas adicionales sobre el cliente..."
+    },
+    "gender": {
+      "male": "Masculino",
+      "female": "Femenino",
+      "other": "Otro"
+    },
+    "tabs": {
+      "data": "Datos del cliente",
+      "history": "Historial",
+      "deferred": "Aplazado",
+      "bonuses": "Bonos"
+    },
+    "relations": {
+      "title": "Relaciones",
+      "noRelations": "No hay relaciones registradas",
+      "noRelationsDescription": "Las relaciones permiten asociar esta entidad con otras",
+      "addRelation": "Añadir Relación",
+      "newRelation": "Añadir Nueva Relación",
+      "relatedWith": "Relacionado con",
+      "entityType": "Tipo de entidad",
+      "relationType": "Tipo de relación",
+      "searchEntity": "Buscar",
+      "selectEntity": "Seleccionar",
+      "searchByName": "Buscar por nombre...",
+      "noResults": "No se encontraron resultados",
+      "searching": "Buscando...",
+      "notes": "Notas",
+      "notesOptional": "Notas (opcional)",
+      "notesPlaceholder": "Información adicional sobre la relación...",
+      "selectEntityType": "Seleccionar tipo de entidad",
+      "selectRelationType": "Seleccionar tipo de relación",
+      "entityTypes": {
+        "client": "Cliente",
+        "company": "Empresa",
+        "user": "Empleado",
+        "lead": "Lead",
+        "contact": "Contacto"
+      },
+      "relationTypes": {
+        "madre": "Madre",
+        "padre": "Padre",
+        "tutor": "Tutor/a",
+        "hijo": "Hijo/a",
+        "conyuge": "Cónyuge",
+        "hermano": "Hermano/a",
+        "empresa": "Empresa",
+        "empleado": "Empleado",
+        "otro": "Otro"
+      },
+      "confirmDelete": "¿Estás seguro de eliminar esta relación?",
+      "relatedEntity": "Entidad relacionada",
+      "type": "Tipo",
+      "date": "Fecha"
+    }
   }
 }
