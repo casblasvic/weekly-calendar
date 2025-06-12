@@ -55,7 +55,7 @@ export type TicketPaymentFormValues = z.infer<typeof ticketPaymentSchema>;
 // Schema para el payload de actualización en lote de un Ticket
 export const batchUpdateTicketPayloadSchema = z.object({
   scalarUpdates: z.object({
-    clientId: z.string().cuid().nullable().optional(),
+    personId: z.string().cuid().nullable().optional(),
     sellerUserId: z.string().cuid().nullable().optional(),
     notes: z.string().nullable().optional(),
     ticketSeries: z.string().nullable().optional(),
@@ -113,7 +113,7 @@ export type BatchUpdateTicketPayload = z.infer<typeof batchUpdateTicketPayloadSc
 // Schema principal para el formulario de creación/edición de Ticket
 export const ticketFormSchema = z.object({
   // --- Sección Cliente ---
-  clientId: z.string().optional().nullable(), // Se seleccionará mediante un buscador
+  personId: z.string().optional().nullable(), // Se seleccionará mediante un buscador
   clientName: z.string().optional(), // Nombre del cliente (display)
   clientDetails: z.any().optional(), // Objeto con más detalles del cliente (display)
 
@@ -161,7 +161,7 @@ export const defaultTicketFormValues: Partial<TicketFormValues> = {
   printSize: '80mm',
   series: 'TICK',
   status: 'OPEN',
-  clientId: undefined, 
+  personId: undefined, 
   clientName: '', 
   clientDetails: null, 
   items: [],

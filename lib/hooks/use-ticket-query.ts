@@ -3,7 +3,7 @@ import { api } from '@/utils/api-client';
 import { CACHE_TIME } from '@/lib/react-query'; 
 import { cashSessionKeys } from '@/lib/hooks/use-cash-session-query';
 import type { TicketFormValues, TicketItemFormValues, TicketPaymentFormValues } from '@/lib/schemas/ticket';
-import { Ticket, TicketStatus, User, Client, Prisma, DiscountType, CashSessionStatus } from '@prisma/client';
+import { Ticket, TicketStatus, User, Person, Prisma, DiscountType, CashSessionStatus } from '@prisma/client';
 import { toast } from '@/components/ui/use-toast';
 import { useTranslation } from 'react-i18next';
 
@@ -34,7 +34,26 @@ interface CloseTicketOptimisticContext {
 // Tipo para la respuesta API (ajustar según sea necesario)
 export type TicketApiResponse = Prisma.TicketGetPayload<{
   include: {
-    client: { select: { id: true, firstName: true, lastName: true, email: true, phone: true, taxId: true, fiscalName: true, address: true, city: true, postalCode: true, countryIsoCode: true }};
+    person: { 
+      select: { 
+        id: true, 
+        firstName: true, 
+        lastName: true, 
+        email: true, 
+        phone: true, 
+        taxId: true, 
+        fiscalName: true, 
+        address: true, 
+        city: true, 
+        postalCode: true, 
+        countryIsoCode: true,
+        functionalRoles: {
+          include: {
+            clientData: true,
+          }
+        }
+      }
+    };
     company: true; // O un select más específico si tienes modelo Company
     sellerUser: { select: { id: true, firstName: true, lastName: true, email: true, isActive: true }};
     cashierUser: { select: { id: true, firstName: true, lastName: true, email: true, isActive: true }};
@@ -105,8 +124,8 @@ export type UpdatedTicketScalarResponse = Prisma.TicketGetPayload<{
     discountType: true;
     discountAmount: true;
     discountReason: true;
-    clientId: true;
-    client: { select: { id: true, firstName: true, lastName: true, email: true, phone: true, taxId: true, fiscalName: true, address: true, city: true, postalCode: true, countryIsoCode: true }};
+    personId: true;
+    person: { select: { id: true, firstName: true, lastName: true, email: true, phone: true, taxId: true, fiscalName: true, address: true, city: true, postalCode: true, countryIsoCode: true }};
     sellerUserId: true;
     sellerUser: { select: { id: true, firstName: true, lastName: true, email: true, isActive: true }};
     cashierUserId: true;
@@ -141,7 +160,7 @@ export const ticketKeys = {
 // Tipos para la respuesta de la API (paginada)
 export interface PaginatedTicketsResponse {
   data: (Ticket & { 
-    client: Pick<Client, 'id' | 'firstName' | 'lastName' | 'email' | 'taxId'> | null;
+    person: Pick<Person, 'id' | 'firstName' | 'lastName' | 'email' | 'taxId'> | null;
     sellerUser: Pick<User, 'id' | 'firstName' | 'lastName'> | null;
     cashierUser: Pick<User, 'id' | 'firstName' | 'lastName'>;
     cashSession: { id: string; status: CashSessionStatus; sessionNumber?: string; closingTime?: Date | null; } | null;
@@ -158,7 +177,7 @@ export interface TicketFilters {
   status?: TicketStatus | TicketStatus[];
   page?: number;
   pageSize?: number;
-  // Otros filtros futuros: startDate, endDate, clientId, etc.
+  // Otros filtros futuros: startDate, endDate, personId, etc.
 }
 
 // Definir el tipo para la queryKey usada por este hook
@@ -595,7 +614,7 @@ export function useCompleteAndCloseTicketMutation() {
       // Actualizar optimistamente
       if (prevDetail) {
         const updatedTicket = { ...prevDetail, status: TicketStatus.CLOSED };
-        queryClient.setQueryData(ticketKeys.detail(ticketId), updatedTicket);
+        queryClient.setQueryData<TicketApiResponse>(ticketKeys.detail(ticketId), updatedTicket);
       }
       if (prevDetailSingle) {
         queryClient.setQueryData(['ticket', ticketId], { ...prevDetailSingle, status: TicketStatus.CLOSED });
@@ -714,7 +733,7 @@ export function useReopenTicketMutation() {
       const previousOpenTicketsList = openTicketsQueryKey ? queryClient.getQueryData<PaginatedTicketsResponse>(openTicketsQueryKey) : undefined;
 
       // 3. Actualizar ticket individual optimistamente
-      let ticketDataForList: (Ticket & { client: any; sellerUser: any; cashierUser: any; cashSession: any; }) | undefined = undefined;
+      let ticketDataForList: (Ticket & { person: any; sellerUser: any; cashierUser: any; cashSession: any; }) | undefined = undefined;
       if (previousTicketDetail) {
         const updatedTicketDetail = {
           ...previousTicketDetail,
@@ -726,10 +745,10 @@ export function useReopenTicketMutation() {
 
         ticketDataForList = {
           ...updatedTicketDetail,
-          client: updatedTicketDetail.client ? { id: updatedTicketDetail.client.id, firstName: updatedTicketDetail.client.firstName, lastName: updatedTicketDetail.client.lastName, email: updatedTicketDetail.client.email, taxId: updatedTicketDetail.client.taxId } : null,
+          person: updatedTicketDetail.person ? { id: updatedTicketDetail.person.id, firstName: updatedTicketDetail.person.firstName, lastName: updatedTicketDetail.person.lastName, email: updatedTicketDetail.person.email, taxId: updatedTicketDetail.person.taxId } : null,
           sellerUser: updatedTicketDetail.sellerUser ? { id: updatedTicketDetail.sellerUser.id, firstName: updatedTicketDetail.sellerUser.firstName, lastName: updatedTicketDetail.sellerUser.lastName } : null,
           cashierUser: updatedTicketDetail.cashierUser ? { id: updatedTicketDetail.cashierUser.id, firstName: updatedTicketDetail.cashierUser.firstName, lastName: updatedTicketDetail.cashierUser.lastName } : {} as any,
-        } as (Ticket & { client: any; sellerUser: any; cashierUser: any; cashSession: any; });
+        } as (Ticket & { person: any; sellerUser: any; cashierUser: any; cashSession: any; });
       }
       
       // 4. Actualizar lista de tickets cerrados (eliminar el ticket)
@@ -948,7 +967,7 @@ export function useCreatePaymentMutation() {
 // definido en `lib/schemas/ticket.ts`
 export interface BatchUpdateTicketPayload {
   scalarUpdates?: {
-    clientId?: string | null;
+    personId?: string | null;
     sellerUserId?: string | null;
     notes?: string | null;
     ticketSeries?: string | null;

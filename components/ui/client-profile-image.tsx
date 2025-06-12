@@ -6,8 +6,8 @@ import { cn } from '@/lib/utils';
 import { useImages } from '@/contexts/image-context';
 import FileUploader from './file-uploader';
 
-interface ClientProfileImageProps {
-  clientId: string;
+interface PersonProfileImageProps {
+  personId: string;
   clinicId: string;
   initialImage?: any;
   size?: 'sm' | 'md' | 'lg';
@@ -16,8 +16,8 @@ interface ClientProfileImageProps {
   onChange?: (image: any) => void;
 }
 
-const ClientProfileImage: React.FC<ClientProfileImageProps> = ({
-  clientId,
+const PersonProfileImage: React.FC<PersonProfileImageProps> = ({
+  personId,
   clinicId,
   initialImage,
   size = 'md',
@@ -32,14 +32,14 @@ const ClientProfileImage: React.FC<ClientProfileImageProps> = ({
   
   // Verificar parámetros requeridos
   useEffect(() => {
-    if (editable && (!clientId || !clinicId)) {
-      console.warn("ClientProfileImage: Faltan clientId o clinicId requeridos para modo editable", 
-        { clientId, clinicId });
+    if (editable && (!personId || !clinicId)) {
+      console.warn("PersonProfileImage: Faltan personId o clinicId requeridos para modo editable", 
+        { personId, clinicId });
       setError("Configuración incompleta");
     } else {
       setError(null);
     }
-  }, [clientId, clinicId, editable]);
+  }, [personId, clinicId, editable]);
   
   // Tamaño basado en la prop size
   const sizeClasses = {
@@ -53,28 +53,28 @@ const ClientProfileImage: React.FC<ClientProfileImageProps> = ({
     if (files.length === 0) return;
     
     // Verificar que tenemos los parámetros necesarios
-    if (!clientId || !clinicId) {
+    if (!personId || !clinicId) {
       console.error("Faltan parámetros necesarios para subir imagen del cliente:", 
-        { clientId, clinicId });
+        { personId, clinicId });
       return;
     }
     
     setIsUploading(true);
     try {
       console.log("Subiendo imagen de cliente con parámetros:", {
-        clientId, 
+        personId, 
         clinicId, 
-        entityType: 'client',
+        entityType: 'PERSON',
         fileName: files[0].name
       });
       
       // Subir imagen de perfil (solo una)
       const uploadedImage = await uploadImage(
         files[0],
-        'client',
-        clientId,
+        'PERSON',
+        personId,
         clinicId,
-        { isPrimary: true }  // Siempre es principal en cliente
+        { isProfilePic: true }  // Siempre es principal en cliente
       );
       
       // Actualizar estado local
@@ -149,4 +149,4 @@ const ClientProfileImage: React.FC<ClientProfileImageProps> = ({
   );
 };
 
-export default ClientProfileImage; 
+export default PersonProfileImage; 

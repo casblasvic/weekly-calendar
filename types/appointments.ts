@@ -14,13 +14,14 @@ export interface Appointment {
   phone?: string
   tags?: string[]
   comment?: string
+  personId?: string
 }
 
 /**
  * Interfaz para una nueva cita que se va a crear
  */
 export interface NewAppointment {
-  client: { 
+  person: { 
     id: string
     name: string
     phone: string 
@@ -43,7 +44,7 @@ export interface NewAppointment {
  * Interfaz para los datos necesarios al guardar una cita
  */
 export interface AppointmentSaveData {
-  client: { 
+  person: { 
     name: string
     phone: string 
   }
@@ -64,7 +65,7 @@ export interface AppointmentSaveData {
 export interface AppointmentFilter {
   startDate?: Date
   endDate?: Date
-  clientId?: string
+  personId?: string
   roomId?: string
   serviceId?: string
   employeeId?: string
@@ -79,4 +80,4 @@ export interface AppointmentService {
   createAppointment: (appointment: NewAppointment) => Promise<Appointment>
   updateAppointment: (id: string, appointment: Partial<Appointment>) => Promise<Appointment>
   deleteAppointment: (id: string) => Promise<boolean>
-} 
+}

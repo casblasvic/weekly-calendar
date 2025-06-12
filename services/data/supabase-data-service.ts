@@ -16,7 +16,7 @@
 // FIN TODO
 
 // Comentar importaciones problemáticas
-import type { DataService, Client, ScheduleTemplate } from './data-service.ts'; 
+import type { DataService, Person, ScheduleTemplate } from './data-service.ts'; 
 import type {
   BaseEntity,
   Clinica,
@@ -29,7 +29,7 @@ import type {
   Tarifa,
   TipoIVA,
   Producto,
-  Bono,
+  BonoDefinition,
   Usuario
 } from './models/interfaces.ts';
 
@@ -226,22 +226,22 @@ export class SupabaseDataService implements DataService {
     return Promise.resolve([]);
   }
 
-  async getAllBonos(): Promise<Bono[]> {
+  async getAllBonos(): Promise<BonoDefinition[]> {
     console.warn("SupabaseDataService.getAllBonos not implemented.");
     return Promise.resolve([]);
   }
 
-  async getBonoById(id: string): Promise<Bono | null> {
+  async getBonoById(id: string): Promise<BonoDefinition | null> {
     console.warn(`SupabaseDataService.getBonoById(${id}) not implemented.`);
     return Promise.resolve(null);
   }
 
-  async createBono(bono: Omit<Bono, 'id'>): Promise<Bono> {
+  async createBono(bono: Omit<BonoDefinition, 'id'>): Promise<BonoDefinition> {
     console.warn("SupabaseDataService.createBono not implemented.");
     return Promise.reject(new Error('SupabaseDataService.createBono not implemented'));
   }
 
-  async updateBono(id: string, bono: Partial<Bono>): Promise<Bono | null> {
+  async updateBono(id: string, bono: Partial<BonoDefinition>): Promise<BonoDefinition | null> {
     console.warn(`SupabaseDataService.updateBono(${id}) not implemented.`);
     return Promise.resolve(null);
   }
@@ -251,12 +251,12 @@ export class SupabaseDataService implements DataService {
     return Promise.resolve(false);
   }
 
-  async getBonosByServicioId(servicioId: string): Promise<Bono[]> {
+  async getBonosByServicioId(servicioId: string): Promise<BonoDefinition[]> {
     console.warn(`SupabaseDataService.getBonosByServicioId(${servicioId}) not implemented.`);
     return Promise.resolve([]);
   }
 
-  async getBonosHabilitados(): Promise<Bono[]> {
+  async getBonosHabilitados(): Promise<BonoDefinition[]> {
     console.warn("SupabaseDataService.getBonosHabilitados not implemented.");
     return Promise.resolve([]);
   }
@@ -781,33 +781,33 @@ export class SupabaseDataService implements DataService {
     }
   }
   
-  // Operaciones de Clientes
-  async getAllClients(): Promise<Client[]> {
-    return this.getAll<Client>('clients');
+  // Operaciones de Personas
+  async getAllPersons(): Promise<Person[]> {
+    return this.getAll<Person>('clients');
   }
   
-  async getClientById(id: string): Promise<Client | null> {
-    return this.getById<Client>('clients', id);
+  async getPersonById(id: string): Promise<Person | null> {
+    return this.getById<Person>('clients', id);
   }
   
-  async createClient(client: Omit<Client, 'id'>): Promise<Client> {
-    return this.create<Client>('clients', client);
+  async createPerson(person: Omit<Person, 'id'>): Promise<Person> {
+    return this.create<Person>('clients', person);
   }
   
-  async updateClient(id: string, client: Partial<Client>): Promise<Client | null> {
-    return this.update<Client>('clients', id, client);
+  async updatePerson(id: string, person: Partial<Person>): Promise<Person | null> {
+    return this.update<Person>('clients', id, person);
   }
   
-  async deleteClient(id: string): Promise<boolean> {
+  async deletePerson(id: string): Promise<boolean> {
     return this.delete('clients', id);
   }
   
-  async getClientsByClinicId(clinicId: string): Promise<Client[]> {
+  async getPersonsByClinicId(clinicId: string): Promise<Person[]> {
     try {
       // Implementación pendiente
       return [];
     } catch (error) {
-      console.error(`Error al obtener clientes para clínica ${clinicId}:`, error);
+      console.error(`Error al obtener personas para clínica ${clinicId}:`, error);
       return [];
     }
   }

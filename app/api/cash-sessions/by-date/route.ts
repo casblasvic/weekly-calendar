@@ -64,7 +64,7 @@ export async function GET(req: NextRequest) {
         paidAmountDirectly: true,
         hasOpenDebt: true,
         dueAmount: true,
-        client: { select: { firstName: true, lastName: true } },
+        person: { select: { firstName: true, lastName: true } },
         payments: {
           select: {
             id: true,

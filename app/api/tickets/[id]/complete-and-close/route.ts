@@ -63,7 +63,7 @@ export async function POST(request: NextRequest, { params: paramsPromise }: { pa
           payments: true,
           items: true, 
           clinic: { select: { delayedPayments: true, id: true } },
-          client: { select: { id: true } } // Incluir client para DebtLedger
+          person: { select: { id: true } } // Incluir person para DebtLedger
         }
       });
 
@@ -77,7 +77,7 @@ export async function POST(request: NextRequest, { params: paramsPromise }: { pa
         payments: Payment[]; 
         items: Prisma.TicketItemGetPayload<{}>[];
         clinic: { delayedPayments: boolean | null, id: string } | null;
-        client: { id: string } | null; // Añadido para tipado de client
+        person: { id: string } | null; // Añadido para tipado de person
       };
 
       if (ticket.status !== TicketStatus.OPEN) {
@@ -118,9 +118,9 @@ export async function POST(request: NextRequest, { params: paramsPromise }: { pa
 
       if (dueAmount > 0.009) {
         if (ticket.clinic?.delayedPayments === true) {
-          if (!ticket.clientId) {
-            console.error(`[API_TICKETS_COMPLETE_CLOSE] Error: clientId es null para ticket ${ticketId} al intentar crear DebtLedger.`); // LOG
-            throw new Error('Se requiere un cliente asignado al ticket para registrar un pago aplazado.');
+          if (!ticket.personId) {
+            console.error(`[API_TICKETS_COMPLETE_CLOSE] Error: personId es null para ticket ${ticketId} al intentar crear DebtLedger.`); // LOG
+            throw new Error('Se requiere una persona asignada al ticket para registrar un pago aplazado.');
           }
           if (!ticket.clinicId) { // Doble check, aunque ya validado para ticketNumber
             console.error(`[API_TICKETS_COMPLETE_CLOSE] Error: clinicId es null para ticket ${ticketId} al intentar crear DebtLedger.`); // LOG
@@ -130,7 +130,7 @@ export async function POST(request: NextRequest, { params: paramsPromise }: { pa
           await tx.debtLedger.create({
             data: {
               ticketId: ticket.id,
-              clientId: ticket.clientId,
+              personId: ticket.personId,
               clinicId: ticket.clinicId,
               originalAmount: dueAmount,
               paidAmount: 0,
@@ -207,7 +207,7 @@ export async function POST(request: NextRequest, { params: paramsPromise }: { pa
           cashSessionId: openSession.id,
         },
         include: { 
-          client: true, company: true, sellerUser: true, cashierUser: true, 
+          person: true, company: true, sellerUser: true, cashierUser: true, 
           clinic: {include: {tariff:true, legalEntity: true}}, items: {orderBy: {createdAt: 'asc'}}, 
           payments: {orderBy: {paymentDate: 'asc'}}, invoice: true, originalTicket: true, 
           returnTickets: true, cashSession: true, 

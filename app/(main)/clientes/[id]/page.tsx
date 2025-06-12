@@ -22,25 +22,25 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { EntityRelationsManager } from '@/components/entity-relations/EntityRelationsManager'
 
-// API para obtener cliente por ID
-async function getClientById(id: string) {
+// API para obtener persona por ID
+async function getPersonById(id: string) {
   try {
-    const response = await fetch(`/api/clients/${id}`)
+    const response = await fetch(`/api/persons/${id}`)
     if (!response.ok) {
-      throw new Error("Error al obtener el cliente")
+      throw new Error("Error al obtener la persona")
     }
     const data = await response.json()
     return data
   } catch (error) {
-    console.error("Error fetching client:", error)
+    console.error("Error fetching person:", error)
     return null
   }
 }
 
-// API para actualizar cliente
-async function updateClient(id: string, data: any) {
+// API para actualizar persona
+async function updatePerson(id: string, data: any) {
   try {
-    const response = await fetch(`/api/clients/${id}`, {
+    const response = await fetch(`/api/persons/${id}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -48,11 +48,12 @@ async function updateClient(id: string, data: any) {
       body: JSON.stringify(data)
     })
     if (!response.ok) {
-      throw new Error("Error al actualizar el cliente")
+      throw new Error("Error al actualizar la persona")
     }
-    return await response.json()
+    const result = await response.json()
+    return result
   } catch (error) {
-    console.error("Error updating client:", error)
+    console.error("Error updating person:", error)
     throw error
   }
 }
@@ -67,12 +68,12 @@ function SectionTitle({ icon: Icon, title }: { icon: any; title: string }) {
   )
 }
 
-interface ClientRelation {
+interface PersonRelation {
   id: string
   relationType: string
   notes?: string
   createdAt: string
-  relatedClient?: {
+  relatedPerson?: {
     id: string
     firstName: string
     lastName: string
@@ -89,10 +90,10 @@ interface ClientRelation {
     email: string
   }
   direction: 'outgoing' | 'incoming'
-  entityType: 'client' | 'company' | 'user'
+  entityType: 'person' | 'company' | 'user'
 }
 
-interface Client {
+interface Person {
   id: string
   firstName: string
   lastName: string
@@ -113,16 +114,16 @@ interface Client {
   birthDate?: string
   profileImage?: string
   createdAt: string
-  relations?: ClientRelation[]
+  relations?: PersonRelation[]
   systemId: string
 }
 
-export default function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default function PersonDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params)
   const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [client, setClient] = useState<Client | null>(null)
+  const [person, setPerson] = useState<Person | null>(null)
   const [birthDate, setBirthDate] = useState<Date | null>(null)
   
   // Estados para países
@@ -181,15 +182,15 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
   }, [])
 
   useEffect(() => {
-    loadClient()
+    loadPerson()
   }, [resolvedParams.id])
 
-  const loadClient = async () => {
+  const loadPerson = async () => {
     setLoading(true)
     try {
-      const data = await getClientById(resolvedParams.id)
+      const data = await getPersonById(resolvedParams.id)
       if (data) {
-        setClient(data)
+        setPerson(data)
         // Actualizar valores del formulario
         setValue("firstName", data.firstName || "")
         setValue("lastName", data.lastName || "")
@@ -213,7 +214,7 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
         }
       }
     } catch (error) {
-      console.error("Error loading client:", error)
+      console.error("Error loading person:", error)
     } finally {
       setLoading(false)
     }
@@ -227,12 +228,12 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
         birthDate: birthDate ? birthDate.toISOString() : null
       }
       
-      await updateClient(resolvedParams.id, updateData)
-      await loadClient() // Recargar datos actualizados
+      await updatePerson(resolvedParams.id, updateData)
+      await loadPerson() // Recargar datos actualizados
       // Mostrar mensaje de éxito
-      alert("Cliente actualizado correctamente")
+      alert("Persona actualizada correctamente")
     } catch (error) {
-      console.error("Error saving client:", error)
+      console.error("Error saving person:", error)
       alert("Error al guardar los cambios")
     } finally {
       setSaving(false)
@@ -257,13 +258,13 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
     )
   }
 
-  if (!client) {
+  if (!person) {
     return (
       <div className="max-w-7xl mx-auto px-4 py-6">
         <Alert>
           <AlertTitle>Error</AlertTitle>
           <AlertDescription>
-            No se pudo cargar la información del cliente.
+            No se pudo cargar la información de la persona.
           </AlertDescription>
         </Alert>
       </div>
@@ -278,18 +279,18 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
           <CardHeader className="pb-6">
             <div className="flex items-center gap-4">
               <ClientProfileImage 
-                clientId={client.id}
-                clinicId={client.systemId}
-                initialImage={client.profileImage}
+                personId={person.id}
+                clinicId={person.systemId}
+                initialImage={person.profileImage}
                 size="lg"
                 editable={false}
               />
               <div>
                 <CardTitle className="text-2xl">
-                  {client.firstName} {client.lastName}
+                  {person.firstName} {person.lastName}
                 </CardTitle>
                 <p className="text-gray-600 mt-1">
-                  Cliente desde {client.createdAt ? format(new Date(client.createdAt), "MMMM yyyy", { locale: es }) : "Fecha no disponible"}
+                  Persona desde {person.createdAt ? format(new Date(person.createdAt), "MMMM yyyy", { locale: es }) : "Fecha no disponible"}
                 </p>
               </div>
             </div>
@@ -544,7 +545,7 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
                 <Textarea
                   id="notes"
                   {...register("notes")}
-                  placeholder="Notas adicionales sobre el cliente..."
+                  placeholder="Notas adicionales sobre la persona..."
                   className="min-h-[100px] resize-none"
                 />
               </div>
@@ -555,8 +556,8 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
               <SectionTitle icon={UserPlus} title="Relaciones" />
               <EntityRelationsManager
                 entityType="client"
-                entityId={client.id}
-                systemId={client.systemId}
+                entityId={person.id}
+                systemId={person.systemId}
               />
             </div>
 

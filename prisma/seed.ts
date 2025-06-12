@@ -24,11 +24,11 @@ import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library'; 
 // Ya no necesitamos importar Permission aquí
 // import { Permission } from '@prisma/client'; // Comentar o eliminar si estaba duplicada
 
-import { hashPassword } from '../lib/hash'; // Cambiado a hash sin extensión
+import { hashPassword } from '@/lib/hash'; // Usando alias @/
 import path from 'path'; // Importar path
 import { fileURLToPath } from 'url'; // Importar fileURLToPath
-import { seedPersons } from './seed-persons'; // Importar función de seed de personas
-import { seedCountries } from './seed-countries';
+import { seedPersons } from '@/prisma/seed-persons'; // Usando alias @/
+import { seedCountries } from '@/prisma/seed-countries'; // Usando alias @/
 // <<< ELIMINAR Importación dinámica de mockData >>>
 // import seedCountries from './seed-countries'; // <<< ELIMINAR Importación (ya integrada)
 
@@ -1394,7 +1394,7 @@ async function main() {
       if (exampleClient) {
           const bonoMasajeDefId = createdBonoDefsMap.get('Bono 5 Masajes Relajantes');
           if (bonoMasajeDefId) { 
-              const bonoInstance = await prisma.bonoInstance.create({ data: { bonoDefinitionId: bonoMasajeDefId, clientId: exampleClient.id, remainingQuantity: 5, purchaseDate: new Date(), expiryDate: new Date(new Date().setDate(new Date().getDate() + 90)), systemId: system!.id } });
+              const bonoInstance = await prisma.bonoInstance.create({ data: { bonoDefinitionId: bonoMasajeDefId, personId: exampleClient.id, remainingQuantity: 5, purchaseDate: new Date(), expiryDate: new Date(new Date().setDate(new Date().getDate() + 90)), systemId: system!.id } });
               bonoMasajeInstanceId = bonoInstance.id; 
           }
           const packRelaxDefId = createdPackageDefsMap.get('Pack Relax Total');
@@ -1403,7 +1403,7 @@ async function main() {
                if (packDef?.items) { 
                    const remainingItemsJson: { [key: string]: number } = {};
                    packDef.items.forEach(item => { const key = item.serviceId ? `service:${item.serviceId}` : `product:${item.productId}`; remainingItemsJson[key] = item.quantity; });
-                   const packageInstance = await prisma.packageInstance.create({ data: { packageDefinitionId: packRelaxDefId, clientId: exampleClient.id, remainingItems: remainingItemsJson as any, purchaseDate: new Date(), systemId: system!.id } });
+                   const packageInstance = await prisma.packageInstance.create({ data: { packageDefinitionId: packRelaxDefId, personId: exampleClient.id, remainingItems: remainingItemsJson as any, purchaseDate: new Date(), systemId: system!.id } });
                    packRelaxInstanceId = packageInstance.id; 
                }
            }
@@ -1546,7 +1546,7 @@ async function main() {
         taxAmount: ticket1_taxAmount,
         finalAmount: ticket1_finalAmount,
         notes: 'Ticket de ejemplo simple, contabilizado (actualizado por seed).',
-        clientId: client1.id,
+        personId: client1.id,
         cashierUserId: cashierUser1.id,
         clinicId: clinic1.id,
         cashSessionId: cashSessionClinic1_Closed.id,
@@ -1562,7 +1562,7 @@ async function main() {
         taxAmount: ticket1_taxAmount,
         finalAmount: ticket1_finalAmount,
         notes: 'Ticket de ejemplo simple, contabilizado.',
-        clientId: client1.id,
+        personId: client1.id,
         cashierUserId: cashierUser1.id,
         clinicId: clinic1.id,
         systemId: system!.id,
@@ -1641,7 +1641,7 @@ async function main() {
             taxAmount: ticket2_taxAmount,
             finalAmount: ticket2_finalAmount, // Este es el importe que queda por pagar o el total a pagar
             notes: 'Ticket con descuento manual, pago parcial, actualmente abierto (actualizado por seed).',
-            clientId: client2.id,
+            personId: client2.id,
             cashierUserId: cashierUser2.id,
             sellerUserId: sellerUser1.id,
             clinicId: clinic2.id,
@@ -1656,7 +1656,7 @@ async function main() {
             taxAmount: ticket2_taxAmount,
             finalAmount: ticket2_finalAmount,
             notes: 'Ticket con descuento manual, pago parcial, actualmente abierto.',
-            clientId: client2.id,
+            personId: client2.id,
             cashierUserId: cashierUser2.id,
             sellerUserId: sellerUser1.id,
             clinicId: clinic2.id,
@@ -1722,7 +1722,7 @@ async function main() {
                 taxAmount: ticket3_taxAmount,
                 finalAmount: ticket3_finalAmount,
                 notes: 'Generado por consumo de bono masaje, contabilizado (actualizado por seed).',
-                clientId: client1.id,
+                personId: client1.id,
                 cashierUserId: cashierUser1.id,
                 clinicId: clinic1.id,
                 cashSessionId: cashSessionClinic1_Closed.id,
@@ -1736,7 +1736,7 @@ async function main() {
                 taxAmount: ticket3_taxAmount,
                 finalAmount: ticket3_finalAmount,
                 notes: 'Generado por consumo de bono masaje, contabilizado.',
-                clientId: client1.id,
+                personId: client1.id,
                 cashierUserId: cashierUser1.id,
                 clinicId: clinic1.id,
                 systemId: system!.id,
@@ -1802,7 +1802,7 @@ async function main() {
                 taxAmount: ticket4_item1_vatDetails.vatAmount,
                 finalAmount: ticket4_item1_finalPrice,
                 notes: 'Ticket de ejemplo anulado, registrado en cierre de caja (actualizado por seed).',
-                clientId: client1.id,
+                personId: client1.id,
                 cashierUserId: cashierUser1.id,
                 clinicId: clinic1.id,
                 cashSessionId: cashSessionClinic1_Closed.id, 
@@ -1816,7 +1816,7 @@ async function main() {
                 taxAmount: ticket4_item1_vatDetails.vatAmount,
                 finalAmount: ticket4_item1_finalPrice,
                 notes: 'Ticket de ejemplo anulado, registrado en cierre de caja.',
-                clientId: client1.id,
+                personId: client1.id,
                 cashierUserId: cashierUser1.id,
                 clinicId: clinic1.id,
                 systemId: system!.id,

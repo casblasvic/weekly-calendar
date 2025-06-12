@@ -5,14 +5,14 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Search, Calendar } from "lucide-react"
 import { useRouter } from "next/navigation"
-import { useClientsQuery } from "@/lib/hooks/use-client-query"
+import { usePersonClientsQuery } from "@/lib/hooks/use-person-query"
 
 export function MobileClientList() {
   const [searchTerm, setSearchTerm] = useState("")
   const router = useRouter()
 
   // Obtener datos reales de la base de datos
-  const { data: clients = [], isLoading, error } = useClientsQuery({
+  const { data: clients = [], isLoading, error } = usePersonClientsQuery({
     search: searchTerm
   })
 

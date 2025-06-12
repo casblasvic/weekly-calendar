@@ -15,7 +15,8 @@
     "db:seed": "npx tsx prisma/seed.ts",
     "db:seed:debug": "node --inspect-brk -r tsx/cjs prisma/seed.ts",
     "test:seed:simple": "npx tsx scripts/test-seed-simple.ts",
-    "db:studio": "npx prisma studio"
+    "db:studio": "npx prisma studio",
+    "db:migrate-clients": "npx tsx prisma/migrations/migrate-clients-to-persons.ts"
   },
   "dependencies": {
     "@auth/core": "^0.39.1",

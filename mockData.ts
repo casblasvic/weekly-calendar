@@ -531,22 +531,22 @@ export const saveTarifaImages = async (tarifaId: string, images: EntityImage[]):
   }
 };
 
-export const getClientImages = async (clientId: string): Promise<EntityImage[]> => {
+export const getPersonImages = async (personId: string): Promise<EntityImage[]> => {
   try {
     const dataService = getDataService();
-    return await dataService.getEntityImages('client', clientId);
+    return await dataService.getEntityImages('person', personId);
   } catch (error) {
-    console.error(`Error en getClientImages(${clientId}):`, error);
+    console.error(`Error en getPersonImages(${personId}):`, error);
     return [];
   }
 };
 
-export const saveClientImages = async (clientId: string, images: EntityImage[]): Promise<boolean> => {
+export const savePersonImages = async (personId: string, images: EntityImage[]): Promise<boolean> => {
   try {
     const dataService = getDataService();
-    return await dataService.saveEntityImages('client', clientId, images);
+    return await dataService.saveEntityImages('person', personId, images);
   } catch (error) {
-    console.error(`Error en saveClientImages(${clientId}):`, error);
+    console.error(`Error en savePersonImages(${personId}):`, error);
     return false;
   }
 };

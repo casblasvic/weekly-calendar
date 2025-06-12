@@ -26,7 +26,7 @@ interface TicketWithRelations {
   taxAmount: number;
   items?: any[];
   payments?: any[];
-  client?: any;
+  person?: any;
   createdById?: string;
   [key: string]: any;
 }
@@ -40,7 +40,7 @@ interface InvoiceWithRelations {
   currencyCode: string;
   totalAmount: number;
   items?: any[];
-  client?: any;
+  person?: any;
   company?: any;
   [key: string]: any;
 }
@@ -169,7 +169,7 @@ async function generateTicketJournalEntry(
           },
         },
       },
-      client: true,
+      person: true,
       company: true,
     },
   }) as TicketWithRelations | null;
@@ -293,7 +293,7 @@ async function generateInvoiceJournalEntry(
           vatRate: true,
         },
       },
-      client: true,
+      person: true,
       company: true,
     },
   }) as InvoiceWithRelations | null;
@@ -306,18 +306,18 @@ async function generateInvoiceJournalEntry(
   let lineOrder = 0;
 
   const legalEntityIdInvoice = invoice.type === 'SALE' 
-    ? invoice.client?.legalEntityId 
+    ? invoice.person?.legalEntityId 
     : invoice.company?.legalEntityId;
 
   // Para facturas de venta (emitidas)
   if (invoice.type === 'SALE') {
     // 1. Línea de cliente (debe)
-    const clientAccountId = await getClientAccountId(invoice.client?.id, legalEntityIdInvoice);
+    const clientAccountId = await getPersonAccountId(invoice.person?.id, legalEntityIdInvoice);
     lines.push({
       accountId: clientAccountId,
       debit: decimal(invoice.totalAmount),
       credit: decimal(0),
-      description: `${invoice.client?.firstName || ''} ${invoice.client?.lastName || ''}`.trim() || 'Cliente',
+      description: `${invoice.person?.firstName || ''} ${invoice.person?.lastName || ''}`.trim() || 'Cliente',
       order: lineOrder++,
     });
 
@@ -558,8 +558,8 @@ async function getDiscountAccountMapping(legalEntityId: string): Promise<string 
   return discountAccount?.id || null;
 }
 
-async function getClientAccountId(clientId: string | undefined, legalEntityId: string): Promise<string> {
-  // TODO: Implementar cuentas individuales por cliente
+async function getPersonAccountId(personId: string | undefined, legalEntityId: string): Promise<string> {
+  // TODO: Implementar cuentas individuales por persona
   // Por ahora usar cuenta genérica de clientes
   const clientAccount = await prisma.chartOfAccountEntry.findFirst({
     where: {

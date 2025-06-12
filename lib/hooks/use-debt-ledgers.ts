@@ -6,7 +6,7 @@ export interface DebtLedgerListItem {
   id: string;
   ticketId: string;
   clinicId: string;
-  client: { id: string; firstName: string | null; lastName: string | null } | null;
+  person: { id: string; firstName: string | null; lastName: string | null } | null;
   originalAmount: number;
   paidAmount: number;
   pendingAmount: number;
@@ -26,8 +26,8 @@ export interface DebtLedgerListItem {
 export interface UseDebtLedgersQueryOptions {
   clinicId?: string | null;
   status?: DebtStatus | null;
-  clientId?: string | null;
-  clientNameSearch?: string | null;
+  personId?: string | null;
+  personNameSearch?: string | null;
   ticketNumberSearch?: string | null;
   dateFrom?: string | null; // ISO date string
   dateTo?: string | null;   // ISO date string
@@ -52,8 +52,8 @@ export function useDebtLedgersQuery(
       const searchParams = new URLSearchParams();
       if (params.clinicId) searchParams.append('clinicId', params.clinicId);
       if (params.status) searchParams.append('status', params.status);
-      if (params.clientId) searchParams.append('clientId', params.clientId);
-      if (params.clientNameSearch) searchParams.append('clientNameSearch', params.clientNameSearch);
+      if (params.personId) searchParams.append('personId', params.personId);
+      if (params.personNameSearch) searchParams.append('personNameSearch', params.personNameSearch);
       if (params.ticketNumberSearch) searchParams.append('ticketNumberSearch', params.ticketNumberSearch);
       if (params.dateFrom) searchParams.append('dateFrom', params.dateFrom);
       if (params.dateTo) searchParams.append('dateTo', params.dateTo);

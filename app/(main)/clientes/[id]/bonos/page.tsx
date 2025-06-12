@@ -34,10 +34,10 @@ interface BonoInstance {
   }>
 }
 
-// API para obtener bonos del cliente
-async function getClientBonos(clientId: string): Promise<BonoInstance[]> {
+// API para obtener bonos de la persona
+async function getPersonBonos(personId: string): Promise<BonoInstance[]> {
   try {
-    const response = await fetch(`/api/clients/${clientId}/bonos`)
+    const response = await fetch(`/api/persons/${personId}/bonos`)
     if (!response.ok) {
       throw new Error("Error al obtener bonos")
     }
@@ -60,7 +60,7 @@ export default function BonosPage({ params }: { params: Promise<{ id: string }> 
   const loadBonos = async () => {
     setLoading(true)
     try {
-      const bonosData = await getClientBonos(resolvedParams.id)
+      const bonosData = await getPersonBonos(resolvedParams.id)
       setBonos(bonosData)
     } catch (error) {
       console.error("Error loading bonos:", error)
@@ -133,7 +133,7 @@ export default function BonosPage({ params }: { params: Promise<{ id: string }> 
             <CardContent className="p-8 text-center text-gray-500">
               <Package className="h-12 w-12 mx-auto mb-4 text-gray-400" />
               <p className="text-lg font-medium mb-2">No hay bonos contratados</p>
-              <p>Este cliente no tiene bonos activos o históricos.</p>
+              <p>Esta persona no tiene bonos activos o históricos.</p>
             </CardContent>
           </Card>
         ) : (

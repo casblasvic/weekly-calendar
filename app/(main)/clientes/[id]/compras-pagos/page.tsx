@@ -1,42 +1,36 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { use } from 'react'
+import { useState, useEffect, use } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { ShoppingCart, CreditCard, User, Building, Calendar, Euro, FileText, ArrowUpDown } from 'lucide-react'
+import { ShoppingBag, CreditCard, CheckCircle, XCircle, Clock, Calendar, User, FileText } from 'lucide-react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Button } from '@/components/ui/button'
 
-interface TicketData {
+interface Ticket {
   id: string
   ticketNumber: string
-  issueDate: string
-  totalAmount: number
-  finalAmount: number
+  createdAt: string
+  totalPrice: number
+  finalPrice: number
+  paidAmount: number
+  remainingAmount: number
   status: string
   type: string
-  client?: {
+  person?: {
     id: string
     firstName: string
     lastName: string
   }
-  payerClient?: {
+  payerPerson?: {
     id: string
     firstName: string
     lastName: string
   }
-  payerCompany?: {
-    id: string
-    name: string
-  }
-  clinic: {
-    name: string
-  }
-  items: Array<{
+  items?: Array<{
     id: string
     description: string
     quantity: number
@@ -45,75 +39,66 @@ interface TicketData {
   }>
 }
 
-interface PaymentData {
+interface Payment {
   id: string
+  paymentNumber: string
+  createdAt: string
   amount: number
-  paymentDate: string
-  type: string
-  status?: string
-  paymentMethodDefinition?: {
-    name: string
-  }
-  ticket?: {
+  status: string
+  paymentMethodCode: string
+  tickets: Array<{
     id: string
     ticketNumber: string
-    client?: {
+    amount: number
+    person?: {
+      id: string
       firstName: string
       lastName: string
     }
-  }
-  invoice?: {
-    id: string
-    invoiceNumber: string
-  }
+  }>
 }
 
 export default function ComprasPagosPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params)
-  const clientId = resolvedParams.id
-  
-  const [ticketsAsReceiver, setTicketsAsReceiver] = useState<TicketData[]>([])
-  const [ticketsAsPayer, setTicketsAsPayer] = useState<TicketData[]>([])
-  const [paymentsAsPayer, setPaymentsAsPayer] = useState<PaymentData[]>([])
+  const personId = resolvedParams.id
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [ticketsAsReceiver, setTicketsAsReceiver] = useState<Ticket[]>([])
+  const [ticketsAsPayer, setTicketsAsPayer] = useState<Ticket[]>([])
+  const [paymentsAsPayer, setPaymentsAsPayer] = useState<Payment[]>([])
 
   useEffect(() => {
-    const fetchData = async () => {
+    const loadData = async () => {
+      setLoading(true)
       try {
-        setLoading(true)
-        
-        // Obtener tickets como receptor (cliente que recibe el servicio)
-        const receiverResponse = await fetch(`/api/clients/${clientId}/tickets-as-receiver`)
+        // Obtener tickets como receptor (persona que recibe el servicio)
+        const receiverResponse = await fetch(`/api/persons/${personId}/tickets-as-receiver`)
         if (receiverResponse.ok) {
           const receiverData = await receiverResponse.json()
           setTicketsAsReceiver(receiverData)
         }
 
-        // Obtener tickets como pagador (cliente que paga por otros)
-        const payerTicketsResponse = await fetch(`/api/clients/${clientId}/tickets-as-payer`)
+        // Obtener tickets como pagador (persona que paga por otros)
+        const payerTicketsResponse = await fetch(`/api/persons/${personId}/tickets-as-payer`)
         if (payerTicketsResponse.ok) {
           const payerTicketsData = await payerTicketsResponse.json()
           setTicketsAsPayer(payerTicketsData)
         }
 
-        // Obtener pagos realizados por este cliente
-        const paymentsResponse = await fetch(`/api/clients/${clientId}/payments-as-payer`)
+        // Obtener pagos realizados por esta persona
+        const paymentsResponse = await fetch(`/api/persons/${personId}/payments-as-payer`)
         if (paymentsResponse.ok) {
           const paymentsData = await paymentsResponse.json()
           setPaymentsAsPayer(paymentsData)
         }
-
       } catch (error) {
-        console.error('Error fetching compras y pagos data:', error)
-        setError('Error al cargar los datos de compras y pagos')
+        console.error("Error loading data:", error)
       } finally {
         setLoading(false)
       }
     }
 
-    fetchData()
-  }, [clientId])
+    loadData()
+  }, [personId])
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('es-ES', {
@@ -157,18 +142,6 @@ export default function ComprasPagosPage({ params }: { params: Promise<{ id: str
     )
   }
 
-  if (error) {
-    return (
-      <div className="max-w-7xl mx-auto px-4 py-6">
-        <Card>
-          <CardContent className="p-6">
-            <p className="text-red-600">{error}</p>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
-
   return (
     <div className="max-w-7xl mx-auto px-4 py-6">
       <div className="space-y-6">
@@ -179,7 +152,7 @@ export default function ComprasPagosPage({ params }: { params: Promise<{ id: str
         <Tabs defaultValue="como-receptor" className="space-y-6">
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="como-receptor" className="flex items-center gap-2">
-              <ShoppingCart className="h-4 w-4" />
+              <ShoppingBag className="h-4 w-4" />
               Como Receptor
             </TabsTrigger>
             <TabsTrigger value="como-pagador" className="flex items-center gap-2">
@@ -187,7 +160,7 @@ export default function ComprasPagosPage({ params }: { params: Promise<{ id: str
               Como Pagador
             </TabsTrigger>
             <TabsTrigger value="pagos-realizados" className="flex items-center gap-2">
-              <Euro className="h-4 w-4" />
+              <User className="h-4 w-4" />
               Pagos Realizados
             </TabsTrigger>
           </TabsList>
@@ -196,11 +169,11 @@ export default function ComprasPagosPage({ params }: { params: Promise<{ id: str
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <ShoppingCart className="h-5 w-5" />
+                  <ShoppingBag className="h-5 w-5" />
                   Compras como Receptor
                 </CardTitle>
                 <p className="text-sm text-gray-600">
-                  Servicios y productos recibidos por este cliente
+                  Servicios y productos recibidos por esta persona
                 </p>
               </CardHeader>
               <CardContent>
@@ -212,7 +185,6 @@ export default function ComprasPagosPage({ params }: { params: Promise<{ id: str
                       <TableRow>
                         <TableHead>Ticket</TableHead>
                         <TableHead>Fecha</TableHead>
-                        <TableHead>Clínica</TableHead>
                         <TableHead>Pagador</TableHead>
                         <TableHead>Importe</TableHead>
                         <TableHead>Estado</TableHead>
@@ -223,24 +195,18 @@ export default function ComprasPagosPage({ params }: { params: Promise<{ id: str
                       {ticketsAsReceiver.map((ticket) => (
                         <TableRow key={ticket.id}>
                           <TableCell className="font-medium">{ticket.ticketNumber}</TableCell>
-                          <TableCell>{formatDate(ticket.issueDate)}</TableCell>
-                          <TableCell>{ticket.clinic.name}</TableCell>
+                          <TableCell>{formatDate(ticket.createdAt)}</TableCell>
                           <TableCell>
-                            {ticket.payerClient ? (
+                            {ticket.payerPerson ? (
                               <div className="flex items-center gap-1">
                                 <User className="h-4 w-4 text-gray-400" />
-                                <span>{ticket.payerClient.firstName} {ticket.payerClient.lastName}</span>
-                              </div>
-                            ) : ticket.payerCompany ? (
-                              <div className="flex items-center gap-1">
-                                <Building className="h-4 w-4 text-gray-400" />
-                                <span>{ticket.payerCompany.name}</span>
+                                <span>{ticket.payerPerson.firstName} {ticket.payerPerson.lastName}</span>
                               </div>
                             ) : (
-                              <span className="text-gray-500">Mismo cliente</span>
+                              <span className="text-gray-500">Misma persona</span>
                             )}
                           </TableCell>
-                          <TableCell>{formatCurrency(ticket.finalAmount)}</TableCell>
+                          <TableCell>{formatCurrency(ticket.finalPrice)}</TableCell>
                           <TableCell>{getStatusBadge(ticket.status)}</TableCell>
                           <TableCell>
                             <Button variant="outline" size="sm">
@@ -265,7 +231,7 @@ export default function ComprasPagosPage({ params }: { params: Promise<{ id: str
                   Compras como Pagador
                 </CardTitle>
                 <p className="text-sm text-gray-600">
-                  Servicios y productos pagados por este cliente para otros
+                  Servicios y productos pagados por esta persona para otros
                 </p>
               </CardHeader>
               <CardContent>
@@ -277,7 +243,6 @@ export default function ComprasPagosPage({ params }: { params: Promise<{ id: str
                       <TableRow>
                         <TableHead>Ticket</TableHead>
                         <TableHead>Fecha</TableHead>
-                        <TableHead>Clínica</TableHead>
                         <TableHead>Receptor</TableHead>
                         <TableHead>Importe</TableHead>
                         <TableHead>Estado</TableHead>
@@ -288,19 +253,18 @@ export default function ComprasPagosPage({ params }: { params: Promise<{ id: str
                       {ticketsAsPayer.map((ticket) => (
                         <TableRow key={ticket.id}>
                           <TableCell className="font-medium">{ticket.ticketNumber}</TableCell>
-                          <TableCell>{formatDate(ticket.issueDate)}</TableCell>
-                          <TableCell>{ticket.clinic.name}</TableCell>
+                          <TableCell>{formatDate(ticket.createdAt)}</TableCell>
                           <TableCell>
-                            {ticket.client ? (
+                            {ticket.person ? (
                               <div className="flex items-center gap-1">
                                 <User className="h-4 w-4 text-gray-400" />
-                                <span>{ticket.client.firstName} {ticket.client.lastName}</span>
+                                <span>{ticket.person.firstName} {ticket.person.lastName}</span>
                               </div>
                             ) : (
                               <span className="text-gray-500">No especificado</span>
                             )}
                           </TableCell>
-                          <TableCell>{formatCurrency(ticket.finalAmount)}</TableCell>
+                          <TableCell>{formatCurrency(ticket.finalPrice)}</TableCell>
                           <TableCell>{getStatusBadge(ticket.status)}</TableCell>
                           <TableCell>
                             <Button variant="outline" size="sm">
@@ -321,11 +285,11 @@ export default function ComprasPagosPage({ params }: { params: Promise<{ id: str
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <Euro className="h-5 w-5" />
+                  <User className="h-5 w-5" />
                   Pagos Realizados
                 </CardTitle>
                 <p className="text-sm text-gray-600">
-                  Historial de pagos realizados por este cliente
+                  Historial de pagos realizados por esta persona
                 </p>
               </CardHeader>
               <CardContent>
@@ -345,29 +309,25 @@ export default function ComprasPagosPage({ params }: { params: Promise<{ id: str
                     <TableBody>
                       {paymentsAsPayer.map((payment) => (
                         <TableRow key={payment.id}>
-                          <TableCell>{formatDate(payment.paymentDate)}</TableCell>
+                          <TableCell>{formatDate(payment.createdAt)}</TableCell>
                           <TableCell>
-                            {payment.paymentMethodDefinition?.name || 'No especificado'}
+                            {payment.paymentMethodCode}
                           </TableCell>
                           <TableCell>
-                            {payment.ticket ? (
-                              <div>
-                                <span>Ticket {payment.ticket.ticketNumber}</span>
-                                {payment.ticket.client && (
+                            {payment.tickets.map((ticket) => (
+                              <div key={ticket.id}>
+                                <span>Ticket {ticket.ticketNumber}</span>
+                                {ticket.person && (
                                   <div className="text-sm text-gray-500">
-                                    Para: {payment.ticket.client.firstName} {payment.ticket.client.lastName}
+                                    Para: {ticket.person.firstName} {ticket.person.lastName}
                                   </div>
                                 )}
                               </div>
-                            ) : payment.invoice ? (
-                              <span>Factura {payment.invoice.invoiceNumber}</span>
-                            ) : (
-                              <span>Pago directo</span>
-                            )}
+                            ))}
                           </TableCell>
                           <TableCell>{formatCurrency(payment.amount)}</TableCell>
                           <TableCell>
-                            {payment.status ? getStatusBadge(payment.status) : <Badge>Completado</Badge>}
+                            {getStatusBadge(payment.status)}
                           </TableCell>
                         </TableRow>
                       ))}

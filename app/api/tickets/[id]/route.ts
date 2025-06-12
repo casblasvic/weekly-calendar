@@ -54,7 +54,7 @@ export async function GET(request: NextRequest, { params: paramsPromise }: { par
         discountReason: true,
         createdAt: true,
         updatedAt: true,
-        clientId: true,
+        personId: true,
         companyId: true,
         sellerUserId: true,
         cashierUserId: true,
@@ -64,8 +64,14 @@ export async function GET(request: NextRequest, { params: paramsPromise }: { par
         originalTicketId: true,
         systemId: true,
         cashSessionId: true,
-        client: {
-          select: { id: true, firstName: true, lastName: true, email: true, phone: true, taxId: true, fiscalName: true, address: true, city: true, postalCode: true, countryIsoCode: true },
+        person: {
+          include: {
+            functionalRoles: {
+              include: {
+                clientData: true,
+              }
+            }
+          }
         },
         company: {
           select: { id: true, fiscalName: true, taxId: true, address: true, city: true, postalCode: true, countryIsoCode: true },
@@ -168,7 +174,7 @@ export async function GET(request: NextRequest, { params: paramsPromise }: { par
 
 // Esquema de validación para la actualización del ticket (campos escalares)
 const updateTicketSchema = z.object({
-  clientId: z.string().cuid({ message: "ID de cliente inválido." }).optional().nullable(),
+  personId: z.string().cuid({ message: "ID de persona inválido." }).optional().nullable(),
   sellerUserId: z.string().cuid({ message: "ID de vendedor inválido." }).optional().nullable(),
   notes: z.string().max(1000).optional().nullable(),
   ticketSeries: z.string().optional().nullable(),
@@ -218,8 +224,8 @@ export async function PUT(request: NextRequest, { params: paramsPromise }: { par
       const dataToUpdate: Prisma.TicketUpdateInput = {};
       let needsFinalAmountRecalculation = false;
 
-      if (validatedData.clientId !== undefined) {
-        dataToUpdate.client = validatedData.clientId ? { connect: { id: validatedData.clientId } } : { disconnect: true };
+      if (validatedData.personId !== undefined) {
+        dataToUpdate.person = validatedData.personId ? { connect: { id: validatedData.personId } } : { disconnect: true };
       }
       if (validatedData.sellerUserId !== undefined) {
         dataToUpdate.sellerUser = validatedData.sellerUserId ? { connect: { id: validatedData.sellerUserId } } : { disconnect: true };
@@ -269,7 +275,29 @@ export async function PUT(request: NextRequest, { params: paramsPromise }: { par
         select: {
             id: true, ticketNumber: true, ticketSeries: true, status: true, finalAmount: true, totalAmount: true,
             taxAmount: true, currencyCode: true, notes: true, discountType: true, discountAmount: true, discountReason: true,
-            clientId: true, client: { select: { id: true, firstName: true, lastName: true, email: true, phone: true, taxId: true, fiscalName: true, address: true, city: true, postalCode: true, countryIsoCode: true }},
+            personId: true, person: { 
+              select: { 
+                id: true, 
+                firstName: true, 
+                lastName: true, 
+                email: true, 
+                phone: true, 
+                taxId: true, 
+                address: true, 
+                city: true, 
+                postalCode: true, 
+                countryIsoCode: true,
+                functionalRoles: {
+                  include: {
+                    clientData: {
+                      select: {
+                        fiscalName: true
+                      }
+                    }
+                  }
+                }
+              }
+            },
             sellerUserId: true, sellerUser: { select: { id: true, firstName: true, lastName: true }},
             cashierUserId: true, cashierUser: { select: { id: true, firstName: true, lastName: true }},
             clinicId: true, 

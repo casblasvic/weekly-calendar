@@ -22,25 +22,25 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Badge } from "@/components/ui/badge";
-import { useClientsQuery, useClientByIdQuery, type ClientForSelector } from '@/lib/hooks/use-client-query';
+import { usePersonClientsQuery, usePersonByIdQuery, type PersonForSelector } from '@/lib/hooks/use-person-query';
 import { useTranslation } from 'react-i18next';
 
 interface ClientSelectorSearchProps {
-  selectedClientId?: string;
-  onClientSelect: (client: ClientForSelector | null) => void;
+  selectedPersonId?: string;
+  onClientSelect: (client: PersonForSelector | null) => void;
   setFormValue: <T extends string>(field: T, value: any, options?: object) => void;
   disabled?: boolean;
   isServiceReceiver?: boolean;
 }
 
-export function ClientSelectorSearch({ selectedClientId, onClientSelect, setFormValue, disabled = false, isServiceReceiver = false }: ClientSelectorSearchProps) {
+export function ClientSelectorSearch({ selectedPersonId, onClientSelect, setFormValue, disabled = false, isServiceReceiver = false }: ClientSelectorSearchProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
-  const [selectedClientInternal, setSelectedClientInternal] = useState<ClientForSelector | null>(null);
+  const [selectedClientInternal, setSelectedClientInternal] = useState<PersonForSelector | null>(null);
   const [searchValue, setSearchValue] = useState<string>("");
 
-  const { data: searchedClients = [], isLoading: isLoadingSearch, isError: isErrorSearch } = useClientsQuery(
+  const { data: searchedClients = [], isLoading: isLoadingSearch, isError: isErrorSearch } = usePersonClientsQuery(
     { search: searchValue }, 
     { enabled: open }
   );
@@ -48,14 +48,14 @@ export function ClientSelectorSearch({ selectedClientId, onClientSelect, setForm
   const { 
     data: initialClient, 
     isLoading: isLoadingInitialClient,
-  } = useClientByIdQuery(selectedClientId, {
-    enabled: !!selectedClientId && !open, 
+  } = usePersonByIdQuery(selectedPersonId, {
+    enabled: !!selectedPersonId && !open, 
   });
 
   const handleClear = () => {
     setSelectedClientInternal(null);
     setIsDetailsOpen(false);
-    setFormValue("clientId", undefined, { shouldValidate: true });
+    setFormValue("personId", undefined, { shouldValidate: true });
     setFormValue("clientName", undefined);
     setFormValue("clientDetails", undefined);
     onClientSelect(null);
@@ -63,8 +63,8 @@ export function ClientSelectorSearch({ selectedClientId, onClientSelect, setForm
   };
 
   useEffect(() => {
-    if (selectedClientId) {
-      if (selectedClientInternal && selectedClientInternal.id === selectedClientId) {
+    if (selectedPersonId) {
+      if (selectedClientInternal && selectedClientInternal.id === selectedPersonId) {
         if (!isDetailsOpen) setIsDetailsOpen(true);
         return; 
       }
@@ -73,12 +73,12 @@ export function ClientSelectorSearch({ selectedClientId, onClientSelect, setForm
         setSelectedClientInternal(initialClient);
         setIsDetailsOpen(true);
         const clientDisplayName = `${initialClient.firstName} ${initialClient.lastName}${initialClient.company?.fiscalName ? ` (${initialClient.company.fiscalName})` : initialClient.fiscalName ? ` (${initialClient.fiscalName})` : ''}`.trim();
-        setFormValue("clientId", initialClient.id, { shouldValidate: true });
+        setFormValue("personId", initialClient.id, { shouldValidate: true });
         setFormValue("clientName", clientDisplayName);
         setFormValue("clientDetails", initialClient);
         onClientSelect(initialClient); 
-      } else if (!isLoadingInitialClient && selectedClientId) {
-        if (selectedClientInternal && selectedClientInternal.id === selectedClientId) {
+      } else if (!isLoadingInitialClient && selectedPersonId) {
+        if (selectedClientInternal && selectedClientInternal.id === selectedPersonId) {
            handleClear();
         } else if (!selectedClientInternal) {
         }
@@ -90,7 +90,7 @@ export function ClientSelectorSearch({ selectedClientId, onClientSelect, setForm
       }
     }
   }, [
-    selectedClientId, 
+    selectedPersonId, 
     initialClient, 
     isLoadingInitialClient, 
     selectedClientInternal, 
@@ -99,11 +99,11 @@ export function ClientSelectorSearch({ selectedClientId, onClientSelect, setForm
     isDetailsOpen
   ]);
 
-  const handleSelect = (client: ClientForSelector) => {
+  const handleSelect = (client: PersonForSelector) => {
     setSelectedClientInternal(client);
     setIsDetailsOpen(true);
     const clientDisplayName = `${client.firstName} ${client.lastName}${client.company?.fiscalName ? ` (${client.company.fiscalName})` : client.fiscalName ? ` (${client.fiscalName})` : ''}`;
-    setFormValue("clientId", client.id, { shouldValidate: true });
+    setFormValue("personId", client.id, { shouldValidate: true });
     setFormValue("clientName", clientDisplayName);
     setFormValue("clientDetails", client);
     onClientSelect(client);
@@ -112,7 +112,7 @@ export function ClientSelectorSearch({ selectedClientId, onClientSelect, setForm
   };
 
   const displayClientName = useMemo(() => {
-    if (isLoadingInitialClient && selectedClientId && (!selectedClientInternal || selectedClientInternal.id !== selectedClientId)) {
+    if (isLoadingInitialClient && selectedPersonId && (!selectedClientInternal || selectedClientInternal.id !== selectedPersonId)) {
       return t('common.loading');
     }
     if (!selectedClientInternal) return t('tickets.selectClient');
@@ -123,7 +123,7 @@ export function ClientSelectorSearch({ selectedClientId, onClientSelect, setForm
       name += ` (${selectedClientInternal.fiscalName})`;
     }
     return name;
-  }, [selectedClientInternal, t, isLoadingInitialClient, selectedClientId]);
+  }, [selectedClientInternal, t, isLoadingInitialClient, selectedPersonId]);
 
   return (
     <div className="w-full space-y-4">
@@ -150,14 +150,14 @@ export function ClientSelectorSearch({ selectedClientId, onClientSelect, setForm
               role="combobox"
               aria-expanded={open}
               className="w-full justify-between h-9 px-3 py-1 text-sm border-gray-300 bg-white hover:bg-gray-50"
-              disabled={(isLoadingInitialClient && !selectedClientInternal && !!selectedClientId) || disabled}
+              disabled={(isLoadingInitialClient && !selectedClientInternal && !!selectedPersonId) || disabled}
             >
               {selectedClientInternal ? (
                 <span className="flex items-center truncate">
                   <User className="mr-2 h-3.5 w-3.5 text-gray-500 flex-shrink-0" />
                   <span className="font-medium truncate">{displayClientName}</span>
                 </span>
-              ) : isLoadingInitialClient && !!selectedClientId ? (
+              ) : isLoadingInitialClient && !!selectedPersonId ? (
                 <span className="text-muted-foreground flex items-center">
                   <User className="mr-2 h-3.5 w-3.5" />
                   {t('common.loading')}

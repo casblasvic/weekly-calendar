@@ -9,14 +9,14 @@ import { useState } from "react"
 import { NewClientDialog } from "./new-client-dialog"
 import { History } from "lucide-react"
 
-interface ClientSearchDialogProps {
+interface PersonSearchDialogProps {
   isOpen: boolean
   onClose: () => void
-  onClientSelect: (client: Client) => void
+  onPersonSelect: (person: Person) => void
   selectedTime?: string
 }
 
-interface Client {
+interface Person {
   id: string
   name: string
   phone: string
@@ -25,7 +25,7 @@ interface Client {
   clinic: string
 }
 
-const TEST_CLIENTS = [
+const TEST_PERSONS = [
   {
     id: "1",
     name: "vicente blasco",
@@ -44,7 +44,7 @@ const TEST_CLIENTS = [
   },
 ]
 
-export function ClientSearchDialog({ isOpen, onClose, onClientSelect, selectedTime }: ClientSearchDialogProps) {
+export function PersonSearchDialog({ isOpen, onClose, onPersonSelect, selectedTime }: PersonSearchDialogProps) {
   const { lastClient, setLastClient } = useLastClient()
   const [formData, setFormData] = useState({
     nombre: "",
@@ -54,7 +54,7 @@ export function ClientSearchDialog({ isOpen, onClose, onClientSelect, selectedTi
     numeroCliente: "",
   })
   const [isNewClientDialogOpen, setIsNewClientDialogOpen] = useState(false)
-  const [searchResults, setSearchResults] = useState<Client[]>([])
+  const [searchResults, setSearchResults] = useState<Person[]>([])
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
@@ -65,13 +65,13 @@ export function ClientSearchDialog({ isOpen, onClose, onClientSelect, selectedTi
   }
 
   const handleSearch = () => {
-    const results = TEST_CLIENTS.filter((client) => client.name.toLowerCase().includes(formData.nombre.toLowerCase()))
+    const results = TEST_PERSONS.filter((person) => person.name.toLowerCase().includes(formData.nombre.toLowerCase()))
     setSearchResults(results)
   }
 
-  const handleClientSelection = (client: Client) => {
-    setLastClient(client)
-    onClientSelect(client)
+  const handlePersonSelection = (person: Person) => {
+    setLastClient(person)
+    onPersonSelect(person)
   }
 
   return (
@@ -79,14 +79,14 @@ export function ClientSearchDialog({ isOpen, onClose, onClientSelect, selectedTi
       <Dialog open={isOpen} onOpenChange={onClose}>
         <DialogContent className="sm:max-w-[700px] md:max-w-[900px] p-0 bg-white overflow-hidden">
           <DialogHeader>
-            <DialogTitle>Buscar Cliente</DialogTitle>
+            <DialogTitle>Buscar Persona</DialogTitle>
             <DialogDescription>
-              Busca un cliente existente por nombre o teléfono para asignarlo a la cita.
+              Busca una persona existente por nombre o teléfono para asignarlo a la cita.
             </DialogDescription>
           </DialogHeader>
           <div className="p-6 space-y-6">
             <div className="flex flex-col h-full">
-              <h2 className="text-xl font-semibold mb-4">Buscador de clientes</h2>
+              <h2 className="text-xl font-semibold mb-4">Buscador de personas</h2>
 
               {/* Quick Select Button */}
               {lastClient && (
@@ -96,13 +96,13 @@ export function ClientSearchDialog({ isOpen, onClose, onClientSelect, selectedTi
                       <History className="h-4 w-4 text-purple-600" />
                       <div>
                         <div className="font-medium text-purple-900">{lastClient.name}</div>
-                        <div className="text-sm text-purple-700">Último cliente seleccionado</div>
+                        <div className="text-sm text-purple-700">Última persona seleccionada</div>
                       </div>
                     </div>
                     <Button
                       variant="ghost"
                       className="text-purple-600 hover:text-purple-700 hover:bg-purple-100"
-                      onClick={() => handleClientSelection(lastClient)}
+                      onClick={() => handlePersonSelection(lastClient)}
                     >
                       Seleccionar
                     </Button>
@@ -133,7 +133,7 @@ export function ClientSearchDialog({ isOpen, onClose, onClientSelect, selectedTi
                   name="numeroCliente"
                   value={formData.numeroCliente}
                   onChange={handleInputChange}
-                  placeholder="Nº Cliente"
+                  placeholder="Nº Persona"
                   className="max-w-[200px]"
                 />
                 <Button variant="default" className="bg-purple-600 hover:bg-purple-700 ml-auto" onClick={handleSearch}>
@@ -143,20 +143,20 @@ export function ClientSearchDialog({ isOpen, onClose, onClientSelect, selectedTi
 
               {/* Results */}
               <div className="flex-1 overflow-y-auto">
-                {searchResults.map((client) => (
-                  <div key={client.id} className="border-b last:border-b-0 p-3 hover:bg-gray-50">
+                {searchResults.map((person) => (
+                  <div key={person.id} className="border-b last:border-b-0 p-3 hover:bg-gray-50">
                     <div className="flex justify-between items-start">
                       <div>
-                        <div className="font-medium">{client.name}</div>
+                        <div className="font-medium">{person.name}</div>
                         <div className="text-sm text-gray-500">
-                          Nº {client.clientNumber} · {client.phone}
+                          Nº {person.clientNumber} · {person.phone}
                         </div>
-                        {client.email && <div className="text-sm text-gray-500">{client.email}</div>}
+                        {person.email && <div className="text-sm text-gray-500">{person.email}</div>}
                       </div>
                       <Button
                         variant="ghost"
                         className="text-purple-600 hover:text-purple-700 hover:bg-purple-50"
-                        onClick={() => handleClientSelection(client)}
+                        onClick={() => handlePersonSelection(person)}
                       >
                         Seleccionar
                       </Button>
@@ -175,7 +175,7 @@ export function ClientSearchDialog({ isOpen, onClose, onClientSelect, selectedTi
                   className="bg-purple-600 hover:bg-purple-700"
                   onClick={() => setIsNewClientDialogOpen(true)}
                 >
-                  Nuevo cliente
+                  Nueva persona
                 </Button>
               </div>
             </div>
@@ -187,4 +187,3 @@ export function ClientSearchDialog({ isOpen, onClose, onClientSelect, selectedTi
     </>
   )
 }
-

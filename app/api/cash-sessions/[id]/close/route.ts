@@ -117,15 +117,16 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
                 },
               });
             } else {
-              if (!t.clientId) {
-                console.warn(`Ticket ${t.id} no tiene clientId, no se puede crear deuda. Se marcará sin deuda pendiente.`);
+              // Cambiar validación a personId
+              if (!t.personId) {
+                console.warn(`Ticket ${t.id} no tiene personId, no se puede crear deuda. Se marcará sin deuda pendiente.`);
                 await tx.ticket.update({ where: { id: t.id }, data: { hasOpenDebt: false, dueAmount: 0 } });
                 continue; 
               }
               await tx.debtLedger.create({
                 data: {
                   ticketId: t.id,
-                  clientId: t.clientId!,
+                  personId: t.personId!, // Cambiar a personId
                   clinicId: t.clinicId!,
                   originalAmount: totalDeferredForTicket,
                   paidAmount: 0,

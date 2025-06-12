@@ -5,31 +5,30 @@
  */
 
 import {
-  // BaseEntity, // Eliminar temporalmente
-  // Clinica, // Eliminar temporalmente
-  // EntityDocument, // Eliminar temporalmente
-  // EntityImage, // Eliminar temporalmente
-  // Equipo, // Eliminar temporalmente
-  // FamiliaTarifa, // Eliminar temporalmente
-  // ScheduleBlock, // Eliminar temporalmente
-  // Servicio, // Eliminar temporalmente
-  // Tarifa, // Eliminar temporalmente
-  // TipoIVA, // Eliminar temporalmente
-  // Producto, // Eliminar temporalmente
-  // Consumo, // Eliminar temporalmente
-  // Bono, // Eliminar temporalmente
-  // Usuario, // Eliminar temporalmente
-  // ExcepcionHoraria, // Eliminar temporalmente
-  // ExcepcionHorariaUsuario // Eliminar temporalmente
+  BaseEntity,
+  Clinica,
+  EntityDocument,
+  EntityImage,
+  Equipo,
+  FamiliaTarifa,
+  ScheduleBlock,
+  Servicio,
+  Tarifa,
+  TipoIVA,
+  Producto,
+  Consumo,
+  BonoDefinition,
+  Usuario,
+  ExcepcionHoraria
 } from './models/interfaces.ts';
 
 /**
- * Interfaz para Clientes
+ * Interfaz para Personas
  */
-export interface Client {
+export interface Person {
   id: string;
   name: string;
-  clientNumber: string;
+  personNumber: string;
   phone: string;
   email: string;
   clinic: string;
@@ -140,13 +139,13 @@ export interface DataService {
   deleteScheduleBlock(id: string): Promise<boolean>;
   getBlocksByDateRange(clinicId: string, startDate: string, endDate: string): Promise<ScheduleBlock[]>;
 
-  // Métodos para Clientes
-  getAllClients(): Promise<Client[]>;
-  getClientById(id: string): Promise<Client | null>;
-  createClient(client: Omit<Client, 'id'>): Promise<Client>;
-  updateClient(id: string, client: Partial<Client>): Promise<Client | null>;
-  deleteClient(id: string): Promise<boolean>;
-  getClientsByClinicId(clinicId: string): Promise<Client[]>;
+  // Métodos para Personas
+  getAllPersons(): Promise<Person[]>;
+  getPersonById(id: string): Promise<Person | null>;
+  createPerson(person: Omit<Person, 'id'>): Promise<Person>;
+  updatePerson(id: string, person: Partial<Person>): Promise<Person | null>;
+  deletePerson(id: string): Promise<boolean>;
+  getPersonsByClinicId(clinicId: string): Promise<Person[]>;
   
   // Métodos para Plantillas Horarias
   getAllScheduleTemplates(): Promise<ScheduleTemplate[]>;
@@ -176,13 +175,13 @@ export interface DataService {
   getProductosByFamilia(familia: string): Promise<Producto[]>;
   
   // Operaciones de Bonos
-  getAllBonos(): Promise<Bono[]>;
-  getBonoById(id: string): Promise<Bono | null>;
-  createBono(bono: Omit<Bono, 'id'>): Promise<Bono>;
-  updateBono(id: string, bono: Partial<Bono>): Promise<Bono | null>;
+  getAllBonos(): Promise<BonoDefinition[]>;
+  getBonoById(id: string): Promise<BonoDefinition | null>;
+  createBono(bono: Omit<BonoDefinition, 'id'>): Promise<BonoDefinition>;
+  updateBono(id: string, bono: Partial<BonoDefinition>): Promise<BonoDefinition | null>;
   deleteBono(id: string): Promise<boolean>;
-  getBonosByServicioId(servicioId: string): Promise<Bono[]>;
-  getBonosHabilitados(): Promise<Bono[]>;
+  getBonosByServicioId(servicioId: string): Promise<BonoDefinition[]>;
+  getBonosHabilitados(): Promise<BonoDefinition[]>;
   toggleBonoStatus(id: string): Promise<boolean>;
 
   // Operaciones de Usuarios

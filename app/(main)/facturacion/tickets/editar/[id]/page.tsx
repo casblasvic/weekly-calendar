@@ -44,7 +44,8 @@ import {
   useCreateTicketMutation 
 } from '@/lib/hooks/use-ticket-query';
 import { useUsersByClinicQuery, type UserForSelector } from "@/lib/hooks/use-user-query";
-import { TicketStatus, DiscountType, type Client, type User, PaymentMethodDefinition, Prisma, CashSessionStatus } from '@prisma/client';
+import { type PersonForSelector } from '@/lib/hooks/use-person-query';
+import { TicketStatus, DiscountType, type User, PaymentMethodDefinition, Prisma, CashSessionStatus } from '@prisma/client';
 import { 
   AlertDialog,
   AlertDialogAction,
@@ -100,7 +101,7 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
   const [pendingAmountForModal, setPendingAmountForModal] = useState<number>(0);
   const [isReopenConfirmModalOpen, setIsReopenConfirmModalOpen] = useState(false); // <<< NUEVO ESTADO
   const [hasServiceReceiver, setHasServiceReceiver] = useState(false);
-  const [serviceReceiverClient, setServiceReceiverClient] = useState<Client | null>(null);
+  const [serviceReceiverClient, setServiceReceiverClient] = useState<PersonForSelector | null>(null);
   
   const { id } = use(params);
   const isNewTicket = id === 'new'; // << NUEVO
@@ -287,9 +288,11 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
 
       // 4. Construct the complete formValues object for reset
       const formValues: Partial<TicketFormValues> = {
-        clientId: ticketData.clientId,
-        clientName: ticketData.client ? `${ticketData.client.firstName} ${ticketData.client.lastName || ''}`.trim() : undefined,
-        clientDetails: ticketData.client,
+        personId: ticketData.personId,
+        clientName: ticketData.person 
+          ? `${ticketData.person.firstName} ${ticketData.person.lastName || ''}`.trim()
+          : '',
+        clientDetails: ticketData.person,
         sellerId: ticketData.sellerUser?.id || null,
         series: ticketData.ticketSeries || defaultTicketFormValues.series,
         printSize: mapPrintSizeToFormEnum(ticketData.clinic?.ticketSize),
@@ -325,19 +328,19 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
   }, [form.formState.isDirty, form.formState.dirtyFields]);
 
   useEffect(() => {
-    if (ticketData?.serviceReceiverClientId) {
+    if (ticketData?.personId) {
       setHasServiceReceiver(true);
-      // Buscar el cliente receptor
-      fetch(`/api/clients/${ticketData.serviceReceiverClientId}`)
+      // Buscar la persona receptora
+      fetch(`/api/persons/${ticketData.personId}`)
         .then(res => res.json())
         .then(data => {
           if (data) {
             setServiceReceiverClient(data);
           }
         })
-        .catch(err => console.error('Error cargando cliente receptor:', err));
+        .catch(err => console.error('Error cargando persona receptora:', err));
     }
-  }, [ticketData?.serviceReceiverClientId]);
+  }, [ticketData?.personId]);
 
   const watchedItems = watch("items");
   const watchedPayments = watch("payments");
@@ -381,7 +384,6 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
   ]);
 
   const recalculateItemTotals = (item: TicketItemFormValues): TicketItemFormValues => {
-    // console.debug("[recalculateItemTotals] Ítem RECIBIDO:", item);
     const unitPrice = Number(item.unitPrice) || 0;
     const quantity = Number(item.quantity) || 0;
     const promoDiscount = Number(item.promotionDiscountAmount) || 0;
@@ -458,7 +460,7 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
       const createPayload = {
         clinicId: activeClinic.id,
         currencyCode: activeClinic.currency,
-        clientId: formData.clientId || null,
+        personId: formData.personId || null,
         sellerUserId: formData.sellerId || null,
         notes: formData.observations || null,
       } as any;
@@ -479,7 +481,7 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
 
       // Escalares iniciales (solo si hay datos)
       const scalarUpdates: any = {};
-      if (formData.clientId) scalarUpdates.clientId = formData.clientId;
+      if (formData.personId) scalarUpdates.personId = formData.personId;
       if (formData.sellerId) scalarUpdates.sellerUserId = formData.sellerId;
       if (formData.observations) scalarUpdates.notes = formData.observations;
       if (formData.series) scalarUpdates.ticketSeries = formData.series;
@@ -550,8 +552,8 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
     let hasAnyScalarChanges = false; // Flag para rastrear si hubo cambios escalares
 
     // --- 1. PROCESAR ACTUALIZACIONES ESCALARES --- (fusionado y limpiado)
-    if (formData.clientId !== (ticketData.clientId || null)) {
-      payload.scalarUpdates = { ...(payload.scalarUpdates ?? {}), clientId: formData.clientId || null };
+    if (formData.personId !== (ticketData.personId || null)) {
+      payload.scalarUpdates = { ...(payload.scalarUpdates ?? {}), personId: formData.personId || null };
       hasAnyScalarChanges = true;
     }
     if (formData.sellerId !== (ticketData.sellerUser?.id || null)) {
@@ -749,7 +751,7 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
     // --- FIN LOGS DETALLADOS ---
 
     // Obtener el cliente actualmente asignado en el formulario
-    const currentClientId = getValues('clientId');
+    const currentClientId = getValues('personId');
     const selectedClientId = client?.id ?? null;
 
     // Si no hay cambio real, no marcar el formulario como dirty ni actualizar valores
@@ -762,25 +764,26 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
     const shouldMarkDirty = true; // Siempre hay cambio si llegamos aquí
 
     if (client) {
-      console.log(`[handleClientSelectedInForm] Estableciendo clientId a: ${client.id}, clientName a: ${client.firstName} ${client.lastName}`);
-      setValue('clientId', client.id, { shouldValidate: true, shouldDirty: shouldMarkDirty });
+      console.log(`[handleClientSelectedInForm] Estableciendo personId a: ${client.id}, clientName a: ${client.firstName} ${client.lastName}`);
+      // Actualizar tanto personId (nuevo modelo)
+      setValue('personId', client.id, { shouldValidate: true, shouldDirty: shouldMarkDirty });
       setValue('clientName', `${client.firstName} ${client.lastName}${client.companyName ? ` (${client.companyName})` : ''}`.trim(), { shouldDirty: shouldMarkDirty });
       setValue('clientDetails', client, { shouldDirty: shouldMarkDirty });
-      clearErrors('clientId');
+      clearErrors('personId');
     } else {
       console.warn("[handleClientSelectedInForm] Limpiando campos de cliente porque el cliente recibido es null.");
-      setValue('clientId', undefined, { shouldValidate: true, shouldDirty: shouldMarkDirty });
+      setValue('personId', undefined, { shouldValidate: true, shouldDirty: shouldMarkDirty });
       setValue('clientName', undefined, { shouldDirty: shouldMarkDirty });
       setValue('clientDetails', undefined, { shouldDirty: shouldMarkDirty });
     }
   };
 
-  const handleServiceReceiverSelect = (client: Client | null) => {
+  const handleServiceReceiverSelect = (client: PersonForSelector | null) => {
     setServiceReceiverClient(client);
     if (client) {
-      setValue('serviceReceiverClientId', client.id, { shouldDirty: true });
+      setValue('personId', client.id, { shouldDirty: true });
     } else {
-      setValue('serviceReceiverClientId', null, { shouldDirty: true });
+      setValue('personId', null, { shouldDirty: true });
     }
   };
 
@@ -1387,10 +1390,10 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
                         >
                           <div className="p-4 rounded-lg">
                             <ClientSelectorSearch 
-                              selectedClientId={watch("clientId")}
+                              selectedPersonId={watch("personId")}
                               onClientSelect={handleClientSelectedInForm}
                               setFormValue={(field, value, options) => {
-                                if (field === "clientId" || field === "clientName" || field === "clientDetails") {
+                                if (field === "personId" || field === "clientName" || field === "clientDetails") {
                                   setValue(field as any, value, options);
                                 }
                               }}
@@ -1436,16 +1439,16 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
                               <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
                                 <div>
                                   <Label className="text-sm font-medium mb-2 block">
-                                    Cliente receptor del servicio
+                                    Persona receptora del servicio
                                   </Label>
                                   <ClientSelectorSearch 
-                                    selectedClientId={serviceReceiverClient?.id || null}
+                                    selectedPersonId={serviceReceiverClient?.id || null}
                                     onClientSelect={(client) => handleServiceReceiverSelect(client)}
                                     setFormValue={(field, value, options) => {
                                       // No necesario aquí
                                     }}
                                     disabled={isReadOnly}
-                                    isServiceReceiver={true}
+                                    isServiceReceiver
                                   />
                                 </div>
                               </div>
@@ -1822,7 +1825,8 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
                           {(() => {
                             // currentPayments y ticketTotalAmount ya están definidos arriba con watch
                             const ticketPaymentsFromForm = currentPayments || []; // Todos los pagos del formulario
-                            const totalPaid = ticketPaymentsFromForm.reduce((acc, p) => acc + (p.amount || 0), 0);
+                            const totalPaid = ticketPaymentsFromForm.reduce((acc, p) => 
+                              acc + (p.amount || 0), 0) || 0;
                             const pendingAmount = (ticketTotalAmount || 0) - totalPaid;
                             // Deshabilitar si el pendiente es 0 o negativo (con un pequeño margen para errores de flotantes)
                             const isAddPaymentDisabledComputed = pendingAmount <= 0.009;

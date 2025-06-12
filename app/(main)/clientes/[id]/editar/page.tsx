@@ -10,8 +10,8 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/componen
 import { useForm } from "react-hook-form"
 import { CustomDatePicker } from "@/components/custom-date-picker"
 
-// Mock client data (same as client detail page)
-const getMockClient = (id: string) => {
+// Mock person data (same as person detail page)
+const getMockPerson = (id: string) => {
   return {
     id,
     name: "Juan Pérez",
@@ -19,11 +19,11 @@ const getMockClient = (id: string) => {
     phone: "555-123-4567",
     address: "Calle Principal 123, Ciudad",
     birthDate: "1985-06-15",
-    notes: "Cliente frecuente. Prefiere cabañas con vista al lago.",
+    notes: "Persona frecuente. Prefiere cabañas con vista al lago.",
   }
 }
 
-export default function EditClientPage() {
+export default function EditPersonPage() {
   const router = useRouter()
   const params = useParams()
   const [loading, setLoading] = useState(true)
@@ -39,16 +39,16 @@ export default function EditClientPage() {
 
   useEffect(() => {
     // In a real app, this would be an API call
-    const clientId = params.id as string
-    const client = getMockClient(clientId)
+    const personId = params.id as string
+    const person = getMockPerson(personId)
 
     // Set form values
-    setValue("name", client.name)
-    setValue("email", client.email)
-    setValue("phone", client.phone)
-    setValue("address", client.address)
-    setValue("birthDate", new Date(client.birthDate))
-    setValue("notes", client.notes)
+    setValue("name", person.name)
+    setValue("email", person.email)
+    setValue("phone", person.phone)
+    setValue("address", person.address)
+    setValue("birthDate", new Date(person.birthDate))
+    setValue("notes", person.notes)
 
     setLoading(false)
   }, [params.id, setValue])
@@ -59,13 +59,13 @@ export default function EditClientPage() {
     setSaving(true)
     // Simulate API call delay
     await new Promise((resolve) => setTimeout(resolve, 1000))
-    console.log("Saving client data:", data)
+    console.log("Saving person data:", data)
     setSaving(false)
-    router.push(`/clientes/${params.id}`)
+    router.push(`/personas/${params.id}`)
   }
 
   const handleBack = () => {
-    router.push(`/clientes/${params.id}`)
+    router.push(`/personas/${params.id}`)
   }
 
   const handleDateChange = (date: Date | undefined) => {
@@ -82,7 +82,7 @@ export default function EditClientPage() {
         <Button variant="ghost" onClick={handleBack} className="mr-2">
           <ArrowLeft className="h-4 w-4" />
         </Button>
-        <h1 className="text-2xl font-bold tracking-tight">Editar Cliente</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Editar Persona</h1>
       </div>
 
       <form onSubmit={handleSubmit(onSubmit)}>
@@ -173,4 +173,3 @@ export default function EditClientPage() {
     </div>
   )
 }
-

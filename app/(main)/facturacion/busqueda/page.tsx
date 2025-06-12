@@ -57,7 +57,7 @@ export default function BusquedaFacturacionPage() {
   const [ticketNumber, setTicketNumber] = useState('');
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
-  const [clientId, setClientId] = useState('');
+  const [personId, setPersonId] = useState('');
   const [selectedClinicIds, setSelectedClinicIds] = useState<string[]>(['ALL']); 
   const [searchResults, setSearchResults] = useState<SearchResultItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -112,7 +112,7 @@ export default function BusquedaFacturacionPage() {
     const urlSearchType = params.get('searchType') as 'Ticket' | 'Factura' | null;
     const urlTicketNumber = params.get('ticketNumber');
     const urlInvoiceNumber = params.get('invoiceNumber');
-    const urlClientId = params.get('clientId');
+    const urlPersonId = params.get('personId');
     const urlDateFrom = params.get('dateFrom');
     const urlDateTo = params.get('dateTo');
     const urlClinicIds = params.get('clinicIds');
@@ -124,7 +124,7 @@ export default function BusquedaFacturacionPage() {
     if (urlSearchType) { setSearchType(urlSearchType); filtersApplied = true; }
     if (urlTicketNumber) { setTicketNumber(urlTicketNumber); filtersApplied = true; }
     if (urlInvoiceNumber) { setInvoiceNumber(urlInvoiceNumber); filtersApplied = true; }
-    if (urlClientId) { setClientId(urlClientId); filtersApplied = true; }
+    if (urlPersonId) { setPersonId(urlPersonId); filtersApplied = true; }
     if (urlDateFrom && urlDateTo) {
       setDateRange({ from: new Date(urlDateFrom), to: new Date(urlDateTo) });
       filtersApplied = true;
@@ -148,7 +148,7 @@ export default function BusquedaFacturacionPage() {
     setTicketNumber('');
     setInvoiceNumber('');
     setDateRange(undefined);
-    setClientId('');
+    setPersonId('');
     setSelectedClinicIds(['ALL']); 
     setSearchResults([]);
     setCurrentPage(1);
@@ -182,7 +182,7 @@ export default function BusquedaFacturacionPage() {
     if (searchType === 'Factura' && invoiceNumber) query.set('invoiceNumber', invoiceNumber);
     if (dateRange?.from) query.set('dateFrom', format(dateRange.from, 'yyyy-MM-dd'));
     if (dateRange?.to) query.set('dateTo', format(dateRange.to, 'yyyy-MM-dd'));
-    if (clientId) query.set('clientId', clientId);
+    if (personId) query.set('personId', personId);
     
     if (selectedClinicIds.length > 0 && !selectedClinicIds.includes('ALL')) {
       query.set('clinicIds', selectedClinicIds.join(','));
@@ -214,7 +214,7 @@ export default function BusquedaFacturacionPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [searchType, ticketNumber, invoiceNumber, clientId, dateRange, selectedClinicIds, pageSize]);
+  }, [searchType, ticketNumber, invoiceNumber, personId, dateRange, selectedClinicIds, pageSize]);
 
   useEffect(() => {
     if (isInitialFilterLoadDone) {
@@ -222,7 +222,7 @@ export default function BusquedaFacturacionPage() {
       if (searchType) queryParams.set('searchType', searchType);
       if (ticketNumber) queryParams.set('ticketNumber', ticketNumber);
       if (invoiceNumber) queryParams.set('invoiceNumber', invoiceNumber);
-      if (clientId) queryParams.set('clientId', clientId);
+      if (personId) queryParams.set('personId', personId);
       if (dateRange?.from) queryParams.set('dateFrom', dateRange.from.toISOString());
       if (dateRange?.to) queryParams.set('dateTo', dateRange.to.toISOString());
       if (selectedClinicIds.length > 0 && !(selectedClinicIds.length === 1 && selectedClinicIds[0] === 'ALL')) {
@@ -237,7 +237,7 @@ export default function BusquedaFacturacionPage() {
 
       handleSearch(currentPage, pageSize); 
     }
-  }, [searchType, ticketNumber, invoiceNumber, clientId, dateRange, selectedClinicIds, currentPage, pageSize, isInitialFilterLoadDone, router, handleSearch]);
+  }, [searchType, ticketNumber, invoiceNumber, personId, dateRange, selectedClinicIds, currentPage, pageSize, isInitialFilterLoadDone, router, handleSearch]);
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
@@ -300,13 +300,13 @@ export default function BusquedaFacturacionPage() {
             )}
 
             <div className="min-w-[180px]">
-              <Label htmlFor="clientId" className="text-sm font-medium text-gray-700">Identificador Cliente</Label>
+              <Label htmlFor="personId" className="text-sm font-medium text-gray-700">Identificador Persona</Label>
               <Input 
-                id="clientId" 
+                id="personId" 
                 type="text" 
-                placeholder="ID, DNI, Nombre..." 
-                value={clientId} 
-                onChange={(e) => setClientId(e.target.value)} 
+                placeholder="ID de la persona" 
+                value={personId} 
+                onChange={(e) => setPersonId(e.target.value)} 
                 className="mt-1 block w-full"
               />
             </div>
@@ -381,7 +381,7 @@ export default function BusquedaFacturacionPage() {
               <TableHead className="text-gray-600 font-semibold">Tipo</TableHead>
               <TableHead className="text-gray-600 font-semibold">Número</TableHead>
               <TableHead className="text-gray-600 font-semibold">Clínica</TableHead> {/* Added Clínica Header */}
-              <TableHead className="text-gray-600 font-semibold">Cliente</TableHead>
+              <TableHead className="text-gray-600 font-semibold">Persona</TableHead>
               <TableHead className="text-gray-600 font-semibold">Fecha</TableHead>
               <TableHead className="text-right text-gray-600 font-semibold">Total</TableHead>
               <TableHead className="text-center text-gray-600 font-semibold">Estado</TableHead>
@@ -479,7 +479,7 @@ export default function BusquedaFacturacionPage() {
                             if (searchType) queryParams.set('searchType', searchType);
                             if (ticketNumber) queryParams.set('ticketNumber', ticketNumber);
                             if (invoiceNumber) queryParams.set('invoiceNumber', invoiceNumber);
-                            if (clientId) queryParams.set('clientId', clientId);
+                            if (personId) queryParams.set('personId', personId);
                             if (dateRange?.from) queryParams.set('dateFrom', dateRange.from.toISOString());
                             if (dateRange?.to) queryParams.set('dateTo', dateRange.to.toISOString());
                             if (selectedClinicIds.length > 0) queryParams.set('clinicIds', selectedClinicIds.join(','));

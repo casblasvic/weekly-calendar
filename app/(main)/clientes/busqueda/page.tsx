@@ -9,7 +9,7 @@ import { ArrowLeft, Calendar, DollarSign, HelpCircle, Search, Users } from "luci
 import { useRouter } from "next/navigation"
 import { MobileClientList } from "@/components/mobile/client/client-list"
 import { ExportButton } from "@/components/ExportButton"
-import { useClientsQuery } from "@/lib/hooks/use-client-query"
+import { usePersonClientsQuery } from "@/lib/hooks/use-person-query"
 
 export default function BusquedaPage() {
   const [searchParams, setSearchParams] = useState({
@@ -26,7 +26,7 @@ export default function BusquedaPage() {
   const [searchQuery, setSearchQuery] = useState("")
 
   // Obtener datos reales de la base de datos
-  const { data: clients = [], isLoading, error } = useClientsQuery({
+  const { data: clients = [], isLoading, error } = usePersonClientsQuery({
     search: searchQuery
   })
 

@@ -113,18 +113,18 @@ export function usePackageItemsQuery(packageDefinitionId: string | null, options
 }
 
 /**
- * Hook para obtener instancias de paquetes para un cliente
+ * Hook para obtener instancias de paquetes para una persona
  */
-export function useClientPackageInstancesQuery(clientId: string | null, options?: Omit<UseQueryOptions<any, unknown, any>, 'queryKey' | 'queryFn'>) {
+export function usePersonPackageInstancesQuery(personId: string | null, options?: Omit<UseQueryOptions<any, unknown, any>, 'queryKey' | 'queryFn'>) {
   return useQuery<any, unknown>({
-    queryKey: ['client-package-instances', clientId],
+    queryKey: ['person-package-instances', personId],
     queryFn: async () => {
-      if (!clientId) throw new Error('Client ID is required');
-      // Suponiendo que existe un endpoint para obtener paquetes por cliente
-      return await api.cached.get(`/api/clients/${clientId}/packages`);
+      if (!personId) throw new Error('Person ID is required');
+      const response = await api.cached.get(`/api/persons/${personId}/package-instances`);
+      return (response as any)?.instances || response || [];
     },
-    enabled: !!clientId,
-    staleTime: 1000 * 60 * 2, // 2 minutos
+    enabled: !!personId,
+    staleTime: 1000 * 60 * 5, // 5 minutos
     ...options,
   });
 }

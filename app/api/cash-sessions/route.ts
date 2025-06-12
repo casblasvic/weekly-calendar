@@ -104,7 +104,7 @@ export async function GET(req: NextRequest) {
           id: true,
           ticketNumber: true,
           finalAmount: true,
-          client: {
+          person: {
             select: {
               id: true,
               firstName: true,

@@ -58,7 +58,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
             items: { // Items de cada ticket
               select: { id: true, description: true, quantity: true, finalPrice: true, itemType: true, serviceId: true, productId: true }
             },
-            client: { // Cliente del ticket
+            person: { // Cliente del ticket
               select: { id: true, firstName: true, lastName: true }
             }
             // Otros campos o relaciones de Ticket que puedan ser útiles para el resumen
@@ -207,7 +207,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
               paymentMethodDefinition: true,
             },
           },
-          client: { select: { id: true, firstName: true, lastName: true } }, // For DebtLedger creation if needed
+          person: { select: { id: true, firstName: true, lastName: true } }, // For DebtLedger creation if needed
         },
       });
       console.log(`[CASH_CLOSE_PUT] Found ${associatedTickets.length} tickets associated with session ${sessionId}.`);
@@ -230,13 +230,13 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
               console.log(`[DEBT_UPDATE_PUT] Updated DebtLedger ${existingDebt.id} for ticket ${t.id} from ${existingDebt.pendingAmount} to ${currentTicketDeferredAmount}`);
             }
           } else {
-            if (!t.client?.id || !t.clinicId || !systemId) {
-              console.error(`[DEBT_CREATE_ERROR_PUT] Missing clientId, clinicId, or systemId for ticket ${t.id}. Cannot create debt record.`);
+            if (!t.person?.id || !t.clinicId || !systemId) {
+              console.error(`[DEBT_CREATE_ERROR_PUT] Missing personId, clinicId, or systemId for ticket ${t.id}. Cannot create debt record.`);
             } else {
               await tx.debtLedger.create({
                 data: {
                   ticketId: t.id,
-                  clientId: t.client.id,
+                  personId: t.person.id,
                   clinicId: t.clinicId,
                   originalAmount: currentTicketDeferredAmount,
                   paidAmount: 0,
@@ -345,18 +345,18 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
           const totalDeferred = deferredPayments.reduce((s, p) => s + p.amount, 0);
           if (totalDeferred > 0.009) {
             console.log('[DEFERRED DETECT] Ticket', t.id, 'Total', totalDeferred, 'NumPagos', deferredPayments.length);
-            console.log('[DEBUG] ticket clientId', t.clientId, 'clinicId', t.clinicId);
+            console.log('[DEBUG] ticket personId', t.personId, 'clinicId', t.clinicId);
             const existing = await tx.debtLedger.findFirst({where:{ticketId:t.id}});
             if(existing){
               console.log('[DEBT UPDATE] antes', existing);
               await tx.debtLedger.update({where:{id:existing.id},data:{originalAmount:totalDeferred,pendingAmount:totalDeferred-existing.paidAmount,status: existing.paidAmount>0 ? 'PARTIALLY_PAID':'PENDING'}});
               console.log('[DEBT UPDATE] después', totalDeferred-existing.paidAmount);
-            }else if(t.clientId){
+            }else if(t.personId){
               await tx.debtLedger.create({
                 data: {
                   ticketId: t.id,
-                  clientId: t.clientId!,
-                  clinicId: t.clinicId!,
+                  personId: t.personId,
+                  clinicId: t.clinicId,
                   originalAmount: totalDeferred,
                   paidAmount: 0,
                   pendingAmount: totalDeferred,

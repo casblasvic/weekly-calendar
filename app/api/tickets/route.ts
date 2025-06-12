@@ -20,7 +20,7 @@ const QueryParamsSchema = z.object({
 const createTicketSchema = z.object({
   clinicId: z.string().cuid({ message: "ID de clínica inválido" }),
   currencyCode: z.string().length(3, { message: "Código de moneda debe tener 3 caracteres" }),
-  clientId: z.string().cuid().optional().nullable(),
+  personId: z.string().cuid().optional().nullable(),
   companyId: z.string().cuid().optional().nullable(),
   sellerUserId: z.string().cuid().optional().nullable(),
   appointmentId: z.string().cuid().optional().nullable(),
@@ -80,7 +80,7 @@ export async function GET(request: NextRequest) {
     const tickets = await prisma.ticket.findMany({
       where: whereClause,
       include: {
-        client: {
+        person: {
           select: { id: true, firstName: true, lastName: true, email: true },
         },
         sellerUser: { // Vendedor
@@ -146,7 +146,7 @@ export async function POST(request: NextRequest) {
     const { 
       clinicId, 
       currencyCode,
-      clientId, 
+      personId, 
       companyId, 
       sellerUserId, 
       appointmentId,
@@ -155,14 +155,14 @@ export async function POST(request: NextRequest) {
 
     // 1. Asegurar que existe la serie “TICK” para la clínica
     const seriesCode = 'TICK';
-    let series = await prisma.documentSeries.findUnique({
+    
+    // Primero buscar la serie por campos individuales
+    let series = await prisma.documentSeries.findFirst({
       where: {
-        organizationId_clinicId_code_documentType: {
-          organizationId: systemId,
-          clinicId,
-          code: seriesCode,
-          documentType: 'TICKET',
-        },
+        organizationId: systemId,
+        clinicId,
+        code: seriesCode,
+        documentType: 'TICKET',
       },
     });
 
@@ -186,11 +186,22 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      // Obtener la clínica con su legalEntityId
+      const clinicData = await prisma.clinic.findUnique({
+        where: { id: clinicId },
+        select: { legalEntityId: true }
+      });
+
+      if (!clinicData?.legalEntityId) {
+        throw new Error(`La clínica ${clinicId} no tiene una entidad legal asociada`);
+      }
+
       series = await prisma.documentSeries.create({
         data: {
           code: seriesCode,
           documentType: 'TICKET',
           organization: { connect: { id: systemId } },
+          legalEntity: { connect: { id: clinicData.legalEntityId } },
           clinic: { connect: { id: clinicId } },
           prefix: '',
           padding: 6,
@@ -231,7 +242,7 @@ export async function POST(request: NextRequest) {
             cashierUser: { connect: { id: cashierUserId } },
             sellerUser: sellerUserId ? { connect: { id: sellerUserId } } : undefined,
             clinic: { connect: { id: clinicId } },
-            client: clientId ? { connect: { id: clientId } } : undefined,
+            person: personId ? { connect: { id: personId } } : undefined,
             company: companyId ? { connect: { id: companyId } } : undefined,
             system: { connect: { id: systemId } },
             appointment: appointmentId ? { connect: { id: appointmentId } } : undefined,

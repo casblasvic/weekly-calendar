@@ -14,8 +14,8 @@ export async function GET(req: NextRequest) {
     const { searchParams } = req.nextUrl;
     const clinicId = searchParams.get('clinicId');
     const statusParam = searchParams.get('status') as DebtStatus | null;
-    const clientIdParam = searchParams.get('clientId');
-    const clientNameSearch = searchParams.get('clientNameSearch');
+    const personIdParam = searchParams.get('personId');
+    const personNameSearch = searchParams.get('personNameSearch');
     const ticketNumberSearch = searchParams.get('ticketNumberSearch');
     const dateFromParam = searchParams.get('dateFrom');
     const dateToParam = searchParams.get('dateTo');
@@ -30,16 +30,16 @@ export async function GET(req: NextRequest) {
       whereConditions.push({ clinicId });
     }
 
-    if (clientIdParam) {
-      whereConditions.push({ clientId: clientIdParam });
+    if (personIdParam) {
+      whereConditions.push({ personId: personIdParam });
     }
 
-    if (clientNameSearch) {
+    if (personNameSearch) {
       whereConditions.push({
-        client: {
+        person: {
           OR: [
-            { firstName: { contains: clientNameSearch, mode: 'insensitive' } },
-            { lastName: { contains: clientNameSearch, mode: 'insensitive' } },
+            { firstName: { contains: personNameSearch, mode: 'insensitive' } },
+            { lastName: { contains: personNameSearch, mode: 'insensitive' } },
           ],
         },
       });
@@ -103,7 +103,7 @@ export async function GET(req: NextRequest) {
           },
         },
         clinic: { select: { id: true, name: true } },
-        client: { select: { id: true, firstName: true, lastName: true } },
+        person: { select: { id: true, firstName: true, lastName: true } },
       },
       orderBy: { createdAt: 'desc' },
       skip: (page - 1) * pageSize,

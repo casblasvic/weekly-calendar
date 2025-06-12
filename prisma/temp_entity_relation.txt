@@ -1,0 +1,20 @@
+model EntityRelation {
+  id            String   @id @default(cuid())
+  entityAType   String   // 'client' | 'lead' | 'contact' | 'user' | 'company'
+  entityAId     String   // CUID de cualquier entidad
+  entityBType   String   // 'client' | 'lead' | 'contact' | 'user' | 'company'
+  entityBId     String   // CUID de cualquier entidad
+  relationType  String   // 'madre', 'padre', 'tutor', 'empresa', 'empleado', etc
+  direction     String?  // 'bidirectional' | 'a_to_b' | 'b_to_a'
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  systemId      String
+  system        System   @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  
+  @@unique([entityAType, entityAId, entityBType, entityBId, relationType])
+  @@index([entityAId])
+  @@index([entityBId])
+  @@index([systemId])
+  @@map("entity_relations")
+}

@@ -35,10 +35,10 @@ interface DeferredPayment {
   }
 }
 
-// API para obtener pagos aplazados del cliente
-async function getDeferredPayments(clientId: string): Promise<DeferredPayment[]> {
+// API para obtener pagos aplazados de la persona
+async function getDeferredPayments(personId: string): Promise<DeferredPayment[]> {
   try {
-    const response = await fetch(`/api/clients/${clientId}/deferred-payments`)
+    const response = await fetch(`/api/persons/${personId}/deferred-payments`)
     if (!response.ok) {
       throw new Error("Error al obtener pagos aplazados")
     }
@@ -111,7 +111,7 @@ export default function AplazadoPage({ params }: { params: Promise<{ id: string 
         <Card>
           {deferredPayments.length === 0 ? (
             <div className="p-8 text-center text-gray-500">
-              <p>No hay pagos aplazados registrados para este cliente.</p>
+              <p>No hay pagos aplazados registrados para esta persona.</p>
             </div>
           ) : (
             <Table>

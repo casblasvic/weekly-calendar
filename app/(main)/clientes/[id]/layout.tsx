@@ -1,38 +1,37 @@
-"use client"
+'use client'
 
-import type React from "react"
-import { useState, useEffect, useRef, use } from "react"
-import Link from "next/link"
-import { usePathname, useRouter } from "next/navigation"
-import { useLastClient } from "@/contexts/last-client-context"
-import { useClientCard } from "@/contexts/client-card-context"
+import React, { useState, useEffect, use, useRef } from 'react'
+import { usePathname, useRouter } from 'next/navigation'
+import Link from 'next/link'
+import { ChevronLeft, Users, CreditCard, Clock, Package, FileText, User, Menu } from 'lucide-react'
+import { useLastClient } from '@/contexts/last-client-context'
+import { useClientCard } from '@/contexts/client-card-context'
 
-interface Client {
+interface Person {
   id: string
   firstName: string
   lastName: string
-  email: string
-  primaryPhone: string
+  email?: string
   profileImage?: string
 }
 
-// API para obtener cliente por ID
-async function getClientById(id: string) {
+// API para obtener persona por ID
+async function getPersonById(id: string) {
   try {
-    const response = await fetch(`/api/clients/${id}`)
+    const response = await fetch(`/api/persons/${id}`)
     if (!response.ok) {
-      throw new Error("Error al obtener el cliente")
+      throw new Error("Error al obtener la persona")
     }
     const data = await response.json()
     return data
   } catch (error) {
-    console.error("Error fetching client:", error)
+    console.error("Error fetching person:", error)
     return null
   }
 }
 
 const tabs = [
-  { label: "DATOS DEL CLIENTE", path: "" },
+  { label: "DATOS DE LA PERSONA", path: "" },
   { label: "HISTORIAL", path: "/historial" },
   { label: "CONSENTIMIENTOS", path: "/consentimientos" },
   { label: "COMPRAS Y PAGOS", path: "/compras-pagos" },
@@ -42,11 +41,11 @@ const tabs = [
   { label: "AVISOS", path: "/avisos" },
 ]
 
-export default function ClientLayout({ children, params }: { children: React.ReactNode; params: Promise<{ id: string }> }) {
+export default function PersonLayout({ children, params }: { children: React.ReactNode; params: Promise<{ id: string }> }) {
   const resolvedParams = use(params)
-  const clientId = resolvedParams.id
+  const personId = resolvedParams.id
   
-  const [client, setClient] = useState<Client | null>(null)
+  const [person, setPerson] = useState<Person | null>(null)
   const [isMobile, setIsMobile] = useState(false)
   const [activeTab, setActiveTab] = useState("")
   
@@ -60,7 +59,7 @@ export default function ClientLayout({ children, params }: { children: React.Rea
   useEffect(() => {
     const currentPath = pathname.split('/').pop()
     const currentTab = tabs.find(tab => {
-      if (tab.path === "" && (currentPath === clientId || pathname.endsWith(`/${clientId}`))) {
+      if (tab.path === "" && (currentPath === personId || pathname.endsWith(`/${personId}`))) {
         return true
       }
       return tab.path !== "" && pathname.includes(tab.path.substring(1))
@@ -69,7 +68,7 @@ export default function ClientLayout({ children, params }: { children: React.Rea
     if (currentTab) {
       setActiveTab(currentTab.path)
     }
-  }, [pathname, clientId])
+  }, [pathname, personId])
 
   useEffect(() => {
     const checkMobile = () => {
@@ -86,33 +85,33 @@ export default function ClientLayout({ children, params }: { children: React.Rea
   }, [setHideMainCard])
 
   useEffect(() => {
-    const loadClient = async () => {
+    const loadPerson = async () => {
       try {
-        const clientData = await getClientById(clientId)
-        if (clientData) {
-          setClient(clientData)
-          setLastClient(clientData)
+        const personData = await getPersonById(personId)
+        if (personData) {
+          setPerson(personData)
+          setLastClient(personData)
         } else {
-          console.error(`No se encontró el cliente con ID: ${clientId}`)
+          console.error(`No se encontró la persona con ID: ${personId}`)
         }
       } catch (error) {
-        console.error(`Error al cargar cliente ${clientId}:`, error)
+        console.error(`Error al cargar persona ${personId}:`, error)
       }
     }
     
-    loadClient()
-  }, [clientId, setLastClient])
+    loadPerson()
+  }, [personId, setLastClient])
 
   // Función para cambiar de pestaña sin forzar recarga completa
   const handleTabChange = (tabPath: string) => {
-    const newPath = `/clientes/${clientId}${tabPath}`
+    const newPath = `/personas/${personId}${tabPath}`
     router.push(newPath)
   }
 
-  if (!client) {
+  if (!person) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <p>Cargando cliente...</p>
+        <p>Cargando persona...</p>
       </div>
     )
   }
@@ -125,23 +124,23 @@ export default function ClientLayout({ children, params }: { children: React.Rea
           <div className="flex items-center justify-between py-4">
             <div className="flex items-center space-x-4">
               <div className="w-10 h-10 bg-gray-300 rounded-full flex items-center justify-center">
-                {client.profileImage ? (
+                {person.profileImage ? (
                   <img 
-                    src={client.profileImage} 
-                    alt="Cliente" 
+                    src={person.profileImage} 
+                    alt="Persona" 
                     className="w-full h-full rounded-full object-cover"
                   />
                 ) : (
                   <span className="text-gray-600 text-sm font-medium">
-                    {client.firstName?.[0]}{client.lastName?.[0]}
+                    {person.firstName?.[0]}{person.lastName?.[0]}
                   </span>
                 )}
               </div>
               <div>
                 <h1 className="text-lg font-semibold">
-                  {client.firstName} {client.lastName}
+                  {person.firstName} {person.lastName}
                 </h1>
-                <p className="text-sm text-gray-500">{client.email}</p>
+                <p className="text-sm text-gray-500">{person.email}</p>
               </div>
             </div>
           </div>

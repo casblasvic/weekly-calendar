@@ -156,17 +156,17 @@ export function useUpdateTariffBonosMutation() {
 }
 
 /**
- * Hook para obtener instancias de bonos para un cliente
+ * Hook para obtener instancias de bonos para una persona
  */
-export function useClientBonoInstancesQuery(clientId: string | null, options?: Omit<UseQueryOptions<any, unknown, any>, 'queryKey' | 'queryFn'>) {
+export function usePersonBonoInstancesQuery(personId: string | null, options?: Omit<UseQueryOptions<any, unknown, any>, 'queryKey' | 'queryFn'>) {
   return useQuery<any, unknown>({
-    queryKey: ['client-bono-instances', clientId],
+    queryKey: ['person-bono-instances', personId],
     queryFn: async () => {
-      if (!clientId) throw new Error('Client ID is required');
-      // Suponiendo que existe un endpoint para obtener bonos por cliente
-      return await api.cached.get(`/api/clients/${clientId}/bonos`);
+      if (!personId) throw new Error('Person ID is required');
+      // Endpoint para obtener bonos por persona
+      return await api.cached.get(`/api/persons/${personId}/bonos`);
     },
-    enabled: !!clientId,
+    enabled: !!personId,
     staleTime: 1000 * 60 * 2, // 2 minutos
     ...options,
   });

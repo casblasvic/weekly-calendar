@@ -11,6 +11,6 @@ export interface Appointment {
   phone?: string; // Opcional: teléfono del cliente
   tags?: string[]; // Opcional: etiquetas/tags
   // Podrían añadirse más campos si son necesarios para la UI
-  clientId?: string; // ID del cliente
+  personId?: string; // ID de la persona
   serviceIds?: string[]; // IDs de los servicios
 } 

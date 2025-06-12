@@ -12,7 +12,7 @@ const searchParamsSchema = z.object({
   invoiceNumber: z.string().optional(), // Includes series
   dateFrom: z.string().optional(), // YYYY-MM-DD
   dateTo: z.string().optional(), // YYYY-MM-DD
-  clientId: z.string().optional(), // Can be ID, DNI, or name part
+  personId: z.string().optional(), // Can be ID, DNI, or name part
   clinicIds: z.preprocess((val) => {
     if (typeof val === 'string') return val.split(',');
     if (Array.isArray(val)) return val;
@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
     invoiceNumber,
     dateFrom,
     dateTo,
-    clientId,
+    personId,
     clinicIds,
     page,
     pageSize,
@@ -80,14 +80,14 @@ export async function GET(request: NextRequest) {
     } catch (e) { /* Invalid date format, ignore */ }
   }
 
-  if (clientId) {
-    // Assuming clientId can be a search term for client's first name, last name, or DNI
-    // This requires that the Ticket model has a relation to Client
-    where.client = {
+  if (personId) {
+    // Assuming personId can be a search term for person's first name, last name, or DNI
+    // This requires that the Ticket model has a relation to Person
+    where.person = {
       OR: [
-        { firstName: { contains: clientId, mode: 'insensitive' } },
-        { lastName: { contains: clientId, mode: 'insensitive' } },
-        { dni: { contains: clientId, mode: 'insensitive' } }, 
+        { firstName: { contains: personId, mode: 'insensitive' } },
+        { lastName: { contains: personId, mode: 'insensitive' } },
+        { dni: { contains: personId, mode: 'insensitive' } }, 
       ],
     };
   }
@@ -102,7 +102,7 @@ export async function GET(request: NextRequest) {
       prisma.ticket.findMany({
         where,
         include: {
-          client: true, // To get clientName
+          person: true, // To get personName
           clinic: {
             include: {
               legalEntity: true // To check if clinic has a legal entity
@@ -125,7 +125,7 @@ export async function GET(request: NextRequest) {
       type: 'Ticket' as const,
       number: ticket.ticketNumber,
       clinicName: ticket.clinic?.name || 'N/A',
-      clientName: ticket.client ? `${ticket.client.firstName || ''} ${ticket.client.lastName || ''}`.trim() : 'N/A',
+      personName: ticket.person ? `${ticket.person.firstName || ''} ${ticket.person.lastName || ''}`.trim() : 'N/A',
       date: formatISO(ticket.createdAt, { representation: 'date' }),
       total: ticket.totalAmount, // totalAmount is already a number
       status: ticket.status, // You might want to map this to a more user-friendly string

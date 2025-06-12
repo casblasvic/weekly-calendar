@@ -14,7 +14,7 @@ const paramsSchema = z.object({
 // Esto debería coincidir con la interfaz BatchUpdateTicketPayload de los hooks
 const batchUpdateTicketPayloadSchema = z.object({
   scalarUpdates: z.object({
-    clientId: z.string().cuid().nullable().optional(),
+    personId: z.string().cuid().nullable().optional(),
     sellerUserId: z.string().cuid().nullable().optional(),
     notes: z.string().max(1000).nullable().optional(),
     ticketSeries: z.string().nullable().optional(),
@@ -67,7 +67,7 @@ async function getPriceAndVatDetails(
   tx: Prisma.TransactionClient, 
   itemType: TicketItemType, 
   itemId: string, 
-  clinicTariffId: string, 
+  clinicTariffId: string,
   systemId: string,
   manualUnitPrice?: number
 ): Promise<{ resolvedUnitPrice: number; resolvedVatRateDetails: { id: string; rate: number; name: string }; description: string; originalItemPrice: number | null }> {
@@ -229,7 +229,35 @@ export async function PUT(request: NextRequest, { params: paramsPromise }: { par
     const updatedTicketResult = await prisma.$transaction(async (tx) => {
       const ticket = await tx.ticket.findUnique({
         where: { id: ticketId, systemId },
-        include: { items: true, payments: true, client: { select: { id: true }}, clinic: {select: {tariffId: true, currency: true}} },
+        include: { 
+          items: true, 
+          payments: true, 
+          person: { 
+            select: { 
+              id: true, 
+              firstName: true, 
+              lastName: true, 
+              email: true, 
+              phone: true, 
+              taxId: true, 
+              address: true, 
+              city: true, 
+              postalCode: true, 
+              countryIsoCode: true,
+              clientData: {
+                select: {
+                  fiscalName: true
+                }
+              }
+            }
+          }, 
+          clinic: {
+            select: {
+              tariffId: true, 
+              currency: true
+            }
+          } 
+        },
       });
 
       if (!ticket) throw new Error('Ticket no encontrado o no pertenece al sistema.');
@@ -296,8 +324,8 @@ export async function PUT(request: NextRequest, { params: paramsPromise }: { par
       // 1. Procesar payload.scalarUpdates
       if (payload.scalarUpdates) {
         const { scalarUpdates } = payload;
-        if (scalarUpdates.clientId !== undefined) {
-          dataToUpdate.client = scalarUpdates.clientId ? { connect: { id: scalarUpdates.clientId } } : { disconnect: true };
+        if (scalarUpdates.personId !== undefined) {
+          dataToUpdate.person = scalarUpdates.personId ? { connect: { id: scalarUpdates.personId } } : { disconnect: true };
           needsScalarUpdate = true;
         }
         if (scalarUpdates.sellerUserId !== undefined) {
@@ -604,15 +632,15 @@ export async function PUT(request: NextRequest, { params: paramsPromise }: { par
       // --- 4. LÓGICA DE DEBTLEDGER Y CAMPOS DE DEUDA DEL TICKET ---
       if (payload.amountToDefer !== undefined && payload.amountToDefer !== null) {
         const amountToDefer = payload.amountToDefer;
-        const clientIdForDebt = payload.scalarUpdates?.clientId === null ? null : (payload.scalarUpdates?.clientId || ticket.clientId);
+        const personIdForDebt = payload.scalarUpdates?.personId === null ? null : (payload.scalarUpdates?.personId || ticket.personId);
 
         const existingDebt = await tx.debtLedger.findFirst({
           where: { ticketId: ticket.id, status: { notIn: ['PAID', 'CANCELLED'] } }
         });
 
         if (amountToDefer > 0) {
-          if (!clientIdForDebt) {
-              throw new Error("Se requiere un cliente para crear o actualizar una deuda aplazada.");
+          if (!personIdForDebt) {
+              throw new Error("Se requiere una persona para crear o actualizar una deuda aplazada.");
           }
           if (existingDebt) {
             const newPendingAmount = amountToDefer - (existingDebt.paidAmount || 0);
@@ -628,7 +656,7 @@ export async function PUT(request: NextRequest, { params: paramsPromise }: { par
             await tx.debtLedger.create({
               data: {
                 ticketId: ticketId,
-                clientId: clientIdForDebt, 
+                personId: personIdForDebt, 
                 clinicId: ticket.clinicId,
                 systemId: systemId,
                 originalAmount: amountToDefer,
@@ -752,7 +780,25 @@ export async function PUT(request: NextRequest, { params: paramsPromise }: { par
          select: { 
             id: true, ticketNumber: true, ticketSeries: true, status: true, finalAmount: true, totalAmount: true,
             taxAmount: true, currencyCode: true, notes: true, discountType: true, discountAmount: true, discountReason: true,
-            clientId: true, client: { select: { id: true, firstName: true, lastName: true, email: true, phone: true, taxId: true, fiscalName: true, address: true, city: true, postalCode: true, countryIsoCode: true }},
+            personId: true, person: { 
+              select: { 
+                id: true, 
+                firstName: true, 
+                lastName: true, 
+                email: true, 
+                phone: true, 
+                taxId: true, 
+                address: true, 
+                city: true, 
+                postalCode: true, 
+                countryIsoCode: true,
+                clientData: {
+                  select: {
+                    fiscalName: true
+                  }
+                }
+              }
+            },
             sellerUserId: true, sellerUser: { select: { id: true, firstName: true, lastName: true, email: true, isActive: true }},
             cashierUserId: true, cashierUser: { select: { id: true, firstName: true, lastName: true, email: true, isActive: true }},
             clinicId: true, clinic: { select: { id: true, name: true, currency: true, ticketSize: true, cif: true, address: true, city: true, postalCode: true, phone: true, email: true, tariffId: true }},

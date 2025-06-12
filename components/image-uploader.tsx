@@ -6,7 +6,7 @@ import { Upload, X, Star } from 'lucide-react';
 import Image from 'next/image';
 
 interface ImageUploaderProps {
-  entityType: 'equipment' | 'service' | 'tarifa' | 'client';
+  entityType: 'EQUIPMENT' | 'SERVICE' | 'TARIFA' | 'PERSON';
   entityId: string | number;
   clinicId: string | number;
   onChange?: (images: ImageFile[]) => void;

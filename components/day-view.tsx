@@ -74,7 +74,7 @@ function getTimeSlots(startTime: string, endTime: string, interval = 15): string
 const ZEBRA_LIGHT = "bg-gray-50"; // O un color púrpura muy claro: "bg-purple-50/20";
 const ZEBRA_DARK = "bg-white";
 
-interface Client { 
+interface Person { 
   id: string; 
   name: string; 
   phone: string; 
@@ -192,7 +192,7 @@ export default function DayView({
     time: string
     roomId: string
   } | null>(null)
-  const [selectedClient, setSelectedClient] = useState<Client | null>(null)
+  const [selectedPerson, setSelectedPerson] = useState<Person | null>(null)
   const [isSearchDialogOpen, setIsSearchDialogOpen] = useState(false)
   const [isAppointmentDialogOpen, setIsAppointmentDialogOpen] = useState(false)
   const [isNewClientDialogOpen, setIsNewClientDialogOpen] = useState(false)
@@ -446,9 +446,9 @@ export default function DayView({
     setIsSearchDialogOpen(true); // Abrir modal de búsqueda de cliente
   }
 
-  const handleClientSelect = (client: Client) => {
-    console.log("Cliente seleccionado:", client)
-    setSelectedClient(client) // selectedClient debe ser de tipo Client | null
+  const handlePersonSelect = (person: Person) => {
+    console.log("Persona seleccionada:", person)
+    setSelectedPerson(person) // selectedPerson debe ser de tipo Person | null
     setIsSearchDialogOpen(false)
     setIsAppointmentDialogOpen(true)
   }
@@ -470,7 +470,7 @@ export default function DayView({
 
   const handleSaveAppointment = useCallback(
     (appointmentData: {
-      client: { name: string; phone: string }
+      person: { name: string; phone: string }
       services: { id: string; name: string; category: string }[]
       time: string
       comment?: string
@@ -484,14 +484,14 @@ export default function DayView({
         if (cabin) {
           const newAppointment: Appointment = {
             id: Math.random().toString(36).substr(2, 9),
-            name: appointmentData.client.name,
+            name: appointmentData.person.name,
             service: appointmentData.services.map((s) => s.name).join(", "),
             date: selectedSlot.date,
             roomId: targetRoomId, // Usar el ID string
             startTime: appointmentData.time,
             duration: appointmentData.blocks || 2, 
             color: cabin.color, 
-            phone: appointmentData.client.phone,
+            phone: appointmentData.person.phone,
             tags: appointmentData.tags || [], 
           };
           setAppointments((prev) => [...prev, newAppointment]);
@@ -536,12 +536,12 @@ export default function DayView({
     setSelectedAppointment(appointment)
     
     // Configurar los datos necesarios para editar la cita
-    const clientForModal: Client = { 
-        id: appointment.clientId || "", // Asumir que Appointment tiene clientId
+    const personForModal: Person = { 
+        id: appointment.personId || "", // Asumir que Appointment tiene personId
         name: appointment.name, 
         phone: appointment.phone || "" 
     };
-    setSelectedClient(clientForModal)
+    setSelectedPerson(personForModal)
     setSelectedSlot({
       date: appointment.date,
       time: appointment.startTime,
@@ -720,7 +720,7 @@ export default function DayView({
         <ClientSearchDialog
           isOpen={isSearchDialogOpen}
           onClose={() => setIsSearchDialogOpen(false)}
-          onClientSelect={handleClientSelect}
+          onPersonSelect={handlePersonSelect}
           selectedTime={selectedSlot?.time}
         />
 
@@ -730,14 +730,14 @@ export default function DayView({
             setIsAppointmentDialogOpen(false)
             setSelectedAppointment(null)
           }}
-          client={selectedClient}
+          person={selectedPerson}
           selectedTime={selectedSlot?.time}
           appointmentToEdit={selectedAppointment}
           onSearchClick={() => {
             setIsAppointmentDialogOpen(false)
             setIsSearchDialogOpen(true)
           }}
-          onNewClientClick={() => {
+          onNewPersonClick={() => {
             setIsAppointmentDialogOpen(false)
             setIsNewClientDialogOpen(true)
           }}

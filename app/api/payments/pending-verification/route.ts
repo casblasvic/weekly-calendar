@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
         ticket: {
           select: {
             ticketNumber: true,
-            client: { select: { firstName: true, lastName: true } },
+            person: { select: { firstName: true, lastName: true } },
           },
         },
         invoice: { select: { invoiceNumber: true } },

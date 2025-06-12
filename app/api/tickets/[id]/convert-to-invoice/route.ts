@@ -73,7 +73,7 @@ export async function POST(
               legalEntity: true
             }
           },
-          client: true,
+          person: true,
           company: true,
           items: {
             include: {
@@ -161,14 +161,14 @@ export async function POST(
       });
 
       // Determinar receptor de la factura
-      let clientId = null;
+      let personId = null;
       let companyId = null;
       
       // Si el ticket tiene empresa, es B2B, sino es B2C
       if (ticket.companyId) {
         companyId = ticket.companyId;
-      } else if (ticket.clientId) {
-        clientId = ticket.clientId;
+      } else if (ticket.personId) {
+        personId = ticket.personId;
       }
 
       // Crear la factura
@@ -194,7 +194,7 @@ export async function POST(
           // Relaciones
           ticketId: ticket.id,
           systemId: systemId,
-          clientId: clientId,
+          personId: personId,
           companyId: companyId,
           
           // Datos adicionales
