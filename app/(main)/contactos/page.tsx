@@ -1,8 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { Search, UserPlus, FilePenLine, Trash2, Eye, Users, Target, Building2 } from "lucide-react"
+import { Search, UserPlus, FilePenLine, Trash2, Eye, Users, Target, Building2, Loader2 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -16,65 +16,67 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { toast } from "sonner"
 
-// Mock data con diferentes tipos de contactos
-const mockContacts = [
-  {
-    id: "1",
-    name: "Juan Pérez",
-    email: "juan.perez@ejemplo.com",
-    phone: "555-123-4567",
-    lastVisit: "2023-10-15",
-    type: "client",
-    roles: ["Cliente"],
-  },
-  {
-    id: "2",
-    name: "María García",
-    email: "maria.garcia@ejemplo.com",
-    phone: "555-765-4321",
-    lastVisit: "2023-11-05",
-    type: "client",
-    roles: ["Cliente", "Lead"],
-  },
-  {
-    id: "3",
-    name: "Carlos Rodríguez",
-    email: "carlos.rodriguez@ejemplo.com",
-    phone: "555-987-6543",
-    lastVisit: "2023-09-28",
-    type: "lead",
-    roles: ["Lead"],
-    company: "Tech Solutions S.L.",
-  },
-  {
-    id: "4",
-    name: "Ana Martínez",
-    email: "ana.martinez@ejemplo.com",
-    phone: "555-456-7890",
-    lastVisit: "2023-11-12",
-    type: "contact",
-    roles: ["Contacto"],
-    company: "Innovación Digital S.A.",
-  },
-  {
-    id: "5",
-    name: "Roberto Sánchez",
-    email: "roberto.sanchez@ejemplo.com",
-    phone: "555-321-0987",
-    lastVisit: "2023-10-30",
-    type: "employee",
-    roles: ["Empleado", "Cliente"],
-  },
-]
+interface Contact {
+  id: string
+  name: string
+  email: string
+  phone: string
+  lastVisit: string | null
+  type: string
+  roles: string[]
+  company: string | null
+  leadData?: {
+    status: string
+    source: string | null
+    assignedTo: string | null
+    priority: string | null
+    estimatedValue: number | null
+  } | null
+  contactData?: {
+    position: string | null
+    department: string | null
+    isPrimary: boolean
+  } | null
+  clientData?: {
+    isActive: boolean
+    marketingConsent: boolean
+    originClinic: string | null
+  } | null
+}
 
 export default function ContactosPage() {
+  const [contacts, setContacts] = useState<Contact[]>([])
+  const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
   const [filterType, setFilterType] = useState("all")
   const router = useRouter()
 
-  // Filter contacts based on search and type
-  const filteredContacts = mockContacts.filter((contact) => {
+  // Cargar contactos desde la API
+  useEffect(() => {
+    fetchContacts()
+  }, [])
+
+  const fetchContacts = async () => {
+    try {
+      setLoading(true)
+      const response = await fetch('/api/contacts')
+      if (!response.ok) {
+        throw new Error('Error al cargar contactos')
+      }
+      const data = await response.json()
+      setContacts(data)
+    } catch (error) {
+      console.error('Error fetching contacts:', error)
+      toast.error('Error al cargar los contactos')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Filtrar contactos basado en búsqueda y tipo
+  const filteredContacts = contacts.filter((contact) => {
     const matchesSearch =
       contact.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       contact.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -91,8 +93,9 @@ export default function ContactosPage() {
     return matchesSearch && matchesType
   })
 
-  // Format date to Spanish locale
-  const formatDate = (dateString: string) => {
+  // Formatear fecha al formato español
+  const formatDate = (dateString: string | null) => {
+    if (!dateString) return "Sin visitas"
     const options: Intl.DateTimeFormatOptions = {
       year: "numeric",
       month: "2-digit",
@@ -101,30 +104,41 @@ export default function ContactosPage() {
     return new Date(dateString).toLocaleDateString("es-ES", options)
   }
 
-  // Navigate to new contact page
+  // Navegar a nueva persona
   const handleNewContact = () => {
     router.push("/clientes/nuevo")
   }
 
-  // View contact details
+  // Ver detalles del contacto
   const handleViewContact = (id: string) => {
     router.push(`/clientes/${id}`)
   }
 
-  // Edit contact
+  // Editar contacto
   const handleEditContact = (id: string) => {
     router.push(`/clientes/${id}/editar`)
   }
 
-  // Delete contact (would be connected to an API in a real app)
-  const handleDeleteContact = (id: string) => {
+  // Eliminar contacto
+  const handleDeleteContact = async (id: string) => {
     if (confirm("¿Estás seguro de que quieres eliminar este contacto?")) {
-      // Delete logic would go here
-      console.log(`Deleted contact ${id}`)
+      try {
+        const response = await fetch(`/api/persons/${id}`, {
+          method: 'DELETE',
+        })
+        if (!response.ok) {
+          throw new Error('Error al eliminar contacto')
+        }
+        toast.success('Contacto eliminado correctamente')
+        fetchContacts() // Recargar la lista
+      } catch (error) {
+        console.error('Error deleting contact:', error)
+        toast.error('Error al eliminar el contacto')
+      }
     }
   }
 
-  // Get badge variant based on role
+  // Obtener variante de badge según el rol
   const getRoleBadgeVariant = (role: string): "default" | "secondary" | "outline" | "destructive" => {
     switch (role) {
       case "Cliente":
@@ -137,6 +151,22 @@ export default function ContactosPage() {
         return "destructive"
       default:
         return "outline"
+    }
+  }
+
+  // Obtener color del estado del lead
+  const getLeadStatusColor = (status: string) => {
+    switch (status) {
+      case "NEW":
+        return "text-blue-600 bg-blue-50"
+      case "CONTACTED":
+        return "text-yellow-600 bg-yellow-50"
+      case "QUALIFIED":
+        return "text-green-600 bg-green-50"
+      case "LOST":
+        return "text-red-600 bg-red-50"
+      default:
+        return "text-gray-600 bg-gray-50"
     }
   }
 
@@ -153,139 +183,7 @@ export default function ContactosPage() {
         </Button>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Buscar Contactos</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              type="search"
-              placeholder="Buscar por nombre, email, teléfono o empresa..."
-              className="pl-8"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-          
-          <div className="flex gap-2 flex-wrap">
-            <Button
-              variant={filterType === "all" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setFilterType("all")}
-            >
-              Todos
-            </Button>
-            <Button
-              variant={filterType === "client" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setFilterType("client")}
-            >
-              Clientes
-            </Button>
-            <Button
-              variant={filterType === "lead" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setFilterType("lead")}
-            >
-              Leads
-            </Button>
-            <Button
-              variant={filterType === "contact" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setFilterType("contact")}
-            >
-              Contactos Empresa
-            </Button>
-            <Button
-              variant={filterType === "employee" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setFilterType("employee")}
-            >
-              Empleados
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Nombre</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead className="hidden md:table-cell">Teléfono</TableHead>
-                  <TableHead className="hidden lg:table-cell">Empresa</TableHead>
-                  <TableHead>Roles</TableHead>
-                  <TableHead className="hidden lg:table-cell">Última Actividad</TableHead>
-                  <TableHead className="text-right">Acciones</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredContacts.length > 0 ? (
-                  filteredContacts.map((contact) => (
-                    <TableRow key={contact.id}>
-                      <TableCell className="font-medium">{contact.name}</TableCell>
-                      <TableCell>{contact.email}</TableCell>
-                      <TableCell className="hidden md:table-cell">{contact.phone}</TableCell>
-                      <TableCell className="hidden lg:table-cell">{contact.company || "-"}</TableCell>
-                      <TableCell>
-                        <div className="flex gap-1 flex-wrap">
-                          {contact.roles.map((role, index) => (
-                            <Badge key={index} variant={getRoleBadgeVariant(role)} className="text-xs">
-                              {role}
-                            </Badge>
-                          ))}
-                        </div>
-                      </TableCell>
-                      <TableCell className="hidden lg:table-cell">{formatDate(contact.lastVisit)}</TableCell>
-                      <TableCell>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="sm">
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuLabel>Acciones</DropdownMenuLabel>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem onClick={() => handleViewContact(contact.id)}>
-                              <Eye className="mr-2 h-4 w-4" />
-                              Ver Detalles
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleEditContact(contact.id)}>
-                              <FilePenLine className="mr-2 h-4 w-4" />
-                              Editar
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => handleDeleteContact(contact.id)}
-                              className="text-red-600"
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Eliminar
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={7} className="h-24 text-center">
-                      No se encontraron contactos.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Quick stats */}
+      {/* Estadísticas */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -293,17 +191,17 @@ export default function ContactosPage() {
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{mockContacts.length}</div>
+            <div className="text-2xl font-bold">{contacts.length}</div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Clientes Activos</CardTitle>
-            <Target className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Clientes</CardTitle>
+            <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {mockContacts.filter((c) => c.roles.includes("Cliente")).length}
+              {contacts.filter(c => c.roles.includes("Cliente")).length}
             </div>
           </CardContent>
         </Card>
@@ -314,7 +212,7 @@ export default function ContactosPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {mockContacts.filter((c) => c.roles.includes("Lead")).length}
+              {contacts.filter(c => c.roles.includes("Lead")).length}
             </div>
           </CardContent>
         </Card>
@@ -325,10 +223,120 @@ export default function ContactosPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {new Set(mockContacts.filter((c) => c.company).map((c) => c.company)).size}
+              {new Set(contacts.filter(c => c.company).map(c => c.company)).size}
             </div>
           </CardContent>
         </Card>
+      </div>
+
+      {/* Filtros */}
+      <div className="flex flex-col sm:flex-row gap-4">
+        <div className="relative flex-1">
+          <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Buscar por nombre, email, teléfono o empresa"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-8"
+          />
+        </div>
+        <select
+          value={filterType}
+          onChange={(e) => setFilterType(e.target.value)}
+          className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#8a70d6]"
+        >
+          <option value="all">Todos los tipos</option>
+          <option value="client">Clientes</option>
+          <option value="lead">Leads</option>
+          <option value="contact">Contactos</option>
+          <option value="employee">Empleados</option>
+        </select>
+      </div>
+
+      {/* Tabla de contactos */}
+      <div className="rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Nombre</TableHead>
+              <TableHead>Email</TableHead>
+              <TableHead>Teléfono</TableHead>
+              <TableHead>Empresa</TableHead>
+              <TableHead>Roles</TableHead>
+              <TableHead>Última Visita</TableHead>
+              <TableHead className="text-right">Acciones</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {loading ? (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin mx-auto" />
+                  <p className="mt-2 text-sm text-muted-foreground">Cargando contactos...</p>
+                </TableCell>
+              </TableRow>
+            ) : filteredContacts.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center py-8">
+                  <p className="text-sm text-muted-foreground">No se encontraron contactos</p>
+                </TableCell>
+              </TableRow>
+            ) : (
+              filteredContacts.map((contact) => (
+                <TableRow key={contact.id}>
+                  <TableCell className="font-medium">{contact.name}</TableCell>
+                  <TableCell>{contact.email}</TableCell>
+                  <TableCell>{contact.phone}</TableCell>
+                  <TableCell>{contact.company || "-"}</TableCell>
+                  <TableCell>
+                    <div className="flex gap-1 flex-wrap">
+                      {contact.roles.map((role) => (
+                        <Badge key={role} variant={getRoleBadgeVariant(role)}>
+                          {role}
+                        </Badge>
+                      ))}
+                    </div>
+                    {contact.leadData && (
+                      <div className={`mt-1 text-xs px-2 py-1 rounded-full inline-block ${getLeadStatusColor(contact.leadData.status)}`}>
+                        {contact.leadData.status}
+                      </div>
+                    )}
+                  </TableCell>
+                  <TableCell>{formatDate(contact.lastVisit)}</TableCell>
+                  <TableCell className="text-right">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" className="h-8 w-8 p-0">
+                          <span className="sr-only">Abrir menú</span>
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuLabel>Acciones</DropdownMenuLabel>
+                        <DropdownMenuItem onClick={() => handleViewContact(contact.id)}>
+                          <Eye className="mr-2 h-4 w-4" />
+                          <span>Ver detalles</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleEditContact(contact.id)}>
+                          <FilePenLine className="mr-2 h-4 w-4" />
+                          <span>Editar</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem 
+                          onClick={() => handleDeleteContact(contact.id)}
+                          className="text-red-600"
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          <span>Eliminar</span>
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
       </div>
     </div>
   )
