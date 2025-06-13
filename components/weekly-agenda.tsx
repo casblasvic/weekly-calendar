@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils"
 import { AGENDA_CONFIG } from "@/config/agenda-config"
 import { CurrentTimeIndicator } from "@/components/current-time-indicator"
 import { PersonSearchDialog } from "@/components/client-search-dialog"
-import { AppointmentDialog } from "@/components/appointment-dialog"
+import { AppointmentDialog, type Person } from "@/components/appointment-dialog"
 import { NewClientDialog } from "@/components/new-client-dialog"
 import { AppointmentItem } from "./appointment-item"
 import { DragDropContext, Droppable } from "react-beautiful-dnd"
@@ -67,13 +67,6 @@ interface WeeklyAgendaProps {
   onAppointmentsChange?: (appointments: Appointment[]) => void
   appointments?: Appointment[]
   onAppointmentClick?: (appointmentId: string) => void
-}
-
-// Asegurar que el tipo Client incluya id
-interface Client { 
-  id: string; 
-  name: string; 
-  phone: string; 
 }
 
 export default function WeeklyAgenda({
@@ -144,7 +137,7 @@ export default function WeeklyAgenda({
     time: string
     roomId: string
   } | null>(null)
-  const [selectedClient, setSelectedClient] = useState<Client | null>(null)
+  const [selectedClient, setSelectedClient] = useState<Person | null>(null)
   const [isSearchDialogOpen, setIsSearchDialogOpen] = useState(false)
   const [isAppointmentDialogOpen, setIsAppointmentDialogOpen] = useState(false)
   const [isNewClientDialogOpen, setIsNewClientDialogOpen] = useState(false)
@@ -458,6 +451,8 @@ export default function WeeklyAgenda({
 
   // Funciones para manejar citas
   const handleCellClick = (day: Date, time: string, roomId: string) => {
+    console.log("[WeeklyAgenda] handleCellClick called with:", { day, time, roomId });
+    
     // Verificar si la celda está bloqueada por un override
     const dayString = format(day, "yyyy-MM-dd")
     const overrideForCell = findOverrideForCell(day, time, roomId); // Usar la nueva función
@@ -479,14 +474,31 @@ export default function WeeklyAgenda({
     })
 
     if (cabin && cabin.isActive) {
+      console.log("[WeeklyAgenda] Setting selectedSlot and opening search dialog");
       setSelectedSlot({ date: day, time, roomId })
       setIsSearchDialogOpen(true)
     }
   }
 
-  // --- Modificar handleClientSelect para aceptar tipo Client --- 
-  const handleClientSelect = (client: Client) => { 
-    console.log("[WeeklyAgenda] Client selected:", client);
+  // --- Modificar handleClientSelect para aceptar tipo Person --- 
+  const handleClientSelect = (person: any) => { 
+    console.log("[WeeklyAgenda] Person selected:", person);
+    console.log("[WeeklyAgenda] Current selectedSlot:", selectedSlot);
+    
+    // Convertir Person a formato Person esperado por AppointmentDialog
+    const client: Person = {
+      id: person.id,
+      firstName: person.firstName,
+      lastName: person.lastName,
+      phone: person.phone || '',
+      email: person.email,
+      address: person.address || '',
+      city: person.city,
+      postalCode: person.postalCode,
+      countryIsoCode: person.countryIsoCode
+    };
+    
+    console.log("[WeeklyAgenda] Setting selectedClient and opening appointment dialog");
     setSelectedClient(client);
     setIsSearchDialogOpen(false);
     setIsAppointmentDialogOpen(true); 
@@ -1150,32 +1162,45 @@ export default function WeeklyAgenda({
             {renderWeeklyGrid()}
 
             {/* Diálogos y modales */}
-            {isSearchDialogOpen && (
-              <PersonSearchDialog
-                isOpen={isSearchDialogOpen}
-                onClose={() => setIsSearchDialogOpen(false)}
-                onPersonSelect={handleClientSelect}
-              />
-            )}
-
-            {isAppointmentDialogOpen && selectedSlot && (
-              <AppointmentDialog
+            {selectedSlot && selectedClient && (
+              <AppointmentDialog 
                 isOpen={isAppointmentDialogOpen}
                 onClose={() => {
                   setIsAppointmentDialogOpen(false);
                   setSelectedClient(null); // Limpiar cliente al cerrar
                   setSelectedSlot(null);
                 }}
-                client={selectedClient}
+                date={selectedSlot.date}
+                initialClient={selectedClient}
                 selectedTime={selectedSlot.time}
+                clinic={{ id: activeClinic?.id?.toString() || '', name: activeClinic?.name || '' }}
+                professional={{ id: '', name: '' }} // TODO: implementar selección de profesional
                 onSearchClick={() => { 
                   setIsAppointmentDialogOpen(false); 
                   setIsSearchDialogOpen(true); 
                 }}
                 onNewClientClick={handleNewClientClick}
-                onSave={handleSaveAppointment}
-                onDelete={handleDeleteAppointment}
-                isEditing={false}
+                onSaveAppointment={(appointmentData) => {
+                  // Adaptar los datos al formato esperado por handleSaveAppointment
+                  handleSaveAppointment({
+                    client: {
+                      name: `${selectedClient.firstName} ${selectedClient.lastName}`,
+                      phone: selectedClient.phone || ''
+                    },
+                    services: [], // TODO: implementar servicios
+                    time: appointmentData.startTime,
+                    comment: appointmentData.notes
+                  });
+                }}
+                onMoveAppointment={handleDeleteAppointment}
+              />
+            )}
+
+            {isSearchDialogOpen && (
+              <PersonSearchDialog
+                isOpen={isSearchDialogOpen}
+                onClose={() => setIsSearchDialogOpen(false)}
+                onPersonSelect={handleClientSelect}
               />
             )}
 
@@ -1195,7 +1220,7 @@ export default function WeeklyAgenda({
                   id: cabin.id.toString()
                 }))}
                 blockToEdit={selectedOverride}
-                clinicId={String(effectiveClinic?.id)}
+                clinicId={String(activeClinic?.id)}
                 clinicConfig={{
                   // Pass calculated times if available, otherwise safe defaults
                   openTime: timeSlots.length > 0 ? timeSlots[0] : "09:00", 
@@ -1223,6 +1248,58 @@ export default function WeeklyAgenda({
         </div>
         
         {/* Renderizar diálogos aquí, no afectan el layout principal */}
+        {selectedSlot && selectedClient && (
+          <AppointmentDialog 
+            isOpen={isAppointmentDialogOpen}
+            onClose={() => {
+              setIsAppointmentDialogOpen(false);
+              setSelectedClient(null); // Limpiar cliente al cerrar
+              setSelectedSlot(null);
+            }}
+            date={selectedSlot.date}
+            initialClient={selectedClient}
+            selectedTime={selectedSlot.time}
+            clinic={{ id: activeClinic?.id?.toString() || '', name: activeClinic?.name || '' }}
+            professional={{ id: '', name: '' }} // TODO: implementar selección de profesional
+            onSearchClick={() => { 
+              setIsAppointmentDialogOpen(false); 
+              setIsSearchDialogOpen(true); 
+            }}
+            onNewClientClick={handleNewClientClick}
+            onSaveAppointment={(appointmentData) => {
+              // Adaptar los datos al formato esperado por handleSaveAppointment
+              handleSaveAppointment({
+                client: {
+                  name: `${selectedClient.firstName} ${selectedClient.lastName}`,
+                  phone: selectedClient.phone || ''
+                },
+                services: [], // TODO: implementar servicios
+                time: appointmentData.startTime,
+                comment: appointmentData.notes
+              });
+            }}
+            onMoveAppointment={handleDeleteAppointment}
+          />
+        )}
+        
+        {/* MODAL DE BLOQUEO/OVERRIDE (fuera del contenedor flex principal) */} 
+        <BlockScheduleModal
+          open={isOverrideModalOpen}
+          onOpenChange={(isOpen) => setIsOverrideModalOpen(isOpen)}
+          clinicRooms={activeCabins.map(cabin => ({
+            ...cabin,
+            id: cabin.id.toString()
+          }))}
+          blockToEdit={selectedOverride}
+          clinicId={String(activeClinic?.id)}
+          clinicConfig={{
+            // Pass calculated times if available, otherwise safe defaults
+            openTime: timeSlots.length > 0 ? timeSlots[0] : "09:00", 
+            closeTime: timeSlots.length > 0 ? timeSlots[timeSlots.length - 1] : "20:00",
+          }}
+        />
+        
+        {/* MODAL DE BÚSQUEDA DE PERSONAS */}
         {isSearchDialogOpen && (
           <PersonSearchDialog
             isOpen={isSearchDialogOpen}
@@ -1230,28 +1307,8 @@ export default function WeeklyAgenda({
             onPersonSelect={handleClientSelect}
           />
         )}
-
-        {isAppointmentDialogOpen && selectedSlot && (
-          <AppointmentDialog
-            isOpen={isAppointmentDialogOpen}
-            onClose={() => {
-              setIsAppointmentDialogOpen(false);
-              setSelectedClient(null); // Limpiar cliente al cerrar
-              setSelectedSlot(null);
-            }}
-            client={selectedClient}
-            selectedTime={selectedSlot.time}
-            onSearchClick={() => { 
-              setIsAppointmentDialogOpen(false); 
-              setIsSearchDialogOpen(true); 
-            }}
-            onNewClientClick={handleNewClientClick}
-            onSave={handleSaveAppointment}
-            onDelete={handleDeleteAppointment}
-            isEditing={false}
-          />
-        )}
-
+        
+        {/* MODAL DE NUEVO CLIENTE */}
         {isNewClientDialogOpen && (
           <NewClientDialog 
             isOpen={isNewClientDialogOpen} 
@@ -1259,23 +1316,6 @@ export default function WeeklyAgenda({
           />
         )}
       </div>
-      
-      {/* MODAL DE BLOQUEO/OVERRIDE (fuera del contenedor flex principal) */} 
-      <BlockScheduleModal
-        open={isOverrideModalOpen}
-        onOpenChange={(isOpen) => setIsOverrideModalOpen(isOpen)}
-        clinicRooms={activeCabins.map(cabin => ({
-          ...cabin,
-          id: cabin.id.toString()
-        }))}
-        blockToEdit={selectedOverride}
-        clinicId={String(effectiveClinic?.id)}
-        clinicConfig={{
-          // Pass calculated times if available, otherwise safe defaults
-          openTime: timeSlots.length > 0 ? timeSlots[0] : "09:00", 
-          closeTime: timeSlots.length > 0 ? timeSlots[timeSlots.length - 1] : "20:00",
-        }}
-      />
     </HydrationWrapper>
   )
 }

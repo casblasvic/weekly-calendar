@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { Dialog, DialogContent, DialogTitle, DialogFooter, DialogHeader } from "@/components/ui/dialog"
+import { Dialog, DialogContent as UIDialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -49,53 +49,61 @@ interface Service {
   duration: number;
 }
 
-export interface Person {
+interface Client {
   id: string;
   firstName: string;
   lastName: string;
-  email?: string;
-  phone?: string;
-  address?: string;
-  city?: string;
-  postalCode?: string;
-  countryIsoCode?: string;
+  name?: string;
+  phone: string;
+  email: string;
+  address: string;
 }
 
 interface AppointmentDialogProps {
   isOpen: boolean;
   onClose: () => void;
   date?: Date;
-  clinic?: { id: string; name: string };
-  professional?: { id: string; name: string };
-  selectedTime?: string;
-  initialClient?: Person;
-  onSaveAppointment?: (appointment: {
-    clinicId: string;
-    professionalId: string;
-    personId: string;
-    date: string;
-    startTime: string;
-    endTime: string;
-    services: string[];
-    notes?: string;
-  }) => void;
+  selectedTime: string;
+  onCreateAppointment?: (appointment: any) => void;
+  onDeleteAppointment?: () => void;
   onMoveAppointment?: () => void;
+  onValidateAppointment?: () => void;
+  onMarkAsNoShow?: () => void;
+  servicesFilter?: string[];
+  client?: Client;
+  appointment?: any;
   onSearchClick?: () => void;
   onNewClientClick?: () => void;
+  onDelete?: () => void;
+  onSave?: (appointment: {
+    client: Client;
+    services: Service[];
+    time: string;
+    comment?: string;
+    blocks: number;
+    tags?: string[];
+  }) => void;
+  isEditing?: boolean;
 }
 
 export function AppointmentDialog({
   isOpen,
   onClose,
   date,
-  clinic,
-  professional,
   selectedTime,
-  initialClient,
-  onSaveAppointment,
+  onCreateAppointment,
+  onDeleteAppointment,
   onMoveAppointment,
+  onValidateAppointment,
+  onMarkAsNoShow,
+  servicesFilter = [],
+  client: initialClient,
+  appointment,
   onSearchClick,
   onNewClientClick,
+  onDelete,
+  onSave,
+  isEditing = false,
 }: AppointmentDialogProps) {
   const [activeTab, setActiveTab] = useState("servicios")
   const [selectedServices, setSelectedServices] = useState<Service[]>([])
@@ -123,13 +131,13 @@ export function AppointmentDialog({
 
   // Initialize from appointment if editing
   useEffect(() => {
-    if (initialClient) {
-      setSelectedServices([])
-      setModules(1)
-      setAppointmentComment("")
-      setSelectedTags([])
+    if (appointment && isEditing) {
+      setSelectedServices(appointment.services || [])
+      setModules(appointment.blocks || 1)
+      setAppointmentComment(appointment.comment || "")
+      setSelectedTags(appointment.tags || [])
     }
-  }, [initialClient])
+  }, [appointment, isEditing])
 
   if (!initialClient) return null
 
@@ -198,23 +206,31 @@ export function AppointmentDialog({
   }
 
   const handleDelete = () => {
-    if (onMoveAppointment) {
-      onMoveAppointment()
+    if (onDeleteAppointment) {
+      onDeleteAppointment()
+      onClose()
+    } else if (onDelete) {
+      onDelete()
       onClose()
     }
   }
 
   const handleSave = () => {
-    if (onSaveAppointment) {
-      onSaveAppointment({
-        clinicId: clinic?.id || "",
-        professionalId: professional?.id || "",
-        personId: initialClient.id,
-        date: format(date, 'yyyy-MM-dd'),
-        startTime: selectedTime || "",
-        endTime: endTime || "",
-        services: selectedServices.map(s => s.id),
-        notes: appointmentComment,
+    if (onValidateAppointment) {
+      onValidateAppointment()
+      onClose()
+    } else if (onSave) {
+      const clientToSave = {
+        ...initialClient,
+        name: initialClient.name || `${initialClient.firstName} ${initialClient.lastName}`
+      }
+      onSave({
+        client: clientToSave,
+        services: selectedServices,
+        time: selectedTime || "",
+        comment: appointmentComment,
+        blocks: modules,
+        tags: selectedTags
       })
       onClose()
     }
@@ -229,7 +245,10 @@ export function AppointmentDialog({
   }
 
   const handleNoShow = () => {
-    // No implementado
+    if (onMarkAsNoShow) {
+      onMarkAsNoShow()
+      onClose()
+    }
   }
 
   const handleMove = () => {
@@ -239,16 +258,11 @@ export function AppointmentDialog({
     }
   }
 
-  const clientName = `${initialClient.firstName} ${initialClient.lastName}`
+  const clientName = initialClient.name || `${initialClient.firstName} ${initialClient.lastName}`
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="p-0 overflow-hidden max-w-3xl">
-        {/* DialogTitle oculto para accesibilidad */}
-        <DialogTitle className="sr-only">
-          Crear cita para {clientName}
-        </DialogTitle>
-        
+      <UIDialogContent className="p-0 overflow-hidden max-w-3xl">
         <div className="flex flex-col h-full overflow-hidden">
           {/* Header con info del cliente */}
           <div className="p-3 border-b">
@@ -442,7 +456,7 @@ export function AppointmentDialog({
                     variant="outline"
                     className="justify-start font-light text-xs bg-[#E9ECEF] hover:bg-gray-200 border-0 shadow-none h-8 disabled:opacity-50 disabled:cursor-not-allowed"
                     onClick={handleDelete}
-                    disabled={!selectedServices.length}
+                    disabled={!isEditing || selectedServices.length === 0}
                   >
                     <Trash2 className="h-3.5 w-3.5 mr-1.5 text-red-500" />
                     Eliminar
@@ -452,7 +466,7 @@ export function AppointmentDialog({
                     variant="outline"
                     className="justify-start font-light text-xs bg-[#E9ECEF] hover:bg-gray-200 border-0 shadow-none h-8 disabled:opacity-50 disabled:cursor-not-allowed"
                     onClick={handleMove}
-                    disabled={!selectedServices.length}
+                    disabled={!isEditing || selectedServices.length === 0}
                   >
                     <Move className="h-3.5 w-3.5 mr-1.5 text-blue-500" />
                     Mover
@@ -462,7 +476,7 @@ export function AppointmentDialog({
                     variant="outline"
                     className="justify-start font-light text-xs bg-[#E9ECEF] hover:bg-gray-200 border-0 shadow-none h-8 disabled:opacity-50 disabled:cursor-not-allowed"
                     onClick={() => setShowCommentDialog(true)}
-                    disabled={!selectedServices.length}
+                    disabled={selectedServices.length === 0}
                   >
                     <MessageSquare className="h-3.5 w-3.5 mr-1.5 text-gray-500" />
                     Comentarios
@@ -472,7 +486,7 @@ export function AppointmentDialog({
                     variant="outline"
                     className="justify-start font-light text-xs bg-[#E9ECEF] hover:bg-gray-200 border-0 shadow-none h-8 disabled:opacity-50 disabled:cursor-not-allowed"
                     onClick={handleNoShow}
-                    disabled={!selectedServices.length}
+                    disabled={!isEditing || selectedServices.length === 0}
                   >
                     <XCircle className="h-3.5 w-3.5 mr-1.5 text-orange-500" />
                     No asistido
@@ -482,14 +496,13 @@ export function AppointmentDialog({
                     variant="outline"
                     className="justify-start font-light text-xs bg-[#28A745] hover:bg-[#218838] text-white border-0 shadow-sm h-8 disabled:opacity-50 disabled:cursor-not-allowed w-full mt-2"
                     onClick={handleSave}
-                    disabled={!selectedServices.length}
+                    disabled={selectedServices.length === 0}
                   >
                     <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />
                     Validar cita
                   </Button>
                 </div>
               </div>
-            </div>
 
             {/* Panel Derecho - Selección de servicios */}
             <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
@@ -617,7 +630,7 @@ export function AppointmentDialog({
                         size="sm" 
                         className="h-7 text-xs px-3 min-w-[80px] bg-[#2F0E5D] hover:bg-[#260b4a] text-white font-normal" 
                         onClick={handleSave}
-                        disabled={!selectedServices.length}
+                        disabled={selectedServices.length === 0}
                       >
                         Guardar
                       </Button>
@@ -627,8 +640,9 @@ export function AppointmentDialog({
               </Tabs>
             </div>
           </div>
+          </div>
         </div>
-      </DialogContent>
+      </UIDialogContent>
 
       {/* Diálogo de comentarios */}
       <CommentDialog
@@ -641,7 +655,7 @@ export function AppointmentDialog({
       {/* Diálogo con detalles del cliente */}
       {showClientDetails && initialClient && (
         <Dialog open={showClientDetails} onOpenChange={setShowClientDetails}>
-          <DialogContent className="sm:max-w-[425px]">
+          <UIDialogContent className="sm:max-w-[425px]">
             <DialogHeader>
               <DialogTitle>Detalles del Cliente</DialogTitle>
             </DialogHeader>
@@ -666,7 +680,7 @@ export function AppointmentDialog({
             <DialogFooter>
               <Button onClick={() => setShowClientDetails(false)}>Cerrar</Button>
             </DialogFooter>
-          </DialogContent>
+          </UIDialogContent>
         </Dialog>
       )}
     </Dialog>
