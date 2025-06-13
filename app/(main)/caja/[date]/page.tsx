@@ -223,7 +223,7 @@ export default function CashPage({ params }: CashPageProps) {
         arr.push({
           ticketId: ticket.id,
           ticketNumber: ticket.ticketNumber,
-          clientName: ticket.client ? `${ticket.client.firstName} ${ticket.client.lastName||''}`.trim(): '',
+          clientName: ticket.person ? `${ticket.person.firstName} ${ticket.person.lastName||''}`.trim(): '',
           posName: pay.posTerminal?.name || '—',
           amount: pay.amount,
           methodName: pay.paymentMethodDefinition.name,
@@ -241,7 +241,7 @@ export default function CashPage({ params }: CashPageProps) {
           arr.push({
             ticketId: ticket.id,
             ticketNumber: ticket.ticketNumber,
-            clientName: ticket.client ? `${ticket.client.firstName} ${ticket.client.lastName||''}`.trim(): '',
+            clientName: ticket.person ? `${ticket.person.firstName} ${ticket.person.lastName||''}`.trim(): '',
             posName: '—',
             amount: deferredAmount,
             methodName: t('cash.summary.deferredTotal','Pago aplazado'),
@@ -896,7 +896,7 @@ const CashSessionTicketsTable: React.FC<CashSessionTicketsTableProps> = ({ ticke
               </TableCell>
               <TableCell className="px-1 font-medium">{ticket.ticketNumber || '-'}</TableCell>
               <TableCell className="flex items-center justify-between px-1">
-                <span>{ticket.client ? `${ticket.client.firstName} ${ticket.client.lastName || ''}`.trim() : '-'}</span>
+                <span>{ticket.person ? `${ticket.person.firstName} ${ticket.person.lastName || ''}`.trim() : '-'}</span>
                 <Button variant="ghost" size="icon" onClick={(e)=>{e.stopPropagation(); router.push(`/facturacion/tickets/editar/${ticket.id}?from=${encodeURIComponent(returnToPath)}`)}}>
                   <Eye className="w-4 h-4 text-purple-600" />
                 </Button>

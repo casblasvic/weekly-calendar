@@ -97,7 +97,9 @@ export type TicketApiResponse = Prisma.TicketGetPayload<{
         paymentMethodDefinition: { select: { id: true, name: true, type: true } },
         bankAccount: { select: { id: true, accountName: true, iban: true, bank: { select: { name: true } } } },
         posTerminal: { select: { id: true, name: true } },
-        user: { select: { id: true, firstName: true, lastName: true } } 
+        user: { select: { id: true, firstName: true, lastName: true } },
+        payerPerson: { select: { id: true, firstName: true, lastName: true } },
+        payerCompany: { select: { id: true, fiscalName: true } }
       }
     };
     invoice: { select: { id: true, invoiceNumber: true, invoiceSeries: true, issueDate: true, totalAmount: true, status: true }};

@@ -5,7 +5,7 @@ interface CanInvoiceResponse {
   reason?: string;
   message?: string;
   legalEntity?: any;
-  client?: any;
+  person?: any;
   company?: any;
   availableSeries?: any[];
   defaultSeriesId?: string;

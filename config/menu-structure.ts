@@ -100,6 +100,12 @@ export const menuItems: MenuItem[] = [
     href: "/clientes",
     submenu: [
       {
+        id: "contactos",
+        label: "Contactos",
+        icon: Users,
+        href: "/contactos",
+      },
+      {
         id: "busqueda",
         label: "Búsqueda",
         icon: Search,

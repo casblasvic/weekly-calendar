@@ -11,7 +11,7 @@
     "find-unused": "ts-prune",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "seed": "ts-node --project tsconfig.json prisma/seed.ts",
+    "seed": "ts-node --project tsconfig.seed.json prisma/seed.ts",
     "db:seed": "npx tsx prisma/seed.ts",
     "db:seed:debug": "node --inspect-brk -r tsx/cjs prisma/seed.ts",
     "test:seed:simple": "npx tsx scripts/test-seed-simple.ts",
@@ -23,6 +23,7 @@
     "@auth/prisma-adapter": "^2.9.1",
     "@emotion/is-prop-valid": "latest",
     "@hookform/resolvers": "^5.0.1",
+    "@paralleldrive/cuid2": "^2.2.2",
     "@prisma/client": "^6.8.2",
     "@radix-ui/react-accordion": "^1.2.2",
     "@radix-ui/react-alert-dialog": "^1.1.10",
@@ -119,6 +120,6 @@
     "typescript": "^5.8.3"
   },
   "prisma": {
-    "seed": "ts-node --project tsconfig.json prisma/seed.ts"
+    "seed": "ts-node --project tsconfig.seed.json prisma/seed.ts"
   }
 }

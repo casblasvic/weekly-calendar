@@ -181,7 +181,7 @@ export function DebtList({ clinicId }: DebtListProps) {
                 </TableCell>
                 <TableCell>{d.clinic?.name || '-'}</TableCell>
                 <TableCell>{d.ticket?.ticketNumber ?? '-'}</TableCell>
-                <TableCell>{d.client ? `${d.client.firstName || ''} ${d.client.lastName || ''}` : '-'}</TableCell>
+                <TableCell>{d.person ? `${d.person.firstName || ''} ${d.person.lastName || ''}` : '-'}</TableCell>
                 <TableCell className="text-right font-medium text-amber-600">{formatCurrency(d.pendingAmount)}</TableCell>
                 <TableCell className="text-right text-sm text-gray-600">{format(new Date(d.createdAt), 'dd/MM/yyyy', { locale: es })}</TableCell>
                 <TableCell className="text-right space-x-1">

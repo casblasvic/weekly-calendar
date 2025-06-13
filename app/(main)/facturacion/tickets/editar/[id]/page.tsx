@@ -103,6 +103,9 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
   const [hasServiceReceiver, setHasServiceReceiver] = useState(false);
   const [serviceReceiverClient, setServiceReceiverClient] = useState<PersonForSelector | null>(null);
   
+  const [originalFormValues, setOriginalFormValues] = useState<TicketFormValues | null>(null);
+  const [hasRealChanges, setHasRealChanges] = useState(false);
+  
   const { id } = use(params);
   const isNewTicket = id === 'new'; // << NUEVO
   const { activeClinic } = useClinic();
@@ -120,7 +123,7 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
   // Estado para forzar un re-renderizado después de cerrar
   const [closingTicket, setClosingTicket] = useState(false);
   // Evitar parpadeo de totales al iniciar / reabrir
-  const [totalsReady, setTotalsReady] = useState(true);
+  const [totalsReady, setTotalsReady] = useState(false); // Cambiar a false para controlar mejor el flujo
   const [activeTab, setActiveTab] = useState('items');
   const [isSavingBeforeClose, setIsSavingBeforeClose] = useState(false);
   // <<< FIN: Variables para control de reapertura >>>
@@ -164,13 +167,57 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
   const ticketTotalAmount = watch('totalAmount');
   const currentPayments = watch('payments');
   
-  // Prefetch de datos comunes (incluye métodos de pago) para mejorar la UX al abrir modales
+  // Observar todos los valores del formulario para detectar cambios reales
+  const watchedFormValues = watch();
+  
+  // Función para comparar objetos profundamente (deep comparison)
+  const deepEqual = (obj1: any, obj2: any): boolean => {
+    if (obj1 === obj2) return true;
+    
+    if (obj1 == null || obj2 == null) return false;
+    
+    if (obj1 instanceof Date && obj2 instanceof Date) {
+      return obj1.getTime() === obj2.getTime();
+    }
+    
+    if (Array.isArray(obj1) && Array.isArray(obj2)) {
+      if (obj1.length !== obj2.length) return false;
+      return obj1.every((item, index) => deepEqual(item, obj2[index]));
+    }
+    
+    if (typeof obj1 !== 'object' || typeof obj2 !== 'object') {
+      return obj1 === obj2;
+    }
+    
+    const keys1 = Object.keys(obj1);
+    const keys2 = Object.keys(obj2);
+    
+    if (keys1.length !== keys2.length) return false;
+    
+    return keys1.every(key => deepEqual(obj1[key], obj2[key]));
+  };
+  
+  // Efecto para detectar cambios reales comparando con valores originales
   useEffect(() => {
-    prefetchCommonData(queryClient);
-  }, [queryClient]);
+    if (!originalFormValues || isNewTicket) return;
+    
+    // Comparar valores actuales con originales
+    const hasChanges = !deepEqual(watchedFormValues, originalFormValues);
+    setHasRealChanges(hasChanges);
+    
+    console.log('[DEBUG] Detección de cambios reales:', {
+      hasChanges,
+      isDirty: formState.isDirty,
+      originalPersonId: originalFormValues.personId,
+      currentPersonId: watchedFormValues.personId,
+      originalPayments: originalFormValues.payments?.length,
+      currentPayments: watchedFormValues.payments?.length
+    });
+  }, [watchedFormValues, originalFormValues, formState.isDirty, isNewTicket]);
 
   useEffect(() => {
     if (isSuccessTicket && ticketData && activeClinic) {
+      console.log('[DEBUG] Iniciando reset del formulario para ticket existente');
       const currentTicketStatus = ticketData.status as TicketStatus;
       const readOnlyCalc = currentTicketStatus !== TicketStatus.OPEN;
       setIsReadOnly(readOnlyCalc);
@@ -230,12 +277,6 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
             formItem.finalPrice = baseLinePriceInit - formItem.manualDiscountAmount;
           }
         }
-        // <<< LOG DE DEBUG >>>
-        if (apiItem.id === 'cmaqk6u8l0001y2xwfjy61xpg') { // ID del "Pack Verano Láser Plus"
-            console.log("[DEBUG page.tsx useEffect Carga] apiItem 'Pack Verano':", JSON.parse(JSON.stringify(apiItem)));
-            console.log("[DEBUG page.tsx useEffect Carga] formItem ANTES de recalculateTotals:", JSON.parse(JSON.stringify(formItem)));
-        }
-        // <<< FIN LOG >>>
         return recalculateItemTotals(formItem);
       });
 
@@ -316,31 +357,95 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
       // 5. Reset the form with all pre-calculated values
       reset(formValues as TicketFormValues); 
       console.log("[DEBUG page.tsx useEffect] FIN. Formulario reseteado. formState.isDirty DESPUÉS de reset:", form.formState.isDirty);
+      
+      // Establecer los valores originales directamente con un pequeño delay
+      if (!isNewTicket) {
+        // Usar requestAnimationFrame para asegurar que el DOM se actualice
+        requestAnimationFrame(() => {
+          // Luego usar setTimeout para dar tiempo a React Hook Form
+          setTimeout(() => {
+            const currentFormValues = form.getValues();
+            console.log('[DEBUG] Estableciendo valores originales:', {
+              personId: currentFormValues.personId,
+              items: currentFormValues.items?.length,
+              payments: currentFormValues.payments?.length,
+              hasOriginalValues: !!originalFormValues
+            });
+            setOriginalFormValues(currentFormValues);
+            setHasRealChanges(false); // Asegurar que sigue en false
+          }, 0);
+        });
+      }
+      
+      setHasRealChanges(false); // No hay cambios al inicio
+      
       setTotalsReady(true);
     }
-  }, [isSuccessTicket, ticketData, ticketData?.status, activeClinic, reset, getValues, t, mapPrintSizeToFormEnum]); // <<< AÑADIDO ticketData.status aquí
+  }, [isSuccessTicket, ticketData, ticketData?.status, activeClinic, reset, getValues, t, mapPrintSizeToFormEnum, isNewTicket, form]); // <<< AÑADIDO ticketData.status aquí
 
+  // Efecto adicional para asegurar que los valores originales se establezcan
   useEffect(() => {
-    console.log('[EditarTicketPage] Form state debug:', {
-      isDirty: form.formState.isDirty,
-      dirtyFields: form.formState.dirtyFields,
-    });
-  }, [form.formState.isDirty, form.formState.dirtyFields]);
-
-  useEffect(() => {
-    if (ticketData?.personId) {
-      setHasServiceReceiver(true);
-      // Buscar la persona receptora
-      fetch(`/api/persons/${ticketData.personId}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data) {
-            setServiceReceiverClient(data);
-          }
-        })
-        .catch(err => console.error('Error cargando persona receptora:', err));
+    if (!isNewTicket && ticketData && formState.defaultValues && !originalFormValues) {
+      console.log('[DEBUG] Intentando establecer valores originales desde defaultValues');
+      const values = form.getValues();
+      if (values.personId || values.items?.length) {
+        console.log('[DEBUG] Estableciendo valores originales (fallback):', {
+          personId: values.personId,
+          items: values.items?.length,
+          payments: values.payments?.length
+        });
+        setOriginalFormValues(values);
+        setHasRealChanges(false);
+      }
     }
-  }, [ticketData?.personId]);
+  }, [isNewTicket, ticketData, formState.defaultValues, originalFormValues, form]);
+
+  useEffect(() => {
+    if (isSuccessTicket && ticketData) {
+      // Verificar si hay pagos con payerPersonId diferente al personId del ticket
+      const hasPaymentsWithDifferentPayer = ticketData.payments?.some((payment: any) => 
+        payment.payerPersonId && payment.payerPersonId !== ticketData.personId
+      );
+      
+      // Si hay pagos con pagador diferente al receptor, SÍ activar el checkbox
+      // Esto indica que el receptor del servicio (ticket.personId) es diferente del pagador (payment.payerPersonId)
+      if (hasPaymentsWithDifferentPayer) {
+        console.log("[DEBUG] Detectados pagos con pagador diferente al receptor. Activando hasServiceReceiver.");
+        setHasServiceReceiver(true);
+        
+        // Solo hacer setValue si los valores originales ya fueron capturados
+        if (originalFormValues) {
+          // Buscar el primer pagador para establecerlo como cliente principal
+          const firstPaymentWithPayer = ticketData.payments?.find((payment: any) => payment.payerPersonId);
+          if (firstPaymentWithPayer?.payerPerson) {
+            // Establecer el pagador como cliente principal (personId del formulario)
+            form.setValue('personId', firstPaymentWithPayer.payerPersonId, { shouldDirty: false });
+            form.setValue('clientName', `${firstPaymentWithPayer.payerPerson.firstName} ${firstPaymentWithPayer.payerPerson.lastName}`, { shouldDirty: false });
+            form.setValue('clientDetails', firstPaymentWithPayer.payerPerson, { shouldDirty: false });
+            
+            // Establecer el receptor actual del ticket como serviceReceiverClient
+            if (ticketData.person) {
+              setServiceReceiverClient({
+                id: ticketData.person.id,
+                firstName: ticketData.person.firstName,
+                lastName: ticketData.person.lastName,
+                email: ticketData.person.email || '',
+                phone: ticketData.person.phone || '',
+                address: ticketData.person.address || '',
+                city: ticketData.person.city || '',
+                postalCode: ticketData.person.postalCode || '',
+                personType: 'CLIENT'
+              } as PersonForSelector);
+            }
+          }
+        }
+      } else {
+        // Si no hay pagador diferente, el checkbox permanece desactivado
+        // El ticket.personId es tanto pagador como receptor
+        console.log("[DEBUG] No hay pagador diferente al receptor. hasServiceReceiver permanece desactivado.");
+      }
+    }
+  }, [isSuccessTicket, ticketData, form, originalFormValues]);
 
   const watchedItems = watch("items");
   const watchedPayments = watch("payments");
@@ -357,7 +462,9 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
     const currentTotalAmount = watchedTotalAmountFromForm || 0;
     const currentPaymentsArray = watchedPayments || [];
 
-    const totalPaid = currentPaymentsArray.reduce((sum, payment) => sum + (payment.amount || 0), 0);
+    const totalPaid = currentPaymentsArray.reduce((sum, payment) => 
+      sum + (payment.amount || 0), 0) || 0;
+    
     // Ensure dueAmount is not negative for the check, and use a small epsilon for float comparisons.
     const dueAmount = Math.max(0, currentTotalAmount - totalPaid); 
     
@@ -384,12 +491,11 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
   ]);
 
   const recalculateItemTotals = (item: TicketItemFormValues): TicketItemFormValues => {
-    const unitPrice = Number(item.unitPrice) || 0;
-    const quantity = Number(item.quantity) || 0;
-    const promoDiscount = Number(item.promotionDiscountAmount) || 0;
-    const vatRate = Number(item.vatRate) || 0;
-    
-    let linePriceNeto: number; 
+    const unitPrice = item.unitPrice || 0;
+    const quantity = item.quantity || 0;
+    const promoDiscount = item.promotionDiscountAmount || 0;
+    const vatRate = item.vatRate || 0;
+    let linePriceNeto = 0;
     let finalManualDiscountAmount = item.manualDiscountAmount ?? 0;
     let finalManualDiscountPercentage = item.manualDiscountPercentage ?? null;
     const baseLinePrice = unitPrice * quantity;
@@ -460,7 +566,8 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
       const createPayload = {
         clinicId: activeClinic.id,
         currencyCode: activeClinic.currency,
-        personId: formData.personId || null,
+        // Cuando hasServiceReceiver es true, el personId del ticket debe ser el receptor
+        personId: (hasServiceReceiver && serviceReceiverClient) ? serviceReceiverClient.id : (formData.personId || null),
         sellerUserId: formData.sellerId || null,
         notes: formData.observations || null,
       } as any;
@@ -514,6 +621,7 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
           notes: p.notes,
           paymentMethodDefinitionId: p.paymentMethodDefinitionId!,
           tempId: p.tempId,
+          ...(hasServiceReceiver && getValues('personId') ? { payerPersonId: getValues('personId') } : {})
         }));
       }
 
@@ -552,10 +660,32 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
     let hasAnyScalarChanges = false; // Flag para rastrear si hubo cambios escalares
 
     // --- 1. PROCESAR ACTUALIZACIONES ESCALARES --- (fusionado y limpiado)
-    if (formData.personId !== (ticketData.personId || null)) {
-      payload.scalarUpdates = { ...(payload.scalarUpdates ?? {}), personId: formData.personId || null };
+    let targetPersonId: string | null = null;
+    if (hasServiceReceiver && serviceReceiverClient) {
+      // Si hay receptor diferente, el personId del ticket debe ser el receptor
+      targetPersonId = serviceReceiverClient.id;
+      console.log("[onSubmit BATCH] Receptor diferente detectado:", {
+        hasServiceReceiver,
+        serviceReceiverClientId: serviceReceiverClient.id,
+        serviceReceiverClientName: `${serviceReceiverClient.firstName} ${serviceReceiverClient.lastName}`,
+        targetPersonId
+      });
+    } else {
+      // Si no hay receptor diferente, el personId del ticket es el pagador
+      targetPersonId = formData.personId;
+    }
+    
+    // Comparar el personId objetivo con el actual del ticket
+    if (targetPersonId !== (ticketData.personId || null)) {
+      console.log("[onSubmit BATCH] Cambio de personId detectado:", {
+        targetPersonId,
+        currentTicketPersonId: ticketData.personId,
+        willUpdate: true
+      });
+      payload.scalarUpdates = { ...(payload.scalarUpdates ?? {}), personId: targetPersonId };
       hasAnyScalarChanges = true;
     }
+    
     if (formData.sellerId !== (ticketData.sellerUser?.id || null)) {
       payload.scalarUpdates = { ...(payload.scalarUpdates ?? {}), sellerUserId: formData.sellerId || null };
       hasAnyScalarChanges = true;
@@ -613,7 +743,7 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
         }
         itemsToAddForBackend.push({ 
           ...itemDataRest, 
-          itemType: type as 'SERVICE' | 'PRODUCT' | 'BONO_DEFINITION' | 'PACKAGE_DEFINITION' | 'CUSTOM',
+          itemType: (type || 'CUSTOM') as any,
           discountNotes,
           tempId: localId 
         });
@@ -660,6 +790,7 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
       notes?: string | null;
       paymentMethodDefinitionId: string; 
       tempId?: string;
+      payerPersonId?: string; // Campo opcional para el pagador
     }> = [];
     const paymentIdsToDeleteFromBackend: string[] = []; // Renombrado para claridad
 
@@ -688,7 +819,8 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
           transactionReference: formPayment.transactionReference,
           notes: formPayment.notes,
           paymentMethodDefinitionId: formPayment.paymentMethodDefinitionId,
-          tempId: formPayment.tempId // Use the tempId from the form payment
+          tempId: formPayment.tempId, // Use the tempId from the form payment
+          ...(hasServiceReceiver && getValues('personId') ? { payerPersonId: getValues('personId') } : {})
         });
       } else {
         // Es un pago existente en BD que sigue presente sin cambios significativos
@@ -710,6 +842,17 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
 
     // --- 4. VERIFICAR CAMBIOS Y ENVIAR --- 
     console.log("[onSubmit BATCH] Payload PRE-VALIDACIÓN CAMBIOS:", JSON.parse(JSON.stringify(payload)));
+    
+    // Log detallado del personId si existe
+    if (payload.scalarUpdates?.personId !== undefined) {
+      console.log("[onSubmit BATCH] personId a enviar:", {
+        value: payload.scalarUpdates.personId,
+        type: typeof payload.scalarUpdates.personId,
+        isNull: payload.scalarUpdates.personId === null,
+        length: payload.scalarUpdates.personId?.length
+      });
+    }
+    
     const finalHasScalarChanges = !!payload.scalarUpdates && Object.keys(payload.scalarUpdates).length > 0;
     const hasItemChanges = !!(payload.itemsToAdd?.length || payload.itemsToUpdate?.length || payload.itemIdsToDelete?.length);
     // Modificado para también considerar si amountToDefer es explícitamente 0 (lo que es un cambio si antes era >0)
@@ -748,15 +891,25 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
   const handleClientSelectedInForm = (client: any | null) => {
     // --- INICIO LOGS DETALLADOS PARA SELECCIÓN DE CLIENTE ---
     console.log("[handleClientSelectedInForm] Callback ejecutado. Cliente recibido:", client ? JSON.parse(JSON.stringify(client)) : null);
+    console.log("[handleClientSelectedInForm] hasServiceReceiver:", hasServiceReceiver);
+    console.log("[handleClientSelectedInForm] serviceReceiverClient:", serviceReceiverClient);
+    // NOTA: Este handler es para el cliente principal (personId)
+    // - Si hasServiceReceiver es FALSE: personId es pagador Y receptor
+    // - Si hasServiceReceiver es TRUE: personId es SOLO pagador, serviceReceiverClient es el receptor
     // --- FIN LOGS DETALLADOS ---
-
     // Obtener el cliente actualmente asignado en el formulario
     const currentClientId = getValues('personId');
     const selectedClientId = client?.id ?? null;
 
-    // Si no hay cambio real, no marcar el formulario como dirty ni actualizar valores
+    // Si no hay cambio real en el ID, verificar si hay otros cambios que requieran actualización
     if (currentClientId === selectedClientId) {
-      console.log('[handleClientSelectedInForm] Selección de cliente idéntica a la actual. No se modifican valores.');
+      console.log('[handleClientSelectedInForm] Selección de cliente idéntica a la actual.');
+      
+      // Aún así, marcar el formulario como dirty si hay cambios en el contexto
+      // (por ejemplo, si cambió el estado del checkbox o hay pagos pendientes)
+      const currentObservations = form.getValues('observations');
+      form.setValue('observations', currentObservations || '', { shouldDirty: true });
+      
       return;
     }
 
@@ -767,24 +920,71 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
       console.log(`[handleClientSelectedInForm] Estableciendo personId a: ${client.id}, clientName a: ${client.firstName} ${client.lastName}`);
       // Actualizar tanto personId (nuevo modelo)
       setValue('personId', client.id, { shouldValidate: true, shouldDirty: shouldMarkDirty });
-      setValue('clientName', `${client.firstName} ${client.lastName}${client.companyName ? ` (${client.companyName})` : ''}`.trim(), { shouldDirty: shouldMarkDirty });
-      setValue('clientDetails', client, { shouldDirty: shouldMarkDirty });
+      setValue('clientName', `${client.firstName} ${client.lastName}`, { shouldValidate: true, shouldDirty: shouldMarkDirty });
+      setValue('clientDetails', client, { shouldValidate: true, shouldDirty: shouldMarkDirty });
       clearErrors('personId');
+      
+      // Si hasServiceReceiver está activo, actualizar los pagos con el nuevo pagador
+      if (hasServiceReceiver) {
+        const currentPayments = getValues('payments') || [];
+        const updatedPayments = currentPayments.map(payment => ({
+          ...payment,
+          payerPersonId: client.id // Actualizar el pagador en todos los pagos
+        }));
+        setValue('payments', updatedPayments, { shouldDirty: true });
+      }
     } else {
-      console.warn("[handleClientSelectedInForm] Limpiando campos de cliente porque el cliente recibido es null.");
       setValue('personId', undefined, { shouldValidate: true, shouldDirty: shouldMarkDirty });
-      setValue('clientName', undefined, { shouldDirty: shouldMarkDirty });
-      setValue('clientDetails', undefined, { shouldDirty: shouldMarkDirty });
+      setValue('clientName', undefined, { shouldValidate: true, shouldDirty: shouldMarkDirty });
+      setValue('clientDetails', undefined, { shouldValidate: true, shouldDirty: shouldMarkDirty });
+      
+      // Si hasServiceReceiver está activo y se elimina el pagador, limpiar payerPersonId de los pagos
+      if (hasServiceReceiver) {
+        const currentPayments = getValues('payments') || [];
+        const updatedPayments = currentPayments.map(payment => ({
+          ...payment,
+          payerPersonId: undefined // Eliminar el pagador de todos los pagos
+        }));
+        setValue('payments', updatedPayments, { shouldDirty: true });
+      }
     }
   };
 
   const handleServiceReceiverSelect = (client: PersonForSelector | null) => {
+    console.log("[handleServiceReceiverSelect] Nuevo receptor seleccionado:", client);
+    console.log("[handleServiceReceiverSelect] Receptor anterior:", serviceReceiverClient);
+    
+    // Obtener el receptor anterior para comparar
+    const previousReceiverId = serviceReceiverClient?.id;
+    const newReceiverId = client?.id;
+    
+    // Actualizar el estado del receptor
     setServiceReceiverClient(client);
-    if (client) {
-      setValue('personId', client.id, { shouldDirty: true });
-    } else {
-      setValue('personId', null, { shouldDirty: true });
+    
+    // Si hay un cambio real de receptor (no es el mismo)
+    if (previousReceiverId !== newReceiverId) {
+      // Actualizar los ítems existentes para cambiar el personId al nuevo receptor
+      const currentItems = getValues('items') || [];
+      if (currentItems.length > 0 && hasServiceReceiver) {
+        const updatedItems = currentItems.map(item => ({
+          ...item,
+          // Los ítems pertenecen al receptor cuando hasServiceReceiver es true
+          personId: newReceiverId || undefined
+        }));
+        setValue('items', updatedItems, { shouldDirty: true });
+      }
+      
+      // Si se elimina el receptor (client es null), verificar si debemos desactivar el checkbox
+      if (!client && hasServiceReceiver) {
+        console.log("[handleServiceReceiverSelect] Receptor eliminado, considerar desactivar hasServiceReceiver");
+        // Opcionalmente, podrías desactivar el checkbox aquí
+        // setHasServiceReceiver(false);
+      }
     }
+    
+    // Marcar el formulario como modificado
+    const currentObservations = form.getValues('observations');
+    form.setValue('observations', currentObservations || '', { shouldDirty: true });
   };
 
   const handleOpenAddItemModal = () => setIsAddItemModalOpen(true);
@@ -1027,6 +1227,7 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
       id: undefined, // Database ID is undefined for new payments
       tempId: tempId, // Store the temporary ID
       // paymentDate is taken from the modal
+      ...(hasServiceReceiver && getValues('personId') ? { payerPersonId: getValues('personId') } : {})
     };
 
     console.log("[handleAddPayment] Nuevo pago para añadir localmente:", newPayment);
@@ -1159,23 +1360,43 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
   const currentPending = Math.max(0, totalGeneralTicket - (nonDeferredAmount + deferredAmount));
 
   useEffect(() => {
-    form.setValue('subtotalAmount', parseFloat(subtotalNetoDeLineas.toFixed(2)), { shouldDirty: false }); 
-    form.setValue('taxableBaseAmount', parseFloat(taxableBaseFinalTicket.toFixed(2)), { shouldDirty: false }); 
-    form.setValue('taxAmount', parseFloat(adjustedIVA.toFixed(2)), { shouldDirty: false });
-    form.setValue('totalAmount', parseFloat(adjustedTotal.toFixed(2)), { shouldDirty: false }); 
-    form.setValue('amountPaid', parseFloat(amountPaid.toFixed(2)), { shouldDirty: false });
-    // El campo 'amountDeferred' se actualiza con ticketData.dueAmount en el useEffect de inicialización
-    // y el resumen de "Aplazado" lo calcula dinámicamente de watchedPayments.
-    setTotalsReady(true);
-    console.log('[EditarTicketPage] Totals calculated. isDirty:', form.formState.isDirty, 'dirtyFields:', form.formState.dirtyFields); // LOG AÑADIDO
-  }, [subtotalNetoDeLineas, taxableBaseFinalTicket, totalIVADeLineas, totalGeneralTicket, amountPaid, form, watchedItems, watchedPayments]); // <<< AÑADIR watchedItems y watchedPayments
+    // Ensure ticketData and activeClinic are loaded, and ticket is OPEN
+    if (!ticketData || !activeClinic || (ticketData.status as string) !== TicketStatus.OPEN) {
+      setIsTicketClosable(false);
+      return;
+    }
 
-  // En el JSX del resumen, asegurar que:
-  // "Base Imponible": muestra subtotalNetoDeLineas (si quieres mostrar el subtotal antes de desc. global)
-  //                 o taxableBaseFinalTicket (si quieres mostrar la base imponible final para IVA).
-  // "Dto.": muestra totalDescuentosDeLineas + effectiveGlobalDiscount
-  // "IVA": muestra totalIVADeLineas
-  // "Total": muestra totalGeneralTicket
+    // Use watched values for direct reactivity
+    const currentTotalAmount = watchedTotalAmountFromForm || 0;
+    const currentPaymentsArray = watchedPayments || [];
+
+    const totalPaid = currentPaymentsArray.reduce((sum, payment) => 
+      sum + (payment.amount || 0), 0) || 0;
+    
+    // Ensure dueAmount is not negative for the check, and use a small epsilon for float comparisons.
+    const dueAmount = Math.max(0, currentTotalAmount - totalPaid); 
+    
+    // Update pendingAmountForModal, ensuring it's 0 if effectively paid.
+    setPendingAmountForModal(dueAmount < 0.009 ? 0 : dueAmount);
+
+    const clinicAllowsDelayedPayments = activeClinic.delayedPayments === true;
+
+    // Determine if ticket is closable
+    if (dueAmount <= 0.009) { // Using a small epsilon for float comparisons (e.g., $0.009)
+      setIsTicketClosable(true);
+    } else if (clinicAllowsDelayedPayments) {
+      // If clinic allows delayed payments, ticket is closable even if there's a pending amount.
+      // handleCompleteAndCloseTicket will manage the deferral process.
+      setIsTicketClosable(true);
+    } else {
+      setIsTicketClosable(false);
+    }
+  }, [
+    ticketData?.status, // More specific dependency
+    activeClinic?.delayedPayments, // More specific dependency
+    watchedTotalAmountFromForm,
+    watchedPayments,
+  ]);
 
   const handleCompleteAndCloseTicket = async () => {
     console.log("[handleCompleteAndCloseTicket] Iniciando cierre de ticket...");
@@ -1192,7 +1413,7 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
       // Mostrar estado de carga inmediatamente
       setRedirectingAfterClose(true);
       
-      // Pequeño retraso para asegurar que la UI se actualice
+      // Pequeño retraso para asegurar que la navegación haya ocurrido tras cerrar el ticket
       setTimeout(() => {
         completeAndCloseMutation.mutate(
           { 
@@ -1259,10 +1480,7 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
       setRedirectingAfterClose(true);
       
       completeAndCloseMutation.mutate(
-        { 
-          ticketId: currentTicketId, 
-          clinicId: activeClinic?.id 
-        },
+        { ticketId: currentTicketId, clinicId: activeClinic.id },
         {
           onSuccess: (data) => {
             // Actualizar la caché con los datos del servidor
@@ -1420,9 +1638,39 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
                                 checked={hasServiceReceiver}
                                 onCheckedChange={(checked) => {
                                   setHasServiceReceiver(checked as boolean);
+                                  
                                   if (!checked) {
+                                    // Al desactivar: el cliente principal vuelve a ser pagador Y receptor
+                                    // Eliminar el receptor de servicio separado
                                     handleServiceReceiverSelect(null);
+                                    
+                                    // Actualizar los pagos existentes para eliminar payerPersonId
+                                    // ya que ahora el pagador y receptor son el mismo
+                                    const currentPayments = getValues('payments') || [];
+                                    const updatedPayments = currentPayments.map(payment => ({
+                                      ...payment,
+                                      payerPersonId: undefined // Eliminar el pagador separado
+                                    }));
+                                    setValue('payments', updatedPayments, { shouldDirty: true });
+                                  } else {
+                                    // Al activar: preparar para tener pagador y receptor diferentes
+                                    // Si ya hay un cliente principal seleccionado, será el pagador
+                                    // El usuario debe seleccionar el receptor en el nuevo campo
+                                    const currentPersonId = getValues('personId');
+                                    if (currentPersonId) {
+                                      // Actualizar los pagos para incluir el pagador
+                                      const currentPayments = getValues('payments') || [];
+                                      const updatedPayments = currentPayments.map(payment => ({
+                                        ...payment,
+                                        payerPersonId: currentPersonId // El cliente principal es el pagador
+                                      }));
+                                      setValue('payments', updatedPayments, { shouldDirty: true });
+                                    }
                                   }
+                                  
+                                  // Marcar el formulario como modificado
+                                  const currentNotes = form.getValues('observations');
+                                  form.setValue('observations', currentNotes || '', { shouldDirty: true });
                                 }}
                                 disabled={isReadOnly}
                               />
@@ -1430,7 +1678,7 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
                                 htmlFor="hasServiceReceiver"
                                 className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                               >
-                                El receptor del servicio es diferente al pagador
+                                El pagador es diferente al receptor del servicio
                               </Label>
                             </div>
 
@@ -1828,7 +2076,7 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
                             const totalPaid = ticketPaymentsFromForm.reduce((acc, p) => 
                               acc + (p.amount || 0), 0) || 0;
                             const pendingAmount = (ticketTotalAmount || 0) - totalPaid;
-                            // Deshabilitar si el pendiente es 0 o negativo (con un pequeño margen para errores de flotantes)
+                            // Habilitar el botón de añadir pago si hay importe pendiente (mayor a 0.009 para evitar errores de flotantes)
                             const isAddPaymentDisabledComputed = pendingAmount <= 0.009;
                             const paymentMethodsCatalog: any[] = []; // Placeholder para solucionar el linting. TODO: Obtener el catálogo real.
 
@@ -1965,12 +2213,13 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
                 type="button"
                 onClick={onSubmitForm}
                   disabled={
-                    !formState.isDirty ||
+                    (!isNewTicket ? !hasRealChanges : !formState.isDirty) ||
                     saveTicketBatchMutation.isPending ||
                     completeAndCloseMutation.isPending ||
                     isSavingBeforeClose ||
                     formState.isSubmitting ||
-                    (!isNewTicket && ticketData?.status !== TicketStatus.OPEN)
+                    (!isNewTicket && ticketData?.status !== TicketStatus.OPEN) ||
+                    (!isNewTicket && !originalFormValues) // Añadir esta condición
                   }
                 className="px-4 py-0 text-sm font-medium h-9"
               >

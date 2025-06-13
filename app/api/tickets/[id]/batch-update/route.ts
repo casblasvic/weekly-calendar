@@ -244,9 +244,13 @@ export async function PUT(request: NextRequest, { params: paramsPromise }: { par
               city: true, 
               postalCode: true, 
               countryIsoCode: true,
-              clientData: {
+              functionalRoles: {
                 select: {
-                  fiscalName: true
+                  clientData: {
+                    select: {
+                      fiscalName: true
+                    }
+                  }
                 }
               }
             }
@@ -616,6 +620,8 @@ export async function PUT(request: NextRequest, { params: paramsPromise }: { par
               transactionReference: paymentToAdd.transactionReference,
               notes: paymentToAdd.notes,
               systemId: systemId,
+              payerPersonId: ticket.personId, // Agregado: establecer el pagador como la persona del ticket
+              // payerCompanyId: ticket.companyId, // Si el ticket tiene companyId, descomentar esta línea
               // bankAccountId: paymentToAdd.bankAccountId, // Si se envía y es relevante
               // posTerminalId: paymentToAdd.posTerminalId, // Si se envía y es relevante
             }
@@ -792,9 +798,13 @@ export async function PUT(request: NextRequest, { params: paramsPromise }: { par
                 city: true, 
                 postalCode: true, 
                 countryIsoCode: true,
-                clientData: {
+                functionalRoles: {
                   select: {
-                    fiscalName: true
+                    clientData: {
+                      select: {
+                        fiscalName: true
+                      }
+                    }
                   }
                 }
               }

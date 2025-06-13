@@ -10,7 +10,7 @@ import { useTranslation } from 'react-i18next';
 import { useClinic } from '@/contexts/clinic-context';
 import { useTicketsQuery, PaginatedTicketsResponse, TicketFilters, useReopenTicketMutation, useDeleteTicketMutation } from '@/lib/hooks/use-ticket-query';
 import { useDailyCashSessionQuery } from '@/lib/hooks/use-cash-session-query';
-import { TicketStatus, Client, User, CashSessionStatus } from '@prisma/client';
+import { TicketStatus, Person, User, CashSessionStatus } from '@prisma/client';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -342,8 +342,8 @@ const TicketsTable = ({
                 )}
                 <TableCell className="font-medium">{ticket.ticketNumber}</TableCell>
                 <TableCell>{format(new Date(ticket.issueDate), 'dd/MM/yyyy HH:mm', { locale: es })}</TableCell>
-                <TableCell>{ticket.client ? `${ticket.client.firstName} ${ticket.client.lastName}` : t('tickets.noClient')}</TableCell>
-                {showNif && <TableCell>{ticket.client?.taxId || '-'}</TableCell>}
+                <TableCell>{ticket.person ? `${ticket.person.firstName} ${ticket.person.lastName}` : t('tickets.noClient')}</TableCell>
+                {showNif && <TableCell>{ticket.person?.taxId || '-'}</TableCell>}
                 <TableCell className="text-right">{formatCurrency(ticket.finalAmount, ticket.currencyCode)}</TableCell>
                 <TableCell className="text-center">
                       <div className="flex justify-center space-x-1">

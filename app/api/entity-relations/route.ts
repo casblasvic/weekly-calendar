@@ -46,8 +46,8 @@ export async function GET(request: NextRequest) {
 
         try {
           switch (relatedEntityType) {
-            case 'client':
-              relatedEntity = await prisma.client.findUnique({
+            case 'person':
+              relatedEntity = await prisma.person.findUnique({
                 where: { id: relatedEntityId },
                 select: {
                   id: true,
@@ -79,29 +79,30 @@ export async function GET(request: NextRequest) {
                 }
               })
               break
-            case 'lead':
-              relatedEntity = await prisma.lead.findUnique({
-                where: { id: relatedEntityId },
-                select: {
-                  id: true,
-                  firstName: true,
-                  lastName: true,
-                  email: true
-                }
-              })
-              break
-            case 'contact':
-              relatedEntity = await prisma.contactPerson.findUnique({
-                where: { id: relatedEntityId },
-                select: {
-                  id: true,
-                  firstName: true,
-                  lastName: true,
-                  email: true,
-                  position: true
-                }
-              })
-              break
+            // Los modelos Lead y ContactPerson ya no existen en el schema actual
+            // case 'lead':
+            //   relatedEntity = await prisma.lead.findUnique({
+            //     where: { id: relatedEntityId },
+            //     select: {
+            //       id: true,
+            //       firstName: true,
+            //       lastName: true,
+            //       email: true
+            //     }
+            //   })
+            //   break
+            // case 'contact':
+            //   relatedEntity = await prisma.contactPerson.findUnique({
+            //     where: { id: relatedEntityId },
+            //     select: {
+            //       id: true,
+            //       firstName: true,
+            //       lastName: true,
+            //       email: true,
+            //       position: true
+            //     }
+            //   })
+            //   break
           }
         } catch (error) {
           console.error(`Error al obtener entidad relacionada ${relatedEntityType}:`, error)

@@ -24,8 +24,28 @@ export async function GET(
         functionalRoles: {
           include: {
             clientData: true,
-            contactData: true,
-            leadData: true,
+            contactData: {
+              include: {
+                company: true
+              }
+            },
+            leadData: {
+              include: {
+                opportunities: {
+                  include: {
+                    clinic: true
+                  }
+                },
+                assignedToUser: {
+                  select: {
+                    id: true,
+                    firstName: true,
+                    lastName: true,
+                    email: true
+                  }
+                }
+              }
+            },
           }
         }
       }
@@ -35,44 +55,53 @@ export async function GET(
       return NextResponse.json({ error: 'Person not found' }, { status: 404 });
     }
 
-    // Transformar los datos para el formato esperado por el frontend
-    const clientRole = person.functionalRoles.find(role => role.roleType === 'CLIENT');
-    const clientData = clientRole?.clientData;
-
+    // Transformar los datos para incluir toda la información de roles
     const transformedPerson = {
       id: person.id,
       firstName: person.firstName,
       lastName: person.lastName,
       email: person.email,
       phone: person.phone,
-      // Usar datos de clientData si existen, sino usar datos de person
-      address: clientData?.address || person.address,
-      city: clientData?.city || person.city,
-      postalCode: clientData?.postalCode || person.postalCode,
-      // Campos adicionales para compatibilidad
-      taxId: person.taxId || null,
-      fiscalName: null, // Person no tiene fiscalName
-      phoneCountryIsoCode: null, // Person no tiene phoneCountryIsoCode
-      country: person.countryIsoCode ? { 
-        name: null,
-        isoCode: person.countryIsoCode
-      } : null,
-      company: null, // TODO: Implementar relación con Company si es necesario
-      clientData: clientData ? {
-        address: clientData.address,
-        city: clientData.city,
-        postalCode: clientData.postalCode,
-        countryIsoCode: clientData.countryIsoCode,
-        marketingConsent: clientData.marketingConsent,
-        isActive: clientData.isActive,
-      } : null,
+      address: person.address,
+      city: person.city,
+      stateProvince: person.stateProvince,
+      postalCode: person.postalCode,
+      countryIsoCode: person.countryIsoCode,
+      birthDate: person.birthDate,
+      gender: person.gender,
+      nationalId: person.nationalId,
+      notes: person.notes,
+      functionalRoles: person.functionalRoles,
+      // Información resumida de roles activos
+      activeRoles: person.functionalRoles
+        ?.filter(role => role.isActive)
+        .map(role => role.roleType) || [],
+      // Información específica por rol
+      clientData: person.functionalRoles
+        ?.filter(role => role.roleType === 'CLIENT' && role.isActive)
+        .map(role => role.clientData)[0] || null,
+      contactRoles: person.functionalRoles
+        ?.filter(role => role.roleType === 'CONTACT' && role.isActive)
+        .map(role => ({
+          ...role.contactData,
+          company: role.contactData?.company,
+          roleId: role.id
+        })) || [],
+      leadRoles: person.functionalRoles
+        ?.filter(role => role.roleType === 'LEAD' && role.isActive)
+        .map(role => ({
+          ...role.leadData,
+          opportunities: role.leadData?.opportunities || [],
+          assignedToUser: role.leadData?.assignedToUser,
+          roleId: role.id
+        })) || []
     };
 
     return NextResponse.json(transformedPerson);
   } catch (error) {
     console.error('Error fetching person:', error);
     return NextResponse.json(
-      { error: 'Error fetching person' },
+      { error: 'Internal server error' },
       { status: 500 }
     );
   }

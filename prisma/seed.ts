@@ -24,11 +24,12 @@ import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library'; 
 // Ya no necesitamos importar Permission aquí
 // import { Permission } from '@prisma/client'; // Comentar o eliminar si estaba duplicada
 
-import { hashPassword } from '@/lib/hash'; // Usando alias @/
+import { hashPassword } from '../lib/hash';
 import path from 'path'; // Importar path
 import { fileURLToPath } from 'url'; // Importar fileURLToPath
-import { seedPersons } from '@/prisma/seed-persons'; // Usando alias @/
-import { seedCountries } from '@/prisma/seed-countries'; // Usando alias @/
+import { seedPersons } from './seed-persons.js';
+import { seedCountries } from './seed-countries.js';
+import { getOrCreateCuid, getMappedId, initializeKnownIds, generateCuid } from './seed-helpers.js';
 // <<< ELIMINAR Importación dinámica de mockData >>>
 // import seedCountries from './seed-countries'; // <<< ELIMINAR Importación (ya integrada)
 
@@ -65,7 +66,8 @@ const initialMockData = {
   ],
   clinicas: [
     {
-      id: 'clinic-1', // Usado como clave en createdClinicsMap
+      mockId: 'clinic-1',
+      id: getOrCreateCuid('clinic-1'), // Usar CUID válido
       prefix: 'CMO', // Usado en upsert
       name: 'Californie Multilaser - Organicare', // Usado en upsert
       city: 'Casablanca', // Usado en upsert
@@ -91,9 +93,9 @@ const initialMockData = {
         sundayOpen: false, // Usado para bloques independientes
         slotDuration: 15, // Usado en upsert clinic
         cabins: [ // Usado para crear cabinas
-          { id: 'cabin-1', clinicId: 'clinic-1', code: 'CAB1', name: 'Cabina Láser 1', color: '#4f46e5', isActive: true, order: 1 },
-          { id: 'cabin-2', clinicId: 'clinic-1', code: 'CAB2', name: 'Cabina Estética', color: '#ef4444', isActive: true, order: 2 },
-          { id: 'cabin-3', clinicId: 'clinic-1', code: 'CAB3', name: 'Cabina Tratamientos', color: '#22c55e', isActive: true, order: 3 }
+          { id: getOrCreateCuid('cabin-1'), clinicId: getOrCreateCuid('clinic-1'), code: 'CAB1', name: 'Cabina Láser 1', color: '#4f46e5', isActive: true, order: 1 },
+          { id: getOrCreateCuid('cabin-2'), clinicId: getOrCreateCuid('clinic-1'), code: 'CAB2', name: 'Cabina Estética', color: '#ef4444', isActive: true, order: 2 },
+          { id: getOrCreateCuid('cabin-3'), clinicId: getOrCreateCuid('clinic-1'), code: 'CAB3', name: 'Cabina Tratamientos', color: '#22c55e', isActive: true, order: 3 }
         ],
         schedule: { // Usado para crear plantilla detallada
           monday: { isOpen: true, ranges: [{ start: '09:00', end: '19:00' }] },
@@ -107,7 +109,6 @@ const initialMockData = {
         initialCash: 1000, // Usado en upsert clinic
         appearsInApp: true, // Usado en upsert clinic
         ticketSize: '80mm', // Usado en upsert clinic
-        rate: 'Tarifa General', // Usado para buscar tarifa existente
         affectsStats: true, // Usado en upsert clinic
         scheduleControl: true, // Usado en upsert clinic
         delayedPayments: true, // Añadido para ejemplo
@@ -118,7 +119,8 @@ const initialMockData = {
       }
     },
     {
-      id: 'clinic-2', // Usado como clave en createdClinicsMap
+      mockId: 'clinic-2',
+      id: getOrCreateCuid('clinic-2'), // Usar CUID válido
       prefix: 'CAFC', // Usado en upsert
       name: 'Cafc Multilaser', // Usado en upsert
       city: 'Casablanca', // Usado en upsert
@@ -142,8 +144,8 @@ const initialMockData = {
         sundayOpen: false, // Usado para bloques independientes
         slotDuration: 30, // Usado en upsert clinic
         cabins: [ // Usado para crear cabinas
-          { id: 'cabin-4', clinicId: 'clinic-2', code: 'C1', name: 'Cabina Principal CAFC', color: '#f97316', isActive: true, order: 1 },
-          { id: 'cabin-5', clinicId: 'clinic-2', code: 'C2', name: 'Sala de Espera CAFC', color: '#6b7280', isActive: false, order: 2 }
+          { id: getOrCreateCuid('cabin-4'), clinicId: getOrCreateCuid('clinic-2'), code: 'C1', name: 'Cabina Principal CAFC', color: '#f97316', isActive: true, order: 1 },
+          { id: getOrCreateCuid('cabin-5'), clinicId: getOrCreateCuid('clinic-2'), code: 'C2', name: 'Sala de Espera CAFC', color: '#6b7280', isActive: false, order: 2 }
         ],
         schedule: { // Usado para crear plantilla detallada
           monday: { isOpen: true, ranges: [{ start: '08:30', end: '20:00' }] },
@@ -157,7 +159,6 @@ const initialMockData = {
         initialCash: 1500, // Usado en upsert clinic
         appearsInApp: true, // Usado en upsert clinic
         ticketSize: 'a4', // Usado en upsert clinic
-        rate: 'Tarifa VIP', // Usado para buscar tarifa existente
         affectsStats: true, // Usado en upsert clinic
         scheduleControl: false, // Usado en upsert clinic
         delayedPayments: false, // Añadido
@@ -168,7 +169,8 @@ const initialMockData = {
       }
     },
     {
-      id: 'clinic-3', // Usado como clave en createdClinicsMap
+      mockId: 'clinic-3',
+      id: getOrCreateCuid('clinic-3'), // Usar CUID válido
       prefix: 'TEST', // Usado en upsert
       name: 'CENTRO TEST', // Usado en upsert
       city: 'Madrid', // Usado en upsert
@@ -191,12 +193,11 @@ const initialMockData = {
         saturdayOpen: true, // Usado para bloques independientes
         sundayOpen: false, // Usado para bloques independientes
         slotDuration: 15, // Usado en upsert clinic
-        cabins: [{ id: 'cabin-6', clinicId: 'clinic-3', code: 'Tes', name: 'Test Cabin', color: '#10b981', isActive: true, order: 1 }], // Usado para crear cabinas
+        cabins: [{ id: getOrCreateCuid('cabin-6'), clinicId: getOrCreateCuid('clinic-3'), code: 'Tes', name: 'Test Cabin', color: '#10b981', isActive: true, order: 1 }], // Usado para crear cabinas
         // schedule: null, // No hay schedule detallado, se usan bloques independientes
         initialCash: 500, // Usado en upsert clinic
         appearsInApp: false, // Usado en upsert clinic
         ticketSize: 'a4', // Usado en upsert clinic
-        rate: 'Tarifa General', // Usado para buscar tarifa existente
         affectsStats: false, // Usado en upsert clinic
         scheduleControl: false, // Usado en upsert clinic
         delayedPayments: true, // Añadido
@@ -208,111 +209,111 @@ const initialMockData = {
     }
   ],
   familias: [ // Usado para crear Categories
-    { id: 'fam-1', nombre: 'Tratamientos Faciales', descripcion: 'Servicios para el rostro', tarifaId: 'tarifa-1', isActive: true },
-    { id: 'fam-2', nombre: 'Tratamientos Corporales', descripcion: 'Servicios para el cuerpo', tarifaId: 'tarifa-1', isActive: true },
-    { id: 'fam-3', nombre: 'Depilación Láser', descripcion: 'Servicios de depilación', tarifaId: 'tarifa-1', isActive: true },
-    { id: 'fam-4', nombre: 'Servicios CAFC', descripcion: 'Servicios exclusivos CAFC', tarifaId: 'tarifa-2', isActive: true },
-    { id: 'fam-5', nombre: 'Cremas Faciales', descripcion: 'Productos para cuidado facial', isActive: true }, // Añadida para productos
-    { id: 'fam-6', nombre: 'Productos Corporales', descripcion: 'Productos para cuidado corporal', isActive: true } // Añadida para productos
+    { id: getOrCreateCuid('fam-1'), nombre: 'Tratamientos Faciales', descripcion: 'Servicios para el rostro', tarifaId: getOrCreateCuid('tarifa-1'), isActive: true },
+    { id: getOrCreateCuid('fam-2'), nombre: 'Tratamientos Corporales', descripcion: 'Servicios para el cuerpo', tarifaId: getOrCreateCuid('tarifa-1'), isActive: true },
+    { id: getOrCreateCuid('fam-3'), nombre: 'Depilación Láser', descripcion: 'Servicios de depilación', tarifaId: getOrCreateCuid('tarifa-1'), isActive: true },
+    { id: getOrCreateCuid('fam-4'), nombre: 'Servicios CAFC', descripcion: 'Servicios exclusivos CAFC', tarifaId: getOrCreateCuid('tarifa-2'), isActive: true },
+    { id: getOrCreateCuid('fam-5'), nombre: 'Cremas Faciales', descripcion: 'Productos para cuidado facial', isActive: true }, // Añadida para productos
+    { id: getOrCreateCuid('fam-6'), nombre: 'Productos Corporales', descripcion: 'Productos para cuidado corporal', isActive: true } // Añadida para productos
   ],
   servicios: [ // Usado para crear Services y ServiceSettings
     // Servicios para 'Tarifa General' (implícito por precio base)
-    { id: 'serv-1', codigo: 'S001', nombre: 'Limpieza Facial Profunda', descripcion: 'Limpieza e hidratación', duracion: 60, familiaId: 'fam-1', nombreFamilia: 'Tratamientos Faciales', tarifaId: 'tarifa-1', precio: 55, tipoIvaId: 'iva-gral-mock', activo: true, config: {}, color: '#3b82f6' }, // Precio ajustado
-    { id: 'serv-2', codigo: 'S002', nombre: 'Peeling Químico', descripcion: 'Renovación celular', duracion: 45, familiaId: 'fam-1', nombreFamilia: 'Tratamientos Faciales', tarifaId: 'tarifa-1', precio: 70, tipoIvaId: 'iva-gral-mock', activo: true, config: {}, color: '#a855f7' }, // Necesita su propio precio específico si es diferente
-    { id: 'serv-3', codigo: 'S003', nombre: 'Masaje Relajante', descripcion: 'Masaje de cuerpo completo', duracion: 60, familiaId: 'fam-2', nombreFamilia: 'Tratamientos Corporales', tarifaId: 'tarifa-1', precio: 50, tipoIvaId: 'iva-gral-mock', activo: true, config: {}, color: '#14b8a6' }, // Precio ajustado
-    { id: 'serv-4', codigo: 'S004', nombre: 'Depilación Láser Piernas', descripcion: 'Láser diodo', duracion: 40, familiaId: 'fam-3', nombreFamilia: 'Depilación Láser', tarifaId: 'tarifa-1', precio: 120, tipoIvaId: 'iva-gral-mock', activo: true, config: {}, color: '#ec4899' }, // Nombre ajustado
-    { id: 'serv-5', codigo: 'S005', nombre: 'Depilación Axilas', descripcion: 'Láser diodo', duracion: 15, familiaId: 'fam-3', nombreFamilia: 'Depilación Láser', tarifaId: 'tarifa-1', precio: 30, tipoIvaId: 'iva-gral-mock', activo: true, config: {}, color: '#f472b6' }, // Necesita su propio precio
+    { id: getOrCreateCuid('serv-1'), codigo: 'S001', nombre: 'Limpieza Facial Profunda', descripcion: 'Limpieza e hidratación', duracion: 60, familiaId: getOrCreateCuid('fam-1'), nombreFamilia: 'Tratamientos Faciales', tarifaId: getOrCreateCuid('tarifa-1'), precio: 55, tipoIvaId: getOrCreateCuid('iva-gral-mock'), activo: true, config: {}, color: '#3b82f6' }, // Precio ajustado
+    { id: getOrCreateCuid('serv-2'), codigo: 'S002', nombre: 'Peeling Químico', descripcion: 'Renovación celular', duracion: 45, familiaId: getOrCreateCuid('fam-1'), nombreFamilia: 'Tratamientos Faciales', tarifaId: getOrCreateCuid('tarifa-1'), precio: 70, tipoIvaId: getOrCreateCuid('iva-gral-mock'), activo: true, config: {}, color: '#a855f7' }, // Necesita su propio precio específico si es diferente
+    { id: getOrCreateCuid('serv-3'), codigo: 'S003', nombre: 'Masaje Relajante', descripcion: 'Masaje de cuerpo completo', duracion: 60, familiaId: getOrCreateCuid('fam-2'), nombreFamilia: 'Tratamientos Corporales', tarifaId: getOrCreateCuid('tarifa-1'), precio: 50, tipoIvaId: getOrCreateCuid('iva-gral-mock'), activo: true, config: {}, color: '#14b8a6' }, // Precio ajustado
+    { id: getOrCreateCuid('serv-4'), codigo: 'S004', nombre: 'Depilación Láser Piernas', descripcion: 'Láser diodo', duracion: 40, familiaId: getOrCreateCuid('fam-3'), nombreFamilia: 'Depilación Láser', tarifaId: getOrCreateCuid('tarifa-1'), precio: 120, tipoIvaId: getOrCreateCuid('iva-gral-mock'), activo: true, config: {}, color: '#ec4899' }, // Nombre ajustado
+    { id: getOrCreateCuid('serv-5'), codigo: 'S005', nombre: 'Depilación Axilas', descripcion: 'Láser diodo', duracion: 15, familiaId: getOrCreateCuid('fam-3'), nombreFamilia: 'Depilación Láser', tarifaId: getOrCreateCuid('tarifa-1'), precio: 30, tipoIvaId: getOrCreateCuid('iva-gral-mock'), activo: true, config: {}, color: '#f472b6' }, // Necesita su propio precio
     // Servicios para 'Tarifa VIP' (implícito por precio base)
-    { id: 'serv-6', codigo: 'S006', nombre: 'Tratamiento Reafirmante CAFC', descripcion: 'Tecnología exclusiva', duracion: 75, familiaId: 'fam-4', nombreFamilia: 'Servicios CAFC', tarifaId: 'tarifa-2', precio: 150, tipoIvaId: 'iva-red-mock', activo: true, config: {}, color: '#f97316' } // Necesita su propio precio
+    { id: getOrCreateCuid('serv-6'), codigo: 'S006', nombre: 'Tratamiento Reafirmante CAFC', descripcion: 'Tecnología exclusiva', duracion: 75, familiaId: getOrCreateCuid('fam-4'), nombreFamilia: 'Servicios CAFC', tarifaId: getOrCreateCuid('tarifa-2'), precio: 150, tipoIvaId: getOrCreateCuid('iva-red-mock'), activo: true, config: {}, color: '#f97316' } // Necesita su propio precio
   ],
   tiposIVA: [ // Usado para crear VATTypes (si no existen por nombre/systemId)
-    { id: 'iva-gral-mock', descripcion: 'IVA General (21%)', porcentaje: 21.00, tarifaId: 'tarifa-1' }, // Coincide con el creado por defecto
-    { id: 'iva-red-mock', descripcion: 'IVA Reducido (10%)', porcentaje: 10.00, tarifaId: 'tarifa-2' } // Se creará si no existe
+    { id: getOrCreateCuid('iva-gral-mock'), descripcion: 'IVA General (21%)', porcentaje: 21.00, tarifaId: getOrCreateCuid('tarifa-1') }, // Coincide con el creado por defecto
+    { id: getOrCreateCuid('iva-red-mock'), descripcion: 'IVA Reducido (10%)', porcentaje: 10.00, tarifaId: getOrCreateCuid('tarifa-2') } // Se creará si no existe
   ],
   equipos: [ // Usado para crear Equipment
-    { id: 'eq-1', clinicId: 'clinic-1', clinicIds: ['clinic-1'], code: 'LASER01', name: 'Láser Diodo LS-1000', description: 'Equipo para depilación', serialNumber: 'LS1000-SN123', modelNumber: 'LS-1000', purchaseDate: '2023-01-15', warrantyDate: '2025-01-15', location: 'Cabina Láser 1', supplier: 'LaserTech', status: 'active', config: {}, isActive: true, notes: 'Mantenimiento anual en Enero' },
-    { id: 'eq-2', clinicId: 'clinic-1', clinicIds: ['clinic-1'], code: 'RF01', name: 'Radiofrecuencia RF-Pro', description: 'Equipo para tratamientos faciales', serialNumber: 'RFPRO-SN456', modelNumber: 'RF-PRO', purchaseDate: '2023-03-20', warrantyDate: '2025-03-20', location: 'Cabina Estética', supplier: 'BeautyCorp', status: 'active', config: {}, isActive: true, notes: '' },
-    { id: 'eq-3', clinicId: 'clinic-2', clinicIds: ['clinic-2'], code: 'ULTRA01', name: 'Ultrasonido US-500', description: 'Equipo para tratamientos corporales', serialNumber: 'US500-SN789', modelNumber: 'US-500', purchaseDate: '2022-11-10', warrantyDate: '2024-11-10', location: 'Cabina Principal CAFC', supplier: 'MedEquip', status: 'active', config: {}, isActive: true, notes: 'Revisión pendiente' }
+    { id: getOrCreateCuid('eq-1'), clinicId: getOrCreateCuid('clinic-1'), clinicIds: [getOrCreateCuid('clinic-1')], code: 'LASER01', name: 'Láser Diodo LS-1000', description: 'Equipo para depilación', serialNumber: 'LS1000-SN123', modelNumber: 'LS-1000', purchaseDate: '2023-01-15', warrantyDate: '2025-01-15', location: 'Cabina Láser 1', supplier: 'LaserTech', status: 'active', config: {}, isActive: true, notes: 'Mantenimiento anual en Enero' },
+    { id: getOrCreateCuid('eq-2'), clinicId: getOrCreateCuid('clinic-1'), clinicIds: [getOrCreateCuid('clinic-1')], code: 'RF01', name: 'Radiofrecuencia RF-Pro', description: 'Equipo para tratamientos faciales', serialNumber: 'RFPRO-SN456', modelNumber: 'RF-PRO', purchaseDate: '2023-03-20', warrantyDate: '2025-03-20', location: 'Cabina Estética', supplier: 'BeautyCorp', status: 'active', config: {}, isActive: true, notes: '' },
+    { id: getOrCreateCuid('eq-3'), clinicId: getOrCreateCuid('clinic-2'), clinicIds: [getOrCreateCuid('clinic-2')], code: 'ULTRA01', name: 'Ultrasonido US-500', description: 'Equipo para tratamientos corporales', serialNumber: 'US500-SN789', modelNumber: 'US-500', purchaseDate: '2022-11-10', warrantyDate: '2024-11-10', location: 'Cabina Principal CAFC', supplier: 'MedEquip', status: 'active', config: {}, isActive: true, notes: 'Revisión pendiente' }
   ],
   usuarios: [ // Usado para crear Users, UserRoles, UserClinicAssignments
     {
-      id: "usr-houda", // No usado directamente, se busca por email
+      id: getOrCreateCuid('usr-houda'), // No usado directamente, se busca por email
       nombre: "Houda",
       apellidos: "Bekkali", // Añadido
       email: "houda@multilaser.ma",
       telefono: "+212 611 223344", // Añadido
       perfil: "Personal Clinica", // Mapeado a rol 'Personal Clinica'
-      clinicasIds: ["clinic-1"], // Mapeado a UserClinicAssignment
+      clinicasIds: [getOrCreateCuid('clinic-1')], // Mapeado a UserClinicAssignment
       activo: true // Usado en upsert
     },
     {
-      id: "usr-islam",
+      id: getOrCreateCuid('usr-islam'),
       nombre: "Islam",
       apellidos: "Alaoui",
       email: "islam.alaoui@multilaser.ma",
       telefono: "+212 622 334455",
       perfil: "Central", // Mapeado a rol 'Administrador'
-      clinicasIds: ["clinic-1", "clinic-2", "clinic-3"],
+      clinicasIds: [getOrCreateCuid('clinic-1'), getOrCreateCuid('clinic-2'), getOrCreateCuid('clinic-3')],
       activo: true
     },
     {
-      id: "usr-latifa",
+      id: getOrCreateCuid('usr-latifa'),
       nombre: "Latifa",
       apellidos: "Cherkaoui",
       email: "latifa@multilaser.ma",
       telefono: "+212 633 445566",
       perfil: "Personal Clinica", // Mapeado a rol 'Personal Clinica'
-      clinicasIds: ["clinic-2"],
+      clinicasIds: [getOrCreateCuid('clinic-2')],
       activo: true
     },
     {
-      id: "usr-lina",
+      id: getOrCreateCuid('usr-lina'),
       nombre: "Lina",
       apellidos: "Admin", // Apellido genérico
       email: "is.organizare@gmail.com",
       telefono: "+34 699 887766",
       perfil: "Administrador", // Mapeado a rol 'Administrador'
-      clinicasIds: ["clinic-1", "clinic-2", "clinic-3"], // Asignado a todas
+      clinicasIds: [getOrCreateCuid('clinic-1'), getOrCreateCuid('clinic-2'), getOrCreateCuid('clinic-3')], // Asignado a todas
       activo: true
     },
     {
-      id: "usr-multi",
+      id: getOrCreateCuid('usr-multi'),
       nombre: "Multilaser",
       apellidos: "System",
       email: "casblaxic@gmail.com",
       telefono: "+34 611 223344",
       perfil: "Administrador", // Mapeado a rol 'Administrador'
-      clinicasIds: ["clinic-1", "clinic-2", "clinic-3"], // Asignado a todas
+      clinicasIds: [getOrCreateCuid('clinic-1'), getOrCreateCuid('clinic-2'), getOrCreateCuid('clinic-3')], // Asignado a todas
       activo: true
     },
     {
-      id: "usr-salma",
+      id: getOrCreateCuid('usr-salma'),
       nombre: "Salma",
       apellidos: "Bouregba",
       email: "bouregbasalma7@gmail.com",
       telefono: "+212 655 667788",
       perfil: "Personal Clinica", // Mapeado a rol 'Personal Clinica'
-      clinicasIds: ["clinic-3"],
+      clinicasIds: [getOrCreateCuid('clinic-3')],
       activo: true
     },
     {
-      id: "usr-yasmine",
+      id: getOrCreateCuid('usr-yasmine'),
       nombre: "Yasmine",
       apellidos: "Tachfine",
       email: "yasmine@multilaser.ma",
       telefono: "+212 677 889900",
       perfil: "Personal Clinica", // Mapeado a rol 'Personal Clinica'
-      clinicasIds: ["clinic-1"],
+      clinicasIds: [getOrCreateCuid('clinic-1')],
       activo: true
     },
     {
-      id: "usr-admin-sys",
+      id: getOrCreateCuid('usr-admin-sys'),
       nombre: "Admin",
       apellidos: "Sistema",
       email: "casblasvic@gmail.com",
       telefono: "+34 600 000001",
       perfil: "Administrador", // Mapeado a rol 'Administrador'
-      clinicasIds: ["clinic-1", "clinic-2", "clinic-3"], // Asignado a todas como admin
+      clinicasIds: [getOrCreateCuid('clinic-1'), getOrCreateCuid('clinic-2'), getOrCreateCuid('clinic-3')], // Asignado a todas como admin
       activo: true
     }
   ]
@@ -325,6 +326,9 @@ const initialMockData = {
 // --- FIN DATOS DE PAÍSES ---
 
 const prisma = new PrismaClient();
+
+// Inicializar los IDs conocidos para mantener consistencia
+initializeKnownIds();
 
 // <<< NUEVO: Función Helper para obtener precio de Tarifa >>>
 async function getTariffPrice(tariffId: string, itemType: 'SERVICE' | 'PRODUCT' | 'BONO' | 'PACKAGE', itemId: string): Promise<number | null> {
@@ -626,7 +630,7 @@ async function main() {
   const createdCategoriesMap = new Map<string, any>(); // Mapa intermedio para familias
   let createdBonoDefsMap = new Map<string, string>();
   let createdPackageDefsMap = new Map<string, string>();
-  const createdClientsMap = new Map<string, pkg.Client>();
+  const createdClientsMap = new Map<string, pkg.Person>(); // Cambiado de Client a Person
   let createdBankAccountsMap = new Map<string, string>(); // iban -> id
   // <<< AÑADIR DECLARACIÓN DEL MAPA DE USUARIOS >>>
   const createdUsersMap = new Map<string, pkg.User>(); 
@@ -850,9 +854,7 @@ async function main() {
   const clinicsData = initialMockData.clinicas;
   for (const clinicData of clinicsData) {
       // <<< CORREGIDO: Lógica de upsert para clínicas (simplificada para ejemplo) >>>
-         const mockTariffName = clinicData.config?.rate;
-         const foundTariff = mockTariffName ? createdTariffsMap.get(mockTariffName) : undefined;
-      const targetTariffId = foundTariff ? foundTariff.id : tarifaGeneral!.id; 
+      const targetTariffId = tarifaGeneral!.id; 
 
          const clinic = await prisma.clinic.upsert({
           where: { Clinic_name_systemId_key: { name: clinicData.name, systemId: system!.id } }, 
@@ -899,7 +901,7 @@ async function main() {
             legalEntityId: legalEntityForClinics.id, // Usar la legal entity para clínicas
           }
          });
-         createdClinicsMap.set(clinicData.id, clinic); // clinicData.id es el mock ID (string)
+         createdClinicsMap.set(clinicData.mockId, clinic); // Usar el mockId como clave
          console.log(`Ensured clinic: ${clinic.name}`);
 
         // --- Crear Cabinas para esta clínica ---
@@ -1027,7 +1029,7 @@ async function main() {
   // <<< AÑADIR DATOS DE PRODUCTOS DIRECTAMENTE AQUÍ >>>
   const directProductData = [
     {
-      id: 'prod-1', // ID para mock
+      id: getOrCreateCuid('prod-1'), // ID para mock
       name: 'Crema Hidratante Facial',
       sku: 'PROD-CHF-001',
       description: 'Crema hidratante intensiva para todo tipo de pieles.',
@@ -1044,7 +1046,7 @@ async function main() {
       pointsAwarded: 25,
     },
     {
-      id: 'prod-2',
+      id: getOrCreateCuid('prod-2'),
       name: 'Sérum Reparador Nocturno',
       sku: 'PROD-SRN-001',
       description: 'Sérum concentrado para reparación nocturna de la piel.',
@@ -1061,7 +1063,7 @@ async function main() {
       pointsAwarded: 45,
     },
     {
-      id: 'prod-3',
+      id: getOrCreateCuid('prod-3'),
       name: 'Aceite Corporal Nutritivo',
       sku: 'PROD-ACN-001',
       description: 'Aceite seco nutritivo para cuerpo y cabello.',
@@ -1078,7 +1080,7 @@ async function main() {
       pointsAwarded: 30,
     },
     {
-      id: 'prod-4',
+      id: getOrCreateCuid('prod-4'),
       name: 'Protector Solar SPF50+',
       sku: 'PROD-PSS-001',
       description: 'Alta protección solar facial y corporal.',
@@ -1345,44 +1347,171 @@ async function main() {
 
   // --- Crear Facturas de Ejemplo ---
   console.log('Creating example invoices...');
-  // ... (Creación de Invoices con upsert completo) ...
- 
-  // --- Crear Pagos de Ejemplo (para Facturas) ---
-  console.log('Creating example payments (for Invoices)...');
-  // ... (Creación de Payments para Invoices con create) ...
+  // ... (Creación de Invoices con upsert completo) 
  
   // <<< --- NUEVO: Crear Clientes de Ejemplo --- >>>
   console.log('Creating example Clients...');
   try {
-      const client1Data = { email: 'cliente1@example.com', firstName: 'Ana', lastName: 'Garcia', phone: '600111222', systemId: system!.id, /*birthDate*/ birthDate: new Date('1985-05-15'), gender: 'Female', address: 'Calle Falsa 123', city: 'Madrid', countryIsoCode: 'ES', postalCode: '28001', marketingConsent: true, /*isEmailVerified*/ dataProcessingConsent: true }; // Ajustados campos booleanos y tipo Gender
-      // <<< CORREGIDO: Cambiado upsert a findFirst/update/create >>>
-      let client1Found = await prisma.client.findFirst({ where: { email: client1Data.email, systemId: client1Data.systemId } });
+      // Ahora crearemos personas con functionalRoles: CLIENT
+      const client1Data = { 
+        email: 'ana.garcia@test.com', // Corregido: usar el email correcto
+        firstName: 'Ana', 
+        lastName: 'Garcia', 
+        phone: '600111222', 
+        system: { connect: { id: system!.id } }, 
+        birthDate: new Date('1985-05-15'), 
+        gender: 'FEMALE', 
+        address: 'Calle Falsa 123', 
+        city: 'Madrid', 
+        countryIsoCode: 'ES', 
+        postalCode: '28001'
+      };
+      
+      // Usar person en lugar de client
+      let client1Found = await prisma.person.findFirst({ 
+        where: { email: client1Data.email, systemId: system!.id } 
+      });
       let client1;
       if (client1Found) {
-          client1 = await prisma.client.update({ where: { id: client1Found.id }, data: client1Data });
+          client1 = await prisma.person.update({ 
+            where: { id: client1Found.id }, 
+            data: client1Data 
+          });
       } else {
-          client1 = await prisma.client.create({ data: client1Data });
+          client1 = await prisma.person.create({ data: client1Data });
       }
-      // const client1 = await prisma.client.upsert({ where: { email_systemId: { email: client1Data.email, systemId: client1Data.systemId } }, update: client1Data, create: client1Data }); // <<< ERROR LINTER
+      
+      // Crear el rol funcional CLIENT para esta persona
+      const client1Role = await prisma.personFunctionalRole.upsert({
+        where: {
+          personId_roleType: {
+            personId: client1.id,
+            roleType: 'CLIENT'
+          }
+        },
+        update: {},
+        create: {
+          person: { connect: { id: client1.id } },
+          roleType: 'CLIENT',
+          isActive: true,
+          system: { connect: { id: system!.id } }
+        }
+      });
+      
+      // Crear PersonClientData
+      await prisma.personClientData.upsert({
+        where: { functionalRoleId: client1Role.id },
+        update: {},
+        create: {
+          functionalRoleId: client1Role.id,
+          marketingConsent: true,
+          dataProcessingConsent: true
+        }
+      });
+      
       createdClientsMap.set(client1Data.email, client1);
       
-      const client2Data = { email: 'cliente2.casablanca@mail.ma', firstName: 'Youssef', lastName: 'Bennani', phone: '0600998877', systemId: system!.id, /*birthDate*/ birthDate: new Date('1990-11-20'), gender: 'Male', address: 'Bd Anfa 5', city: 'Casablanca', countryIsoCode: 'MA', postalCode: '20000', marketingConsent: false, /*isEmailVerified*/ dataProcessingConsent: false }; // Ajustados campos booleanos y tipo Gender
-      // <<< CORREGIDO: Cambiado upsert a findFirst/update/create >>>
-      let client2Found = await prisma.client.findFirst({ where: { email: client2Data.email, systemId: client2Data.systemId } });
+      const client2Data = { 
+        email: 'cliente2.casablanca@mail.ma', 
+        firstName: 'Youssef', 
+        lastName: 'Bennani', 
+        phone: '0600998877', 
+        system: { connect: { id: system!.id } }, 
+        birthDate: new Date('1990-11-20'), 
+        gender: 'MALE', 
+        address: 'Boulevard Hassan II 456', 
+        city: 'Casablanca', 
+        countryIsoCode: 'MA', 
+        postalCode: '20250', 
+      };
+      
+      let client2Found = await prisma.person.findFirst({ 
+        where: { email: client2Data.email, systemId: system!.id } 
+      });
       let client2;
       if (client2Found) {
-          client2 = await prisma.client.update({ where: { id: client2Found.id }, data: client2Data });
+          client2 = await prisma.person.update({ 
+            where: { id: client2Found.id }, 
+            data: client2Data 
+          });
       } else {
-          client2 = await prisma.client.create({ data: client2Data });
+          client2 = await prisma.person.create({ data: client2Data });
       }
-      // const client2 = await prisma.client.upsert({ where: { email_systemId: { email: client2Data.email, systemId: client2Data.systemId } }, update: client2Data, create: client2Data }); // <<< ERROR LINTER
+      
+      // Crear el rol funcional CLIENT para esta persona
+      const client2Role = await prisma.personFunctionalRole.upsert({
+        where: {
+          personId_roleType: {
+            personId: client2.id,
+            roleType: 'CLIENT'
+          }
+        },
+        update: {},
+        create: {
+          person: { connect: { id: client2.id } },
+          roleType: 'CLIENT',
+          isActive: true,
+          system: { connect: { id: system!.id } }
+        }
+      });
+      
+      // Crear PersonClientData
+      await prisma.personClientData.upsert({
+        where: { functionalRoleId: client2Role.id },
+        update: {},
+        create: {
+          functionalRoleId: client2Role.id,
+          marketingConsent: false,
+          dataProcessingConsent: false
+        }
+      });
+      
       createdClientsMap.set(client2Data.email, client2);
 
-      // Cliente sin email, usar otro identificador único si es necesario o permitir null si el schema lo permite.
-      // Para este ejemplo, asumimos que se puede identificar por una combinación (esto es solo un ejemplo)
-      const client3Data = { firstName: 'Cliente', lastName: 'Test Sin Email', phone: '600333444', systemId: system!.id, /*birthDate*/ birthDate: new Date('1995-01-01'), gender: 'Male', address: 'Plaza Mayor 1', city: 'Sevilla', countryIsoCode: 'ES', postalCode: '41001' };
-      // const client3 = await prisma.client.create({ data: client3Data }); // Usar create si no hay constraint única para upsert sin email
-      // createdClientsMap.set('client3-no-email', client3); // Usar un ID temporal si es necesario
+      // Cliente sin email
+      const client3Data = { 
+        firstName: 'Cliente', 
+        lastName: 'Test Sin Email', 
+        phone: '600333444', 
+        system: { connect: { id: system!.id } }, 
+        birthDate: new Date('1995-01-01'), 
+        gender: 'MALE', 
+        address: 'Plaza Mayor 1', 
+        city: 'Sevilla', 
+        countryIsoCode: 'ES', 
+        postalCode: '41001',
+      };
+      const client3 = await prisma.person.create({ data: client3Data });
+      
+      // Crear el rol funcional CLIENT para esta persona
+      const client3Role = await prisma.personFunctionalRole.upsert({
+        where: {
+          personId_roleType: {
+            personId: client3.id,
+            roleType: 'CLIENT'
+          }
+        },
+        update: {},
+        create: {
+          person: { connect: { id: client3.id } },
+          roleType: 'CLIENT',
+          isActive: true,
+          system: { connect: { id: system!.id } }
+        }
+      });
+      
+      // Crear PersonClientData
+      await prisma.personClientData.upsert({
+        where: { functionalRoleId: client3Role.id },
+        update: {},
+        create: {
+          functionalRoleId: client3Role.id,
+          marketingConsent: false,
+          dataProcessingConsent: true
+        }
+      });
+      
+      createdClientsMap.set('client3-no-email', client3);
   } catch (error) { console.error("Error creating example clients:", error); }
   console.log(`Example Clients ensured. Created ${createdClientsMap.size} clients.`);
   // <<< --- FIN Crear Clientes --- >>>
@@ -1390,7 +1519,7 @@ async function main() {
   // --- Crear Instancias de Bonos y Paquetes para Clientes --- 
   console.log('Creating Bono/Package Instances for clients...');
   try {
-      const exampleClient = createdClientsMap.get('cliente1@example.com'); 
+      const exampleClient = createdClientsMap.get('ana.garcia@test.com'); // Corregido: usar el email correcto
       if (exampleClient) {
           const bonoMasajeDefId = createdBonoDefsMap.get('Bono 5 Masajes Relajantes');
           if (bonoMasajeDefId) { 
@@ -1421,7 +1550,7 @@ async function main() {
     const sellerUser1 = createdUsersMap.get('yasmine@multilaser.ma');
     const adminUser = createdUsersMap.get('casblasvic@gmail.com');
 
-    const client1 = createdClientsMap.get('cliente1@example.com');
+    const client1 = createdClientsMap.get('ana.garcia@test.com'); // Corregido: usar el email correcto
     const client2 = createdClientsMap.get('cliente2.casablanca@mail.ma');
 
     const clinic1 = createdClinicsMap.get('clinic-1');
@@ -1566,7 +1695,6 @@ async function main() {
         cashierUserId: cashierUser1.id,
         clinicId: clinic1.id,
         systemId: system!.id,
-        cashSessionId: cashSessionClinic1_Closed.id, // Vinculado a la sesión cerrada
         items: {
           create: [
             {
@@ -1602,7 +1730,7 @@ async function main() {
               userId: cashierUser1.id,
               clinicId: clinic1.id,
               systemId: system!.id,
-              payerClientId: client1.id,
+              payerPersonId: client1.id,
               cashSessionId: cashSessionClinic1_Closed.id, // Pago vinculado a la sesión
             }
           ]
@@ -1688,7 +1816,7 @@ async function main() {
                         userId: cashierUser2.id,
                         clinicId: clinic2.id,
                         systemId: system!.id,
-                      payerClientId: client2.id,
+                      payerPersonId: client2.id,
                       cashSessionId: cashSessionClinic2_Open.id, 
                     }
                 ]
@@ -1771,7 +1899,7 @@ async function main() {
                              userId: cashierUser1.id,
                              clinicId: clinic1.id,
                              systemId: system!.id,
-                             payerClientId: client1.id,
+                             payerPersonId: client1.id,
                              notes: `Pago con Bono Instancia ID: ${bonoMasajeInstanceId}`,
                              cashSessionId: cashSessionClinic1_Closed.id, // Pago vinculado a la sesión
                          }
@@ -1847,7 +1975,7 @@ async function main() {
   console.log('Comprehensive example Tickets, Items, and Payments creation attempt finished.');
   // <<< --- FIN: SEEDING DE TICKETS Y PAGOS --- >>>
 
-  await seedPersons(prisma);
+  await seedPersons(prisma, system!.id);
   console.log('Seeding completed.');
 } // Fin función main()
 

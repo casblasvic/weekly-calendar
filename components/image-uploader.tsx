@@ -1,12 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { EntityType } from '@prisma/client';
 import { useImages, ImageFile } from '@/contexts/image-context';
 import { Upload, X, Star } from 'lucide-react';
 import Image from 'next/image';
 
 interface ImageUploaderProps {
-  entityType: 'EQUIPMENT' | 'SERVICE' | 'TARIFA' | 'PERSON';
+  entityType: EntityType;
   entityId: string | number;
   clinicId: string | number;
   onChange?: (images: ImageFile[]) => void;
@@ -37,13 +38,24 @@ export function ImageUploader({
         const entityImages = await getImagesByEntity(entityType, entityId.toString());
         
         if (entityImages && entityImages.length > 0) {
-          // Procesar las imágenes para asegurar que tienen URLs válidas
-          const processedImages = entityImages.map(img => ({
-            ...img,
-            url: img.url.startsWith('blob:') && img.path
-              ? `/api/storage/file?path=${img.path}`
-              : img.url
-          }));
+          const processedImages = entityImages.map(img => {
+            // Mapear explícitamente a la estructura esperada para mayor claridad y para satisfacer al linter.
+            // Dado que ImageFile es EntityImage, img ya tiene estos campos.
+            return {
+              id: img.id,
+              entityId: img.entityId,
+              entityType: img.entityType,
+              imageUrl: img.imageUrl,
+              altText: img.altText,
+              caption: img.caption,
+              order: img.order,
+              isProfilePic: img.isProfilePic,
+              uploadedByUserId: img.uploadedByUserId,
+              systemId: img.systemId,
+              createdAt: img.createdAt,
+              updatedAt: img.updatedAt,
+            };
+          });
           
           setImages(processedImages);
           console.log(`Cargadas ${processedImages.length} imágenes para ${entityType} ${entityId}:`, processedImages);
@@ -99,18 +111,18 @@ export function ImageUploader({
             entityType,
             String(entityId),
             String(clinicId),
-            { isPrimary: images.length === 0 && newImages.length === 0 }
+            { isProfilePic: images.length === 0 && newImages.length === 0 }
           );
           
           // Añadir a la lista de nuevas imágenes
           newImages.push({
-            id: uploadedImage.id,
-            url: uploadedImage.url,
-            isPrimary: images.length === 0 && newImages.length === 0,
-            path: uploadedImage.path
+            ...uploadedImage, // uploadedImage es de tipo ImageFile (EntityImage)
+            // imageUrl y isProfilePic ya están en uploadedImage
+            // No es necesario re-mapear aquí si el tipo es correcto desde uploadImage
+            // Asegurarse que isProfilePic se establece correctamente en la llamada a uploadImage
           });
           
-          console.log(`Imagen subida: ${uploadedImage.id}, URL: ${uploadedImage.url}`);
+          console.log(`Imagen subida: ${uploadedImage.id}, URL: ${uploadedImage.imageUrl}`);
         } catch (error) {
           console.error('Error al subir imagen:', error);
         }
@@ -138,7 +150,7 @@ export function ImageUploader({
   const setAsPrimary = async (id: string) => {
     const updatedImages = images.map(img => ({
       ...img,
-      isPrimary: img.id === id
+      isProfilePic: img.id === id
     }));
     
     setImages(updatedImages);
@@ -201,14 +213,14 @@ export function ImageUploader({
         {images.length > 0 ? (
           <div className="relative w-full h-full">
             <Image 
-              src={images[currentIndex].url} 
+              src={images[currentIndex].imageUrl} 
               alt={`Imagen ${currentIndex + 1}`} 
               fill
               className="object-contain"
             />
             
             {/* Indicador de imagen principal */}
-            {images[currentIndex].isPrimary && (
+            {images[currentIndex].isProfilePic && (
               <div className="absolute flex items-center px-2 py-1 text-xs font-medium text-yellow-700 bg-yellow-100 rounded-md top-2 left-2">
                 <Star className="w-3 h-3 mr-1" />
                 Principal
@@ -276,14 +288,14 @@ export function ImageUploader({
         <div className="grid grid-cols-4 gap-2 mt-4">
           {images.map((img, index) => (
             <div 
-              key={img.id} 
+              key={img.id || `temp-${index}`} 
               className={`relative rounded-md overflow-hidden border-2 h-16 ${
                 currentIndex === index ? 'border-purple-600' : 'border-transparent'
-              } ${img.isPrimary ? 'ring-2 ring-yellow-400' : ''}`}
+              } ${img.isProfilePic ? 'ring-2 ring-yellow-400' : ''}`}
               onClick={() => setCurrentIndex(index)}
             >
               <Image 
-                src={img.url} 
+                src={img.imageUrl} 
                 alt={`Miniatura ${index + 1}`}
                 fill
                 className="object-cover cursor-pointer"
@@ -292,16 +304,16 @@ export function ImageUploader({
                 <button 
                   onClick={(e) => {
                     e.stopPropagation();
-                    setAsPrimary(img.id);
+                    setAsPrimary(img.id!); // Asumimos que img.id siempre estará presente para imágenes existentes
                   }}
-                  className={`bg-white/80 rounded-full p-0.5 ${img.isPrimary ? 'text-yellow-500' : 'text-gray-500'}`}
+                  className={`bg-white/80 rounded-full p-0.5 ${img.isProfilePic ? 'text-yellow-500' : 'text-gray-500'}`}
                 >
                   <Star className="w-3 h-3" />
                 </button>
                 <button 
                   onClick={(e) => {
                     e.stopPropagation();
-                    removeImage(img.id);
+                    removeImage(img.id!); // Asumimos que img.id siempre estará presente para imágenes existentes
                   }}
                   className="bg-white/80 rounded-full p-0.5 text-red-500"
                 >

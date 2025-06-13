@@ -68,12 +68,12 @@ const mockContacts = [
   },
 ]
 
-export default function ContactsPage() {
-  const router = useRouter()
+export default function ContactosPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [filterType, setFilterType] = useState("all")
+  const router = useRouter()
 
-  // Filter contacts based on search term and type
+  // Filter contacts based on search and type
   const filteredContacts = mockContacts.filter((contact) => {
     const matchesSearch =
       contact.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -81,22 +81,22 @@ export default function ContactsPage() {
       contact.phone.includes(searchTerm) ||
       (contact.company && contact.company.toLowerCase().includes(searchTerm.toLowerCase()))
 
-    const matchesType = filterType === "all" || contact.roles.some(role => 
-      (filterType === "client" && role === "Cliente") ||
-      (filterType === "lead" && role === "Lead") ||
-      (filterType === "contact" && role === "Contacto") ||
-      (filterType === "employee" && role === "Empleado")
-    )
+    const matchesType =
+      filterType === "all" ||
+      (filterType === "client" && contact.roles.includes("Cliente")) ||
+      (filterType === "lead" && contact.roles.includes("Lead")) ||
+      (filterType === "contact" && contact.roles.includes("Contacto")) ||
+      (filterType === "employee" && contact.roles.includes("Empleado"))
 
     return matchesSearch && matchesType
   })
 
-  // Format date for display
+  // Format date to Spanish locale
   const formatDate = (dateString: string) => {
     const options: Intl.DateTimeFormatOptions = {
       year: "numeric",
-      month: "long",
-      day: "numeric",
+      month: "2-digit",
+      day: "2-digit",
     }
     return new Date(dateString).toLocaleDateString("es-ES", options)
   }
@@ -211,17 +211,17 @@ export default function ContactsPage() {
 
       <Card>
         <CardContent className="p-0">
-          <div className="rounded-md border">
+          <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Nombre</TableHead>
-                  <TableHead className="hidden md:table-cell">Email</TableHead>
-                  <TableHead className="hidden sm:table-cell">Teléfono</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead className="hidden md:table-cell">Teléfono</TableHead>
                   <TableHead className="hidden lg:table-cell">Empresa</TableHead>
                   <TableHead>Roles</TableHead>
                   <TableHead className="hidden lg:table-cell">Última Actividad</TableHead>
-                  <TableHead className="w-[80px]">Acciones</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -229,11 +229,9 @@ export default function ContactsPage() {
                   filteredContacts.map((contact) => (
                     <TableRow key={contact.id}>
                       <TableCell className="font-medium">{contact.name}</TableCell>
-                      <TableCell className="hidden md:table-cell">{contact.email}</TableCell>
-                      <TableCell className="hidden sm:table-cell">{contact.phone}</TableCell>
-                      <TableCell className="hidden lg:table-cell">
-                        {contact.company || "-"}
-                      </TableCell>
+                      <TableCell>{contact.email}</TableCell>
+                      <TableCell className="hidden md:table-cell">{contact.phone}</TableCell>
+                      <TableCell className="hidden lg:table-cell">{contact.company || "-"}</TableCell>
                       <TableCell>
                         <div className="flex gap-1 flex-wrap">
                           {contact.roles.map((role, index) => (
@@ -298,19 +296,17 @@ export default function ContactsPage() {
             <div className="text-2xl font-bold">{mockContacts.length}</div>
           </CardContent>
         </Card>
-        
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Clientes Activos</CardTitle>
-            <UserPlus className="h-4 w-4 text-muted-foreground" />
+            <Target className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {mockContacts.filter(c => c.roles.includes("Cliente")).length}
+              {mockContacts.filter((c) => c.roles.includes("Cliente")).length}
             </div>
           </CardContent>
         </Card>
-        
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Leads</CardTitle>
@@ -318,11 +314,10 @@ export default function ContactsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {mockContacts.filter(c => c.roles.includes("Lead")).length}
+              {mockContacts.filter((c) => c.roles.includes("Lead")).length}
             </div>
           </CardContent>
         </Card>
-        
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Empresas</CardTitle>
@@ -330,7 +325,7 @@ export default function ContactsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {mockContacts.filter(c => c.company).length}
+              {new Set(mockContacts.filter((c) => c.company).map((c) => c.company)).size}
             </div>
           </CardContent>
         </Card>

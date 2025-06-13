@@ -107,7 +107,7 @@ export class AccountingService {
             vatRate: true
           }
         },
-        client: true,
+        person: true,
         clinic: {
           include: {
             legalEntity: {
@@ -271,13 +271,13 @@ export class AccountingService {
     let order = 0;
 
     // Línea del DEBE - Cliente o Caja
-    const debitAccount = ticket.client ? accountCodes.customers : accountCodes.cash;
+    const debitAccount = ticket.person ? accountCodes.customers : accountCodes.cash;
     lines.push({
       account: { connect: { id: await this.getAccountId(debitAccount) } },
       debit: new Prisma.Decimal(ticket.finalAmount),
       credit: new Prisma.Decimal(0),
-      description: ticket.client 
-        ? `Cliente: ${ticket.client.firstName} ${ticket.client.lastName}`
+      description: ticket.person 
+        ? `Cliente: ${ticket.person.firstName} ${ticket.person.lastName}`
         : 'Venta al contado',
       order: order++
     });

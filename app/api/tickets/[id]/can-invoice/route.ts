@@ -46,7 +46,7 @@ export async function GET(
             legalEntity: true
           }
         },
-        client: true,
+        person: true,
         company: true,
         invoice: true, // Para verificar si ya tiene factura
         items: {
@@ -213,16 +213,16 @@ export async function GET(
         email: legalEntity.email,
         phone: legalEntity.phone
       },
-      client: ticket.client ? {
-        id: ticket.client.id,
-        firstName: ticket.client.firstName,
-        lastName: ticket.client.lastName,
-        email: ticket.client.email,
-        taxId: ticket.client.taxId,
-        phone: ticket.client.phone,
-        address: ticket.client.address,
-        city: ticket.client.city,
-        postalCode: ticket.client.postalCode
+      person: ticket.person ? {
+        id: ticket.person.id,
+        firstName: ticket.person.firstName,
+        lastName: ticket.person.lastName,
+        email: ticket.person.email,
+        taxId: ticket.person.taxId,
+        phone: ticket.person.phone,
+        address: ticket.person.address,
+        city: ticket.person.city,
+        postalCode: ticket.person.postalCode
       } : null,
       company: companyFiscalData,
       availableSeries: documentSeries,

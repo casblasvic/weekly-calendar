@@ -26,7 +26,7 @@ export interface CashSessionTicket {
   paidAmountDirectly?: number;
   hasOpenDebt?: boolean;
   dueAmount?: number | null;
-  client: { firstName: string; lastName: string | null } | null;
+  person: { firstName: string; lastName: string | null } | null;
   payments?: TicketPaymentSummary[];
 }
 

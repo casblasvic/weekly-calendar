@@ -282,21 +282,21 @@ export default function InvoiceConversionModal({
           postalCode: canInvoiceData.company.postalCode || '',
           countryCode: 'ES'
         });
-      } else if (canInvoiceData.client) {
+      } else if (canInvoiceData.person) {
         setOriginalRecipientData({
-          taxId: canInvoiceData.client.taxId || '',
-          fiscalName: `${canInvoiceData.client.firstName} ${canInvoiceData.client.lastName}`,
-          address: canInvoiceData.client.address || '',
-          city: canInvoiceData.client.city || '',
-          postalCode: canInvoiceData.client.postalCode || '',
+          taxId: canInvoiceData.person.taxId || '',
+          fiscalName: `${canInvoiceData.person.firstName} ${canInvoiceData.person.lastName}`,
+          address: canInvoiceData.person.address || '',
+          city: canInvoiceData.person.city || '',
+          postalCode: canInvoiceData.person.postalCode || '',
           countryCode: 'ES'
         });
         setRecipientData({
-          taxId: canInvoiceData.client.taxId || '',
-          fiscalName: `${canInvoiceData.client.firstName} ${canInvoiceData.client.lastName}`,
-          address: canInvoiceData.client.address || '',
-          city: canInvoiceData.client.city || '',
-          postalCode: canInvoiceData.client.postalCode || '',
+          taxId: canInvoiceData.person.taxId || '',
+          fiscalName: `${canInvoiceData.person.firstName} ${canInvoiceData.person.lastName}`,
+          address: canInvoiceData.person.address || '',
+          city: canInvoiceData.person.city || '',
+          postalCode: canInvoiceData.person.postalCode || '',
           countryCode: 'ES'
         });
       }
@@ -357,7 +357,7 @@ export default function InvoiceConversionModal({
           seriesId: canInvoiceData?.defaultSeriesId || '',
           issueDate: issueDate.toISOString(),
           receiverType: recipientData.taxId ? 'B2B' : 'B2C',
-          companyId: canInvoiceData?.client?.company?.id,
+          companyId: canInvoiceData?.person?.company?.id,
           notes: invoiceNotes,
           sendByEmail: false,
           generatePDF: true,

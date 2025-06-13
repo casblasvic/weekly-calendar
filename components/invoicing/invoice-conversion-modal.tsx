@@ -284,16 +284,16 @@ export default function InvoiceConversionModal({
                   />
 
                   {/* Mostrar datos según el tipo de receptor */}
-                  {receiverType === 'B2C' && canInvoiceData.client && (
+                  {receiverType === 'B2C' && canInvoiceData.person && (
                     <div className="space-y-2 text-sm bg-muted/50 p-3 rounded-md">
                       <div className="font-medium">
-                        {canInvoiceData.client.firstName} {canInvoiceData.client.lastName}
+                        {canInvoiceData.person.firstName} {canInvoiceData.person.lastName}
                       </div>
-                      {canInvoiceData.client.taxId && (
-                        <div className="text-muted-foreground">NIF: {canInvoiceData.client.taxId}</div>
+                      {canInvoiceData.person.taxId && (
+                        <div className="text-muted-foreground">NIF: {canInvoiceData.person.taxId}</div>
                       )}
-                      {canInvoiceData.client.email && (
-                        <div className="text-muted-foreground">{canInvoiceData.client.email}</div>
+                      {canInvoiceData.person.email && (
+                        <div className="text-muted-foreground">{canInvoiceData.person.email}</div>
                       )}
                     </div>
                   )}
