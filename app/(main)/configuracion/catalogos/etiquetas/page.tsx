@@ -1,9 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { PlusCircle, ArrowLeft, Tag } from "lucide-react"
+import { PlusCircle, ArrowLeft, Tag, Loader2 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { 
@@ -19,15 +19,33 @@ import { useAppointmentTags } from "@/contexts/appointment-tags-context"
 export default function AppointmentTagsPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const router = useRouter()
-  const { tags, deleteTag } = useAppointmentTags() || { tags: [], deleteTag: async () => false }
+  const { tags, loading, error, deleteTag, fetchTags } = useAppointmentTags()
+  const [isDeleting, setIsDeleting] = useState<string | null>(null)
+
+  // Ya no necesitamos forzar recarga porque el contexto ya carga automáticamente
+  // y usa caché cuando está disponible
 
   // Filtrar etiquetas por búsqueda
-  const filteredTags = searchQuery
-    ? tags.filter(tag => 
-        tag.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        tag.id.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : tags
+  const filteredTags = tags.filter(tag => 
+    tag.isActive && (
+      searchQuery === "" ||
+      tag.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      tag.id.toLowerCase().includes(searchQuery.toLowerCase())
+    )
+  )
+
+  const handleDelete = async (tag: typeof tags[0]) => {
+    if (!confirm(`¿Estás seguro de que quieres eliminar la etiqueta "${tag.name}"?`)) {
+      return
+    }
+    
+    setIsDeleting(tag.id)
+    const success = await deleteTag(tag.id)
+    if (!success) {
+      alert('Error al eliminar la etiqueta')
+    }
+    setIsDeleting(null)
+  }
 
   return (
     <div className="container mx-auto p-4 space-y-4">
@@ -43,6 +61,12 @@ export default function AppointmentTagsPage() {
           </Button>
         </Link>
       </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-md">
+          {error}
+        </div>
+      )}
 
       <div className="flex items-center gap-4">
         <div className="relative flex-1">
@@ -75,14 +99,22 @@ export default function AppointmentTagsPage() {
             <TableRow>
               <TableHead className="w-[120px]">ID</TableHead>
               <TableHead>Nombre</TableHead>
+              <TableHead>Descripción</TableHead>
               <TableHead className="w-[120px]">Color</TableHead>
               <TableHead className="text-right w-[100px]">Acciones</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredTags.length === 0 ? (
+            {loading && tags.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={4} className="text-center py-8">
+                <TableCell colSpan={5} className="text-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin mx-auto" />
+                  <p className="mt-2 text-muted-foreground">Cargando etiquetas...</p>
+                </TableCell>
+              </TableRow>
+            ) : filteredTags.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center py-8">
                   {searchQuery ? "No se encontraron etiquetas" : "No hay etiquetas creadas"}
                 </TableCell>
               </TableRow>
@@ -91,10 +123,13 @@ export default function AppointmentTagsPage() {
                 <TableRow key={tag.id}>
                   <TableCell className="font-mono text-xs">{tag.id.slice(0, 8)}</TableCell>
                   <TableCell>{tag.name}</TableCell>
+                  <TableCell className="text-muted-foreground text-sm">
+                    {tag.description || '-'}
+                  </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
                       <div 
-                        className="w-6 h-6 rounded-full" 
+                        className="w-6 h-6 rounded-full border" 
                         style={{ backgroundColor: tag.color }}
                       />
                       <span className="text-sm font-mono">{tag.color}</span>
@@ -106,6 +141,7 @@ export default function AppointmentTagsPage() {
                         variant="ghost"
                         size="icon"
                         onClick={() => router.push(`/configuracion/catalogos/etiquetas/${tag.id}`)}
+                        disabled={isDeleting === tag.id}
                       >
                         <svg 
                           xmlns="http://www.w3.org/2000/svg" 
@@ -125,29 +161,30 @@ export default function AppointmentTagsPage() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={async () => {
-                          if (confirm(`¿Estás seguro de que quieres eliminar la etiqueta "${tag.name}"?`)) {
-                            await deleteTag(tag.id)
-                          }
-                        }}
+                        onClick={() => handleDelete(tag)}
+                        disabled={isDeleting === tag.id}
                       >
-                        <svg 
-                          xmlns="http://www.w3.org/2000/svg" 
-                          width="16" 
-                          height="16" 
-                          viewBox="0 0 24 24" 
-                          fill="none" 
-                          stroke="#EF4444" 
-                          strokeWidth="2" 
-                          strokeLinecap="round" 
-                          strokeLinejoin="round"
-                        >
-                          <path d="M3 6h18" />
-                          <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
-                          <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-                          <line x1="10" x2="10" y1="11" y2="17" />
-                          <line x1="14" x2="14" y1="11" y2="17" />
-                        </svg>
+                        {isDeleting === tag.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <svg 
+                            xmlns="http://www.w3.org/2000/svg" 
+                            width="16" 
+                            height="16" 
+                            viewBox="0 0 24 24" 
+                            fill="none" 
+                            stroke="#EF4444" 
+                            strokeWidth="2" 
+                            strokeLinecap="round" 
+                            strokeLinejoin="round"
+                          >
+                            <path d="M3 6h18" />
+                            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                            <line x1="10" x2="10" y1="11" y2="17" />
+                            <line x1="14" x2="14" y1="11" y2="17" />
+                          </svg>
+                        )}
                       </Button>
                     </div>
                   </TableCell>
@@ -177,4 +214,3 @@ export default function AppointmentTagsPage() {
     </div>
   )
 }
-

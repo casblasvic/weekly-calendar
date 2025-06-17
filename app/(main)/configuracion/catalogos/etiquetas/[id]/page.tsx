@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { ColorPicker } from "@/app/components/ui/color-picker"
-import { ArrowLeft, Save } from "lucide-react"
+import { ArrowLeft, Save, Loader2 } from "lucide-react"
 import { useAppointmentTags } from "@/contexts/appointment-tags-context"
 import Link from "next/link"
 import React from "react"
@@ -26,27 +26,34 @@ export default function EditAppointmentTagPage({ params }: EditAppointmentTagPag
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   
-  const { getTagById, updateTag } = useAppointmentTags() || { 
-    getTagById: () => undefined, 
-    updateTag: async () => null 
-  }
+  const { updateTag } = useAppointmentTags()
   const router = useRouter()
   
-  // Cargar datos de la etiqueta
+  // Cargar datos de la etiqueta desde la API
   useEffect(() => {
-    if (!getTagById) return
-    
-    const tag = getTagById(id)
-    if (tag) {
-      setName(tag.name || "")
-      setDescription(tag.description || "")
-      setColor(tag.color || "#E040FB")
-      setIsLoading(false)
-    } else {
-      setError("Etiqueta no encontrada")
-      setIsLoading(false)
+    const fetchTag = async () => {
+      try {
+        setIsLoading(true)
+        const response = await fetch(`/api/tags/${id}`)
+        
+        if (!response.ok) {
+          throw new Error('Etiqueta no encontrada')
+        }
+        
+        const tag = await response.json()
+        setName(tag.name || "")
+        setDescription(tag.description || "")
+        setColor(tag.color || "#E040FB")
+      } catch (err) {
+        console.error('Error loading tag:', err)
+        setError(err instanceof Error ? err.message : 'Error al cargar la etiqueta')
+      } finally {
+        setIsLoading(false)
+      }
     }
-  }, [id, getTagById])
+    
+    fetchTag()
+  }, [id])
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -77,7 +84,10 @@ export default function EditAppointmentTagPage({ params }: EditAppointmentTagPag
     return (
       <div className="container mx-auto p-4 max-w-2xl">
         <div className="flex justify-center items-center h-64">
-          <div className="text-center text-gray-500">Cargando etiqueta...</div>
+          <div className="flex flex-col items-center gap-2">
+            <Loader2 className="h-8 w-8 animate-spin text-gray-500" />
+            <p className="text-gray-500">Cargando etiqueta...</p>
+          </div>
         </div>
       </div>
     )
@@ -179,4 +189,4 @@ export default function EditAppointmentTagPage({ params }: EditAppointmentTagPag
       </form>
     </div>
   )
-} 
+}

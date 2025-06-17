@@ -21,13 +21,14 @@ const addBonosSchema = z.object({
  */
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   console.log('[API TARIFFS/.../BONOS GET] Received request.');
   try {
     const session = await getServerAuthSession();
     await Promise.resolve();
-    const { id: tariffId } = await params;
+    const resolvedParams = await params;
+    const { id: tariffId } = resolvedParams;
 
     if (!session?.user.systemId) {
       return new NextResponse("Unauthorized", { status: 401 });

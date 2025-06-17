@@ -1,52 +1,73 @@
 "use client"
 
-import type React from "react"
-import { Dialog, DialogContent, DialogTitle, DialogFooter, DialogHeader } from "@/components/ui/dialog"
+import React from "react"
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog"
+import { VisuallyHidden } from "@/components/ui/visually-hidden"
+import { ClientQuickViewDialog } from "./client-quick-view-dialog"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
+import { Label } from "@/components/ui/label"
+import { Input } from "@/components/ui/input"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import {
-  Phone,
+import { 
+  Calendar,
+  X,
+  Search,
+  Users,
+  Tag,
   MessageCircle,
+  Copy,
   ChevronLeft,
   ChevronRight,
   Trash2,
-  Clock,
-  Heart,
-  Users,
-  UserPlus,
-  Copy,
-  ExternalLink,
-  Tag,
   Move,
+  CheckCircle,
+  Phone,
+  ExternalLink,
+  ChevronUp,
+  ChevronDown,
+  Check,
+  FileText,
+  UserPlus,
+  Clock,
+  MapPin,
   MessageSquare,
   XCircle,
   CheckCircle2,
-  X,
-  Check,
-  Search,
-  MapPin,
+  ArrowUpRight,
 } from "lucide-react"
 import { useState, forwardRef, useEffect, useRef, useMemo } from "react"
 import { cn } from "@/lib/utils"
 import { useLastClient } from "@/contexts/last-client-context"
 import { CommentDialog } from "./comment-dialog"
-import { Input } from "@/components/ui/input"
 import { useAppointmentTags } from "@/contexts/appointment-tags-context"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { format, parseISO } from 'date-fns'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from "@/components/ui/textarea"
-import { Label } from "@/components/ui/label"
 import { Loader2 } from "lucide-react"
 import type { Appointment } from '@/types/appointments'
 import type { CSSProperties, Key } from 'react'
+import { useRouter } from 'next/navigation'
+import { useClinic } from '@/contexts/clinic-context'
+import { useServicesQuery, useBonosQuery, usePackagesQuery } from '@/lib/hooks/use-api-query'
+
+// WhatsApp icon component
+const WhatsAppIcon = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5" fill="none">
+    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.693.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/>
+  </svg>
+)
 
 interface Service {
-  id: string;
-  name: string;
-  category: string;
-  duration: number;
+  id: string
+  name: string
+  price?: number
+  duration: number
+  category: string
+  type?: 'service' | 'bono' | 'package' | 'package-service'
+  items?: any[]
+  serviceName?: string // Para bonos
 }
 
 export interface Person {
@@ -68,8 +89,18 @@ interface AppointmentDialogProps {
   clinic?: { id: string; name: string };
   professional?: { id: string; name: string };
   selectedTime?: string;
+  roomId?: string;
   initialClient?: Person;
+  isEditing?: boolean;
+  existingAppointment?: {
+    id?: string; // Añadir el ID de la cita para poder eliminarla o validarla
+    services?: any[];
+    notes?: string;
+    tags?: string[];
+    isValidated?: boolean; // Nuevo campo para saber si la cita está validada
+  };
   onSaveAppointment?: (appointment: {
+    id?: string; // Incluir el ID si es una edición
     clinicId: string;
     professionalId: string;
     personId: string;
@@ -78,6 +109,8 @@ interface AppointmentDialogProps {
     endTime: string;
     services: string[];
     notes?: string;
+    roomId: string;
+    tags?: string[] // Añadir etiquetas
   }) => void;
   onMoveAppointment?: () => void;
   onSearchClick?: () => void;
@@ -87,11 +120,14 @@ interface AppointmentDialogProps {
 export function AppointmentDialog({
   isOpen,
   onClose,
-  date,
+  date = new Date(),
   clinic,
   professional,
   selectedTime,
+  roomId,
   initialClient,
+  isEditing = false,
+  existingAppointment,
   onSaveAppointment,
   onMoveAppointment,
   onSearchClick,
@@ -101,14 +137,32 @@ export function AppointmentDialog({
   const [selectedServices, setSelectedServices] = useState<Service[]>([])
   const [modules, setModules] = useState(1)
   const [showCommentDialog, setShowCommentDialog] = useState(false)
+  const [showClientQuickView, setShowClientQuickView] = useState(false)
   const [appointmentComment, setAppointmentComment] = useState("")
   const [showClientDetails, setShowClientDetails] = useState(false)
   const [selectedTags, setSelectedTags] = useState<string[]>([])
   const [searchQuery, setSearchQuery] = useState("")
   const [endTime, setEndTime] = useState("")
+  const [tagPopoverOpen, setTagPopoverOpen] = useState(false)
   const servicesContainerRef = useRef<HTMLDivElement>(null)
   
+  // Nuevo estado para controlar servicios a validar
+  const [servicesToValidate, setServicesToValidate] = useState<Record<string, 'VALIDATED' | 'NO_SHOW' | null>>({})
+  
+  // Estado para saber si la cita está validada
+  const isAppointmentValidated = existingAppointment?.isValidated || false
+  
   const { getTags, getTagById } = useAppointmentTags()
+  const router = useRouter()
+
+  const [hasChanges, setHasChanges] = useState(false)
+  const [clientFormData, setClientFormData] = useState({
+    firstName: initialClient?.firstName || '',
+    lastName: initialClient?.lastName || '',
+    phone: initialClient?.phone || '',
+    email: initialClient?.email || '',
+    address: initialClient?.address || '',
+  })
 
   // Calculate end time based on selected services
   useEffect(() => {
@@ -121,6 +175,403 @@ export function AppointmentDialog({
     }
   }, [selectedTime, modules])
 
+  // Obtener la clínica activa y su tarifa
+  const { activeClinic } = useClinic()
+  const tariffId = activeClinic?.tariff?.id
+
+  // Usar los hooks normales que ya tienen caché optimizada
+  const { 
+    data: allServicesData = [], 
+    isLoading: loadingServices 
+  } = useServicesQuery()
+  
+  const { 
+    data: allBonosData = [], 
+    isLoading: loadingBonos 
+  } = useBonosQuery()
+  
+  const { 
+    data: allPackagesData = [], 
+    isLoading: loadingPackages 
+  } = usePackagesQuery()
+
+  // Formatear los datos inmediatamente sin esperar a efectos
+  const formattedServices = useMemo(() => {
+    return allServicesData.map((s: any) => ({
+      id: s.id,
+      name: s.name,
+      duration: s.durationMinutes || 0,
+      category: s.category?.name || 'Sin categoría',
+      type: 'service' as const
+    }))
+  }, [allServicesData])
+
+  const formattedBonos = useMemo(() => {
+    return allBonosData.map((b: any) => ({
+      id: b.id,
+      name: b.name,
+      serviceName: b.service?.name || '', // Guardar el nombre del servicio
+      duration: b.service?.durationMinutes || 0,
+      category: 'Bonos',
+      sessions: b.sessions,
+      type: 'bono' as const
+    }))
+  }, [allBonosData])
+
+  const formattedPackages = useMemo(() => {
+    // Solo mostrar paquetes que contengan servicios
+    return allPackagesData
+      .filter((p: any) => {
+        // Verificar si el paquete tiene items de tipo servicio
+        return p.items && p.items.some((item: any) => item.serviceId && item.service)
+      })
+      .map((p: any) => ({
+        id: p.id,
+        name: p.name,
+        duration: 0, // No mostrar duración para paquetes
+        category: 'Paquetes',
+        items: p.items.filter((item: any) => item.serviceId && item.service),
+        type: 'package' as const
+      }))
+  }, [allPackagesData])
+
+  // Seleccionar qué datos mostrar según la pestaña activa
+  const currentServices = useMemo(() => {
+    switch (activeTab) {
+      case 'servicios':
+        return formattedServices
+      case 'bonos':
+        return formattedBonos
+      case 'paquetes':
+        return formattedPackages
+      default:
+        return []
+    }
+  }, [activeTab, formattedServices, formattedBonos, formattedPackages])
+
+  // Filtrar por búsqueda
+  const filteredServices = searchQuery
+    ? currentServices.filter((s: any) =>
+        s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        s.category.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : currentServices
+
+  // Agrupar por categoría
+  const servicesByCategory = useMemo(() => {
+    return filteredServices.reduce((acc, service) => {
+      if (!acc[service.category]) {
+        acc[service.category] = []
+      }
+      acc[service.category].push(service)
+      return acc
+    }, {} as Record<string, typeof currentServices>)
+  }, [filteredServices])
+
+  // No mostrar spinner de carga ya que los datos principales están en caché
+  const isLoading = false // Los datos ya están cargados en caché
+
+  const handleServiceClick = (service: Service) => {
+    if (isAppointmentValidated) return // No permitir añadir si está validada
+    
+    if (service.type === 'bono') {
+      // Para bonos, añadir el servicio asociado
+      const serviceId = `bono-${service.id}`
+      const isSelected = selectedServices.some((s) => s.id === serviceId)
+      
+      if (isSelected) {
+        // Quitar el servicio
+        setSelectedServices((prev) => prev.filter((s) => s.id !== serviceId))
+        setModules((prev) => Math.max(1, prev - Math.ceil(service.duration / 15)))
+        setServicesToValidate((prev) => {
+          const newState = { ...prev }
+          delete newState[serviceId]
+          return newState
+        })
+      } else {
+        // Añadir el servicio del bono
+        const serviceToAdd = {
+          ...service,
+          id: serviceId,
+          name: service.serviceName || service.name, // Usar el nombre del servicio, no del bono
+          type: 'service' as const
+        }
+        setSelectedServices((prev) => [...prev, serviceToAdd])
+        setModules((prev) => prev + Math.ceil(service.duration / 15))
+      }
+    } else if (service.type === 'package' && service.items) {
+      // Para paquetes, verificar si algún servicio del paquete está seleccionado
+      const packageServiceIds = service.items.map((item: any) => `${service.id}-${item.service.id}`)
+      const hasAnySelected = selectedServices.some((s) => packageServiceIds.includes(s.id))
+      
+      if (hasAnySelected) {
+        // Quitar todos los servicios del paquete
+        setSelectedServices((prev) => prev.filter((s) => !packageServiceIds.includes(s.id)))
+        const totalDuration = service.items.reduce((sum: number, item: any) => 
+          sum + (item.service.durationMinutes || 0), 0
+        )
+        setModules((prev) => Math.max(1, prev - Math.ceil(totalDuration / 15)))
+        setServicesToValidate((prev) => {
+          const newState = { ...prev }
+          packageServiceIds.forEach((id) => delete newState[id])
+          return newState
+        })
+      } else {
+        // Añadir todos los servicios del paquete
+        const packageServices = service.items.map((item: any) => ({
+          id: `${service.id}-${item.service.id}`,
+          name: item.service.name,
+          duration: item.service.durationMinutes || 0,
+          category: service.name,
+          type: 'service' as const,
+          price: 0
+        }))
+        
+        setSelectedServices((prev) => [...prev, ...packageServices])
+        const totalDuration = packageServices.reduce((sum, s) => sum + s.duration, 0)
+        setModules((prev) => prev + Math.ceil(totalDuration / 15))
+      }
+    } else {
+      // Para servicios normales
+      const isSelected = selectedServices.some((s) => s.id === service.id)
+      
+      if (isSelected) {
+        setSelectedServices((prev) => prev.filter((s) => s.id !== service.id))
+        setModules((prev) => Math.max(1, prev - Math.ceil(service.duration / 15)))
+        setServicesToValidate((prev) => {
+          const newState = { ...prev }
+          delete newState[service.id]
+          return newState
+        })
+      } else {
+        setSelectedServices((prev) => [...prev, service])
+        setModules((prev) => prev + Math.ceil(service.duration / 15))
+      }
+    }
+    
+    // Scroll automático al final
+    setTimeout(() => {
+      if (servicesContainerRef.current) {
+        servicesContainerRef.current.scrollTop = servicesContainerRef.current.scrollHeight
+      }
+    }, 50)
+  }
+
+  const handleRemoveService = (serviceId: string) => {
+    if (isAppointmentValidated) return // No permitir eliminar si está validada
+    
+    const service = selectedServices.find((s) => s.id === serviceId)
+    if (service) {
+      setSelectedServices((prev) => prev.filter((s) => s.id !== serviceId))
+      setModules((prev) => Math.max(1, prev - Math.ceil(service.duration / 15)))
+      
+      // También quitar de servicios a validar
+      setServicesToValidate((prev) => {
+        const newState = { ...prev }
+        delete newState[serviceId]
+        return newState
+      })
+    }
+  }
+
+  const handleSaveComment = (comment: string) => {
+    setAppointmentComment(comment)
+    setShowCommentDialog(false)
+  }
+
+  const handleDelete = async () => {
+    if (!existingAppointment?.id) return
+    
+    if (!confirm('¿Estás seguro de que deseas eliminar esta cita?')) {
+      return
+    }
+    
+    try {
+      const response = await fetch(`/api/appointments?id=${existingAppointment.id}`, {
+        method: 'DELETE',
+      })
+
+      if (response.ok) {
+        // NO mostrar segunda alerta - solo refrescar y cerrar
+        
+        // Refrescar la agenda si existe la función
+        if (onMoveAppointment) {
+          onMoveAppointment()
+        }
+        onClose()
+      } else {
+        const error = await response.json()
+        alert(`Error al eliminar: ${error.error || 'Error desconocido'}`)
+      }
+    } catch (error) {
+      console.error('Error deleting appointment:', error)
+      alert('Error al eliminar la cita')
+    }
+  }
+
+  const handleSave = async () => {
+    if (!clinic || !professional || !selectedTime || !roomId || selectedServices.length === 0) {
+      return
+    }
+
+    const serviceIds = selectedServices.map(service => {
+      if (service.id.startsWith('bono-')) {
+        return service.id.substring(5) // Quitar el prefijo 'bono-'
+      } else if (service.id.includes('-')) {
+        // Para servicios de paquetes, obtener el ID del servicio
+        const parts = service.id.split('-')
+        return parts[parts.length - 1]
+      }
+      return service.id
+    })
+
+    const appointmentData = {
+      id: existingAppointment?.id, // Incluir el ID si es una edición
+      clinicId: clinic.id,
+      professionalId: professional.id,
+      personId: initialClient?.id || '',
+      date: format(date, 'yyyy-MM-dd'),
+      startTime: selectedTime,
+      endTime,
+      services: serviceIds,
+      notes: appointmentComment,
+      roomId: roomId, // CORREGIDO: usar roomId, no equipmentId
+      tags: selectedTags // Añadir las etiquetas seleccionadas
+    }
+
+    if (onSaveAppointment) {
+      onSaveAppointment(appointmentData)
+    }
+    
+    onClose()
+  }
+
+  const handleValidate = async () => {
+    // Filtrar solo los servicios que tienen un estado seleccionado
+    const servicesToSend = Object.entries(servicesToValidate)
+      .filter(([_, status]) => status !== null)
+      .map(([serviceId, status]) => ({
+        serviceId,
+        status: status as 'VALIDATED' | 'NO_SHOW'
+      }))
+    
+    if (servicesToSend.length === 0) return
+    
+    try {
+      const response = await fetch('/api/appointments/validate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          appointmentId: existingAppointment?.id,
+          servicesToValidate: servicesToSend,
+          clinicId: clinic?.id
+        })
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        alert(result.message || 'Cita validada correctamente')
+        
+        // Refrescar la agenda si existe la función
+        if (onMoveAppointment) {
+          onMoveAppointment()
+        }
+        onClose()
+      } else {
+        const error = await response.json()
+        alert(`Error al validar: ${error.message}`)
+      }
+    } catch (error) {
+      console.error('Error validating appointment:', error)
+      alert('Error al validar la cita')
+    }
+  }
+
+  const handleNoShow = async () => {
+    if (!existingAppointment?.id) return
+    
+    try {
+      // Marcar todos los servicios como NO_SHOW
+      const servicesToSend = selectedServices.map(service => {
+        let realServiceId = service.id
+        if (service.id.startsWith('bono-')) {
+          realServiceId = service.id.substring(5)
+        } else if (service.id.includes('-')) {
+          const parts = service.id.split('-')
+          realServiceId = parts[parts.length - 1]
+        }
+
+        return {
+          serviceId: realServiceId,
+          status: 'NO_SHOW'
+        }
+      })
+
+      const response = await fetch('/api/appointments/validate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          appointmentId: existingAppointment.id,
+          servicesToValidate: servicesToSend,
+          clinicId: clinic?.id
+        })
+      })
+
+      if (response.ok) {
+        alert('Cita marcada como no asistida')
+        
+        if (onMoveAppointment) {
+          onMoveAppointment()
+        }
+        onClose()
+      } else {
+        const error = await response.json()
+        alert(`Error: ${error.message}`)
+      }
+    } catch (error) {
+      console.error('Error marking appointment as no-show:', error)
+      alert('Error al marcar la cita como no asistida')
+    }
+  }
+
+  const toggleServiceValidation = (serviceId: string, status: 'VALIDATED' | 'NO_SHOW') => {
+    if (isAppointmentValidated) return // No permitir cambios si está validada
+    
+    setServicesToValidate(prev => {
+      const newState = { ...prev }
+      
+      // Si ya tiene el mismo estado, lo quitamos (deseleccionar)
+      if (newState[serviceId] === status) {
+        delete newState[serviceId]
+      } else {
+        // Si no, lo establecemos con el nuevo estado
+        newState[serviceId] = status
+      }
+      
+      return newState
+    })
+  }
+
+  const handleTagSelect = (tagId: string) => {
+    console.log('[AppointmentDialog] handleTagSelect called with tagId:', tagId)
+    setSelectedTags((prev) => 
+      prev.includes(tagId) 
+        ? prev.filter(id => id !== tagId) 
+        : [...prev, tagId]
+    )
+  }
+
+  const handleMove = () => {
+    if (onMoveAppointment) {
+      onMoveAppointment()
+      onClose()
+    }
+  }
+
   // Initialize from appointment if editing
   useEffect(() => {
     if (initialClient) {
@@ -131,269 +582,335 @@ export function AppointmentDialog({
     }
   }, [initialClient])
 
-  if (!initialClient) return null
-
-  // Mock data for services - in real app this would come from API
-  const servicesData = {
-    servicios: [
-      { id: "s1", name: "Consulta General", category: "General", duration: 2 },
-      { id: "s2", name: "Limpieza Dental", category: "Dental", duration: 4 },
-      { id: "s3", name: "Revisión Anual", category: "General", duration: 2 },
-    ],
-    bonos: [
-      { id: "b1", name: "Bono 5 sesiones", category: "Bonos", duration: 0 },
-      { id: "b2", name: "Bono 10 sesiones", category: "Bonos", duration: 0 },
-    ],
-    paquetes: [
-      { id: "p1", name: "Paquete Belleza", category: "Paquetes", duration: 12 },
-      { id: "p2", name: "Paquete Relajación", category: "Paquetes", duration: 10 },
-    ],
-    productos: [
-      { id: "pr1", name: "Crema Facial", category: "Productos", duration: 0 },
-      { id: "pr2", name: "Serum", category: "Productos", duration: 0 },
-    ]
-  }
-
-  const currentServices = servicesData[activeTab as keyof typeof servicesData] || []
-  
-  const filteredServices = searchQuery 
-    ? currentServices.filter(s => 
-        s.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-        s.category.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : currentServices
-
-  const servicesByCategory = filteredServices.reduce((acc, service) => {
-    if (!acc[service.category]) {
-      acc[service.category] = []
-    }
-    acc[service.category].push(service)
-    return acc
-  }, {} as Record<string, Service[]>)
-
-  const handleServiceClick = (service: Service) => {
-    if (!selectedServices.some((s) => s.id === service.id)) {
-      setSelectedServices((prev) => [...prev, service])
-      setModules((prev) => prev + (service.duration || 0))
+  // Initialize from existing appointment when editing
+  useEffect(() => {
+    if (isEditing && existingAppointment) {
+      // Inicializar notas
+      setAppointmentComment(existingAppointment.notes || "")
       
-      setTimeout(() => {
-        if (servicesContainerRef.current) {
-          servicesContainerRef.current.scrollTop = servicesContainerRef.current.scrollHeight
+      // Inicializar tags
+      setSelectedTags(existingAppointment.tags || [])
+      
+      // Inicializar servicios seleccionados
+      const servicesToSelect = existingAppointment.services || []
+      const formattedServices = allServicesData.map((s: any) => ({
+        id: s.id,
+        name: s.name,
+        duration: s.durationMinutes || 0,
+        category: s.category?.name || 'Sin categoría',
+        type: 'service' as const
+      }))
+      const formattedBonos = allBonosData.map((b: any) => ({
+        id: b.id,
+        name: b.name,
+        serviceName: b.service?.name || '', // Guardar el nombre del servicio
+        duration: b.service?.durationMinutes || 0,
+        category: 'Bonos',
+        sessions: b.sessions,
+        type: 'bono' as const
+      }))
+      const formattedPackages = allPackagesData
+        .filter((p: any) => {
+          // Verificar si el paquete tiene items de tipo servicio
+          return p.items && p.items.some((item: any) => item.serviceId && item.service)
+        })
+        .map((p: any) => ({
+          id: p.id,
+          name: p.name,
+          duration: 0, // No mostrar duración para paquetes
+          category: 'Paquetes',
+          items: p.items.filter((item: any) => item.serviceId && item.service),
+          type: 'package' as const
+        }))
+      const allServices = [...formattedServices, ...formattedBonos, ...formattedPackages]
+      
+      // Mapear los servicios desde la estructura del backend
+      const selectedServices = servicesToSelect.map((appointmentService: any) => {
+        const serviceId = appointmentService.serviceId || appointmentService.id
+        const service = allServices.find((s) => {
+          if (s.type === 'package') {
+            return s.items.some((item: any) => item.serviceId === serviceId)
+          }
+          return s.id === serviceId
+        })
+        if (!service) return null
+        if (service.type === 'bono') {
+          // Para bonos, crear un ID especial para evitar conflictos
+          return {
+            ...service,
+            id: `bono-${service.id}`,
+            name: service.serviceName || service.name, // Usar el nombre del servicio, no del bono
+            type: 'service' as const
+          }
+        } else if (service.type === 'package' && service.items) {
+          // Para paquetes, crear servicios individuales
+          const packageService = service.items.find((item: any) => item.serviceId === serviceId)
+          return {
+            id: `${service.id}-${packageService.service.id}`,
+            name: packageService.service.name,
+            duration: packageService.service.durationMinutes || 0,
+            category: service.name,
+            type: 'service' as const,
+            price: 0
+          }
+        } else {
+          return service
         }
-      }, 50)
+      }).filter(Boolean)
+      
+      setSelectedServices(selectedServices)
+      setModules(Math.ceil(selectedServices.reduce((sum, s) => sum + s.duration, 0) / 15))
     }
-  }
+  }, [isEditing, existingAppointment, allServicesData, allBonosData, allPackagesData])
 
-  const handleRemoveService = (serviceId: string) => {
-    const serviceToRemove = selectedServices.find((s) => s.id === serviceId)
-    setSelectedServices((prev) => prev.filter((s) => s.id !== serviceId))
-    if (serviceToRemove) {
-      setModules((prev) => Math.max(1, prev - (serviceToRemove.duration || 0)))
-    }
-  }
-
-  const handleSaveComment = (comment: string) => {
-    setAppointmentComment(comment)
-    setShowCommentDialog(false)
-  }
-
-  const handleDelete = () => {
-    if (onMoveAppointment) {
-      onMoveAppointment()
-      onClose()
-    }
-  }
-
-  const handleSave = () => {
-    if (onSaveAppointment) {
-      onSaveAppointment({
-        clinicId: clinic?.id || "",
-        professionalId: professional?.id || "",
-        personId: initialClient.id,
-        date: format(date, 'yyyy-MM-dd'),
-        startTime: selectedTime || "",
-        endTime: endTime || "",
-        services: selectedServices.map(s => s.id),
-        notes: appointmentComment,
-      })
-      onClose()
-    }
-  }
-
-  const handleTagSelect = (tagId: string) => {
-    setSelectedTags((prev) => 
-      prev.includes(tagId) 
-        ? prev.filter(id => id !== tagId) 
-        : [...prev, tagId]
-    )
-  }
-
-  const handleNoShow = () => {
-    // No implementado
-  }
-
-  const handleMove = () => {
-    if (onMoveAppointment) {
-      onMoveAppointment()
-      onClose()
-    }
-  }
+  // Si no hay cliente, no mostrar el modal
+  if (!initialClient) return null
 
   const clientName = `${initialClient.firstName} ${initialClient.lastName}`
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="p-0 overflow-hidden max-w-3xl">
-        {/* DialogTitle oculto para accesibilidad */}
-        <DialogTitle className="sr-only">
-          Crear cita para {clientName}
-        </DialogTitle>
-        
-        <div className="flex flex-col h-full overflow-hidden">
-          {/* Header con info del cliente */}
-          <div className="p-3 border-b">
-            <div className="flex justify-between items-start">
-              <div className="space-y-1.5">
-                <div className="flex items-center gap-2 group cursor-pointer">
-                  <h2 className="text-lg font-normal text-purple-600">{clientName}</h2>
-                  <ExternalLink 
-                    className="h-4 w-4 text-purple-600 opacity-0 group-hover:opacity-100 transition-opacity" 
-                    onClick={() => setShowClientDetails(!showClientDetails)}
-                  />
-                </div>
-                <div className="flex items-center gap-2 text-gray-600">
-                  <span className="text-xs">Teléfono {initialClient.phone}</span>
-                  <div className="flex gap-1">
-                    <Button variant="ghost" size="icon" className="h-6 w-6 text-purple-600">
-                      <Phone className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-6 w-6 text-purple-600">
-                      <MessageCircle className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-6 w-6 text-purple-600">
-                      <Copy className="h-3.5 w-3.5" />
-                    </Button>
+    <React.Fragment>
+      <Dialog 
+        open={isOpen} 
+        onOpenChange={(newOpen) => {
+          if (!newOpen) {
+            onClose()
+          }
+        }}
+      >
+        <DialogContent 
+          className="sm:max-w-[800px] p-0 overflow-hidden h-[600px] flex flex-col"
+        >
+          <VisuallyHidden>
+            <DialogTitle>Crear nueva cita</DialogTitle>
+            <DialogDescription>Crear una nueva cita para el cliente {clientName}</DialogDescription>
+          </VisuallyHidden>
+          
+          <div className="flex h-full flex-col">
+            {/* Header horizontal a todo el ancho */}
+            <div className="bg-gray-50 border-b">
+              <div className="px-4 py-3 flex items-center justify-between">
+                {/* Lado izquierdo con información del cliente */}
+                <div className="flex items-start gap-4">
+                  {/* Nombre y resumen */}
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-lg font-medium text-violet-600">{clientName}</h2>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 hover:bg-purple-50"
+                        onClick={() => {
+                          console.log('[AppointmentDialog] Opening client quick view', { showClientDetails, initialClient })
+                          setShowClientDetails(true)
+                        }}
+                        title="Ver resumen rápido"
+                      >
+                        <ExternalLink className="h-4 w-4 text-purple-600" />
+                      </Button>
+                    </div>
+                    {/* Teléfono y acciones */}
+                    <div className="flex items-center gap-3 mt-1">
+                      <span className="text-sm text-gray-600">{initialClient.phone}</span>
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="h-5 w-5 hover:bg-violet-50"
+                        onClick={() => window.location.href = `tel:${initialClient.phone}`}
+                        title="Llamar"
+                      >
+                        <Phone className="h-3.5 w-3.5 text-violet-600" />
+                      </Button>
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="h-5 w-5 hover:bg-violet-50"
+                        onClick={() => window.open(`https://wa.me/${initialClient.phone?.replace(/\s+/g, '')}`, '_blank')}
+                        title="WhatsApp"
+                      >
+                        <WhatsAppIcon className="h-3.5 w-3.5 text-violet-600" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-5 w-5 hover:bg-purple-50"
+                        onClick={() => {
+                          // TODO: Navegar a la ficha del cliente
+                          window.location.href = `/clientes/${initialClient.id}`
+                        }}
+                        title="Ir a ficha del cliente"
+                      >
+                        <FileText className="h-3.5 w-3.5 text-purple-600" />
+                      </Button>
+                    </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 text-xs text-gray-500">
-                  <Clock className="h-3.5 w-3.5 text-green-500" />
-                  <span>{selectedTime}</span>
-                  {endTime && <span>- {endTime}</span>}
-                  <Heart className="h-3.5 w-3.5 text-purple-600" />
-                  
-                  {/* Etiquetas seleccionadas como pequeños círculos */}
-                  {selectedTags.length > 0 && (
-                    <div className="flex items-center gap-1 ml-1">
-                      {selectedTags.map(tagId => {
-                        const tag = getTagById(tagId)
-                        if (!tag) return null
-                        
-                        return (
-                          <div 
-                            key={tag.id}
-                            className="group relative"
-                          >
-                            <div 
-                              className="w-4 h-4 rounded-full flex items-center justify-center cursor-pointer border border-white shadow-sm"
-                              style={{ backgroundColor: tag.color }}
-                              onClick={() => handleTagSelect(tag.id)}
-                              title={tag.name}
+
+                {/* Lado derecho con acciones */}
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => {
+                      if (onNewClientClick) onNewClientClick()
+                    }}
+                    title="Añadir nuevo cliente"
+                  >
+                    <UserPlus className="h-4 w-4 text-blue-600" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => {
+                      if (onSearchClick) onSearchClick()
+                    }}
+                    title="Buscar otro cliente"
+                  >
+                    <Search className="h-4 w-4 text-orange-600" />
+                  </Button>
+                  <div className="w-px h-6 bg-gray-300 mx-1" />
+                </div>
+              </div>
+            </div>
+            
+            {/* Contenido principal con dos columnas */}
+            <div className="flex flex-1 min-h-0">
+              {/* Panel lateral con fecha y hora de la cita */}
+              <div className="w-[280px] border-r bg-white flex flex-col">
+                {/* Fecha y hora de la cita */}
+                <div className="p-4 border-b bg-gray-50">
+                  <div className="flex items-center gap-2">
+                    <MapPin className="h-3.5 w-3.5 text-purple-600" />
+                    <span className="text-xs text-gray-700">
+                      {date ? format(date, 'dd/MM/yyyy') : 'Sin fecha'}
+                    </span>
+                    <Clock className="h-3.5 w-3.5 text-green-500 ml-2" />
+                    <span className="text-xs text-gray-700">
+                      {selectedTime}
+                      {endTime && selectedServices.length > 0 && (
+                        <span> - {endTime}</span>
+                      )}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Contenedor scrollable para servicios seleccionados */}
+                <div 
+                  ref={servicesContainerRef}
+                  className="flex-1 p-2.5 overflow-y-auto bg-[#F8F9FA]"
+                  style={{ 
+                    scrollbarWidth: 'thin',
+                    scrollbarColor: '#9333ea #f3f4f6'
+                  }}
+                >
+                  {selectedServices.length === 0 ? (
+                    <div className="text-center text-gray-400 py-6">
+                      <p className="text-sm">No hay servicios seleccionados</p>
+                      <p className="text-xs">Selecciona servicios de la lista</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {selectedServices.map((service) => (
+                        <div 
+                          key={service.id} 
+                          className="p-2 flex items-center justify-between"
+                        >
+                          <div className="flex items-center gap-1.5 max-w-[160px]">
+                            <div className="w-1.5 h-1.5 rounded-full bg-purple-600 shrink-0" />
+                            <span className="text-xs text-gray-700 truncate">{service.name}</span>
+                            <span className="text-xs text-gray-500 ml-1 shrink-0">({service.duration}m)</span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            {isEditing && !isAppointmentValidated && (
+                              <div className="flex items-center gap-0.5">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className={cn(
+                                    "h-5 w-5 shrink-0",
+                                    servicesToValidate[service.id] === 'VALIDATED' 
+                                      ? "text-green-600 hover:text-green-700" 
+                                      : "text-gray-400 hover:text-green-600"
+                                  )}
+                                  onClick={() => toggleServiceValidation(service.id, 'VALIDATED')}
+                                  title={servicesToValidate[service.id] === 'VALIDATED' ? "Marcado para validar" : "Marcar para validar"}
+                                >
+                                  <CheckCircle2 className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className={cn(
+                                    "h-5 w-5 shrink-0",
+                                    servicesToValidate[service.id] === 'NO_SHOW' 
+                                      ? "text-red-600 hover:text-red-700" 
+                                      : "text-gray-400 hover:text-red-600"
+                                  )}
+                                  onClick={() => toggleServiceValidation(service.id, 'NO_SHOW')}
+                                  title={servicesToValidate[service.id] === 'NO_SHOW' ? "Marcado como no asistido" : "Marcar como no asistido"}
+                                >
+                                  <XCircle className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-5 w-5 shrink-0"
+                              onClick={() => handleRemoveService(service.id)}
+                              disabled={isAppointmentValidated}
                             >
-                              <X 
-                                className="h-2.5 w-2.5 text-white opacity-0 group-hover:opacity-100 transition-opacity" 
-                              />
-                            </div>
-                            <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white text-xs rounded px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10">
-                              {tag.name}
-                            </div>
+                              <Trash2 className="h-3.5 w-3.5 text-red-600" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Botones de acción - siempre visible */}
+                <div className="p-2.5 space-y-2 border-t bg-[#F8F9FA]">
+                  {/* Etiquetas seleccionadas como bolitas de colores */}
+                  {selectedTags.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      {selectedTags.map((tagId) => {
+                        const tag = getTags().find((t) => t.id === tagId)
+                        if (!tag) return null
+                        return (
+                          <div
+                            key={tagId}
+                            className="w-5 h-5 rounded-full relative group cursor-pointer"
+                            style={{ backgroundColor: tag.color }}
+                            title={tag.name}
+                          >
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleTagSelect(tagId)
+                              }}
+                              className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-black/20 rounded-full transition-opacity"
+                            >
+                              <X className="h-2.5 w-2.5 text-white" />
+                            </button>
                           </div>
                         )
                       })}
                     </div>
                   )}
-                </div>
-              </div>
-              <div className="flex items-center gap-1">
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  className="h-7 w-7 text-purple-600"
-                  onClick={onSearchClick}
-                  title="Cambiar cliente"
-                >
-                  <Users className="h-4 w-4" />
-                </Button>
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  className="h-7 w-7 text-purple-600"
-                  onClick={onNewClientClick}
-                  title="Nuevo cliente"
-                >
-                  <UserPlus className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          </div>
-
-          {/* Body con dos columnas */}
-          <div className="flex flex-1 min-h-0">
-            {/* Panel Izquierdo - Servicios seleccionados y acciones */}
-            <div className="w-[260px] border-r flex flex-col shrink-0">
-              {/* Fecha y hora */}
-              <div className="p-3 border-b bg-gray-50">
-                <div className="flex items-center gap-2">
-                  <MapPin className="h-3.5 w-3.5 text-purple-600" />
-                  <span className="text-xs text-gray-700">
-                    {date ? format(date, 'dd/MM/yyyy') : 'Sin fecha'} - {selectedTime}
-                  </span>
-                </div>
-              </div>
-
-              {/* Contenedor scrollable para servicios seleccionados */}
-              <div 
-                ref={servicesContainerRef}
-                className="p-2.5 flex-1 overflow-y-auto bg-[#F8F9FA] min-h-[300px]"
-                style={{ scrollbarWidth: 'thin' }}
-              >
-                {selectedServices.length === 0 ? (
-                  <div className="text-center text-gray-400 py-6">
-                    <p className="text-sm">No hay servicios seleccionados</p>
-                    <p className="text-xs">Selecciona servicios de la lista</p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {selectedServices.map((service) => (
-                      <div 
-                        key={service.id} 
-                        className="p-2 flex items-center justify-between"
-                      >
-                        <div className="flex items-center gap-1.5 max-w-[190px]">
-                          <div className="w-1.5 h-1.5 rounded-full bg-purple-600 shrink-0" />
-                          <span className="text-xs text-gray-700 truncate">{service.name}</span>
-                          <span className="text-xs text-gray-500 ml-1 shrink-0">({service.duration * 15}m)</span>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-5 w-5 shrink-0"
-                          onClick={() => handleRemoveService(service.id)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5 text-red-600" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Botones de acción */}
-              <div className="p-2.5 space-y-2 border-t bg-[#F8F9FA]">
-                <Popover>
-                  <PopoverTrigger asChild>
+                  
+                  <div className="relative">
                     <Button 
                       variant="outline" 
-                      className="w-full justify-start font-light text-xs bg-white hover:bg-gray-50 text-gray-700 border shadow-sm h-8"
+                      className="w-full justify-start font-light text-xs bg-white hover:bg-gray-50 border shadow-sm h-8"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        console.log('[AppointmentDialog] Etiquetas button clicked')
+                        setTagPopoverOpen(!tagPopoverOpen)
+                      }}
                     >
                       <Tag className="h-3.5 w-3.5 mr-1.5 text-purple-500" />
                       Etiquetas
@@ -403,233 +920,303 @@ export function AppointmentDialog({
                         </span>
                       )}
                     </Button>
-                  </PopoverTrigger>
-                  <PopoverContent 
-                    className="p-0 w-[240px] shadow-md border" 
-                    align="start" 
-                    sideOffset={5}
-                  >
-                    <div className="max-h-[220px] overflow-y-auto">
-                      {getTags().length === 0 ? (
-                        <div className="py-4 text-center text-gray-500">
-                          <p className="text-sm">No hay etiquetas disponibles</p>
-                          <p className="text-xs mt-1">Crea etiquetas en Configuración &gt; Catálogos &gt; Etiquetas</p>
-                        </div>
-                      ) : (
-                        <div className="grid gap-0.5">
-                          {getTags().map((tag) => (
-                            <div
-                              key={tag.id}
-                              className="flex items-center justify-between px-3 py-2 cursor-pointer transition-colors"
-                              style={{
-                                backgroundColor: tag.color,
-                                color: "#FFFFFF",
-                              }}
-                              onClick={() => handleTagSelect(tag.id)}
-                            >
-                              <span className="font-medium text-sm">{tag.name}</span>
-                              {selectedTags.includes(tag.id) && <Check className="h-4 w-4" />}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </PopoverContent>
-                </Popover>
-                
-                <div className="px-2.5 pt-1.5 pb-2.5 flex flex-wrap gap-2">
-                  <Button
-                    variant="outline"
-                    className="justify-start font-light text-xs bg-[#E9ECEF] hover:bg-gray-200 border-0 shadow-none h-8 disabled:opacity-50 disabled:cursor-not-allowed"
-                    onClick={handleDelete}
-                    disabled={!selectedServices.length}
-                  >
-                    <Trash2 className="h-3.5 w-3.5 mr-1.5 text-red-500" />
-                    Eliminar
-                  </Button>
-                  
-                  <Button
-                    variant="outline"
-                    className="justify-start font-light text-xs bg-[#E9ECEF] hover:bg-gray-200 border-0 shadow-none h-8 disabled:opacity-50 disabled:cursor-not-allowed"
-                    onClick={handleMove}
-                    disabled={!selectedServices.length}
-                  >
-                    <Move className="h-3.5 w-3.5 mr-1.5 text-blue-500" />
-                    Mover
-                  </Button>
-                  
-                  <Button
-                    variant="outline"
-                    className="justify-start font-light text-xs bg-[#E9ECEF] hover:bg-gray-200 border-0 shadow-none h-8 disabled:opacity-50 disabled:cursor-not-allowed"
-                    onClick={() => setShowCommentDialog(true)}
-                    disabled={!selectedServices.length}
-                  >
-                    <MessageSquare className="h-3.5 w-3.5 mr-1.5 text-gray-500" />
-                    Comentarios
-                  </Button>
-                  
-                  <Button
-                    variant="outline"
-                    className="justify-start font-light text-xs bg-[#E9ECEF] hover:bg-gray-200 border-0 shadow-none h-8 disabled:opacity-50 disabled:cursor-not-allowed"
-                    onClick={handleNoShow}
-                    disabled={!selectedServices.length}
-                  >
-                    <XCircle className="h-3.5 w-3.5 mr-1.5 text-orange-500" />
-                    No asistido
-                  </Button>
-                  
-                  <Button
-                    variant="outline"
-                    className="justify-start font-light text-xs bg-[#28A745] hover:bg-[#218838] text-white border-0 shadow-sm h-8 disabled:opacity-50 disabled:cursor-not-allowed w-full mt-2"
-                    onClick={handleSave}
-                    disabled={!selectedServices.length}
-                  >
-                    <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />
-                    Validar cita
-                  </Button>
-                </div>
-              </div>
-            </div>
-
-            {/* Panel Derecho - Selección de servicios */}
-            <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-              <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
-                <TabsList className="w-full justify-start h-auto px-3 py-1.5 bg-transparent border-b rounded-none">
-                  <TabsTrigger
-                    value="servicios"
-                    className="rounded-none px-3 py-1 text-xs font-normal border-b-2 border-transparent
-                              data-[state=active]:border-purple-600 
-                              data-[state=active]:text-purple-600 hover:text-purple-600 
-                              data-[state=active]:font-medium data-[state=active]:bg-transparent"
-                  >
-                    SERVICIOS
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="bonos"
-                    className="rounded-none px-3 py-1 text-xs font-normal border-b-2 border-transparent
-                              data-[state=active]:border-purple-600 
-                              data-[state=active]:text-purple-600 hover:text-purple-600 
-                              data-[state=active]:font-medium data-[state=active]:bg-transparent"
-                  >
-                    BONOS
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="paquetes"
-                    className="rounded-none px-3 py-1 text-xs font-normal border-b-2 border-transparent
-                              data-[state=active]:border-purple-600 
-                              data-[state=active]:text-purple-600 hover:text-purple-600 
-                              data-[state=active]:font-medium data-[state=active]:bg-transparent"
-                  >
-                    PAQUETES
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="productos"
-                    className="rounded-none px-3 py-1 text-xs font-normal border-b-2 border-transparent
-                              data-[state=active]:border-purple-600 
-                              data-[state=active]:text-purple-600 hover:text-purple-600 
-                              data-[state=active]:font-medium data-[state=active]:bg-transparent"
-                  >
-                    PRODUCTOS
-                  </TabsTrigger>
-                </TabsList>
-                
-                {/* Contenedor con scroll para los servicios de la pestaña - altura fija */}
-                <div className="flex-1 overflow-y-auto min-h-[300px]">
-                  {['servicios', 'bonos', 'paquetes', 'productos'].map((tab) => (
-                    <TabsContent key={tab} value={tab} className="p-3 m-0 h-full">
-                      {Object.entries(servicesByCategory).map(([category, services]) => (
-                        <div key={category} className="mb-4">
-                          <h3 className="text-xs font-medium text-gray-700 mb-1.5">{category}</h3>
-                          <div className="space-y-1.5">
-                            {services.map((service) => (
-                              <div
-                                key={service.id}
-                                className="px-2 py-1.5 cursor-pointer transition-colors rounded hover:bg-gray-50"
-                                onClick={() => handleServiceClick(service)}
-                              >
-                                <div className="flex items-center justify-between">
-                                  <span className="font-medium text-xs">{service.name}</span>
-                                  <span className="text-xs text-gray-500">{service.duration * 15} min</span>
-                                </div>
+                    
+                    {/* Popover simple sin Radix UI para depurar */}
+                    {tagPopoverOpen && (
+                      <>
+                        {/* Overlay invisible para cerrar al hacer clic fuera */}
+                        <div 
+                          className="fixed inset-0 z-40" 
+                          onClick={() => setTagPopoverOpen(false)}
+                        />
+                        <div 
+                          className="absolute top-full left-0 mt-1 w-[240px] bg-white border rounded-md shadow-lg z-50"
+                          onMouseLeave={() => {
+                            // Cerrar después de un pequeño delay para evitar cierres accidentales
+                            setTimeout(() => setTagPopoverOpen(false), 300)
+                          }}
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                          }}
+                        >
+                          <div className="max-h-[220px] overflow-y-auto p-1">
+                            {getTags().length === 0 ? (
+                              <div className="p-4 text-center text-gray-500 text-xs">
+                                No hay etiquetas disponibles
                               </div>
-                            ))}
+                            ) : (
+                              <div className="grid gap-0.5 pb-1">
+                                {getTags().map((tag) => (
+                                  <button
+                                    key={tag.id}
+                                    type="button"
+                                    className="flex items-center justify-between px-3 py-2 cursor-pointer transition-colors hover:brightness-110 rounded text-left"
+                                    style={{
+                                      backgroundColor: tag.color,
+                                      color: "#FFFFFF",
+                                    }}
+                                    onClick={(e) => {
+                                      e.preventDefault()
+                                      e.stopPropagation()
+                                      console.log('[AppointmentDialog] Tag clicked:', tag.id, tag.name)
+                                      handleTagSelect(tag.id)
+                                    }}
+                                  >
+                                    <span className="font-medium text-sm">{tag.name}</span>
+                                    {selectedTags.includes(tag.id) && <Check className="h-4 w-4" />}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         </div>
-                      ))}
-                    </TabsContent>
-                  ))}
-                </div>
-                
-                {/* Buscador */}
-                <div className="px-3 py-2 border-t">
-                  <Input 
-                    placeholder="Buscar servicio..." 
-                    className="bg-gray-50 h-8 text-xs" 
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                  />
-                </div>
-                
-                {/* Controles inferiores */}
-                <div className="px-3 py-3 border-t bg-white">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs text-gray-500">Módulos:</label>
-                      <div className="flex items-center">
-                        <button
-                          onClick={() => setModules((prev) => Math.max(1, prev - 1))}
-                          className="w-6 h-6 flex items-center justify-center"
-                          disabled={modules <= 1}
-                        >
-                          <ChevronLeft className="h-3.5 w-3.5 text-green-500" />
-                        </button>
-                        <div className="h-6 w-[30px] flex items-center justify-center">
-                          <span className="text-center text-xs">{modules}</span>
-                        </div>
-                        <button
-                          onClick={() => setModules((prev) => prev + 1)}
-                          className="w-6 h-6 flex items-center justify-center"
-                        >
-                          <ChevronRight className="h-3.5 w-3.5 text-green-500" />
-                        </button>
-                      </div>
-                    </div>
+                      </>
+                    )}
+                  </div>
+                  
+                  <div className="px-2.5 pt-1.5 pb-2.5 flex flex-wrap gap-2">
+                    <Button
+                      variant="outline"
+                      className="justify-start font-light text-xs bg-[#E9ECEF] hover:bg-gray-200 border-0 shadow-none h-8 disabled:opacity-50 disabled:cursor-not-allowed"
+                      onClick={handleDelete}
+                      disabled={!selectedServices.length || isAppointmentValidated}
+                    >
+                      <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                      Eliminar
+                    </Button>
                     
-                    <div className="flex-1 max-w-[160px]">
-                      <Select defaultValue="any">
-                        <SelectTrigger className="bg-gray-50 h-7 text-xs">
-                          <SelectValue placeholder="Profesional" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="any" className="text-xs">(Cualquiera)</SelectItem>
-                          <SelectItem value="houda" className="text-xs">Houda</SelectItem>
-                          <SelectItem value="imane" className="text-xs">Imane</SelectItem>
-                          <SelectItem value="sofia" className="text-xs">Sofia</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
+                    <Button
+                      variant="outline"
+                      className="justify-start font-light text-xs bg-[#E9ECEF] hover:bg-gray-200 border-0 shadow-none h-8 disabled:opacity-50 disabled:cursor-not-allowed"
+                      onClick={handleMove}
+                      disabled={!selectedServices.length || isAppointmentValidated}
+                    >
+                      <Move className="h-3.5 w-3.5 text-blue-500" />
+                      Mover
+                    </Button>
                     
-                    <div className="flex gap-2">
-                      <Button variant="outline" size="sm" className="h-7 text-xs px-3 min-w-[80px]" onClick={onClose}>
-                        Cancelar
-                      </Button>
-                      <Button 
-                        size="sm" 
-                        className="h-7 text-xs px-3 min-w-[80px] bg-[#2F0E5D] hover:bg-[#260b4a] text-white font-normal" 
-                        onClick={handleSave}
-                        disabled={!selectedServices.length}
+                    <Button
+                      variant="outline"
+                      className="justify-start font-light text-xs bg-[#E9ECEF] hover:bg-gray-200 border-0 shadow-none h-8 disabled:opacity-50 disabled:cursor-not-allowed"
+                      onClick={() => setShowCommentDialog(true)}
+                      disabled={!selectedServices.length || isAppointmentValidated}
+                    >
+                      <MessageSquare className="h-3.5 w-3.5 mr-1.5 text-gray-500" />
+                      Comentarios
+                    </Button>
+                    
+                    <Button
+                      variant="outline"
+                      className="justify-start font-light text-xs bg-[#E9ECEF] hover:bg-gray-200 border-0 shadow-none h-8 disabled:opacity-50 disabled:cursor-not-allowed"
+                      onClick={handleNoShow}
+                      disabled={!selectedServices.length || isAppointmentValidated}
+                    >
+                      <XCircle className="h-3.5 w-3.5 mr-1.5 text-orange-500" />
+                      No asistido
+                    </Button>
+                    
+                    {isEditing && (
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          "justify-start font-light text-xs border-0 shadow-sm h-8 disabled:opacity-50 disabled:cursor-not-allowed w-full mt-2",
+                          Object.values(servicesToValidate).some(status => status === 'VALIDATED') 
+                            ? "bg-[#28A745] hover:bg-[#218838] text-white" 
+                            : "bg-red-500 hover:bg-red-600 text-white"
+                        )}
+                        onClick={handleValidate}
+                        disabled={!Object.values(servicesToValidate).some(status => status !== null)}
                       >
-                        Guardar
+                        <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />
+                        Validar cita
                       </Button>
-                    </div>
+                    )}
                   </div>
                 </div>
-              </Tabs>
+              </div>
+
+              {/* Panel derecho con pestañas de servicios */}
+              <div className="flex-1 flex flex-col bg-white min-h-0 overflow-hidden">
+                <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col h-full">
+                  <TabsList className="w-full justify-start h-auto px-3 py-1.5 bg-transparent border-b rounded-none shrink-0">
+                    <TabsTrigger
+                      value="servicios"
+                      className="rounded-none px-3 py-1 text-xs font-normal border-b-2 border-transparent
+                                data-[state=active]:border-purple-600 
+                                data-[state=active]:text-purple-600 
+                                data-[state=active]:font-medium data-[state=active]:bg-transparent
+                                hover:bg-purple-600 hover:text-white transition-colors"
+                    >
+                      SERVICIOS
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="bonos"
+                      className="rounded-none px-3 py-1 text-xs font-normal border-b-2 border-transparent
+                                data-[state=active]:border-purple-600 
+                                data-[state=active]:text-purple-600 
+                                data-[state=active]:font-medium data-[state=active]:bg-transparent
+                                hover:bg-purple-600 hover:text-white transition-colors"
+                    >
+                      BONOS
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="paquetes"
+                      className="rounded-none px-3 py-1 text-xs font-normal border-b-2 border-transparent
+                                data-[state=active]:border-purple-600 
+                                data-[state=active]:text-purple-600 
+                                data-[state=active]:font-medium data-[state=active]:bg-transparent
+                                hover:bg-purple-600 hover:text-white transition-colors"
+                    >
+                      PAQUETES
+                    </TabsTrigger>
+                  </TabsList>
+                  
+                  {/* Contenedor con scroll para los servicios de la pestaña */}
+                  <div className="flex-1 overflow-hidden min-h-0">
+                    <div className="h-full overflow-y-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: '#9333ea #f3f4f6' }}>
+                      {['servicios', 'bonos', 'paquetes'].map((tab) => (
+                        <TabsContent key={tab} value={tab} className="m-0">
+                          {/* Siempre mostrar contenido con altura fija, nunca skeleton */}
+                          {servicesByCategory && Object.keys(servicesByCategory).length > 0 ? (
+                            Object.entries(servicesByCategory).map(([category, servicesInCategory]) => (
+                              <div key={category} className="border-b last:border-b-0">
+                                {/* Categoría con estilo más prominente */}
+                                <h3 className="text-xs font-bold text-gray-700 px-3 py-3 bg-gray-50 uppercase tracking-wider border-b border-gray-200 sticky top-0 z-10">
+                                  {category}
+                                </h3>
+                                {/* Servicios con mejor separación visual */}
+                                <div className="bg-white">
+                                  {(servicesInCategory as Service[]).map((service, index) => {
+                                    // Para bonos, verificar si está seleccionado por el ID especial
+                                    const isSelected = service.type === 'bono' 
+                                      ? selectedServices.some(s => s.id === `bono-${service.id}`)
+                                      : service.type === 'package' && service.items
+                                      ? service.items.some((item: any) => selectedServices.some(s => s.id === `${service.id}-${item.service.id}`))
+                                      : selectedServices.some(s => s.id === service.id)
+                                    
+                                    return (
+                                      <div
+                                        key={service.id}
+                                        className={cn(
+                                          "px-4 py-2.5 cursor-pointer transition-all group border-b border-gray-100 last:border-b-0",
+                                          isSelected 
+                                            ? "bg-purple-50 shadow-sm" 
+                                            : "hover:bg-purple-50 hover:shadow-sm"
+                                        )}
+                                        onClick={() => handleServiceClick(service)}
+                                      >
+                                        <div className="flex items-center justify-between">
+                                          <span className={cn(
+                                            "text-sm flex-1 mr-3 font-normal",
+                                            isSelected 
+                                              ? "text-purple-700 font-medium" 
+                                              : "text-gray-700 group-hover:text-purple-700"
+                                          )}>
+                                            {service.name}
+                                          </span>
+                                          <div className="flex items-center gap-3 shrink-0">
+                                            {isSelected && (
+                                              <CheckCircle2 className="h-4 w-4 text-purple-600" />
+                                            )}
+                                            {service.type !== 'package' && (
+                                              <span className={cn(
+                                                "text-xs",
+                                                isSelected 
+                                                  ? "text-purple-600" 
+                                                  : "text-gray-500 group-hover:text-purple-600"
+                                              )}>
+                                                <Clock className="h-3 w-3 inline mr-1" />
+                                                {service.duration}min
+                                              </span>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              </div>
+                            ))
+                          ) : (
+                            // Contenedor vacío con altura mínima para evitar saltos
+                            <div className="min-h-[200px] flex items-center justify-center text-gray-400 text-sm">
+                              {activeTab === 'servicios' && 'No hay servicios disponibles'}
+                              {activeTab === 'bonos' && 'No hay bonos disponibles'}
+                              {activeTab === 'paquetes' && 'No hay paquetes disponibles'}
+                            </div>
+                          )}
+                        </TabsContent>
+                      ))}
+                    </div>
+                  </div>
+                  
+                  {/* Buscador - siempre visible al fondo */}
+                  <div className="px-3 py-2 border-t shrink-0">
+                    <Input 
+                      placeholder="Buscar servicio..." 
+                      className="bg-gray-50 h-8 text-xs" 
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                    />
+                  </div>
+                  
+                  {/* Controles inferiores */}
+                  <div className="px-3 py-3 border-t bg-white shrink-0">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs text-gray-500">Módulos:</label>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={() => setModules(Math.max(1, modules - 1))}
+                          >
+                            <ChevronDown className="h-3 w-3" />
+                          </Button>
+                          <span className="text-xs font-medium w-8 text-center">{modules}</span>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={() => setModules(modules + 1)}
+                          >
+                            <ChevronUp className="h-3 w-3" />
+                          </Button>
+                        </div>
+                        <span className="text-xs text-gray-500">
+                          (Cualquiera)
+                        </span>
+                      </div>
+                      
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={onClose}
+                        >
+                          Cancelar
+                        </Button>
+                        <Button
+                          variant="default"
+                          size="sm"
+                          className="bg-purple-600 hover:bg-purple-700"
+                          onClick={handleSave}
+                          disabled={!selectedServices.length || isAppointmentValidated}
+                        >
+                          Guardar
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </Tabs>
+              </div>
             </div>
           </div>
-        </div>
-      </DialogContent>
-
+        </DialogContent>
+      </Dialog>
+      
       {/* Diálogo de comentarios */}
       <CommentDialog
         isOpen={showCommentDialog}
@@ -638,37 +1225,12 @@ export function AppointmentDialog({
         initialComment={appointmentComment}
       />
       
-      {/* Diálogo con detalles del cliente */}
-      {showClientDetails && initialClient && (
-        <Dialog open={showClientDetails} onOpenChange={setShowClientDetails}>
-          <DialogContent className="sm:max-w-[425px]">
-            <DialogHeader>
-              <DialogTitle>Detalles del Cliente</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label className="text-xs text-gray-500">Nombre completo</Label>
-                <p className="text-sm">{clientName}</p>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-xs text-gray-500">Teléfono</Label>
-                <p className="text-sm">{initialClient.phone}</p>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-xs text-gray-500">Email</Label>
-                <p className="text-sm">{initialClient.email || 'No especificado'}</p>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-xs text-gray-500">Dirección</Label>
-                <p className="text-sm">{initialClient.address || 'No especificada'}</p>
-              </div>
-            </div>
-            <DialogFooter>
-              <Button onClick={() => setShowClientDetails(false)}>Cerrar</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      )}
-    </Dialog>
+      {/* Panel lateral de detalles del cliente */}
+      <ClientQuickViewDialog
+        isOpen={showClientDetails}
+        onOpenChange={setShowClientDetails}
+        client={initialClient}
+      />
+    </React.Fragment>
   )
 }

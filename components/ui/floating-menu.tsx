@@ -544,10 +544,10 @@ export function FloatingMenu({ className }: FloatingMenuProps) {
                   <div className="p-2.5 border-b bg-gradient-to-r from-purple-50 to-white">
                     <div className="flex items-center space-x-2.5">
                       <div className="flex items-center justify-center w-8 h-8 text-sm font-medium text-purple-600 bg-purple-100 rounded-full border-2 border-white shadow-sm">
-                        {lastClient.name.charAt(0)}
+                        {lastClient.name ? lastClient.name.charAt(0) : "?"}
                       </div>
                       <div>
-                        <div className="font-semibold text-xs text-gray-800 leading-tight">{lastClient.name}</div>
+                        <div className="font-semibold text-xs text-gray-800 leading-tight">{lastClient.name || "Sin nombre"}</div>
                         {lastClient.clientNumber && (
                           <div className="text-[10px] text-gray-500 flex items-center">
                             <span className="inline-block w-1.5 h-1.5 bg-purple-500 rounded-full mr-1"></span>

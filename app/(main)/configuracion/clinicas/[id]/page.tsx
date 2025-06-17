@@ -338,6 +338,24 @@ function ClinicPaymentsTabContent({ clinicId }: ClinicPaymentsTabContentProps) {
 }
 // --- FIN COMPONENTE PESTAÑA MÉTODOS DE PAGO ---
 
+const DEFAULT_GRANULARITIES: { [key: number]: number } = {
+  15: 5,
+  20: 5,
+  30: 10,
+  45: 15,
+  60: 15
+};
+
+const getValidGranularities = (slot: number) => {
+  const divisors = [];
+  for (let i = 1; i <= slot; i++) {
+    if (slot % i === 0) {
+      divisors.push(i);
+    }
+  }
+  return divisors;
+};
+
 export default function ClinicaDetailPage() {
   const clinicContext = useClinic()
   const { 
@@ -418,8 +436,26 @@ export default function ClinicaDetailPage() {
   // <<< NUEVOS ESTADOS PARA DISPLAY (con iniciales neutros) >>>
   const [displayOpenTime, setDisplayOpenTime] = useState<string>("--:--"); // <<< CAMBIAR INICIAL
   const [displayCloseTime, setDisplayCloseTime] = useState<string>("--:--"); // <<< CAMBIAR INICIAL
-  const [displaySlotDuration, setDisplaySlotDuration] = useState<number | string>(""); // <<< CAMBIAR INICIAL (o null? probar "") >>>
-  
+  const [displaySlotDuration, setDisplaySlotDuration] = useState(30) // Valor inicial por defecto
+  const [displayCreateGranularity, setDisplayCreateGranularity] = useState<number>(10);
+
+  // Estado para las opciones de granularidad válidas
+  const [validGranularities, setValidGranularities] = useState<number[]>(getValidGranularities(displaySlotDuration));
+
+  // Efecto para actualizar la granularidad cuando cambia el slot
+  useEffect(() => {
+    if (typeof displaySlotDuration === 'number') {
+      const newValidGranularities = getValidGranularities(displaySlotDuration);
+      setValidGranularities(newValidGranularities);
+
+      // Si la granularidad actual no es válida para el nuevo slot, la reseteamos
+      if (!newValidGranularities.includes(displayCreateGranularity)) {
+        const newDefaultGranularity = DEFAULT_GRANULARITIES[displaySlotDuration] ?? newValidGranularities[0] ?? 5;
+        setDisplayCreateGranularity(newDefaultGranularity);
+      }
+    }
+  }, [displaySlotDuration]);
+
   // --- NUEVO ESTADO PARA HORARIO --- 
   const [useTemplateSchedule, setUseTemplateSchedule] = useState<boolean>(false);
   // Estado para gestionar el horario independiente cuando useTemplateSchedule es false
@@ -573,6 +609,21 @@ export default function ClinicaDetailPage() {
       setClinicData(clinicDataFromContext);
       // <<< MODIFICAR: Sincronizar formData aquí >>>
       setFormData(clinicDataFromContext); 
+      
+      // <<< AÑADIR: Forzar recalculo de horarios cuando cambia la clínica del contexto >>>
+      // Resetear estados de horario para forzar recalculo
+      setUseTemplateSchedule(!!clinicDataFromContext.linkedScheduleTemplateId);
+      setSelectedTemplateId(clinicDataFromContext.linkedScheduleTemplateId || null);
+      
+      // Si no usa plantilla, reconstruir el horario independiente
+      if (!clinicDataFromContext.linkedScheduleTemplateId && clinicDataFromContext.independentScheduleBlocks) {
+        const newIndependentSchedule = convertBlocksToWeekSchedule(
+          clinicDataFromContext.independentScheduleBlocks, 
+          "00:00", 
+          "23:59"
+        );
+        setIndependentSchedule(newIndependentSchedule);
+      }
     }
   }, [clinicDataFromContext, clinicId, isInitializing]); 
 
@@ -1511,56 +1562,43 @@ export default function ClinicaDetailPage() {
 
   useEffect(() => {
     if (clinicData) {
-      let initialSchedule: WeekSchedule | null = null;
-      
-      // 1. Intentar usar horario independiente si existe y es parseable
-      // <<< ELIMINAR BLOQUE try/catch para JSON.parse >>>
-      // if (clinicData.independentSchedule) { // Ya no usamos clinicData.independentSchedule directamente aquí
-      //     console.log("Attempting to use independentSchedule...");
-      //     try {
-      //         const parsed = JSON.parse(clinicData.independentSchedule as string); // <<< ERROR ESTABA AQUÍ
-      //         initialSchedule = parsed as WeekSchedule;
-      //         console.log("Successfully parsed independentSchedule.");
-      //     } catch (e) {
-      //         console.warn("Failed to parse clinicData.independentSchedule as JSON. Structure might be different or needs conversion.", e);
-              // Confiar en los bloques si el parseo falla o si independentSchedule no es la fuente directa
-              if (clinicData.independentScheduleBlocks && clinicData.independentScheduleBlocks.length > 0) {
-                 console.log("Attempting conversion from independentScheduleBlocks.");
-                 // <<< AÑADIR ARGUMENTOS FALTANTES >>>
-                 initialSchedule = convertBlocksToWeekSchedule(clinicData.independentScheduleBlocks, "00:00", "23:59");
-              }
-      //     }
-      // }
-      
-      // 2. Si no hay horario independiente válido, intentar usar la plantilla vinculada
-      if (!initialSchedule && clinicData.linkedScheduleTemplate) {
-          console.log("Independent schedule not found or invalid, trying linked template...");
-          if (clinicData.linkedScheduleTemplate.blocks && clinicData.linkedScheduleTemplate.blocks.length > 0) {
-              console.log("Using blocks from linkedScheduleTemplate.");
-              // <<< AÑADIR ARGUMENTOS FALTANTES >>>
-              initialSchedule = convertBlocksToWeekSchedule(clinicData.linkedScheduleTemplate.blocks, "00:00", "23:59");
-          } else {
-               console.warn("linkedScheduleTemplate exists but has no blocks or schedule info in expected format.");
-          }
+      const useTemplate = !!clinicData.linkedScheduleTemplateId;
+      setUseTemplateSchedule(useTemplate);
+
+      let schedule, openTime, closeTime, slotDuration, createGranularity;
+
+      if (useTemplate && clinicData.linkedScheduleTemplate) {
+        // Usar datos de la plantilla vinculada
+        const template = clinicData.linkedScheduleTemplate;
+        openTime = template.openTime;
+        closeTime = template.closeTime;
+        slotDuration = template.slotDuration;
+        createGranularity = template.createGranularity;
+        if (template.blocks) {
+          schedule = convertBlocksToWeekSchedule(template.blocks, openTime || '00:00', closeTime || '23:59');
+        }
+
+      } else if (clinicData.independentSchedule) {
+        // Usar datos del horario independiente
+        const indSchedule = clinicData.independentSchedule;
+        openTime = indSchedule.openTime;
+        closeTime = indSchedule.closeTime;
+        slotDuration = indSchedule.slotDuration;
+        createGranularity = indSchedule.createGranularity;
+        if (clinicData.independentScheduleBlocks) {
+          schedule = convertBlocksToWeekSchedule(clinicData.independentScheduleBlocks, openTime || '00:00', closeTime || '23:59');
+        }
       }
 
-      // 3. Si aún no hay horario, intentar construir desde bloques independientes (si no se hizo ya)
-      // <<< Comprobación ajustada, si initialSchedule aún es null Y hay bloques independientes >>>
-      if (!initialSchedule && clinicData.independentScheduleBlocks && clinicData.independentScheduleBlocks.length > 0) {
-           console.log("No valid schedule from independent or template, trying conversion from independentScheduleBlocks again.");
-           // <<< AÑADIR ARGUMENTOS FALTANTES >>>
-           initialSchedule = convertBlocksToWeekSchedule(clinicData.independentScheduleBlocks, "00:00", "23:59");
-      }
+      // Establecer los estados de display
+      setDisplayOpenTime(openTime || "09:00");
+      setDisplayCloseTime(closeTime || "17:00");
+      setDisplaySlotDuration(slotDuration || 30);
+      setDisplayCreateGranularity(createGranularity || 5);
+      setCurrentScheduleConfig(schedule || DEFAULT_SCHEDULE);
 
-      if (initialSchedule) {
-          console.log('Horario inicial establecido:', initialSchedule);
-          setCurrentScheduleConfig(initialSchedule);
-      } else {
-          console.log("No valid initial schedule found. Setting to null.");
-          setCurrentScheduleConfig(null); // Fallback a null si no se encontró/convirtió
-      }
     }
-}, [clinicData]); // Dependencia: clinicData
+  }, [clinicData]);
 
   const loadTarifaData = async () => {
     // ... existente ...
@@ -2228,29 +2266,49 @@ export default function ClinicaDetailPage() {
                               disabled={useTemplateSchedule}
                             />
                           </div>
-                          <div className="space-y-2">
-                            <Label>Duración Slot (min)</Label>
-                            <Input
-                              type="number"
-                              min="1"
-                              max="60"
-                              step="1"
-                              // --- Mostrar valor de plantilla si aplica, o el independiente (falta estado display?) --- 
-                              // TODO: Si se crea displaySlotDuration, usarlo aquí cuando !useTemplateSchedule
-                              // value={useTemplateSchedule ? (clinicData.linkedScheduleTemplate?.slotDuration || "-") : (clinicData?.independentSchedule?.slotDuration || "-")} // Temporalmente lee de independentSchedule (que no lo tiene)
-                              // <<< LEER DEL NUEVO ESTADO >>>
-                              value={displaySlotDuration} 
-                              // --- El onChange actual probablemente cause error --- 
-                              onChange={(e) => {
-                                if (!useTemplateSchedule) {
-                                    const value = Number.parseInt(e.target.value)
-                                    const newValue = !isNaN(value) && value >= 1 && value <= 60 ? value : null;
-                                    // Esta lógica es incorrecta
-                                    console.warn("onChange de Duración Slot necesita revisión.");                                
-                                }
-                              }}
-                              disabled={useTemplateSchedule}
-                            />
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <Label>Duración Slot (min)</Label>
+                              <Input
+                                type="number"
+                                min="1"
+                                max="60"
+                                step="1"
+                                value={displaySlotDuration}
+                                onChange={(e) => {
+                                  if (!useTemplateSchedule) {
+                                    const value = Number.parseInt(e.target.value);
+                                    const newValue = !isNaN(value) && value >= 1 && value <= 60 ? value : 30;
+                                    setDisplaySlotDuration(newValue);
+                                  }
+                                }}
+                                disabled={useTemplateSchedule}
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Precisión al crear citas (minutos)</Label>
+                              <Select
+                                value={String(displayCreateGranularity)}
+                                onValueChange={(value) => {
+                                  if (!useTemplateSchedule) {
+                                    setDisplayCreateGranularity(Number(value));
+                                  }
+                                }}
+                                disabled={useTemplateSchedule}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Seleccionar" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {validGranularities.map((g) => (
+                                    <SelectItem key={g} value={String(g)}>{g}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <p className="text-xs text-gray-500">
+                                Intervalos para crear citas. Debe ser divisor del slot.
+                              </p>
+                            </div>
                           </div>
                         </div>
                         {/* <<< FIN RESTAURAR >>> */}
@@ -2743,4 +2801,3 @@ export default function ClinicaDetailPage() {
     </div>
   )
 }
-

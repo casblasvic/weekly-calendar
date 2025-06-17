@@ -36,8 +36,8 @@ model System {
   stockLedgers                 StockLedger[]
   vatTypes                     VATType[]
   tariffs                      Tariff[]
-  tickets                      Ticket[]                   @relation("SystemTickets")
-  invoices                     Invoice[]                   @relation("SystemInvoices")
+  tickets                      Ticket[]                      @relation("SystemTickets")
+  invoices                     Invoice[]                     @relation("SystemInvoices")
   payments                     Payment[]
   cashSessions                 CashSession[]
   bonoDefinitions              BonoDefinition[]
@@ -80,6 +80,7 @@ model System {
   persons                      Person[]
   personFunctionalRoles        PersonFunctionalRole[]
   opportunities                Opportunity[]
+  tags                         Tag[]
 
   @@map("systems")
 }
@@ -128,6 +129,7 @@ model User {
   chartOfAccountTemplateVersions ChartOfAccountTemplateVersion[]
   journalEntries                 JournalEntry[]
   personLeadData                 PersonLeadData[]
+  validatedAppointmentServices   AppointmentService[]            @relation("ValidatedAppointmentServices")
 
   @@index([systemId])
   @@index([countryIsoCode])
@@ -271,8 +273,8 @@ model Clinic {
   ExpenseTypeAccountMapping    ExpenseTypeAccountMapping[]
   DiscountTypeAccountMapping   DiscountTypeAccountMapping[]
   promotionAccountMappings     PromotionAccountMapping[]
-  opportunities               Opportunity[]
-  personClientOrigin          PersonClientData[]           @relation("PersonClientOriginClinic")
+  opportunities                Opportunity[]
+  personClientOrigin           PersonClientData[]            @relation("PersonClientOriginClinic")
 
   @@unique([name, systemId], name: "Clinic_name_systemId_key")
   @@index([systemId])
@@ -359,58 +361,50 @@ model RolePermission {
 }
 
 model Company {
-  id               String          @id @default(cuid())
-  fiscalName       String
-  taxId            String          @unique
-  address          String?
-  city             String?
-  postalCode       String?
-  countryIsoCode   String?
-  phone            String?
-  email            String?         @unique
-  website          String?
-  notes            String?
-  systemId         String
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
-  country          CountryInfo?    @relation(fields: [countryIsoCode], references: [isoCode])
-  system           System          @relation(fields: [systemId], references: [id], onDelete: Cascade)
-  purchaseInvoices Invoice[]       @relation("PurchaseInvoices")
-  payerPayments    Payment[]       @relation("PayerCompanyPayments")
-  saleInvoices     Invoice[]       @relation("SaleInvoices")
-  tickets          Ticket[]
-  supplierExpenses Expense[]       @relation("SupplierExpenses")
-  personLeadData   PersonLeadData[]
+  id                String              @id @default(cuid())
+  fiscalName        String
+  taxId             String              @unique
+  address           String?
+  city              String?
+  postalCode        String?
+  countryIsoCode    String?
+  phone             String?
+  email             String?             @unique
+  website           String?
+  notes             String?
+  systemId          String
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  country           CountryInfo?        @relation(fields: [countryIsoCode], references: [isoCode])
+  system            System              @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  purchaseInvoices  Invoice[]           @relation("PurchaseInvoices")
+  payerPayments     Payment[]           @relation("PayerCompanyPayments")
+  saleInvoices      Invoice[]           @relation("SaleInvoices")
+  tickets           Ticket[]
+  supplierExpenses  Expense[]           @relation("SupplierExpenses")
+  personLeadData    PersonLeadData[]
   personContactData PersonContactData[]
-  personClientData PersonClientData[] @relation("PersonClientCompany")
+  personClientData  PersonClientData[]  @relation("PersonClientCompany")
 
   @@unique([taxId, systemId])
   @@index([systemId])
   @@index([countryIsoCode])
 }
 
-
-
-
-
-
-
-
-
 model EntityRelation {
-  id            String   @id @default(cuid())
-  entityAType   String   // 'client' | 'lead' | 'contact' | 'user' | 'company'
-  entityAId     String   // CUID de cualquier entidad
-  entityBType   String   // 'client' | 'lead' | 'contact' | 'user' | 'company'
-  entityBId     String   // CUID de cualquier entidad
-  relationType  String   // 'madre', 'padre', 'tutor', 'empresa', 'empleado', etc
-  direction     String?  // 'bidirectional' | 'a_to_b' | 'b_to_a'
-  notes         String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  systemId      String
-  system        System   @relation(fields: [systemId], references: [id], onDelete: Cascade)
-  
+  id           String   @id @default(cuid())
+  entityAType  String
+  entityAId    String
+  entityBType  String
+  entityBId    String
+  relationType String
+  direction    String?
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  systemId     String
+  system       System   @relation(fields: [systemId], references: [id], onDelete: Cascade)
+
   @@unique([entityAType, entityAId, entityBType, entityBId, relationType])
   @@index([entityAId])
   @@index([entityBId])
@@ -449,9 +443,9 @@ model TimeLog {
   notes           String?
   source          String?
   systemId        String
-  personId        String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+  personId        String?
   user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   system          System    @relation(fields: [systemId], references: [id], onDelete: Cascade)
   person          Person?   @relation(fields: [personId], references: [id])
@@ -653,31 +647,34 @@ model Device {
 }
 
 model Appointment {
-  id                          String            @id @default(cuid())
+  id                          String               @id @default(cuid())
   startTime                   DateTime
   endTime                     DateTime
   durationMinutes             Int
-  status                      AppointmentStatus @default(SCHEDULED)
+  status                      AppointmentStatus    @default(SCHEDULED)
   notes                       String?
   clientNotes                 String?
-  personId                    String
   professionalUserId          String
   systemId                    String
   clinicId                    String
+  roomId                      String?              // ID de la cabina donde se realiza la cita
   equipmentId                 String?
   deviceActivationTimestamp   DateTime?
   deviceDeactivationTimestamp DateTime?
   actualUsageMinutes          Int?
-  isUsageLocked               Boolean           @default(false)
+  isUsageLocked               Boolean              @default(false)
   originalAppointmentId       String?
-  createdAt                   DateTime          @default(now())
-  updatedAt                   DateTime          @updatedAt
-  person                      Person            @relation(fields: [personId], references: [id])
-  professionalUser            User              @relation("ProfessionalUserAppointments", fields: [professionalUserId], references: [id])
-  system                      System            @relation(fields: [systemId], references: [id], onDelete: Cascade)
-  clinic                      Clinic            @relation(fields: [clinicId], references: [id])
-  equipment                   Equipment?        @relation(fields: [equipmentId], references: [id], onDelete: SetNull)
+  createdAt                   DateTime             @default(now())
+  updatedAt                   DateTime             @updatedAt
+  personId                    String
+  person                      Person               @relation(fields: [personId], references: [id])
+  professionalUser            User                 @relation("ProfessionalUserAppointments", fields: [professionalUserId], references: [id])
+  system                      System               @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  clinic                      Clinic               @relation(fields: [clinicId], references: [id])
+  equipment                   Equipment?           @relation(fields: [equipmentId], references: [id], onDelete: SetNull)
   relatedTicket               Ticket?
+  services                    AppointmentService[]
+  tags                        AppointmentTag[]
 
   @@index([startTime])
   @@index([personId])
@@ -687,7 +684,65 @@ model Appointment {
   @@index([equipmentId])
   @@index([status])
   @@index([originalAppointmentId])
+  @@index([roomId])
   @@map("appointments")
+}
+
+model AppointmentService {
+  id                 String                   @id @default(cuid())
+  appointmentId      String
+  serviceId          String
+  quantity           Int                      @default(1)
+  status             AppointmentServiceStatus @default(SCHEDULED)
+  sortOrder          Int                      @default(0)
+  estimatedDuration  Int?
+  notes              String?
+  validatedAt        DateTime?
+  validatedByUserId  String?
+  cancellationReason String?
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+  appointment        Appointment              @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  service            Service                  @relation(fields: [serviceId], references: [id])
+  validatedByUser    User?                    @relation("ValidatedAppointmentServices", fields: [validatedByUserId], references: [id])
+
+  @@unique([appointmentId, serviceId])
+  @@index([appointmentId])
+  @@index([serviceId])
+  @@index([status])
+  @@index([validatedAt])
+  @@index([validatedByUserId])
+  @@map("appointment_services")
+}
+
+model Tag {
+  id          String   @id @default(cuid())
+  systemId    String
+  name        String
+  color       String
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+  
+  system       System           @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  appointments AppointmentTag[]
+
+  @@unique([systemId, name])
+  @@index([systemId])
+}
+
+model AppointmentTag {
+  appointmentId String
+  tagId         String
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+  
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  tag         Tag         @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([appointmentId, tagId])
+  @@index([appointmentId])
+  @@index([tagId])
 }
 
 model ScheduleTemplate {
@@ -700,6 +755,7 @@ model ScheduleTemplate {
   closeTime                  String?
   openTime                   String?
   slotDuration               Int?
+  createGranularity          Int?                       @default(5)
   system                     System                     @relation(fields: [systemId], references: [id], onDelete: Cascade)
   blocks                     ScheduleTemplateBlock[]
   linkedClinics              Clinic[]                   @relation("LinkedClinicTemplate")
@@ -731,6 +787,7 @@ model ClinicSchedule {
   openTime     String?
   closeTime    String?
   slotDuration Int?
+  createGranularity Int?     @default(5)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   clinic       Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
@@ -780,6 +837,7 @@ model Service {
   targetedPromotions     Promotion[]             @relation("TargetService")
   bogoGiftPromotions     Promotion[]             @relation("BogoService")
   serviceAccountMappings ServiceAccountMapping[]
+  appointmentServices    AppointmentService[]
 
   @@unique([name, systemId])
   @@index([systemId])
@@ -992,7 +1050,6 @@ model Ticket {
   taxAmount          Float
   finalAmount        Float
   notes              String?
-  personId           String?
   companyId          String?
   cashierUserId      String
   clinicId           String
@@ -1017,6 +1074,7 @@ model Ticket {
   paidAmount         Float           @default(0)
   pendingAmount      Float           @default(0)
   documentSeriesId   String?
+  personId           String?
   person             Person?         @relation(fields: [personId], references: [id])
   company            Company?        @relation(fields: [companyId], references: [id])
   cashierUser        User            @relation("CashierUserTickets", fields: [cashierUserId], references: [id])
@@ -1113,7 +1171,6 @@ model Invoice {
   type               InvoiceType
   issueDate          DateTime       @default(now())
   dueDate            DateTime?
-  personId           String?
   companyId          String?
   supplierCompanyId  String?
   emitterFiscalName  String?
@@ -1134,6 +1191,7 @@ model Invoice {
   createdAt          DateTime       @default(now())
   updatedAt          DateTime       @updatedAt
   status             String?
+  personId           String?
   person             Person?        @relation(fields: [personId], references: [id])
   company            Company?       @relation("SaleInvoices", fields: [companyId], references: [id], onDelete: Restrict)
   supplierCompany    Company?       @relation("PurchaseInvoices", fields: [supplierCompanyId], references: [id], onDelete: Restrict)
@@ -1203,11 +1261,11 @@ model Payment {
   bankAccountId             String?
   cashSessionId             String?
   bonoInstanceId            String?
-  payerPersonId             String?
   payerCompanyId            String?
   debtLedgerId              String?
   createdAt                 DateTime                 @default(now())
   updatedAt                 DateTime                 @updatedAt
+  payerPersonId             String?
   debtLedger                DebtLedger?              @relation("DebtPayments", fields: [debtLedgerId], references: [id], onDelete: SetNull)
   system                    System                   @relation(fields: [systemId], references: [id], onDelete: Cascade)
   clinic                    Clinic?                  @relation(fields: [clinicId], references: [id])
@@ -1338,7 +1396,6 @@ model BonoDefinitionSetting {
 model BonoInstance {
   id                   String         @id @default(cuid())
   bonoDefinitionId     String
-  personId             String?
   purchaseDate         DateTime       @default(now())
   expiryDate           DateTime?
   purchaseTicketItemId String?        @unique
@@ -1346,6 +1403,7 @@ model BonoInstance {
   createdAt            DateTime       @default(now())
   updatedAt            DateTime       @updatedAt
   remainingQuantity    Int
+  personId             String?
   bonoDefinition       BonoDefinition @relation(fields: [bonoDefinitionId], references: [id])
   person               Person?        @relation(fields: [personId], references: [id])
   system               System         @relation(fields: [systemId], references: [id], onDelete: Cascade)
@@ -1412,13 +1470,13 @@ model PackageItem {
 model PackageInstance {
   id                   String            @id @default(cuid())
   packageDefinitionId  String
-  personId             String?
   purchaseDate         DateTime          @default(now())
   purchaseTicketItemId String?           @unique
   remainingItems       Json
   systemId             String
   createdAt            DateTime          @default(now())
   updatedAt            DateTime          @updatedAt
+  personId             String?
   packageDefinition    PackageDefinition @relation(fields: [packageDefinitionId], references: [id])
   person               Person?           @relation(fields: [personId], references: [id])
   system               System            @relation(fields: [systemId], references: [id], onDelete: Cascade)
@@ -1495,7 +1553,6 @@ model Promotion {
 
 model LoyaltyLedger {
   id           String              @id @default(cuid())
-  personId     String
   movementType LoyaltyMovementType
   points       Int
   movementDate DateTime            @default(now())
@@ -1504,6 +1561,7 @@ model LoyaltyLedger {
   userId       String?
   systemId     String
   createdAt    DateTime            @default(now())
+  personId     String
   person       Person              @relation(fields: [personId], references: [id])
   user         User?               @relation("UserLogs", fields: [userId], references: [id], onDelete: SetNull)
   system       System              @relation(fields: [systemId], references: [id], onDelete: Cascade)
@@ -1593,12 +1651,12 @@ model UserClinicAssignment {
   clinicId             String
   roleId               String
   assignedAt           DateTime                      @default(now())
+  userClinicScheduleId String?
   user                 User                          @relation(fields: [userId], references: [id], onDelete: Cascade)
   clinic               Clinic                        @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   role                 Role                          @relation(fields: [roleId], references: [id], onDelete: Cascade)
   customSchedule       UserClinicSchedule?           @relation(fields: [userClinicScheduleId], references: [id])
   customExceptions     UserClinicScheduleException[]
-  userClinicScheduleId String?
 
   @@id([userId, clinicId])
   @@index([clinicId])
@@ -1607,14 +1665,14 @@ model UserClinicAssignment {
 }
 
 model UserClinicSchedule {
-  id           String   @id @default(cuid())
-  userId       String
-  clinicId     String
-  scheduleJson Json
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  clinic       Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  scheduleJson         Json
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  clinicId             String
+  id                   String                 @id @default(cuid())
+  userId               String
+  user                 User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clinic               Clinic                 @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   UserClinicAssignment UserClinicAssignment[]
 
   @@unique([userId, clinicId])
@@ -1821,7 +1879,6 @@ model DebtLedger {
   id                     String           @id @default(cuid())
   ticketId               String
   invoiceId              String?
-  personId               String
   clinicId               String
   originalAmount         Float
   paidAmount             Float            @default(0)
@@ -1834,6 +1891,7 @@ model DebtLedger {
   updatedAt              DateTime         @updatedAt
   cashSessionId          String?
   legalEntityId          String?
+  personId               String
   ticket                 Ticket           @relation("TicketDebts", fields: [ticketId], references: [id], onDelete: Restrict)
   invoice                Invoice?         @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
   person                 Person           @relation(fields: [personId], references: [id])
@@ -2032,7 +2090,7 @@ model JournalEntryLine {
   vatRate        Decimal?            @db.Decimal(5, 2)
   costCenterId   String?
   projectId      String?
-  order         Int                 @default(0)
+  order          Int                 @default(0)
   journalEntry   JournalEntry        @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
   account        ChartOfAccountEntry @relation(fields: [accountId], references: [id])
 
@@ -2046,12 +2104,12 @@ model ServiceAccountMapping {
   serviceId            String
   accountId            String
   legalEntityId        String
-  clinicId             String? // Opcional para permitir mapeos globales
   systemId             String
   subaccountPattern    String?
   analyticalDimensions Json?
   createdAt            DateTime            @default(now())
   updatedAt            DateTime            @updatedAt
+  clinicId             String?
   service              Service             @relation(fields: [serviceId], references: [id])
   account              ChartOfAccountEntry @relation(fields: [accountId], references: [id])
   legalEntity          LegalEntity         @relation(fields: [legalEntityId], references: [id], onDelete: Cascade)
@@ -2068,13 +2126,13 @@ model ProductAccountMapping {
   productId            String
   accountId            String
   legalEntityId        String
-  clinicId             String? // Opcional para permitir mapeos globales
-  accountType          String? // 'sales' o 'consumption' para productos duales
   systemId             String
   subaccountPattern    String?
   analyticalDimensions Json?
   createdAt            DateTime            @default(now())
   updatedAt            DateTime            @updatedAt
+  clinicId             String?
+  accountType          String?
   product              Product             @relation(fields: [productId], references: [id])
   account              ChartOfAccountEntry @relation(fields: [accountId], references: [id])
   legalEntity          LegalEntity         @relation(fields: [legalEntityId], references: [id], onDelete: Cascade)
@@ -2114,12 +2172,12 @@ model PaymentMethodAccountMapping {
   paymentMethodDefinitionId String
   accountId                 String
   legalEntityId             String
-  clinicId                  String? // Opcional para permitir mapeos globales
   systemId                  String
   createdAt                 DateTime                @default(now())
   updatedAt                 DateTime                @updatedAt
   subaccountPattern         String?
   analyticalDimensions      Json?
+  clinicId                  String?
   paymentMethodDefinition   PaymentMethodDefinition @relation(fields: [paymentMethodDefinitionId], references: [id])
   account                   ChartOfAccountEntry     @relation(fields: [accountId], references: [id])
   legalEntity               LegalEntity             @relation(fields: [legalEntityId], references: [id], onDelete: Cascade)
@@ -2134,24 +2192,23 @@ model PaymentMethodAccountMapping {
 }
 
 model VATTypeAccountMapping {
-  id              String   @id @default(cuid())
-  vatTypeId       String
-  clinicId        String? // null = mapeo global
-  legalEntityId   String
-  inputAccountId  String? // Cuenta IVA soportado
-  outputAccountId String? // Cuenta IVA repercutido
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
+  id                    String               @id @default(cuid())
+  vatTypeId             String
+  inputAccountId        String?
+  outputAccountId       String?
+  legalEntityId         String
+  systemId              String?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  chartOfAccountEntryId String?
+  clinicId              String?
   vatType               VATType              @relation(fields: [vatTypeId], references: [id])
   clinic                Clinic?              @relation(fields: [clinicId], references: [id])
   legalEntity           LegalEntity          @relation(fields: [legalEntityId], references: [id])
   inputAccount          ChartOfAccountEntry? @relation("VATInputAccount", fields: [inputAccountId], references: [id])
   outputAccount         ChartOfAccountEntry? @relation("VATOutputAccount", fields: [outputAccountId], references: [id])
   System                System?              @relation(fields: [systemId], references: [id])
-  systemId              String?
   ChartOfAccountEntry   ChartOfAccountEntry? @relation(fields: [chartOfAccountEntryId], references: [id])
-  chartOfAccountEntryId String?
 
   @@unique([vatTypeId, clinicId, legalEntityId])
   @@index([clinicId])
@@ -2165,11 +2222,11 @@ model ExpenseTypeAccountMapping {
   accountId            String
   legalEntityId        String
   systemId             String
-  clinicId             String? // ID de la clínica (opcional)
   createdAt            DateTime            @default(now())
   updatedAt            DateTime            @updatedAt
   subaccountPattern    String?
   analyticalDimensions Json?
+  clinicId             String?
   expenseType          ExpenseType         @relation(fields: [expenseTypeId], references: [id], onDelete: Cascade)
   account              ChartOfAccountEntry @relation(fields: [accountId], references: [id], onDelete: Cascade)
   legalEntity          LegalEntity         @relation(fields: [legalEntityId], references: [id], onDelete: Cascade)
@@ -2212,17 +2269,17 @@ model CashSessionAccountMapping {
 
 model DiscountTypeAccountMapping {
   id                   String              @id @default(cuid())
-  discountTypeId       String? // ID del tipo de descuento (si aplica)
   discountTypeCode     String
   discountTypeName     String
   accountId            String
   legalEntityId        String
   systemId             String
-  clinicId             String? // ID de la clínica (opcional)
   createdAt            DateTime            @default(now())
   updatedAt            DateTime            @updatedAt
   subaccountPattern    String?
   analyticalDimensions Json?
+  clinicId             String?
+  discountTypeId       String?
   account              ChartOfAccountEntry @relation(fields: [accountId], references: [id])
   legalEntity          LegalEntity         @relation(fields: [legalEntityId], references: [id], onDelete: Cascade)
   system               System              @relation(fields: [systemId], references: [id], onDelete: Cascade)
@@ -2433,27 +2490,26 @@ model Expense {
 }
 
 model PromotionAccountMapping {
-  id                String              @id @default(cuid())
-  promotionId       String              @map("promotion_id")
-  accountId         String              @map("account_id")
-  legalEntityId     String              @map("legal_entity_id")
-  clinicId          String              @map("clinic_id")
-  systemId          String              @map("system_id")
-  targetRevenue     Decimal?            @map("target_revenue") @db.Decimal(10, 2)
-  targetNewClients  Int?                @map("target_new_clients")
-  budgetedDiscount  Decimal?            @map("budgeted_discount") @db.Decimal(10, 2)
-  actualRevenue     Decimal?            @map("actual_revenue") @db.Decimal(10, 2)
-  actualNewClients  Int?                @map("actual_new_clients") @default(0)
-  actualDiscount    Decimal?            @map("actual_discount") @db.Decimal(10, 2)
-  createdAt         DateTime            @default(now()) @map("created_at")
-  updatedAt         DateTime            @updatedAt @map("updated_at")
-  
-  promotion         Promotion           @relation(fields: [promotionId], references: [id], onDelete: Cascade)
-  account           ChartOfAccountEntry @relation(fields: [accountId], references: [id])
-  legalEntity       LegalEntity         @relation(fields: [legalEntityId], references: [id], onDelete: Cascade)
-  clinic            Clinic              @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  system            System              @relation(fields: [systemId], references: [id], onDelete: Cascade)
-  
+  id               String              @id @default(cuid())
+  promotionId      String              @map("promotion_id")
+  accountId        String              @map("account_id")
+  legalEntityId    String              @map("legal_entity_id")
+  clinicId         String              @map("clinic_id")
+  systemId         String              @map("system_id")
+  targetRevenue    Decimal?            @map("target_revenue") @db.Decimal(10, 2)
+  targetNewClients Int?                @map("target_new_clients")
+  budgetedDiscount Decimal?            @map("budgeted_discount") @db.Decimal(10, 2)
+  actualRevenue    Decimal?            @map("actual_revenue") @db.Decimal(10, 2)
+  actualNewClients Int?                @default(0) @map("actual_new_clients")
+  actualDiscount   Decimal?            @map("actual_discount") @db.Decimal(10, 2)
+  createdAt        DateTime            @default(now()) @map("created_at")
+  updatedAt        DateTime            @updatedAt @map("updated_at")
+  promotion        Promotion           @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+  account          ChartOfAccountEntry @relation(fields: [accountId], references: [id])
+  legalEntity      LegalEntity         @relation(fields: [legalEntityId], references: [id], onDelete: Cascade)
+  clinic           Clinic              @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  system           System              @relation(fields: [systemId], references: [id], onDelete: Cascade)
+
   @@unique([promotionId, clinicId], map: "uq_promotion_clinic")
   @@index([promotionId], map: "idx_promotion_account_mapping_promotion_id")
   @@index([accountId], map: "idx_promotion_account_mapping_account_id")
@@ -2461,6 +2517,171 @@ model PromotionAccountMapping {
   @@index([clinicId], map: "idx_promotion_account_mapping_clinic_id")
   @@index([systemId], map: "idx_promotion_account_mapping_system_id")
   @@map("promotion_account_mappings")
+}
+
+model Person {
+  id               String                 @id @default(cuid())
+  firstName        String
+  lastName         String
+  email            String?
+  phone            String?
+  birthDate        DateTime?
+  gender           String?
+  address          String?
+  city             String?
+  postalCode       String?
+  countryIsoCode   String?
+  nationalId       String?
+  notes            String?
+  systemId         String
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  nationalIdType   String?
+  passportCountry  String?
+  passportNumber   String?
+  stateProvince    String?
+  taxId            String?
+  system           System                 @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  functionalRoles  PersonFunctionalRole[]
+  appointments     Appointment[]
+  tickets          Ticket[]
+  invoices         Invoice[]
+  timeLogs         TimeLog[]
+  bonoInstances    BonoInstance[]
+  packageInstances PackageInstance[]
+  loyaltyLedgers   LoyaltyLedger[]
+  debtLedgers      DebtLedger[]
+  payerPayments    Payment[]              @relation("PayerPersonPayments")
+
+  @@index([systemId])
+  @@index([email])
+  @@index([phone])
+  @@map("persons")
+}
+
+model PersonFunctionalRole {
+  id          String             @id @default(cuid())
+  personId    String
+  isActive    Boolean            @default(true)
+  startDate   DateTime           @default(now())
+  endDate     DateTime?
+  systemId    String
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  roleType    String
+  person      Person             @relation(fields: [personId], references: [id], onDelete: Cascade)
+  system      System             @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  leadData    PersonLeadData?
+  contactData PersonContactData?
+  clientData  PersonClientData?
+
+  @@unique([personId, roleType])
+  @@index([personId])
+  @@index([systemId])
+  @@map("person_functional_roles")
+}
+
+model PersonLeadData {
+  id               String               @id @default(cuid())
+  functionalRoleId String               @unique
+  source           String?
+  assignedToUserId String?
+  companyId        String?
+  companyName      String?
+  conversionDate   DateTime?
+  conversionToRole String?
+  estimatedValue   Float?
+  interests        String?
+  lastContactDate  DateTime?
+  nextFollowUpDate DateTime?
+  priority         String?
+  status           String               @default("NEW")
+  functionalRole   PersonFunctionalRole @relation(fields: [functionalRoleId], references: [id], onDelete: Cascade)
+  assignedToUser   User?                @relation(fields: [assignedToUserId], references: [id], onDelete: SetNull)
+  company          Company?             @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  opportunities    Opportunity[]
+
+  @@index([functionalRoleId])
+  @@index([assignedToUserId])
+  @@index([companyId])
+  @@map("person_lead_data")
+}
+
+model PersonContactData {
+  id                     String               @id @default(cuid())
+  functionalRoleId       String               @unique
+  position               String?
+  companyId              String
+  isPrimary              Boolean              @default(false)
+  department             String?
+  preferredContactMethod String?
+  functionalRole         PersonFunctionalRole @relation(fields: [functionalRoleId], references: [id], onDelete: Cascade)
+  company                Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([functionalRoleId])
+  @@index([companyId])
+  @@map("person_contact_data")
+}
+
+model Opportunity {
+  id                 String         @id @default(cuid())
+  description        String?
+  probability        Float?
+  actualCloseDate    DateTime?
+  systemId           String
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  clinicId           String
+  estimatedCloseDate DateTime?
+  estimatedValue     Float?
+  leadDataId         String
+  name               String
+  notes              String?
+  wonLostReason      String?
+  stage              String         @default("PROSPECTING")
+  leadData           PersonLeadData @relation(fields: [leadDataId], references: [id], onDelete: Restrict)
+  clinic             Clinic         @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  system             System         @relation(fields: [systemId], references: [id], onDelete: Cascade)
+
+  @@index([leadDataId])
+  @@index([clinicId])
+  @@index([systemId])
+  @@map("opportunities")
+}
+
+model PersonClientData {
+  id                           String               @id @default(cuid())
+  functionalRoleId             String               @unique
+  address                      String?
+  city                         String?
+  postalCode                   String?
+  countryIsoCode               String?
+  phoneCountryIsoCode          String?
+  secondaryPhone               String?
+  secondaryPhoneCountryIsoCode String?
+  fiscalName                   String?
+  marketingConsent             Boolean              @default(false)
+  dataProcessingConsent        Boolean              @default(false)
+  isActive                     Boolean              @default(true)
+  companyId                    String?
+  originClinicId               String?
+  createdAt                    DateTime             @default(now())
+  updatedAt                    DateTime             @updatedAt
+  functionalRole               PersonFunctionalRole @relation(fields: [functionalRoleId], references: [id], onDelete: Cascade)
+  company                      Company?             @relation("PersonClientCompany", fields: [companyId], references: [id])
+  originClinic                 Clinic?              @relation("PersonClientOriginClinic", fields: [originClinicId], references: [id], onDelete: SetNull)
+
+  @@index([functionalRoleId])
+  @@index([companyId])
+  @@index([originClinicId])
+  @@map("person_client_data")
+}
+
+enum AppointmentServiceStatus {
+  SCHEDULED
+  VALIDATED
+  CANCELLED
+  NO_SHOW
 }
 
 enum BaseDocumentType {
@@ -2658,7 +2879,6 @@ enum EntityType {
   SYSTEM
   USER
   CLIENT
-  PERSON
   COMPANY
   CONTACT_PERSON
   LEAD
@@ -2682,6 +2902,7 @@ enum EntityType {
   DEBT_ADJUSTMENT
   FISCAL_YEAR
   EXPENSE
+  PERSON
   TARIFA
 }
 
@@ -2703,184 +2924,4 @@ enum ExpenseStatus {
   APPROVED
   PAID
   CANCELLED
-}
-
-// ==========================================
-// NUEVOS MODELOS - FASE 1 MIGRACIÓN PERSON
-// ==========================================
-
-model Person {
-  id                      String                   @id @default(cuid())
-  firstName               String
-  lastName                String
-  email                   String?
-  phone                   String?
-  birthDate               DateTime?
-  gender                  String?
-  address                 String?
-  city                    String?
-  postalCode              String?
-  stateProvince           String?
-  countryIsoCode          String?
-  nationalId              String?
-  nationalIdType          String?
-  passportNumber          String?
-  passportCountry         String?
-  taxId                   String?
-  notes                   String?
-  createdAt               DateTime                 @default(now())
-  updatedAt               DateTime                 @updatedAt
-  systemId                String
-
-  // Relaciones
-  system                  System                   @relation(fields: [systemId], references: [id], onDelete: Cascade)
-  functionalRoles         PersonFunctionalRole[]
-  appointments            Appointment[]
-  tickets                 Ticket[]
-  invoices                Invoice[]
-  timeLogs                TimeLog[]
-  bonoInstances           BonoInstance[]
-  packageInstances        PackageInstance[]
-  loyaltyLedgers          LoyaltyLedger[]
-  debtLedgers             DebtLedger[]
-  payerPayments           Payment[]                @relation("PayerPersonPayments")
-
-  @@index([systemId])
-  @@index([email])
-  @@index([phone])
-  @@map("persons")
-}
-
-model PersonFunctionalRole {
-  id              String                @id @default(cuid())
-  personId        String
-  roleType        String                // 'CLIENT', 'LEAD', 'CONTACT', 'EMPLOYEE'
-  isActive        Boolean               @default(true)
-  startDate       DateTime              @default(now())
-  endDate         DateTime?
-  createdAt       DateTime              @default(now())
-  updatedAt       DateTime              @updatedAt
-  systemId        String
-
-  // Relaciones
-  person          Person                @relation(fields: [personId], references: [id], onDelete: Cascade)
-  system          System                @relation(fields: [systemId], references: [id], onDelete: Cascade)
-  leadData        PersonLeadData?
-  contactData     PersonContactData?
-  clientData      PersonClientData?
-
-  @@unique([personId, roleType])
-  @@index([personId])
-  @@index([systemId])
-  @@map("person_functional_roles")
-}
-
-model PersonLeadData {
-  id                      String                @id @default(cuid())
-  functionalRoleId        String                @unique
-  status                  String                @default("NEW")
-  source                  String?
-  companyName             String?
-  assignedToUserId        String?
-  companyId               String?
-  conversionDate          DateTime?
-  conversionToRole        String?
-  lastContactDate         DateTime?
-  nextFollowUpDate        DateTime?
-  priority                String?
-  estimatedValue          Float?
-  interests               String?
-  
-  // Relaciones
-  functionalRole          PersonFunctionalRole  @relation(fields: [functionalRoleId], references: [id], onDelete: Cascade)
-  assignedToUser          User?                 @relation(fields: [assignedToUserId], references: [id], onDelete: SetNull)
-  company                 Company?              @relation(fields: [companyId], references: [id], onDelete: SetNull)
-  opportunities           Opportunity[]
-
-  @@index([functionalRoleId])
-  @@index([assignedToUserId])
-  @@index([companyId])
-  @@map("person_lead_data")
-}
-
-model PersonContactData {
-  id                      String                @id @default(cuid())
-  functionalRoleId        String                @unique
-  position                String?
-  department              String?
-  companyId               String
-  isPrimary               Boolean               @default(false)
-  preferredContactMethod  String?
-  
-  // Relaciones
-  functionalRole          PersonFunctionalRole  @relation(fields: [functionalRoleId], references: [id], onDelete: Cascade)
-  company                 Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
-
-  @@index([functionalRoleId])
-  @@index([companyId])
-  @@map("person_contact_data")
-}
-
-model Opportunity {
-  id                      String                @id @default(cuid())
-  name                    String
-  description             String?
-  leadDataId              String
-  stage                   String                @default("PROSPECTING")
-  probability             Float?
-  estimatedValue          Float?
-  estimatedCloseDate      DateTime?
-  actualCloseDate         DateTime?
-  wonLostReason           String?
-  notes                   String?
-  clinicId                String
-  createdAt               DateTime              @default(now())
-  updatedAt               DateTime              @updatedAt
-  systemId                String
-
-  // Relaciones
-  leadData                PersonLeadData        @relation(fields: [leadDataId], references: [id], onDelete: Restrict)
-  clinic                  Clinic                @relation(fields: [clinicId], references: [id], onDelete: Restrict)
-  system                  System                @relation(fields: [systemId], references: [id], onDelete: Cascade)
-
-  @@index([leadDataId])
-  @@index([clinicId])
-  @@index([systemId])
-  @@map("opportunities")
-}
-
-model PersonClientData {
-  id                           String               @id @default(cuid())
-  functionalRoleId             String               @unique
-  
-  // Campos específicos de cliente (migrados de Client)
-  address                      String?
-  city                         String?
-  postalCode                   String?
-  countryIsoCode               String?
-  phoneCountryIsoCode          String?
-  secondaryPhone               String?
-  secondaryPhoneCountryIsoCode String?
-  fiscalName                   String?
-  marketingConsent             Boolean              @default(false)
-  dataProcessingConsent        Boolean              @default(false)
-  isActive                     Boolean              @default(true)
-  
-  // Referencias opcionales
-  companyId                    String?
-  originClinicId               String?
-  
-  // Metadatos
-  createdAt                    DateTime             @default(now())
-  updatedAt                    DateTime             @updatedAt
-  
-  // Relaciones
-  functionalRole               PersonFunctionalRole @relation(fields: [functionalRoleId], references: [id], onDelete: Cascade)
-  company                      Company?             @relation("PersonClientCompany", fields: [companyId], references: [id])
-  originClinic                 Clinic?              @relation("PersonClientOriginClinic", fields: [originClinicId], references: [id], onDelete: SetNull)
-  
-  @@index([functionalRoleId])
-  @@index([companyId])
-  @@index([originClinicId])
-  @@map("person_client_data")
 }

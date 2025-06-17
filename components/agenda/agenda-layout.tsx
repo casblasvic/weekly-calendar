@@ -1,15 +1,41 @@
 import { useClinic } from "@/contexts/clinic-context";
 import { WeekSchedule } from "@/types/schedule";
-import { format } from "date-fns";
+import { format, startOfWeek, endOfWeek } from "date-fns";
 import { es } from "date-fns/locale";
 import { AgendaNavBar } from "@/components/agenda-nav-bar";
 
 // Componente simple para mostrar la fecha
-const DateDisplay = ({ date }: { date: Date }) => (
-  <p className="text-gray-500">
-    {format(date, "EEEE, d 'de' MMMM 'de' yyyy", { locale: es })}
-  </p>
-);
+const DateDisplay = ({ date, view }: { date: Date; view: 'day' | 'week' }) => {
+  if (view === 'week') {
+    // Para vista semanal, mostrar el rango de fechas de la semana
+    const weekStart = startOfWeek(date, { weekStartsOn: 1 }); // Lunes como inicio
+    const weekEnd = endOfWeek(date, { weekStartsOn: 1 }); // Domingo como fin
+    
+    // Si están en el mismo mes
+    if (weekStart.getMonth() === weekEnd.getMonth()) {
+      return (
+        <p className="text-gray-500">
+          {format(weekStart, "d", { locale: es })} - {format(weekEnd, "d 'de' MMMM 'de' yyyy", { locale: es })}
+        </p>
+      );
+    }
+    // Si están en meses diferentes
+    else {
+      return (
+        <p className="text-gray-500">
+          {format(weekStart, "d 'de' MMM", { locale: es })} - {format(weekEnd, "d 'de' MMM 'de' yyyy", { locale: es })}
+        </p>
+      );
+    }
+  }
+  
+  // Para vista diaria, mostrar la fecha completa
+  return (
+    <p className="text-gray-500">
+      {format(date, "EEEE, d 'de' MMMM 'de' yyyy", { locale: es })}
+    </p>
+  );
+};
 
 export function AgendaLayout({
   title,
@@ -73,7 +99,7 @@ export function AgendaLayout({
       <header className="px-4 py-3 relative bg-white border-b">
         <div className="px-4 py-3">
           <h1 className="text-2xl font-medium mb-4">{title}</h1>
-          <DateDisplay date={date} />
+          <DateDisplay date={date} view={view} />
         </div>
         
         <AgendaNavBar

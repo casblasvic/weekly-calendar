@@ -74,9 +74,17 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   }, []);
 
   const fetchAndUpdateDetailedClinic = useCallback(async (clinicId: string) => {
-    if (status !== 'authenticated') return;
-    if (!clinicId) return;
-    console.log(`[ClinicContext] fetchAndUpdateDetailedClinic - Fetching details for clinic: ${clinicId}`);
+    if (status !== 'authenticated') {
+      console.log(`[ClinicContext] fetchAndUpdateDetailedClinic - Not authenticated, returning for ${clinicId}`);
+      return;
+    }
+    if (!clinicId) {
+      console.log(`[ClinicContext] fetchAndUpdateDetailedClinic - No clinicId provided, returning.`);
+      return;
+    }
+    // Asegurarse de que el ID es una cadena
+    const idToFetch = String(clinicId);
+    console.log(`[ClinicContext] fetchAndUpdateDetailedClinic - START - Fetching details for clinic: ${idToFetch}`);
     setIsLoadingDetails(true);
     try {
       setError(null);
@@ -85,18 +93,35 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         throw new Error(`Error ${response.status} fetching detailed clinic ${clinicId}`);
       }
       const detailedClinicData: ClinicaApiOutput = await response.json();
-      console.log(`[ClinicContext] fetchAndUpdateDetailedClinic - Received detailed data for ${clinicId}. Updating active clinic state.`);
-      internalSetActiveClinic(detailedClinicData); 
+      console.log(`[ClinicContext] fetchAndUpdateDetailedClinic - Received detailed data for ${idToFetch}. Updating active clinic state.`);
+      // Logs de depuración para las fuentes de horario
+      console.log(`[ClinicContext] Debug schedule sources for clinic ${clinicId}:`);
+      console.log(`  - independentSchedule:`, detailedClinicData.independentSchedule ? 'Exists' : 'null/undefined', detailedClinicData.independentSchedule);
+      console.log(`  - linkedScheduleTemplate:`, detailedClinicData.linkedScheduleTemplate ? 'Exists' : 'null/undefined', detailedClinicData.linkedScheduleTemplate);
+      if (detailedClinicData.linkedScheduleTemplate) {
+        console.log(`    - linkedScheduleTemplate.blocks:`, detailedClinicData.linkedScheduleTemplate.blocks && detailedClinicData.linkedScheduleTemplate.blocks.length > 0 ? `Exists (${detailedClinicData.linkedScheduleTemplate.blocks.length} blocks)` : 'null/undefined/empty', detailedClinicData.linkedScheduleTemplate.blocks);
+      }
+      console.log(`  - independentScheduleBlocks:`, detailedClinicData.independentScheduleBlocks && detailedClinicData.independentScheduleBlocks.length > 0 ? `Exists (${detailedClinicData.independentScheduleBlocks.length} blocks)` : 'null/undefined/empty', detailedClinicData.independentScheduleBlocks);
+      // Actualizar clínica activa
+      internalSetActiveClinic(detailedClinicData);
+      // Asignar las cabinas recibidas directamente para que la UI las tenga de inmediato
+      if (Array.isArray(detailedClinicData.cabins)) {
+        console.log(`[ClinicContext] fetchAndUpdateDetailedClinic - Setting activeClinicCabins from detailedClinicData.cabins (len=${detailedClinicData.cabins.length})`);
+        setActiveClinicCabins(detailedClinicData.cabins);
+      }
+      
     } catch (err) {
-      console.error(`[ClinicContext] fetchAndUpdateDetailedClinic - Error fetching details for ${clinicId}:`, err);
-      setError(err instanceof Error ? err.message : `Error fetching details for clinic ${clinicId}`);
+      console.error(`[ClinicContext] fetchAndUpdateDetailedClinic - ERROR - Error fetching details for ${idToFetch}:`, err);
+      setError(err instanceof Error ? err.message : `Error fetching details for clinic ${idToFetch}`);
     } finally {
       setIsLoadingDetails(false);
+      console.log(`[ClinicContext] fetchAndUpdateDetailedClinic - END - Finished for clinic: ${idToFetch}`);
     }
   }, [internalSetActiveClinic, setError, status]);
 
   const setActiveClinicById = useCallback(async (id: string) => {
-    console.log(`[ClinicContext] setActiveClinicById called for ID: ${id}`);
+    const currentId = activeClinic?.id || 'null';
+    console.log(`[ClinicContext] setActiveClinicById called for ID: ${id}. Current active: ${currentId}`);
     // Validar ID si es necesario (ej. cuid)
     if (!id) {
         console.warn("[ClinicContext] setActiveClinicById called with invalid ID");
@@ -439,18 +464,35 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     await fetchClinics();
   }, [fetchClinics]);
 
-  // Función expuesta (solo llama a la interna)
+  // Función expuesta (modificada para cargar detalles si es necesario)
   const exposedSetActiveClinic = useCallback((clinic: ClinicaApiOutput | null) => {
     const newClinicId = clinic?.id ? String(clinic.id) : null;
     const currentClinicId = activeClinic?.id ? String(activeClinic.id) : null;
-    console.log(`Exposed setActiveClinic called. Current: ${currentClinicId}, New: ${newClinicId}`);
+    
+    console.log(`[ClinicContext] exposedSetActiveClinic called. Current: ${currentClinicId}, New: ${newClinicId}`);
+
     if (newClinicId !== currentClinicId) {
-      console.log(`Exposed setActiveClinic: ID diferente, llamando a internalSetActiveClinic.`);
-      internalSetActiveClinic(clinic);
+      if (clinic && newClinicId) {
+        // Verificar si la clínica proporcionada tiene datos de horario.
+        // Usamos la presencia de 'linkedScheduleTemplate' o 'independentSchedule' como indicador.
+        const hasScheduleData = clinic.linkedScheduleTemplate !== undefined || clinic.independentSchedule !== undefined;
+
+        if (hasScheduleData) {
+          console.log(`[ClinicContext] exposedSetActiveClinic: ID diferente. Clínica proporcionada tiene datos de horario. Llamando a internalSetActiveClinic.`);
+          internalSetActiveClinic(clinic);
+        } else {
+          console.log(`[ClinicContext] exposedSetActiveClinic: ID diferente. Clínica proporcionada NO tiene datos de horario. Llamando a fetchAndUpdateDetailedClinic para ${newClinicId}.`);
+          fetchAndUpdateDetailedClinic(newClinicId); // Obtener datos completos
+        }
+      } else {
+        // Si clinic es null (para deseleccionar)
+        console.log(`[ClinicContext] exposedSetActiveClinic: ID diferente. Nueva clínica es null. Llamando a internalSetActiveClinic con null.`);
+        internalSetActiveClinic(null);
+      }
     } else {
-      console.log("Exposed setActiveClinic: ID es el mismo, no se llama.");
+      console.log("[ClinicContext] exposedSetActiveClinic: ID es el mismo, no se hace nada.");
     }
-  }, [activeClinic?.id, internalSetActiveClinic]);
+  }, [activeClinic?.id, internalSetActiveClinic, fetchAndUpdateDetailedClinic]);
 
   // --- Función para cargar cabinas de una clínica específica (CORREGIDA y CON LOGS) ---
   const fetchCabinsForClinic = useCallback(async (clinicId: string, systemId: string) => {
@@ -469,7 +511,7 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setIsLoadingCabinsContext(true);
     try {
       setError(null);
-      const systemId = session.user.systemId;
+      
       console.log(`[ClinicContext] fetchCabinsForClinic - Fetching cabins for clinic: ${clinicId} and systemId: ${systemId}`);
       const response = await fetch(`/api/clinics/${clinicId}/cabins?systemId=${systemId}`);
       if (!response.ok) {
@@ -506,12 +548,11 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       // console.log(`useEffect[activeClinic.id] - Active clinic changed to ${currentClinicId} for system ${currentSystemId}, fetching cabins.`); // <<< ELIMINAR LOG
       fetchCabinsForClinic(String(currentClinicId), currentSystemId); 
     } else {
-      // <<< ELIMINAR LOGS >>>
-      // if (!currentClinicId) console.log("useEffect[activeClinic.id] - No active clinic, clearing cabins.");
-      // else if (!currentSystemId) console.log(`useEffect[activeClinic.id] - No systemId available for clinic ${currentClinicId}, clearing cabins.`);
-      // else if (status !== 'authenticated') console.log(`useEffect[activeClinic.id] - Session not authenticated, clearing cabins.`);
-      setActiveClinicCabins(null);
-      if (!currentClinicId) setIsLoadingCabinsContext(false);
+      // Solo limpiamos las cabinas si NO hay clínica activa; en otros casos mantenemos el estado actual
+      if (!currentClinicId) {
+        setActiveClinicCabins(null);
+        setIsLoadingCabinsContext(false);
+      }
     }
   }, [activeClinic?.id, fetchCabinsForClinic, session?.user?.systemId, status]); 
   

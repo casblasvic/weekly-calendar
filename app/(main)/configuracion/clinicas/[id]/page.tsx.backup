@@ -1,0 +1,2497 @@
+"use client"
+
+import { useState, useEffect, useCallback, useMemo, useRef } from "react"
+import { useRouter, useSearchParams, useParams } from "next/navigation"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Label } from "@/components/ui/label"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Textarea } from "@/components/ui/textarea"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { CabinEditDialog } from "@/components/cabin-edit-dialog"
+import { useClinic } from "@/contexts/clinic-context"
+import {
+  // findActiveExceptions,
+  // createExampleException,
+  // applyExampleException
+} from "@/services/clinic-schedule-service"
+import type { WeekSchedule, DaySchedule, TimeRange } from "@/types/schedule"
+import { saveToStorage } from "@/utils/storage-utils"
+import { DebugStorage } from "@/components/debug-storage"
+import { useEquipment } from "@/contexts/equipment-context"
+import { useTarif } from "@/contexts/tarif-context"
+import { UsuariosClinica } from "@/components/usuarios-clinica"
+import { Prisma, DayOfWeek } from '@prisma/client'
+import type { Cabin, Clinic as PrismaClinic } from '@prisma/client'
+import { Skeleton } from "@/components/ui/skeleton"
+import type { Tariff as PrismaTariff } from '@prisma/client';
+import { SearchInput } from "@/components/SearchInput"
+import { ScheduleConfig } from "@/components/schedule-config"
+import { DEFAULT_SCHEDULE } from "@/types/schedule"
+import { useTemplates } from "@/hooks/use-templates"
+import { toast } from "@/components/ui/use-toast"
+import { Badge } from "@/components/ui/badge"
+import { Switch } from "@/components/ui/switch"
+import {
+  Building2, Bed, Cog, Users, CreditCard, 
+  LinkIcon as LucideLinkIcon, Percent, MessageSquare, Mail, Phone, Globe, 
+  ArrowLeft, HelpCircle, Save, MapPin, BarChart2, Search, Plus, 
+  ChevronUp, ChevronDown, Trash2, Clock, Database, FolderOpen, Tag, 
+  Settings2, LayoutGrid, Wrench, HardDrive, X, Calendar, AlertCircle, 
+  AlertTriangle, PlusCircle, Loader2
+} from "lucide-react"
+import { cn } from "@/lib/utils"
+import { convertBlocksToWeekSchedule, createDefaultSchedule } from "@/utils/scheduleUtils"
+import { debounce } from 'lodash';
+import type { Equipment } from "@prisma/client";
+import type { ClinicaApiOutput } from "@/lib/types/api-outputs";
+import { CountryInfo } from "@prisma/client";
+import { ActionButtons } from '@/app/components/ui/action-buttons';
+import { DataTable } from "@/components/ui/data-table"
+import type { ColumnDef } from "@tanstack/react-table"
+import { DataTableColumnHeader } from "@/components/ui/data-table-column-header";
+import { useLegalEntitiesQuery } from "@/lib/hooks/use-legal-entity-query";
+// Card components are already imported earlier, removing duplicate.
+import type { ScheduleTemplateBlock as PrismaScheduleTemplateBlock, ClinicScheduleBlock as PrismaClinicScheduleBlock } from '@prisma/client';
+import type { ScheduleTemplate } from '@prisma/client'; 
+import { useTranslation } from 'react-i18next';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import Link from 'next/link';
+import { BankDataTable } from '@/app/(main)/configuracion/bancos/components/data-table';
+import { type Bank } from '@/app/(main)/configuracion/bancos/components/columns';
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+// <<< AÑADIR IMPORTACIONES FALTANTES >>>
+import React from 'react'; // Importar React explícitamente
+import { getClinicPaymentSettings } from "@/lib/api/clinicPaymentSettings";
+import { getClinicPaymentSettingColumns } from "./components/clinic-payment-settings/columns";
+import { ClinicPromotionsTabContent } from "@/app/(main)/configuracion/clinicas/[id]/components/clinic-promotions-tab" // <<< RUTA ABSOLUTA @/
+// <<< ELIMINAR import de ClinicPaymentSettingsTable >>>
+// import { ClinicPaymentSettingsTable } from "./components/clinic-payment-settings/data-table";
+// <<< AÑADIR import de DataTable genérico >>>
+//import { DataTable } from "@/components/ui/data-table";
+import type { ClinicPaymentSettingWithRelations } from "@/lib/api/clinicPaymentSettings";
+// <<< AÑADIR import del diálogo de edición (si existe) >>>
+// import { ClinicPaymentSettingEditDialog } from "./components/clinic-payment-settings/edit-dialog"; 
+// --- FIN IMPORTACIONES FALTANTES ---
+
+// --- Tipos locales temporales para modal de excepciones (Refactorizar en el futuro) ---
+interface FranjaHorariaLocal {
+  id: string;
+  inicio: string;
+  fin: string;
+}
+
+interface HorarioDiaLocal {
+  dia: 'lunes' | 'martes' | 'miercoles' | 'jueves' | 'viernes' | 'sabado' | 'domingo';
+  franjas: FranjaHorariaLocal[];
+  activo: boolean;
+}
+
+interface ExcepcionHorariaLocal {
+  id: string;
+  clinicaId?: string; // Hacer opcional si no siempre se usa
+  nombre: string;
+  fechaInicio: string;
+  fechaFin: string;
+  dias: HorarioDiaLocal[];
+}
+// --- Fin Tipos locales temporales ---
+
+// --- Función de utilidad Debounce ---
+function debounce<F extends (...args: any[]) => any>(func: F, waitFor: number) {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+  return (...args: Parameters<F>): void => {
+    if (timeoutId !== null) {
+      clearTimeout(timeoutId);
+    }
+    timeoutId = setTimeout(() => func(...args), waitFor);
+  };
+}
+// --- Fin Debounce ---
+
+const menuItems = [
+  { id: "datos", label: "Datos de la clínica", icon: Building2 },
+  { id: "horarios", label: "Horarios", icon: Clock },
+  { id: "excepciones", label: "Excepciones Horario", icon: Calendar },
+  { id: "usuarios", label: "Usuarios", icon: Users },
+  { id: "tarifa", label: "Tarifa", icon: Tag },
+  { id: "entidades", label: "Entidades bancarias", icon: CreditCard },
+  { id: "pagos", label: "Metodos de Pago", icon: CreditCard },
+  { id: "integraciones", label: "Integraciones", icon: LucideLinkIcon }, // <<< USAR EL ALIAS
+  { id: "descuentos", label: "Descuentos", icon: Percent },
+  { id: "sms", label: "SMS/Push", icon: MessageSquare },
+  { id: "email", label: "Notificaciones e-mail", icon: Mail },
+  { id: "whatsapp", label: "Notificaciones WhatsApp", icon: Phone },
+  { id: "otros", label: "Otros APIs", icon: Globe },
+  { id: "sedes", label: "Sedes", icon: MapPin },
+  { id: "cabinas", label: "Cabinas", icon: LayoutGrid },
+  { id: "equipamiento", label: "Equipamiento", icon: Wrench },
+  { id: "almacenamiento", label: "Almacenamiento", icon: HardDrive },
+  { id: "depuracion", label: "Depuración", icon: Trash2 },
+]
+
+const SectionTitle = ({ icon: Icon, title, color }: { icon: any; title: string; color: string }) => (
+  <div className={`flex items-center space-x-2 mb-4 pb-2 border-b ${color}`}>
+    <Icon className="w-5 h-5" />
+    <h3 className={`text-lg font-medium ${color}`}>{title}</h3>
+  </div>
+)
+
+// <<< INICIO DATOS MOCK PAÍSES (Copiar de usuarios) >>>
+const COUNTRIES_MOCK = [
+  { isoCode: 'ES', name: 'España', phoneCode: '+34' },
+  { isoCode: 'FR', name: 'Francia', phoneCode: '+33' },
+  { isoCode: 'PT', name: 'Portugal', phoneCode: '+351' },
+  { isoCode: 'GB', name: 'Reino Unido', phoneCode: '+44' },
+  { isoCode: 'DE', name: 'Alemania', phoneCode: '+49' },
+  { isoCode: 'IT', name: 'Italia', phoneCode: '+39' },
+];
+// <<< FIN DATOS MOCK PAÍSES >>>
+
+// --- COPIAR/ADAPTAR fetchBanks ---
+// (Podríamos mover esto a lib/api o un hook personalizado más adelante)
+async function fetchBanks(clinicId?: string): Promise<Bank[]> {
+  let apiUrl = '/api/banks';
+  if (clinicId) {
+    apiUrl += `?clinicId=${encodeURIComponent(clinicId)}`;
+  }
+  const response = await fetch(apiUrl);
+  if (!response.ok) {
+    let errorMsg = `Error ${response.status}: ${response.statusText}`;
+    try {
+      const errorBody = await response.json();
+      errorMsg = errorBody.message || errorMsg;
+    } catch (e) { /* Ignorar */ }
+    throw new Error(errorMsg);
+  }
+  return response.json() as Promise<Bank[]>;
+}
+// --- FIN fetchBanks ---
+
+// --- NUEVO COMPONENTE PARA EL CONTENIDO DE LA PESTAÑA DE BANCOS ---
+interface ClinicBanksTabContentProps {
+  clinicId: string;
+}
+
+function ClinicBanksTabContent({ clinicId }: ClinicBanksTabContentProps) {
+  const { t } = useTranslation();
+  
+  const { 
+    data: banksData = [], 
+    isLoading, 
+    isError, 
+    error 
+  } = useQuery<Bank[], Error>({
+    queryKey: ['banks', clinicId], 
+    queryFn: () => fetchBanks(clinicId),
+  });
+
+  if (isError) {
+    return (
+      <Alert variant="destructive" className="mt-4">
+        {/* Usar AlertCircle directamente */}
+        <AlertCircle className="w-4 h-4" /> 
+        <AlertTitle>{t('common.errors.loadingTitle')}</AlertTitle>
+        <AlertDescription>
+          {error?.message || t('common.errors.loadingDesc')}
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  return (
+    <div className="mt-4 space-y-4">
+       <div className="flex items-center justify-between mb-4">
+         {/* <h3 className="text-lg font-semibold">{t('config_clinics.banks.title')}</h3> */}
+         <p className="text-sm text-muted-foreground">{t('config_clinics.banks.description')}</p>
+         {/* Botón Añadir Banco */}
+         {/* <<< MODIFICAR Link: quitar legacyBehavior, passHref y añadir asChild >>> */}
+         {/* <<< QUITAR asChild para evitar error consola >>> */}
+         <Link href="/configuracion/bancos/nuevo">
+           <Button variant="default" size="sm" className="bg-purple-600 hover:bg-purple-700">
+              {/* El contenido se queda igual, sin span extra */}
+              <PlusCircle className="w-4 h-4 mr-2" />
+              {t('config_clinics.banks.add_button')}
+           </Button>
+         </Link>
+       </div>
+      <BankDataTable data={banksData} isLoading={isLoading} showSelectionStatus={false} />
+    </div>
+  );
+}
+// --- FIN NUEVO COMPONENTE ---
+
+// --- NUEVO COMPONENTE PARA PESTAÑA MÉTODOS DE PAGO ---
+interface ClinicPaymentsTabContentProps {
+  clinicId: string;
+}
+
+function ClinicPaymentsTabContent({ clinicId }: ClinicPaymentsTabContentProps) {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient(); // Obtener instancia de QueryClient
+  const router = useRouter(); // Hook para navegación
+  // <<< ELIMINAR queryClient y estados del diálogo >>>
+  // const queryClient = useQueryClient(); 
+  // const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  // const [editingSetting, setEditingSetting] = useState<ClinicPaymentSettingWithRelations | null>(null);
+
+  const {
+    data: paymentSettings = [],
+    isLoading,
+    isError,
+    error
+  } = useQuery<ClinicPaymentSettingWithRelations[], Error>({
+    queryKey: ['clinicPaymentSettings', clinicId],
+    queryFn: () => getClinicPaymentSettings({ clinicId }),
+    enabled: !!clinicId,
+  });
+
+  // <<< FUNCIÓN PARA MANEJAR LA EDICIÓN (Navegación) >>>
+  const handleEdit = (setting: ClinicPaymentSettingWithRelations) => {
+    // Navegar a la página de edición del MÉTODO DE PAGO, pasando el ID de la clínica
+    // para que esa página filtre sus datos internos.
+    const paymentMethodDefinitionId = setting.paymentMethodDefinitionId;
+    if (!paymentMethodDefinitionId) {
+        console.error("No paymentMethodDefinitionId found in setting:", setting);
+        // Mostrar un toast de error?
+        return;
+    }
+    // <<< CONSTRUIR Y CODIFICAR LA URL DE RETORNO >>>
+    const returnUrl = encodeURIComponent(`/configuracion/clinicas/${clinicId}?tab=pagos`);
+    // <<< AÑADIR returnTo A LA URL >>>
+    router.push(`/configuracion/metodos-pago/${paymentMethodDefinitionId}?filterClinicId=${clinicId}&returnTo=${returnUrl}`);
+  };
+
+  // <<< ELIMINAR handleCloseEditDialog >>>
+  // const handleCloseEditDialog = ...
+
+  // <<< PASAR handleEdit (la nueva versión) a getClinicPaymentSettingColumns >>>
+  const columns = React.useMemo(() => getClinicPaymentSettingColumns(t, handleEdit), [t, clinicId]); // Añadir clinicId como dependencia si se usa en handleEdit
+
+  const redirectToUrl = useMemo(() => {
+    if (!clinicId || typeof clinicId !== 'string') {
+        console.warn('[ClinicPaymentsTabContent] clinicId no está disponible para crear redirectToUrl');
+        return '/configuracion/metodos-pago';
+    }
+    return encodeURIComponent(`/configuracion/clinicas/${clinicId}?tab=pagos`);
+  }, [clinicId]);
+
+  if (isError) {
+    return (
+      <Alert variant="destructive" className="mt-4">
+        <AlertCircle className="w-4 h-4" />
+        <AlertTitle>{t('common.errors.loadingTitle')}</AlertTitle>
+        <AlertDescription>
+          {error?.message || t('common.errors.loadingDesc')}
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  return (
+    // El div exterior ya tiene overflow-x-auto
+    <div className="mt-4 space-y-4 overflow-x-auto">
+      <div className="flex items-center justify-between mb-4">
+         <p className="text-sm text-muted-foreground">{t('config_clinics.payments.description')}</p>
+         <Button
+             variant="outline"
+             size="sm"
+             onClick={() => router.push(`/configuracion/metodos-pago/nuevo?redirectBackTo=${redirectToUrl}`)}
+          >
+              <PlusCircle className="w-4 h-4 mr-2" />
+              {t('config_clinics.payments.add_button')}
+          </Button>
+      </div>
+
+      {/* <<< Contenedor con overflow >>> */}
+      <div className="overflow-x-auto">
+        {isLoading ? (
+          <div className="w-full p-4 space-y-2">
+            <Skeleton className="w-full h-10" />
+            <Skeleton className="w-full h-10" />
+            <Skeleton className="w-full h-10" />
+          </div>
+        ) : (
+          <DataTable
+              columns={columns}
+              data={paymentSettings}
+          />
+        )}
+       </div>
+      {/* <<< FIN Contenedor con overflow >>> */}
+
+      {/* <<< ELIMINAR RENDERIZADO DEL DIÁLOGO >>> */}
+      {/* {editingSetting && ...} */}
+    </div>
+  );
+}
+// --- FIN COMPONENTE PESTAÑA MÉTODOS DE PAGO ---
+
+export default function ClinicaDetailPage() {
+  const clinicContext = useClinic()
+  const { 
+    clinics, 
+    updateClinica, 
+    getClinicaById, 
+    refreshActiveClinicCabins, 
+    activeClinic: clinicDataFromContext,
+    isLoading: isLoadingContext, // <<< AÑADIR isLoading del contexto
+    fetchCabinsForClinic,
+    activeClinicCabins,
+    isLoadingCabinsContext
+  } = clinicContext
+  const { templates } = useTemplates()
+  const { getTarifaById, tarifas } = useTarif()
+  // Obtener funciones y datos necesarios del contexto de equipamiento
+  const { allEquipos, getClinicEquipos } = useEquipment() 
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const params = useParams();
+  const { data: legalEntitiesData, isLoading: isLoadingLegalEntities } = useLegalEntitiesQuery();
+  
+  // <<< MOVER AQUÍ EL NUEVO ESTADO >>>
+  const [displayedCabins, setDisplayedCabins] = useState<Cabin[]>([]);
+  // Estado de carga local para cabinas (evita usar el del contexto cuando editamos otra clínica)
+  const [isLoadingCabinsLocal, setIsLoadingCabinsLocal] = useState<boolean>(false);
+  
+  // --- ESTADOS PARA PAÍSES (COLOCADOS AL PRINCIPIO) --- <<< NUEVO >>>
+  const [countries, setCountries] = useState<CountryInfo[]>([]);
+  const [isLoadingCountries, setIsLoadingCountries] = useState<boolean>(true);
+  const [countriesError, setCountriesError] = useState<string | null>(null);
+  // --- FIN ESTADOS PAÍSES --- <<< NUEVO >>>
+
+  // Usar clinicDataFromContext para inicializar el estado local
+  const [clinicData, setClinicData] = useState<ClinicaApiOutput | null>(clinicDataFromContext)
+  // Ajustar los fallbacks para horario simple
+  // const defaultOpenTime = useMemo(() => clinicData?.openTime || "00:00", [clinicData]);
+  // const defaultCloseTime = useMemo(() => clinicData?.closeTime || "23:59", [clinicData]);
+  // const defaultSlotDuration = useMemo(() => clinicData?.slotDuration ?? 15, [clinicData]);
+  // --- Fin Mover useMemo ---
+
+  const [activeTab, setActiveTab] = useState("datos")
+  const [isCabinDialogOpen, setIsCabinDialogOpen] = useState(false)
+  const [editingCabin, setEditingCabin] = useState<Cabin | null>(null)
+  const [isLoadingClinic, setIsLoadingClinic] = useState(true);
+  const [cabinFilterText, setCabinFilterText] = useState("")
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null)
+  const [equipmentData, setEquipmentData] = useState<Equipment[]>([])
+  // Cambiar tipo de Tarifa a PrismaTariff
+  const [tarifaAplicada, setTarifaAplicada] = useState<PrismaTariff | null | undefined>(undefined)
+  const [isLoadingTarifa, setIsLoadingTarifa] = useState(false)
+  const [showNewUserDialog, setShowNewUserDialog] = useState(false)
+  const [showExcepcionModal, setShowExcepcionModal] = useState(false)
+  const [showHorarioModal, setShowHorarioModal] = useState(false)
+  // Usar el tipo local ExcepcionHorariaLocal
+  const [nuevaExcepcion, setNuevaExcepcion] = useState<Partial<ExcepcionHorariaLocal>>({
+    nombre: "",
+    fechaInicio: "",
+    fechaFin: "",
+    dias: []
+  })
+  // Usar el tipo local ExcepcionHorariaLocal
+  const [editingExcepcion, setEditingExcepcion] = useState<ExcepcionHorariaLocal | null>(null)
+  const [editingFranja, setEditingFranja] = useState<{
+    diaId: string;
+    franjaId?: string;
+    inicio: string;
+    fin: string;
+    excepcionDiaIndex?: number;
+  } | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
+  // <<< MODIFICAR: Inicializar formData directamente desde clinicData si es posible >>>
+  const [formData, setFormData] = useState<Partial<ClinicaApiOutput>>(clinicData || {});
+  // <<< ELIMINAR ESTADOS LOCALES DE PREFIJOS, se manejarán dentro de formData >>>
+  // const [clinicPhone1Prefix, setClinicPhone1Prefix] = useState("ES"); 
+  // const [clinicPhone2Prefix, setClinicPhone2Prefix] = useState("ES"); 
+  
+  // <<< NUEVOS ESTADOS PARA DISPLAY (con iniciales neutros) >>>
+  const [displayOpenTime, setDisplayOpenTime] = useState<string>("--:--"); // <<< CAMBIAR INICIAL
+  const [displayCloseTime, setDisplayCloseTime] = useState<string>("--:--"); // <<< CAMBIAR INICIAL
+  const [displaySlotDuration, setDisplaySlotDuration] = useState<number | string>(""); // <<< CAMBIAR INICIAL (o null? probar "") >>>
+  const [displayCreateGranularity, setDisplayCreateGranularity] = useState<number | string>(""); // Estado para granularidad de creación
+  
+  // --- NUEVO ESTADO PARA HORARIO --- 
+  const [useTemplateSchedule, setUseTemplateSchedule] = useState<boolean>(false);
+  // Estado para gestionar el horario independiente cuando useTemplateSchedule es false
+  const [independentSchedule, setIndependentSchedule] = useState<WeekSchedule | null>(null);
+  // Estado para guardar la plantilla original al desmarcar el check
+  const [idDePlantillaOriginalAlDesmarcar, setIdDePlantillaOriginalAlDesmarcar] = useState<string | null>(null);
+  // Flag para saber si se ha editado el horario desde que se desmarcó
+  const [haEditadoHorario, setHaEditadoHorario] = useState<boolean>(false);
+  // --- FIN NUEVO ESTADO ---
+  
+  const diasSemana = [
+    'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'
+  ]
+
+  const clinicId = typeof params?.id === 'string' ? params.id : ''
+  
+  // <<< ELIMINAR LOG >>>
+  // console.log("ClinicaDetailPage - Extracted clinicId from URL params:", clinicId, "(Type:", typeof clinicId, ")", "Raw params:", params);
+  
+  // <<< ELIMINAR LOG >>>
+  // console.log("ClinicaDetailPage - Context Values: isLoadingContext=", isLoadingContext, "Has clinicDataFromContext=", !!clinicDataFromContext);
+
+  const [isInitializing, setIsInitializing] = useState(true); // Flag para controlar la carga inicial
+
+  // <<< useEffect PARA CARGAR PAÍSES (COLOCADO DESPUÉS DE LOS ESTADOS) >>> <<< NUEVO >>>
+  useEffect(() => {
+    const fetchCountries = async () => {
+      // No resetear isLoading y error aquí para evitar re-renders innecesarios si ya se cargaron
+      // setIsLoadingCountries(true); 
+      // setCountriesError(null);
+      try {
+        const response = await fetch('/api/countries'); 
+        if (!response.ok) {
+          throw new Error(`Error ${response.status}: ${response.statusText}`);
+        }
+        const data: CountryInfo[] = await response.json();
+        setCountries(data);
+      } catch (err) {
+        console.error("Error fetching countries:", err);
+        setCountriesError(err instanceof Error ? err.message : 'Error desconocido al cargar países');
+        setCountries([]); 
+      } finally {
+        setIsLoadingCountries(false); // Marcar como finalizado aquí
+      }
+    };
+    // Solo llamar si aún no se han cargado (o si queremos recargar)
+    if (isLoadingCountries) {
+       fetchCountries();
+    }
+  }, [isLoadingCountries]); // Dependencia en isLoadingCountries para reintentar si falla? O dejarla vacía []? -> Vacía es más seguro para evitar loops si falla. Ajustado a vacía.
+  // Corregido: Usar dependencia vacía [] para que se ejecute solo una vez al montar.
+  useEffect(() => {
+    const fetchCountries = async () => {
+      setIsLoadingCountries(true); // Marcar inicio de carga
+      setCountriesError(null);     // Limpiar errores previos
+      try {
+        const response = await fetch('/api/countries'); 
+        if (!response.ok) {
+          throw new Error(`Error ${response.status}: ${response.statusText}`);
+        }
+        const data: CountryInfo[] = await response.json();
+        setCountries(data);
+      } catch (err) {
+        console.error("Error fetching countries:", err);
+        setCountriesError(err instanceof Error ? err.message : 'Error desconocido al cargar países');
+        setCountries([]); 
+      } finally {
+        setIsLoadingCountries(false); // Marcar fin de carga (éxito o error)
+      }
+    };
+    fetchCountries(); // Llamar a la función
+  }, []); // Array de dependencias vacío para ejecutar solo al montar.
+  // --- FIN useEffect PAÍSES --- <<< NUEVO >>>
+
+  // <<< NUEVO useEffect para cargar los datos de la clínica **sin** alterar el contexto >>>
+  useEffect(() => {
+    if (!clinicId) {
+      console.error("[ClinicaDetail] No se encontró clinicId en la URL.");
+      setIsInitializing(false);
+      return;
+    }
+
+    // Evitar refetch si ya tenemos los datos correctos
+    if (clinicData && clinicData.id === clinicId) {
+      setIsInitializing(false);
+      return;
+    }
+
+    const loadClinic = async () => {
+      try {
+        setIsLoadingClinic(true);
+        const data = await getClinicaById(clinicId);
+        setClinicData(data);
+        if (data) {
+          setFormData(data);
+        }
+      } catch (error) {
+        console.error(`[ClinicaDetail] Error cargando datos de la clínica ${clinicId}:`, error);
+      } finally {
+        setIsLoadingClinic(false);
+        setIsInitializing(false);
+      }
+    };
+
+    loadClinic();
+  }, [clinicId, getClinicaById]);
+
+  // <<< NUEVO useEffect para cargar cabinas de la clínica editada sin tocar el contexto >>>
+  useEffect(() => {
+    const loadCabins = async () => {
+      if (!clinicId) {
+        setDisplayedCabins([]);
+        setIsLoadingCabinsLocal(false);
+        return;
+      }
+      setIsLoadingCabinsLocal(true);
+      try {
+        const res = await fetch(`/api/clinics/${clinicId}/cabins`);
+        if (res.ok) {
+          const cabins: Cabin[] = await res.json();
+          const sorted = [...cabins].sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity));
+          setDisplayedCabins(sorted);
+        } else {
+          console.warn(`[ClinicaDetail] No se pudieron obtener cabinas para la clínica ${clinicId}. Status: ${res.status}`);
+          setDisplayedCabins([]);
+        }
+      } catch (error) {
+        console.error(`[ClinicaDetail] Error obteniendo cabinas para la clínica ${clinicId}:`, error);
+        setDisplayedCabins([]);
+      } finally {
+        setIsLoadingCabinsLocal(false);
+      }
+    };
+
+    loadCabins();
+  }, [clinicId]);
+
+  // useEffect para sincronizar isLoadingClinic LOCAL con isLoadingContext GLOBAL
+  useEffect(() => {
+    // Solo actualizamos si NO estamos en la fase de inicialización de esta página
+    if (!isInitializing) {
+       setIsLoadingClinic(isLoadingContext);
+    }
+  }, [isLoadingContext, isInitializing]);
+
+  // --- useEffect para sincronizar clinicData LOCAL con clinicDataFromContext
+  useEffect(() => {
+    // Solo sincronizar si ya hemos pasado la inicialización Y la clínica del contexto coincide con la URL
+    if (!isInitializing && clinicDataFromContext && clinicDataFromContext.id === clinicId) {
+      console.log(`[ClinicaDetail] useEffect[clinicDataFromContext] - Syncing local state with context for ID: ${clinicId}`);
+      setClinicData(clinicDataFromContext);
+      // <<< MODIFICAR: Sincronizar formData aquí >>>
+      setFormData(clinicDataFromContext); 
+      
+      // <<< AÑADIR: Forzar recalculo de horarios cuando cambia la clínica del contexto >>>
+      // Resetear estados de horario para forzar recalculo
+      setUseTemplateSchedule(!!clinicDataFromContext.linkedScheduleTemplateId);
+      setSelectedTemplateId(clinicDataFromContext.linkedScheduleTemplateId || null);
+      
+      // Si no usa plantilla, reconstruir el horario independiente
+      if (!clinicDataFromContext.linkedScheduleTemplateId && clinicDataFromContext.independentScheduleBlocks) {
+        const newIndependentSchedule = convertBlocksToWeekSchedule(
+          clinicDataFromContext.independentScheduleBlocks, 
+          "00:00", 
+          "23:59"
+        );
+        setIndependentSchedule(newIndependentSchedule);
+      }
+    }
+  }, [clinicDataFromContext, clinicId, isInitializing]); 
+
+  useEffect(() => {
+    // Cargar equipamiento específico de la clínica cuando el ID o la lista completa cambien
+    if (clinicId && allEquipos) {
+      const clinicEquipment = getClinicEquipos(clinicId);
+      setEquipmentData(clinicEquipment);
+    }
+  }, [clinicId, allEquipos, getClinicEquipos]); // Dependencias actualizadas
+
+  useEffect(() => {
+    const tabParam = searchParams.get("tab")
+    
+    // Si el parámetro tab es 'usuarios', establecer la pestaña activa a 'usuarios'
+    if (tabParam === "usuarios") {
+      setActiveTab("usuarios");
+    } 
+    // Si no, verificar si el parámetro tab coincide con algún ID de los menuItems
+    else if (tabParam && menuItems.some(item => item.id === tabParam)) {
+      setActiveTab(tabParam);
+    } else {
+      // Si no hay parámetro o no es válido, asegurar que la pestaña por defecto sea 'datos'
+      setActiveTab("datos"); 
+    }
+  }, [searchParams])
+
+  useEffect(() => {
+    const loadTarifaData = async () => {
+      const tarifaIdAsignada = clinicData?.tariffId as string | undefined;
+
+      if (tarifaIdAsignada) {
+        setIsLoadingTarifa(true);
+        setTarifaAplicada(undefined);
+        try {
+          // Usar el alias PrismaTariff
+          const tarifa: PrismaTariff | null = await getTarifaById(tarifaIdAsignada);
+          setTarifaAplicada(tarifa || null);
+        } catch (error) {
+          console.error("Error al cargar la tarifa plantilla:", error);
+          setTarifaAplicada(null);
+    } finally {
+          setIsLoadingTarifa(false);
+        }
+      } else if (clinicData) {
+         setTarifaAplicada(null);
+      }
+    };
+
+    loadTarifaData();
+  }, [clinicData, getTarifaById]);
+    // --- HANDLER PARA CAMBIOS EN EL FORMULARIO ---
+    const handleFormChange = useCallback((e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement> | { target: { name: string; value: any; type: string } }) => {
+      // Adaptado para aceptar también el formato que enviaremos desde onValueChange del Select
+      const { name, value, type } = e.target;
+      let processedValue: string | number | boolean | null = value;
+
+      // Procesar tipos específicos
+      if (type === 'checkbox') {
+        processedValue = (e.target as HTMLInputElement).checked;
+      } else if (type === 'number') {
+        processedValue = value === '' ? null : Number(value);
+      } else if (type === 'text' || type === 'textarea' || type === 'email' || type === 'select') { // Añadir 'select'
+           // Para campos de texto/select opcionales, si el valor es vacío, lo consideramos null
+           // Ajustar si se prefiere enviar string vacío ''
+           if (value === '' || value === undefined) { // Añadir chequeo para undefined que puede venir del Select
+               processedValue = null;
+           }
+      } else if (type === 'radio') { // Añadir manejo para radio
+          processedValue = value; // El valor ya viene procesado (boolean en nuestro caso)
+      }
+
+
+      setFormData(prev => {
+        // Evitar actualizar si el valor no ha cambiado
+        if (prev && prev[name as keyof typeof prev] === processedValue) {
+            return prev;
+        }
+        return {
+          ...prev,
+          [name]: processedValue,
+        };
+      });
+    }, []); 
+    // --- FIN HANDLER FORMULARIO ---
+
+    // --- HANDLER ESPECÍFICO PARA CHECKBOX/SWITCH --- 
+    const handleCheckboxSwitchChange = useCallback((checked: boolean | string, name: string) => {
+        // El prop onCheckedChange puede devolver 'indeterminate', lo tratamos como false
+        const processedValue = checked === true;
+        setFormData(prev => ({
+          ...prev,
+          [name]: processedValue,
+        }));
+    }, []); // Dependencia vacía
+    // --- FIN HANDLER CHECKBOX/SWITCH ---
+
+  // --- NUEVO useEffect para inicializar useTemplateSchedule --- 
+  useEffect(() => {
+    if (clinicData) {
+      // Inicializa el checkbox basado en si hay una plantilla vinculada al cargar
+      setUseTemplateSchedule(!!clinicData.linkedScheduleTemplateId);
+      console.log(`[ClinicaDetail] Initializing useTemplateSchedule based on linkedTemplateId (${clinicData.linkedScheduleTemplateId}): ${!!clinicData.linkedScheduleTemplateId}`);
+    }
+  }, [clinicData?.id, clinicData?.linkedScheduleTemplateId]); // Depender del ID y del linkedId
+  // --- FIN NUEVO useEffect ---
+
+  // --- useEffect para inicializar/actualizar independentSchedule --- 
+  useEffect(() => {
+    if (!useTemplateSchedule && clinicData) {
+      // Si estamos en modo independiente, cargar los bloques independientes
+      const blocks = clinicData.independentScheduleBlocks; // Acceder directamente
+      // Verificar que blocks existe, es un array y no está vacío
+      if (blocks && Array.isArray(blocks) && blocks.length > 0) { 
+        console.log("[Schedule Init] Initializing independent schedule from loaded blocks:", blocks);
+        // TODO: Obtener open/close time del propio horario derivado o usar fallbacks razonables
+        const derivedSchedule = convertBlocksToWeekSchedule(blocks, "08:00", "20:00"); // PLACEHOLDER TIMES
+        setIndependentSchedule(derivedSchedule);
+      } else {
+        // Si no hay bloques o el array está vacío, inicializar por defecto
+        console.log("[Schedule Init] No independent blocks found or empty array, initializing empty independent schedule.");
+        setIndependentSchedule(createDefaultSchedule());
+      }
+    } else if (useTemplateSchedule) {
+      // Si usamos plantilla, limpiamos el horario independiente
+      setIndependentSchedule(null);
+    }
+    // Actualizar dependencias
+  }, [clinicData?.id, useTemplateSchedule, clinicData?.independentScheduleBlocks]); 
+  // --- FIN useEffect Horario Independiente ---
+
+  // --- useEffect para inicializar/sincronizar estados del horario ---
+  useEffect(() => {
+      // ... (Lógica existente para sincronizar useTemplateSchedule, selectedTemplateId, 
+      //      inicializar independentSchedule si aplica, y calcular/actualizar initialOpen/Close)
+      // Asegurarse que se usan calcularBoundsSchedule y actualizarDisplayTimes
+  }, [clinicData?.id, clinicData?.linkedScheduleTemplateId, clinicData?.independentScheduleBlocks, independentSchedule]); // Dependencias pueden necesitar ajuste
+
+  // --- NUEVO Handler para aplicar horario general --- 
+  const handleApplyGeneralTimesToAllDays = () => {
+      if (useTemplateSchedule) { 
+        toast({ title: "Acción no permitida", description: "No se pueden aplicar horarios generales cuando se usa una plantilla.", variant: "default" });
+          return;
+      }
+
+      if (!independentSchedule) {
+          toast({ title: "Error", description: "No hay un horario independiente para modificar.", variant: "destructive" });
+          return;
+      }
+
+      // 1. Obtener los tiempos generales del horario INDEPENDIENTE ACTUAL
+      let earliest = "23:59";
+      let latest = "00:00";
+      let foundAnyRange = false;
+      Object.values(independentSchedule).forEach(day => {
+        if (day.isOpen && day.ranges.length > 0) {
+          day.ranges.forEach(range => {
+            if (range.start && range.end && range.start < range.end) {
+              foundAnyRange = true;
+              if (range.start < earliest) earliest = range.start;
+              if (range.end > latest) latest = range.end;
+            }
+          });
+        }
+      });
+
+      // Usar defaults si no se encontraron rangos válidos
+      if (!foundAnyRange || latest <= earliest) {
+        earliest = "09:00";
+        latest = "18:00";
+      }
+
+      console.log(`[handleApplyGeneralTimes] Applying times: ${earliest} - ${latest} to independent schedule.`);
+
+      // 2. Crear el nuevo WeekSchedule aplicando estos tiempos
+      const newSchedule: WeekSchedule = { ...independentSchedule }; // Copiar estado actual
+      const generalRange: TimeRange = { start: earliest, end: latest };
+
+      for (const dayKey in newSchedule) {
+              const key = dayKey as keyof WeekSchedule;
+        // Aplicar solo a días laborables (L-V por defecto, podría ser configurable)
+        if (key !== 'saturday' && key !== 'sunday') {
+          newSchedule[key] = {
+            isOpen: true,
+            ranges: [generalRange] // Reemplazar rangos existentes con el general
+          };
+        } else {
+          // Mantener Sáb/Dom como estaban o cerrarlos? Por ahora, mantenerlos.
+          // newSchedule[key] = { isOpen: false, ranges: [] };
+        }
+      }
+
+      // 3. Actualizar el estado local
+      setIndependentSchedule(newSchedule);
+
+      // 4. Opcional: Actualizar los inputs visuales openTime/closeTime locales
+      setClinicData(prev => prev ? {
+          ...prev,
+          // @ts-ignore
+          openTime: earliest,
+          // @ts-ignore
+          closeTime: latest
+      } : null);
+
+      toast({ title: "Horario Actualizado", description: `Horario general ${earliest}-${latest} aplicado a días laborables.` });
+  };
+  // --- FIN Nuevo Handler ---
+
+  const handleSaveCabin = useCallback(async (cabinDataFromDialog: Partial<Cabin>) => {
+    console.log("handleSaveCabin - Datos recibidos:", cabinDataFromDialog);
+    setIsSaving(true);
+    try {
+      let savedCabin: Cabin | null = null;
+      let operationSuccess = false; // Flag para saber si la operación API tuvo éxito
+
+      if (cabinDataFromDialog.id) {
+        // --- Actualizar Cabina Existente ---
+        console.log(`handleSaveCabin - Actualizando cabina ID: ${cabinDataFromDialog.id}`);
+        const response = await fetch(`/api/cabins/${cabinDataFromDialog.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(cabinDataFromDialog),
+      });
+      if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          console.error("API Error Data (PUT):", errorData);
+          throw new Error(errorData.error || `Failed to update cabin (status ${response.status})`);
+        }
+        savedCabin = await response.json();
+        console.log("handleSaveCabin - Cabina actualizada:", savedCabin);
+        // setCabinsData(prev => prev.map(c => c.id === savedCabin?.id ? savedCabin : c)); // <<< ELIMINAR - Ya no hay estado local
+        operationSuccess = true;
+
+      } else {
+        // --- Crear Nueva Cabina ---
+        if (!clinicData?.id) {
+          throw new Error("No se puede crear una cabina sin una clínica seleccionada.");
+        }
+        const dataToSend = {
+          ...cabinDataFromDialog,
+          clinicId: clinicData.id,
+          systemId: clinicData.systemId // Asegurar que el systemId se envía
+        };
+        console.log("handleSaveCabin - Creando nueva cabina con datos:", dataToSend);
+        const response = await fetch('/api/cabins', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(dataToSend),
+        });
+      if (!response.ok) {
+          const errorData = await response.json().catch(() => ({})); // Catch si no hay JSON
+          console.error("API Error Data (POST):", errorData);
+          throw new Error(errorData.error || `Failed to create cabin (status ${response.status})`);
+        }
+        savedCabin = await response.json();
+        console.log("handleSaveCabin - Nueva cabina creada:", savedCabin);
+        // Actualizar estado local
+        // setCabinsData(prev => [...prev, savedCabin!].sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity))); // <<< ELIMINAR - Ya no hay estado local
+        operationSuccess = true;
+      }
+
+      // --- Refrescar cabinas en el contexto SI la operación fue exitosa ---
+      if (operationSuccess && typeof refreshActiveClinicCabins === 'function') {
+        console.log("handleSaveCabin - Operation successful, calling refreshActiveClinicCabins...");
+        await refreshActiveClinicCabins();
+        console.log("handleSaveCabin - refreshActiveClinicCabins completed.");
+      } else if (!operationSuccess) {
+         console.warn("handleSaveCabin - API operation failed, skipping refresh.");
+      } else {
+         console.warn("handleSaveCabin - refreshActiveClinicCabins is not available.");
+      }
+      // -----------------------------------------------------------------
+
+      toast({ title: "Éxito", description: `Cabina "${savedCabin?.name}" guardada correctamente.` });
+      setIsCabinDialogOpen(false);
+      setEditingCabin(null);
+
+    } catch (error) {
+      console.error("Error guardando cabina:", error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Error desconocido al guardar la cabina.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+    // Actualizar dependencias de useCallback
+  }, [clinicData, updateClinica, refreshActiveClinicCabins]); 
+
+  const handleDeleteCabin = useCallback(
+    (cabinId: string) => {
+      console.warn("handleDeleteCabin needs refactoring for API calls.")
+    },
+    [],
+  )
+
+  const handleReorderCabin = useCallback((cabinId: string, direction: 'up' | 'down') => {
+    setDisplayedCabins(prevCabins => {
+      const index = prevCabins.findIndex(c => c.id === cabinId);
+      if (index === -1) {
+        console.error("handleReorderCabin - Cabin not found in displayedCabins");
+        return prevCabins; // No hacer cambios si no se encuentra
+      }
+
+      const newIndex = direction === 'up' ? index - 1 : index + 1;
+      if (newIndex < 0 || newIndex >= prevCabins.length) {
+        console.warn("handleReorderCabin - Cannot move cabin further");
+        return prevCabins; // No se puede mover más, devolver estado sin cambios
+      }
+
+      // Crear el nuevo array reordenado basado en el estado local
+      const reordered = [...prevCabins];
+      const temp = reordered[index];
+      reordered[index] = reordered[newIndex];
+      reordered[newIndex] = temp;
+      
+      console.log(`[handleReorderCabin] Cabin ${cabinId} moved ${direction}. New local order:`, reordered.map(c => c.id));
+      
+      // Devolver el nuevo array reordenado para actualizar el estado local
+      return reordered; 
+    });
+
+    // <<< ELIMINARADAS LLAMADAS A API Y refreshActiveClinicCabins >>>
+    // Ya no llamamos a la API ni refrescamos el contexto aquí.
+    // La persistencia se hará en handleSaveClick.
+
+  }, []); // Dependencia vacía, ya que ahora solo usa setDisplayedCabins
+  // --- FIN MODIFICACIÓN handleReorderCabin ---
+
+  // La función handleApplyGeneralTimesToAllDays ya está definida más arriba (alrededor de la línea 998)
+  // Se elimina esta segunda definición para evitar el error de redeclaración.
+
+  // --- FIN Nuevo Handler ---
+
+  const handleSaveClick = useCallback(async () => {
+    if (!clinicData || !formData) { // <<< Añadir chequeo para formData
+      toast({ title: "Error", description: "Datos de la clínica o formulario no disponibles.", variant: "destructive" });
+      return;
+    }
+    setIsSaving(true);
+    let finalLinkedTemplateId: string | null = null;
+    let finalIndependentBlocksData: any | null = null; // Usar any temporalmente para flexibilidad
+    let finalDeleteIndependentBlocksFlag: boolean | undefined = undefined;
+
+    try {
+      // 1. Preparar payload base (usando formData para los campos editables)
+      //    Asegurarse de que formData no sea null (ya chequeado arriba)
+      const basePayload: Partial<Omit<ClinicaApiOutput, 'id' | 'createdAt' | 'updatedAt' | 'systemId' | 'linkedScheduleTemplate' | 'independentScheduleBlocks' | 'independentSchedule' | 'tariff' | 'cabins'> & { tariffId?: string | null }> = {
+        name: formData.name, // <<< Usar formData
+        address: formData.address, // <<< Usar formData
+        city: formData.city, // <<< Usar formData
+        legalEntityId: formData.legalEntityId, // Asegurarse de que se envía
+        postalCode: formData.postalCode, // <<< Usar formData
+        province: formData.province, // <<< Usar formData
+        // countryCode: formData.countryCode, // <<< Usar formData <<<- REEMPLAZAR
+        countryIsoCode: formData.countryIsoCode, // <<< REEMPLAZADO por countryIsoCode
+        phone: formData.phone, // <<< Usar formData
+        // --- AÑADIR PREFIJOS DESDE formData ---
+        phone1CountryIsoCode: formData.phone1CountryIsoCode,
+        phone2CountryIsoCode: formData.phone2CountryIsoCode,
+        // --- FIN AÑADIR PREFIJOS ---
+        email: formData.email, // <<< Usar formData
+        currency: formData.currency, // <<< Usar formData
+        // timezone: formData.timezone, // <<< Usar formData <<<- Se obtiene de CountryInfo
+        isActive: formData.isActive, // <<< Usar formData
+        prefix: formData.prefix, // <<< Usar formData
+        commercialName: formData.commercialName, // <<< Usar formData
+        businessName: formData.businessName, // <<< Usar formData
+        cif: formData.cif, // <<< Usar formData
+        // country: formData.country, // <<< Usar formData <<<- REEMPLAZAR si es redundante con countryIsoCode
+        phone2: formData.phone2, // <<< Usar formData
+        initialCash: formData.initialCash, // <<< Usar formData
+        ticketSize: formData.ticketSize, // <<< Usar formData
+        ip: formData.ip, // <<< Usar formData
+        blockSignArea: formData.blockSignArea, // <<< Usar formData
+        blockPersonalData: formData.blockPersonalData, // <<< Usar formData
+        delayedPayments: formData.delayedPayments, // <<< Usar formData
+        affectsStats: formData.affectsStats, // <<< Usar formData
+        appearsInApp: formData.appearsInApp, // <<< Usar formData
+        scheduleControl: formData.scheduleControl, // <<< Usar formData
+        professionalSkills: formData.professionalSkills, // <<< Usar formData
+        notes: formData.notes, // <<< Usar formData
+        tariffId: formData.tariffId, // <<< Usar formData (asegurarse que Select actualiza formData)
+        // linkedScheduleTemplateId se maneja después
+      };
+
+      // Limpiar propiedades undefined que podrían venir de Partial<ClinicaApiOutput>
+      // La API podría fallar si se envían explícitamente como undefined.
+      Object.keys(basePayload).forEach(key => {
+         const typedKey = key as keyof typeof basePayload;
+         if (basePayload[typedKey] === undefined) {
+             delete basePayload[typedKey];
+         }
+      });
+
+      // 2. Añadir lógica de horario (plantilla vs independiente) <<< ¡AÑADIR AQUÍ! >>>
+      if (useTemplateSchedule) {
+        // --- Guardando con Plantilla ---
+        finalLinkedTemplateId = selectedTemplateId; // Asignar ID de plantilla
+        // Asegurarse de no enviar datos independientes si usamos plantilla
+        finalIndependentBlocksData = null; 
+        // La API debería manejar deleteIndependentBlocks basado en linkedScheduleTemplateId no nulo
+        finalDeleteIndependentBlocksFlag = true; // Ser explícito como en el contexto
+        console.log(`[handleSaveClick] Modo Plantilla. Template ID: ${finalLinkedTemplateId}, Borrar bloques: ${finalDeleteIndependentBlocksFlag}`);
+      } else {
+        // --- Guardando con Horario Independiente ---
+        finalLinkedTemplateId = null; // Desvincular plantilla
+        finalIndependentBlocksData = independentSchedule; // Pasar el objeto WeekSchedule
+        finalDeleteIndependentBlocksFlag = false; // No borrar bloques existentes si enviamos nuevos
+        console.log(`[handleSaveClick] Modo Independiente. Template ID: ${finalLinkedTemplateId}, Borrar bloques: ${finalDeleteIndependentBlocksFlag}`);
+        console.log(`[handleSaveClick] Datos horario independiente a enviar:`, finalIndependentBlocksData);
+      }
+      // <<< FIN LÓGICA DE HORARIO AÑADIDA >>>
+
+      // 3. Construir el payload final que se envía a updateClinica
+      //    updateClinica espera Partial<PrismaClinic> & { independentScheduleData?: any, deleteIndependentBlocks?: boolean }
+      const finalPayload: Record<string, any> = { 
+          ...basePayload, // Incluir los campos base de la clínica
+          linkedScheduleTemplateId: finalLinkedTemplateId, // ID de plantilla (puede ser null)
+      };
+
+      // Añadir los bloques solo si existen
+      if (finalIndependentBlocksData !== null) {
+          // Usar la clave que espera la API (asumiendo 'independentScheduleData')
+         finalPayload.independentScheduleData = finalIndependentBlocksData;
+      }
+
+      // Añadir el flag de borrado si se definió
+      if (finalDeleteIndependentBlocksFlag !== undefined) {
+         finalPayload.deleteIndependentBlocks = finalDeleteIndependentBlocksFlag;
+      }
+
+      // <<< INICIO: NUEVA LÓGICA PARA AÑADIR ORDEN DE CABINAS >>>
+      // Crear el array 'cabinsOrder' a partir del estado 'displayedCabins'
+      const cabinsOrderPayload = displayedCabins.map((cabin, index) => ({
+          id: cabin.id,
+          order: index // Usar el índice actual del array como el nuevo orden
+      }));
+      console.log("[handleSaveClick] Prepared cabinsOrder payload:", cabinsOrderPayload);
+      // <<< FIN: NUEVA LÓGICA >>>
+
+      // <<< AÑADIR explícitamente cabinsOrder si existe >>>
+      if (cabinsOrderPayload && cabinsOrderPayload.length > 0) {
+          finalPayload.cabinsOrder = cabinsOrderPayload;
+          console.log("[handleSaveClick] Added cabinsOrder to finalPayload."); // Log de confirmación
+      } else {
+           console.log("[handleSaveClick] No cabinsOrder data to add."); // Log si no hay datos
+      }
+      // <<< FIN AÑADIR EXPLÍCITO >>>
+
+      console.log("Datos finales enviados a updateClinica:", JSON.stringify(finalPayload, null, 2));
+
+      // 4. Llamar a updateClinica con el payload final
+      const clinicIdString = String(clinicData.id); 
+      // Asegurar que el tipo de finalPayload sea compatible con lo que espera updateClinica
+      // updateClinica espera Partial<PrismaClinic> pero acepta campos extra como vimos en el contexto
+      const result = await updateClinica(clinicIdString, finalPayload as Partial<PrismaClinic> & { independentScheduleData?: any, deleteIndependentBlocks?: boolean });
+
+      // 5. Procesar resultado (igual que antes, pero ajustando estados post-guardado)
+      if (result) {
+        toast({ title: "Éxito", description: "Configuración de la clínica guardada." });
+        
+        // FORZAR RECARGA DE DATOS para asegurar consistencia total post-guardado
+        // Esto es más seguro que intentar sincronizar todos los estados manualmente.
+        // await getClinicaById(clinicIdString); // <<< ELIMINAR ESTA LÍNEA >>>
+        // La recarga del contexto debería actualizar `clinicData` y disparar los useEffects
+        // para recalcular `useTemplateSchedule`, `selectedTemplateId`, `independentSchedule`, etc.
+        
+        /* // Alternativa: Sincronización manual (más propensa a errores) 
+        setClinicData(result); // Actualizar con datos guardados
+        const guardadoConPlantilla = !!result.linkedScheduleTemplateId;
+        setUseTemplateSchedule(guardadoConPlantilla);
+        setSelectedTemplateId(result.linkedScheduleTemplateId);
+        setIdDePlantillaOriginalAlDesmarcar(null); // Limpiar
+        setHaEditadoHorario(false);             // Limpiar
+        if (guardadoConPlantilla) {
+            setIndependentSchedule(null);
+      } else {
+            setIndependentSchedule(convertBlocksToWeekSchedule(result.independentScheduleBlocks, "00:00", "23:59"));
+        }
+         const finalScheduleForDisplay = guardadoConPlantilla
+             ? convertBlocksToWeekSchedule(result.linkedScheduleTemplate?.blocks, "00:00", "23:59")
+             : convertBlocksToWeekSchedule(result.independentScheduleBlocks, "00:00", "23:59");
+         const { earliest, latest } = calcularBoundsSchedule(finalScheduleForDisplay);
+         actualizarDisplayTimes(earliest, latest);
+        */
+
+      } else { 
+         // ... (manejo de error igual que antes) ...
+         toast({ title: "Error", description: "No se pudo guardar la configuración. Inténtalo de nuevo.", variant: "destructive" });
+      }
+    } catch (error) {
+       // ... (manejo de error igual que antes) ...
+       console.error("Error detallado en handleSaveClick:", error);
+       toast({ title: "Error", description: `Error al guardar: ${error instanceof Error ? error.message : 'Error desconocido'}`, variant: "destructive" });
+    } finally {
+      setIsSaving(false);
+    }
+  }, [
+      clinicData, formData, updateClinica, useTemplateSchedule, independentSchedule, // <<< Añadir formData a dependencias
+      selectedTemplateId, idDePlantillaOriginalAlDesmarcar, haEditadoHorario, 
+      templates, // Quitar weekScheduleToPrismaBlocks si no se usa aquí
+      getClinicaById, 
+      displayedCabins // <<< AÑADIR displayedCabins a las dependencias de useCallback >>>
+  ]);
+
+  const handleExcepcionChange = (field: keyof ExcepcionHorariaLocal, value: any) => {
+    if (editingExcepcion) {
+      setEditingExcepcion({ ...editingExcepcion, [field]: value })
+    } else {
+      setNuevaExcepcion({ ...nuevaExcepcion, [field]: value })
+    }
+  }
+
+  const handleCrearExcepcion = () => {
+    // <<< INICIALIZAR CAMPOS FALTANTES PARA ExcepcionHorariaLocal >>>
+    const nuevaExcepcionInicial: ExcepcionHorariaLocal = {
+      id: Date.now().toString(),
+      clinicaId: clinicId,
+      nombre: "Nueva Excepción", // <<< VALOR POR DEFECTO >>>
+      fechaInicio: "", // <<< VALOR POR DEFECTO >>>
+      fechaFin: "", // <<< VALOR POR DEFECTO >>>
+      dias: [], // <<< VALOR POR DEFECTO >>>
+    };
+    setEditingExcepcion({
+      ...nuevaExcepcionInicial
+    })
+    setShowExcepcionModal(true)
+  }
+
+  const handleEditarExcepcion = (excepcionId: string) => {
+    // const excepcion = scheduleExceptions.find(exc => exc.id === excepcionId); // << COMENTADO TEMPORALMENTE
+    const excepcion = null; // Placeholder para evitar error
+    if (excepcion) {
+      console.warn("Editing exceptions needs mapping from Prisma structure.");
+      // Usar el tipo local ExcepcionHorariaLocal
+      setEditingExcepcion(excepcion as ExcepcionHorariaLocal);
+      setShowExcepcionModal(true)
+    }
+  }
+
+  const handleGuardarExcepcion = () => {
+    if (!editingExcepcion) return
+
+    console.warn("handleGuardarExcepcion needs refactoring for API calls and data mapping.");
+
+    setShowExcepcionModal(false)
+    setEditingExcepcion(null)
+
+    toast({
+      title: "Excepción de horario guardada",
+      description: "La excepción ha sido guardada correctamente",
+    })
+  }
+
+  const handleEliminarExcepcion = (excepcionId: string) => {
+    console.warn("handleEliminarExcepcion needs refactoring for API calls.");
+    toast({
+      title: "Excepción eliminada",
+      description: "La excepción ha sido eliminada exitosamente.",
+    })
+  }
+
+  const handleToggleDiaExcepcion = (diaIndex: number, activo: boolean) => {
+    if (!editingExcepcion) return
+    
+    const diasActualizados = [...editingExcepcion.dias]
+    diasActualizados[diaIndex] = {
+      ...diasActualizados[diaIndex],
+      activo,
+      franjas: activo ? diasActualizados[diaIndex].franjas : []
+    }
+    
+    setEditingExcepcion({
+      ...editingExcepcion,
+      dias: diasActualizados
+    })
+  }
+
+  const handleAddFranjaExcepcion = (diaIndex: number, inicio: string, fin: string) => {
+    if (!editingExcepcion) return
+    
+    // Usar el tipo local FranjaHorariaLocal
+    const nuevaFranja: FranjaHorariaLocal = {
+      id: Date.now().toString(),
+      inicio,
+      fin
+    }
+    
+    const diasActualizados = [...editingExcepcion.dias]
+    diasActualizados[diaIndex] = {
+      ...diasActualizados[diaIndex],
+      franjas: [...diasActualizados[diaIndex].franjas, nuevaFranja]
+    }
+    
+    setEditingExcepcion({
+      ...editingExcepcion,
+      dias: diasActualizados
+    })
+  }
+
+  const handleRemoveFranjaExcepcion = (diaIndex: number, franjaId: string) => {
+    if (!editingExcepcion) return
+    
+    const diasActualizados = [...editingExcepcion.dias]
+    diasActualizados[diaIndex] = {
+      ...diasActualizados[diaIndex],
+      franjas: editingExcepcion.dias[diaIndex].franjas.filter(franja => franja.id !== franjaId)
+    }
+    
+    setEditingExcepcion({
+      ...editingExcepcion,
+      dias: diasActualizados
+    })
+  }
+
+  const handleSave = async () => {
+    setIsSaving(true)
+    // Simular una operación de guardado
+    await new Promise((resolve) => setTimeout(resolve, 2000))
+    setIsSaving(false)
+    // Aquí iría la lógica real de guardado
+  }
+
+  const { t } = useTranslation(); // <<< Asegurar que se llama >>>
+
+  // <<< MOVER LA DEFINICIÓN DE TABS AQUÍ PARA PODER USAR t() >>>
+  const clinicTabs = useMemo(() => [
+    { id: "datos", label: t('config_clinics.tabs.datos'), icon: Building2 },
+    { id: "horarios", label: t('config_clinics.tabs.horarios'), icon: Clock },
+    { id: "usuarios", label: t('config_clinics.tabs.usuarios'), icon: Users },
+    { id: "tarifa", label: t('config_clinics.tabs.tarifa'), icon: Tag },
+    { id: "entidades", label: t('config_clinics.tabs.entidades'), icon: CreditCard },
+    { id: "pagos", label: t('config_clinics.tabs.pagos'), icon: CreditCard },
+    { id: "integraciones", label: t('config_clinics.tabs.integraciones'), icon: LucideLinkIcon }, // <<< USAR EL ALIAS
+    { id: "descuentos", label: t('config_clinics.tabs.promotions', 'Promociones'), icon: Percent }, // Usar clave de promociones
+    { id: "sms", label: t('config_clinics.tabs.sms'), icon: MessageSquare },
+    { id: "email", label: t('config_clinics.tabs.email'), icon: Mail },
+    { id: "whatsapp", label: t('config_clinics.tabs.whatsapp'), icon: Phone },
+    { id: "otros", label: t('config_clinics.tabs.otros'), icon: Globe },
+    { id: "sedes", label: t('config_clinics.tabs.sedes'), icon: MapPin },
+    { id: "cabinas", label: t('config_clinics.tabs.cabinas'), icon: LayoutGrid },
+    { id: "equipamiento", label: t('config_clinics.tabs.equipamiento'), icon: Wrench },
+    { id: "almacenamiento", label: t('config_clinics.tabs.almacenamiento'), icon: HardDrive },
+    { id: "depuracion", label: t('config_clinics.tabs.depuracion'), icon: Trash2 },
+  ], [t]); // <<< Añadir t como dependencia >>>
+
+  const [tarifaName, setTarifaName] = useState<string | null>(null);
+  const [loadingTarifa, setLoadingTarifa] = useState<boolean>(false);
+  const [currentScheduleConfig, setCurrentScheduleConfig] = useState<WeekSchedule | null>(null);
+
+  useEffect(() => {
+    if (clinicData) {
+      let initialSchedule: WeekSchedule | null = null;
+      
+      // 1. Intentar usar horario independiente si existe y es parseable
+      // <<< ELIMINAR BLOQUE try/catch para JSON.parse >>>
+      // if (clinicData.independentSchedule) { // Ya no usamos clinicData.independentSchedule directamente aquí
+      //     console.log("Attempting to use independentSchedule...");
+      //     try {
+      //         const parsed = JSON.parse(clinicData.independentSchedule as string); // <<< ERROR ESTABA AQUÍ
+      //         initialSchedule = parsed as WeekSchedule;
+      //         console.log("Successfully parsed independentSchedule.");
+      //     } catch (e) {
+      //         console.warn("Failed to parse clinicData.independentSchedule as JSON. Structure might be different or needs conversion.", e);
+              // Confiar en los bloques si el parseo falla o si independentSchedule no es la fuente directa
+              if (clinicData.independentScheduleBlocks && clinicData.independentScheduleBlocks.length > 0) {
+                 console.log("Attempting conversion from independentScheduleBlocks.");
+                 // <<< AÑADIR ARGUMENTOS FALTANTES >>>
+                 initialSchedule = convertBlocksToWeekSchedule(clinicData.independentScheduleBlocks, "00:00", "23:59");
+              }
+      //     }
+      // }
+      
+      // 2. Si no hay horario independiente válido, intentar usar la plantilla vinculada
+      if (!initialSchedule && clinicData.linkedScheduleTemplate) {
+          console.log("Independent schedule not found or invalid, trying linked template...");
+          if (clinicData.linkedScheduleTemplate.blocks && clinicData.linkedScheduleTemplate.blocks.length > 0) {
+              console.log("Using blocks from linkedScheduleTemplate.");
+              // <<< AÑADIR ARGUMENTOS FALTANTES >>>
+              initialSchedule = convertBlocksToWeekSchedule(clinicData.linkedScheduleTemplate.blocks, "00:00", "23:59");
+          } else {
+               console.warn("linkedScheduleTemplate exists but has no blocks or schedule info in expected format.");
+          }
+      }
+
+      // 3. Si aún no hay horario, intentar construir desde bloques independientes (si no se hizo ya)
+      // <<< Comprobación ajustada, si initialSchedule aún es null Y hay bloques independientes >>>
+      if (!initialSchedule && clinicData.independentScheduleBlocks && clinicData.independentScheduleBlocks.length > 0) {
+           console.log("No valid schedule from independent or template, trying conversion from independentScheduleBlocks again.");
+           // <<< AÑADIR ARGUMENTOS FALTANTES >>>
+           initialSchedule = convertBlocksToWeekSchedule(clinicData.independentScheduleBlocks, "00:00", "23:59");
+      }
+
+      if (initialSchedule) {
+          console.log('Horario inicial establecido:', initialSchedule);
+          setCurrentScheduleConfig(initialSchedule);
+      } else {
+          console.log("No valid initial schedule found. Setting to null.");
+          setCurrentScheduleConfig(null); // Fallback a null si no se encontró/convirtió
+      }
+    }
+}, [clinicData]); // Dependencia: clinicData
+
+  const loadTarifaData = async () => {
+    // ... existente ...
+  };
+
+  // <<< AJUSTAR onScheduleConfigChange para actualizar independentSchedule >>>
+  const onScheduleConfigChange = useCallback((newSchedule: WeekSchedule) => {
+    console.log("[Page] Schedule config changed by component:", newSchedule);
+    // Solo actualizar el estado 'independentSchedule' si NO estamos usando plantilla
+    if (!useTemplateSchedule) {
+        console.log("[Page] Updating independentSchedule state...");
+        setIndependentSchedule(newSchedule);
+        setHaEditadoHorario(true); // Marcar que se ha editado desde que se desmarcó
+    } else {
+        console.log("[Page] In template mode, ignoring schedule change notification from component.");
+    }
+    // Ya no necesitamos setCurrentScheduleConfig aquí, lo quitamos
+    // setCurrentScheduleConfig(newSchedule); 
+  }, [useTemplateSchedule]); // Depender de useTemplateSchedule
+
+  const selectedLegalEntityForDisplay = useMemo(() => {
+    if (!formData?.legalEntityId || !Array.isArray(legalEntitiesData)) {
+      return null;
+    }
+    // Assuming legalEntitiesData is an array of legal entity objects
+    // @ts-ignore TS assumes legalEntitiesData is any[] so 'le' is any. Add specific type if available.
+    return legalEntitiesData.find(le => le.id === formData.legalEntityId) || null;
+  }, [formData?.legalEntityId, legalEntitiesData]);
+
+
+
+  // ... useEffect para cargar datos de la clínica ...
+  useEffect(() => {
+    // ... existente ...
+  }, [clinicId]);
+
+  // ... handleSave, handleCancel, etc ...
+
+  // NOTE: Linter error "No se encuentra el nombre 'crearExcepcionPorDefecto'." persiste.
+  // Needs investigation to determine where this function should be defined or imported from.
+
+  // ... return JSX ...
+
+        return (
+    <div className="container px-0 pt-4 pb-20"> {/* Añadir pb-20 para espacio footer */}
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold">Configuración de Clínica: {clinicData?.name}</h1>
+                    </div>
+
+      <div className="flex items-start gap-6">
+        <div className="w-64 shrink-0">
+          <div className="sticky p-4 border rounded-lg shadow top-4 bg-card">
+            <div className="flex flex-col space-y-1">
+              {menuItems.map((item) => {
+                const Icon = item.icon
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => setActiveTab(item.id)}
+                    className={cn(
+                      "flex items-center space-x-2 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                      activeTab === item.id
+                        ? "bg-accent text-accent-foreground"
+                        : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                    )}
+                  >
+                    <Icon className="w-5 h-5" />
+                    <span>{item.label}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex-1">
+          {clinicData && (
+            <div className="space-y-6">
+              <h2 className="mb-6 text-2xl font-semibold">{menuItems.find((item) => item.id === activeTab)?.label}</h2>
+
+              {activeTab === "datos" && (
+                <Card className="p-6">
+                  <SectionTitle icon={Building2} title="Información general" color="text-blue-600 border-blue-600" />
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="prefix" className="text-sm">
+                        Prefijo
+                      </Label>
+                      <Input
+                        id="prefix"
+                        name="prefix" // <<< Añadir name
+                        value={formData?.prefix || ''} // <<< Usar formData
+                        className="text-sm h-9"
+                        onChange={handleFormChange} // <<< Usar handleFormChange
+                      />
+                        </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="name" className="text-sm">
+                        Nombre
+                      </Label>
+                      <Input
+                        id="name"
+                      name="name" // <<< AÑADIR O ASEGURAR ESTE ATRIBUTO
+                      placeholder="Nombre de la clínica" // (Este ya debería estar)
+                      required // (Este ya debería estar)
+                      value={formData?.name || ''} // <<< CAMBIAR ESTE ATRIBUTO
+                      onChange={handleFormChange} // <<< CAMBIAR ESTE ATRIBUTO
+                      />
+                        </div>
+                    
+                    <div className="space-y-2 md:col-span-2">
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id="isActive"
+                          name="isActive"
+                          checked={formData?.isActive ?? false}
+                          // onCheckedChange={handleFormChange} // <<< NO USAR handleFormChange directamente
+                          onCheckedChange={(checked) => handleCheckboxSwitchChange(checked as boolean, 'isActive')} // <<< USAR NUEVO HANDLER
+                        />
+                        <Label htmlFor="isActive" className="text-sm font-medium cursor-pointer">
+                          Clínica activa
+                        </Label>
+                        {/* Mantener el badge visual, leyendo de formData ahora */}
+                        <div className={`ml-2 px-2 py-0.5 text-xs rounded-full ${formData?.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                          {formData?.isActive ? 'Activa' : 'Inactiva'}
+                        </div>
+                        </div>
+                      <p className="ml-6 text-xs text-gray-500">
+                        Las clínicas inactivas no aparecerán en los selectores por defecto,
+                        pero sus datos se conservan y pueden reactivarse en cualquier momento.
+                      </p>
+                        </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="commercialName" className="text-sm">
+                        Nombre Comercial
+                      </Label>
+                      <Input
+                        id="commercialName"
+                        name="commercialName" // <<< Añadir name
+                        value={formData?.commercialName || ''} // <<< Usar formData
+                        className="text-sm h-9"
+                        onChange={handleFormChange} // <<< Usar handleFormChange
+                      />
+                      </div>
+                    {/* 
+                    <div className="space-y-2">
+                      <Label htmlFor="businessName" className="text-sm">
+                        Razón Social
+                      </Label>
+                      <Input
+                        id="businessName"
+                        name="businessName"
+                        value={formData?.businessName || ''}
+                        className="text-sm h-9"
+                        onChange={handleFormChange}
+                      />
+                    </div>
+                    */}
+                    {/* 
+                    <div className="space-y-2">
+                      <Label htmlFor="cif" className="text-sm">
+                        CIF
+                      </Label>
+                      <Input
+                        id="cif"
+                        name="cif"
+                        value={formData?.cif || ''}
+                        className="text-sm h-9"
+                        onChange={handleFormChange}
+                      />
+                    </div>
+                    */}
+                    {/* FIN CIF Input div COMENTADO */} 
+
+                    {/* Selector para Sociedad Mercantil Asociada (COMIENZO) */}
+                    {/* Este div es un item del grid principal */}
+                    <div className="space-y-2">
+                      <Label htmlFor="legalEntityId" className="text-sm"> {/* Cambiado htmlFor */}
+                        Sociedad Mercantil Asociada
+                      </Label>
+                      {/* <<< REEMPLAZO DEL INPUT POR SELECT >>> */}
+                      <Select
+                        name="legalEntityId"
+                        value={formData?.legalEntityId || ""} // Usar "" como fallback para SelectTrigger
+                        onValueChange={(value) => handleFormChange({ target: { name: 'legalEntityId', value: value === "NONE" ? null : value, type: 'select' } } as any)}
+                        disabled={isLoadingLegalEntities}
+                      >
+                        <SelectTrigger className="text-sm h-9" disabled={isLoadingLegalEntities}>
+                          <SelectValue placeholder={isLoadingLegalEntities ? "Cargando sociedades..." : "Selecciona una sociedad"} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="NONE">Ninguna</SelectItem>
+                          {Array.isArray(legalEntitiesData) && legalEntitiesData.map((le: any) => (
+                            <SelectItem key={le.id} value={le.id}>
+                              {le.name} ({le.cif})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {/* <<< FIN REEMPLAZO >>> */}
+                      </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="province" className="text-sm">
+                        Provincia
+                      </Label>
+                      <Input
+                        id="province"
+                        name="province" // <<< Añadir name
+                        value={formData?.province || ''} // <<< Usar formData
+                        className="text-sm h-9"
+                        onChange={handleFormChange} // <<< Usar handleFormChange
+                      />
+                      </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="city" className="text-sm">
+                        Ciudad
+                      </Label>
+                      <Input
+                        id="city"
+                        name="city" // <<< Añadir name
+                        value={formData?.city || ''} // <<< Usar formData
+                        className="text-sm h-9"
+                        onChange={handleFormChange} // <<< Usar handleFormChange
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="postalCode" className="text-sm">
+                        CP
+                      </Label>
+                      <Input
+                        id="postalCode"
+                        name="postalCode" // <<< Añadir name
+                        value={formData?.postalCode || ''} // <<< Usar formData
+                        className="text-sm h-9"
+                        onChange={handleFormChange} // <<< Usar handleFormChange
+                      />
+                    </div>
+                    <div className="space-y-2 md:col-span-2">
+                      <Label htmlFor="address" className="text-sm">
+                        Dirección
+                      </Label>
+                      <Input
+                        id="address"
+                        name="address" // <<< Añadir name
+                        value={formData?.address || ''} // <<< Usar formData
+                        className="text-sm h-9"
+                        onChange={handleFormChange} // <<< Usar handleFormChange
+                      />
+                    </div>
+                  </div> {/* Este es el cierre del div className="grid gap-4 md:grid-cols-2" principal */}
+
+                  <SectionTitle icon={MapPin} title="Ubicación" color="text-green-600 border-green-600" />
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {/* ... resto de los campos de ubicación ... */}
+
+                    <div className="space-y-2">
+                      <Label htmlFor="countryIsoCode" className="text-sm"> {/* Cambiado htmlFor */}
+                        País
+                      </Label>
+                      {/* <<< REEMPLAZO DEL INPUT POR SELECT >>> */}
+                      <Select
+                        name="countryIsoCode"
+                        value={formData?.countryIsoCode || ""} // Usar "" como fallback para SelectTrigger
+                        onValueChange={(value) => handleFormChange({ target: { name: 'countryIsoCode', value: value, type: 'select' } } as any)}
+                        disabled={isLoadingCountries} // Deshabilitar mientras carga
+                      >
+                        <SelectTrigger className="text-sm h-9" disabled={isLoadingCountries}>
+                          <SelectValue placeholder={isLoadingCountries ? "Cargando países..." : "Selecciona un país"} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {isLoadingCountries ? (
+                             <SelectItem value="loading" disabled>Cargando...</SelectItem>
+                          ) : countriesError ? (
+                             <SelectItem value="error" disabled>Error al cargar: {countriesError}</SelectItem>
+                          ) : countries.length === 0 ? (
+                             <SelectItem value="no-countries" disabled>No hay países disponibles</SelectItem>
+                          ) : (
+                            countries.map((country) => (
+                              <SelectItem key={country.isoCode} value={country.isoCode}>
+                                {country.name}
+                              </SelectItem>
+                            ))
+                          )}
+                        </SelectContent>
+                      </Select>
+                      {/* <<< FIN REEMPLAZO >>> */}
+                      </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="province" className="text-sm">
+                        Provincia
+                      </Label>
+                      <Input
+                        id="province"
+                        name="province" // <<< Añadir name
+                        value={formData?.province || ''} // <<< Usar formData
+                        className="text-sm h-9"
+                        onChange={handleFormChange} // <<< Usar handleFormChange
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="city" className="text-sm">
+                        Ciudad
+                      </Label>
+                      <Input
+                        id="city"
+                        name="city" // <<< Añadir name
+                        value={formData?.city || ''} // <<< Usar formData
+                        className="text-sm h-9"
+                        onChange={handleFormChange} // <<< Usar handleFormChange
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="postalCode" className="text-sm">
+                        CP
+                      </Label>
+                      <Input
+                        id="postalCode"
+                        name="postalCode" // <<< Añadir name
+                        value={formData?.postalCode || ''} // <<< Usar formData
+                        className="text-sm h-9"
+                        onChange={handleFormChange} // <<< Usar handleFormChange
+                      />
+                    </div>
+                    <div className="space-y-2 md:col-span-2">
+                      <Label htmlFor="address" className="text-sm">
+                        Dirección
+                      </Label>
+                      <Input
+                        id="address"
+                        name="address" // <<< Añadir name
+                        value={formData?.address || ''} // <<< Usar formData
+                        className="text-sm h-9"
+                        onChange={handleFormChange} // <<< Usar handleFormChange
+                      />
+                    </div>
+                  </div>
+
+                  <SectionTitle icon={Phone} title="Contacto" color="text-orange-600 border-orange-600" />
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="phone" className="text-sm">
+                        Teléfono
+                      </Label>
+                      {/* <<< ENVOLVER INPUT EN FLEX Y AÑADIR SELECT >>> */}
+                      <div className="flex items-center gap-2"> 
+                        <Select
+                          name="phone1CountryIsoCode" // Nombre para el handler
+                          value={formData?.phone1CountryIsoCode || ""}
+                          onValueChange={(value) => handleFormChange({ target: { name: 'phone1CountryIsoCode', value: value, type: 'select' } } as any)}
+                          disabled={isLoadingCountries} // Deshabilitar mientras carga
+                        >
+                          <SelectTrigger id="clinic-phone1-prefix" className="h-9 w-auto min-w-[120px] text-sm"> {/* Ajustar ancho */}
+                            <SelectValue placeholder={isLoadingCountries ? "Cargando..." : "Prefijo"} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {isLoadingCountries ? (
+                              <SelectItem value="loading" disabled>Cargando...</SelectItem>
+                            ) : countriesError ? (
+                              <SelectItem value="error" disabled>Error</SelectItem>
+                            ) : countries.length === 0 ? (
+                              <SelectItem value="no-countries" disabled>N/A</SelectItem>
+                            ) : (
+                              countries.map(country => (
+                                <SelectItem key={country.isoCode} value={country.isoCode}>
+                                  {country.phoneCode} ({country.isoCode})
+                                </SelectItem>
+                              ))
+                            )}
+                          </SelectContent>
+                        </Select>
+                        <Input 
+                          id="phone" 
+                          name="phone" // Asegurar que el input tiene nombre
+                          value={formData.phone || ''} // Leer de formData
+                          onChange={handleFormChange} // Usar handler general
+                          className="flex-1 text-sm h-9" // Ajustar clase
+                        />
+                      </div>
+                      {/* Mostrar error si falla la carga de países */}
+                      {countriesError && (
+                        <p className="mt-1 text-xs text-red-500">Error al cargar prefijos: {countriesError}</p>
+                      )}
+                      {/* <<< FIN ENVOLVER Y AÑADIR SELECT >>> */}
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="phone2" className="text-sm">
+                        Teléfono 2
+                      </Label>
+                       {/* <<< ENVOLVER INPUT EN FLEX Y AÑADIR SELECT >>> */}
+                       <div className="flex items-center gap-2">
+                         <Select
+                           name="phone2CountryIsoCode" // Nombre para el handler
+                           value={formData?.phone2CountryIsoCode || ""}
+                           onValueChange={(value) => handleFormChange({ target: { name: 'phone2CountryIsoCode', value: value, type: 'select' } } as any)}
+                           disabled={isLoadingCountries} // Deshabilitar mientras carga
+                         >
+                           <SelectTrigger id="clinic-phone2-prefix" className="h-9 w-auto min-w-[120px] text-sm"> {/* Ajustar ancho */}
+                             <SelectValue placeholder={isLoadingCountries ? "Cargando..." : "Prefijo"} />
+                           </SelectTrigger>
+                           <SelectContent>
+                             {isLoadingCountries ? (
+                               <SelectItem value="loading" disabled>Cargando...</SelectItem>
+                             ) : countriesError ? (
+                               <SelectItem value="error" disabled>Error</SelectItem>
+                             ) : countries.length === 0 ? (
+                               <SelectItem value="no-countries" disabled>N/A</SelectItem>
+                             ) : (
+                               countries.map(country => (
+                                 <SelectItem key={country.isoCode} value={country.isoCode}>
+                                   {country.phoneCode} ({country.isoCode})
+                                 </SelectItem>
+                               ))
+                             )}
+                           </SelectContent>
+                         </Select>
+                         <Input 
+                           id="phone2" 
+                           name="phone2" // Asegurar que el input tiene nombre
+                           value={formData.phone2 || ''} // Leer de formData
+                           onChange={handleFormChange} // Usar handler general
+                           className="flex-1 text-sm h-9" // Ajustar clase
+                         />
+                       </div>
+                       {/* Mostrar error si falla la carga de países */}
+                       {countriesError && (
+                         <p className="mt-1 text-xs text-red-500">Error al cargar prefijos: {countriesError}</p>
+                       )}
+                       {/* <<< FIN ENVOLVER Y AÑADIR SELECT >>> */}
+                    </div>
+                    <div className="space-y-2 md:col-span-2">
+                      <Label htmlFor="email" className="text-sm">
+                        E-mail
+                      </Label>
+                      <Input
+                        id="email"
+                        name="email" // <<< Añadir name
+                        type="email"
+                        value={formData?.email || ''} // <<< Usar formData
+                        className="text-sm h-9"
+                        onChange={handleFormChange} // <<< Usar handleFormChange
+                      />
+                    </div>
+                  </div>
+
+                  <SectionTitle icon={Settings2} title="Configuración" color="text-purple-600 border-purple-600" />
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label className="text-sm">Caja inicial</Label>
+                      <Input
+                        id="initialCash" // <<< Añadir id si falta
+                        name="initialCash" // <<< Añadir name
+                        type="number"
+                        step="0.01"
+                        value={formData?.initialCash ?? ''} // <<< Usar formData
+                        className="text-sm h-9"
+                        onChange={handleFormChange} // <<< Usar handleFormChange
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label className="text-sm">Tamaño impresión ticket</Label>
+                  <Select 
+                        name="ticketSize" // <<< Añadir name
+                        value={formData?.ticketSize || undefined} // <<< Usar formData
+                        // onValueChange={(value) => debouncedHandleOtherFieldUpdate({ ticketSize: value })} // <<< Modificar
+                        onValueChange={(value) => handleFormChange({ target: { name: 'ticketSize', value: value, type: 'select' } } as any)}
+                  >
+                        <SelectTrigger className="text-sm h-9">
+                          <SelectValue placeholder="Seleccionar tamaño" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="a5">Hoja A5</SelectItem>
+                          <SelectItem value="a4">Hoja A4</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label className="text-sm">Tarifa</Label>
+                      <Select
+                        name="tariffId" // <<< Añadir name
+                        value={formData?.tariffId || undefined} // <<< Usar formData
+                        // onValueChange={(value) => debouncedHandleOtherFieldUpdate({ tariffId: value })} // <<< Modificar
+                        onValueChange={(value) => handleFormChange({ target: { name: 'tariffId', value: value, type: 'select' } } as any)}
+                      >
+                        <SelectTrigger className="text-sm h-9">
+                          <SelectValue placeholder="Seleccionar tarifa" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {tarifas?.map((tarifa) => (
+                            <SelectItem key={tarifa.id} value={tarifa.id}>
+                              {tarifa.name}
+                            </SelectItem>
+                          ))}
+                          {(!tarifas || tarifas.length === 0) && (
+                            <SelectItem value="no-tarifs" disabled>
+                              No hay tarifas disponibles
+                            </SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label className="text-sm">IP</Label>
+                      <Input
+                        id="ip" // <<< Añadir id si falta
+                        name="ip" // <<< Añadir name
+                        value={formData?.ip || ''} // <<< Usar formData
+                        className="text-sm h-9"
+                        onChange={handleFormChange} // <<< Usar handleFormChange
+                      />
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label className="text-sm">¿Desea bloquear el área de firma electrónica en Qleven?</Label>
+                        <RadioGroup
+                          name="blockSignArea" // <<< Añadir name
+                          value={formData?.blockSignArea ? 'yes' : 'no'} // <<< Usar formData
+                          // onValueChange={(value) => debouncedHandleOtherFieldUpdate({ blockSignArea: value === 'yes' })} // <<< Modificar
+                          onValueChange={(value) => handleFormChange({ target: { name: 'blockSignArea', value: value === 'yes', type: 'radio' } } as any)} // <<< Usar handleFormChange
+                        >
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="no" id="sign-no" />
+                            <Label htmlFor="sign-no" className="text-sm">
+                              No
+                            </Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="yes" id="sign-yes" />
+                            <Label htmlFor="sign-yes" className="text-sm">
+                              Sí, con la clave
+                            </Label>
+                          </div>
+                        </RadioGroup>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label className="text-sm">¿Desea bloquear las áreas de datos personales en Qleven?</Label>
+                        <RadioGroup
+                          name="blockPersonalData" // <<< Añadir name
+                          value={formData?.blockPersonalData ? 'yes' : 'no'} // <<< Usar formData
+                          // onValueChange={(value) => debouncedHandleOtherFieldUpdate({ blockPersonalData: value === 'yes' })} // <<< Modificar
+                          onValueChange={(value) => handleFormChange({ target: { name: 'blockPersonalData', value: value === 'yes', type: 'radio' } } as any)} // <<< Usar handleFormChange
+                        >
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="no" id="personal-no" />
+                            <Label htmlFor="personal-no" className="text-sm">
+                              No
+                            </Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="yes" id="personal-yes" />
+                            <Label htmlFor="personal-yes" className="text-sm">
+                              Sí, con la clave
+                            </Label>
+                          </div>
+                        </RadioGroup>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label className="text-sm">Funcionalidades</Label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="flex items-center space-x-2">
+                          <Checkbox
+                            id="delayed-payments"
+                            checked={!!formData.delayedPayments} // <<< Usar formData
+                            // onCheckedChange={(checked) => debouncedHandleOtherFieldUpdate({ delayedPayments: checked === true })} // <<< Modificar
+                            onCheckedChange={(checked) => handleCheckboxSwitchChange(checked as boolean, 'delayedPayments')} // <<< Usar nuevo handler
+                          />
+                          <Label htmlFor="delayed-payments" className="text-sm">
+                            Pagos aplazados
+                          </Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <Checkbox
+                            id="affects-stats"
+                            checked={!!formData.affectsStats} // <<< Usar formData
+                            // onCheckedChange={(checked) => debouncedHandleOtherFieldUpdate({ affectsStats: checked === true })} // <<< Modificar
+                            onCheckedChange={(checked) => handleCheckboxSwitchChange(checked as boolean, 'affectsStats')} // <<< Usar nuevo handler
+                          />
+                          <Label htmlFor="affects-stats" className="text-sm">
+                            Afecta estadísticas
+                          </Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <Checkbox
+                            id="appears-in-app"
+                            checked={!!formData.appearsInApp} // <<< Usar formData
+                            // onCheckedChange={(checked) => debouncedHandleOtherFieldUpdate({ appearsInApp: checked === true })} // <<< Modificar
+                            onCheckedChange={(checked) => handleCheckboxSwitchChange(checked as boolean, 'appearsInApp')} // <<< Usar nuevo handler
+                          />
+                          <Label htmlFor="appears-in-app" className="text-sm">
+                            Aparece en App / Self
+                          </Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <Checkbox
+                            id="schedule-control"
+                            checked={!!formData.scheduleControl} // <<< Usar formData
+                            // onCheckedChange={(checked) => debouncedHandleOtherFieldUpdate({ scheduleControl: checked === true })} // <<< Modificar
+                            onCheckedChange={(checked) => handleCheckboxSwitchChange(checked as boolean, 'scheduleControl')} // <<< Usar nuevo handler
+                          />
+                          <Label htmlFor="schedule-control" className="text-sm">
+                            Control de horarios
+                          </Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <Checkbox
+                            id="professional-skills"
+                            checked={!!formData.professionalSkills} // <<< Usar formData
+                            // onCheckedChange={(checked) => debouncedHandleOtherFieldUpdate({ professionalSkills: checked === true })} // <<< Modificar
+                            onCheckedChange={(checked) => handleCheckboxSwitchChange(checked as boolean, 'professionalSkills')} // <<< Usar nuevo handler
+                          />
+                          <Label htmlFor="professional-skills" className="text-sm">
+                            Control de habilidades profesionales
+                          </Label>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="notes" className="text-sm">
+                        Notas
+                      </Label>
+                      <Textarea
+                        id="notes"
+                        name="notes" // <<< Añadir name
+                        value={formData?.notes || ''} // <<< Usar formData
+                        className="h-20 text-sm"
+                        onChange={handleFormChange} // <<< Usar handleFormChange
+                      />
+                    </div>
+                  </div>
+                </Card>
+              )}
+
+              {activeTab === "horarios" && (
+                <Card className="p-6">
+                  <Tabs defaultValue="general" className="w-full">
+                    <TabsList className="mb-4">
+                      <TabsTrigger value="general">Horario General</TabsTrigger>
+                      <TabsTrigger value="excepciones">Excepciones</TabsTrigger>
+                    </TabsList>
+                    
+                    <TabsContent value="general">
+                      <div className="space-y-4">
+                        {/* <<< RESTAURAR INPUTS >>> */}
+                        <div className="grid grid-cols-3 gap-4 mb-6">
+                          <div className="space-y-2">
+                            <Label>Horario Apertura</Label>
+                            <Input
+                              type="time"
+                              // <<< LEER DIRECTAMENTE DEL ESTADO DE DISPLAY >>>
+                              value={displayOpenTime} 
+                              // --- El onChange actual probablemente cause error o no haga nada útil,
+                              //     pero lo dejamos como está por ahora como pediste --- 
+                              onChange={(e) => {
+                                  if (!useTemplateSchedule) {
+                                      // Esta lógica intenta actualizar una estructura que no existe así
+                                      // handleOtherFieldUpdate({ independentSchedule: { ...clinicData?.independentSchedule, openTime: e.target.value } } as Partial<ClinicaApiOutput> )
+                                      console.warn("onChange de Horario Apertura necesita revisión.")
+                                  }
+                              }}
+                              disabled={useTemplateSchedule} // Mantener deshabilitado si usa plantilla
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Horario Cierre</Label>
+                            <Input
+                              type="time"
+                              // <<< LEER DIRECTAMENTE DEL ESTADO DE DISPLAY >>>
+                              value={displayCloseTime}
+                              // --- El onChange actual probablemente cause error o no haga nada útil --- 
+                              onChange={(e) => {
+                                  if (!useTemplateSchedule) {
+                                      // Esta lógica intenta actualizar una estructura que no existe así
+                                      // handleOtherFieldUpdate({ independentSchedule: { ...clinicData?.independentSchedule, closeTime: e.target.value } } as Partial<ClinicaApiOutput> )
+                                      console.warn("onChange de Horario Cierre necesita revisión.")
+                                  }
+                              }}
+                              disabled={useTemplateSchedule}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Duración Slot (min)</Label>
+                            <Input
+                              type="number"
+                              min="1"
+                              max="60"
+                              step="1"
+                              // --- Mostrar valor de plantilla si aplica, o el independiente (falta estado display?) --- 
+                              // TODO: Si se crea displaySlotDuration, usarlo aquí cuando !useTemplateSchedule
+                              // value={useTemplateSchedule ? (clinicData.linkedScheduleTemplate?.slotDuration || "-") : (clinicData?.independentSchedule?.slotDuration || "-")} // Temporalmente lee de independentSchedule (que no lo tiene)
+                              // <<< LEER DEL NUEVO ESTADO >>>
+                              value={displaySlotDuration} 
+                              // --- El onChange actual probablemente cause error --- 
+                              onChange={(e) => {
+                                if (!useTemplateSchedule) {
+                                    const value = Number.parseInt(e.target.value)
+                                    const newValue = !isNaN(value) && value >= 1 && value <= 60 ? value : null;
+                                    // Esta lógica es incorrecta
+                                    console.warn("onChange de Duración Slot necesita revisión.");                                
+                                }
+                              }}
+                              disabled={useTemplateSchedule}
+                            />
+                          </div>
+                        </div>
+                        {/* <<< FIN RESTAURAR >>> */}
+                        
+                        {/* Botón para aplicar horario general (condición revisada) */}
+                        {!useTemplateSchedule && (
+                            <div className="flex justify-end mb-4">
+                                <Button 
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={handleApplyGeneralTimesToAllDays}
+                                >
+                                    Aplicar Horario General a Días Abiertos
+                                </Button>
+                            </div>
+                        )}
+                        {/* Fin Botón */}
+                        <div className="space-y-2">
+                          <Label>Seleccionar plantilla horaria</Label>
+                          <Select 
+                              value={clinicData.linkedScheduleTemplateId || ""} 
+                              onValueChange={handleTemplateChange}
+                              // Opcional: Deshabilitar el Select si useTemplateSchedule es true?
+                              // disabled={useTemplateSchedule} // <-- Considerar si se debe poder cambiar plantilla mientras está bloqueado
+                          >
+                            <SelectTrigger>
+                                <SelectValue placeholder="Seleccionar una plantilla"> {/* Placeholder si el valor es "" y no hay contenido */} 
+                                    {/* CONTENIDO DINÁMICO AQUÍ */} 
+                                    {clinicData.linkedScheduleTemplateId 
+                                        ? (templates.find(t => t.id === clinicData.linkedScheduleTemplateId) as any)?.description || 
+                                          (templates.find(t => t.id === clinicData.linkedScheduleTemplateId) as any)?.name || 
+                                          `Plantilla ID: ${clinicData.linkedScheduleTemplateId}` // Fallback final al ID
+                                        : <span className="text-muted-foreground">Horario personalizado</span>
+                                    }
+                                </SelectValue>
+                            </SelectTrigger>
+                            <SelectContent>
+                              {/* Opción para desvincular explícitamente? */} 
+                              {/* 
+                              <SelectItem value="__none__" onClick={() => handleUseTemplateToggle(false)}>
+                                  -- Usar Horario Personalizado --
+                              </SelectItem> 
+                              */} 
+                              {templates.map((template) => (
+                                <SelectItem key={String(template.id)} value={String(template.id)}>
+                                        {(template as any)?.description || `ID: ${template.id}`} {/* Usar descripción o ID */} 
+                            </SelectItem>
+                          ))}
+                                {templates.length === 0 && <SelectItem value="_no_templates_" disabled>No hay plantillas</SelectItem>}
+                        </SelectContent>
+                      </Select>
+                      </div>
+                        {/* Checkbox Usar Plantilla (SIN disabled) */}
+                        <div className="flex items-center mt-4 mb-4 space-x-2">
+                            <Checkbox 
+                                id="use-template-schedule"
+                                checked={useTemplateSchedule}
+                                onCheckedChange={handleUseTemplateToggle}
+                                // disabled={!clinicData?.linkedScheduleTemplateId} // <-- ELIMINADO
+                            />
+                            <Label htmlFor="use-template-schedule" className="text-sm font-medium">
+                                Usar horario de la plantilla vinculada (Bloquea edición)
+                            </Label>
+                  </div>
+                        <Card className="mt-6">
+                          <CardHeader>
+                            <CardTitle>Configuración del Horario</CardTitle>
+                            <CardDescription>
+                              {useTemplateSchedule 
+                                ? "El horario se basa en la plantilla seleccionada. Desmarca la opción anterior para editar manualmente."
+                                : "Define los horarios de apertura por día. Haz clic en un día para expandir."
+                              }
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent>
+                            {isLoadingClinic || !clinicData ? (
+                                <Skeleton className="w-full h-64" />
+                            ) : (
+                                <ScheduleConfig
+                                    clinic={clinicData} 
+                                    isReadOnly={useTemplateSchedule} 
+                                    onChange={onScheduleConfigChange} // <<< Esta es la importante
+                                    // schedule={currentScheduleConfig} // <<< ELIMINAR ESTA PROP >>>
+                                    // showTemplateSelector={false} // Opcional: ocultar selector interno si se maneja fuera
+                                    key={useTemplateSchedule ? `template-${selectedTemplateId}` : `independent-${clinicData.id}-${haEditadoHorario}`} // <<< Añadir haEditadoHorario a la key independiente para forzar re-render si cambia >>>
+                            />
+                            )}
+                          </CardContent>
+                        </Card>
+
+                        {/* ... Sección Excepciones (si aplica) ... */}
+                      </div>
+                    </TabsContent>
+
+                    <TabsContent value="excepciones" className="mt-4">
+                      <Card>
+                        <CardHeader>
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <CardTitle>Excepciones de Horario</CardTitle>
+                              <CardDescription>
+                                Define periodos específicos donde el horario general no aplica (ej. festivos, vacaciones).
+                                Estos horarios especiales prevalecerán sobre el horario general de la clínica.
+                              </CardDescription>
+                            </div>
+                            <Button size="sm" disabled>
+                              <Plus className="mr-2 h-4 w-4" /> Añadir Nueva Excepción
+                            </Button>
+                          </div>
+                        </CardHeader>
+                        <CardContent>
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Nombre</TableHead>
+                                <TableHead>Fecha Inicio</TableHead>
+                                <TableHead>Fecha Fin</TableHead>
+                                <TableHead>Días Afectados</TableHead>
+                                <TableHead className="text-right">Acciones</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              <TableRow>
+                                <TableCell colSpan={5} className="text-center text-muted-foreground">
+                                  No hay excepciones de horario definidas.
+                                </TableCell>
+                              </TableRow>
+                            </TableBody>
+                          </Table>
+                        </CardContent>
+                      </Card>
+                    </TabsContent>
+                  </Tabs>
+                </Card>
+              )}
+
+              {activeTab === "cabinas" && (
+                <Card className="p-6">
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-medium">Cabinas de la clínica: {clinicData?.name}</h3>
+                      <Button onClick={() => {
+                          setEditingCabin(null); // Asegurar que no hay cabina en edición
+                          setIsCabinDialogOpen(true); // Abrir diálogo para nueva cabina
+                        }}
+                      >
+                        <PlusCircle className="w-4 h-4 mr-2" /> Nueva cabina
+                        </Button>
+                    </div>
+                    <SearchInput
+                      placeholder="Buscar cabina por nombre o código"
+                            value={cabinFilterText} 
+                      onChange={setCabinFilterText}
+                        />
+                    <div className="border rounded-md">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-[100px]">Nº</TableHead>
+                                <TableHead>Código</TableHead>
+                            <TableHead>Nombre</TableHead>
+                                <TableHead>Color</TableHead>
+                            <TableHead className="text-center">Activo</TableHead>
+                            <TableHead className="text-center">Subir</TableHead>
+                            <TableHead className="text-center">Bajar</TableHead>
+                            <TableHead className="text-center">Borrar</TableHead>
+                            <TableHead className="text-center">Ver +</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {isLoadingCabinsLocal ? ( // <<< Usar isLoadingCabinsLocal
+                            <TableRow>
+                              <TableCell colSpan={9} className="h-24 text-center">
+                                Cargando cabinas...
+                              </TableCell>
+                            </TableRow>
+                          ) : displayedCabins.length === 0 ? ( // <<< Usar displayedCabins
+                            <TableRow>
+                              <TableCell colSpan={9} className="h-24 text-center">
+                                No se encontraron cabinas para esta clínica.
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            displayedCabins // <<< Usar displayedCabins
+                              .filter(
+                                (cabin: Cabin) =>
+                                  cabin.name.toLowerCase().includes(cabinFilterText.toLowerCase()) ||
+                                  (cabin.code && cabin.code.toLowerCase().includes(cabinFilterText.toLowerCase()))
+                              )
+                              .map((cabin, index, filteredArray) => ( // <<< Añadir filteredArray para calcular último índice
+                                <TableRow key={cabin.id} className={cabin.isActive ? "" : "opacity-50"}>
+                                        <TableCell>{index + 1}</TableCell> 
+                                  <TableCell>{cabin.code ?? '-'}</TableCell>
+                                  <TableCell>{cabin.name}</TableCell>
+                                  <TableCell>
+                                    <div className="w-6 h-6 border rounded-full" style={{ backgroundColor: cabin.color ?? '#ffffff' }}></div>
+                                  </TableCell>
+                                  <TableCell className="text-center">
+                                    <Checkbox
+                                      checked={cabin.isActive}
+                                      // <<< TODO: Actualizar estado local Y luego guardar en handleSaveClick >>>
+                                      onCheckedChange={(checked) => {
+                                        console.warn("Checkbox change needs to update local state 'displayedCabins' first.");
+                                        // setDisplayedCabins(prev => 
+                                        //   prev.map(c => c.id === cabin.id ? {...c, isActive: checked as boolean} : c)
+                                        // );
+                                      }}
+                                    />
+                                  </TableCell>
+                                  <TableCell className="text-center">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="w-10 h-10 text-gray-600 hover:text-gray-800"
+                                      onClick={() => handleReorderCabin(cabin.id, 'up')}
+                                      // <<< DESHABILITAR SI ES EL PRIMERO DEL ARRAY FILTRADO >>>
+                                      disabled={index === 0} 
+                                    >
+                                      <ChevronUp className="w-6 h-6 font-bold" />
+                                </Button>
+                                  </TableCell>
+                                  <TableCell className="text-center">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="w-10 h-10 text-gray-600 hover:text-gray-800"
+                                      onClick={() => handleReorderCabin(cabin.id, 'down')}
+                                      // <<< DESHABILITAR SI ES EL ÚLTIMO DEL ARRAY FILTRADO >>>
+                                      disabled={index === filteredArray.length - 1}
+                                    >
+                                      <ChevronDown className="w-6 h-6 font-bold" />
+                                </Button>
+                                  </TableCell>
+                                  <TableCell className="text-center">
+                                    {/* ... (Botón Borrar - necesita lógica similar para estado local) ... */}
+                                    <Button
+                                       variant="ghost"
+                                       size="sm"
+                                       className="w-10 h-10 text-destructive hover:text-red-700"
+                                       onClick={() => {
+                                         console.warn("Delete cabin needs to update local state 'displayedCabins' first.");
+                                         // setDisplayedCabins(prev => prev.filter(c => c.id !== cabin.id));
+                                       }}
+                                     >
+                                       <Trash2 className="w-6 h-6 font-bold" /> 
+                                     </Button>
+                                  </TableCell>
+                                  <TableCell className="text-center">
+                                    {/* ... (Botón Ver +) ... */}
+                                    <Button
+                                       variant="ghost"
+                                       size="sm"
+                                       className="w-10 h-10 text-blue-600 hover:text-blue-800"
+                                       onClick={() => {
+                                         setEditingCabin(cabin);
+                                         setIsCabinDialogOpen(true);
+                                       }}
+                                     >
+                                       <Search className="w-6 h-6 font-bold" />
+                                     </Button>
+                                  </TableCell>
+                                </TableRow>
+                              ))
+                          )}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                </Card>
+              )}
+
+              {activeTab === "equipamiento" && (
+                <Card className="p-6">
+                  <div className="space-y-4">
+                    <div className="flex flex-col gap-2">
+                      <h2 className="text-lg font-medium">Listado del equipamiento de la clínica: {clinicData.name}</h2>
+                    </div>
+
+                    {/* <<< ELIMINAR SearchInput manual >>> */}
+                    {/* 
+                    <SearchInput
+                      placeholder="Buscar equipamiento"
+                      value={equipmentFilterText}
+                      onChange={setEquipmentFilterText}
+                    /> 
+                    */}
+
+                    {/* <<< REEMPLAZAR Tabla Manual con DataTable >>> */}
+                    {/* <DataTable
+                       columns={equipmentColumns} // <<< COMENTADO HASTA QUE SE DEFINA equipmentColumns
+                       data={equipmentData} // Pasar los datos directamente
+                       searchKey="name" // Habilitar búsqueda integrada por nombre
+                    /> */}
+                    {/* <<< FIN REEMPLAZO >>> */}
+                    <p className="text-sm text-muted-foreground">Tabla de equipamiento pendiente de implementación con DataTable y definición de columnas.</p>
+
+                  </div>
+                </Card>
+              )}
+
+              {activeTab === "almacenamiento" && (
+                <Card className="p-6">
+                  {/* <AlmacenamientoClinicaContent /> */} {/* Comentado temporalmente */}
+                </Card>
+              )}
+
+              {activeTab === "usuarios" && (
+                <Card className="p-6">
+                  <div className="flex flex-col gap-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-medium">Usuarios de la clínica: {clinicData.name}</h3>
+                    </div>
+                    
+                    <UsuariosClinica 
+                      clinicId={clinicId}
+                      showNewUserDialog={showNewUserDialog}
+                      onCloseNewUserDialog={() => setShowNewUserDialog(false)}
+                    />
+                  </div>
+                </Card>
+              )}
+
+              {activeTab === "entidades" && (
+                <Card className="p-6">
+                  <CardHeader>
+                    <CardTitle className="flex items-center">
+                      <CreditCard className="w-5 h-5 mr-2 text-purple-600" />
+                      {t('config_clinics.tabs.entidades')} 
+                    </CardTitle>
+                    {/* CardDescription eliminada */}
+                  </CardHeader>
+                  <CardContent>
+                    {/* Renderizar el nuevo componente pasándole el clinicId */}
+                    <ClinicBanksTabContent clinicId={clinicId} />
+                  </CardContent>
+                </Card>
+              )}
+              
+              {activeTab === "pagos" && (
+                <Card className="p-6">
+                  <CardHeader>
+                    <CardTitle className="flex items-center">
+                      <CreditCard className="w-5 h-5 mr-2 text-orange-600" /> {/* Color opcional */}
+                      {t('config_clinics.tabs.pagos')} 
+                    </CardTitle>
+                    <CardDescription>
+                      {t('config_clinic_payment_settings.description')} {/* Añadir key traducción */}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {/* <<< RENDERIZAR EL NUEVO COMPONENTE >>> */}
+                    <ClinicPaymentsTabContent clinicId={clinicId} />
+                  </CardContent>
+                </Card>
+              )}
+              
+              {activeTab === "integraciones" && (
+                <Card className="p-6">
+                  <h3>Integraciones</h3>
+                </Card>
+              )}
+              
+              {activeTab === "descuentos" && (
+                <Card className="p-6">
+                  {/* <<< REEMPLAZAR CONTENIDO INTERNO >>> */}
+                  {clinicId ? (
+                      <ClinicPromotionsTabContent clinicId={clinicId} />
+                   ) : (
+                      <p>{t('common.loading', 'Cargando...')}</p> // O Skeleton
+                   )}
+                   {/* Antes probablemente había algo como <SectionTitle.../> y contenido de descuentos */}
+                </Card>
+              )}
+              {/* <<< FIN MODIFICACIÓN >>> */}
+
+              {activeTab === "sms" && (
+                <Card className="p-6">
+                  <SectionTitle icon={MessageSquare} title={t('config_clinics.tabs.sms')} color="text-blue-600 border-blue-600" />
+                  {/* ... existing code ... */}
+                </Card>
+              )}
+              
+              {activeTab === "email" && (
+                <Card className="p-6">
+                  <h3>Notificaciones e-mail</h3>
+                </Card>
+              )}
+              
+              {activeTab === "whatsapp" && (
+                <Card className="p-6">
+                  <h3>Notificaciones WhatsApp</h3>
+                </Card>
+              )}
+              
+              {activeTab === "otros" && (
+                <Card className="p-6">
+                  <h3>Otros APIs</h3>
+                </Card>
+              )}
+
+              {activeTab === "tarifa" && (
+                <Card className="p-6">
+                  <SectionTitle icon={Tag} title="Tarifa Aplicada" color="text-teal-600 border-teal-600" />
+                  {isLoadingTarifa ? (
+                    <p className="text-gray-500">Cargando información de la tarifa...</p>
+                  ) : tarifaAplicada === null ? (
+                    <p className="text-gray-500">
+                      {clinicData?.tariffId ? 
+                         `No se encontró la tarifa con ID: "${clinicData.tariffId}". Verifique la configuración.` : 
+                         "Esta clínica no tiene una tarifa asignada."}
+                    </p>
+                  ) : tarifaAplicada ? (
+                    <div className="space-y-4">
+                       <div>
+                          <Label className="block mb-1 text-sm font-medium text-gray-500">Nombre Tarifa</Label>
+                          <p className="text-lg font-semibold">{tarifaAplicada.name}</p>
+                       </div>
+                       <Button onClick={() => router.push(`/configuracion/clinicas/${clinicId}/servicios`)} className="mt-4">
+                          Configurar Servicios y Precios para esta Clínica
+                       </Button>
+                    </div>
+                  ) : (
+                     <p className="text-gray-500">Inicializando...</p>
+                  )}
+                </Card>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+      
+      <CabinEditDialog
+        isOpen={isCabinDialogOpen}
+        cabin={editingCabin}
+        onClose={() => {
+          setIsCabinDialogOpen(false)
+          setEditingCabin(null)
+        }}
+        onSave={handleSaveCabin as any}
+      />
+
+      <div className="fixed z-50 flex flex-col items-start space-y-2 bottom-4 left-4 md:left-auto md:bottom-4 md:right-[calc(theme(spacing.4)+160px)] md:flex-row md:space-y-0 md:space-x-2">
+        {/* Mover aquí los botones condicionales "Nuevo..." */}
+        {activeTab === "cabinas" && (
+          <Button
+            className="px-4 py-2 text-sm text-white bg-blue-600 rounded-md shadow-md hover:bg-blue-700"
+            onClick={() => {
+              setEditingCabin(null)
+              setIsCabinDialogOpen(true)
+            }}
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Nueva cabina
+          </Button>
+        )}
+        {activeTab === "equipamiento" && (
+          <Button
+            className="px-4 py-2 text-sm text-white bg-blue-600 rounded-md shadow-md hover:bg-blue-700"
+            onClick={() => {
+              router.push(`/configuracion/clinicas/${clinicId}/equipamiento/nuevo`)
+            }}
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Nuevo equipamiento
+          </Button>
+        )}
+        {activeTab === "usuarios" && (
+          <Button
+            className="px-4 py-2 text-sm text-white bg-blue-600 rounded-md shadow-md hover:bg-blue-700"
+            onClick={() => setShowNewUserDialog(true)}
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Nuevo usuario
+          </Button>
+        )}
+      </div>
+
+      <ActionButtons
+        fixed={true}
+        alignment="end" // Alinea los botones principales (Guardar/Ayuda) a la derecha
+        onBack={() => router.push('/configuracion/clinicas')} // Define la acción de volver
+        onSave={handleSaveClick} // Pasa la función de guardado
+        isSaving={isSaving} // Pasa el estado de guardado
+        saveText="Guardar Centro" // Texto específico para guardar
+        // helpContent={<div>Contenido de ayuda aquí...</div>} // Descomentar para añadir ayuda
+        className="space-x-2" // Añadir espacio entre grupos de botones si es necesario
+      >
+        {/* Botones adicionales (Nuevo...) se renderizan fuera de ActionButtons */}
+      </ActionButtons>
+    </div>
+  )
+}

@@ -68,9 +68,9 @@ export async function GET(request: NextRequest) {
         email: person.email,
         phone: person.phone,
         // Usar datos de clientData si existen, sino usar datos de person
-        address: clientData?.address || person.address,
-        city: clientData?.city || person.city,
-        postalCode: clientData?.postalCode || person.postalCode,
+        address: person.address || clientData?.address || null,
+        city: person.city || clientData?.city || null,
+        postalCode: person.postalCode || clientData?.postalCode || null,
         // Campos adicionales para compatibilidad
         taxId: person.taxId || null,
         fiscalName: null, // Person no tiene fiscalName

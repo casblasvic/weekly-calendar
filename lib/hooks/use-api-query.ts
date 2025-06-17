@@ -96,7 +96,10 @@ export function useServicesQuery(options?: Omit<UseQueryOptions<any, unknown, an
     queryFn: async () => {
       return await api.get('/api/services');
     },
-    staleTime: CACHE_TIME.MEDIO, // 5 minutos
+    staleTime: CACHE_TIME.LARGO, // 30 minutos - mantener en caché más tiempo
+    gcTime: CACHE_TIME.LARGO, // 30 minutos
+    refetchOnWindowFocus: false, // No refrescar al cambiar de ventana
+    refetchOnMount: false, // No refrescar al montar si ya hay datos
     ...options,
   });
 }
@@ -110,35 +113,54 @@ export function useProductsQuery(options?: Omit<UseQueryOptions<any, unknown, an
     queryFn: async () => {
       return await api.get('/api/products');
     },
-    staleTime: CACHE_TIME.MEDIO, // 5 minutos
+    staleTime: CACHE_TIME.LARGO, // 30 minutos
+    gcTime: CACHE_TIME.LARGO, // 30 minutos
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
     ...options,
   });
 }
 
 /**
- * Hook para obtener definiciones de paquetes
- */
-export function usePackagesQuery(options?: Omit<UseQueryOptions<any, unknown, any>, 'queryKey' | 'queryFn'>) {
-  return useQuery<any, unknown>({
-    queryKey: ['packages'],
-    queryFn: async () => {
-      return await api.get('/api/package-definitions');
-    },
-    staleTime: CACHE_TIME.MEDIO, // 5 minutos
-    ...options,
-  });
-}
-
-/**
- * Hook para obtener definiciones de bonos
+ * Hook para obtener bonos
  */
 export function useBonosQuery(options?: Omit<UseQueryOptions<any, unknown, any>, 'queryKey' | 'queryFn'>) {
   return useQuery<any, unknown>({
     queryKey: ['bonos'],
     queryFn: async () => {
-      return await api.get('/api/bono-definitions');
+      return await api.get('/api/bonos');
     },
-    staleTime: CACHE_TIME.MEDIO, // 5 minutos
+    staleTime: CACHE_TIME.LARGO, // 30 minutos
+    gcTime: CACHE_TIME.LARGO, // 30 minutos
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    ...options,
+  });
+}
+
+/**
+ * Hook para obtener paquetes
+ * Corregido para devolver siempre un array
+ */
+export function usePackagesQuery(options?: Omit<UseQueryOptions<any, unknown, any>, 'queryKey' | 'queryFn'>) {
+  return useQuery<any, unknown>({
+    queryKey: ['packages'],
+    queryFn: async () => {
+      console.log('[usePackagesQuery] Fetching packages...')
+      const response = await api.get('/api/packages');
+      console.log('[usePackagesQuery] Raw response:', response)
+      
+      // La API devuelve { packageDefinitions: [...] }
+      const packages = (response as any)?.packageDefinitions || response || []
+      console.log('[usePackagesQuery] Extracted packages:', packages)
+      console.log('[usePackagesQuery] Is array?', Array.isArray(packages))
+      
+      return packages
+    },
+    staleTime: CACHE_TIME.LARGO, // 30 minutos
+    gcTime: CACHE_TIME.LARGO, // 30 minutos
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
     ...options,
   });
 }

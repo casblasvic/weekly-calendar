@@ -7,6 +7,7 @@ import React, { useMemo } from "react"
 import { useState, useEffect, useCallback, useRef } from "react"
 import { format, parse, parseISO, isAfter, isBefore, getDay, getDate, isSameDay, addDays, subDays, set, addMinutes, isEqual } from "date-fns"
 import { es } from "date-fns/locale"
+import { toZonedTime } from 'date-fns-tz'
 import { useClinic } from "@/contexts/clinic-context"
 import { useCabins } from "@/contexts/CabinContext"
 import { AgendaNavBar } from "@/components/agenda-nav-bar"
@@ -17,6 +18,7 @@ import { AGENDA_CONFIG } from "@/config/agenda-config"
 import { CurrentTimeIndicator } from "@/components/current-time-indicator"
 import { PersonSearchDialog } from "./client-search-dialog"
 import { AppointmentDialog } from "@/components/appointment-dialog"
+import type { Person } from "@/components/appointment-dialog"
 import { NewClientDialog } from "@/components/new-client-dialog"
 import { AppointmentItem } from "./appointment-item"
 import { Calendar } from "lucide-react"
@@ -73,12 +75,6 @@ function getTimeSlots(startTime: string, endTime: string, interval = 15): string
 // Definir colores zebra si no están importados globalmente
 const ZEBRA_LIGHT = "bg-gray-50"; // O un color púrpura muy claro: "bg-purple-50/20";
 const ZEBRA_DARK = "bg-white";
-
-interface Person { 
-  id: string; 
-  name: string; 
-  phone: string; 
-}
 
 interface Employee {
   id: string
@@ -157,7 +153,7 @@ export default function DayView({
   onViewChange,
 }: DayViewProps) {
   const router = useRouter()
-  const { activeClinic, isLoading: isLoadingClinic } = useClinic()
+  const { activeClinic, isLoading: isLoadingClinic, activeClinicCabins } = useClinic()
   const { theme } = useTheme()
   const {
     createBlock, updateBlock, deleteBlock,
@@ -167,6 +163,15 @@ export default function DayView({
   } = useScheduleBlocks()
   
   const { toast } = useToast()
+
+  // Log inicial para depuración
+  console.log('[DayView] Component rendering with:', {
+    dateString,
+    containerMode,
+    initialAppointmentsLength: initialAppointments.length,
+    activeClinicId: activeClinic?.id,
+    isLoadingClinic
+  });
 
   // Parsear la fecha una vez
   const currentDate = useMemo(() => {
@@ -204,35 +209,127 @@ export default function DayView({
   // Añadir este estado cerca de los otros estados al inicio del componente
   const [updateKey, setUpdateKey] = useState(0)
 
-  // Modificar el estado de appointments para usar los proporcionados en modo contenedor
-  const [appointments, setAppointments] = useState<Appointment[]>(() => {
-    if (initialAppointments.length > 0) {
-      return initialAppointments
+  // Estado para appointments
+  const [appointments, setAppointments] = useState<Appointment[]>([])
+  // Añadir estado para loading de appointments
+  const [loadingAppointments, setLoadingAppointments] = useState(false)
+
+  // Función para cargar citas desde la API (igual que en weekly-agenda)
+  const fetchAppointments = useCallback(async (cabins: any[] | null) => {
+    if (!activeClinic?.id || !currentDate) {
+      console.log('[DayView] Skipping fetch - missing data:', {
+        activeClinicId: activeClinic?.id,
+        currentDate
+      });
+      return;
     }
 
-    // Código original para cargar desde sessionStorage si no se proporcionan
-    if (typeof window !== "undefined") {
-      const storedAppointments = sessionStorage.getItem("weeklyAppointments")
-      if (storedAppointments) {
-        try {
-          const parsedAppointments = JSON.parse(storedAppointments)
-
-          // Convertir las fechas de string a objetos Date
-          return parsedAppointments.map((apt: any) => ({
-            ...apt,
-            date: new Date(apt.date),
-          }))
-        } catch (error) {
-          // Error silencioso
-        }
+    setLoadingAppointments(true);
+    try {
+      const dateStr = format(currentDate, 'yyyy-MM-dd');
+      const url = `/api/appointments?clinicId=${activeClinic.id}&startDate=${dateStr}&endDate=${dateStr}`;
+      console.log('[DayView] Fetching appointments from:', url);
+      
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error('Failed to fetch appointments');
       }
+      
+      const data = await response.json();
+      console.log('[DayView] Received appointments:', data);
+      
+      // Procesar las citas recibidas
+      const processedAppointments = data.map((apt: any) => {
+        // Convertir las fechas string a objetos Date
+        const startTime = new Date(apt.startTime);
+        const endTime = new Date(apt.endTime);
+        
+        // Determinar el color basándose en los servicios
+        let appointmentColor = '#6b7280'; // Color por defecto (gris)
+        
+        if (apt.services && apt.services.length > 0) {
+          const serviceTypes = new Set(apt.services.map((s: any) => s.service?.categoryId));
+          const uniqueColors = new Set(apt.services.map((s: any) => s.service?.colorCode).filter(Boolean));
+          
+          if (serviceTypes.size === 1 && uniqueColors.size === 1) {
+            // Todos los servicios del mismo tipo - usar el color del servicio
+            const firstColor = Array.from(uniqueColors)[0];
+            appointmentColor = (typeof firstColor === 'string' ? firstColor : null) || appointmentColor;
+          } else if (apt.equipment?.color) {
+            // Múltiples tipos de servicios - usar el color de la cabina
+            appointmentColor = apt.equipment.color;
+          }
+        }
+        
+        // Fallback de cabina si no tiene asignada
+        const assignedRoomId = apt.equipment?.id || apt.roomId || apt.equipmentId || '';
+        const finalRoomId = assignedRoomId || (cabins && cabins.length > 0 ? cabins[0].id : '');
+        
+        return {
+          id: apt.id,
+          name: `${apt.person.firstName} ${apt.person.lastName}`,
+          service: apt.services?.map((s: any) => s.service?.name).filter(Boolean).join(", ") || 'Sin servicio',
+          date: startTime,
+          roomId: finalRoomId,
+          startTime: format(startTime, 'HH:mm'),
+          duration: Math.ceil((endTime.getTime() - startTime.getTime()) / (1000 * 60)),
+          color: appointmentColor,
+          phone: apt.person.phone,
+          personId: apt.personId,
+          status: apt.status,
+          tags: apt.tags || [],
+          // Información adicional para la vista detallada
+          services: apt.services || [],
+          notes: apt.notes,
+        };
+      }) as Appointment[];
+      
+      // Eliminar duplicados por ID
+      const dedupedAppointments = Array.from(new Map(processedAppointments.map((a: Appointment) => [a.id, a])).values());
+      
+      setAppointments(dedupedAppointments);
+      console.log('[DayView] Processed appointments:', dedupedAppointments);
+      
+      // Log de depuración detallado para cada cita
+      dedupedAppointments.forEach((apt) => {
+        console.log('[DayView] Appointment date details:', {
+          id: apt.id,
+          date: apt.date,
+          dateString: apt.date.toString(),
+          dateISO: apt.date.toISOString(),
+          startTime: apt.startTime
+        });
+      });
+    } catch (error) {
+      console.error('[DayView] Error fetching appointments:', error);
+      toast({
+        title: "Error",
+        description: "No se pudieron cargar las citas",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingAppointments(false);
     }
-    return []
-  })
-
-  // Actualizar appointments cuando cambian initialAppointments
+  }, [activeClinic?.id, currentDate, toast]);
+  
   useEffect(() => {
-    if (initialAppointments && initialAppointments.length > 0) {
+    console.log('[DayView] useEffect triggered:', {
+      containerMode,
+      initialAppointmentsLength: initialAppointments.length,
+      shouldFetch: !containerMode || initialAppointments.length === 0,
+      activeClinicId: activeClinic?.id,
+      currentDate: currentDate?.toISOString()
+    });
+    
+    // Solo cargar desde la API si no estamos en modo contenedor
+    if (!containerMode || initialAppointments.length === 0) {
+      fetchAppointments(activeClinicCabins);
+    }
+  }, [fetchAppointments, containerMode, initialAppointments.length, activeClinicCabins]);
+
+  // Actualizar appointments cuando cambian initialAppointments en modo contenedor
+  useEffect(() => {
+    if (containerMode && initialAppointments && initialAppointments.length > 0) {
       // Verificar si realmente hay cambios antes de actualizar
       const currentIds = appointments.map(apt => apt.id).sort().join(',');
       const newIds = initialAppointments.map(apt => apt.id).sort().join(',');
@@ -241,7 +338,7 @@ export default function DayView({
         setAppointments(initialAppointments)
       }
     }
-  }, [initialAppointments, appointments])
+  }, [containerMode, initialAppointments, appointments])
 
   // <<< ADD useMemo to calculate correctSchedule >>>
   const correctSchedule = useMemo(() => {
@@ -266,9 +363,52 @@ export default function DayView({
   }, [activeClinic]);
 
   // --- Derive general config and log --- 
-  const openTime = useMemo(() => (activeClinic as any)?.openTime ?? "09:00", [activeClinic]);
-  const closeTime = useMemo(() => (activeClinic as any)?.closeTime ?? "18:00", [activeClinic]);
-  const slotDuration = useMemo(() => (activeClinic as any)?.slotDuration ?? 15, [activeClinic]);
+  const { openTime, closeTime } = useMemo(() => {
+    if (!correctSchedule) {
+      return { openTime: "08:00", closeTime: "20:00" }; // Valores por defecto más razonables
+    }
+    
+    // Obtener el día actual
+    const dayKey = getDayKey(currentDate);
+    const daySchedule = correctSchedule[dayKey as keyof typeof correctSchedule];
+    
+    if (!daySchedule || !daySchedule.isOpen || daySchedule.ranges.length === 0) {
+      // Si el día no tiene horario específico, usar valores por defecto
+      return { openTime: "08:00", closeTime: "20:00" };
+    }
+    
+    // Usar el primer rango del día para determinar apertura y cierre
+    const firstRange = daySchedule.ranges[0];
+    const lastRange = daySchedule.ranges[daySchedule.ranges.length - 1];
+    
+    return {
+      openTime: firstRange.start,
+      closeTime: lastRange.end
+    };
+  }, [correctSchedule, currentDate]);
+  
+  // Obtener slotDuration usando la misma lógica que weekly-agenda
+  const slotDuration = useMemo(() => {
+    if (!activeClinic) return 30; // Default si no hay clínica
+    
+    // Intentar obtener de la plantilla vinculada
+    const templateDuration = (activeClinic as any).linkedScheduleTemplate?.slotDuration;
+    if (templateDuration !== undefined && templateDuration !== null) {
+      console.log("[DayView] Using template slotDuration:", Number(templateDuration));
+      return Number(templateDuration);
+    }
+    
+    // Intentar obtener del horario independiente
+    const independentDuration = (activeClinic as any).independentSchedule?.slotDuration;
+    if (independentDuration !== undefined && independentDuration !== null) {
+      console.log("[DayView] Using independent slotDuration:", Number(independentDuration));
+      return Number(independentDuration);
+    }
+    
+    // Fallback
+    console.log("[DayView] Using fallback slotDuration: 30");
+    return 30;
+  }, [activeClinic]);
   
   // <<< UPDATE this log to show correctSchedule >>>
   console.log("[DayView] Derived schedule config:", { openTime, closeTime, slotDuration, schedule: correctSchedule });
@@ -406,6 +546,19 @@ export default function DayView({
   // Filtrar citas para el día actual
   const dayAppointments = appointments.filter((apt) => apt.date.toDateString() === currentDate.toDateString())
 
+  console.log('[DayView] Filtering appointments:', {
+    currentDate: currentDate,
+    currentDateString: currentDate.toDateString(),
+    currentDateISO: currentDate.toISOString(),
+    totalAppointments: appointments.length,
+    filteredAppointments: dayAppointments.length,
+    appointmentDates: appointments.map(apt => ({
+      id: apt.id,
+      dateString: apt.date.toDateString(),
+      matches: apt.date.toDateString() === currentDate.toDateString()
+    }))
+  });
+
   // Corregir: findOverrideForCell debe esperar string para cabinId
   const findOverrideForCell = (currentViewDate: Date, timeSlot: string, cabinId: string, overrides: CabinScheduleOverride[], clinicId?: string): CabinScheduleOverride | null => {
     if (!overrides || overrides.length === 0 || !clinicId) {
@@ -538,7 +691,8 @@ export default function DayView({
     // Configurar los datos necesarios para editar la cita
     const personForModal: Person = { 
         id: appointment.personId || "", // Asumir que Appointment tiene personId
-        name: appointment.name, 
+        firstName: appointment.name.split(' ')[0],
+        lastName: appointment.name.split(' ').slice(1).join(' '),
         phone: appointment.phone || "" 
     };
     setSelectedPerson(personForModal)
@@ -566,11 +720,13 @@ export default function DayView({
       console.log("[DayView] renderDayGrid - valor de rooms:", JSON.stringify(rooms));
       const clinicIdStr = activeClinic?.id ? String(activeClinic.id) : undefined;
       return (
-          <div className="flex-1 overflow-visible relative bg-white" ref={agendaRef}>
+          <div className="flex-1 overflow-visible relative bg-white">
               {/* Cabecera de la tabla (fija) */}
               <div className="sticky top-0 z-30 grid bg-white border-b shadow-sm" 
                    style={{ gridTemplateColumns: `60px repeat(${rooms.length > 0 ? rooms.length : 1}, minmax(100px, 1fr))` }}> 
-                  <div className="flex items-center justify-center h-12 px-2 py-1 text-xs font-semibold tracking-wide text-center text-gray-600 uppercase border-r bg-gray-50">Hora</div>
+                  <div className="hour-column sticky left-0 z-10 p-2 text-sm font-medium text-purple-600 bg-white border-b border-r border-gray-300">
+                    Hora
+                  </div>
                   {rooms.length > 0 ? (
                     rooms.map((room) => (
                       <div key={room.id} className="flex items-center justify-center h-12 px-2 py-1 text-xs font-semibold tracking-wide text-center text-white border-r last:border-r-0" style={{ backgroundColor: room.color || '#ccc' }}>
@@ -585,7 +741,7 @@ export default function DayView({
               </div>
 
               {/* Contenedor scrollable para slots */}
-              <div className="relative">
+              <div className="relative" ref={agendaRef}>
                   {timeSlots.map((time, timeIndex) => (
                     <div key={time} className="grid border-b" 
                          data-time={time}
@@ -593,7 +749,7 @@ export default function DayView({
                       {/* Celda de Hora */}
                       <div 
                         data-time={time}
-                        className="sticky left-0 z-10 p-2 text-sm font-medium text-purple-600 bg-white border-b border-r border-gray-300">
+                        className="hour-column sticky left-0 z-10 p-2 text-sm font-medium text-purple-600 bg-white border-b border-r border-gray-300">
                         {time}
                       </div>
                       {/* Celdas de Cabinas */}
@@ -624,7 +780,22 @@ export default function DayView({
                             >
                               {/* Renderizar citas */}
                               {dayAppointments
-                                .filter((apt) => apt.startTime === time && String(apt.roomId) === String(room.id))
+                                .filter((apt) => {
+                                  const matches = apt.startTime === time && String(apt.roomId) === String(room.id);
+                                  if (time === "09:00" || apt.startTime === "09:00") { // Solo loguear para el slot de las 9:00
+                                    console.log('[DayView] Appointment filter check:', {
+                                      aptId: apt.id,
+                                      aptStartTime: apt.startTime,
+                                      time: time,
+                                      startTimeMatch: apt.startTime === time,
+                                      aptRoomId: apt.roomId,
+                                      roomId: room.id,
+                                      roomIdMatch: String(apt.roomId) === String(room.id),
+                                      matches: matches
+                                    });
+                                  }
+                                  return matches;
+                                })
                                 .map((apt, index) => (
                                   <AppointmentItem
                                     key={apt.id}
@@ -729,21 +900,41 @@ export default function DayView({
           onClose={() => {
             setIsAppointmentDialogOpen(false)
             setSelectedAppointment(null)
+            setSelectedPerson(null)
+            setSelectedSlot(null)
           }}
-          client={selectedPerson}
+          date={selectedSlot?.date || new Date()}
+          initialClient={selectedPerson}
           selectedTime={selectedSlot?.time}
-          appointmentToEdit={selectedAppointment}
+          roomId={selectedSlot?.roomId}
+          isEditing={!!selectedAppointment}
+          existingAppointment={selectedAppointment}
+          clinic={{ id: activeClinic?.id?.toString() || '', name: activeClinic?.name || '' }}
+          professional={{ id: '', name: '' }}
           onSearchClick={() => {
             setIsAppointmentDialogOpen(false)
             setIsSearchDialogOpen(true)
           }}
-          onNewPersonClick={() => {
+          onNewClientClick={() => {
             setIsAppointmentDialogOpen(false)
             setIsNewClientDialogOpen(true)
           }}
-          onDelete={handleDeleteAppointment}
-          onSave={handleSaveAppointment}
-          isEditing={!!selectedAppointment}
+          onSaveAppointment={(appointmentData) => {
+            // El appointmentData ya viene con el formato correcto del modal
+            // Solo necesitamos mapear al formato esperado por handleSaveAppointment
+            handleSaveAppointment({
+              person: {
+                name: `${selectedPerson?.firstName || ''} ${selectedPerson?.lastName || ''}`.trim(),
+                phone: selectedPerson?.phone || ''
+              },
+              services: [], // Por ahora dejamos vacío, después lo corregiremos cuando veamos cómo se pasan los servicios
+              time: appointmentData.startTime,
+              comment: appointmentData.notes,
+              blocks: 1, // Por defecto 1 bloque, después calcularemos basado en la duración
+              tags: []
+            });
+          }}
+          onMoveAppointment={handleDeleteAppointment}
         />
 
         <NewClientDialog 
@@ -762,7 +953,11 @@ export default function DayView({
             onBlockSaved={() => {
                 console.log("Bloqueo guardado/eliminado, modal cerrado.");
                 setIsBlockModalOpen(false);
-                toast({ title: "Bloqueo guardado", description: "El bloqueo de horario se ha guardado correctamente." });
+                toast({
+                  title: "Bloqueo guardado",
+                  description: "El bloqueo de horario se ha guardado correctamente.",
+                  variant: "default",
+                });
                 setUpdateKey(prev => prev + 1);
             }}
             clinicConfig={{ 

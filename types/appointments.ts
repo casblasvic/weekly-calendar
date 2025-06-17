@@ -15,6 +15,9 @@ export interface Appointment {
   tags?: string[]
   comment?: string
   personId?: string
+  status?: string
+  notes?: string
+  services?: any[] // Array de servicios asociados a la cita
 }
 
 /**

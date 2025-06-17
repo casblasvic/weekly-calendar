@@ -41,6 +41,10 @@ const UpdateTemplateSchema = z.object({
       .max(60, "La duración máxima es 60 min")
       .refine(val => val % 5 === 0, { message: "La duración debe ser múltiplo de 5" })
       .optional().nullable(),
+  createGranularity: z.number().int()
+      .min(1, "La granularidad mínima es 1 minuto")
+      .max(60, "La granularidad máxima es 60 minutos")
+      .optional().nullable(),
   schedule: WeekScheduleSchema.optional(),
 }).strict();
 // --- Fin Esquema PUT ---

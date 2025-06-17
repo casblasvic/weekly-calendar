@@ -21,9 +21,6 @@ model System {
   clinics                      Clinic[]
   roles                        Role[]
   companies                    Company[]
-  contactPersons               ContactPerson[]
-  leads                        Lead[]
-  clients                      Client[]
   employmentContracts          EmploymentContract[]
   timeLogs                     TimeLog[]
   banks                        Bank[]
@@ -110,7 +107,6 @@ model User {
   roles                          UserRole[]
   timeLogs                       TimeLog[]
   contracts                      EmploymentContract[]
-  assignedLeads                  Lead[]
   appointmentsAsProf             Appointment[]                   @relation("ProfessionalUserAppointments")
   ticketsAsCashier               Ticket[]                        @relation("CashierUserTickets")
   paymentsRegistered             Payment[]
@@ -158,7 +154,6 @@ model CountryInfo {
   clinics            Clinic[]
   banks              Bank[]
   companies          Company[]
-  clients            Client[]
   legalEntities      LegalEntity[] @relation("LegalEntityJurisdictionCountry")
   legalEntitiesPhone LegalEntity[] @relation("LegalEntityPhoneCountry")
 
@@ -250,7 +245,6 @@ model Clinic {
   tariff                       Tariff?                       @relation(fields: [tariffId], references: [id], onDelete: Restrict)
   equipment                    Equipment[]
   appointments                 Appointment[]
-  clientsOrigin                Client[]                      @relation("OriginClinic")
   tickets                      Ticket[]
   cashSessions                 CashSession[]
   userAssignments              UserClinicAssignment[]
@@ -381,9 +375,6 @@ model Company {
   updatedAt        DateTime        @updatedAt
   country          CountryInfo?    @relation(fields: [countryIsoCode], references: [isoCode])
   system           System          @relation(fields: [systemId], references: [id], onDelete: Cascade)
-  contactPersons   ContactPerson[]
-  leads            Lead[]
-  clients          Client[]
   purchaseInvoices Invoice[]       @relation("PurchaseInvoices")
   payerPayments    Payment[]       @relation("PayerCompanyPayments")
   saleInvoices     Invoice[]       @relation("SaleInvoices")
@@ -398,119 +389,13 @@ model Company {
   @@index([countryIsoCode])
 }
 
-model ContactPerson {
-  id        String   @id @default(cuid())
-  firstName String
-  lastName  String
-  position  String?
-  email     String?
-  phone     String?
-  notes     String?
-  companyId String
-  systemId  String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  system    System   @relation(fields: [systemId], references: [id], onDelete: Cascade)
 
-  @@index([companyId])
-  @@index([systemId])
-  @@map("contact_persons")
-}
 
-model Lead {
-  id               String     @id @default(cuid())
-  firstName        String?
-  lastName         String?
-  email            String?
-  phone            String?
-  companyName      String?
-  source           String?
-  status           LeadStatus @default(NEW)
-  notes            String?
-  assignedToUserId String?
-  systemId         String
-  createdAt        DateTime   @default(now())
-  updatedAt        DateTime   @updatedAt
-  companyId        String?
-  assignedToUser   User?      @relation(fields: [assignedToUserId], references: [id], onDelete: SetNull)
-  system           System     @relation(fields: [systemId], references: [id], onDelete: Cascade)
-  company          Company?   @relation(fields: [companyId], references: [id], onDelete: SetNull)
 
-  @@index([status])
-  @@index([assignedToUserId])
-  @@index([systemId])
-  @@index([companyId])
-  @@map("leads")
-}
 
-model Client {
-  id                           String               @id @default(cuid())
-  firstName                    String
-  lastName                     String
-  email                        String?
-  phone                        String?
-  phoneCountryIsoCode          String?
-  secondaryPhone               String?
-  secondaryPhoneCountryIsoCode String?
-  birthDate                    DateTime?
-  gender                       String?
-  address                      String?
-  city                         String?
-  postalCode                   String?
-  countryIsoCode               String?
-  nationalId                   String?
-  fiscalName                   String?
-  taxId                        String?
-  notes                        String?
-  marketingConsent             Boolean              @default(false)
-  dataProcessingConsent        Boolean              @default(false)
-  isActive                     Boolean              @default(true)
-  systemId                     String
-  companyId                    String?
-  originClinicId               String?
-  createdAt                    DateTime             @default(now())
-  updatedAt                    DateTime             @updatedAt
-  country                      CountryInfo?         @relation(fields: [countryIsoCode], references: [isoCode])
-  system                       System               @relation(fields: [systemId], references: [id], onDelete: Cascade)
-  company                      Company?             @relation(fields: [companyId], references: [id])
-  originClinic                 Clinic?              @relation("OriginClinic", fields: [originClinicId], references: [id], onDelete: SetNull)
-  appointments                 Appointment[]
-  relationsAsSource            ClientRelation[]     @relation("ClientA")
-  relationsAsTarget            ClientRelation[]     @relation("ClientB")
-  employmentContracts          EmploymentContract[]
-  payerPayments                Payment[]            @relation("PayerClientPayments")
 
-  @@index([systemId])
-  @@index([companyId])
-  @@index([countryIsoCode])
-  @@index([lastName])
-  @@index([email])
-  @@index([phone])
-  @@index([originClinicId])
-  @@map("clients")
-}
 
-model ClientRelation {
-  clientAId    String
-  clientBId    String
-  personAId    String?
-  personBId    String?
-  relationType String
-  notes        String?
-  createdAt    DateTime @default(now())
-  clientA      Client   @relation("ClientA", fields: [clientAId], references: [id], onDelete: Cascade)
-  clientB      Client   @relation("ClientB", fields: [clientBId], references: [id], onDelete: Cascade)
-  personA      Person?  @relation("PersonA", fields: [personAId], references: [id], onDelete: Cascade)
-  personB      Person?  @relation("PersonB", fields: [personBId], references: [id], onDelete: Cascade)
 
-  @@id([clientAId, clientBId])
-  @@index([clientAId])
-  @@index([clientBId])
-  @@index([personAId])
-  @@index([personBId])
-  @@map("client_relations")
-}
 
 model EntityRelation {
   id            String   @id @default(cuid())
@@ -546,14 +431,11 @@ model EmploymentContract {
   systemId     String
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
-  clientId     String?
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   system       System    @relation(fields: [systemId], references: [id], onDelete: Cascade)
-  client       Client?   @relation(fields: [clientId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([systemId])
-  @@index([clientId])
   @@map("employment_contracts")
 }
 
@@ -778,8 +660,7 @@ model Appointment {
   status                      AppointmentStatus @default(SCHEDULED)
   notes                       String?
   clientNotes                 String?
-  clientId                    String
-  personId                    String?
+  personId                    String
   professionalUserId          String
   systemId                    String
   clinicId                    String
@@ -791,8 +672,7 @@ model Appointment {
   originalAppointmentId       String?
   createdAt                   DateTime          @default(now())
   updatedAt                   DateTime          @updatedAt
-  client                      Client            @relation(fields: [clientId], references: [id])
-  person                      Person?           @relation(fields: [personId], references: [id])
+  person                      Person            @relation(fields: [personId], references: [id])
   professionalUser            User              @relation("ProfessionalUserAppointments", fields: [professionalUserId], references: [id])
   system                      System            @relation(fields: [systemId], references: [id], onDelete: Cascade)
   clinic                      Clinic            @relation(fields: [clinicId], references: [id])
@@ -800,7 +680,6 @@ model Appointment {
   relatedTicket               Ticket?
 
   @@index([startTime])
-  @@index([clientId])
   @@index([personId])
   @@index([professionalUserId])
   @@index([systemId])
@@ -1324,7 +1203,6 @@ model Payment {
   bankAccountId             String?
   cashSessionId             String?
   bonoInstanceId            String?
-  payerClientId             String?
   payerPersonId             String?
   payerCompanyId            String?
   debtLedgerId              String?
@@ -1341,7 +1219,6 @@ model Payment {
   bankAccount               BankAccount?             @relation(fields: [bankAccountId], references: [id])
   cashSession               CashSession?             @relation(fields: [cashSessionId], references: [id], onDelete: SetNull)
   bonoInstance              BonoInstance?            @relation(fields: [bonoInstanceId], references: [id])
-  payerClient               Client?                  @relation("PayerClientPayments", fields: [payerClientId], references: [id])
   payerPerson               Person?                  @relation("PayerPersonPayments", fields: [payerPersonId], references: [id])
   payerCompany              Company?                 @relation("PayerCompanyPayments", fields: [payerCompanyId], references: [id])
   verification              PaymentVerification?
@@ -1358,7 +1235,6 @@ model Payment {
   @@index([bankAccountId])
   @@index([cashSessionId])
   @@index([bonoInstanceId])
-  @@index([payerClientId])
   @@index([payerPersonId])
   @@index([payerCompanyId])
   @@index([debtLedgerId])
@@ -2806,6 +2682,7 @@ enum EntityType {
   DEBT_ADJUSTMENT
   FISCAL_YEAR
   EXPENSE
+  TARIFA
 }
 
 enum DebtStatus {
@@ -2867,8 +2744,6 @@ model Person {
   loyaltyLedgers          LoyaltyLedger[]
   debtLedgers             DebtLedger[]
   payerPayments           Payment[]                @relation("PayerPersonPayments")
-  clientRelationsAsA      ClientRelation[]         @relation("PersonA")
-  clientRelationsAsB      ClientRelation[]         @relation("PersonB")
 
   @@index([systemId])
   @@index([email])

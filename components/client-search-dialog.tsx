@@ -134,7 +134,9 @@ export function PersonSearchDialog({ isOpen, onClose, onPersonSelect, selectedTi
 
   // Convertir lastClient a Person para mostrar
   const clientToPerson = (client: ClientAdapter): Person => {
-    const [firstName, ...lastNameParts] = client.name.split(' ')
+    const fullName = client.name ?? "";
+    const [firstName, ...lastNameParts] = fullName.split(" ");
+    
     return {
       id: client.id,
       firstName: firstName || '',
@@ -191,7 +193,7 @@ export function PersonSearchDialog({ isOpen, onClose, onPersonSelect, selectedTi
           
           <div className="p-6 pb-2">
             {/* Quick Select Button */}
-            {lastClient && (
+            {lastClient?.name && (
               <div className="mb-4 p-3 bg-purple-50 rounded-lg">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -204,7 +206,7 @@ export function PersonSearchDialog({ isOpen, onClose, onPersonSelect, selectedTi
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => handlePersonSelection(clientToPerson(lastClient))}
+                    onClick={() => lastClient?.name && handlePersonSelection(clientToPerson(lastClient))}
                     className="text-purple-600 hover:text-purple-700 hover:bg-purple-100"
                   >
                     <Check className="h-4 w-4" />

@@ -176,105 +176,80 @@ export async function POST(
  * junto con sus precios y configuraciones particulares para esa tarifa.
  */
 export async function GET(
-  request: Request, // No necesitamos el request body, pero sí los params
-  { params }: { params: { id: string } } // El 'id' aquí es tariffId
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
 ) {
   let systemId: string | undefined;
   let tariffIdForLog = 'unknown';
 
   try {
-    // const session = await getServerSession(authOptions); // <<< Obsoleto
-    const session = await auth(); // <<< Usar auth() directamente
+    const session = await auth();
     systemId = session?.user?.systemId;
     if (!systemId) {
       return new NextResponse(JSON.stringify({ error: "Unauthorized: Missing systemId" }), { status: 401 });
     }
 
-    // Extraer el id de los parámetros ANTES de la validación
-    const tariffIdFromParams = params.id;
-
-    // Pasamos un objeto { id: tariffIdFromParams } para que coincida con la forma del schema
-    const paramsValidation = TariffParamsSchema.safeParse({ id: tariffIdFromParams }); 
-    if (!paramsValidation.success) {
-      // Log de error eliminado, el problema era el acceso directo a params.id
-      // console.error(`[API TARIFFS GET /services] Zod validation failed for params.id: ${params?.id}`, paramsValidation.error.format());
-      return new NextResponse(JSON.stringify({ error: "Bad Request: Invalid Tariff ID format.", details: paramsValidation.error.errors }), { status: 400 });
-    }
-    
-    const tariffId = paramsValidation.data.id;
+    // Await params antes de usarlo
+    const resolvedParams = await params;
+    const tariffId = resolvedParams.id;
     tariffIdForLog = tariffId;
 
-    console.log(`[API TARIFFS/${tariffId}/SERVICES GET] Fetching services for Tariff ${tariffId} and System ${systemId}`);
-
-    // 1. Verificar que la tarifa existe y pertenece al sistema
-    const tariffExists = await prisma.tariff.count({
-      where: { id: tariffId, systemId: systemId },
-    });
-
-    if (tariffExists === 0) {
-      console.warn(`[API TARIFFS/${tariffId}/SERVICES GET] Tariff ${tariffId} not found or does not belong to system ${systemId}`);
-      return new NextResponse(JSON.stringify({ error: "Tariff not found" }), { status: 404 });
+    // Validar ID de tarifa
+    const tariffParamsValidation = TariffParamsSchema.safeParse({ id: tariffId });
+    if (!tariffParamsValidation.success) {
+      console.error(`[API tariffs/${tariffIdForLog}/services GET] Validation Error:`, tariffParamsValidation.error.flatten());
+      return new NextResponse(
+        JSON.stringify({ 
+          error: "Validation Error", 
+          details: tariffParamsValidation.error.flatten() 
+        }), 
+        { status: 400 }
+      );
     }
 
-    // 2. Obtener los ServicePrice asociados a la tarifa
-    const servicePrices = await prisma.tariffServicePrice.findMany({
+    console.log(`[API tariffs/${tariffId}/services GET] System ${systemId} fetching services for tariff ${tariffId}`);
+
+    // Obtener los servicios asociados a esta tarifa
+    const tariffServices = await prisma.tariffServicePrice.findMany({
       where: {
         tariffId: tariffId,
-        // Opcional: Filtrar por systemId también aquí si ServicePrice lo tiene
-      },
-      include: {
-        service: { // Incluir datos básicos del servicio asociado
-          select: {
-            id: true,
-            name: true,
-            code: true,
-            durationMinutes: true,
-            settings: {
-              select: { isActive: true }
-            },
-            category: {
-              select: { name: true } // Incluir nombre de la categoría
-            },
-            vatType: { // Incluir datos del IVA
-              select: { name: true, rate: true }
-            }
-          }
+        isActive: true,
+        tariff: {
+          systemId: systemId
         }
       },
-      orderBy: {
-        service: { name: 'asc' } // Ordenar por nombre de servicio
+      include: {
+        service: {
+          include: {
+            category: true
+          }
+        }
       }
     });
 
-    console.log(`[API TARIFFS/${tariffId}/SERVICES GET] Found ${servicePrices.length} services for Tariff ${tariffId}`);
+    console.log(`[API tariffs/${tariffId}/services GET] Found ${tariffServices.length} services for tariff`);
 
-    // 3. Mapear el resultado para devolver la estructura deseada
-    // Incluir precio específico de la tarifa y datos básicos del servicio
-    const result = servicePrices.map(sp => ({
-      serviceId: sp.serviceId,
-      tariffId: sp.tariffId,
-      price: sp.price, // Precio específico de la tarifa
-      // Datos del servicio
-      name: sp.service.name,
-      code: sp.service.code,
-      durationMinutes: sp.service.durationMinutes,
-      categoryName: sp.service.category?.name,
-      vatTypeName: sp.service.vatType?.name,
-      vatRate: sp.service.vatType?.rate,
-      isActive: sp.service.settings?.isActive ?? true, // Asumir true si no hay settings
+    // Formatear la respuesta
+    const formattedServices = tariffServices.map(ts => ({
+      id: ts.service.id,
+      serviceId: ts.serviceId,
+      name: ts.service.name,
+      description: ts.service.description,
+      price: ts.price,
+      durationMinutes: ts.service.durationMinutes,
+      duration: Math.ceil(ts.service.durationMinutes / 15), // Convertir a slots de 15 minutos
+      category: ts.service.category ? {
+        id: ts.service.category.id,
+        name: ts.service.category.name
+      } : null,
+      // Campos específicos de la tarifa
+      tariffPrice: ts.price
     }));
 
-    return NextResponse.json(result);
+    return NextResponse.json(formattedServices);
 
-  } catch (error: any) {
-    // Loggear usando tariffIdForLog si se obtuvo
-    console.error(`[API TARIFFS/${tariffIdForLog}/SERVICES GET]`, error);
-    return new NextResponse(
-      JSON.stringify({ error: "Internal Server Error", details: error.message }),
-      { status: 500 }
-    );
+  } catch (error) {
+    console.error(`[API tariffs/${tariffIdForLog}/services GET] System ${systemId || 'unknown'} - Error:`, error);
+    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }
-
-// Opcional: Implementar GET si necesitas obtener los servicios de una tarifa específica
-// export async function GET(...) { ... } 

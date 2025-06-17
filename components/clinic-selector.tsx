@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback, useRef } from "react"
 import { useDataWithRevalidation } from "@/hooks/use-data-with-revalidation"
 import { useAuth } from "@/contexts/auth-context"
 import { trackEvent } from "@/utils/analytics"
-import { useClinic, Clinica } from "@/contexts/clinic-context"
+import { useClinic } from "@/contexts/clinic-context"
+import type { Clinic as PrismaClinic } from '@prisma/client'
 
 export function ClinicSelector() {
   const { user } = useAuth()
@@ -19,7 +20,7 @@ export function ClinicSelector() {
     isLoading,
     error,
     revalidate,
-  } = useDataWithRevalidation<Clinica[]>({
+  } = useDataWithRevalidation<PrismaClinic[]>({
     cookieKey: "user_clinics",
     cacheKey: "clinics_data",
     fetchFn: async () => {

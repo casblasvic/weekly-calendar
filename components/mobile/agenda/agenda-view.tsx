@@ -192,7 +192,66 @@ function MobileAgendaViewContent({ showMainSidebar = false }: MobileAgendaViewPr
   const [appointmentError, setAppointmentError] = useState<string | null>(null);
   
   // <<< FUNCIONES RELACIONADAS VACÍAS/PLACEHOLDERS >>>
-  const fetchAppointments = async () => { /* No hacer nada */ };
+  const fetchAppointments = async () => {
+    console.log('[MobileAgendaView] fetchAppointments called - activeClinic:', activeClinic?.id, 'currentDate:', currentDate);
+    
+    if (!activeClinic?.id || !currentDate) {
+      console.log('[MobileAgendaView] Missing activeClinic ID or currentDate, skipping fetch');
+      return;
+    }
+    
+    setIsLoadingAppointments(true);
+    setAppointmentError(null);
+    
+    try {
+      // Para la vista móvil, solo cargamos las citas del día actual
+      const url = `/api/appointments?clinicId=${activeClinic.id}&startDate=${format(currentDate, 'yyyy-MM-dd')}&endDate=${format(currentDate, 'yyyy-MM-dd')}`;
+      console.log('[MobileAgendaView] Fetching appointments from:', url);
+      
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        throw new Error(`Error fetching appointments: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      console.log('[MobileAgendaView] Received appointments:', data);
+      
+      // Procesar las citas para el formato esperado
+      const processedAppointments = data.map((apt: any) => ({
+        id: apt.id,
+        name: apt.person?.name || 'Sin nombre',
+        service: apt.services?.map((s: any) => s.service?.name).filter(Boolean).join(', ') || 'Sin servicio',
+        date: new Date(apt.startTime),
+        roomId: apt.equipment?.id || apt.roomId || 'default',
+        startTime: format(new Date(apt.startTime), 'HH:mm'),
+        duration: apt.duration || 30, // duración en minutos
+        color: (() => {
+          // Lógica de color como en WeeklyAgenda
+          if (apt.services && apt.services.length > 0) {
+            const uniqueServiceTypes = [...new Set(apt.services.map((s: any) => s.serviceId))];
+            if (uniqueServiceTypes.length === 1 && apt.services[0].service?.colorCode) {
+              return apt.services[0].service.colorCode;
+            }
+          }
+          return '#6B7280'; // Color por defecto (gris)
+        })(),
+        completed: apt.status === 'COMPLETED',
+        phone: apt.person?.phone,
+        personId: apt.personId,
+        serviceIds: apt.services?.map((s: any) => s.serviceId) || []
+      }));
+      
+      setAppointments(processedAppointments);
+      console.log('[MobileAgendaView] Processed appointments:', processedAppointments);
+    } catch (error) {
+      console.error('[MobileAgendaView] Error fetching appointments:', error);
+      setAppointmentError('Error al cargar las citas');
+      setAppointments([]);
+    } finally {
+      setIsLoadingAppointments(false);
+    }
+  };
   const getAppointmentBgColor = (appointment: AppointmentType, theme: string): string => "bg-gray-200";
   const getAppointmentTextColor = (appointment: AppointmentType, theme: string): string => "text-gray-800";
   const getAppointmentTop = (appointment: AppointmentType, timeSlots: string[]): number => 0;
@@ -333,16 +392,15 @@ function MobileAgendaViewContent({ showMainSidebar = false }: MobileAgendaViewPr
     setIsIOSDevice(isIOS())
   }, [])
 
-  // <<< COMENTADO: Fetch de citas >>>
-  // useEffect(() => {
-  //   if (activeClinic?.id && currentDate) {
-  //     fetchAppointments();
-  //   } else {
-  //     setAppointments(null);
-  //   }
-  //   // eslint-disable-next-line react-hooks/exhaustive-deps
-  // }, [activeClinic?.id, currentDate]);
-  // <<< FIN COMENTADO >>>
+  // Fetch de citas
+  useEffect(() => {
+    if (activeClinic?.id && currentDate) {
+      fetchAppointments();
+    } else {
+      setAppointments([]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeClinic?.id, currentDate]);
 
   // Temporizador para la línea roja
   useEffect(() => {
@@ -813,22 +871,46 @@ function MobileAgendaViewContent({ showMainSidebar = false }: MobileAgendaViewPr
                           }}
                         >
                           {!isBlocked && appointments
-                            .filter((apt) => apt.startTime === time && apt.roomId === room.id)
-                            .map((apt) => (
-                              <div
-                                key={apt.id}
-                                className="absolute inset-0 p-1 m-0.5 text-xs text-white rounded"
-                                style={{ backgroundColor: appColors.primary }}
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  handleAppointmentClick(apt);
-                                }}
-                              >
-                                <div className="font-medium truncate">{apt.name}</div>
-                                <div className="text-[10px] truncate">{apt.service}</div>
-                              </div>
-                            ))}
+                            .filter((apt) => {
+                              // Verificar si la cita corresponde a este slot de tiempo
+                              const aptStartTime = typeof apt.startTime === 'string' ? apt.startTime : format(apt.startTime, 'HH:mm');
+                              // Verificar si la cita está en esta cabina
+                              const isInRoom = apt.roomId === room.id;
+                              // La cita debe comenzar en este tiempo y estar en esta cabina
+                              return aptStartTime === time && isInRoom;
+                            })
+                            .map((apt) => {
+                              // Calcular la altura basada en la duración
+                              const height = calculateAppointmentHeight(apt.duration, slotDuration);
+                              
+                              // Usar el color de la cita (que viene del servicio o cabina)
+                              const bgColor = apt.color || '#6B7280'; // Color por defecto si no hay color
+                              
+                              return (
+                                <div
+                                  key={apt.id}
+                                  className="absolute left-0 right-0 top-0 z-10 p-1 m-0.5 text-xs text-white rounded shadow-sm cursor-pointer hover:shadow-md transition-shadow"
+                                  style={{ 
+                                    backgroundColor: bgColor,
+                                    height: `${height - 4}px`, // -4px para el margen
+                                    opacity: apt.completed ? 0.7 : 1
+                                  }}
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    handleAppointmentClick(apt);
+                                  }}
+                                >
+                                  <div className="font-medium truncate">{apt.name}</div>
+                                  <div className="text-[10px] truncate opacity-90">
+                                    {apt.service}
+                                  </div>
+                                  {apt.completed && (
+                                    <div className="text-[10px] font-semibold">✓</div>
+                                  )}
+                                </div>
+                              );
+                            })}
                           {(() => { // IIFE para lógica compleja
                             if (!isBlocked) return null; // Solo si está bloqueado
 
@@ -1238,4 +1320,3 @@ function MobileAgendaViewContent({ showMainSidebar = false }: MobileAgendaViewPr
     </div>
   )
 }
-

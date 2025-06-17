@@ -3,6 +3,7 @@
 import React, { useMemo, useEffect, useState, useCallback, useRef } from "react"
 
 import { format, parse, addDays, startOfWeek, isSameDay, differenceInDays, isToday, addWeeks, subWeeks, isSameMonth, parseISO, isBefore, isAfter, startOfDay, endOfDay, getDay, isWithinInterval } from "date-fns"
+import { toZonedTime } from "date-fns-tz"
 import { es } from "date-fns/locale"
 import { useClinic } from "@/contexts/clinic-context"
 import { AgendaNavBar } from "./agenda-nav-bar"
@@ -22,7 +23,6 @@ import { getDate } from "date-fns"
 import { useToast } from "@/hooks/use-toast"
 import { BlockScheduleModal } from "./block-schedule-modal"
 import { WeekSchedule, DaySchedule, TimeRange } from "@/types/schedule"
-import { Calendar } from "lucide-react"
 import { Appointment } from "@/types/appointments"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -34,6 +34,14 @@ import {
 } from "@/services/clinic-schedule-service"
 import { Clinic, Cabin, ScheduleTemplateBlock, ClinicScheduleBlock } from '@prisma/client'
 import type { CabinScheduleOverride } from '@prisma/client'
+// Añadir hooks de precarga para servicios, bonos y paquetes
+import { useServicesQuery, useBonosQuery, usePackagesQuery } from "@/lib/hooks/use-api-query"
+
+// Importar nuevos módulos de drag & drop
+import { useDragAndDrop } from "@/lib/drag-drop/hooks"
+import { DragPreview } from "@/components/drag-drop/drag-preview"
+import { DragItem } from "@/lib/drag-drop/types"
+import { getAppointmentDuration } from "@/lib/drag-drop/utils"
 
 // Función para generar slots de tiempo
 function getTimeSlots(startTime: string, endTime: string, interval = 15): string[] {
@@ -81,6 +89,11 @@ export default function WeeklyAgenda({
   const { activeClinic, activeClinicCabins, isLoading: isLoadingClinic, isLoadingCabinsContext } = useClinic()
   const { cabinOverrides, loadingOverrides, fetchOverridesByDateRange } = useScheduleBlocks()
   
+  // Precarga de datos para el modal de citas - ejecutar siempre para tenerlos en caché
+  useServicesQuery({ enabled: true })
+  useBonosQuery({ enabled: true })
+  usePackagesQuery({ enabled: true })
+  
   // --- LOG: Clínica activa recibida del contexto ---
   console.log("[WeeklyAgenda] activeClinic from context:", activeClinic);
   // ---------------------------------------------
@@ -108,28 +121,93 @@ export default function WeeklyAgenda({
   const prevDateRef = useRef<string | null>(null);
   const needsFullRerenderRef = useRef(false);
 
-  // Optimizar el efecto para actualizar la fecha cuando cambia initialDate
-  useEffect(() => {
-    try {
-      // Si ya estamos en transición, no iniciar otra para evitar parpadeos
-      if (isTransitioning) return;
-
-      const parsedDate = parse(initialDate, "yyyy-MM-dd", new Date());
-      const initialDateStr = format(parsedDate, "yyyy-MM-dd");
-      
-      // Solo actualizar si la fecha realmente cambió para evitar re-renderizados innecesarios
-      if (!isSameDay(parsedDate, currentDate)) {
-        // Actualizar referencia sin transición visual
-        prevDateRef.current = initialDateStr;
-        
-        // Actualizar fecha directamente, sin animaciones ni efectos visuales
-        // Esto es más rápido y evita parpadeos al navegar entre semanas
-        setCurrentDate(parsedDate);
-      }
-    } catch (error) {
-      // Error silencioso
+  // Estado para cargar citas
+  const [loadingAppointments, setLoadingAppointments] = useState(false);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  
+  // Función para obtener citas de la BD
+  const fetchAppointments = useCallback(async () => {
+    console.log('[WeeklyAgenda] fetchAppointments called - activeClinic:', activeClinic?.id);
+    if (!activeClinic?.id) {
+      console.log('[WeeklyAgenda] No activeClinic ID, skipping fetch');
+      return;
     }
-  }, [initialDate, currentDate, isTransitioning]);
+    
+    setLoadingAppointments(true);
+    try {
+      const startDate = startOfWeek(currentDate, { weekStartsOn: 1 });
+      const endDate = addDays(startDate, 6);
+      
+      const url = `/api/appointments?clinicId=${activeClinic.id}&startDate=${format(startDate, 'yyyy-MM-dd')}&endDate=${format(endDate, 'yyyy-MM-dd')}`;
+      console.log('[WeeklyAgenda] Fetching appointments from:', url);
+      
+      const response = await fetch(url);
+      
+      if (!response.ok) throw new Error('Error fetching appointments');
+      
+      const data = await response.json();
+      console.log('[WeeklyAgenda] Received appointments:', data);
+      
+      // Procesar las citas para el formato esperado por la agenda
+      const processedAppointments = data.map((apt: any) => {
+        const clinicTz = (activeClinic as any)?.countryInfo?.timezone || (activeClinic as any)?.country?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+        const startUtc = parseISO(apt.startTime);
+        const endUtc = parseISO(apt.endTime);
+        const startTime = toZonedTime(startUtc, clinicTz);
+        const endTime = toZonedTime(endUtc, clinicTz);
+        
+        // Determinar el color basado en los servicios
+        let appointmentColor = '#9CA3AF'; // Color por defecto (gris)
+        
+        if (apt.services && apt.services.length > 0) {
+          // Si todos los servicios son del mismo tipo, usar ese color
+          const serviceTypes = new Set(apt.services.map((s: any) => s.service?.categoryId));
+          const uniqueColors = new Set(apt.services.map((s: any) => s.service?.colorCode).filter(Boolean));
+          
+          if (serviceTypes.size === 1 && uniqueColors.size === 1) {
+            // Todos los servicios del mismo tipo - usar el color del servicio
+            const firstColor = Array.from(uniqueColors)[0];
+            appointmentColor = (typeof firstColor === 'string' ? firstColor : null) || appointmentColor;
+          } else if (apt.equipment?.color) {
+            // Múltiples tipos de servicios - usar el color de la cabina
+            appointmentColor = apt.equipment.color;
+          }
+        }
+        
+        return {
+          id: apt.id,
+          name: `${apt.person.firstName} ${apt.person.lastName}`,
+          service: apt.services?.map((s: any) => s.service?.name).filter(Boolean).join(", ") || 'Sin servicio',
+          date: startTime,
+          roomId: apt.equipment?.id || apt.roomId || apt.equipmentId || (activeClinicCabins?.[0]?.id ?? 'default'),
+          startTime: format(startTime, 'HH:mm'),
+          duration: Math.ceil((endTime.getTime() - startTime.getTime()) / (1000 * 60)),
+          color: appointmentColor,
+          phone: apt.person.phone,
+          services: apt.services || [],
+          tags: apt.tags || [],
+          // Información adicional para la vista detallada
+          notes: apt.notes,
+        };
+      }) as Appointment[];
+      
+      const dedupedAppointments = Array.from(new Map(processedAppointments.map((a: Appointment) => [a.id, a])).values());
+      
+      setAppointments(dedupedAppointments);
+      console.log('[WeeklyAgenda] Processed appointments:', dedupedAppointments);
+    } catch (error) {
+      console.error('[WeeklyAgenda] Error fetching appointments:', error);
+      // Podríamos mostrar un toast de error aquí
+    } finally {
+      setLoadingAppointments(false);
+    }
+  }, [activeClinic?.id, currentDate]);
+  
+  // Fetch appointments cuando cambia la clínica o la semana
+  useEffect(() => {
+    console.log('[WeeklyAgenda] useEffect triggered - activeClinic:', activeClinic?.id, 'currentDate:', currentDate);
+    fetchAppointments();
+  }, [fetchAppointments]);
 
   // Estados para diálogos y selección
   const [selectedSlot, setSelectedSlot] = useState<{
@@ -137,6 +215,32 @@ export default function WeeklyAgenda({
     time: string
     roomId: string
   } | null>(null)
+  const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
+
+  // Manejar clic sobre una cita existente para abrir el modal de edición
+  const handleAppointmentClick = useCallback((appointment: Appointment) => {
+    // Guardar la cita seleccionada
+    setSelectedAppointment(appointment);
+
+    // Construir objeto Person a partir del nombre telefóno, etc.
+    const [firstName, ...rest] = appointment.name.split(' ');
+    const personForModal: Person = {
+      id: appointment.personId || '',
+      firstName: firstName || appointment.name,
+      lastName: rest.join(' ') || '',
+      phone: appointment.phone || '',
+    };
+
+    // Actualizar estados necesarios para AppointmentDialog
+    setSelectedClient(personForModal);
+    setSelectedSlot({
+      date: appointment.date,
+      time: appointment.startTime,
+      roomId: appointment.roomId,
+    });
+
+    setIsAppointmentDialogOpen(true);
+  }, []);
   const [selectedClient, setSelectedClient] = useState<Person | null>(null)
   const [isSearchDialogOpen, setIsSearchDialogOpen] = useState(false)
   const [isAppointmentDialogOpen, setIsAppointmentDialogOpen] = useState(false)
@@ -147,48 +251,25 @@ export default function WeeklyAgenda({
     setIsNewClientDialogOpen(true);
   }, []);
 
-  // Estado para almacenar las citas
-  const [appointments, setAppointments] = useState<Appointment[]>(() => {
-    if (initialAppointments && initialAppointments.length > 0) {
-      // Convertir fechas si es necesario (si initialAppointments viene de API)
-       return initialAppointments.map((apt: any) => ({
-         ...apt,
-         date: typeof apt.date === 'string' ? parseISO(apt.date) : apt.date, 
-         startTime: typeof apt.startTime === 'string' ? parseISO(apt.startTime) : apt.startTime,
-         endTime: typeof apt.endTime === 'string' ? parseISO(apt.endTime) : apt.endTime,
-       }));
-    }
-    if (typeof window !== "undefined") {
-      const storedAppointments = sessionStorage.getItem("weeklyAppointments")
-      if (storedAppointments) {
-        try {
-          const parsedAppointments = JSON.parse(storedAppointments)
-
-          // Convertir las fechas de string a objetos Date
-          return parsedAppointments.map((apt: any) => ({
-            ...apt,
-            date: new Date(apt.date),
-          }))
-        } catch (error) {
-          // Error silencioso
-        }
-      }
-    }
-    return []
-  })
-
   // NUEVO: Estado para CabinScheduleOverride seleccionado
   const [selectedOverride, setSelectedOverride] = useState<CabinScheduleOverride | null>(null);
   // NUEVO: Estado para controlar la visibilidad del modal de bloqueo/override
   const [isOverrideModalOpen, setIsOverrideModalOpen] = useState(false);
 
-  // Efecto para guardar las citas en sessionStorage cuando cambian
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      sessionStorage.setItem("weeklyAppointments", JSON.stringify(appointments))
-    }
+  // Configuración de granularidad de minutos (1, 5, 10, 15, etc.)
+  const minuteGranularity = 5; // Configurable: cada cuántos minutos se puede posicionar
 
-    // Notificar al componente padre sobre el cambio en las citas
+  // Estado para hover con hora exacta
+  const [hoveredCell, setHoveredCell] = useState<{
+    day: Date;
+    time: string;
+    cabinId: string;
+    exactTime: string;
+    offsetY: number;
+  } | null>(null);
+
+  // Efecto para notificar al componente padre sobre el cambio en las citas
+  useEffect(() => {
     if (onAppointmentsChange) {
       onAppointmentsChange(appointments)
     }
@@ -451,7 +532,14 @@ export default function WeeklyAgenda({
 
   // Funciones para manejar citas
   const handleCellClick = (day: Date, time: string, roomId: string) => {
-    console.log("[WeeklyAgenda] handleCellClick called with:", { day, time, roomId });
+    // Usar la hora exacta del hover si está disponible, sino usar la hora del slot
+    const exactTime = hoveredCell && 
+                      hoveredCell.day.getTime() === day.getTime() && 
+                      hoveredCell.cabinId === roomId 
+                      ? hoveredCell.exactTime 
+                      : time;
+    
+    console.log("[WeeklyAgenda] handleCellClick called with:", { day, exactTime, roomId });
     
     // Verificar si la celda está bloqueada por un override
     const dayString = format(day, "yyyy-MM-dd")
@@ -475,7 +563,7 @@ export default function WeeklyAgenda({
 
     if (cabin && cabin.isActive) {
       console.log("[WeeklyAgenda] Setting selectedSlot and opening search dialog");
-      setSelectedSlot({ date: day, time, roomId })
+      setSelectedSlot({ date: day, time: exactTime, roomId })
       setIsSearchDialogOpen(true)
     }
   }
@@ -501,7 +589,7 @@ export default function WeeklyAgenda({
     console.log("[WeeklyAgenda] Setting selectedClient and opening appointment dialog");
     setSelectedClient(client);
     setIsSearchDialogOpen(false);
-    setIsAppointmentDialogOpen(true); 
+    setIsAppointmentDialogOpen(true); // Abrir el modal de citas después de seleccionar el cliente
   };
 
   const handleDeleteAppointment = useCallback(() => {
@@ -520,30 +608,95 @@ export default function WeeklyAgenda({
   }, [selectedSlot])
 
   const handleSaveAppointment = useCallback(
-     (appointmentData: { // Definir tipo esperado para appointmentData si es necesario
+     async (appointmentData: { 
+       id?: string; // ID opcional para cuando es edición
        client: { name: string; phone: string };
        services: any[]; // Ajustar tipo según sea necesario
        time: string;
        comment?: string;
+       tags?: string[]; // Añadir etiquetas al tipo
      }) => {
       if (selectedSlot) {
-        const cabin = activeCabins.find((c) => String(c.id) === selectedSlot.roomId) || activeCabins[0];
-        if (cabin) {
+        const isUpdate = !!appointmentData.id;
+        
+        try {
+          const method = isUpdate ? 'PUT' : 'POST';
+          
+          // Los datos ya vienen en el formato correcto del modal
+          const response = await fetch('/api/appointments', {
+            method: method,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(appointmentData),
+          });
+
+          if (!response.ok) {
+            throw new Error(isUpdate ? 'Error updating appointment' : 'Error creating appointment');
+          }
+
+          const savedAppointment = await response.json();
+          
+          // Convertir las fechas string a objetos Date
+          const startTime = new Date(savedAppointment.startTime);
+          const endTime = new Date(savedAppointment.endTime);
+          
+          // Determinar el color basado en los servicios creados
+          let appointmentColor = '#9CA3AF'; // Color por defecto
+          if (savedAppointment.services && savedAppointment.services.length > 0) {
+            const serviceTypes = new Set(savedAppointment.services.map((s: any) => s.service?.categoryId));
+            const uniqueColors = new Set(savedAppointment.services.map((s: any) => s.service?.colorCode).filter(Boolean));
+            
+            if (serviceTypes.size === 1 && uniqueColors.size === 1) {
+              const firstColor = Array.from(uniqueColors)[0];
+              appointmentColor = (typeof firstColor === 'string' ? firstColor : null) || appointmentColor;
+            } else if (savedAppointment.equipment?.color) {
+              appointmentColor = savedAppointment.equipment.color;
+            }
+          }
+          
+          // Obtener los IDs de las etiquetas de la respuesta
+          const tagIds = savedAppointment.tags?.map((tagRelation: any) => tagRelation.tagId) || [];
+          
+          // Convertir la cita creada al formato esperado por la agenda
           const newAppointment: Appointment = {
-            id: Math.random().toString(36).substr(2, 9), // ID temporal
-            name: appointmentData.client.name,
-            service: appointmentData.services.map((s) => s.name).join(", "),
-            date: selectedSlot.date,
-            roomId: selectedSlot.roomId,
-            startTime: format(selectedSlot.date, 'yyyy-MM-dd') + 'T' + appointmentData.time + ':00Z', // Añadir segundos y Z para formato ISO
-            duration: 2,
-            color: cabin.color ?? '#d1d5db',
-            phone: appointmentData.client.phone,
+            id: savedAppointment.id,
+            name: `${savedAppointment.person.firstName} ${savedAppointment.person.lastName}`,
+            service: savedAppointment.services.map((s: any) => s.service.name).join(", "),
+            date: startTime, // Date object
+            roomId: savedAppointment.roomId || savedAppointment.equipment?.id || selectedSlot?.roomId || 'default',
+            startTime: startTime.toTimeString().slice(0, 5), // string HH:MM
+            duration: Math.ceil((endTime.getTime() - startTime.getTime()) / (1000 * 60)), // Duración en minutos
+            color: appointmentColor,
+            phone: savedAppointment.person.phone,
+            services: savedAppointment.services || [],
+            tags: tagIds, // Añadir las etiquetas
           };
-          setAppointments((prev) => [...prev, newAppointment]);
+          
+          if (isUpdate) {
+            // Si es actualización, reemplazar la cita existente
+            setAppointments((prev) => 
+              prev.map(apt => apt.id === newAppointment.id ? newAppointment : apt)
+            );
+          } else {
+            // Si es nueva, agregarla
+            setAppointments((prev) => [...prev, newAppointment]);
+          }
+          
+          // Refrescar todas las citas para asegurar sincronización completa
+          await fetchAppointments();
+          
+          // Cerrar modal
+          setIsAppointmentDialogOpen(false);
+          
+          // Limpiar selección
+          setSelectedClient(null);
+        } catch (error) {
+          console.error(`Error ${isUpdate ? 'updating' : 'creating'} appointment:`, error);
+          // Mostrar mensaje de error contextual
+          alert(`Error al ${isUpdate ? 'actualizar' : 'crear'} la cita. Por favor, inténtalo de nuevo.`);
         }
       }
-       setIsAppointmentDialogOpen(false); // Cerrar diálogo después de guardar
     },
     [selectedSlot, activeCabins, setAppointments] // Añadir setAppointments a dependencias
   );
@@ -552,6 +705,118 @@ export default function WeeklyAgenda({
     // Esta función ya no es necesaria con el nuevo componente sin redimensionamiento
     console.log("La funcionalidad de redimensionamiento visual ha sido desactivada");
   }
+
+  // Usar el nuevo hook modular de drag & drop
+  const handleAppointmentDrop = useCallback(async (appointmentId: string, changes: any) => {
+    try {
+      // Buscar la cita actual
+      const appointmentToUpdate = appointments.find(app => app.id === appointmentId);
+      if (!appointmentToUpdate) return;
+      
+      // Crear una copia actualizada de la cita con los cambios
+      const updatedAppointment = {
+        ...appointmentToUpdate,
+        ...changes
+      };
+      
+      // Actualizar el estado local inmediatamente para renderizado instantáneo
+      setAppointments(prevAppointments => 
+        prevAppointments.map(app => 
+          app.id === appointmentId ? updatedAppointment : app
+        )
+      );
+      
+      // Hacer la llamada a la API en segundo plano
+      const response = await fetch(`/api/appointments`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: appointmentId,
+          ...changes
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error('Error al mover la cita');
+      }
+      
+      toast({
+        title: "Cita actualizada",
+        description: "La cita se ha movido correctamente",
+      });
+    } catch (error) {
+      console.error('Error moving appointment:', error);
+      
+      // Si hay error, revertir los cambios refrescando desde la API
+      await fetchAppointments();
+      
+      toast({
+        title: "Error",
+        description: "No se pudo mover la cita",
+        variant: "destructive",
+      });
+    }
+  }, [appointments, fetchAppointments, toast]);
+
+  const {
+    dragState,
+    handleDragStart,
+    handleDragOver,
+    handleDrop,
+    handleDragEnd,
+    setContainerRef
+  } = useDragAndDrop(handleAppointmentDrop, 60, 15);
+
+  // Ref para el contenedor de la agenda
+  const gridContainerRef = useRef<HTMLDivElement>(null);
+  
+  useEffect(() => {
+    if (gridContainerRef.current) {
+      setContainerRef(gridContainerRef.current);
+    }
+  }, [setContainerRef]);
+
+  // Wrappers para adaptar los handlers del nuevo sistema a las firmas de AppointmentItem
+  const handleAppointmentDragStart = useCallback((appointment: Appointment, e?: React.DragEvent) => {
+    if (!e) return;
+    
+    // Calcular endTime a partir de startTime y duration
+    const [hours, minutes] = appointment.startTime.split(':').map(Number);
+    const startDate = new Date(appointment.date);
+    startDate.setHours(hours, minutes, 0, 0);
+    const endDate = new Date(startDate.getTime() + appointment.duration * 60000);
+    const endTime = endDate.toTimeString().slice(0, 5);
+    
+    // Crear un DragItem a partir del Appointment
+    const dragItem: DragItem = {
+      id: appointment.id,
+      title: appointment.name,
+      startTime: appointment.startTime,
+      endTime: endTime,
+      duration: appointment.duration,
+      roomId: appointment.roomId,
+      color: appointment.color,
+      personId: appointment.personId || '',
+      currentDate: appointment.date,
+      services: appointment.services?.map(s => ({ name: typeof s === 'string' ? s : s.service?.name || s.name }))
+    };
+    
+    // Usar el handler del hook con el evento y el dragItem
+    handleDragStart(e, dragItem);
+  }, [handleDragStart]);
+
+  const handleCellDragOver = useCallback((e: React.DragEvent, date: Date, time: string, roomId: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    handleDragOver(e, date, roomId, gridContainerRef.current || undefined);
+  }, [handleDragOver]);
+
+  const handleCellDrop = useCallback((e: React.DragEvent, date: Date, time: string, roomId: string) => {
+    e.preventDefault();
+    handleDrop(e, date, roomId);
+  }, [handleDrop]);
 
   const onDragEnd = (result: any) => {
     if (!result.destination) {
@@ -583,6 +848,41 @@ export default function WeeklyAgenda({
     }
   }
 
+  // Función auxiliar para filtrar citas de una celda específica
+  const getAppointmentsForCell = useCallback((day: Date, time: string, cabinId: string) => {
+    const cellAppointments: Array<Appointment & { offsetMinutes: number }> = [];
+    
+    appointments.forEach(appointment => {
+      // Verificar que la fecha coincida
+      const appointmentDate = appointment.date;
+      if (!isSameDay(appointmentDate, day)) return;
+      
+      // Verificar que la cabina coincida
+      if (appointment.roomId !== cabinId) return;
+      
+      // Parsear hora de inicio de la cita
+      const [appointmentHours, appointmentMinutes] = appointment.startTime.split(':').map(Number);
+      const appointmentStartMinutes = appointmentHours * 60 + appointmentMinutes;
+      
+      // Parsear hora del slot
+      const [slotHours, slotMinutes] = time.split(':').map(Number);
+      const slotStartMinutes = slotHours * 60 + slotMinutes;
+      const slotEndMinutes = slotStartMinutes + slotDuration;
+      
+      // Verificar si la cita empieza dentro de este slot
+      if (appointmentStartMinutes >= slotStartMinutes && appointmentStartMinutes < slotEndMinutes) {
+        // Calcular el offset en minutos dentro del slot
+        const offsetMinutes = appointmentStartMinutes - slotStartMinutes;
+        cellAppointments.push({
+          ...appointment,
+          offsetMinutes
+        });
+      }
+    });
+    
+    return cellAppointments;
+  }, [appointments, slotDuration]);
+
   // Estructura corregida para el renderWeeklyGrid
   const renderWeeklyGrid = () => {
     // --- DEBUG LOG --- 
@@ -592,7 +892,7 @@ export default function WeeklyAgenda({
 
     return (
       <DragDropContext onDragEnd={onDragEnd}>
-        <div ref={agendaRef} className="relative z-0" style={{ scrollBehavior: "smooth" }}>
+        <div className="relative z-0" style={{ scrollBehavior: "smooth" }}>
           <div className="min-w-[1200px] relative">
             <div
               className="grid"
@@ -602,7 +902,7 @@ export default function WeeklyAgenda({
               }}
             >
               {/* Columna de tiempo - Fija - z-30 */}
-              <div className="sticky top-0 left-0 w-20 p-4 bg-white border-b border-r border-gray-300 hour-header" style={{ zIndex: 999 }}>
+              <div className="sticky left-0 z-10 w-20 p-4 bg-white border-b border-r border-gray-300 hour-header" style={{ zIndex: 999 }}>
                 <div className="text-sm text-gray-500">Hora</div>
               </div>
 
@@ -780,10 +1080,21 @@ export default function WeeklyAgenda({
                                     // ***** FIN AJUSTE CLASES CSS *****
                                     style={{
                                       height: `${AGENDA_CONFIG.ROW_HEIGHT}px`,
-                                      // Estilo visual para drop (si es posible)
+                                      // No sombrear toda la celda, solo mostrar el indicador de drop
                                       backgroundColor: snapshot.isDraggingOver && isCellInteractive && !overrideForCell
-                                        ? "rgba(167, 139, 250, 0.2)" // Color Púrpura semi-transparente
+                                        ? "rgba(167, 139, 250, 0.1)" // Color muy sutil para indicar que es dropeable
                                         : undefined, // Usa el fondo definido en className
+                                    }}
+                                    // ***** DRAG AND DROP EVENTS *****
+                                    onDragOver={(e) => {
+                                      if (active && isAvailable && !overrideForCell) {
+                                        handleCellDragOver(e, day, time, cabin.id)
+                                      }
+                                    }}
+                                    onDrop={(e) => {
+                                      if (active && isAvailable && !overrideForCell) {
+                                        handleCellDrop(e, day, time, cabin.id)
+                                      }
                                     }}
                                     // ***** AJUSTE onClick *****
                                     onClick={(e) => {
@@ -800,6 +1111,42 @@ export default function WeeklyAgenda({
                                       }
                                       // No hacer nada si el día está inactivo o el slot no está disponible (y no es un override)
                                     }}
+                                    onMouseMove={(e) => {
+                                      if (isCellInteractive || (overrideForCell && active)) {
+                                        const rect = e.currentTarget.getBoundingClientRect();
+                                        const offsetY = e.clientY - rect.top;
+                                        
+                                        // Calcular minutos con granularidad
+                                        const minuteOffset = Math.floor((offsetY / AGENDA_CONFIG.ROW_HEIGHT) * slotDuration);
+                                        const snappedMinuteOffset = Math.floor(minuteOffset / minuteGranularity) * minuteGranularity;
+                                        
+                                        // Verificar si hay una cita en esta posición
+                                        if (hasAppointmentAtPosition(day, time, cabin.id.toString(), snappedMinuteOffset)) {
+                                          setHoveredCell(null);
+                                          return;
+                                        }
+                                        
+                                        const [hours, minutes] = time.split(':').map(Number);
+                                        const totalMinutes = hours * 60 + minutes + snappedMinuteOffset;
+                                        const exactHours = Math.floor(totalMinutes / 60);
+                                        const exactMinutes = totalMinutes % 60;
+                                        const exactTime = `${exactHours.toString().padStart(2, '0')}:${exactMinutes.toString().padStart(2, '0')}`;
+                                        
+                                        // Calcular la posición Y relativa dentro de la celda
+                                        const snappedOffsetY = (snappedMinuteOffset / slotDuration) * AGENDA_CONFIG.ROW_HEIGHT;
+                                        
+                                        setHoveredCell({
+                                          day,
+                                          time,
+                                          cabinId: cabin.id.toString(),
+                                          exactTime,
+                                          offsetY: snappedOffsetY
+                                        });
+                                      }
+                                    }}
+                                    onMouseLeave={() => {
+                                      setHoveredCell(null);
+                                    }}
                                     // ***** FIN AJUSTE onClick *****
                                   >
                                     {/* ***** VISUALIZACIÓN DEL BLOQUE ***** */}
@@ -811,28 +1158,159 @@ export default function WeeklyAgenda({
                                         }}
                                         title={overrideForCell.description || "Bloqueado"} // Tooltip con el motivo (CORREGIDO: usar description)
                                       >
-                                         {/* Contenido del bloque: Icono y motivo si cabe */}
-                                         <div className="flex flex-col items-center justify-center w-full h-full text-center">
-                                           <Lock className="flex-shrink-0 w-3 h-3 mb-1 text-rose-600 dark:text-rose-300" />
-                                           {/* Mostrar motivo solo si el bloque es suficientemente alto */}
-                                           {blockDurationSlots * AGENDA_CONFIG.ROW_HEIGHT > 30 && ( 
-                                             <span className="leading-tight break-words line-clamp-2">
-                                               {overrideForCell.description || "Bloqueado"} {/* (CORREGIDO: usar description) */}
-                                             </span>
-                                           )}
+                                          {/* Contenido del bloque: Icono y motivo si cabe */}
+                                          <div className="flex flex-col items-center justify-center w-full h-full text-center">
+                                            <Lock className="flex-shrink-0 w-3 h-3 mb-1 text-rose-600 dark:text-rose-300" />
+                                            {/* Mostrar motivo solo si el bloque es suficientemente alto */}
+                                            {blockDurationSlots * AGENDA_CONFIG.ROW_HEIGHT > 30 && ( 
+                                              <span className="leading-tight break-words line-clamp-2">
+                                                {overrideForCell.description || "Bloqueado"} {/* (CORREGIDO: usar description) */}
+                                              </span>
+                                            )}
+                                          </div>
+                                       </div>
+                                     )}
+                                     {/* Placeholder para react-beautiful-dnd, solo si no es continuación de bloque */}
+                                     {!(overrideForCell && !isStartOfBlock) && provided.placeholder}
+                                     {/* ***** FIN VISUALIZACIÓN DEL BLOQUE ***** */}
+                                     
+                                     {/* Línea de hover para mostrar hora exacta */}
+                                     {hoveredCell && 
+                                      hoveredCell.day.getTime() === day.getTime() && 
+                                      hoveredCell.time === time && 
+                                      hoveredCell.cabinId === cabin.id.toString() && (
+                                       <div 
+                                         className="absolute left-0 right-0 pointer-events-none z-20"
+                                         style={{ top: `${hoveredCell.offsetY}px` }}
+                                       >
+                                         <div className="relative">
+                                           <div className="absolute left-0 right-0 h-[1px] bg-blue-500"></div>
+                                           <div className="absolute left-2 -top-3 bg-blue-500 text-white text-xs px-2 py-0.5 rounded">
+                                             {hoveredCell.exactTime}
+                                           </div>
                                          </div>
-                                      </div>
-                                    )}
-                                    {/* Placeholder para react-beautiful-dnd, solo si no es continuación de bloque */}
-                                    {!(overrideForCell && !isStartOfBlock) && provided.placeholder}
-                                    {/* ***** FIN VISUALIZACIÓN DEL BLOQUE ***** */}
+                                       </div>
+                                     )}
+                                     
+                                     {/* Renderizar citas de esta celda específica */}
+                                     {!overrideForCell && getAppointmentsForCell(day, time, cabin.id).map((appointmentWithOffset, appointmentIndex) => {
+                                       const { offsetMinutes, ...appointment } = appointmentWithOffset;
+                                       const offsetTop = (offsetMinutes / slotDuration) * AGENDA_CONFIG.ROW_HEIGHT;
+                                       
+                                       return (
+                                         <div
+                                           key={appointment.id}
+                                           style={{
+                                             position: 'absolute',
+                                             top: `${offsetTop}px`,
+                                             left: 0,
+                                             right: 0,
+                                             zIndex: 10
+                                           }}
+                                         >
+                                           <AppointmentItem
+                                             appointment={appointment}
+                                             index={appointmentIndex}
+                                             slotDuration={slotDuration}
+                                             onClick={() => handleAppointmentClick(appointment)}
+                                             onDragStart={handleAppointmentDragStart}
+                                             onDragEnd={handleDragEnd}
+                                             isDragging={dragState.isDragging && dragState.draggedItem?.id === appointment.id}
+                                           />
+                                         </div>
+                                       );
+                                     })}
+                                      
+                                      {/* Mostrar sombra de la cita en la posición del preview */}
+                                      {dragState.isDragging && 
+                                       dragState.preview && 
+                                       dragState.draggedItem &&
+                                       dragState.preview.date.toDateString() === day.toDateString() && 
+                                       dragState.preview.roomId === cabin.id && (() => {
+                                        // Calcular si el preview está dentro de este slot de tiempo
+                                        const [slotHour, slotMinute] = time.split(':').map(Number);
+                                        const slotStartMinutes = slotHour * 60 + slotMinute;
+                                        const slotEndMinutes = slotStartMinutes + slotDuration;
+                                        
+                                        const [previewHour, previewMinute] = dragState.preview.time.split(':').map(Number);
+                                        const previewStartMinutes = previewHour * 60 + previewMinute;
+                                        const previewEndMinutes = previewStartMinutes + dragState.draggedItem.duration;
+                                        
+                                        // Verificar si el preview comienza en este slot o se extiende a través de él
+                                        if (previewStartMinutes < slotEndMinutes && previewEndMinutes > slotStartMinutes) {
+                                          // Calcular el offset dentro del slot
+                                          const minutesIntoSlot = Math.max(0, previewStartMinutes - slotStartMinutes);
+                                          const offsetPercentage = minutesIntoSlot / slotDuration;
+                                          const topOffset = offsetPercentage * AGENDA_CONFIG.ROW_HEIGHT;
+                                          
+                                          // Buscar citas existentes en este rango de tiempo para evitar solapamientos
+                                          const allAppointmentsInRange = appointments.filter(appointment => {
+                                            if (appointment.roomId !== cabin.id) return false;
+                                            if (!isSameDay(appointment.date, day)) return false;
+                                            if (appointment.id === dragState.draggedItem.id) return false; // No contar la cita que se está arrastrando
+                                            
+                                            const [appHour, appMinute] = appointment.startTime.split(':').map(Number);
+                                            const appStartMinutes = appHour * 60 + appMinute;
+                                            const appEndMinutes = appStartMinutes + appointment.duration;
+                                            
+                                            // Verificar si hay solapamiento
+                                            return appStartMinutes < previewEndMinutes && appEndMinutes > previewStartMinutes;
+                                          });
+                                          
+                                          let finalTopOffset = topOffset;
+                                          
+                                          // Si hay citas existentes que podrían solaparse, ajustar la posición
+                                          allAppointmentsInRange.forEach(appointment => {
+                                            const [appHour, appMinute] = appointment.startTime.split(':').map(Number);
+                                            const appStartMinutes = appHour * 60 + appMinute;
+                                            const appEndMinutes = appStartMinutes + appointment.duration;
+                                            
+                                            // Si la nueva cita empezaría antes del final de una existente, ajustar
+                                            if (previewStartMinutes < appEndMinutes) {
+                                              // Posicionar justo después de la cita existente
+                                              const appEndInSlot = appEndMinutes - slotStartMinutes;
+                                              if (appEndInSlot > 0 && appEndInSlot <= slotDuration) {
+                                                const appEndOffset = (appEndInSlot / slotDuration) * AGENDA_CONFIG.ROW_HEIGHT;
+                                                finalTopOffset = Math.max(finalTopOffset, appEndOffset);
+                                              }
+                                            }
+                                          });
+                                          
+                                          // Calcular la altura visible en este slot
+                                          const visibleStartMinutes = Math.max(previewStartMinutes, slotStartMinutes);
+                                          const visibleEndMinutes = Math.min(previewEndMinutes, slotEndMinutes);
+                                          const visibleDuration = visibleEndMinutes - visibleStartMinutes;
+                                          const height = (visibleDuration / slotDuration) * AGENDA_CONFIG.ROW_HEIGHT - 2;
+                                          
+                                          return (
+                                            <div
+                                              className="absolute left-0 right-0 pointer-events-none"
+                                              style={{
+                                                top: `${finalTopOffset}px`,
+                                                height: `${height}px`,
+                                                backgroundColor: dragState.draggedItem.color || '#9CA3AF',
+                                                opacity: 0.5,
+                                                borderRadius: '6px',
+                                                border: '2px dashed rgba(0, 0, 0, 0.3)',
+                                                zIndex: 5,
+                                                transition: 'top 0.1s ease-out' // Transición suave
+                                              }}
+                                            >
+                                              <div className="p-1.5 text-xs text-white truncate">
+                                                {dragState.draggedItem.title}
+                                              </div>
+                                            </div>
+                                          );
+                                        }
+                                        return null;
+                                      })()}
                                   </div>
                                 )}
                               </Droppable>
                             );
                             // ***** FIN INTEGRACIÓN EN REND *****
                           }) : (
-                            <div className="flex items-center justify-center h-full p-1 text-xs italic text-gray-400 border-t border-r border-gray-200 last:border-r-0" style={{ height: `${AGENDA_CONFIG.ROW_HEIGHT}px` }}>
+                            <div className="flex items-center justify-center h-full p-1 text-xs italic text-center text-gray-400 border-t border-r border-gray-200 last:border-r-0" style={{ height: `${AGENDA_CONFIG.ROW_HEIGHT}px` }}>
                               Sin cabinas activas
                             </div>
                           )}
@@ -844,23 +1322,13 @@ export default function WeeklyAgenda({
               ))}
             </div>
 
-            {/* Renderizar citas */}
-            {appointments.map((appointment, index) => (
-              <AppointmentItem
-                key={appointment.id}
-                appointment={appointment}
-                index={index}
-                onClick={undefined}
-              />
-            ))}
-
             {/* Indicador de tiempo actual */}
             <div 
               className="absolute inset-0 pointer-events-none"
               style={{ 
-                top: '80px', // Compensar por la altura de la cabecera fija
+                top: '100px', // Compensar por la altura de la cabecera fija
                 overflow: 'hidden',
-                zIndex: 15 // Por debajo de las cabeceras fijas (z-index: 20)
+                zIndex: 50 // Aumentar z-index para estar por encima de todo (citas tienen z-10)
               }}
             >
               <CurrentTimeIndicator
@@ -881,6 +1349,21 @@ export default function WeeklyAgenda({
       </DragDropContext>
     )
   }
+
+  // Función para verificar si hay una cita en una posición específica
+  const hasAppointmentAtPosition = (day: Date, time: string, cabinId: string, offsetMinutes: number): boolean => {
+    const appointments = getAppointmentsForCell(day, time, cabinId);
+    const [hours, minutes] = time.split(':').map(Number);
+    const hoverTimeInMinutes = hours * 60 + minutes + offsetMinutes;
+    
+    return appointments.some(apt => {
+      const aptStartMinutes = parseInt(apt.startTime.split(':')[0]) * 60 + parseInt(apt.startTime.split(':')[1]);
+      const aptEndMinutes = aptStartMinutes + apt.duration;
+      
+      // Verificar si el punto del hover está dentro del rango de la cita
+      return hoverTimeInMinutes >= aptStartMinutes && hoverTimeInMinutes < aptEndMinutes;
+    });
+  };
 
   // Modificar la función handleAppointmentAdd para ser más eficiente
   const handleAppointmentAdd = useCallback((appointment: Appointment) => {
@@ -1037,107 +1520,31 @@ export default function WeeklyAgenda({
              let isValid = !isNaN(overrideStartDate?.getTime()); // Start date MUST be valid
 
              if (isRecurring) {
-                 // For recurring, we need EITHER a valid recurrenceEndDate OR a valid endDate
-                 const isRecurrenceEndDateValid = recurrenceEndDate && !isNaN(recurrenceEndDate.getTime());
-                 const isEndDateValid = overrideEndDate && !isNaN(overrideEndDate.getTime());
-                 
-                 // If recurrenceEndDate exists, it MUST be valid.
-                 if (recurrenceEndDate) {
-                      isValid = isValid && isRecurrenceEndDateValid;
-                 } 
-                 // If recurrenceEndDate does NOT exist, then the regular endDate MUST be valid.
-                 else {
-                      isValid = isValid && isEndDateValid; 
+                 // --- Lógica Recurrente ---
+                 const effectiveEndDate = recurrenceEndDate ? endOfDay(recurrenceEndDate) : endOfDay(overrideEndDate);
+                 const overrideStartDateStart = startOfDay(overrideStartDate);
+
+                 // ¿Está la fecha de la celda DENTRO del rango de fechas de la recurrencia?
+                 const isWithinDateRange = isWithinInterval(startOfDay(day), { start: overrideStartDateStart, end: effectiveEndDate });
+
+                 // ¿Coincide el DÍA DE LA SEMANA?
+                 const isDayOfWeekMatch = daysOfWeek && daysOfWeek.includes(getDay(day));
+
+                 if (isWithinDateRange && isDayOfWeekMatch) {
+                    return override; // ¡Coincidencia de bloqueo recurrente!
                  }
+                 // --- Fin Lógica Recurrente ---
 
              } else {
-                 // For non-recurring, endDate might be null. 
-                 // We only need startDate for the logic.
-                 // We only invalidate if endDate exists AND is invalid.
-                 if (overrideEndDate && isNaN(overrideEndDate.getTime())) {
-                      isValid = false; 
-                 }
-                 // If overrideEndDate is null, isValid remains based on overrideStartDate validity.
-             }
+                 // --- Lógica No Recurrente (Un solo día) ---
+                 const overrideStartDateStart = startOfDay(overrideStartDate);
 
-             if (!isValid) {
-                 // Log more details including potentially parsed/converted dates
-                 console.warn("Skipping override due to invalid date objects:", {
-                     ...override, // Spread original data
-                     _parsedStartDate: overrideStartDate, 
-                     _parsedEndDate: overrideEndDate, 
-                     _parsedRecurrenceEndDate: recurrenceEndDate
-                 }); 
-                 continue;
-             }
-             // --- End Date Validation ---
-
-            const cellDate = day; // La fecha de la celda actual
-            const cellTime = timeSlot; // La hora de la celda actual HH:mm
-            const cellDayOfWeek = getDay(cellDate); // 0 = Domingo, 1 = Lunes,...
-
-            // Combinar fecha y hora de la celda para comparación precisa
-            let cellDateTime: Date;
-            try {
-                 const dateTimeString = `${format(cellDate, "yyyy-MM-dd")}T${cellTime}:00`;
-                 cellDateTime = parseISO(dateTimeString);
-                 if (isNaN(cellDateTime.getTime())) {
-                     // Fallback por si parseISO falla con solo HH:mm
-                     cellDateTime = parse(dateTimeString.substring(0, 16), "yyyy-MM-dd'T'HH:mm", new Date());
-                 }
-                 if (isNaN(cellDateTime.getTime())) continue; // Saltar si la hora de la celda no es válida
-            } catch (e) { continue; }
-
-            // Combinar la FECHA de la celda con las HORAS del override para definir límites
-             let overrideStartDateTimeOnCellDay: Date;
-             let overrideEndDateTimeOnCellDay: Date;
-             try {
-                overrideStartDateTimeOnCellDay = parse(`${format(cellDate, "yyyy-MM-dd")}T${overrideStartTime}`, "yyyy-MM-dd'T'HH:mm", new Date());
-                overrideEndDateTimeOnCellDay = parse(`${format(cellDate, "yyyy-MM-dd")}T${overrideEndTime}`, "yyyy-MM-dd'T'HH:mm", new Date());
-                if (isNaN(overrideStartDateTimeOnCellDay.getTime()) || isNaN(overrideEndDateTimeOnCellDay.getTime())) continue; // Saltar si las horas del override son inválidas
-             } catch(e) { continue; }
-
-
-            // --- Comprobación Principal --- 
-
-            // 1. ¿La HORA de la celda cae dentro del rango de horas del override?
-            const isTimeMatch = !isBefore(cellDateTime, overrideStartDateTimeOnCellDay) &&
-                                isBefore(cellDateTime, overrideEndDateTimeOnCellDay);
-            
-            if (!isTimeMatch) {
-                continue; // Si la hora no coincide, no puede ser este bloqueo
-            }
-
-            // 2. La HORA coincide, ahora comprobar FECHAS y RECURRENCIA
-
-            const cellDateStart = startOfDay(cellDate); // Normalizar a inicio del día para comparaciones
-
-            if (isRecurring) {
-                // --- Lógica Recurrente ---
-                const effectiveEndDate = recurrenceEndDate ? endOfDay(recurrenceEndDate) : endOfDay(overrideEndDate);
-                const overrideStartDateStart = startOfDay(overrideStartDate);
-
-                // ¿Está la fecha de la celda DENTRO del rango de fechas de la recurrencia?
-                const isWithinDateRange = isWithinInterval(cellDateStart, { start: overrideStartDateStart, end: effectiveEndDate });
-
-                // ¿Coincide el DÍA DE LA SEMANA?
-                const isDayOfWeekMatch = daysOfWeek && daysOfWeek.includes(cellDayOfWeek);
-
-                if (isWithinDateRange && isDayOfWeekMatch) {
-                    return override; // ¡Coincidencia de bloqueo recurrente!
-                }
-                // --- Fin Lógica Recurrente ---
-
-            } else {
-                // --- Lógica No Recurrente (Un solo día) ---
-                const overrideStartDateStart = startOfDay(overrideStartDate);
-
-                // ¿Es la fecha de la celda EXACTAMENTE la fecha de inicio del bloqueo?
-                if (isSameDay(cellDateStart, overrideStartDateStart)) {
+                 // ¿Es la fecha de la celda EXACTAMENTE la fecha de inicio del bloqueo?
+                 if (isSameDay(startOfDay(day), overrideStartDateStart)) {
                     return override; // ¡Coincidencia de bloqueo de un solo día!
-                }
-                // --- Fin Lógica No Recurrente ---
-            }
+                 }
+                 // --- Fin Lógica No Recurrente ---
+             }
 
         } catch (error) {
             console.error("Error processing override:", override, error);
@@ -1160,74 +1567,7 @@ export default function WeeklyAgenda({
             {/* En modo contenedor, no mostramos el encabezado ni la barra de navegación
                ya que estos serán proporcionados por el AgendaContainer padre */}
             {renderWeeklyGrid()}
-
-            {/* Diálogos y modales */}
-            {selectedSlot && selectedClient && (
-              <AppointmentDialog 
-                isOpen={isAppointmentDialogOpen}
-                onClose={() => {
-                  setIsAppointmentDialogOpen(false);
-                  setSelectedClient(null); // Limpiar cliente al cerrar
-                  setSelectedSlot(null);
-                }}
-                date={selectedSlot.date}
-                initialClient={selectedClient}
-                selectedTime={selectedSlot.time}
-                clinic={{ id: activeClinic?.id?.toString() || '', name: activeClinic?.name || '' }}
-                professional={{ id: '', name: '' }} // TODO: implementar selección de profesional
-                onSearchClick={() => { 
-                  setIsAppointmentDialogOpen(false); 
-                  setIsSearchDialogOpen(true); 
-                }}
-                onNewClientClick={handleNewClientClick}
-                onSaveAppointment={(appointmentData) => {
-                  // Adaptar los datos al formato esperado por handleSaveAppointment
-                  handleSaveAppointment({
-                    client: {
-                      name: `${selectedClient.firstName} ${selectedClient.lastName}`,
-                      phone: selectedClient.phone || ''
-                    },
-                    services: [], // TODO: implementar servicios
-                    time: appointmentData.startTime,
-                    comment: appointmentData.notes
-                  });
-                }}
-                onMoveAppointment={handleDeleteAppointment}
-              />
-            )}
-
-            {isSearchDialogOpen && (
-              <PersonSearchDialog
-                isOpen={isSearchDialogOpen}
-                onClose={() => setIsSearchDialogOpen(false)}
-                onPersonSelect={handleClientSelect}
-              />
-            )}
-
-            {isNewClientDialogOpen && (
-              <NewClientDialog 
-                isOpen={isNewClientDialogOpen} 
-                onClose={() => setIsNewClientDialogOpen(false)} 
-              />
-            )}
-
-            {isOverrideModalOpen && (
-              <BlockScheduleModal
-                open={isOverrideModalOpen}
-                onOpenChange={(isOpen) => setIsOverrideModalOpen(isOpen)}
-                clinicRooms={activeCabins.map(cabin => ({
-                  name: cabin.name,
-                  id: cabin.id.toString()
-                }))}
-                blockToEdit={selectedOverride}
-                clinicId={String(activeClinic?.id)}
-                clinicConfig={{
-                  // Pass calculated times if available, otherwise safe defaults
-                  openTime: timeSlots.length > 0 ? timeSlots[0] : "09:00", 
-                  closeTime: timeSlots.length > 0 ? timeSlots[timeSlots.length - 1] : "20:00",
-                }}
-              />
-            )}
+            {/* Asegurarse de que CurrentTimeIndicator esté relacionado con este div si usa refs */}
           </div>
         </HydrationWrapper>
       </div>
@@ -1242,23 +1582,40 @@ export default function WeeklyAgenda({
         {/* El bloque de AgendaNavBar eliminado completamente */}
 
         {/* Contenedor de la rejilla que debe tener scroll */}
-        <div className="relative flex-1 overflow-auto">
+        <div ref={gridContainerRef} className="relative flex-1 overflow-auto">
             {renderWeeklyGrid()}
             {/* Asegurarse de que CurrentTimeIndicator esté relacionado con este div si usa refs */}
         </div>
+        
+        {/* Mostrar el preview del drag cuando se está arrastrando */}
+        {dragState.isDragging && dragState.preview && dragState.draggedItem && (
+          <DragPreview 
+            preview={dragState.preview}
+            duration={dragState.draggedItem.duration}
+            color={dragState.draggedItem.color}
+            title={dragState.draggedItem.title}
+          />
+        )}
         
         {/* Renderizar diálogos aquí, no afectan el layout principal */}
         {selectedSlot && selectedClient && (
           <AppointmentDialog 
             isOpen={isAppointmentDialogOpen}
             onClose={() => {
+              console.log('[WeeklyAgenda] AppointmentDialog onClose called')
+              console.log('[WeeklyAgenda] Current selectedSlot:', selectedSlot)
+              console.log('[WeeklyAgenda] Current selectedClient:', selectedClient)
               setIsAppointmentDialogOpen(false);
               setSelectedClient(null); // Limpiar cliente al cerrar
               setSelectedSlot(null);
+              setSelectedAppointment(null); // Limpiar cita seleccionada
             }}
             date={selectedSlot.date}
             initialClient={selectedClient}
             selectedTime={selectedSlot.time}
+            roomId={selectedSlot.roomId}
+            isEditing={!!selectedAppointment}
+            existingAppointment={selectedAppointment}
             clinic={{ id: activeClinic?.id?.toString() || '', name: activeClinic?.name || '' }}
             professional={{ id: '', name: '' }} // TODO: implementar selección de profesional
             onSearchClick={() => { 
@@ -1266,19 +1623,84 @@ export default function WeeklyAgenda({
               setIsSearchDialogOpen(true); 
             }}
             onNewClientClick={handleNewClientClick}
-            onSaveAppointment={(appointmentData) => {
-              // Adaptar los datos al formato esperado por handleSaveAppointment
-              handleSaveAppointment({
-                client: {
-                  name: `${selectedClient.firstName} ${selectedClient.lastName}`,
-                  phone: selectedClient.phone || ''
-                },
-                services: [], // TODO: implementar servicios
-                time: appointmentData.startTime,
-                comment: appointmentData.notes
-              });
+            onMoveAppointment={async () => {
+              // Refrescar las citas después de eliminar o validar
+              await fetchAppointments();
             }}
-            onMoveAppointment={handleDeleteAppointment}
+            onSaveAppointment={async (appointmentData) => {
+              const isUpdate = !!appointmentData.id;
+              
+              try {
+                const method = isUpdate ? 'PUT' : 'POST';
+                
+                // Los datos ya vienen en el formato correcto del modal
+                const response = await fetch('/api/appointments', {
+                  method: method,
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify(appointmentData),
+                });
+
+                if (!response.ok) {
+                  throw new Error(isUpdate ? 'Error updating appointment' : 'Error creating appointment');
+                }
+
+                const savedAppointment = await response.json();
+                
+                // Convertir las fechas string a objetos Date
+                const startTime = new Date(savedAppointment.startTime);
+                const endTime = new Date(savedAppointment.endTime);
+                
+                // Determinar el color basado en los servicios creados
+                let appointmentColor = '#9CA3AF'; // Color por defecto
+                if (savedAppointment.services && savedAppointment.services.length > 0) {
+                  const serviceTypes = new Set(savedAppointment.services.map((s: any) => s.service?.categoryId));
+                  const uniqueColors = new Set(savedAppointment.services.map((s: any) => s.service?.colorCode).filter(Boolean));
+                  
+                  if (serviceTypes.size === 1 && uniqueColors.size === 1) {
+                    const firstColor = Array.from(uniqueColors)[0];
+                    appointmentColor = (typeof firstColor === 'string' ? firstColor : null) || appointmentColor;
+                  } else if (savedAppointment.equipment?.color) {
+                    appointmentColor = savedAppointment.equipment.color;
+                  }
+                }
+                
+                // Obtener los IDs de las etiquetas de la respuesta
+                const tagIds = savedAppointment.tags?.map((tagRelation: any) => tagRelation.tagId) || [];
+                
+                // Convertir la cita creada al formato esperado por la agenda
+                const newAppointment: Appointment = {
+                  id: savedAppointment.id,
+                  name: `${savedAppointment.person.firstName} ${savedAppointment.person.lastName}`,
+                  service: savedAppointment.services.map((s: any) => s.service.name).join(", "),
+                  date: startTime, // Date object
+                  roomId: savedAppointment.roomId || savedAppointment.equipment?.id || selectedSlot?.roomId || 'default',
+                  startTime: startTime.toTimeString().slice(0, 5), // string HH:MM
+                  duration: Math.ceil((endTime.getTime() - startTime.getTime()) / (1000 * 60)), // Duración en minutos
+                  color: appointmentColor,
+                  phone: savedAppointment.person.phone,
+                  services: savedAppointment.services || [],
+                  tags: tagIds, // Añadir las etiquetas
+                };
+                
+                // Agregar la nueva cita a la lista de appointments
+                setAppointments((prev) => [...prev, newAppointment]);
+                
+                // Opcional: Refrescar todas las citas para asegurar sincronización
+                // await fetchAppointments();
+                
+                // Cerrar modal
+                setIsAppointmentDialogOpen(false);
+                
+                // Limpiar selección
+                setSelectedClient(null);
+              } catch (error) {
+                console.error(`Error ${isUpdate ? 'updating' : 'creating'} appointment:`, error);
+                // Mostrar mensaje de error contextual
+                alert(`Error al ${isUpdate ? 'actualizar' : 'crear'} la cita. Por favor, inténtalo de nuevo.`);
+              }
+            }}
           />
         )}
         

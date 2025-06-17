@@ -199,7 +199,19 @@ export function FloatingMenu({ className }: FloatingMenuProps) {
                 onClick={() => lastClient && handleMenuSelect("client")}
                 title={lastClient ? "Cliente activo" : "No hay cliente seleccionado"}
               >
-                <User className="w-6 h-6" />
+                { lastClient ? (
+                  lastClient.avatar ? (
+                    <img
+                      src={lastClient.avatar}
+                      alt={lastClient.name}
+                      className="w-6 h-6 rounded-full object-cover"
+                    />
+                  ) : (
+                    <User className="w-6 h-6" />
+                  )
+                ) : (
+                  <User className="w-6 h-6" />
+                ) }
               </Button>
 
               {/* Botón de personal */}
@@ -307,7 +319,7 @@ export function FloatingMenu({ className }: FloatingMenuProps) {
                   <div className="p-2.5 border-b bg-gradient-to-r from-purple-50 to-white">
                     <div className="flex items-center space-x-2.5">
                       <div className="flex items-center justify-center w-8 h-8 text-sm font-medium text-purple-600 bg-purple-100 border-2 border-white rounded-full shadow-sm">
-                        {lastClient.name.charAt(0)}
+                        {lastClient.name ? lastClient.name.charAt(0) : "?"}
                       </div>
                       <div>
                         <div className="text-xs font-semibold leading-tight text-gray-800">{lastClient.name}</div>

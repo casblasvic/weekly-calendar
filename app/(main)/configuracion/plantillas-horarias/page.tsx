@@ -117,18 +117,40 @@ const renderTemplateTableSkeleton = () => (
 export default function PlantillasHorariasPage() {
   const { templates, addTemplate, updateTemplate, deleteTemplate, loading: loadingTemplates } = useTemplates()
   const [isAddingTemplate, setIsAddingTemplate] = useState(false)
-  const [editingTemplate, setEditingTemplate] = useState<ScheduleTemplate & { blocks?: ScheduleTemplateBlock[] } | null>(null)
+  const [editingTemplate, setEditingTemplate] = useState<(ScheduleTemplate & { blocks?: ScheduleTemplateBlock[], createGranularity?: number }) | null>(null)
   const [currentTemplateName, setCurrentTemplateName] = useState("")
   const [currentTemplateDescription, setCurrentTemplateDescription] = useState("")
   const [currentSchedule, setCurrentSchedule] = useState<WeekSchedule>(DEFAULT_SCHEDULE)
   const [currentOpenTime, setCurrentOpenTime] = useState("09:00")
   const [currentCloseTime, setCurrentCloseTime] = useState("17:00")
   const [currentSlotDuration, setCurrentSlotDuration] = useState<number>(15);
-  const [simulatedClinicForModal, setSimulatedClinicForModal] = useState<Partial<Clinic> | null>(null);
+  const [currentCreateGranularity, setCurrentCreateGranularity] = useState<number>(5);
+  const [simulatedClinicForModal, setSimulatedClinicForModal] = useState<any | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
   // Opciones para el selector de slotDuration
   const slotDurationOptions = Array.from({ length: 12 }, (_, i) => (i + 1) * 5); // 5, 10, ..., 60
+  
+  // Granularidades válidas por duración de slot
+  const VALID_GRANULARITIES: Record<number, number[]> = {
+    15: [1, 3, 5, 15],
+    30: [1, 2, 3, 5, 6, 10, 15, 30],
+    45: [1, 3, 5, 9, 15, 45],
+    60: [1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60]
+  }
+  
+  // Granularidades por defecto recomendadas
+  const DEFAULT_GRANULARITIES: Record<number, number> = {
+    15: 5,   // Cada 5 minutos (3 posiciones por slot)
+    30: 10,  // Cada 10 minutos (3 posiciones por slot)
+    45: 15,  // Cada 15 minutos (3 posiciones por slot)
+    60: 15   // Cada 15 minutos (4 posiciones por slot)
+  }
+  
+  // Obtener granularidades válidas para el slot actual
+  const getValidGranularities = (slotDuration: number): number[] => {
+    return VALID_GRANULARITIES[slotDuration] || [1, 5, 10, 15]
+  }
 
   useEffect(() => {
     if (editingTemplate) {
@@ -145,6 +167,9 @@ export default function PlantillasHorariasPage() {
       setCurrentCloseTime(editingTemplate.closeTime || "23:59")
       const slotDuration = editingTemplate.slotDuration ?? 15;
       setCurrentSlotDuration(slotDuration);
+      // Establecer granularidad desde BD o valor por defecto
+      const granularity = editingTemplate.createGranularity ?? DEFAULT_GRANULARITIES[slotDuration] ?? 5;
+      setCurrentCreateGranularity(granularity);
 
       // --- Crear objeto simulado con tipo Partial<Clinic> --- 
       setSimulatedClinicForModal({
@@ -167,6 +192,7 @@ export default function PlantillasHorariasPage() {
       setCurrentOpenTime("09:00")
       setCurrentCloseTime("17:00")
       setCurrentSlotDuration(15);
+      setCurrentCreateGranularity(5);
       setSimulatedClinicForModal(null);
     }
   }, [editingTemplate])
@@ -185,6 +211,7 @@ export default function PlantillasHorariasPage() {
       openTime: currentOpenTime,
       closeTime: currentCloseTime,
       slotDuration: currentSlotDuration,
+      createGranularity: currentCreateGranularity,
     }
     console.log("Calling addTemplate with:", templateData)
     addTemplate(templateData as any)
@@ -192,7 +219,7 @@ export default function PlantillasHorariasPage() {
   }
 
   const handleOpenEditModal = (template: ScheduleTemplate & { blocks?: ScheduleTemplateBlock[] }) => {
-    setEditingTemplate({ ...template, id: String(template.id) })
+    setEditingTemplate({ ...template, id: String(template.id) } as any)
   }
 
   const handleEditTemplate = async () => {
@@ -206,6 +233,7 @@ export default function PlantillasHorariasPage() {
       openTime: currentOpenTime,
       closeTime: currentCloseTime,
       slotDuration: currentSlotDuration,
+      createGranularity: currentCreateGranularity,
     };
     console.log(`Calling updateTemplate for ID ${editingTemplate.id} with:`, updatedData);
     
@@ -259,6 +287,7 @@ export default function PlantillasHorariasPage() {
           if('openTime' in updates) setCurrentOpenTime(updates.openTime);
           if('closeTime' in updates) setCurrentCloseTime(updates.closeTime);
           if('slotDuration' in updates) setCurrentSlotDuration(updates.slotDuration);
+          if('createGranularity' in updates) setCurrentCreateGranularity(updates.createGranularity);
       }
   }, []);
 
@@ -304,7 +333,7 @@ export default function PlantillasHorariasPage() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => handleOpenEditModal(template as ScheduleTemplate & { blocks?: ScheduleTemplateBlock[] })}
+                          onClick={() => handleOpenEditModal(template as any)}
                           className="text-blue-600 hover:text-blue-800"
                         >
                           <SearchIcon className="h-4 w-4" />
@@ -382,11 +411,20 @@ export default function PlantillasHorariasPage() {
                 />
               </div>
             </div>
-            <div className="space-y-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
                 <Label htmlFor="newSlotDuration">Duración del Slot (minutos)</Label>
                 <Select 
                     value={String(currentSlotDuration)} 
-                    onValueChange={(value) => setCurrentSlotDuration(Number(value))}
+                    onValueChange={(value) => {
+                      const newSlotDuration = Number(value);
+                      setCurrentSlotDuration(newSlotDuration);
+                      // Ajustar granularidad si la actual no es válida para el nuevo slot
+                      const validGranularities = getValidGranularities(newSlotDuration);
+                      if (!validGranularities.includes(currentCreateGranularity)) {
+                        setCurrentCreateGranularity(DEFAULT_GRANULARITIES[newSlotDuration] || 5);
+                      }
+                    }}
                 >
                     <SelectTrigger id="newSlotDuration">
                         <SelectValue placeholder="Seleccionar duración" />
@@ -399,6 +437,28 @@ export default function PlantillasHorariasPage() {
                         ))}
                     </SelectContent>
                 </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="newCreateGranularity">Precisión al crear citas (minutos)</Label>
+                <Select 
+                    value={String(currentCreateGranularity)} 
+                    onValueChange={(value) => setCurrentCreateGranularity(Number(value))}
+                >
+                    <SelectTrigger id="newCreateGranularity">
+                        <SelectValue placeholder="Seleccionar precisión" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        {getValidGranularities(currentSlotDuration).map(granularity => (
+                            <SelectItem key={granularity} value={String(granularity)}>
+                                {granularity} {granularity === 1 ? 'minuto' : 'minutos'}
+                            </SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Define los intervalos de tiempo disponibles al crear citas
+                </p>
+              </div>
             </div>
             <Label>Horario Detallado por Día</Label>
             <Card>
@@ -431,4 +491,3 @@ export default function PlantillasHorariasPage() {
     </div>
   )
 }
-

@@ -29,6 +29,7 @@ import path from 'path'; // Importar path
 import { fileURLToPath } from 'url'; // Importar fileURLToPath
 import { seedPersons } from './seed-persons.js';
 import { seedCountries } from './seed-countries.js';
+import { seedTags } from './seed-tags.js';
 import { getOrCreateCuid, getMappedId, initializeKnownIds, generateCuid } from './seed-helpers.js';
 // <<< ELIMINAR Importación dinámica de mockData >>>
 // import seedCountries from './seed-countries'; // <<< ELIMINAR Importación (ya integrada)
@@ -1976,6 +1977,7 @@ async function main() {
   // <<< --- FIN: SEEDING DE TICKETS Y PAGOS --- >>>
 
   await seedPersons(prisma, system!.id);
+  await seedTags(prisma, system!.id); // Agregar llamada a seedTags
   console.log('Seeding completed.');
 } // Fin función main()
 
