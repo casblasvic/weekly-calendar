@@ -31,7 +31,8 @@ export interface DragState {
   isDragging: boolean;
   draggedItem: DragItem | null;
   preview: DragPreview | null;
-  originalPosition: {
+  originalPosition: DropResult | null;
+  currentPosition: {
     date: Date;
     time: string;
     roomId: string;

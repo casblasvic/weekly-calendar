@@ -17,7 +17,8 @@ export function useDragAndDrop(
     isDragging: false,
     draggedItem: null,
     preview: null,
-    originalPosition: null
+    originalPosition: null,
+    currentPosition: null
   });
 
   const dragRef = useRef<{ startY: number; lastY: number }>({ startY: 0, lastY: 0 });
@@ -48,7 +49,8 @@ export function useDragAndDrop(
         date: item.currentDate,
         time: item.startTime,
         roomId: item.roomId
-      }
+      },
+      currentPosition: null
     });
     
     dragRef.current = { startY: e.clientY, lastY: e.clientY };
@@ -90,6 +92,11 @@ export function useDragAndDrop(
         date,
         time: adjustedTime,
         roomId
+      },
+      currentPosition: {
+        date,
+        time: adjustedTime,
+        roomId
       }
     }));
   }, [dragState.isDragging, slotHeight, slotDuration]);
@@ -120,7 +127,8 @@ export function useDragAndDrop(
       isDragging: false,
       draggedItem: null,
       preview: null,
-      originalPosition: null
+      originalPosition: null,
+      currentPosition: null
     });
   }, [dragState, onDrop]);
 
@@ -129,7 +137,8 @@ export function useDragAndDrop(
       isDragging: false,
       draggedItem: null,
       preview: null,
-      originalPosition: null
+      originalPosition: null,
+      currentPosition: null
     });
   }, []);
 

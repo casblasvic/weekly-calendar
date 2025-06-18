@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react'
 import { useScheduleConfig } from '@/lib/hooks/use-schedule-config'
+import { useClinic } from '@/contexts/clinic-context'
 
 interface GranularityContextValue {
   minuteGranularity: number
@@ -15,10 +16,11 @@ const GranularityContext = createContext<GranularityContextValue | null>(null)
 
 interface GranularityProviderProps {
   children: React.ReactNode
-  clinicId: string
 }
 
-export function GranularityProvider({ children, clinicId }: GranularityProviderProps) {
+export function GranularityProvider({ children }: GranularityProviderProps) {
+  const { activeClinic } = useClinic()
+  const clinicId = activeClinic?.id || ''
   const { config, loading } = useScheduleConfig({ clinicId })
   const [minuteGranularity, setMinuteGranularity] = useState(config.createGranularity)
   
@@ -26,6 +28,23 @@ export function GranularityProvider({ children, clinicId }: GranularityProviderP
   useEffect(() => {
     setMinuteGranularity(config.createGranularity)
   }, [config.createGranularity])
+  
+  // Si no hay clínica activa, usar valores por defecto
+  if (!activeClinic) {
+    return (
+      <GranularityContext.Provider 
+        value={{ 
+          minuteGranularity: 5,
+          setMinuteGranularity,
+          slotDuration: 30,
+          moveGranularity: 1,
+          isLoading: false
+        }}
+      >
+        {children}
+      </GranularityContext.Provider>
+    )
+  }
   
   return (
     <GranularityContext.Provider 

@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils"
 import { MobileDrawerMenu } from "@/components/mobile/layout/drawer-menu"
 import { MobileClinicButton } from "@/components/mobile-clinic-button"
 import { FloatingMenu } from "./ui/floating-menu"
+import { GranularityProvider } from "@/lib/drag-drop/granularity-context"
 
 interface LayoutWrapperProps {
   children: React.ReactNode
@@ -253,10 +254,11 @@ export function LayoutWrapper({ children }: LayoutWrapperProps) {
         className="flex-1" 
         style={mainStyle} // <<< Usar el objeto style calculado
       >
-        {/* Renderizar children directamente */} 
-        {children}
+        {/* Envolver children con GranularityProvider */}
+        <GranularityProvider>
+          {children}
+        </GranularityProvider>
       </main>
     </div>
   )
 }
-

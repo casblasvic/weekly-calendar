@@ -16,7 +16,6 @@ import { PersonSearchDialog } from "@/components/client-search-dialog"
 import { AppointmentDialog, type Person } from "@/components/appointment-dialog"
 import { NewClientDialog } from "@/components/new-client-dialog"
 import { AppointmentItem } from "./appointment-item"
-import { DragDropContext, Droppable } from "react-beautiful-dnd"
 import { useScheduleBlocks } from "@/contexts/schedule-blocks-context"
 import { Lock, AlertTriangle, Calendar as CalendarIcon, Loader2 } from "lucide-react"
 import { getDate } from "date-fns"
@@ -38,10 +37,12 @@ import type { CabinScheduleOverride } from '@prisma/client'
 import { useServicesQuery, useBonosQuery, usePackagesQuery } from "@/lib/hooks/use-api-query"
 
 // Importar nuevos módulos de drag & drop
-import { useDragAndDrop } from "@/lib/drag-drop/hooks"
+import { useOptimizedDragAndDrop } from "@/lib/drag-drop/optimized-hooks"
+import OptimizedHoverableCell from "@/components/agenda/optimized-hoverable-cell"
 import { DragPreview } from "@/components/drag-drop/drag-preview"
 import { DragItem } from "@/lib/drag-drop/types"
 import { getAppointmentDuration } from "@/lib/drag-drop/utils"
+import { useGranularity } from "@/lib/drag-drop/granularity-context"
 
 // Función para generar slots de tiempo
 function getTimeSlots(startTime: string, endTime: string, interval = 15): string[] {
@@ -256,17 +257,8 @@ export default function WeeklyAgenda({
   // NUEVO: Estado para controlar la visibilidad del modal de bloqueo/override
   const [isOverrideModalOpen, setIsOverrideModalOpen] = useState(false);
 
-  // Configuración de granularidad de minutos (1, 5, 10, 15, etc.)
-  const minuteGranularity = 5; // Configurable: cada cuántos minutos se puede posicionar
-
-  // Estado para hover con hora exacta
-  const [hoveredCell, setHoveredCell] = useState<{
-    day: Date;
-    time: string;
-    cabinId: string;
-    exactTime: string;
-    offsetY: number;
-  } | null>(null);
+  // Obtener configuración de granularidad desde el contexto
+  const { minuteGranularity, slotDuration, moveGranularity } = useGranularity();
 
   // Efecto para notificar al componente padre sobre el cambio en las citas
   useEffect(() => {
@@ -304,29 +296,6 @@ export default function WeeklyAgenda({
 
   // REMOVE const schedule = useMemo(() => activeClinic?.scheduleJson as unknown as WeekSchedule | null, [activeClinic?.scheduleJson]);
   
-  // Obtener slotDuration de la plantilla o horario independiente, con fallback
-  const slotDuration = useMemo(() => {
-    if (!activeClinic) return 15; // Default si no hay clínica
-    // Intentar obtener de la plantilla vinculada
-    const templateDuration = (activeClinic as any).linkedScheduleTemplate?.slotDuration;
-    if (templateDuration !== undefined && templateDuration !== null) {
-      return Number(templateDuration);
-    }
-    // Intentar obtener del horario independiente
-    const independentDuration = (activeClinic as any).independentSchedule?.slotDuration;
-    if (independentDuration !== undefined && independentDuration !== null) {
-      return Number(independentDuration);
-    }
-    // Fallback
-    return 15;
-  }, [activeClinic]); // Depender de activeClinic completo
-  
-  // REMOVED useMemo for openTime and closeTime as they are derived dynamically for timeSlots
-  
-  // Adjust console log
-  console.log("[WeeklyAgenda] Correct derived schedule:", correctSchedule);
-  console.log("[WeeklyAgenda] Using slot duration:", slotDuration);
-
   // --- Time Slot Generation using useMemo (adjust loop) --- 
   const timeSlots = useMemo(() => {
       if (!activeClinic || !correctSchedule) {
@@ -373,14 +342,7 @@ export default function WeeklyAgenda({
 
       console.log(`[WeeklyAgenda timeSlots] Final calculated range for slots: ${overallEarliestStart} to ${overallLatestEnd}`);
       
-      // Asegurar que latestEnd es realmente más tarde que earliestStart (esto debería ser cierto si hasAnyRange es true)
-      if (overallLatestEnd <= overallEarliestStart) {
-          console.error(`[WeeklyAgenda timeSlots] Inconsistent range: latestEnd (${overallLatestEnd}) <= earliestStart (${overallEarliestStart}). Returning empty slots.`);
-          // Esto indica un problema lógico o datos inconsistentes en el schedule
-           return [];
-      }
-
-      // Obtener slotDuration del activeClinic si existe, o usar el default
+      // Obtener slotDuration del contexto useGranularity
       const currentSlotDuration = slotDuration;
 
       // Generar slots con el rango calculado final y la duración correcta
@@ -533,13 +495,13 @@ export default function WeeklyAgenda({
   // Funciones para manejar citas
   const handleCellClick = (day: Date, time: string, roomId: string) => {
     // Usar la hora exacta del hover si está disponible, sino usar la hora del slot
-    const exactTime = hoveredCell && 
-                      hoveredCell.day.getTime() === day.getTime() && 
-                      hoveredCell.cabinId === roomId 
-                      ? hoveredCell.exactTime 
-                      : time;
+    // const exactTime = hoveredCell && 
+    //                   hoveredCell.day.getTime() === day.getTime() && 
+    //                   hoveredCell.cabinId === roomId 
+    //                   ? hoveredCell.exactTime 
+    //                   : time;
     
-    console.log("[WeeklyAgenda] handleCellClick called with:", { day, exactTime, roomId });
+    console.log("[WeeklyAgenda] handleCellClick called with:", { day, time, roomId });
     
     // Verificar si la celda está bloqueada por un override
     const dayString = format(day, "yyyy-MM-dd")
@@ -563,7 +525,7 @@ export default function WeeklyAgenda({
 
     if (cabin && cabin.isActive) {
       console.log("[WeeklyAgenda] Setting selectedSlot and opening search dialog");
-      setSelectedSlot({ date: day, time: exactTime, roomId })
+      setSelectedSlot({ date: day, time, roomId })
       setIsSearchDialogOpen(true)
     }
   }
@@ -708,23 +670,72 @@ export default function WeeklyAgenda({
 
   // Usar el nuevo hook modular de drag & drop
   const handleAppointmentDrop = useCallback(async (appointmentId: string, changes: any) => {
+    console.log('[handleAppointmentDrop] Iniciando drop:', { appointmentId, changes });
+    
     try {
       // Buscar la cita actual
       const appointmentToUpdate = appointments.find(app => app.id === appointmentId);
-      if (!appointmentToUpdate) return;
+      if (!appointmentToUpdate) {
+        console.error('[handleAppointmentDrop] No se encontró la cita:', appointmentId);
+        return;
+      }
       
-      // Crear una copia actualizada de la cita con los cambios
+      console.log('[handleAppointmentDrop] Cita encontrada:', appointmentToUpdate);
+      
+      // Transformar los cambios al formato esperado por Appointment
+      const transformedChanges: Partial<Appointment> = {};
+      
+      if (changes.startTime) {
+        // Enviar formato HH:mm
+        transformedChanges.startTime = `${changes.startTime.getHours().toString().padStart(2, '0')}:${changes.startTime.getMinutes().toString().padStart(2, '0')}`;
+        // Enviar la nueva fecha
+        transformedChanges.date = changes.startTime;
+      }
+      
+      if (changes.equipmentId) {
+        // Enviar roomId, no equipmentId
+        transformedChanges.roomId = changes.equipmentId;
+      }
+      
+      console.log('[handleAppointmentDrop] Cambios transformados:', transformedChanges);
+      
+      // Crear una copia actualizada de la cita con los cambios transformados
       const updatedAppointment = {
         ...appointmentToUpdate,
-        ...changes
+        ...transformedChanges
       };
       
+      console.log('[handleAppointmentDrop] Cita actualizada:', updatedAppointment);
+      
       // Actualizar el estado local inmediatamente para renderizado instantáneo
-      setAppointments(prevAppointments => 
-        prevAppointments.map(app => 
+      setAppointments(prevAppointments => {
+        const newAppointments = prevAppointments.map(app => 
           app.id === appointmentId ? updatedAppointment : app
-        )
-      );
+        );
+        console.log('[handleAppointmentDrop] Nuevo estado de citas:', newAppointments);
+        return newAppointments;
+      });
+      
+      // Preparar datos para la API
+      const apiData: any = {
+        id: appointmentId,
+        roomId: transformedChanges.roomId || appointmentToUpdate.roomId
+      };
+      
+      // Si cambió la hora, construir las fechas completas en formato ISO
+      if (changes.startTime) {
+        const newStartDateTime = changes.startTime;
+        const duration = appointmentToUpdate.duration || 30; // duración en minutos
+        const newEndDateTime = new Date(newStartDateTime.getTime() + duration * 60000);
+        
+        // Formatear las fechas en ISO para la API
+        apiData.startTime = newStartDateTime.toISOString();
+        apiData.endTime = newEndDateTime.toISOString();
+        
+        // NO enviar el campo date cuando ya tenemos fechas ISO completas
+      }
+      
+      console.log('[handleAppointmentDrop] Enviando a API:', apiData);
       
       // Hacer la llamada a la API en segundo plano
       const response = await fetch(`/api/appointments`, {
@@ -732,15 +743,14 @@ export default function WeeklyAgenda({
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          id: appointmentId,
-          ...changes
-        })
+        body: JSON.stringify(apiData)
       });
       
       if (!response.ok) {
         throw new Error('Error al mover la cita');
       }
+      
+      console.log('[handleAppointmentDrop] Cita guardada en BD correctamente');
       
       toast({
         title: "Cita actualizada",
@@ -761,84 +771,76 @@ export default function WeeklyAgenda({
   }, [appointments, fetchAppointments, toast]);
 
   const {
-    dragState,
+    dragState: localDragState,
     handleDragStart,
     handleDragOver,
     handleDrop,
     handleDragEnd,
-    setContainerRef
-  } = useDragAndDrop(handleAppointmentDrop, 60, 15);
+    updateMousePosition,
+    updateCurrentPosition
+  } = useOptimizedDragAndDrop(handleAppointmentDrop, 60, 15);
+  
+  // Rastrear el movimiento del mouse durante el drag
+  React.useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (localDragState.isActive) {
+        updateMousePosition(e.clientX, e.clientY);
+      }
+    };
 
+    const handleDragOver = (e: DragEvent) => {
+      if (localDragState.isActive) {
+        updateMousePosition(e.clientX, e.clientY);
+      }
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('dragover', handleDragOver);
+    
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('dragover', handleDragOver);
+    };
+  }, [localDragState.isActive, updateMousePosition]);
+  
   // Ref para el contenedor de la agenda
   const gridContainerRef = useRef<HTMLDivElement>(null);
-  
-  useEffect(() => {
-    if (gridContainerRef.current) {
-      setContainerRef(gridContainerRef.current);
-    }
-  }, [setContainerRef]);
 
-  // Wrappers para adaptar los handlers del nuevo sistema a las firmas de AppointmentItem
-  const handleAppointmentDragStart = useCallback((appointment: Appointment, e?: React.DragEvent) => {
+  const handleAppointmentDragStart = useCallback((appointment: any, e?: React.DragEvent) => {
+    console.log('[WeeklyAgenda] Appointment drag start:', appointment);
+    
     if (!e) return;
     
-    // Calcular endTime a partir de startTime y duration
-    const [hours, minutes] = appointment.startTime.split(':').map(Number);
-    const startDate = new Date(appointment.date);
-    startDate.setHours(hours, minutes, 0, 0);
-    const endDate = new Date(startDate.getTime() + appointment.duration * 60000);
-    const endTime = endDate.toTimeString().slice(0, 5);
-    
-    // Crear un DragItem a partir del Appointment
-    const dragItem: DragItem = {
+    // Convertir el appointment al formato DragItem esperado por el hook optimizado
+    const dragItem = {
       id: appointment.id,
-      title: appointment.name,
+      title: appointment.title || appointment.name,
       startTime: appointment.startTime,
-      endTime: endTime,
+      endTime: '', // Se calculará en el hook si es necesario
       duration: appointment.duration,
       roomId: appointment.roomId,
-      color: appointment.color,
-      personId: appointment.personId || '',
       currentDate: appointment.date,
-      services: appointment.services?.map(s => ({ name: typeof s === 'string' ? s : s.service?.name || s.name }))
+      color: appointment.color || '#9CA3AF',
+      personId: appointment.personId || ''
     };
     
-    // Usar el handler del hook con el evento y el dragItem
+    // Llamar al handleDragStart del hook optimizado con la firma correcta
     handleDragStart(e, dragItem);
   }, [handleDragStart]);
 
   const handleCellDragOver = useCallback((e: React.DragEvent, date: Date, time: string, roomId: string) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
-    handleDragOver(e, date, roomId, gridContainerRef.current || undefined);
+    handleDragOver(e);
   }, [handleDragOver]);
 
   const handleCellDrop = useCallback((e: React.DragEvent, date: Date, time: string, roomId: string) => {
     e.preventDefault();
-    handleDrop(e, date, roomId);
+    handleDrop(e, date, time, roomId);
   }, [handleDrop]);
 
-  const onDragEnd = (result: any) => {
-    if (!result.destination) {
-      return
-    }
-
-    const { source, destination } = result
-    const updatedAppointments = Array.from(appointments)
-    const [movedAppointment] = updatedAppointments.splice(source.index, 1)
-
-    const [dayIndex, roomId, time] = destination.droppableId.split("-")
-
-    const updatedAppointment = {
-      ...movedAppointment,
-      date: weekDays[Number.parseInt(dayIndex)],
-      roomId,
-      startTime: time,
-    }
-
-    updatedAppointments.push(updatedAppointment)
-    setAppointments(updatedAppointments)
-    setIsAppointmentDialogOpen(false)
+  const onDragEnd = () => {
+    handleDragEnd();
   }
 
   const handleDayClick = (date: Date) => {
@@ -860,8 +862,11 @@ export default function WeeklyAgenda({
       // Verificar que la cabina coincida
       if (appointment.roomId !== cabinId) return;
       
-      // Parsear hora de inicio de la cita
-      const [appointmentHours, appointmentMinutes] = appointment.startTime.split(':').map(Number);
+      // Parsear hora de inicio de la cita - asegurar que sea string
+      const startTimeStr = typeof appointment.startTime === 'string' 
+        ? appointment.startTime 
+        : '00:00'; // Valor por defecto si no es string
+      const [appointmentHours, appointmentMinutes] = startTimeStr.split(':').map(Number);
       const appointmentStartMinutes = appointmentHours * 60 + appointmentMinutes;
       
       // Parsear hora del slot
@@ -891,473 +896,238 @@ export default function WeeklyAgenda({
     // --- FIN DEBUG LOG ---
 
     return (
-      <DragDropContext onDragEnd={onDragEnd}>
-        <div className="relative z-0" style={{ scrollBehavior: "smooth" }}>
-          <div className="min-w-[1200px] relative">
-            <div
-              className="grid"
-              style={{
-                gridTemplateColumns: `auto repeat(7, 1fr)`,
-                width: "100%",
-              }}
-            >
-              {/* Columna de tiempo - Fija - z-30 */}
-              <div className="sticky left-0 z-10 w-20 p-4 bg-white border-b border-r border-gray-300 hour-header" style={{ zIndex: 999 }}>
-                <div className="text-sm text-gray-500">Hora</div>
-              </div>
+      <div className="relative z-0" style={{ scrollBehavior: "smooth" }}>
+        <div className="min-w-[1200px] relative">
+          <div
+            className="grid"
+            style={{
+              gridTemplateColumns: `auto repeat(7, 1fr)`,
+              width: "100%",
+            }}
+          >
+            {/* Columna de tiempo - Fija - z-30 */}
+            <div className="sticky left-0 z-10 w-20 p-4 bg-white border-b border-r border-gray-300 hour-header" style={{ zIndex: 999 }}>
+              <div className="text-sm text-gray-500">Hora</div>
+            </div>
 
-              {/* Cabeceras de días - Fijas - z-30 */}
-              {weekDays.map((day, index) => {
-                const today = isToday(day);
-                const active = isDayActive(day);
-                return (
-                  <div key={index} className={cn(
-                    "sticky top-0 bg-white border-b border-gray-300 day-header",
-                    today ? "border-l-2 border-r-2 border-purple-300" : "border-l border-r border-gray-300",
-                    !active && "bg-gray-100"
-                  )} style={{ zIndex: 20 }}>
-                    <div
-                      className={cn(
-                        "p-4 border-b border-gray-300",
-                        active ? "cursor-pointer hover:bg-gray-50" : "cursor-not-allowed opacity-70",
-                        today && "bg-purple-50/10",
-                      )}
-                      onClick={() => active && handleDayClick(day)}
-                      title={active ? "Ir a vista diaria" : "Día no activo"}
-                    >
-                      <div className="flex items-center justify-start gap-2">
-                        <div>
-                          <div className="text-base font-medium capitalize">{format(day, "EEEE", { locale: es })}</div>
-                          <div className={cn("text-sm", today ? "text-purple-600 font-bold" : "text-gray-500")}>
-                            {format(day, "d/M/yyyy")}
-                          </div>
+            {/* Cabeceras de días - Fijas - z-30 */}
+            {weekDays.map((day, index) => {
+              const today = isToday(day);
+              const active = isDayActive(day);
+              return (
+                <div key={index} className={cn(
+                  "sticky top-0 bg-white border-b border-gray-300 day-header",
+                  today ? "border-l-2 border-r-2 border-purple-300" : "border-l border-r border-gray-300",
+                  !active && "bg-gray-100"
+                )} style={{ zIndex: 20 }}>
+                  <div
+                    className={cn(
+                      "p-4 border-b border-gray-300",
+                      active ? "cursor-pointer hover:bg-gray-50" : "cursor-not-allowed opacity-70",
+                      today && "bg-purple-50/10",
+                    )}
+                    onClick={() => active && handleDayClick(day)}
+                    title={active ? "Ir a vista diaria" : "Día no activo"}
+                  >
+                    <div className="flex items-center justify-start gap-2">
+                      <div>
+                        <div className="text-base font-medium capitalize">{format(day, "EEEE", { locale: es })}</div>
+                        <div className={cn("text-sm", today ? "text-purple-600 font-bold" : "text-gray-500")}>
+                          {format(day, "d/M/yyyy")}
                         </div>
                       </div>
                     </div>
-                    <div
-                      className="grid"
-                      style={{ gridTemplateColumns: `repeat(${activeCabins.length || 1}, 1fr)` }}
-                    >
-                      {activeCabins.map((cabin) => (
-                        <div
-                          key={cabin.id}
-                          className={cn(
-                            "text-white text-xs py-1 px-1 text-center font-medium border-r border-gray-300 last:border-r-0",
-                            !active && "opacity-70"
-                          )}
-                          style={{ backgroundColor: cabin.color }}
-                          title={cabin.name}
-                        >
-                          {cabin.code || cabin.name}
-                        </div>
-                      ))}
-                      {activeCabins.length === 0 && (
-                        <div className="px-1 py-1 text-xs italic text-center text-gray-400">
-                          Sin cabinas
-                        </div>
-                      )}
-                    </div>
                   </div>
-                );
-              })}
-
-              {/* Filas de Slots de Tiempo */}
-              {timeSlots.map((time) => (
-                <React.Fragment key={time}>
-                  {/* Celda de Hora - CORREGIDO: Añadido z-index */}
                   <div
-                    className="sticky left-0 z-10 w-20 p-2 text-sm font-medium text-purple-600 bg-white border-b border-r border-gray-300 hour-column"
-                    data-time={time}
+                    className="grid"
+                    style={{ gridTemplateColumns: `repeat(${activeCabins.length || 1}, 1fr)` }}
                   >
-                    {time}
-                  </div>
-                  {/* Celdas de Día/Cabina */}
-                  {weekDays.map((day, dayIndex) => {
-                    const today = isToday(day);
-                    const active = isDayActive(day);
-                    return (
+                    {activeCabins.map((cabin) => (
                       <div
-                        key={`${dayIndex}-${time}`}
+                        key={cabin.id}
                         className={cn(
-                          "border-b border-gray-200 relative",
-                          today ? "border-l-2 border-r-2 border-purple-300" : "border-l border-r border-gray-300",
-                          today && "bg-purple-50/10",
-                          !active && !today && "bg-gray-100"
+                          "text-white text-xs py-1 px-1 text-center font-medium border-r border-gray-300 last:border-r-0",
+                          !active && "opacity-70"
                         )}
-                        data-time={time}
-                        style={{ minWidth: `${activeCabins.length * 80}px` }}
+                        style={{ backgroundColor: cabin.color }}
+                        title={cabin.name}
                       >
-                        <div
-                          className="grid h-full"
-                          style={{ gridTemplateColumns: `repeat(${activeCabins.length || 1}, 1fr)` }}
-                        >
-                          {activeCabins.length > 0 ? activeCabins.map((cabin, cabinIndex) => {
-                            // ***** INTEGRACIÓN EN REND *****
-                            const isAvailable = isTimeSlotAvailable(day, time);
-                            const dayString = format(day, "yyyy-MM-dd");
-                            // Usar la nueva función para encontrar override
-                            const overrideForCell = findOverrideForCell(day, time, cabin.id.toString());
-                            // blockForCell ya no es necesario, usamos overrideForCell
+                        {cabin.code || cabin.name}
+                      </div>
+                    ))}
+                    {activeCabins.length === 0 && (
+                      <div className="px-1 py-1 text-xs italic text-center text-gray-400">
+                        Sin cabinas
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
 
-                            // La celda es interactiva si está activa, disponible Y *NO* está bloqueada
-                            const isCellInteractive = active && isAvailable && !overrideForCell;
-                            // La celda es clickeable si es interactiva O si está bloqueada (para abrir modal de bloqueo)
-                            const isCellClickable = isCellInteractive || (overrideForCell && active);
+            {/* Filas de Slots de Tiempo */}
+            {timeSlots.map((time) => (
+              <React.Fragment key={time}>
+                {/* Celda de Hora - CORREGIDO: Añadido z-index */}
+                <div
+                  className="sticky left-0 z-10 w-20 p-2 text-sm font-medium text-purple-600 bg-white border-b border-r border-gray-300 hour-column"
+                  data-time={time}
+                >
+                  {time}
+                </div>
+                {/* Celdas de Día/Cabina */}
+                {weekDays.map((day, dayIndex) => {
+                  const today = isToday(day);
+                  const active = isDayActive(day);
+                  return (
+                    <div
+                      key={`${dayIndex}-${time}`}
+                      className={cn(
+                        "border-b border-gray-200 relative",
+                        today ? "border-l-2 border-r-2 border-purple-300" : "border-l border-r border-gray-300",
+                        today && "bg-purple-50/10",
+                        !active && !today && "bg-gray-100"
+                      )}
+                      data-time={time}
+                      style={{ minWidth: `${activeCabins.length * 80}px` }}
+                    >
+                      <div
+                        className="grid h-full"
+                        style={{ gridTemplateColumns: `repeat(${activeCabins.length || 1}, 1fr)` }}
+                      >
+                        {activeCabins.length > 0 ? activeCabins.map((cabin, cabinIndex) => {
+                          // ***** INTEGRACIÓN EN REND *****
+                          const isAvailable = isTimeSlotAvailable(day, time);
+                          const dayString = format(day, "yyyy-MM-dd");
+                          // Usar la nueva función para encontrar override
+                          const overrideForCell = findOverrideForCell(day, time, cabin.id.toString());
+                          // blockForCell ya no es necesario, usamos overrideForCell
 
-                            const timeIndex = timeSlots.indexOf(time);
-                            const prevTime = timeIndex > 0 ? timeSlots[timeIndex - 1] : null;
-                            // Encontrar override para la celda anterior
-                            const overrideForPrevCell = prevTime ? findOverrideForCell(day, prevTime, cabin.id.toString()) : null;
-                            // blockForPrevCell ya no es necesario
+                          // La celda es interactiva si está activa, disponible Y *NO* está bloqueada
+                          const isCellInteractive = active && isAvailable && !overrideForCell;
+                          // La celda es clickeable si es interactiva O si está bloqueada (para abrir modal de bloqueo)
+                          const isCellClickable = isCellInteractive || (overrideForCell && active);
 
-                            // Determinar si esta celda es el inicio de un bloque visual
-                            const isStartOfBlock = overrideForCell && (!overrideForPrevCell || overrideForPrevCell.id !== overrideForCell.id);
+                          const timeIndex = timeSlots.indexOf(time);
+                          const prevTime = timeIndex > 0 ? timeSlots[timeIndex - 1] : null;
+                          // Encontrar override para la celda anterior
+                          const overrideForPrevCell = prevTime ? findOverrideForCell(day, prevTime, cabin.id.toString()) : null;
+                          // blockForPrevCell ya no es necesario
 
-                            // Calcular cuántos slots ocupa el bloque visualmente
-                            let blockDurationSlots = 0;
-                            if (isStartOfBlock && overrideForCell) {
-                              blockDurationSlots = 1; // Empieza con 1 (la celda actual)
-                              // Buscar hacia adelante en los timeSlots del mismo día/cabina
-                              for (let i = timeIndex + 1; i < timeSlots.length; i++) {
-                                const nextTime = timeSlots[i];
-                                const overrideForNextCell = findOverrideForCell(day, nextTime, cabin.id.toString());
-                                // Si la siguiente celda pertenece al *mismo* override, incrementar duración
-                                if (overrideForNextCell && overrideForNextCell.id === overrideForCell.id) {
-                                  blockDurationSlots++;
-                                } else {
-                                  break; // Termina el bloque (o no hay más slots)
-                                }
+                          // Determinar si esta celda es el inicio de un bloque visual
+                          const isStartOfBlock = overrideForCell && (!overrideForPrevCell || overrideForPrevCell.id !== overrideForCell.id);
+
+                          // Calcular cuántos slots ocupa el bloque visualmente
+                          let blockDurationSlots = 0;
+                          if (isStartOfBlock && overrideForCell) {
+                            blockDurationSlots = 1; // Empieza con 1 (la celda actual)
+                            // Buscar hacia adelante en los timeSlots del mismo día/cabina
+                            for (let i = timeIndex + 1; i < timeSlots.length; i++) {
+                              const nextTime = timeSlots[i];
+                              const overrideForNextCell = findOverrideForCell(day, nextTime, cabin.id.toString());
+                              // Si la siguiente celda pertenece al *mismo* override, incrementar duración
+                              if (overrideForNextCell && overrideForNextCell.id === overrideForCell.id) {
+                                blockDurationSlots++;
+                              } else {
+                                break; // Termina el bloque (o no hay más slots)
                               }
                             }
-                            // ***** FIN CÁLCULO DURACIÓN BLOQUE *****
+                          }
+                          // ***** FIN CÁLCULO DURACIÓN BLOQUE *****
 
-                            return (
-                              <Droppable
-                                droppableId={`${dayIndex}-${cabin.id}-${time}`}
-                                key={`${cabin.id}-${time}`}
-                                type="appointment"
-                                // Deshabilitar drop si la celda no es interactiva O si está bloqueada
-                                isDropDisabled={!isCellInteractive || !!overrideForCell}
-                                isCombineEnabled={false}
-                                ignoreContainerClipping={false}
-                              >
-                                {(provided, snapshot) => (
-                                  <div
-                                    ref={provided.innerRef}
-                                    {...provided.droppableProps}
-                                    // ***** AJUSTE DE CLASES CSS *****
-                                    className={cn(
-                                      "relative h-full", // Base
-
-                                      // --- Prioridad 1: Día Inactivo ---
-                                      !active && "opacity-70 bg-gray-100 cursor-not-allowed border border-gray-200",
-
-                                      // --- Prioridad 2: Slot Inactivo (dentro de día activo, SIN override) ---
-                                      active && !isAvailable && !overrideForCell && [
-                                        "bg-gray-300 dark:bg-gray-700 cursor-not-allowed",
-                                        "border border-white/50 dark:border-white/30",
-                                      ],
-                                      
-                                      // --- Prioridad 3: Slot Bloqueado/Override (dentro de día activo) ---
-                                      active && overrideForCell && [
-                                         "bg-rose-100 dark:bg-rose-900/30", // Fondo distintivo
-                                         "cursor-pointer", // Clickeable para ver/editar
-                                         // Bordes condicionales para visualización del bloque
-                                         "border-r border-gray-200 dark:border-gray-700 last:border-r-0", // Borde derecho siempre (excepto último)
-                                         !isStartOfBlock && "border-t-0", // Sin borde superior si es continuación
-                                         isStartOfBlock && "border-t border-gray-200 dark:border-gray-700", // Borde superior si es inicio
-                                      ],
-
-                                      // --- Prioridad 4: Celda Activa y Disponible (SIN override) ---
-                                      active && isAvailable && !overrideForCell && [
-                                        "border-r border-gray-200 dark:border-gray-700 last:border-r-0",
-                                        "border-t border-gray-200 dark:border-gray-700", // Bordes estándar
-                                        // Estilos Hover y Zebra
-                                        "hover:bg-purple-100/50 dark:hover:bg-purple-900/30 cursor-pointer",
-                                        !today && (cabinIndex % 2 === 0 ? ZEBRA_LIGHT : ZEBRA_DARK), // Zebra (ajustar colores dark si es necesario)
-                                      ]
-                                    )}
-                                    // ***** FIN AJUSTE CLASES CSS *****
-                                    style={{
-                                      height: `${AGENDA_CONFIG.ROW_HEIGHT}px`,
-                                      // No sombrear toda la celda, solo mostrar el indicador de drop
-                                      backgroundColor: snapshot.isDraggingOver && isCellInteractive && !overrideForCell
-                                        ? "rgba(167, 139, 250, 0.1)" // Color muy sutil para indicar que es dropeable
-                                        : undefined, // Usa el fondo definido en className
-                                    }}
-                                    // ***** DRAG AND DROP EVENTS *****
-                                    onDragOver={(e) => {
-                                      if (active && isAvailable && !overrideForCell) {
-                                        handleCellDragOver(e, day, time, cabin.id)
-                                      }
-                                    }}
-                                    onDrop={(e) => {
-                                      if (active && isAvailable && !overrideForCell) {
-                                        handleCellDrop(e, day, time, cabin.id)
-                                      }
-                                    }}
-                                    // ***** AJUSTE onClick *****
-                                    onClick={(e) => {
-                                      // Si está bloqueada (y día activo), abrir modal de bloqueo
-                                      if (overrideForCell && active) {
-                                        e.stopPropagation();
-                                        setSelectedOverride(overrideForCell); // Guardar el override seleccionado
-                                        setIsOverrideModalOpen(true); // Abrir el modal
-                                      } 
-                                      // Si es interactiva (activa, disponible, no bloqueada), iniciar flujo de cita
-                                      else if (isCellInteractive) { 
-                                        e.stopPropagation();
-                                        handleCellClick(day, time, cabin.id.toString());
-                                      }
-                                      // No hacer nada si el día está inactivo o el slot no está disponible (y no es un override)
-                                    }}
-                                    onMouseMove={(e) => {
-                                      if (isCellInteractive || (overrideForCell && active)) {
-                                        const rect = e.currentTarget.getBoundingClientRect();
-                                        const offsetY = e.clientY - rect.top;
-                                        
-                                        // Calcular minutos con granularidad
-                                        const minuteOffset = Math.floor((offsetY / AGENDA_CONFIG.ROW_HEIGHT) * slotDuration);
-                                        const snappedMinuteOffset = Math.floor(minuteOffset / minuteGranularity) * minuteGranularity;
-                                        
-                                        // Verificar si hay una cita en esta posición
-                                        if (hasAppointmentAtPosition(day, time, cabin.id.toString(), snappedMinuteOffset)) {
-                                          setHoveredCell(null);
-                                          return;
-                                        }
-                                        
-                                        const [hours, minutes] = time.split(':').map(Number);
-                                        const totalMinutes = hours * 60 + minutes + snappedMinuteOffset;
-                                        const exactHours = Math.floor(totalMinutes / 60);
-                                        const exactMinutes = totalMinutes % 60;
-                                        const exactTime = `${exactHours.toString().padStart(2, '0')}:${exactMinutes.toString().padStart(2, '0')}`;
-                                        
-                                        // Calcular la posición Y relativa dentro de la celda
-                                        const snappedOffsetY = (snappedMinuteOffset / slotDuration) * AGENDA_CONFIG.ROW_HEIGHT;
-                                        
-                                        setHoveredCell({
-                                          day,
-                                          time,
-                                          cabinId: cabin.id.toString(),
-                                          exactTime,
-                                          offsetY: snappedOffsetY
-                                        });
-                                      }
-                                    }}
-                                    onMouseLeave={() => {
-                                      setHoveredCell(null);
-                                    }}
-                                    // ***** FIN AJUSTE onClick *****
-                                  >
-                                    {/* ***** VISUALIZACIÓN DEL BLOQUE ***** */}
-                                    {isStartOfBlock && active && overrideForCell && (
-                                      <div
-                                        className="absolute inset-x-0 top-0 z-10 flex items-center justify-center p-1 m-px overflow-hidden text-xs rounded-sm pointer-events-none bg-rose-200/80 border-rose-300 text-rose-700 dark:bg-rose-800/50 dark:border-rose-600 dark:text-rose-200"
-                                        style={{
-                                          height: `calc(${blockDurationSlots * AGENDA_CONFIG.ROW_HEIGHT}px - 2px)`, // Ocupa altura calculada
-                                        }}
-                                        title={overrideForCell.description || "Bloqueado"} // Tooltip con el motivo (CORREGIDO: usar description)
-                                      >
-                                          {/* Contenido del bloque: Icono y motivo si cabe */}
-                                          <div className="flex flex-col items-center justify-center w-full h-full text-center">
-                                            <Lock className="flex-shrink-0 w-3 h-3 mb-1 text-rose-600 dark:text-rose-300" />
-                                            {/* Mostrar motivo solo si el bloque es suficientemente alto */}
-                                            {blockDurationSlots * AGENDA_CONFIG.ROW_HEIGHT > 30 && ( 
-                                              <span className="leading-tight break-words line-clamp-2">
-                                                {overrideForCell.description || "Bloqueado"} {/* (CORREGIDO: usar description) */}
-                                              </span>
-                                            )}
-                                          </div>
-                                       </div>
-                                     )}
-                                     {/* Placeholder para react-beautiful-dnd, solo si no es continuación de bloque */}
-                                     {!(overrideForCell && !isStartOfBlock) && provided.placeholder}
-                                     {/* ***** FIN VISUALIZACIÓN DEL BLOQUE ***** */}
-                                     
-                                     {/* Línea de hover para mostrar hora exacta */}
-                                     {hoveredCell && 
-                                      hoveredCell.day.getTime() === day.getTime() && 
-                                      hoveredCell.time === time && 
-                                      hoveredCell.cabinId === cabin.id.toString() && (
-                                       <div 
-                                         className="absolute left-0 right-0 pointer-events-none z-20"
-                                         style={{ top: `${hoveredCell.offsetY}px` }}
-                                       >
-                                         <div className="relative">
-                                           <div className="absolute left-0 right-0 h-[1px] bg-blue-500"></div>
-                                           <div className="absolute left-2 -top-3 bg-blue-500 text-white text-xs px-2 py-0.5 rounded">
-                                             {hoveredCell.exactTime}
-                                           </div>
-                                         </div>
-                                       </div>
-                                     )}
-                                     
-                                     {/* Renderizar citas de esta celda específica */}
-                                     {!overrideForCell && getAppointmentsForCell(day, time, cabin.id).map((appointmentWithOffset, appointmentIndex) => {
-                                       const { offsetMinutes, ...appointment } = appointmentWithOffset;
-                                       const offsetTop = (offsetMinutes / slotDuration) * AGENDA_CONFIG.ROW_HEIGHT;
-                                       
-                                       return (
-                                         <div
-                                           key={appointment.id}
-                                           style={{
-                                             position: 'absolute',
-                                             top: `${offsetTop}px`,
-                                             left: 0,
-                                             right: 0,
-                                             zIndex: 10
-                                           }}
-                                         >
-                                           <AppointmentItem
-                                             appointment={appointment}
-                                             index={appointmentIndex}
-                                             slotDuration={slotDuration}
-                                             onClick={() => handleAppointmentClick(appointment)}
-                                             onDragStart={handleAppointmentDragStart}
-                                             onDragEnd={handleDragEnd}
-                                             isDragging={dragState.isDragging && dragState.draggedItem?.id === appointment.id}
-                                           />
-                                         </div>
-                                       );
-                                     })}
-                                      
-                                      {/* Mostrar sombra de la cita en la posición del preview */}
-                                      {dragState.isDragging && 
-                                       dragState.preview && 
-                                       dragState.draggedItem &&
-                                       dragState.preview.date.toDateString() === day.toDateString() && 
-                                       dragState.preview.roomId === cabin.id && (() => {
-                                        // Calcular si el preview está dentro de este slot de tiempo
-                                        const [slotHour, slotMinute] = time.split(':').map(Number);
-                                        const slotStartMinutes = slotHour * 60 + slotMinute;
-                                        const slotEndMinutes = slotStartMinutes + slotDuration;
-                                        
-                                        const [previewHour, previewMinute] = dragState.preview.time.split(':').map(Number);
-                                        const previewStartMinutes = previewHour * 60 + previewMinute;
-                                        const previewEndMinutes = previewStartMinutes + dragState.draggedItem.duration;
-                                        
-                                        // Verificar si el preview comienza en este slot o se extiende a través de él
-                                        if (previewStartMinutes < slotEndMinutes && previewEndMinutes > slotStartMinutes) {
-                                          // Calcular el offset dentro del slot
-                                          const minutesIntoSlot = Math.max(0, previewStartMinutes - slotStartMinutes);
-                                          const offsetPercentage = minutesIntoSlot / slotDuration;
-                                          const topOffset = offsetPercentage * AGENDA_CONFIG.ROW_HEIGHT;
-                                          
-                                          // Buscar citas existentes en este rango de tiempo para evitar solapamientos
-                                          const allAppointmentsInRange = appointments.filter(appointment => {
-                                            if (appointment.roomId !== cabin.id) return false;
-                                            if (!isSameDay(appointment.date, day)) return false;
-                                            if (appointment.id === dragState.draggedItem.id) return false; // No contar la cita que se está arrastrando
-                                            
-                                            const [appHour, appMinute] = appointment.startTime.split(':').map(Number);
-                                            const appStartMinutes = appHour * 60 + appMinute;
-                                            const appEndMinutes = appStartMinutes + appointment.duration;
-                                            
-                                            // Verificar si hay solapamiento
-                                            return appStartMinutes < previewEndMinutes && appEndMinutes > previewStartMinutes;
-                                          });
-                                          
-                                          let finalTopOffset = topOffset;
-                                          
-                                          // Si hay citas existentes que podrían solaparse, ajustar la posición
-                                          allAppointmentsInRange.forEach(appointment => {
-                                            const [appHour, appMinute] = appointment.startTime.split(':').map(Number);
-                                            const appStartMinutes = appHour * 60 + appMinute;
-                                            const appEndMinutes = appStartMinutes + appointment.duration;
-                                            
-                                            // Si la nueva cita empezaría antes del final de una existente, ajustar
-                                            if (previewStartMinutes < appEndMinutes) {
-                                              // Posicionar justo después de la cita existente
-                                              const appEndInSlot = appEndMinutes - slotStartMinutes;
-                                              if (appEndInSlot > 0 && appEndInSlot <= slotDuration) {
-                                                const appEndOffset = (appEndInSlot / slotDuration) * AGENDA_CONFIG.ROW_HEIGHT;
-                                                finalTopOffset = Math.max(finalTopOffset, appEndOffset);
-                                              }
-                                            }
-                                          });
-                                          
-                                          // Calcular la altura visible en este slot
-                                          const visibleStartMinutes = Math.max(previewStartMinutes, slotStartMinutes);
-                                          const visibleEndMinutes = Math.min(previewEndMinutes, slotEndMinutes);
-                                          const visibleDuration = visibleEndMinutes - visibleStartMinutes;
-                                          const height = (visibleDuration / slotDuration) * AGENDA_CONFIG.ROW_HEIGHT - 2;
-                                          
-                                          return (
-                                            <div
-                                              className="absolute left-0 right-0 pointer-events-none"
-                                              style={{
-                                                top: `${finalTopOffset}px`,
-                                                height: `${height}px`,
-                                                backgroundColor: dragState.draggedItem.color || '#9CA3AF',
-                                                opacity: 0.5,
-                                                borderRadius: '6px',
-                                                border: '2px dashed rgba(0, 0, 0, 0.3)',
-                                                zIndex: 5,
-                                                transition: 'top 0.1s ease-out' // Transición suave
-                                              }}
-                                            >
-                                              <div className="p-1.5 text-xs text-white truncate">
-                                                {dragState.draggedItem.title}
-                                              </div>
-                                            </div>
-                                          );
-                                        }
-                                        return null;
-                                      })()}
-                                  </div>
-                                )}
-                              </Droppable>
-                            );
-                            // ***** FIN INTEGRACIÓN EN REND *****
-                          }) : (
-                            <div className="flex items-center justify-center h-full p-1 text-xs italic text-center text-gray-400 border-t border-r border-gray-200 last:border-r-0" style={{ height: `${AGENDA_CONFIG.ROW_HEIGHT}px` }}>
-                              Sin cabinas activas
-                            </div>
-                          )}
-                        </div>
+                          return (
+                            <OptimizedHoverableCell
+                              key={`${cabin.id}-${time}`}
+                              day={day}
+                              time={time}
+                              cabinId={cabin.id.toString()}
+                              isAvailable={isAvailable}
+                              isInteractive={isCellInteractive}
+                              isClickable={isCellClickable}
+                              isStartOfBlock={isStartOfBlock}
+                              blockDurationSlots={blockDurationSlots}
+                              overrideForCell={overrideForCell}
+                              onCellClick={handleCellClick}
+                              onDragOver={handleCellDragOver}
+                              onDrop={handleCellDrop}
+                              appointments={getAppointmentsForCell(day, time, cabin.id.toString())}
+                              slotDuration={slotDuration}
+                              minuteGranularity={minuteGranularity}
+                              moveGranularity={moveGranularity}
+                              active={active}
+                              today={today}
+                              cabinIndex={cabinIndex}
+                              setSelectedOverride={setSelectedOverride}
+                              setIsOverrideModalOpen={setIsOverrideModalOpen}
+                              hasAppointmentAtPosition={hasAppointmentAtPosition}
+                              handleAppointmentClick={handleAppointmentClick}
+                              handleAppointmentDragStart={handleAppointmentDragStart}
+                              handleDragEnd={handleDragEnd}
+                              dragState={localDragState}
+                              cellHeight={AGENDA_CONFIG.ROW_HEIGHT}
+                              isDaily={false}
+                              globalDragState={localDragState}
+                              updateCurrentPosition={updateCurrentPosition}
+                            />
+                          );
+                          // ***** FIN INTEGRACIÓN EN REND *****
+                        }) : (
+                          <div className="flex items-center justify-center h-full p-1 text-xs italic text-center text-gray-400 border-t border-r border-gray-200 last:border-r-0" style={{ height: `${AGENDA_CONFIG.ROW_HEIGHT}px` }}>
+                            Sin cabinas activas
+                          </div>
+                        )}
                       </div>
-                    );
-                  })}
-                </React.Fragment>
-              ))}
-            </div>
+                    </div>
+                  );
+                })}
+              </React.Fragment>
+            ))}
+          </div>
 
-            {/* Indicador de tiempo actual */}
-            <div 
-              className="absolute inset-0 pointer-events-none"
-              style={{ 
-                top: '100px', // Compensar por la altura de la cabecera fija
-                overflow: 'hidden',
-                zIndex: 50 // Aumentar z-index para estar por encima de todo (citas tienen z-10)
-              }}
-            >
-              <CurrentTimeIndicator
-                key="desktop-week-indicator"
-                timeSlots={timeSlots}
-                rowHeight={AGENDA_CONFIG.ROW_HEIGHT}
-                isMobile={false}
-                className="current-time-indicator"
-                agendaRef={agendaRef}
-                // Pass calculated earliest/latest times if available, otherwise defaults
-                clinicOpenTime={timeSlots.length > 0 ? timeSlots[0] : "09:00"} 
-                clinicCloseTime={timeSlots.length > 0 ? timeSlots[timeSlots.length - 1] : "20:00"}
-                config={{ slotDuration: slotDuration }}
-              />
-            </div>
+          {/* Indicador de tiempo actual */}
+          <div 
+            className="absolute inset-0 pointer-events-none"
+            style={{ 
+              top: '100px', // Compensar por la altura de la cabecera fija
+              overflow: 'hidden',
+              zIndex: 50 // Aumentar z-index para estar por encima de todo (citas tienen z-10)
+            }}
+          >
+            <CurrentTimeIndicator
+              key="desktop-week-indicator"
+              timeSlots={timeSlots}
+              rowHeight={AGENDA_CONFIG.ROW_HEIGHT}
+              isMobile={false}
+              className="current-time-indicator"
+              agendaRef={agendaRef}
+              // Pass calculated earliest/latest times if available, otherwise defaults
+              clinicOpenTime={timeSlots.length > 0 ? timeSlots[0] : "09:00"} 
+              clinicCloseTime={timeSlots.length > 0 ? timeSlots[timeSlots.length - 1] : "20:00"}
+              config={{ slotDuration: slotDuration }}
+            />
           </div>
         </div>
-      </DragDropContext>
+      </div>
     )
   }
 
   // Función para verificar si hay una cita en una posición específica
   const hasAppointmentAtPosition = (day: Date, time: string, cabinId: string, offsetMinutes: number): boolean => {
-    const appointments = getAppointmentsForCell(day, time, cabinId);
     const [hours, minutes] = time.split(':').map(Number);
     const hoverTimeInMinutes = hours * 60 + minutes + offsetMinutes;
     
+    // Buscar TODAS las citas del día y cabina, no solo las del slot actual
     return appointments.some(apt => {
-      const aptStartMinutes = parseInt(apt.startTime.split(':')[0]) * 60 + parseInt(apt.startTime.split(':')[1]);
+      // Verificar que sea el mismo día
+      if (!isSameDay(apt.date, day)) return false;
+      
+      // Verificar que sea la misma cabina
+      if (apt.roomId !== cabinId) return false;
+      
+      // Obtener hora de inicio y fin de la cita
+      const aptStartTime = typeof apt.startTime === 'string' ? apt.startTime : '00:00';
+      const [aptHours, aptMinutes] = aptStartTime.split(':').map(Number);
+      const aptStartMinutes = aptHours * 60 + aptMinutes;
       const aptEndMinutes = aptStartMinutes + apt.duration;
       
       // Verificar si el punto del hover está dentro del rango de la cita
@@ -1587,13 +1357,25 @@ export default function WeeklyAgenda({
             {/* Asegurarse de que CurrentTimeIndicator esté relacionado con este div si usa refs */}
         </div>
         
-        {/* Mostrar el preview del drag cuando se está arrastrando */}
-        {dragState.isDragging && dragState.preview && dragState.draggedItem && (
-          <DragPreview 
-            preview={dragState.preview}
-            duration={dragState.draggedItem.duration}
-            color={dragState.draggedItem.color}
-            title={dragState.draggedItem.title}
+        {/* Renderizar el preview si está activo */}
+        {localDragState.isActive && localDragState.draggedItem && localDragState.currentPosition && (
+          <DragPreview
+            preview={{
+              x: localDragState.mouseX,
+              y: localDragState.mouseY,
+              date: localDragState.currentPosition.date,
+              time: localDragState.currentPosition.time,
+              roomId: localDragState.currentPosition.roomId
+            }}
+            duration={localDragState.draggedItem.duration}
+            color={localDragState.draggedItem.color}
+            title={localDragState.draggedItem.title}
+            slotDuration={slotDuration}
+            slotHeight={AGENDA_CONFIG.ROW_HEIGHT}
+            roomName={activeCabins.find(c => c.id.toString() === localDragState.currentPosition?.roomId)?.name}
+            clientName={(localDragState.draggedItem as any).clientName}
+            clientPhone={(localDragState.draggedItem as any).clientPhone}
+            services={(localDragState.draggedItem as any).services}
           />
         )}
         

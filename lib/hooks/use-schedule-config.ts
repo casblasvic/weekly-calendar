@@ -50,28 +50,23 @@ export function useScheduleConfig({ clinicId }: UseScheduleConfigProps) {
       try {
         setLoading(true)
         
-        // Primero obtener la clínica para ver si usa template
+        // Obtener la clínica con todos los datos incluidos
         const clinicResponse = await fetch(`/api/clinics/${clinicId}`)
         if (!clinicResponse.ok) throw new Error('Error al cargar clínica')
         const clinic = await clinicResponse.json()
         
-        let scheduleData: any
+        let slotDuration = 30 // valor por defecto
+        let createGranularity = 5 // valor por defecto
         
-        if (clinic.linkedScheduleTemplateId) {
-          // Usar template
-          const templateResponse = await fetch(`/api/schedule-templates/${clinic.linkedScheduleTemplateId}`)
-          if (!templateResponse.ok) throw new Error('Error al cargar template')
-          scheduleData = await templateResponse.json()
-        } else {
-          // Usar horario personalizado
-          const scheduleResponse = await fetch(`/api/clinics/${clinicId}/schedule`)
-          if (!scheduleResponse.ok) throw new Error('Error al cargar horario')
-          scheduleData = await scheduleResponse.json()
+        if (clinic.linkedScheduleTemplateId && clinic.linkedScheduleTemplate) {
+          // Usar datos del template vinculado
+          slotDuration = clinic.linkedScheduleTemplate.slotDuration || 30
+          createGranularity = clinic.linkedScheduleTemplate.createGranularity || DEFAULT_GRANULARITIES[slotDuration] || 5
+        } else if (clinic.independentSchedule) {
+          // Usar horario personalizado de la clínica
+          slotDuration = clinic.independentSchedule.slotDuration || 30
+          createGranularity = clinic.independentSchedule.createGranularity || DEFAULT_GRANULARITIES[slotDuration] || 5
         }
-        
-        // Aplicar configuración con valores por defecto si no existen
-        const slotDuration = scheduleData.slotDuration || 30
-        const createGranularity = scheduleData.createGranularity || DEFAULT_GRANULARITIES[slotDuration] || 5
         
         // Validar coherencia
         if (!validateGranularity(slotDuration, createGranularity)) {

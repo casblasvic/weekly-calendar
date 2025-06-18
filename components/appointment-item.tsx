@@ -3,8 +3,11 @@ import { Check, Clock, Phone, User } from "lucide-react"
 import { AGENDA_CONFIG } from "@/config/agenda-config"
 import { Appointment } from "@/types/appointments"
 import { useAppointmentTags } from "@/contexts/appointment-tags-context"
-import { useMemo } from "react"
+import { useMemo, useState, useRef } from "react"
 import { cn } from "@/lib/utils"
+import { AppointmentTooltip } from "@/components/appointment-tooltip"
+import { format } from "date-fns"
+import { es } from "date-fns/locale"
 
 export function AppointmentItem({
   appointment,
@@ -25,6 +28,9 @@ export function AppointmentItem({
 }) {
   const height = (appointment.duration / slotDuration) * AGENDA_CONFIG.ROW_HEIGHT
   const { getTagById } = useAppointmentTags() || { getTagById: () => undefined }
+  const [showTooltip, setShowTooltip] = useState(false)
+  const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 })
+  const appointmentRef = useRef<HTMLDivElement>(null)
   
   // Obtener etiquetas de la cita si están disponibles
   const tagIds = useMemo(() => appointment.tags || [], [appointment.tags])
@@ -40,6 +46,29 @@ export function AppointmentItem({
   const borderColor = adjustColorBrightness(backgroundColor, -20)
   const textColor = getContrastColor(backgroundColor)
 
+  const handleMouseEnter = (e: React.MouseEvent) => {
+    e.stopPropagation() // Evitar que el evento se propague a la celda
+    if (!isDragging) {
+      const rect = appointmentRef.current?.getBoundingClientRect()
+      if (rect) {
+        setTooltipPosition({
+          x: rect.right + 10,
+          y: rect.top + rect.height / 2
+        })
+        setShowTooltip(true)
+      }
+    }
+  }
+
+  const handleMouseLeave = (e: React.MouseEvent) => {
+    e.stopPropagation() // Evitar que el evento se propague a la celda
+    setShowTooltip(false)
+  }
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    e.stopPropagation() // Evitar que el evento se propague a la celda
+  }
+
   const handleDragStart = (e: React.DragEvent) => {
     e.dataTransfer.effectAllowed = 'move'
     e.dataTransfer.setData('application/json', JSON.stringify(appointment))
@@ -51,108 +80,140 @@ export function AppointmentItem({
   }
 
   return (
-    <div
-      className={cn(
-        "absolute left-0 right-0 rounded-md text-xs cursor-pointer overflow-hidden transition-all duration-200",
-        "hover:shadow-lg hover:z-20 hover:scale-[1.02]",
-        appointment.status === 'CANCELLED' && "opacity-60 line-through",
-        appointment.status === 'COMPLETED' && "opacity-80",
-        isDragging && "opacity-40" // Hacer translúcida la cita durante el arrastre
-      )}
-      style={{
-        height: `${height - 2}px`, // -2px para dar espacio entre citas
-        width: 'calc(100% - 4px)', // Pequeño margen lateral
-        left: '2px',
-        backgroundColor,
-        borderLeft: `3px solid ${borderColor}`,
-        color: textColor,
-        zIndex: 10,
-        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24)',
-      }}
-      draggable
-      onDragStart={handleDragStart}
-      onDragEnd={handleDragEnd}
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick && onClick(appointment);
-      }}
-    >
-      {/* Indicadores de etiquetas en la parte superior */}
-      {tagIds.length > 0 && !isCompact && (
-        <div className="flex items-center gap-0.5 mb-0.5 absolute top-1 right-1">
-          {tagIds.slice(0, maxVisibleTags).map((tagId) => {
-            const tag = getTagById(tagId);
-            if (!tag) return null;
-            
-            return (
-              <div 
-                key={tag.id}
-                className="w-2 h-2 rounded-full border"
-                style={{ 
-                  backgroundColor: tag.color,
-                  borderColor: textColor === '#FFFFFF' ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.2)'
-                }}
-                title={tag.name}
-              />
-            );
-          })}
-          {tagIds.length > maxVisibleTags && (
-            <div 
-              className="text-[8px] w-3 h-2 rounded-full flex items-center justify-center"
-              style={{
-                backgroundColor: textColor === '#FFFFFF' ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.2)',
-                color: textColor
-              }}
-            >
-              +{tagIds.length - maxVisibleTags}
-            </div>
-          )}
-        </div>
-      )}
-
-      <div className={cn("px-2", isCompact ? "py-1" : "py-2")}>
-        {/* Nombre del cliente */}
-        <div className={cn(
-          "font-semibold truncate",
-          isCompact ? "text-[11px]" : "text-sm"
-        )}>
-          {appointment.name}
-        </div>
-        
-        {/* Servicio - solo si hay espacio */}
-        {!isCompact && (
-          <div className="text-[11px] opacity-90 truncate mt-0.5">
-            {appointment.service}
-          </div>
+    <>
+      <div
+        ref={appointmentRef}
+        data-appointment-item="true"
+        className={cn(
+          "absolute left-0 right-0 rounded-md text-xs cursor-pointer overflow-hidden transition-all duration-200",
+          "hover:shadow-lg hover:z-20 hover:scale-[1.02]",
+          appointment.status === 'CANCELLED' && "opacity-60 line-through",
+          appointment.status === 'COMPLETED' && "opacity-80",
+          isDragging && "opacity-40" // Hacer translúcida la cita durante el arrastre
         )}
-        
-        {/* Información adicional - solo si hay más espacio */}
-        {appointment.duration >= 45 && (
-          <div className="mt-1 space-y-0.5">
-            {/* Hora */}
-            <div className="flex items-center gap-1 text-[10px] opacity-80">
-              <Clock className="h-3 w-3" />
-              <span>{appointment.startTime} ({appointment.duration} min)</span>
-            </div>
-            
-            {/* Teléfono si está disponible */}
-            {appointment.phone && (
-              <div className="flex items-center gap-1 text-[10px] opacity-80">
-                <Phone className="h-3 w-3" />
-                <span className="truncate">{appointment.phone}</span>
+        style={{
+          height: `${height - 2}px`, // -2px para dar espacio entre citas
+          width: 'calc(100% - 4px)', // Pequeño margen lateral
+          left: '2px',
+          backgroundColor,
+          borderLeft: `3px solid ${borderColor}`,
+          color: textColor,
+          zIndex: 10,
+          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24)',
+        }}
+        draggable
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        onMouseMove={handleMouseMove}
+        onClick={(e) => {
+          e.stopPropagation();
+          onClick && onClick(appointment);
+        }}
+      >
+        {/* Indicadores de etiquetas en la parte superior */}
+        {tagIds.length > 0 && !isCompact && (
+          <div className="flex items-center gap-0.5 mb-0.5 absolute top-1 right-1">
+            {tagIds.slice(0, maxVisibleTags).map((tagId) => {
+              const tag = getTagById(tagId);
+              if (!tag) return null;
+              
+              return (
+                <div 
+                  key={tag.id}
+                  className="w-2 h-2 rounded-full border"
+                  style={{ 
+                    backgroundColor: tag.color,
+                    borderColor: textColor === '#FFFFFF' ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.2)'
+                  }}
+                  title={tag.name}
+                />
+              );
+            })}
+            {tagIds.length > maxVisibleTags && (
+              <div 
+                className="text-[8px] w-3 h-2 rounded-full flex items-center justify-center"
+                style={{
+                  backgroundColor: textColor === '#FFFFFF' ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.2)',
+                  color: textColor
+                }}
+              >
+                +{tagIds.length - maxVisibleTags}
               </div>
             )}
           </div>
         )}
-        
-        {/* Indicador de completado */}
-        {appointment.status === 'COMPLETED' && (
-          <div className="absolute bottom-1 right-1">
-            <Check className="h-3 w-3" strokeWidth={3} />
+
+        <div className={cn("px-2", isCompact ? "py-1" : "py-2")}>
+          {/* Nombre del cliente */}
+          <div className={cn(
+            "font-semibold truncate",
+            isCompact ? "text-[11px]" : "text-sm"
+          )}>
+            {appointment.name}
           </div>
-        )}
+          
+          {/* Servicio - solo si hay espacio */}
+          {!isCompact && (
+            <div className="text-[11px] opacity-90 truncate mt-0.5">
+              {appointment.service}
+            </div>
+          )}
+          
+          {/* Información adicional - solo si hay más espacio */}
+          {appointment.duration >= 45 && (
+            <div className="mt-1 space-y-0.5">
+              {/* Hora */}
+              <div className="flex items-center gap-1 text-[10px] opacity-80">
+                <Clock className="h-3 w-3" />
+                <span>{appointment.startTime} ({appointment.duration} min)</span>
+              </div>
+              
+              {/* Teléfono si está disponible */}
+              {appointment.phone && (
+                <div className="flex items-center gap-1 text-[10px] opacity-80">
+                  <Phone className="h-3 w-3" />
+                  <span className="truncate">{appointment.phone}</span>
+                </div>
+              )}
+            </div>
+          )}
+          
+          {/* Indicador de completado */}
+          {appointment.status === 'COMPLETED' && (
+            <div className="absolute bottom-1 right-1">
+              <Check className="h-3 w-3" strokeWidth={3} />
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+
+      {/* Tooltip al hacer hover */}
+      {showTooltip && !isDragging && (
+        <div
+          className="fixed pointer-events-none z-[9999]"
+          style={{
+            left: `${tooltipPosition.x}px`,
+            top: `${tooltipPosition.y}px`,
+            transform: 'translateY(-50%)'
+          }}
+        >
+          <AppointmentTooltip
+            title={appointment.name}
+            date={appointment.date}
+            time={appointment.startTime}
+            duration={appointment.duration}
+            color={backgroundColor}
+            roomName={undefined} // No mostrar sala en tooltip de hover
+            clientName={appointment.name}
+            clientPhone={appointment.phone}
+            services={appointment.service ? [appointment.service] : []}
+            height={Math.max(appointment.duration * (AGENDA_CONFIG.ROW_HEIGHT / slotDuration), 80)}
+          />
+        </div>
+      )}
+    </>
   )
 }
 

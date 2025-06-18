@@ -43,6 +43,12 @@ import { Loader2 } from "lucide-react"
 import { isValid } from "date-fns"
 import { convertCabinToRoom } from "@/types/fix-types"
 import { useTheme } from "@/app/contexts/theme-context"
+import OptimizedHoverableCell from '@/components/agenda/optimized-hoverable-cell'
+import { useGranularity } from '@/lib/drag-drop/granularity-context'
+import { useOptimizedDragAndDrop } from "@/lib/drag-drop/optimized-hooks"
+import { DragPreview } from "@/components/drag-drop/drag-preview"
+import { DragItem } from "@/lib/drag-drop/types"
+import { getAppointmentDuration } from "@/lib/drag-drop/utils"
 
 interface Clinica {
   // ... otras propiedades existentes ...
@@ -311,7 +317,7 @@ export default function DayView({
       setLoadingAppointments(false);
     }
   }, [activeClinic?.id, currentDate, toast]);
-  
+
   useEffect(() => {
     console.log('[DayView] useEffect triggered:', {
       containerMode,
@@ -544,7 +550,14 @@ export default function DayView({
   }, [currentDate, timeSlots, scrollToCurrentTime]);
 
   // Filtrar citas para el día actual
-  const dayAppointments = appointments.filter((apt) => apt.date.toDateString() === currentDate.toDateString())
+  const dayAppointments = appointments.filter((apt) => {
+    const isValid = apt.date instanceof Date && !isNaN(apt.date.getTime());
+    const matches = isValid && apt.date.toDateString() === currentDate.toDateString();
+    if (!isValid) {
+      console.warn('[DayView] Invalid date for appointment:', apt.id, apt.date);
+    }
+    return matches;
+  });
 
   console.log('[DayView] Filtering appointments:', {
     currentDate: currentDate,
@@ -554,8 +567,11 @@ export default function DayView({
     filteredAppointments: dayAppointments.length,
     appointmentDates: appointments.map(apt => ({
       id: apt.id,
-      dateString: apt.date.toDateString(),
-      matches: apt.date.toDateString() === currentDate.toDateString()
+      date: apt.date,
+      dateType: typeof apt.date,
+      isValidDate: apt.date instanceof Date,
+      dateString: apt.date instanceof Date ? apt.date.toDateString() : 'INVALID',
+      matches: apt.date instanceof Date ? apt.date.toDateString() === currentDate.toDateString() : false
     }))
   });
 
@@ -670,7 +686,7 @@ export default function DayView({
     const updatedAppointments = Array.from(appointments);
     const [movedAppointment] = updatedAppointments.splice(source.index, 1);
     const [roomId, time] = destination.droppableId.split("-"); // roomId aquí es string
-    const updatedAppointment = { ...movedAppointment, date: currentDate, roomId, startTime: time };
+    const updatedAppointment = { ...movedAppointment, roomId, startTime: time };
     updatedAppointments.push(updatedAppointment);
     setAppointments(updatedAppointments);
      // Notificar al padre si existe el callback
@@ -759,54 +775,94 @@ export default function DayView({
                           const isBlocked = !!findOverrideForCell(currentDate, time, String(room.id), cabinOverrides, clinicIdStr);
                           
                           return (
-                            <div
+                            <OptimizedHoverableCell
                               key={`${time}-${room.id}`}
-                              data-time={time}
-                              className={cn(
-                                "relative border-r last:border-r-0 min-h-[40px] flex flex-col justify-start", // min-h y flex-col
-                                timeIndex % 2 === 0 ? ZEBRA_LIGHT : ZEBRA_DARK,
-                                isAvailable && !isBlocked ? "cursor-pointer hover:bg-purple-100/50" : "",
-                                !isAvailable && !isBlocked ? "bg-gray-100 cursor-not-allowed opacity-70" : "", // Estilo para no disponible
-                                isBlocked ? "bg-rose-100/50 cursor-not-allowed" : "" // Estilo para bloqueado
-                              )}
-                              onClick={() => {
-                                if (isAvailable && !isBlocked) {
-                                  handleCellClick(currentDate, time, String(room.id));
-                                } else if (isBlocked && findOverrideForCell(currentDate, time, String(room.id), cabinOverrides, clinicIdStr)) {
-                                   console.log('Click en celda bloqueada, abriendo modal de edición:', findOverrideForCell(currentDate, time, String(room.id), cabinOverrides, clinicIdStr));
-                                   openOverrideModal(findOverrideForCell(currentDate, time, String(room.id), cabinOverrides, clinicIdStr));
+                              day={currentDate}
+                              time={time}
+                              cabinId={String(room.id)}
+                              isAvailable={isAvailable}
+                              isInteractive={isAvailable && !isBlocked}
+                              isClickable={isAvailable || isBlocked}
+                              isStartOfBlock={isBlocked}
+                              blockDurationSlots={1}
+                              overrideForCell={isBlocked ? findOverrideForCell(currentDate, time, String(room.id), cabinOverrides, clinicIdStr) : null}
+                              onCellClick={handleCellClick}
+                              onDragOver={handleCellDragOver}
+                              onDrop={handleCellDrop}
+                              appointments={dayAppointments.filter(apt => {
+                                // Verificar si la cita empieza dentro de este slot de tiempo
+                                const [slotHours, slotMinutes] = time.split(':').map(Number);
+                                const slotStartMinutes = slotHours * 60 + slotMinutes;
+                                const slotEndMinutes = slotStartMinutes + slotDuration;
+                                
+                                const [aptHours, aptMinutes] = apt.startTime.split(':').map(Number);
+                                const aptStartMinutes = aptHours * 60 + aptMinutes;
+                                
+                                // La cita pertenece a este slot si empieza dentro del rango del slot
+                                const timeMatches = aptStartMinutes >= slotStartMinutes && aptStartMinutes < slotEndMinutes;
+                                const roomMatches = String(apt.roomId) === String(room.id);
+                                
+                                return timeMatches && roomMatches;
+                              }).map(apt => {
+                                // Calcular el offset en minutos desde el inicio del slot
+                                const [slotHours, slotMinutes] = time.split(':').map(Number);
+                                const slotStartMinutes = slotHours * 60 + slotMinutes;
+                                
+                                const [aptHours, aptMinutes] = apt.startTime.split(':').map(Number);
+                                const aptStartMinutes = aptHours * 60 + aptMinutes;
+                                
+                                const offsetMinutes = aptStartMinutes - slotStartMinutes;
+                                
+                                return {
+                                  ...apt,
+                                  offsetMinutes
+                                };
+                              })}
+                              slotDuration={slotDuration}
+                              minuteGranularity={minuteGranularity}
+                              moveGranularity={1}
+                              active={true}
+                              today={isSameDay(currentDate, new Date())}
+                              cabinIndex={rooms.indexOf(room)}
+                              setSelectedOverride={setSelectedOverride}
+                              setIsOverrideModalOpen={setIsBlockModalOpen}
+                              hasAppointmentAtPosition={(date, time, roomId, minuteOffset) => {
+                                const [hours, minutes] = time.split(':').map(Number)
+                                const totalMinutes = hours * 60 + minutes + minuteOffset
+                                const checkHours = Math.floor(totalMinutes / 60)
+                                const checkMinutes = totalMinutes % 60
+                                
+                                // Buscar TODAS las citas del día en esa cabina
+                                return dayAppointments.some(apt => {
+                                  if (String(apt.roomId) !== roomId) return false
+                                  
+                                  const aptStart = apt.startTime
+                                  const [aptHours, aptMinutes] = aptStart.split(':').map(Number)
+                                  const aptStartMinutes = aptHours * 60 + aptMinutes
+                                  const aptEndMinutes = aptStartMinutes + apt.duration
+                                  
+                                  const checkTotalMinutes = checkHours * 60 + checkMinutes
+                                  
+                                  // Verificar si el punto está dentro del rango de la cita
+                                  return checkTotalMinutes >= aptStartMinutes && checkTotalMinutes < aptEndMinutes
+                                })
+                              }}
+                              handleAppointmentClick={handleAppointmentClick}
+                              handleAppointmentDragStart={(appointment: any, e?: React.DragEvent) => {
+                                console.log('[DayView] Drag start triggered:', { appointment, e });
+                                if (e) {
+                                  handleAppointmentDragStart(e, appointment);
+                                } else {
+                                  console.warn('[DayView] No event provided to drag start');
                                 }
                               }}
-                            >
-                              {/* Renderizar citas */}
-                              {dayAppointments
-                                .filter((apt) => {
-                                  const matches = apt.startTime === time && String(apt.roomId) === String(room.id);
-                                  if (time === "09:00" || apt.startTime === "09:00") { // Solo loguear para el slot de las 9:00
-                                    console.log('[DayView] Appointment filter check:', {
-                                      aptId: apt.id,
-                                      aptStartTime: apt.startTime,
-                                      time: time,
-                                      startTimeMatch: apt.startTime === time,
-                                      aptRoomId: apt.roomId,
-                                      roomId: room.id,
-                                      roomIdMatch: String(apt.roomId) === String(room.id),
-                                      matches: matches
-                                    });
-                                  }
-                                  return matches;
-                                })
-                                .map((apt, index) => (
-                                  <AppointmentItem
-                                    key={apt.id}
-                                    appointment={apt}
-                                    index={index}
-                                    onClick={() => handleAppointmentClick(apt)}
-                                  />
-                                ))}
-                              {/* Renderizar indicador de bloqueo */}
-                              {isBlocked && renderBlockIndicator(findOverrideForCell(currentDate, time, String(room.id), cabinOverrides, clinicIdStr), time, String(room.id))}
-                            </div>
+                              handleDragEnd={handleDragEnd}
+                              dragState={localDragState}
+                              updateCurrentPosition={updateCurrentPosition}
+                              cellHeight={AGENDA_CONFIG.ROW_HEIGHT}
+                              isDaily={true}
+                              globalDragState={localDragState}
+                            />
                           );
                         })
                       ) : (
@@ -971,6 +1027,228 @@ export default function DayView({
     );
   };
 
+  // Handler para cuando se suelta una cita
+  const handleAppointmentDrop = useCallback(async (appointmentId: string, changes: any) => {
+    console.log('[DayView handleAppointmentDrop] Iniciando drop:', { appointmentId, changes });
+    
+    try {
+      // Buscar la cita actual
+      const appointmentToUpdate = appointments.find(app => app.id === appointmentId);
+      if (!appointmentToUpdate) {
+        console.error('[DayView handleAppointmentDrop] No se encontró la cita:', appointmentId);
+        return;
+      }
+      
+      console.log('[DayView handleAppointmentDrop] Cita encontrada:', appointmentToUpdate);
+      
+      // Transformar los cambios al formato esperado por Appointment
+      const transformedChanges: Partial<Appointment> = {};
+      
+      if (changes.startTime) {
+        // Convertir Date a string HH:mm para mostrar
+        const newStartTime = new Date(changes.startTime);
+        transformedChanges.startTime = `${newStartTime.getHours().toString().padStart(2, '0')}:${newStartTime.getMinutes().toString().padStart(2, '0')}`;
+      }
+      
+      if (changes.equipmentId) {
+        // Mapear equipmentId a roomId
+        transformedChanges.roomId = changes.equipmentId;
+      }
+      
+      console.log('[DayView handleAppointmentDrop] Cambios transformados:', transformedChanges);
+      
+      // Crear una copia actualizada de la cita con los cambios transformados
+      const updatedAppointment = {
+        ...appointmentToUpdate,
+        ...transformedChanges
+      };
+      
+      console.log('[DayView handleAppointmentDrop] Cita actualizada:', updatedAppointment);
+      
+      // Actualizar el estado local inmediatamente para renderizado instantáneo
+      setAppointments(prevAppointments => {
+        const newAppointments = prevAppointments.map(app => 
+          app.id === appointmentId ? updatedAppointment : app
+        );
+        console.log('[DayView handleAppointmentDrop] Nuevo estado de citas:', newAppointments);
+        return newAppointments;
+      });
+      
+      // Preparar datos para la API
+      const apiData: any = {
+        id: appointmentId,
+        roomId: transformedChanges.roomId || appointmentToUpdate.roomId
+      };
+      
+      // Si cambió la hora, construir las fechas completas
+      if (changes.startTime) {
+        const newStartDateTime = new Date(changes.startTime);
+        const duration = appointmentToUpdate.duration || 30; // duración en minutos
+        const newEndDateTime = new Date(newStartDateTime.getTime() + duration * 60000);
+        
+        // Formatear las fechas en ISO para la API
+        apiData.startTime = newStartDateTime.toISOString();
+        apiData.endTime = newEndDateTime.toISOString();
+      }
+      
+      console.log('[DayView handleAppointmentDrop] Enviando a API:', apiData);
+      console.log('[DayView handleAppointmentDrop] Detalles de la cita original:', {
+        id: appointmentToUpdate.id,
+        date: appointmentToUpdate.date,
+        startTime: appointmentToUpdate.startTime,
+        duration: appointmentToUpdate.duration,
+        roomId: appointmentToUpdate.roomId
+      });
+      
+      // Hacer la llamada a la API para actualizar la cita
+      const response = await fetch(`/api/appointments`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(apiData)
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Error desconocido' }));
+        console.error('[DayView handleAppointmentDrop] Error de API:', errorData);
+        throw new Error(errorData.error || 'Error al mover la cita');
+      }
+      
+      console.log('[DayView handleAppointmentDrop] Cita guardada en BD correctamente');
+      
+      toast({
+        title: "Cita actualizada",
+        description: "La cita se ha movido correctamente",
+      });
+    } catch (error) {
+      console.error('Error moving appointment:', error);
+      
+      // Si hay error, revertir los cambios refrescando desde la API
+      await fetchAppointments(rooms);
+      
+      toast({
+        title: "Error",
+        description: "No se pudo mover la cita",
+        variant: "destructive",
+      });
+    }
+  }, [appointments, fetchAppointments, rooms, toast]);
+
+  // Hook de drag & drop optimizado
+  const {
+    dragState: localDragState,
+    handleDragStart,
+    handleDragEnd,
+    updateMousePosition,
+    updateCurrentPosition
+  } = useOptimizedDragAndDrop(handleAppointmentDrop);
+
+  const { minuteGranularity } = useGranularity();
+
+  // Handlers para el drag en las celdas
+  const handleCellDragOver = useCallback((
+    e: React.DragEvent,
+    day: Date,
+    time: string,
+    roomId: string
+  ) => {
+    e.preventDefault();
+    updateCurrentPosition(day, time, roomId);
+  }, [updateCurrentPosition]);
+
+  const handleCellDrop = useCallback((
+    e: React.DragEvent,
+    day: Date,
+    time: string,
+    roomId: string
+  ) => {
+    e.preventDefault();
+    
+    if (!localDragState.draggedItem || !localDragState.originalPosition) return;
+    
+    // Verificar si algo cambió
+    const hasChanged = 
+      localDragState.originalPosition.date.toDateString() !== day.toDateString() ||
+      localDragState.originalPosition.time !== time ||
+      localDragState.originalPosition.roomId !== roomId;
+    
+    if (hasChanged) {
+      const changes: any = {};
+      
+      if (localDragState.originalPosition.date.toDateString() !== day.toDateString() || 
+          localDragState.originalPosition.time !== time) {
+        const [hours, minutes] = time.split(':').map(Number);
+        const newStartTime = new Date(day);
+        newStartTime.setHours(hours, minutes, 0, 0);
+        changes.startTime = newStartTime;
+      }
+      
+      if (localDragState.originalPosition.roomId !== roomId) {
+        changes.equipmentId = roomId;
+      }
+      
+      handleAppointmentDrop(localDragState.draggedItem.id, changes);
+    }
+    
+    handleDragEnd();
+  }, [localDragState, handleAppointmentDrop, handleDragEnd]);
+
+  // Handler para cuando se empieza a arrastrar una cita
+  const handleAppointmentDragStart = useCallback((
+    e: React.DragEvent,
+    appointment: Appointment
+  ) => {
+    console.log('[DayView handleAppointmentDragStart] Iniciando drag:', appointment);
+    e.dataTransfer.effectAllowed = 'move';
+    
+    // Calcular endTime a partir de startTime y duration
+    const [hours, minutes] = appointment.startTime.split(':').map(Number);
+    const startDate = new Date(appointment.date);
+    startDate.setHours(hours, minutes, 0, 0);
+    
+    const endDate = new Date(startDate);
+    endDate.setMinutes(endDate.getMinutes() + appointment.duration);
+    
+    const endTime = `${endDate.getHours().toString().padStart(2, '0')}:${endDate.getMinutes().toString().padStart(2, '0')}`;
+    
+    const dragItem: DragItem = {
+      id: appointment.id,
+      title: appointment.name,
+      startTime: appointment.startTime,
+      endTime: endTime,
+      duration: appointment.duration,
+      roomId: appointment.roomId,
+      color: appointment.color || '#3B82F6',
+      personId: appointment.personId || '',
+      currentDate: appointment.date,
+      services: appointment.service ? [{ name: appointment.service }] : []
+    };
+    
+    console.log('[DayView handleAppointmentDragStart] DragItem creado:', dragItem);
+    handleDragStart(e, dragItem);
+    console.log('[DayView handleAppointmentDragStart] handleDragStart llamado');
+  }, [handleDragStart]);
+
+  // Función para obtener las citas de una celda específica
+  const getAppointmentsForCell = useCallback((day: Date, time: string, roomId: string) => {
+    return dayAppointments.filter(apt => {
+      // Comparar si la cita empieza dentro de este slot de tiempo
+      const [slotHours, slotMinutes] = time.split(':').map(Number);
+      const slotStartMinutes = slotHours * 60 + slotMinutes;
+      const slotEndMinutes = slotStartMinutes + slotDuration;
+      
+      const [aptHours, aptMinutes] = apt.startTime.split(':').map(Number);
+      const aptStartMinutes = aptHours * 60 + aptMinutes;
+      
+      // La cita pertenece a este slot si empieza dentro del rango del slot
+      const timeMatches = aptStartMinutes >= slotStartMinutes && aptStartMinutes < slotEndMinutes;
+      const roomMatches = String(apt.roomId) === roomId;
+      
+      return timeMatches && roomMatches;
+    });
+  }, [dayAppointments, slotDuration]);
+
   if (containerMode) {
     return (
       <div className="flex flex-col h-full" style={{ transition: "opacity 0.2s ease", opacity: 1 }}>
@@ -989,9 +1267,35 @@ export default function DayView({
   return (
     <HydrationWrapper>
       {/* Renderizar directamente la cuadrícula y modales */}
-      <div className="flex-1 overflow-visible h-full"> {/* Asegurar altura y overflow */} 
+      <div 
+        className="flex-1 overflow-visible h-full"
+        onDragOver={(e) => {
+          e.preventDefault();
+          updateMousePosition(e.clientX, e.clientY);
+        }}
+      > 
          {renderDayGrid()}
       </div>
+      
+      {/* DragPreview para mostrar info durante el drag */}
+      {localDragState.isActive && localDragState.draggedItem && localDragState.currentPosition && (
+        <DragPreview
+          preview={{
+            x: localDragState.mouseX,
+            y: localDragState.mouseY,
+            date: localDragState.currentPosition.date,
+            time: localDragState.currentPosition.time,
+            roomId: localDragState.currentPosition.roomId
+          }}
+          duration={localDragState.draggedItem.duration}
+          color={localDragState.draggedItem.color}
+          title={localDragState.draggedItem.title}
+          slotDuration={slotDuration}
+          slotHeight={AGENDA_CONFIG.ROW_HEIGHT}
+          roomName={rooms.find(r => r.id.toString() === localDragState.currentPosition?.roomId)?.name}
+        />
+      )}
+      
       {renderModals()}
     </HydrationWrapper>
   )

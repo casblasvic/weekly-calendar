@@ -99,7 +99,8 @@
     "uuid": "^11.1.0",
     "vaul": "^0.9.6",
     "xlsx": "^0.18.5",
-    "zod": "^3.24.3"
+    "zod": "^3.24.3",
+    "zustand": "^5.0.5"
   },
   "devDependencies": {
     "@types/bcrypt": "^5.0.2",
