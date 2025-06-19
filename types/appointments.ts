@@ -8,7 +8,9 @@ export interface Appointment {
   date: Date
   roomId: string
   startTime: string
+  endTime?: string // Hora de fin real de la cita
   duration: number
+  estimatedDurationMinutes?: number // Duración estimada original basada en servicios
   color: string
   completed?: boolean
   phone?: string

@@ -130,6 +130,7 @@ model User {
   journalEntries                 JournalEntry[]
   personLeadData                 PersonLeadData[]
   validatedAppointmentServices   AppointmentService[]            @relation("ValidatedAppointmentServices")
+  appointmentExtensions          AppointmentExtension[]
 
   @@index([systemId])
   @@index([countryIsoCode])
@@ -651,6 +652,7 @@ model Appointment {
   startTime                   DateTime
   endTime                     DateTime
   durationMinutes             Int
+  estimatedDurationMinutes    Int?
   status                      AppointmentStatus    @default(SCHEDULED)
   notes                       String?
   clientNotes                 String?
@@ -675,6 +677,7 @@ model Appointment {
   relatedTicket               Ticket?
   services                    AppointmentService[]
   tags                        AppointmentTag[]
+  extensions                  AppointmentExtension[]
 
   @@index([startTime])
   @@index([personId])
@@ -686,6 +689,25 @@ model Appointment {
   @@index([originalAppointmentId])
   @@index([roomId])
   @@map("appointments")
+}
+
+model AppointmentExtension {
+  id                  String      @id @default(cuid())
+  appointmentId       String
+  previousDuration    Int         // Duración anterior en minutos
+  newDuration         Int         // Nueva duración en minutos
+  extendedMinutes     Int         // Minutos ampliados
+  extendedByUserId    String      // Usuario que realizó la ampliación
+  reason              String?     // Razón de la ampliación (opcional)
+  createdAt           DateTime    @default(now())
+  
+  appointment         Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  extendedByUser      User        @relation(fields: [extendedByUserId], references: [id])
+  
+  @@index([appointmentId])
+  @@index([extendedByUserId])
+  @@index([createdAt])
+  @@map("appointment_extensions")
 }
 
 model AppointmentService {

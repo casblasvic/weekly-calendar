@@ -27,8 +27,8 @@ import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library'; 
 import { hashPassword } from '../lib/hash';
 import path from 'path'; // Importar path
 import { fileURLToPath } from 'url'; // Importar fileURLToPath
-import { seedPersons } from './seed-persons.js';
 import { seedCountries } from './seed-countries.js';
+import { seedPersons } from './seed-persons.js';
 import { seedTags } from './seed-tags.js';
 import { getOrCreateCuid, getMappedId, initializeKnownIds, generateCuid } from './seed-helpers.js';
 // <<< ELIMINAR Importación dinámica de mockData >>>
@@ -1976,8 +1976,10 @@ async function main() {
   console.log('Comprehensive example Tickets, Items, and Payments creation attempt finished.');
   // <<< --- FIN: SEEDING DE TICKETS Y PAGOS --- >>>
 
+  // Temporalmente comentado hasta adaptar los seeds al modelo actual
   await seedPersons(prisma, system!.id);
   await seedTags(prisma, system!.id); // Agregar llamada a seedTags
+  
   console.log('Seeding completed.');
 } // Fin función main()
 

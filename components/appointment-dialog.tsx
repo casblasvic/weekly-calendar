@@ -1,7 +1,17 @@
 "use client"
 
 import React from "react"
-import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog"
+import {
+  Dialog,
+  DialogTrigger,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogContent
+} from "./ui/dialog"
+import { DialogContent as DialogPrimitive } from "@radix-ui/react-dialog"
+import { X } from "lucide-react"
 import { VisuallyHidden } from "@/components/ui/visually-hidden"
 import { ClientQuickViewDialog } from "./client-quick-view-dialog"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
@@ -12,7 +22,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { 
   Calendar,
-  X,
+  X as XIcon,
   Search,
   Users,
   Tag,
@@ -51,6 +61,8 @@ import type { CSSProperties, Key } from 'react'
 import { useRouter } from 'next/navigation'
 import { useClinic } from '@/contexts/clinic-context'
 import { useServicesQuery, useBonosQuery, usePackagesQuery } from '@/lib/hooks/use-api-query'
+import { extractTimeFromString, calculateDurationInMinutes, calculateEndTime } from "@/lib/utils/time-parser"
+import { useGranularity } from "@/lib/drag-drop/granularity-context"
 
 // WhatsApp icon component
 const WhatsAppIcon = ({ className }: { className?: string }) => (
@@ -68,6 +80,8 @@ interface Service {
   type?: 'service' | 'bono' | 'package' | 'package-service'
   items?: any[]
   serviceName?: string // Para bonos
+  serviceId?: string // ID del servicio real asociado al bono
+  realServiceId?: string // ID del servicio real para el backend
 }
 
 export interface Person {
@@ -98,6 +112,8 @@ interface AppointmentDialogProps {
     notes?: string;
     tags?: string[];
     isValidated?: boolean; // Nuevo campo para saber si la cita está validada
+    startTime?: string; // Hora de inicio de la cita (HH:mm o ISO string)
+    endTime?: string; // Hora de fin de la cita (HH:mm o ISO string)
   };
   onSaveAppointment?: (appointment: {
     id?: string; // Incluir el ID si es una edición
@@ -110,11 +126,16 @@ interface AppointmentDialogProps {
     services: string[];
     notes?: string;
     roomId: string;
-    tags?: string[] // Añadir etiquetas
+    tags?: string[]; // Añadir etiquetas
+    estimatedDurationMinutes: number;
+    durationMinutes: number;
+    hasExtension: boolean;
+    extensionMinutes: number;
   }) => void;
   onMoveAppointment?: () => void;
   onSearchClick?: () => void;
   onNewClientClick?: () => void;
+  showClientDetailsOnOpen?: boolean;
 }
 
 export function AppointmentDialog({
@@ -132,6 +153,7 @@ export function AppointmentDialog({
   onMoveAppointment,
   onSearchClick,
   onNewClientClick,
+  showClientDetailsOnOpen,
 }: AppointmentDialogProps) {
   const [activeTab, setActiveTab] = useState("servicios")
   const [selectedServices, setSelectedServices] = useState<Service[]>([])
@@ -144,6 +166,9 @@ export function AppointmentDialog({
   const [searchQuery, setSearchQuery] = useState("")
   const [endTime, setEndTime] = useState("")
   const [tagPopoverOpen, setTagPopoverOpen] = useState(false)
+  const [userModifiedModules, setUserModifiedModules] = useState(false) // Track si el usuario modificó los módulos
+  const [userModifiedServices, setUserModifiedServices] = useState(false) // Track si el usuario modificó los servicios
+  const [initialTime, setInitialTime] = useState<string | undefined>() // Hora inicial para detectar cambios
   const servicesContainerRef = useRef<HTMLDivElement>(null)
   
   // Nuevo estado para controlar servicios a validar
@@ -164,16 +189,39 @@ export function AppointmentDialog({
     address: initialClient?.address || '',
   })
 
-  // Calculate end time based on selected services
+  // Obtener slotDuration del contexto de granularidad
+  const { slotDuration, minuteGranularity } = useGranularity();
+
+  // Calcular endTime cuando cambie selectedTime o modules
   useEffect(() => {
-    if (selectedTime && modules > 0) {
-      const [hours, minutes] = selectedTime.split(':').map(Number)
-      const totalMinutes = hours * 60 + minutes + (modules * 15)
-      const endHours = Math.floor(totalMinutes / 60)
-      const endMinutes = totalMinutes % 60
-      setEndTime(`${String(endHours).padStart(2, '0')}:${String(endMinutes).padStart(2, '0')}`)
+    // Solo recalcular endTime si:
+    // 1. Es una nueva cita (no hay existingAppointment)
+    // 2. El usuario modificó manualmente los módulos/servicios
+    // 3. El usuario cambió la hora de inicio
+    if (!existingAppointment || userModifiedModules || userModifiedServices) {
+      if (selectedTime && modules > 0) {
+        const totalMinutes = modules * minuteGranularity;
+        const calculatedEndTime = calculateEndTime(selectedTime, totalMinutes);
+        setEndTime(calculatedEndTime);
+      }
     }
-  }, [selectedTime, modules])
+  }, [selectedTime, modules, minuteGranularity, existingAppointment, userModifiedModules, userModifiedServices])
+
+  // Reset user modification flags when dialog opens/closes
+  useEffect(() => {
+    if (isOpen) {
+      setUserModifiedModules(false)
+      setUserModifiedServices(false)
+      setInitialTime(selectedTime)
+    }
+  }, [isOpen, selectedTime])
+
+  // Detectar cambios en selectedTime
+  useEffect(() => {
+    if (initialTime && selectedTime && selectedTime !== initialTime) {
+      setUserModifiedModules(true) // Si cambia la hora, recalcular todo
+    }
+  }, [selectedTime, initialTime])
 
   // Obtener la clínica activa y su tarifa
   const { activeClinic } = useClinic()
@@ -214,7 +262,8 @@ export function AppointmentDialog({
       duration: b.service?.durationMinutes || 0,
       category: 'Bonos',
       sessions: b.sessions,
-      type: 'bono' as const
+      type: 'bono' as const,
+      serviceId: b.service?.id // Guardar el ID del servicio real asociado al bono
     }))
   }, [allBonosData])
 
@@ -276,7 +325,7 @@ export function AppointmentDialog({
     
     if (service.type === 'bono') {
       // Para bonos, añadir el servicio asociado
-      const serviceId = `bono-${service.id}`
+      const serviceId = `bono-${service.id}` // Mantener ID único para diferenciar servicios de bonos
       const isSelected = selectedServices.some((s) => s.id === serviceId)
       
       if (isSelected) {
@@ -288,16 +337,19 @@ export function AppointmentDialog({
           delete newState[serviceId]
           return newState
         })
+        setUserModifiedServices(true)
       } else {
         // Añadir el servicio del bono
         const serviceToAdd = {
           ...service,
-          id: serviceId,
+          id: serviceId, // ID único para el estado local
           name: service.serviceName || service.name, // Usar el nombre del servicio, no del bono
-          type: 'service' as const
+          type: 'service' as const,
+          realServiceId: service.serviceId // Guardar el ID del servicio real para el backend
         }
         setSelectedServices((prev) => [...prev, serviceToAdd])
         setModules((prev) => prev + Math.ceil(service.duration / 15))
+        setUserModifiedServices(true)
       }
     } else if (service.type === 'package' && service.items) {
       // Para paquetes, verificar si algún servicio del paquete está seleccionado
@@ -316,6 +368,7 @@ export function AppointmentDialog({
           packageServiceIds.forEach((id) => delete newState[id])
           return newState
         })
+        setUserModifiedServices(true)
       } else {
         // Añadir todos los servicios del paquete
         const packageServices = service.items.map((item: any) => ({
@@ -330,6 +383,7 @@ export function AppointmentDialog({
         setSelectedServices((prev) => [...prev, ...packageServices])
         const totalDuration = packageServices.reduce((sum, s) => sum + s.duration, 0)
         setModules((prev) => prev + Math.ceil(totalDuration / 15))
+        setUserModifiedServices(true)
       }
     } else {
       // Para servicios normales
@@ -343,9 +397,11 @@ export function AppointmentDialog({
           delete newState[service.id]
           return newState
         })
+        setUserModifiedServices(true)
       } else {
         setSelectedServices((prev) => [...prev, service])
         setModules((prev) => prev + Math.ceil(service.duration / 15))
+        setUserModifiedServices(true)
       }
     }
     
@@ -371,6 +427,7 @@ export function AppointmentDialog({
         delete newState[serviceId]
         return newState
       })
+      setUserModifiedServices(true)
     }
   }
 
@@ -416,7 +473,7 @@ export function AppointmentDialog({
 
     const serviceIds = selectedServices.map(service => {
       if (service.id.startsWith('bono-')) {
-        return service.id.substring(5) // Quitar el prefijo 'bono-'
+        return service.realServiceId // Usar el ID del servicio real para el backend
       } else if (service.id.includes('-')) {
         // Para servicios de paquetes, obtener el ID del servicio
         const parts = service.id.split('-')
@@ -424,6 +481,12 @@ export function AppointmentDialog({
       }
       return service.id
     })
+
+    // Calcular duración teórica de los servicios vs duración real
+    const theoreticalDuration = selectedServices.reduce((sum, s) => sum + s.duration, 0)
+    const actualDuration = modules * minuteGranularity
+    const hasExtension = actualDuration > theoreticalDuration
+    const extensionMinutes = hasExtension ? actualDuration - theoreticalDuration : 0
 
     const appointmentData = {
       id: existingAppointment?.id, // Incluir el ID si es una edición
@@ -436,11 +499,16 @@ export function AppointmentDialog({
       services: serviceIds,
       notes: appointmentComment,
       roomId: roomId, // CORREGIDO: usar roomId, no equipmentId
-      tags: selectedTags // Añadir las etiquetas seleccionadas
+      tags: selectedTags, // Añadir las etiquetas seleccionadas
+      // Información de extensión si aplica
+      estimatedDurationMinutes: theoreticalDuration,
+      durationMinutes: actualDuration,
+      hasExtension,
+      extensionMinutes
     }
 
     if (onSaveAppointment) {
-      onSaveAppointment(appointmentData)
+      await onSaveAppointment(appointmentData)
     }
     
     onClose()
@@ -451,7 +519,7 @@ export function AppointmentDialog({
     const servicesToSend = Object.entries(servicesToValidate)
       .filter(([_, status]) => status !== null)
       .map(([serviceId, status]) => ({
-        serviceId,
+        serviceId: serviceId.startsWith('bono-') ? serviceId.substring(5) : serviceId,
         status: status as 'VALIDATED' | 'NO_SHOW'
       }))
     
@@ -497,7 +565,7 @@ export function AppointmentDialog({
       const servicesToSend = selectedServices.map(service => {
         let realServiceId = service.id
         if (service.id.startsWith('bono-')) {
-          realServiceId = service.id.substring(5)
+          realServiceId = service.realServiceId // Usar el ID del servicio real para el backend
         } else if (service.id.includes('-')) {
           const parts = service.id.split('-')
           realServiceId = parts[parts.length - 1]
@@ -591,6 +659,21 @@ export function AppointmentDialog({
       // Inicializar tags
       setSelectedTags(existingAppointment.tags || [])
       
+      // NUEVO: Si existingAppointment tiene endTime, usarlo directamente
+      if (existingAppointment.endTime) {
+        // Extraer hora de fin del appointment existente usando la utilidad
+        const endTimeStr = extractTimeFromString(existingAppointment.endTime);
+        setEndTime(endTimeStr)
+        
+        // Calcular módulos basándose en la duración REAL de la cita
+        if (existingAppointment.startTime && existingAppointment.endTime) {
+          // Extraer las horas usando la utilidad
+          const startTimeStr = extractTimeFromString(existingAppointment.startTime);
+          const durationMinutes = calculateDurationInMinutes(startTimeStr, endTimeStr);
+          setModules(Math.ceil(durationMinutes / 15))
+        }
+      }
+      
       // Inicializar servicios seleccionados
       const servicesToSelect = existingAppointment.services || []
       const formattedServices = allServicesData.map((s: any) => ({
@@ -607,7 +690,8 @@ export function AppointmentDialog({
         duration: b.service?.durationMinutes || 0,
         category: 'Bonos',
         sessions: b.sessions,
-        type: 'bono' as const
+        type: 'bono' as const,
+        serviceId: b.service?.id // Guardar el ID del servicio real asociado al bono
       }))
       const formattedPackages = allPackagesData
         .filter((p: any) => {
@@ -638,9 +722,10 @@ export function AppointmentDialog({
           // Para bonos, crear un ID especial para evitar conflictos
           return {
             ...service,
-            id: `bono-${service.id}`,
+            id: `bono-${service.id}`, // ID único para el estado local
             name: service.serviceName || service.name, // Usar el nombre del servicio, no del bono
-            type: 'service' as const
+            type: 'service' as const,
+            realServiceId: service.serviceId // Guardar el ID del servicio real para el backend
           }
         } else if (service.type === 'package' && service.items) {
           // Para paquetes, crear servicios individuales
@@ -659,9 +744,20 @@ export function AppointmentDialog({
       }).filter(Boolean)
       
       setSelectedServices(selectedServices)
-      setModules(Math.ceil(selectedServices.reduce((sum, s) => sum + s.duration, 0) / 15))
+      
+      // IMPORTANTE: Solo recalcular duración si NO tenemos endTime de la BD
+      if (!existingAppointment.endTime) {
+        setModules(Math.ceil(selectedServices.reduce((sum, s) => sum + s.duration, 0) / 15))
+      }
     }
   }, [isEditing, existingAppointment, allServicesData, allBonosData, allPackagesData])
+
+  // Mostrar el resumen del cliente si showClientDetailsOnOpen es true
+  useEffect(() => {
+    if (isOpen && showClientDetailsOnOpen) {
+      setShowClientDetails(true);
+    }
+  }, [isOpen, showClientDetailsOnOpen]);
 
   // Si no hay cliente, no mostrar el modal
   if (!initialClient) return null
@@ -678,9 +774,15 @@ export function AppointmentDialog({
           }
         }}
       >
-        <DialogContent 
-          className="sm:max-w-[800px] p-0 overflow-hidden h-[600px] flex flex-col"
-        >
+        <DialogContent className="w-[90vw] max-h-[85vh] md:w-full sm:max-w-[800px] p-0 overflow-hidden h-[600px] flex flex-col">
+          <button
+            onClick={onClose}
+            className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-0 disabled:pointer-events-none z-50"
+          >
+            <XIcon className="h-4 w-4" />
+            <span className="sr-only">Close</span>
+          </button>
+          
           <VisuallyHidden>
             <DialogTitle>Crear nueva cita</DialogTitle>
             <DialogDescription>Crear una nueva cita para el cliente {clientName}</DialogDescription>
@@ -696,10 +798,8 @@ export function AppointmentDialog({
                   <div>
                     <div className="flex items-center gap-2">
                       <h2 className="text-lg font-medium text-violet-600">{clientName}</h2>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 hover:bg-purple-50"
+                      <button
+                        className="h-6 w-6 hover:bg-purple-50 rounded inline-flex items-center justify-center"
                         onClick={() => {
                           console.log('[AppointmentDialog] Opening client quick view', { showClientDetails, initialClient })
                           setShowClientDetails(true)
@@ -707,7 +807,7 @@ export function AppointmentDialog({
                         title="Ver resumen rápido"
                       >
                         <ExternalLink className="h-4 w-4 text-purple-600" />
-                      </Button>
+                      </button>
                     </div>
                     {/* Teléfono y acciones */}
                     <div className="flex items-center gap-3 mt-1">
@@ -893,7 +993,7 @@ export function AppointmentDialog({
                               }}
                               className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-black/20 rounded-full transition-opacity"
                             >
-                              <X className="h-2.5 w-2.5 text-white" />
+                              <XIcon className="h-2.5 w-2.5 text-white" />
                             </button>
                           </div>
                         )
@@ -1171,7 +1271,10 @@ export function AppointmentDialog({
                             variant="outline"
                             size="icon"
                             className="h-6 w-6"
-                            onClick={() => setModules(Math.max(1, modules - 1))}
+                            onClick={() => {
+                              setModules(Math.max(1, modules - 1))
+                              setUserModifiedModules(true)
+                            }}
                           >
                             <ChevronDown className="h-3 w-3" />
                           </Button>
@@ -1180,7 +1283,10 @@ export function AppointmentDialog({
                             variant="outline"
                             size="icon"
                             className="h-6 w-6"
-                            onClick={() => setModules(modules + 1)}
+                            onClick={() => {
+                              setModules(modules + 1)
+                              setUserModifiedModules(true)
+                            }}
                           >
                             <ChevronUp className="h-3 w-3" />
                           </Button>

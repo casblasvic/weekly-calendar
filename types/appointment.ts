@@ -5,6 +5,7 @@ export interface Appointment {
   date: Date; // Fecha de la cita
   roomId: string; // ID de la cabina/sala
   startTime: string; // Hora de inicio formato "HH:MM"
+  endTime?: string; // Hora de fin formato "HH:MM" - opcional para compatibilidad
   duration: number; // Duración en número de slots o minutos (a definir consistencia)
   color: string; // Color para mostrar en la agenda (probablemente de la cabina)
   completed?: boolean; // Opcional: si la cita está completada
@@ -13,4 +14,4 @@ export interface Appointment {
   // Podrían añadirse más campos si son necesarios para la UI
   personId?: string; // ID de la persona
   serviceIds?: string[]; // IDs de los servicios
-} 
+}

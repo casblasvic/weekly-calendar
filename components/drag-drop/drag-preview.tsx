@@ -35,28 +35,29 @@ export const DragPreview: React.FC<DragPreviewProps> = ({
   const [adjustedPosition, setAdjustedPosition] = React.useState({ x: preview.x, y: preview.y });
   
   React.useEffect(() => {
+    const previewHeight = height + 40; // Altura estimada del tooltip
+    const previewWidth = 280; // Ancho estimado del tooltip
+    
+    // Posición inicial con más offset para no tapar la sombra
+    let x = preview.x + 20; // Más separación horizontal
+    let y = preview.y - previewHeight - 15; // Aparece arriba del cursor con más separación
+    
+    // Obtener dimensiones del viewport
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
-    const previewWidth = 240; // Actualizado al ancho del AppointmentTooltip
-    const previewHeight = height;
     
-    let x = preview.x + 20; // Offset horizontal mayor para mejor visibilidad
-    let y = preview.y + 10; // Offset vertical para que no esté centrado en el cursor
+    // Si el tooltip se sale por arriba, mostrarlo abajo
+    if (y < 20) {
+      y = preview.y + 30; // Más separación cuando aparece abajo
+    }
     
-    // Ajustar horizontalmente si se sale de la pantalla
+    // Si el tooltip se sale por la derecha, mostrarlo a la izquierda
     if (x + previewWidth > viewportWidth - 20) {
-      // Si no cabe a la derecha, ponerlo a la izquierda del cursor
-      x = preview.x - previewWidth - 20;
+      x = preview.x - previewWidth - 20; // A la izquierda del cursor
     }
     
-    // Asegurar que no se salga por la izquierda
-    if (x < 20) {
-      x = 20;
-    }
-    
-    // Ajustar verticalmente si se sale de la pantalla
+    // Asegurar que no se salga por abajo
     if (y + previewHeight > viewportHeight - 20) {
-      // Si no cabe abajo, ajustar hacia arriba
       y = viewportHeight - previewHeight - 20;
     }
     

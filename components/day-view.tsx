@@ -22,6 +22,7 @@ import type { Person } from "@/components/appointment-dialog"
 import { NewClientDialog } from "@/components/new-client-dialog"
 import { AppointmentItem } from "./appointment-item"
 import { Calendar } from "lucide-react"
+import { ClientQuickViewDialog } from "@/components/client-quick-view-dialog"
 import { useScheduleBlocks } from "@/contexts/schedule-blocks-context"
 import { Lock } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
@@ -49,6 +50,7 @@ import { useOptimizedDragAndDrop } from "@/lib/drag-drop/optimized-hooks"
 import { DragPreview } from "@/components/drag-drop/drag-preview"
 import { DragItem } from "@/lib/drag-drop/types"
 import { getAppointmentDuration } from "@/lib/drag-drop/utils"
+import { utcToClinicTime } from "@/lib/timezone-utils"
 
 interface Clinica {
   // ... otras propiedades existentes ...
@@ -207,6 +209,9 @@ export default function DayView({
   const [isSearchDialogOpen, setIsSearchDialogOpen] = useState(false)
   const [isAppointmentDialogOpen, setIsAppointmentDialogOpen] = useState(false)
   const [isNewClientDialogOpen, setIsNewClientDialogOpen] = useState(false)
+  const [showClientDetailsOnOpen, setShowClientDetailsOnOpen] = useState(false)
+  const [isClientQuickViewOpen, setIsClientQuickViewOpen] = useState(false)
+  const [selectedClientForQuickView, setSelectedClientForQuickView] = useState<Person | null>(null)
 
   // Dentro de la función DayView, añadir estos estados:
   const [selectedOverride, setSelectedOverride] = useState<CabinScheduleOverride | null>(null)
@@ -278,6 +283,7 @@ export default function DayView({
           date: startTime,
           roomId: finalRoomId,
           startTime: format(startTime, 'HH:mm'),
+          endTime: format(endTime, 'HH:mm'), // Agregar hora de fin en formato HH:mm
           duration: Math.ceil((endTime.getTime() - startTime.getTime()) / (1000 * 60)),
           color: appointmentColor,
           phone: apt.person.phone,
@@ -336,15 +342,9 @@ export default function DayView({
   // Actualizar appointments cuando cambian initialAppointments en modo contenedor
   useEffect(() => {
     if (containerMode && initialAppointments && initialAppointments.length > 0) {
-      // Verificar si realmente hay cambios antes de actualizar
-      const currentIds = appointments.map(apt => apt.id).sort().join(',');
-      const newIds = initialAppointments.map(apt => apt.id).sort().join(',');
-      
-      if (currentIds !== newIds) {
-        setAppointments(initialAppointments)
-      }
+      setAppointments(initialAppointments)
     }
-  }, [containerMode, initialAppointments, appointments])
+  }, [containerMode, initialAppointments])
 
   // <<< ADD useMemo to calculate correctSchedule >>>
   const correctSchedule = useMemo(() => {
@@ -595,9 +595,63 @@ export default function DayView({
     return null;
   }
 
+  // Agregar un manejador para el clic en una cita existente
+  const handleAppointmentClick = (appointment: Appointment) => {
+    console.log("Cita seleccionada para edición:", appointment)
+    
+    setSelectedAppointment(appointment)
+    
+    // Configurar los datos necesarios para editar la cita
+    const personForModal: Person = { 
+        id: appointment.personId || "", // Asumir que Appointment tiene personId
+        firstName: appointment.name.split(' ')[0],
+        lastName: appointment.name.split(' ').slice(1).join(' '),
+        phone: appointment.phone || "" 
+    };
+    setSelectedPerson(personForModal)
+    setSelectedSlot({
+      date: appointment.date,
+      time: appointment.startTime, 
+      roomId: appointment.roomId
+    })
+    
+    // Abrir el diálogo de edición
+    setIsAppointmentDialogOpen(true)
+  }
+
+  // Handler para cuando se hace click en el nombre del cliente en el tooltip
+  const handleClientNameClick = (appointment: Appointment) => {
+    console.log("Click en nombre del cliente, abriendo resumen:", appointment)
+    
+    // Crear el objeto Person con los datos del appointment
+    const personForQuickView: Person = { 
+        id: appointment.personId || "",
+        firstName: appointment.name.split(' ')[0],
+        lastName: appointment.name.split(' ').slice(1).join(' '),
+        phone: appointment.phone || "",
+        email: null,
+        address: null,
+        city: null,
+        postalCode: null
+    };
+    
+    // Configurar el cliente para el quick view
+    setSelectedClientForQuickView(personForQuickView)
+    
+    // Abrir solo el ClientQuickViewDialog
+    setIsClientQuickViewOpen(true)
+  }
+
   // Funciones para manejar citas
   const handleCellClick = (date: Date, time: string, roomId: string) => {
     console.log(`Celda clickeada: ${format(date, 'yyyy-MM-dd')} ${time}, Cabina: ${roomId}`);
+    
+    // Verificar si estamos en proceso de resize para evitar abrir el modal
+    if (document.body.dataset.resizing === 'true') {
+      console.log('Evitando apertura de modal durante resize');
+      return;
+    }
+    
     const clinicIdStr = activeClinic?.id ? String(activeClinic.id) : undefined;
 
     // Verificar si la celda está bloqueada por un override
@@ -622,23 +676,9 @@ export default function DayView({
     setIsAppointmentDialogOpen(true)
   }
 
-  const handleDeleteAppointment = useCallback(() => {
-    if (selectedSlot) {
-      setAppointments((prev) =>
-        prev.filter(
-          (apt) =>
-            !(
-              apt.date.toDateString() === selectedSlot?.date?.toDateString() &&
-              apt.startTime === selectedSlot?.time &&
-              apt.roomId === selectedSlot?.roomId
-            ),
-        ),
-      )
-    }
-  }, [selectedSlot])
-
   const handleSaveAppointment = useCallback(
-    (appointmentData: {
+    async (appointmentData: {
+      id?: string; 
       person: { name: string; phone: string }
       services: { id: string; name: string; category: string }[]
       time: string
@@ -646,32 +686,89 @@ export default function DayView({
       blocks: number
       tags?: string[]
     }) => {
-      if (selectedSlot) {
-        const targetRoomId = String(selectedSlot.roomId);
-        const cabin = rooms.find(c => String(c.id) === targetRoomId);
+      const isUpdate = !!appointmentData.id;
+      
+      try {
+        const method = isUpdate ? 'PUT' : 'POST';
+        
+        // Los datos ya vienen en el formato correcto del modal
+        const response = await fetch('/api/appointments', {
+          method: method,
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(appointmentData),
+        });
 
-        if (cabin) {
-          const newAppointment: Appointment = {
-            id: Math.random().toString(36).substr(2, 9),
-            name: appointmentData.person.name,
-            service: appointmentData.services.map((s) => s.name).join(", "),
-            date: selectedSlot.date,
-            roomId: targetRoomId, // Usar el ID string
-            startTime: appointmentData.time,
-            duration: appointmentData.blocks || 2, 
-            color: cabin.color, 
-            phone: appointmentData.person.phone,
-            tags: appointmentData.tags || [], 
-          };
-          setAppointments((prev) => [...prev, newAppointment]);
-          // Notificar al padre si existe el callback
-          if (onAppointmentsChange) {
-             onAppointmentsChange([...appointments, newAppointment]);
+        if (!response.ok) {
+          const error = await response.json();
+          console.error('[DayView] Error saving appointment:', error);
+          throw new Error(isUpdate ? 'Error updating appointment' : 'Error creating appointment');
+        }
+
+        const savedAppointment = await response.json();
+        
+        // Convertir las fechas string a objetos Date
+        const startTime = new Date(savedAppointment.startTime);
+        
+        // Determinar el color basado en los servicios creados
+        let appointmentColor = '#9CA3AF'; // Color por defecto
+        if (savedAppointment.services && savedAppointment.services.length > 0) {
+          const serviceTypes = new Set(savedAppointment.services.map((s: any) => s.service?.categoryId));
+          const uniqueColors = new Set(savedAppointment.services.map((s: any) => s.service?.colorCode).filter(Boolean));
+          
+          if (serviceTypes.size === 1 && uniqueColors.size === 1) {
+            const firstColor = Array.from(uniqueColors)[0];
+            appointmentColor = (typeof firstColor === 'string' ? firstColor : null) || appointmentColor;
+          } else if (savedAppointment.equipment?.color) {
+            appointmentColor = savedAppointment.equipment.color;
           }
         }
+        
+        // Obtener los IDs de las etiquetas de la respuesta
+        const tagIds = savedAppointment.tags?.map((tagRelation: any) => tagRelation.tagId) || [];
+        
+        // Convertir la cita creada al formato esperado por la agenda
+        const newAppointment: Appointment = {
+          id: savedAppointment.id,
+          name: `${savedAppointment.person.firstName} ${savedAppointment.person.lastName}`,
+          service: savedAppointment.services.map((s: any) => s.service.name).join(", "),
+          date: startTime,
+          roomId: savedAppointment.roomId || savedAppointment.equipment?.id || selectedSlot?.roomId || 'default',
+          startTime: format(startTime, 'HH:mm'),
+          endTime: format(new Date(savedAppointment.endTime), 'HH:mm'),
+          duration: Math.ceil((new Date(savedAppointment.endTime).getTime() - startTime.getTime()) / (1000 * 60)),
+          color: appointmentColor,
+          phone: savedAppointment.person.phone,
+          tags: tagIds,
+        };
+        
+        if (isUpdate) {
+          // Actualizar cita existente
+          setAppointments((prev) => prev.map(app => app.id === newAppointment.id ? newAppointment : app));
+        } else {
+          // Agregar nueva cita
+          setAppointments((prev) => [...prev, newAppointment]);
+        }
+        
+        // Notificar al padre si existe el callback
+        if (onAppointmentsChange) {
+          if (isUpdate) {
+            onAppointmentsChange(appointments.map(app => app.id === newAppointment.id ? newAppointment : app));
+          } else {
+            onAppointmentsChange([...appointments, newAppointment]);
+          }
+        }
+        
+        // Refrescar la vista
+        fetchAppointments(rooms);
+        
+      } catch (error) {
+        console.error('[DayView] Error al guardar cita:', error);
+        // TODO: Mostrar mensaje de error al usuario
       }
     },
-    [selectedSlot, rooms, setAppointments, onAppointmentsChange, appointments]
+    [fetchAppointments, onAppointmentsChange, appointments, selectedSlot, rooms]
   );
 
   const handleAppointmentResize = (id: string, newDuration: number) => {
@@ -680,47 +777,512 @@ export default function DayView({
     console.log("La funcionalidad de redimensionamiento visual ha sido desactivada");
   }
 
-  const onDragEnd = (result: any) => {
-    if (!result.destination) return;
-    const { source, destination } = result;
-    const updatedAppointments = Array.from(appointments);
-    const [movedAppointment] = updatedAppointments.splice(source.index, 1);
-    const [roomId, time] = destination.droppableId.split("-"); // roomId aquí es string
-    const updatedAppointment = { ...movedAppointment, roomId, startTime: time };
-    updatedAppointments.push(updatedAppointment);
-    setAppointments(updatedAppointments);
-     // Notificar al padre si existe el callback
-    if (onAppointmentsChange) {
-        onAppointmentsChange(updatedAppointments);
+  const handleAppointmentDrop = useCallback(async (appointmentId: string, changes: any) => {
+    console.log('[DayView handleAppointmentDrop] Iniciando drop:', { appointmentId, changes });
+    
+    try {
+      // Buscar la cita actual
+      const appointmentToUpdate = appointments.find(app => app.id === appointmentId);
+      if (!appointmentToUpdate) {
+        console.error('[DayView handleAppointmentDrop] No se encontró la cita:', appointmentId);
+        return;
+      }
+      
+      console.log('[DayView handleAppointmentDrop] Cita encontrada:', appointmentToUpdate);
+      
+      // Transformar los cambios al formato esperado por Appointment
+      const transformedChanges: Partial<Appointment> = {};
+      
+      if (changes.startTime) {
+        // Convertir Date a string HH:mm para mostrar
+        const newStartTime = new Date(changes.startTime);
+        transformedChanges.startTime = `${newStartTime.getHours().toString().padStart(2, '0')}:${newStartTime.getMinutes().toString().padStart(2, '0')}`;
+      }
+      
+      if (changes.equipmentId) {
+        // Mapear equipmentId a roomId
+        transformedChanges.roomId = changes.equipmentId;
+      }
+      
+      console.log('[DayView handleAppointmentDrop] Cambios transformados:', transformedChanges);
+      
+      // Crear una copia actualizada de la cita con los cambios transformados
+      const updatedAppointment = {
+        ...appointmentToUpdate,
+        ...transformedChanges
+      };
+      
+      console.log('[DayView handleAppointmentDrop] Cita actualizada:', updatedAppointment);
+      
+      // Actualizar el estado local inmediatamente para renderizado instantáneo
+      setAppointments(prevAppointments => {
+        const newAppointments = prevAppointments.map(app => 
+          app.id === appointmentId ? updatedAppointment : app
+        );
+        console.log('[DayView handleAppointmentDrop] Nuevo estado de citas:', newAppointments);
+        return newAppointments;
+      });
+      
+      // Preparar datos para la API
+      const apiData = {
+        date: format(appointmentToUpdate.date, 'yyyy-MM-dd'), // Convertir Date a string YYYY-MM-DD
+        startTime: formatDateForAPI(appointmentToUpdate.date), // Usar zona horaria de clínica
+        endTime: formatDateForAPI(new Date(appointmentToUpdate.date.getTime() + (changes.endTime ? new Date(changes.endTime).getTime() - appointmentToUpdate.date.getTime() : (appointmentToUpdate.duration * 60 * 1000)))), // Usar zona horaria de clínica
+        roomId: appointmentToUpdate.roomId,
+        durationMinutes: changes.endTime ? Math.ceil((new Date(changes.endTime).getTime() - appointmentToUpdate.date.getTime()) / (1000 * 60)) : appointmentToUpdate.duration
+      };
+      
+      console.log('[DayView handleAppointmentDrop] Enviando a API:', apiData);
+      console.log('[DayView handleAppointmentDrop] Detalles de la cita original:', {
+        id: appointmentToUpdate.id,
+        date: appointmentToUpdate.date,
+        startTime: appointmentToUpdate.startTime,
+        duration: appointmentToUpdate.duration,
+        roomId: appointmentToUpdate.roomId
+      });
+      
+      // Hacer la llamada a la API para actualizar la cita
+      const response = await fetch(
+        `/api/appointments`,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            id: appointmentId,
+            ...apiData
+          })
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Error al mover la cita');
+      }
+
+      console.log('[DayView handleAppointmentDrop] Cita guardada en BD correctamente');
+      
+      toast({
+        title: "Cita actualizada",
+        description: "La cita se ha movido correctamente",
+      });
+    } catch (error) {
+      console.error('Error moving appointment:', error);
+      
+      // Si hay error, revertir los cambios refrescando desde la API
+      await fetchAppointments(rooms); // Corregir llamada a fetchAppointments
+      
+      toast({
+        title: "Error",
+        description: "No se pudo mover la cita",
+        variant: "destructive",
+      });
     }
-    setIsAppointmentDialogOpen(false);
-  };
+  }, [appointments, fetchAppointments, rooms, toast]);
+
+  const { minuteGranularity } = useGranularity();
+
+  // Helper para convertir Date a timestamp en zona horaria de la clínica
+  const formatDateForAPI = useCallback((date: Date, clinicTimezone?: string) => {
+    const timezone = clinicTimezone || 
+                    (activeClinic as any)?.countryInfo?.timezone || 
+                    (activeClinic as any)?.country?.timezone || 
+                    Intl.DateTimeFormat().resolvedOptions().timeZone;
+    
+    // Crear formatter con zona horaria de la clínica
+    const formatter = new Intl.DateTimeFormat('sv-SE', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    });
+    
+    // Formatear y convertir a ISO con zona horaria
+    const parts = formatter.formatToParts(date);
+    const formattedDate = `${parts.find(p => p.type === 'year')?.value}-${parts.find(p => p.type === 'month')?.value}-${parts.find(p => p.type === 'day')?.value}`;
+    const formattedTime = `${parts.find(p => p.type === 'hour')?.value}:${parts.find(p => p.type === 'minute')?.value}:${parts.find(p => p.type === 'second')?.value}`;
+    
+    // Construir timestamp en zona horaria local de clínica
+    const localDateTime = new Date(`${formattedDate}T${formattedTime}`);
+    return localDateTime.toISOString(); // Ahora sí representa la hora local de la clínica
+  }, [activeClinic]);
+
+  const handleDurationChange = useCallback(async (appointmentId: string, newDuration: number) => {
+    console.log('[DayView handleDurationChange] Cambiando duración:', { appointmentId, newDuration });
+    
+    try {
+      // Buscar la cita en el estado local
+      const appointmentToUpdate = appointments.find(app => app.id === appointmentId);
+      if (!appointmentToUpdate) {
+        console.error('[DayView handleDurationChange] No se encontró la cita:', appointmentId);
+        return;
+      }
+
+      // Calcular la nueva hora de fin basándose en la nueva duración
+      const [hours, minutes] = appointmentToUpdate.startTime.split(':').map(Number);
+      const startDate = new Date(appointmentToUpdate.date);
+      startDate.setHours(hours, minutes, 0, 0);
+      
+      const endDate = new Date(startDate);
+      endDate.setMinutes(endDate.getMinutes() + newDuration);
+      
+      const newEndTime = `${endDate.getHours().toString().padStart(2, '0')}:${endDate.getMinutes().toString().padStart(2, '0')}`;
+
+      // Actualizar el estado local inmediatamente (optimistic update)
+      const updatedAppointment = {
+        ...appointmentToUpdate,
+        duration: newDuration,
+        endTime: newEndTime
+      };
+
+      const newAppointments = appointments.map(app => 
+        app.id === appointmentId ? updatedAppointment : app
+      );
+      setAppointments(newAppointments);
+
+      // Preparar datos para la API
+      const apiData = {
+        date: format(appointmentToUpdate.date, 'yyyy-MM-dd'), // Convertir Date a string YYYY-MM-DD
+        startTime: formatDateForAPI(appointmentToUpdate.date), // Usar zona horaria de clínica
+        endTime: formatDateForAPI(new Date(appointmentToUpdate.date.getTime() + (newDuration * 60 * 1000))), // Usar zona horaria de clínica
+        roomId: appointmentToUpdate.roomId,
+        durationMinutes: newDuration
+      };
+
+      console.log('[DayView handleDurationChange] Enviando a API:', apiData);
+
+      // Actualizar en la base de datos
+      const response = await fetch(
+        `/api/appointments`,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            id: appointmentId,
+            ...apiData
+          })
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Error al actualizar la duración de la cita');
+      }
+
+      console.log('[DayView handleDurationChange] Duración actualizada correctamente');
+      
+      toast({
+        title: "Duración actualizada",
+        description: `La cita ahora dura ${newDuration} minutos`,
+      });
+      
+    } catch (error) {
+      console.error('[DayView handleDurationChange] Error:', error);
+      
+      // Revertir el cambio en caso de error
+      await fetchAppointments(rooms);
+      
+      toast({
+        title: "Error",
+        description: "No se pudo actualizar la duración de la cita",
+        variant: "destructive",
+      });
+    }
+  }, [appointments, fetchAppointments, rooms, toast, formatDateForAPI]);
+
+  const handleTimeAdjust = useCallback(async (appointmentId: string, direction: 'up' | 'down') => {
+    console.log('[DayView handleTimeAdjust] Ajustando hora:', { appointmentId, direction, minuteGranularity });
+    
+    try {
+      // Buscar la cita en el estado local
+      const appointmentToUpdate = appointments.find(app => app.id === appointmentId);
+      if (!appointmentToUpdate) {
+        console.error('[DayView handleTimeAdjust] No se encontró la cita:', appointmentId);
+        return;
+      }
+
+      // Calcular el nuevo horario basándose en la granularidad
+      const [hours, minutes] = appointmentToUpdate.startTime.split(':').map(Number);
+      const startDate = new Date(appointmentToUpdate.date);
+      startDate.setHours(hours, minutes, 0, 0);
+      
+      // Ajustar según la dirección y granularidad
+      const adjustMinutes = direction === 'up' ? -minuteGranularity : minuteGranularity;
+      const newStartDate = new Date(startDate.getTime() + adjustMinutes * 60 * 1000);
+      
+      // Validar que no se salga del horario de la clínica
+      const newHours = newStartDate.getHours();
+      const newMinutes = newStartDate.getMinutes();
+      const newStartTime = `${newHours.toString().padStart(2, '0')}:${newMinutes.toString().padStart(2, '0')}`;
+      
+      // Calcular nueva hora de fin manteniendo la duración
+      const newEndDate = new Date(newStartDate.getTime() + appointmentToUpdate.duration * 60 * 1000);
+      const newEndTime = `${newEndDate.getHours().toString().padStart(2, '0')}:${newEndDate.getMinutes().toString().padStart(2, '0')}`;
+
+      // Actualizar el estado local inmediatamente (optimistic update)
+      const updatedAppointment = {
+        ...appointmentToUpdate,
+        startTime: newStartTime,
+        endTime: newEndTime,
+        date: newStartDate
+      };
+
+      const newAppointments = appointments.map(app => 
+        app.id === appointmentId ? updatedAppointment : app
+      );
+      setAppointments(newAppointments);
+
+      // Preparar datos para la API
+      const apiData = {
+        date: format(newStartDate, 'yyyy-MM-dd'),
+        startTime: formatDateForAPI(newStartDate),
+        endTime: formatDateForAPI(newEndDate),
+        roomId: appointmentToUpdate.roomId,
+        durationMinutes: appointmentToUpdate.duration
+      };
+
+      console.log('[DayView handleTimeAdjust] Enviando a API:', apiData);
+
+      // Actualizar en la base de datos
+      const response = await fetch(
+        `/api/appointments`,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            id: appointmentId,
+            ...apiData
+          })
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Error al ajustar la hora de la cita');
+      }
+
+      console.log('[DayView handleTimeAdjust] Hora ajustada correctamente');
+      
+      toast({
+        title: "Hora ajustada",
+        description: `La cita se movió ${direction === 'up' ? 'hacia arriba' : 'hacia abajo'} ${minuteGranularity} minutos`,
+      });
+      
+    } catch (error) {
+      console.error('[DayView handleTimeAdjust] Error:', error);
+      
+      // Revertir el cambio en caso de error
+      await fetchAppointments(rooms);
+      
+      toast({
+        title: "Error",
+        description: "No se pudo ajustar la hora de la cita",
+        variant: "destructive",
+      });
+    }
+  }, [appointments, fetchAppointments, rooms, toast, minuteGranularity]);
+
+  // Hook de drag & drop optimizado
+  const {
+    dragState: localDragState,
+    handleDragStart,
+    handleDragEnd,
+    updateMousePosition,
+    updateCurrentPosition
+  } = useOptimizedDragAndDrop(handleAppointmentDrop);
+
+  // Handlers para el drag en las celdas
+  const handleCellDragOver = useCallback((
+    e: React.DragEvent,
+    day: Date,
+    time: string,
+    roomId: string
+  ) => {
+    e.preventDefault();
+    updateCurrentPosition(day, time, roomId);
+  }, [updateCurrentPosition]);
+
+  const handleCellDrop = useCallback((
+    e: React.DragEvent,
+    day: Date,
+    time: string,
+    roomId: string
+  ) => {
+    e.preventDefault();
+    
+    if (!localDragState.draggedItem || !localDragState.originalPosition) return;
+    
+    // Verificar si algo cambió
+    const hasChanged = 
+      localDragState.originalPosition.date.toDateString() !== day.toDateString() ||
+      localDragState.originalPosition.time !== time ||
+      localDragState.originalPosition.roomId !== roomId;
+    
+    if (hasChanged) {
+      const changes: any = {};
+      
+      if (localDragState.originalPosition.date.toDateString() !== day.toDateString() || 
+          localDragState.originalPosition.time !== time) {
+        const [hours, minutes] = time.split(':').map(Number);
+        const newStartTime = new Date(day);
+        newStartTime.setHours(hours, minutes, 0, 0);
+        changes.startTime = newStartTime.toISOString(); // Convertir Date a ISO string para timestamptz
+      }
+      
+      if (localDragState.originalPosition.roomId !== roomId) {
+        changes.equipmentId = roomId;
+      }
+      
+      handleAppointmentDrop(localDragState.draggedItem.id, changes);
+    }
+    
+    handleDragEnd();
+  }, [localDragState, handleAppointmentDrop, handleDragEnd]);
+
+  // Handler para cuando se empieza a arrastrar una cita
+  const handleAppointmentDragStart = useCallback((
+    e: React.DragEvent,
+    appointment: Appointment
+  ) => {
+    console.log('[DayView handleAppointmentDragStart] Iniciando drag:', appointment);
+    e.dataTransfer.effectAllowed = 'move';
+    
+    // Calcular endTime a partir de startTime y duration
+    const [hours, minutes] = appointment.startTime.split(':').map(Number);
+    const startDate = new Date(appointment.date);
+    startDate.setHours(hours, minutes, 0, 0);
+    
+    const endDate = new Date(startDate);
+    endDate.setMinutes(endDate.getMinutes() + appointment.duration);
+    
+    const endTime = endDate.toISOString(); // Convertir Date a ISO string para timestamptz
+
+    const dragItem: DragItem = {
+      id: appointment.id,
+      title: appointment.name,
+      startTime: appointment.date.toISOString(), // Convertir Date a ISO string para timestamptz
+      endTime: endTime,
+      duration: appointment.duration,
+      roomId: appointment.roomId,
+      color: appointment.color || '#3B82F6',
+      personId: appointment.personId || '',
+      currentDate: appointment.date,
+      services: appointment.service ? [{ name: appointment.service }] : []
+    };
+    
+    console.log('[DayView handleAppointmentDragStart] DragItem creado:', dragItem);
+    handleDragStart(e, dragItem);
+    console.log('[DayView handleAppointmentDragStart] handleDragStart llamado');
+  }, [handleDragStart]);
+
+  // Función para obtener las citas de una celda específica
+  const getAppointmentsForCell = useCallback((day: Date, time: string, roomId: string) => {
+    return dayAppointments.filter(apt => {
+      // Comparar si la cita empieza dentro de este slot de tiempo
+      const [slotHours, slotMinutes] = time.split(':').map(Number);
+      const slotStartMinutes = slotHours * 60 + slotMinutes;
+      const slotEndMinutes = slotStartMinutes + slotDuration;
+      
+      const [aptHours, aptMinutes] = apt.startTime.split(':').map(Number);
+      const aptStartMinutes = aptHours * 60 + aptMinutes;
+      
+      // La cita pertenece a este slot si:
+      // 1. Empieza dentro del slot
+      // 2. O si ya empezó antes pero continúa en este slot
+      const startsInSlot = aptStartMinutes >= slotStartMinutes && aptStartMinutes < slotEndMinutes;
+      const continuesInSlot = aptStartMinutes < slotStartMinutes && aptStartMinutes + apt.duration > slotStartMinutes;
+      
+      const timeMatches = startsInSlot || continuesInSlot;
+      const roomMatches = String(apt.roomId) === roomId;
+      
+      return timeMatches && roomMatches;
+    });
+  }, [dayAppointments, slotDuration]);
 
   // Añadir un estado para la cita seleccionada
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null)
 
-  // Agregar un manejador para el clic en una cita existente
-  const handleAppointmentClick = (appointment: Appointment) => {
-    console.log("Cita seleccionada para edición:", appointment)
-    setSelectedAppointment(appointment)
+  // Handler para actualizar etiquetas de forma optimista
+  const handleTagsUpdate = useCallback(async (appointmentId: string, tagIds: string[]) => {
+    console.log('[handleTagsUpdate] Actualizando etiquetas:', { appointmentId, tagIds });
     
-    // Configurar los datos necesarios para editar la cita
-    const personForModal: Person = { 
-        id: appointment.personId || "", // Asumir que Appointment tiene personId
-        firstName: appointment.name.split(' ')[0],
-        lastName: appointment.name.split(' ').slice(1).join(' '),
-        phone: appointment.phone || "" 
-    };
-    setSelectedPerson(personForModal)
-    setSelectedSlot({
-      date: appointment.date,
-      time: appointment.startTime,
-      roomId: appointment.roomId
-    })
+    try {
+      // Actualización optimista - crear una copia profunda para asegurar re-render
+      setAppointments(prevAppointments => 
+        prevAppointments.map(app => 
+          app.id === appointmentId 
+            ? { ...app, tags: [...tagIds] } // Crear nuevo array para tags
+            : app
+        )
+      );
+
+      // Llamar a la API para actualizar las etiquetas
+      const response = await fetch(`/api/appointments/${appointmentId}/tags`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ tagIds })
+      });
+
+      if (!response.ok) {
+        throw new Error('Error al actualizar etiquetas');
+      }
+
+      console.log('[handleTagsUpdate] Etiquetas actualizadas correctamente');
+      
+    } catch (error) {
+      console.error('[handleTagsUpdate] Error:', error);
+      // Revertir el cambio en caso de error
+      fetchAppointments(rooms); // Corregir llamada a fetchAppointments
+    }
+  }, [fetchAppointments, rooms]);
+
+  const handleMoveAppointment = useCallback(() => {
+    // TODO: Implementar lógica de mover cita
+    console.log('[handleMoveAppointment] Función de mover cita pendiente de implementar');
+  }, []);
+
+  const handleDeleteAppointment = useCallback(async (appointmentId: string) => {
+    console.log('[handleDeleteAppointment] Eliminar cita:', appointmentId);
     
-    // Abrir el diálogo de edición
-    setIsAppointmentDialogOpen(true)
-  }
+    try {
+      // Confirmar con el usuario
+      if (!confirm('¿Está seguro de que desea eliminar esta cita?')) {
+        return;
+      }
+
+      // Llamar a la API para eliminar
+      const response = await fetch(`/api/appointments/${appointmentId}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Error al eliminar la cita');
+      }
+
+      // Actualización optimista - eliminar de la lista local
+      setAppointments(prevAppointments => 
+        prevAppointments.filter(app => app.id !== appointmentId)
+      );
+
+      console.log('[handleDeleteAppointment] Cita eliminada correctamente');
+    } catch (error) {
+      console.error('[handleDeleteAppointment] Error:', error);
+      
+      // Si hay error, revertir los cambios refrescando desde la API
+      await fetchAppointments(rooms); // Corregir llamada a fetchAppointments
+      
+      alert(error instanceof Error ? error.message : 'Error al eliminar la cita');
+    }
+  }, [fetchAppointments, rooms]);
 
   // Crear clinicRooms con el formato correcto para BlockScheduleModal
   const clinicRoomsForModal: Room[] = useMemo(() => {
@@ -797,25 +1359,33 @@ export default function DayView({
                                 
                                 const [aptHours, aptMinutes] = apt.startTime.split(':').map(Number);
                                 const aptStartMinutes = aptHours * 60 + aptMinutes;
+                                const aptEndMinutes = aptStartMinutes + apt.duration;
                                 
-                                // La cita pertenece a este slot si empieza dentro del rango del slot
-                                const timeMatches = aptStartMinutes >= slotStartMinutes && aptStartMinutes < slotEndMinutes;
+                                // IMPORTANTE: Solo mostrar la cita en el slot donde EMPIEZA
+                                // Esto evita duplicados en slots de continuación
+                                const startsInSlot = aptStartMinutes >= slotStartMinutes && aptStartMinutes < slotEndMinutes;
                                 const roomMatches = String(apt.roomId) === String(room.id);
                                 
-                                return timeMatches && roomMatches;
+                                return startsInSlot && roomMatches;
                               }).map(apt => {
-                                // Calcular el offset en minutos desde el inicio del slot
+                                // Calcular el offset y la altura visible para toda la cita
                                 const [slotHours, slotMinutes] = time.split(':').map(Number);
                                 const slotStartMinutes = slotHours * 60 + slotMinutes;
                                 
                                 const [aptHours, aptMinutes] = apt.startTime.split(':').map(Number);
                                 const aptStartMinutes = aptHours * 60 + aptMinutes;
                                 
+                                // El offset es la diferencia entre el inicio de la cita y el inicio del slot
                                 const offsetMinutes = aptStartMinutes - slotStartMinutes;
                                 
+                                // La duración visible es toda la duración de la cita
+                                // AppointmentItem se encargará de renderizarla correctamente
+                                // incluso si cruza a otros slots
                                 return {
                                   ...apt,
-                                  offsetMinutes
+                                  offsetMinutes,
+                                  visibleDuration: apt.duration, // Duración completa
+                                  isContinuation: false
                                 };
                               })}
                               slotDuration={slotDuration}
@@ -862,6 +1432,12 @@ export default function DayView({
                               cellHeight={AGENDA_CONFIG.ROW_HEIGHT}
                               isDaily={true}
                               globalDragState={localDragState}
+                              handleAppointmentDrop={handleAppointmentDrop}
+                              onDurationChange={handleDurationChange}
+                              onTagsUpdate={handleTagsUpdate}
+                              onMoveAppointment={handleMoveAppointment}
+                              onTimeAdjust={handleTimeAdjust}
+                              onClientNameClick={handleClientNameClick}
                             />
                           );
                         })
@@ -958,6 +1534,7 @@ export default function DayView({
             setSelectedAppointment(null)
             setSelectedPerson(null)
             setSelectedSlot(null)
+            setShowClientDetailsOnOpen(false)
           }}
           date={selectedSlot?.date || new Date()}
           initialClient={selectedPerson}
@@ -990,12 +1567,22 @@ export default function DayView({
               tags: []
             });
           }}
-          onMoveAppointment={handleDeleteAppointment}
+          onMoveAppointment={() => {
+            // TODO: Implementar lógica de mover cita
+            console.log('[onMoveAppointment] Función de mover cita pendiente de implementar');
+          }}
+          showClientDetailsOnOpen={showClientDetailsOnOpen}
         />
 
         <NewClientDialog 
           isOpen={isNewClientDialogOpen} 
           onClose={() => setIsNewClientDialogOpen(false)} 
+        />
+
+        <ClientQuickViewDialog 
+          isOpen={isClientQuickViewOpen} 
+          onOpenChange={setIsClientQuickViewOpen} 
+          client={selectedClientForQuickView} 
         />
 
         {/* Modal para bloqueos */}
@@ -1026,228 +1613,6 @@ export default function DayView({
       </>
     );
   };
-
-  // Handler para cuando se suelta una cita
-  const handleAppointmentDrop = useCallback(async (appointmentId: string, changes: any) => {
-    console.log('[DayView handleAppointmentDrop] Iniciando drop:', { appointmentId, changes });
-    
-    try {
-      // Buscar la cita actual
-      const appointmentToUpdate = appointments.find(app => app.id === appointmentId);
-      if (!appointmentToUpdate) {
-        console.error('[DayView handleAppointmentDrop] No se encontró la cita:', appointmentId);
-        return;
-      }
-      
-      console.log('[DayView handleAppointmentDrop] Cita encontrada:', appointmentToUpdate);
-      
-      // Transformar los cambios al formato esperado por Appointment
-      const transformedChanges: Partial<Appointment> = {};
-      
-      if (changes.startTime) {
-        // Convertir Date a string HH:mm para mostrar
-        const newStartTime = new Date(changes.startTime);
-        transformedChanges.startTime = `${newStartTime.getHours().toString().padStart(2, '0')}:${newStartTime.getMinutes().toString().padStart(2, '0')}`;
-      }
-      
-      if (changes.equipmentId) {
-        // Mapear equipmentId a roomId
-        transformedChanges.roomId = changes.equipmentId;
-      }
-      
-      console.log('[DayView handleAppointmentDrop] Cambios transformados:', transformedChanges);
-      
-      // Crear una copia actualizada de la cita con los cambios transformados
-      const updatedAppointment = {
-        ...appointmentToUpdate,
-        ...transformedChanges
-      };
-      
-      console.log('[DayView handleAppointmentDrop] Cita actualizada:', updatedAppointment);
-      
-      // Actualizar el estado local inmediatamente para renderizado instantáneo
-      setAppointments(prevAppointments => {
-        const newAppointments = prevAppointments.map(app => 
-          app.id === appointmentId ? updatedAppointment : app
-        );
-        console.log('[DayView handleAppointmentDrop] Nuevo estado de citas:', newAppointments);
-        return newAppointments;
-      });
-      
-      // Preparar datos para la API
-      const apiData: any = {
-        id: appointmentId,
-        roomId: transformedChanges.roomId || appointmentToUpdate.roomId
-      };
-      
-      // Si cambió la hora, construir las fechas completas
-      if (changes.startTime) {
-        const newStartDateTime = new Date(changes.startTime);
-        const duration = appointmentToUpdate.duration || 30; // duración en minutos
-        const newEndDateTime = new Date(newStartDateTime.getTime() + duration * 60000);
-        
-        // Formatear las fechas en ISO para la API
-        apiData.startTime = newStartDateTime.toISOString();
-        apiData.endTime = newEndDateTime.toISOString();
-      }
-      
-      console.log('[DayView handleAppointmentDrop] Enviando a API:', apiData);
-      console.log('[DayView handleAppointmentDrop] Detalles de la cita original:', {
-        id: appointmentToUpdate.id,
-        date: appointmentToUpdate.date,
-        startTime: appointmentToUpdate.startTime,
-        duration: appointmentToUpdate.duration,
-        roomId: appointmentToUpdate.roomId
-      });
-      
-      // Hacer la llamada a la API para actualizar la cita
-      const response = await fetch(`/api/appointments`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(apiData)
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Error desconocido' }));
-        console.error('[DayView handleAppointmentDrop] Error de API:', errorData);
-        throw new Error(errorData.error || 'Error al mover la cita');
-      }
-      
-      console.log('[DayView handleAppointmentDrop] Cita guardada en BD correctamente');
-      
-      toast({
-        title: "Cita actualizada",
-        description: "La cita se ha movido correctamente",
-      });
-    } catch (error) {
-      console.error('Error moving appointment:', error);
-      
-      // Si hay error, revertir los cambios refrescando desde la API
-      await fetchAppointments(rooms);
-      
-      toast({
-        title: "Error",
-        description: "No se pudo mover la cita",
-        variant: "destructive",
-      });
-    }
-  }, [appointments, fetchAppointments, rooms, toast]);
-
-  // Hook de drag & drop optimizado
-  const {
-    dragState: localDragState,
-    handleDragStart,
-    handleDragEnd,
-    updateMousePosition,
-    updateCurrentPosition
-  } = useOptimizedDragAndDrop(handleAppointmentDrop);
-
-  const { minuteGranularity } = useGranularity();
-
-  // Handlers para el drag en las celdas
-  const handleCellDragOver = useCallback((
-    e: React.DragEvent,
-    day: Date,
-    time: string,
-    roomId: string
-  ) => {
-    e.preventDefault();
-    updateCurrentPosition(day, time, roomId);
-  }, [updateCurrentPosition]);
-
-  const handleCellDrop = useCallback((
-    e: React.DragEvent,
-    day: Date,
-    time: string,
-    roomId: string
-  ) => {
-    e.preventDefault();
-    
-    if (!localDragState.draggedItem || !localDragState.originalPosition) return;
-    
-    // Verificar si algo cambió
-    const hasChanged = 
-      localDragState.originalPosition.date.toDateString() !== day.toDateString() ||
-      localDragState.originalPosition.time !== time ||
-      localDragState.originalPosition.roomId !== roomId;
-    
-    if (hasChanged) {
-      const changes: any = {};
-      
-      if (localDragState.originalPosition.date.toDateString() !== day.toDateString() || 
-          localDragState.originalPosition.time !== time) {
-        const [hours, minutes] = time.split(':').map(Number);
-        const newStartTime = new Date(day);
-        newStartTime.setHours(hours, minutes, 0, 0);
-        changes.startTime = newStartTime;
-      }
-      
-      if (localDragState.originalPosition.roomId !== roomId) {
-        changes.equipmentId = roomId;
-      }
-      
-      handleAppointmentDrop(localDragState.draggedItem.id, changes);
-    }
-    
-    handleDragEnd();
-  }, [localDragState, handleAppointmentDrop, handleDragEnd]);
-
-  // Handler para cuando se empieza a arrastrar una cita
-  const handleAppointmentDragStart = useCallback((
-    e: React.DragEvent,
-    appointment: Appointment
-  ) => {
-    console.log('[DayView handleAppointmentDragStart] Iniciando drag:', appointment);
-    e.dataTransfer.effectAllowed = 'move';
-    
-    // Calcular endTime a partir de startTime y duration
-    const [hours, minutes] = appointment.startTime.split(':').map(Number);
-    const startDate = new Date(appointment.date);
-    startDate.setHours(hours, minutes, 0, 0);
-    
-    const endDate = new Date(startDate);
-    endDate.setMinutes(endDate.getMinutes() + appointment.duration);
-    
-    const endTime = `${endDate.getHours().toString().padStart(2, '0')}:${endDate.getMinutes().toString().padStart(2, '0')}`;
-    
-    const dragItem: DragItem = {
-      id: appointment.id,
-      title: appointment.name,
-      startTime: appointment.startTime,
-      endTime: endTime,
-      duration: appointment.duration,
-      roomId: appointment.roomId,
-      color: appointment.color || '#3B82F6',
-      personId: appointment.personId || '',
-      currentDate: appointment.date,
-      services: appointment.service ? [{ name: appointment.service }] : []
-    };
-    
-    console.log('[DayView handleAppointmentDragStart] DragItem creado:', dragItem);
-    handleDragStart(e, dragItem);
-    console.log('[DayView handleAppointmentDragStart] handleDragStart llamado');
-  }, [handleDragStart]);
-
-  // Función para obtener las citas de una celda específica
-  const getAppointmentsForCell = useCallback((day: Date, time: string, roomId: string) => {
-    return dayAppointments.filter(apt => {
-      // Comparar si la cita empieza dentro de este slot de tiempo
-      const [slotHours, slotMinutes] = time.split(':').map(Number);
-      const slotStartMinutes = slotHours * 60 + slotMinutes;
-      const slotEndMinutes = slotStartMinutes + slotDuration;
-      
-      const [aptHours, aptMinutes] = apt.startTime.split(':').map(Number);
-      const aptStartMinutes = aptHours * 60 + aptMinutes;
-      
-      // La cita pertenece a este slot si empieza dentro del rango del slot
-      const timeMatches = aptStartMinutes >= slotStartMinutes && aptStartMinutes < slotEndMinutes;
-      const roomMatches = String(apt.roomId) === roomId;
-      
-      return timeMatches && roomMatches;
-    });
-  }, [dayAppointments, slotDuration]);
 
   if (containerMode) {
     return (

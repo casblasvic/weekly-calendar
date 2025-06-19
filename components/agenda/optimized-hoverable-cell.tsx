@@ -44,6 +44,15 @@ interface OptimizedHoverableCellProps {
   isDaily: boolean
   globalDragState: any
   updateCurrentPosition: (date: Date, time: string, roomId: string) => void
+  handleAppointmentDrop: (appointmentId: string, newDate: Date, newTime: string, newRoomId: string) => void
+  onDurationChange?: (appointmentId: string, newDuration: number) => void
+  isDraggingDuration?: boolean
+  onDraggingDurationChange?: (isDragging: boolean) => void
+  onRevertExtension?: (appointmentId: string) => void
+  onTagsUpdate?: (appointmentId: string, tagIds: string[]) => void
+  onMoveAppointment?: (appointmentId: string) => void
+  onTimeAdjust?: (appointmentId: string, direction: 'up' | 'down') => void
+  onClientNameClick?: (appointment: any) => void
 }
 
 const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
@@ -76,7 +85,16 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
   cellHeight,
   isDaily,
   globalDragState,
-  updateCurrentPosition
+  updateCurrentPosition,
+  handleAppointmentDrop,
+  onDurationChange,
+  isDraggingDuration = false,
+  onDraggingDurationChange,
+  onRevertExtension,
+  onTagsUpdate,
+  onMoveAppointment,
+  onTimeAdjust,
+  onClientNameClick
 }) => {
   const cellRef = useRef<HTMLDivElement>(null)
   
@@ -110,7 +128,7 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
   const baseMinutes = hours * 60 + minutes
 
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (!cellRef.current || !isInteractive || !active || overrideForCell) return
+    if (!cellRef.current || !isInteractive || !active || overrideForCell || isDraggingDuration) return
 
     // Verificar si el target es una cita
     const target = e.target as HTMLElement
@@ -119,7 +137,7 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
       return
     }
 
-    const rect = cellRef.current.getBoundingClientRect()
+    const rect = cellRef.current?.getBoundingClientRect()
     const relativeY = e.clientY - rect.top
     const percentage = Math.max(0, Math.min(1, relativeY / rect.height))
     
@@ -143,7 +161,7 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
     } else {
       clearHover()
     }
-  }, [baseMinutes, slotDuration, minuteGranularity, hasAppointmentAtPosition, day, time, cabinId, isInteractive, active, overrideForCell, cellHeight, cellId, setHoveredInfo, clearHover])
+  }, [baseMinutes, slotDuration, minuteGranularity, hasAppointmentAtPosition, day, time, cabinId, isInteractive, active, overrideForCell, cellHeight, cellId, setHoveredInfo, clearHover, isDraggingDuration])
 
   const handleMouseLeave = useCallback(() => {
     clearHover()
@@ -151,6 +169,11 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
 
   const handleClick = useCallback(() => {
     if (!active) return
+    
+    // No abrir modal si estamos haciendo resize
+    if (document.body.dataset.resizing === 'true') {
+      return
+    }
     
     if (overrideForCell) {
       setSelectedOverride(overrideForCell)
@@ -314,6 +337,14 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
               onDragStart={handleAppointmentDragStart}
               onDragEnd={handleDragEnd}
               isDragging={globalDragState.isActive && globalDragState.draggedItem?.id === appointment.id}
+              onDurationChange={onDurationChange}
+              onDraggingDurationChange={onDraggingDurationChange}
+              onRevertExtension={onRevertExtension}
+              onTagsUpdate={onTagsUpdate}
+              onMoveAppointment={onMoveAppointment}
+              onTimeAdjust={onTimeAdjust}
+              onClientNameClick={onClientNameClick}
+              viewType="week"
             />
           </div>
         )

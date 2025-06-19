@@ -1,7 +1,13 @@
 import React from 'react';
-import { Calendar, Clock, MapPin, Phone, User, Briefcase } from 'lucide-react';
+import { Calendar, Clock, MapPin, Phone, User, Briefcase, Tag } from 'lucide-react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
+
+interface Tag {
+  id: string;
+  name: string;
+  color: string;
+}
 
 interface AppointmentTooltipProps {
   title: string;
@@ -13,7 +19,8 @@ interface AppointmentTooltipProps {
   clientName?: string;
   clientPhone?: string;
   services?: string[];
-  height?: number;
+  tags?: Tag[];
+  onClientNameClick?: () => void;
 }
 
 export const AppointmentTooltip: React.FC<AppointmentTooltipProps> = ({
@@ -26,7 +33,8 @@ export const AppointmentTooltip: React.FC<AppointmentTooltipProps> = ({
   clientName,
   clientPhone,
   services = [],
-  height
+  tags = [],
+  onClientNameClick
 }) => {
   // Formatear la fecha correctamente
   const formattedDate = typeof date === 'string' 
@@ -44,12 +52,19 @@ export const AppointmentTooltip: React.FC<AppointmentTooltipProps> = ({
     <div
       className="bg-white rounded-lg shadow-xl border border-gray-200 p-3 min-w-[200px] max-w-[280px]"
       style={{
-        borderLeft: `4px solid ${color}`,
-        minHeight: height ? `${height}px` : 'auto'
+        borderLeft: `4px solid ${color}`
       }}
     >
       {/* Título/Nombre del cliente */}
-      <div className="font-semibold text-sm text-gray-900 mb-2 truncate">
+      <div 
+        className={`font-semibold text-sm text-gray-900 mb-2 truncate ${onClientNameClick ? 'cursor-pointer hover:text-violet-600 transition-colors' : ''}`}
+        onClick={(e) => {
+          if (onClientNameClick) {
+            e.stopPropagation();
+            onClientNameClick();
+          }
+        }}
+      >
         {clientName || title}
       </div>
       
@@ -100,6 +115,27 @@ export const AppointmentTooltip: React.FC<AppointmentTooltipProps> = ({
                   )}
                 </div>
               )}
+            </div>
+          </div>
+        )}
+        
+        {/* Etiquetas */}
+        {tags.length > 0 && (
+          <div className="flex items-start gap-2 pt-1">
+            <Tag className="w-3.5 h-3.5 text-gray-500 flex-shrink-0 mt-0.5" />
+            <div className="flex flex-wrap gap-1">
+              {tags.map((tag) => (
+                <span
+                  key={tag.id}
+                  className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium"
+                  style={{
+                    backgroundColor: `${tag.color}20`,
+                    color: tag.color
+                  }}
+                >
+                  {tag.name}
+                </span>
+              ))}
             </div>
           </div>
         )}

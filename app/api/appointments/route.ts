@@ -138,7 +138,9 @@ export async function POST(request: NextRequest) {
       services,
       notes,
       tags,
-      roomId // Restaurar roomId
+      roomId, // Restaurar roomId
+      hasExtension,
+      extensionMinutes
     } = body;
 
     console.log('🔍 [API] Campos extraídos:', {
@@ -240,6 +242,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Calcular la duración estimada sumando las duraciones de todos los servicios
+    const estimatedDurationMinutes = existingServices.reduce((total, service) => {
+      return total + service.durationMinutes;
+    }, 0);
+
+    console.log('📊 [API] Duración estimada calculada:', {
+      servicios: existingServices.map(s => ({ nombre: s.name, duracion: s.durationMinutes })),
+      duracionTotalEstimada: estimatedDurationMinutes
+    });
+
     // Crear la cita básica primero
     const appointment = await prisma.appointment.create({
       data: {
@@ -250,6 +262,7 @@ export async function POST(request: NextRequest) {
         startTime: appointmentStartTime,
         endTime: appointmentEndTime,
         durationMinutes: Math.ceil((appointmentEndTime.getTime() - appointmentStartTime.getTime()) / (1000 * 60)),
+        estimatedDurationMinutes: estimatedDurationMinutes, // Guardar duración estimada
         status: 'SCHEDULED',
         notes: notes || undefined,
         roomId: roomId || undefined, // RESTAURAR: guardar roomId correctamente
@@ -297,6 +310,26 @@ export async function POST(request: NextRequest) {
       } catch (error) {
         console.error('Error creating appointment tags:', error);
         // No fallar la creación de la cita si hay error con las etiquetas
+      }
+    }
+
+    // Crear registro de extensión si corresponde
+    if (hasExtension && extensionMinutes > 0) {
+      try {
+        await prisma.appointmentExtension.create({
+          data: {
+            appointmentId: appointment.id,
+            previousDuration: estimatedDurationMinutes, // La duración teórica de los servicios
+            newDuration: appointment.durationMinutes, // La duración real de la cita
+            extendedMinutes: extensionMinutes,
+            extendedByUserId: session.user.id,
+            reason: 'Extensión inicial al crear la cita'
+          }
+        });
+        console.log('✅ [API] Registro de extensión creado:', extensionMinutes, 'minutos');
+      } catch (error) {
+        console.error('Error creating appointment extension:', error);
+        // No fallar la creación de la cita si hay error con la extensión
       }
     }
 
@@ -533,7 +566,10 @@ export async function PUT(request: NextRequest) {
       services,
       notes,
       tags,
-      date
+      date,
+      hasExtension,
+      extensionMinutes,
+      estimatedDurationMinutes
     } = body;
 
     console.log('🔄 [API PUT] Actualizando cita:', id);
@@ -544,7 +580,8 @@ export async function PUT(request: NextRequest) {
       tags: tags?.length,
       roomId,
       startTime,
-      endTime
+      endTime,
+      date
     });
 
     // Verificar que la cita existe y pertenece al sistema del usuario
@@ -565,6 +602,13 @@ export async function PUT(request: NextRequest) {
         { status: 404 }
       );
     }
+
+    console.log('📅 [API PUT] Cita existente:', {
+      id: existingAppointment.id,
+      startTime: existingAppointment.startTime.toISOString(),
+      endTime: existingAppointment.endTime.toISOString(),
+      roomId: existingAppointment.roomId
+    });
 
     // Verificar si la cita está validada
     const hasValidatedServices = existingAppointment.services.some(
@@ -594,24 +638,102 @@ export async function PUT(request: NextRequest) {
 
     // Construir las fechas de inicio y fin si se proporcionan
     let appointmentStartTime, appointmentEndTime;
-    if (date && startTime && endTime) {
-      appointmentStartTime = new Date(`${date}T${startTime}`);
-      appointmentEndTime = new Date(`${date}T${endTime}`);
-    } else if (startTime && endTime) {
-      appointmentStartTime = new Date(startTime);
-      appointmentEndTime = new Date(endTime);
+    
+    // Si startTime y endTime ya son timestamps completos ISO, usarlos directamente
+    if (startTime && endTime) {
+      // Verificar si startTime es un timestamp completo ISO o solo tiempo
+      if (startTime.includes('T') && startTime.includes('Z')) {
+        // startTime es timestamp completo ISO (ej: "2025-06-17T11:33:00.000Z")
+        appointmentStartTime = new Date(startTime);
+        appointmentEndTime = new Date(endTime);
+        console.log('🕐 [API PUT] Usando timestamps ISO directamente:', {
+          startTime: appointmentStartTime.toISOString(),
+          endTime: appointmentEndTime.toISOString()
+        });
+      } else {
+        // startTime es solo tiempo (ej: "11:33:00"), necesita combinarse con date
+        appointmentStartTime = new Date(`${date}T${startTime}`);
+        appointmentEndTime = new Date(`${date}T${endTime}`);
+        console.log('🕐 [API PUT] Construyendo timestamps desde date+time:', {
+          date,
+          startTime: appointmentStartTime.toISOString(),
+          endTime: appointmentEndTime.toISOString()
+        });
+      }
     }
 
     // Actualizar la cita con transacción para incluir servicios y etiquetas
     const updatedAppointment = await prisma.$transaction(async (tx) => {
+      // Calcular nueva duración si se proporcionan tiempos
+      let newDurationMinutes: number | undefined;
+      if (appointmentStartTime && appointmentEndTime) {
+        newDurationMinutes = Math.ceil((appointmentEndTime.getTime() - appointmentStartTime.getTime()) / (1000 * 60));
+      }
+
+      console.log('📊 [API PUT] Valores a actualizar:', {
+        startTime: appointmentStartTime?.toISOString(),
+        endTime: appointmentEndTime?.toISOString(),
+        durationMinutes: newDurationMinutes,
+        roomId,
+        clinicId
+      });
+
+      // Si hay cambio en la duración, verificar si es una extensión
+      // O si explícitamente se indica que hay extensión desde el modal
+      if ((newDurationMinutes && newDurationMinutes > existingAppointment.durationMinutes) || 
+          (hasExtension && extensionMinutes > 0)) {
+        
+        // Calcular minutos extendidos
+        let actualExtendedMinutes = extensionMinutes;
+        let actualPreviousDuration = existingAppointment.durationMinutes;
+        let actualNewDuration = newDurationMinutes || existingAppointment.durationMinutes;
+        let extensionReason = 'Resize manual desde la agenda';
+        
+        // Si viene del modal con datos explícitos, usar esos
+        if (hasExtension && extensionMinutes > 0) {
+          actualExtendedMinutes = extensionMinutes;
+          extensionReason = 'Extensión desde el modal de edición';
+          
+          // Si viene estimatedDurationMinutes del modal, usarlo como duración previa
+          if (estimatedDurationMinutes) {
+            actualPreviousDuration = estimatedDurationMinutes;
+          }
+        } else {
+          // Calculado por resize
+          actualExtendedMinutes = newDurationMinutes - existingAppointment.durationMinutes;
+        }
+        
+        console.log('📈 [API PUT] Detectada extensión de cita:', {
+          citaId: id,
+          duracionAnterior: actualPreviousDuration,
+          duracionNueva: actualNewDuration,
+          minutosExtendidos: actualExtendedMinutes,
+          origen: extensionReason
+        });
+
+        // Crear registro de extensión
+        await tx.appointmentExtension.create({
+          data: {
+            appointmentId: id,
+            previousDuration: actualPreviousDuration,
+            newDuration: actualNewDuration,
+            extendedMinutes: actualExtendedMinutes,
+            extendedByUserId: session.user.id,
+            reason: extensionReason
+          }
+        });
+
+        console.log('✅ [API PUT] Registro de extensión creado');
+      }
+
       // Actualizar datos básicos de la cita
       const updated = await tx.appointment.update({
         where: { id: id },
         data: {
           ...(appointmentStartTime && { startTime: appointmentStartTime }),
           ...(appointmentEndTime && { endTime: appointmentEndTime }),
-          ...(appointmentStartTime && appointmentEndTime && { 
-            durationMinutes: Math.ceil((appointmentEndTime.getTime() - appointmentStartTime.getTime()) / (1000 * 60))
+          ...(newDurationMinutes && { 
+            durationMinutes: newDurationMinutes
           }),
           ...(roomId !== undefined && { roomId }),
           ...(clinicId && { clinicId }),
@@ -620,6 +742,14 @@ export async function PUT(request: NextRequest) {
           ...(notes !== undefined && { notes }),
           updatedAt: new Date()
         },
+      });
+
+      console.log('✅ [API PUT] Cita actualizada en BD:', {
+        id: updated.id,
+        startTime: updated.startTime.toISOString(),
+        endTime: updated.endTime.toISOString(),
+        roomId: updated.roomId,
+        updatedAt: updated.updatedAt.toISOString()
       });
 
       // Si se proporcionan servicios, actualizar la relación
