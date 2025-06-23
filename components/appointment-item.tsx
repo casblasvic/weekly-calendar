@@ -1,9 +1,12 @@
 "use client"
-import { Calendar, Clock, MoreVertical, Tag, Plus, Trash2, CheckCircle, XCircle, MessageSquare, RefreshCw, Check, ChevronRight, Move, ChevronUp, ChevronDown, ExternalLink } from "lucide-react"
+import { Calendar, Clock, MoreVertical, Tag, Plus, Trash2, CheckCircle, XCircle, MessageSquare, RefreshCw, Check, ChevronRight, Move, ChevronUp, ChevronDown, ExternalLink, Copy, Info, MoveHorizontal, X, RotateCcw } from "lucide-react"
 import { AGENDA_CONFIG } from "@/config/agenda-config"
 import { Appointment } from "@/types/appointments"
 import { useAppointmentTags } from "@/contexts/appointment-tags-context"
+import { useClinic } from "@/contexts/clinic-context"
+import { isTimeSlotAvailable, getBusinessHours } from "@/services/clinic-schedule-service"
 import { useMemo, useState, useRef, useEffect, useCallback } from "react"
+import { createPortal } from "react-dom"
 import { cn } from "@/lib/utils"
 import { AppointmentTooltip } from "@/components/appointment-tooltip"
 import { format } from "date-fns"
@@ -58,37 +61,66 @@ export function AppointmentItem({
   onDragStart,
   onDragEnd,
   isDragging = false,
+  draggedTime,
   onDurationChange,
   onDraggingDurationChange,
   onRevertExtension,
   onTagsUpdate,
   onMoveAppointment,
+  onDeleteAppointment,
   onTimeAdjust,
   viewType,
   visibleDuration,
   onClientNameClick,
+  appointments = [],
+  minuteGranularity = 15,
+  dragState,
 }: {
-  appointment: Appointment & { visibleDuration?: number; isContinuation?: boolean }
+  appointment: Appointment & { 
+    visibleDuration?: number; 
+    isContinuation?: boolean;
+    nextAppointmentInRoom?: { startTime: string; startMinutes: number } | null;
+  }
   index: number
   onClick?: (appointment: Appointment) => void
   slotDuration?: number
-  onDragStart?: (appointment: Appointment, e?: React.DragEvent) => void
+  onDragStart?: (appointment: Appointment, e?: React.DragEvent, initialOffsetMinutes?: number) => void
   onDragEnd?: () => void
   isDragging?: boolean
+  draggedTime?: string
   onDurationChange?: (appointmentId: string, newDuration: number) => void
   onDraggingDurationChange?: (isDragging: boolean) => void
   onRevertExtension?: (appointmentId: string) => void
-  onTagsUpdate?: (appointmentId: string, tagIds: string[]) => void
+  onTagsUpdate?: (appointmentId: string, updates: any) => void
   onMoveAppointment?: (appointmentId: string) => void
+  onDeleteAppointment?: (appointmentId: string, showConfirm?: boolean) => void
   onTimeAdjust?: (appointmentId: string, direction: 'up' | 'down') => void
   viewType?: 'day' | 'week'
   visibleDuration?: number
   onClientNameClick?: (appointment: Appointment) => void
+  appointments?: any[]
+  minuteGranularity?: number
+  dragState?: any
 }) {
+  // Obtener información de la clínica para validaciones de horario
+  const { activeClinic } = useClinic()
+  
   // Log para depurar el renderizado de etiquetas
-  useEffect(() => {
-    console.log(`[AppointmentItem ${appointment.id}] Tags actualizadas:`, appointment.tags);
-  }, [appointment.tags, appointment.id]);
+  // ✅ DEBUG temporal comentado para reducir spam
+  // useEffect(() => {
+  //   console.log(`[AppointmentItem ${appointment.id}] 🏷️ TAGS EN RENDER:`, appointment.tags, appointment.tags?.length || 0, 'tags');
+  // }, [appointment.tags, appointment.id]);
+
+  // ✅ DEBUG temporal comentado para reducir spam
+  // useEffect(() => {
+  //   console.log(`[AppointmentItem ${appointment.id}] ⏱️ DURATION EN RENDER:`, {
+  //     duration: appointment.duration,
+  //     durationMinutes: (appointment as any).durationMinutes, 
+  //     startTime: appointment.startTime,
+  //     endTime: appointment.endTime,
+  //     service: appointment.service
+  //   });
+  // }, [appointment.duration, appointment.id, appointment.startTime, appointment.endTime]);
 
   const baseHeight = (appointment.duration / slotDuration) * AGENDA_CONFIG.ROW_HEIGHT
   const { getTagById, getTags } = useAppointmentTags() || { 
@@ -105,25 +137,37 @@ export function AppointmentItem({
   const [resizeStartY, setResizeStartY] = useState(0)
   const [currentPreviewDuration, setCurrentPreviewDuration] = useState(appointment.duration)
   const [initialDuration, setInitialDuration] = useState(appointment.duration)
-  const [tooltipTimeout, setTooltipTimeout] = useState<ReturnType<typeof setTimeout> | null>(null)
+  const [tooltipTimeout, setTooltipTimeout] = useState<NodeJS.Timeout | null>(null)
   const resizeDurationRef = useRef(appointment.duration)
+  const [hasResizeConflict, setHasResizeConflict] = useState(false)
+  const [showOptimisticSpinner, setShowOptimisticSpinner] = useState(false)
 
-  // Estado para la visualización durante el estiramiento
-  const effectiveDuration = isResizing ? resizeDurationRef.current : (previewDuration || appointment.duration);
-  const displayDuration = effectiveDuration || appointment.duration;
+  // ✅ SINCRONIZAR previewDuration cuando appointment.duration cambie (renderizado optimista)
+  useEffect(() => {
+    if (!isResizing) { // Solo actualizar si no estamos en proceso de resize
+      setPreviewDuration(appointment.duration);
+      setCurrentPreviewDuration(appointment.duration);
+      resizeDurationRef.current = appointment.duration;
+    }
+  }, [appointment.duration, isResizing]);
 
-  // Calcular altura dinámica basada en la duración visible o de preview
+  // ✅ SIMPLIFICAR LÓGICA: Usar directamente appointment.duration para renderizado optimista inmediato
   const getHeight = useCallback(() => {
-    if (viewType === 'day' && visibleDuration !== undefined) {
+    // ✅ PRIORIDAD CLARA: 
+    // 1. Durante resize = currentPreviewDuration (feedback visual tiempo real)
+    // 2. Fuera de resize = appointment.duration (renderizado optimista inmediato)
+    const durationForHeight = isResizing ? currentPreviewDuration : appointment.duration;
+    
+    if (viewType === 'day' && typeof visibleDuration === 'number') {
       const slotHeightInPixels = 40;
       const minutesPerPixel = slotDuration / slotHeightInPixels;
       return (visibleDuration / minutesPerPixel) - 2;
     }
     
     const slotHeightInPixels = 40;
-    const slotsOccupied = displayDuration / slotDuration;
+    const slotsOccupied = durationForHeight / slotDuration;
     return (slotsOccupied * slotHeightInPixels) - 2;
-  }, [displayDuration, slotDuration, viewType, visibleDuration]);
+  }, [appointment.duration, currentPreviewDuration, isResizing, slotDuration, viewType, visibleDuration]);
 
   const height = getHeight();
 
@@ -133,6 +177,9 @@ export function AppointmentItem({
   // Determinar si el contenido es compacto (menos de 30 minutos)
   const isCompact = appointment.duration < 30
 
+  // Determinar si es una cita optimista
+  const isOptimistic = appointment.id.toString().startsWith('temp-');
+  
   // Determinar el color de fondo y borde basado en el color de la cita
   const backgroundColor = appointment.color || '#9CA3AF'
   const borderColor = adjustColorBrightness(backgroundColor, -20)
@@ -150,22 +197,137 @@ export function AppointmentItem({
     }
   };
 
+  // Calcular si hay espacio disponible para mover la cita arriba o abajo
+  const canMoveUp = useMemo(() => {
+    if (!appointments || appointments.length === 0 || !activeClinic) return true;
+    
+    // Parsear la hora de inicio actual
+    const [currentHour, currentMinute] = appointment.startTime.split(':').map(Number);
+    const currentStartMinutes = currentHour * 60 + currentMinute;
+    
+    // Calcular la nueva hora si movemos hacia arriba
+    const newStartMinutes = currentStartMinutes - minuteGranularity;
+    const newHours = Math.floor(newStartMinutes / 60);
+    const newMinutes = newStartMinutes % 60;
+    const newTime = `${newHours.toString().padStart(2, '0')}:${newMinutes.toString().padStart(2, '0')}`;
+    
+    // Verificar límites de horario de la clínica
+    if (!isTimeSlotAvailable(appointment.date, newTime, activeClinic)) {
+      return false;
+    }
+    
+    // Verificar conflictos con otras citas
+    for (const otherApt of appointments) {
+      if (otherApt.id === appointment.id) continue;
+      if (otherApt.roomId !== appointment.roomId) continue;
+      
+      const [otherHour, otherMinute] = otherApt.startTime.split(':').map(Number);
+      const otherStartMinutes = otherHour * 60 + otherMinute;
+      const otherEndMinutes = otherStartMinutes + otherApt.duration;
+      
+      // Si la nueva posición entraría en conflicto
+      if (newStartMinutes < otherEndMinutes && (newStartMinutes + appointment.duration) > otherStartMinutes) {
+        return false;
+      }
+    }
+    
+    return true;
+  }, [appointments, appointment, minuteGranularity, activeClinic]);
+
+  const canMoveDown = useMemo(() => {
+    if (!appointments || appointments.length === 0 || !activeClinic) return true;
+    
+    // Parsear la hora de inicio actual
+    const [currentHour, currentMinute] = appointment.startTime.split(':').map(Number);
+    const currentStartMinutes = currentHour * 60 + currentMinute;
+    
+    // Calcular la nueva hora si movemos hacia abajo
+    const newStartMinutes = currentStartMinutes + minuteGranularity;
+    const newEndMinutes = newStartMinutes + appointment.duration;
+    const newHours = Math.floor(newStartMinutes / 60);
+    const newMinutes = newStartMinutes % 60;
+    const newTime = `${newHours.toString().padStart(2, '0')}:${newMinutes.toString().padStart(2, '0')}`;
+    
+    // Verificar límites de horario de la clínica usando el horario de fin de la cita
+    const endHours = Math.floor(newEndMinutes / 60);
+    const endMins = newEndMinutes % 60;
+    const endTime = `${endHours.toString().padStart(2, '0')}:${endMins.toString().padStart(2, '0')}`;
+    
+    // Verificar que tanto el inicio como el fin estén dentro del horario de la clínica
+    const businessHours = getBusinessHours(appointment.date, activeClinic);
+    if (!businessHours || newTime < businessHours.open || endTime > businessHours.close) {
+      return false;
+    }
+    
+    // Verificar conflictos con otras citas
+    for (const otherApt of appointments) {
+      if (otherApt.id === appointment.id) continue;
+      if (otherApt.roomId !== appointment.roomId) continue;
+      
+      const [otherHour, otherMinute] = otherApt.startTime.split(':').map(Number);
+      const otherStartMinutes = otherHour * 60 + otherMinute;
+      const otherEndMinutes = otherStartMinutes + otherApt.duration;
+      
+      // Si la nueva posición entraría en conflicto
+      if (newStartMinutes < otherEndMinutes && newEndMinutes > otherStartMinutes) {
+        return false;
+      }
+    }
+    
+    return true;
+  }, [appointments, appointment, minuteGranularity, activeClinic]);
+
   const handleMouseMove = (e: React.MouseEvent) => {
-    e.stopPropagation(); // Evitar que se muestren granularidades
+    // ✅ CORRECCIÓN: Solo bloquear granularidades si NO estamos dragging
+    // Durante drag, permitir granularidades sobre la cita propia para movilidad suave
+    if (!isDragging) {
+      e.stopPropagation(); // Evitar que se muestren granularidades
+    }
+    
     if (showTooltip) {
       const rect = appointmentRef.current?.getBoundingClientRect();
       if (rect) {
+        // Calcular posición relativa a la cita, no al cursor exacto
+        // Esto evita que el tooltip se aleje demasiado de la cita
+        const tooltipX = rect.right + 10; // Siempre a la derecha de la cita
+        const tooltipY = Math.min(e.clientY, rect.bottom - 20); // Limitado por el bottom de la cita
+        
         setTooltipPosition({
-          x: e.clientX,
-          y: e.clientY
+          x: tooltipX,
+          y: Math.max(rect.top, tooltipY) // No subir más allá del top de la cita
         });
       }
     }
   }
 
   const handleDragStart = (e: React.DragEvent) => {
+    // ✅ BLOQUEO: No permitir drag en citas optimistas
+    if (isOptimistic) {
+      e.preventDefault(); // ❌ Cancelar drag inmediatamente
+      
+      // ✅ MOSTRAR SPINNER VISUAL
+      setShowOptimisticSpinner(true);
+      setTimeout(() => setShowOptimisticSpinner(false), 2000);
+      
+      console.log('[AppointmentItem] 🚫 Drag bloqueado en cita optimista:', appointment.id);
+      return;
+    }
+    
     e.dataTransfer.effectAllowed = 'move'
     e.dataTransfer.setData('application/json', JSON.stringify(appointment))
+    
+    // Calcular el offset inicial en minutos desde el inicio de la cita
+    let initialOffsetMinutes = 0;
+    if (appointmentRef.current) {
+      const rect = appointmentRef.current.getBoundingClientRect();
+      const relativeY = e.clientY - rect.top;
+      const percentage = Math.max(0, Math.min(1, relativeY / rect.height));
+      // CORRECCIÓN DEFINITIVA: Usar SIEMPRE la duración REAL (incluyendo extensiones)
+      // El drag debe funcionar con la duración visual que el usuario ve
+      initialOffsetMinutes = Math.round(percentage * appointment.duration);
+      
+
+    }
     
     // Crear una imagen de arrastre personalizada con el tamaño correcto
     if (appointmentRef.current) {
@@ -185,7 +347,7 @@ export function AppointmentItem({
       }, 0);
     }
     
-    if (onDragStart) onDragStart(appointment, e)
+    if (onDragStart) onDragStart(appointment, e, initialOffsetMinutes)
   }
 
   const handleDragEnd = () => {
@@ -202,113 +364,106 @@ export function AppointmentItem({
     }
   };
 
+  // ✅ MEJORAR SISTEMA DE RESIZE: Más suave como drag & drop
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     
+    console.log('[AppointmentItem] 🔧 Iniciando resize MEJORADO:', appointment.id);
+    
     const startY = e.clientY;
-    const startDuration = appointment.duration;
+    const originalDuration = appointment.duration;
+    const originalHeight = height;
     
+    // ✅ CAPTURAR MOUSE y establecer estado inicial
     setIsResizing(true);
-    setResizeStartY(startY);
-    setInitialDuration(startDuration);
-    resizeDurationRef.current = startDuration;
-    setCurrentPreviewDuration(startDuration);
-    
-    // Mostrar tooltip durante resize para feedback visual
-    setShowTooltip(true);
+    setCurrentPreviewDuration(originalDuration);
+    setPreviewDuration(originalDuration);
+    setHasResizeConflict(false);
     
     if (onDraggingDurationChange) {
       onDraggingDurationChange(true);
     }
     
-    // Ocultar tooltip durante el resize
-    // setShowTooltip(false);
-    if (tooltipTimeout) {
-      clearTimeout(tooltipTimeout);
-      setTooltipTimeout(null);
-    }
-    
-    // Cambiar cursor globalmente
+    // ✅ CONFIGURAR CURSOR GLOBAL Y CAPTURA
+    document.body.dataset.resizing = 'true';
     document.body.style.cursor = 'ns-resize';
     document.body.style.userSelect = 'none';
+    document.body.style.pointerEvents = 'none'; // Evitar interferencia
     const originalOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     
-    // Marcar que estamos en proceso de resize para evitar que se abra el modal
-    document.body.dataset.resizing = 'true';
+    // ✅ CREAR OVERLAY INVISIBLE PARA CAPTURAR MOUSE
+    const overlay = document.createElement('div');
+    overlay.id = 'resize-capture-overlay';
+    overlay.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 999999;
+      cursor: ns-resize;
+      background: transparent;
+      pointer-events: all;
+    `;
+    document.body.appendChild(overlay);
+    
+    // ✅ REF PARA TRACKING CONTINUO
+    const resizeDurationRef = { current: originalDuration };
     
     const handleMouseMove = (e: MouseEvent) => {
-      const currentY = e.clientY;
-      const deltaY = currentY - startY;
+      e.preventDefault();
+      e.stopPropagation();
       
-      // Convertir píxeles a minutos con mayor precisión
-      const slotHeightInPixels = 40;
-      const minutesPerPixel = slotDuration / slotHeightInPixels;
-      // Usar redondeo más preciso para evitar desfases
-      const deltaMinutes = Math.round((deltaY * minutesPerPixel) / 5) * 5; // Redondear a múltiplos de 5
+      const deltaY = e.clientY - startY;
       
-      // Calcular nueva duración (mínimo 15 minutos, máximo 240 minutos)
-      const newDuration = Math.max(15, Math.min(240, startDuration + deltaMinutes));
+      // ✅ CONVERTIR PIXELS A MINUTOS con mejor precisión
+      const pixelsPerMinute = (originalHeight / originalDuration) || 1;
+      const deltaMinutes = Math.round(deltaY / pixelsPerMinute);
       
-      // Debug del cálculo
-      console.log('[AppointmentItem handleMouseMove] Debug cálculo duración:', {
-        deltaY,
-        slotDuration,
-        slotHeightInPixels,
-        minutesPerPixel,
-        deltaMinutes,
-        startDuration,
-        newDuration,
-        currentPreviewDuration
-      });
+      // ✅ APLICAR GRANULARIDAD CORRECTA DEL SISTEMA (no slotDuration)
+      const granularDelta = Math.round(deltaMinutes / minuteGranularity) * minuteGranularity;
+      let newDuration = Math.max(minuteGranularity, originalDuration + granularDelta);
       
-      // Solo actualizar si la nueva duración es diferente a la actual
-      if (newDuration !== currentPreviewDuration) {
-        console.log('[AppointmentItem handleMouseMove] Actualizando duración:', {
-          from: currentPreviewDuration,
-          to: newDuration
+      // ✅ DETECCIÓN DE CONFLICTOS SUAVE
+      let hasConflict = false;
+      if (appointments.length > 0) {
+        const [startHours, startMinutes] = appointment.startTime.split(':').map(Number);
+        const appointmentStartMinutes = startHours * 60 + startMinutes;
+        const appointmentEndMinutes = appointmentStartMinutes + newDuration;
+        
+        const conflictingAppointment = appointments.find(apt => {
+          if (apt.id === appointment.id || String(apt.roomId) !== String(appointment.roomId)) {
+            return false;
+          }
+          
+          const [aptStartHours, aptStartMinutes] = apt.startTime.split(':').map(Number);
+          const aptStartMinutesTotal = aptStartHours * 60 + aptStartMinutes;
+          const aptEndMinutesTotal = aptStartMinutesTotal + apt.duration;
+          
+          return appointmentEndMinutes > aptStartMinutesTotal && appointmentStartMinutes < aptEndMinutesTotal;
         });
         
-        // Actualizar tanto el estado como el ref
+        if (conflictingAppointment) {
+          hasConflict = true;
+          const [conflictStartHours, conflictStartMinutes] = conflictingAppointment.startTime.split(':').map(Number);
+          const conflictStartMinutesTotal = conflictStartHours * 60 + conflictStartMinutes;
+          const maxDuration = Math.max(minuteGranularity, conflictStartMinutesTotal - appointmentStartMinutes);
+          newDuration = maxDuration;
+        }
+      }
+      
+      // ✅ ACTUALIZAR ESTADO SUAVEMENTE
+      if (resizeDurationRef.current !== newDuration) {
         resizeDurationRef.current = newDuration;
         setCurrentPreviewDuration(newDuration);
         setPreviewDuration(newDuration);
-      }
-    };
-    
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        console.log('[AppointmentItem] Cancelando resize con ESC');
-        
-        // Restaurar tamaño original
-        const originalDuration = appointment.duration;
-        resizeDurationRef.current = originalDuration;
-        setCurrentPreviewDuration(originalDuration);
-        setPreviewDuration(originalDuration);
-        
-        // Limpiar estado
-        setIsResizing(false);
-        setShowTooltip(false);
+        setHasResizeConflict(hasConflict);
         
         if (onDraggingDurationChange) {
-          onDraggingDurationChange(false);
+          onDraggingDurationChange(true);
         }
-        
-        // Restaurar estilos
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
-        document.body.style.overflow = originalOverflow;
-        
-        // Quitar flag de resizing
-        setTimeout(() => {
-          delete document.body.dataset.resizing;
-        }, 150);
-        
-        // Remover listeners
-        document.removeEventListener('mousemove', handleMouseMove);
-        document.removeEventListener('mouseup', handleMouseUp);
-        document.removeEventListener('keydown', handleKeyDown);
       }
     };
     
@@ -316,58 +471,82 @@ export function AppointmentItem({
       e.preventDefault();
       e.stopPropagation();
       
-      // Limpiar el flag de resizing después de un pequeño delay para evitar que el click se propague
-      setTimeout(() => {
-        delete document.body.dataset.resizing;
-      }, 150); // Aumentar el delay para asegurar que no hay propagación
-      
-      console.log('[AppointmentItem handleMouseUp] Debug resize:', {
-        currentPreviewDuration: resizeDurationRef.current, // Usar ref en lugar de estado
-        originalDuration: appointment.duration,
-        hasOnDurationChange: !!onDurationChange,
-        durationChanged: resizeDurationRef.current !== appointment.duration
+      console.log('[AppointmentItem] 🔧 Finalizando resize MEJORADO:', {
+        originalDuration,
+        newDuration: resizeDurationRef.current,
+        changed: resizeDurationRef.current !== originalDuration
       });
       
-      if (resizeDurationRef.current !== appointment.duration && onDurationChange) {
-        console.log('[AppointmentItem handleMouseUp] Llamando onDurationChange:', {
-          appointmentId: appointment.id,
-          newDuration: resizeDurationRef.current
-        });
-        onDurationChange(appointment.id, resizeDurationRef.current);
-      } else {
-        console.log('[AppointmentItem handleMouseUp] NO se llama onDurationChange - motivo:', {
-          durationChanged: resizeDurationRef.current !== appointment.duration,
-          hasHandler: !!onDurationChange
-        });
+      // ✅ LIMPIAR OVERLAY Y ESTILOS
+      const overlayElement = document.getElementById('resize-capture-overlay');
+      if (overlayElement) {
+        overlayElement.remove();
       }
       
+      // ✅ RESTAURAR ESTILOS GLOBALES
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      document.body.style.pointerEvents = '';
+      document.body.style.overflow = originalOverflow;
+      delete document.body.dataset.resizing;
+      
+      // ✅ APLICAR CAMBIO FINAL
+      if (resizeDurationRef.current !== originalDuration && onDurationChange) {
+        onDurationChange(appointment.id, resizeDurationRef.current);
+      }
+      
+      // ✅ LIMPIAR ESTADO
       setIsResizing(false);
+      setHasResizeConflict(false);
+      
       if (onDraggingDurationChange) {
         onDraggingDurationChange(false);
       }
       
-      // Restaurar estilos
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-      document.body.style.overflow = originalOverflow;
-      
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
+      // ✅ REMOVER LISTENERS
+      overlay.removeEventListener('mousemove', handleMouseMove);
+      overlay.removeEventListener('mouseup', handleMouseUp);
       document.removeEventListener('keydown', handleKeyDown);
-      
-      // Mantener nueva duración visualmente para actualización optimista
-      // Solo resetear si no cambió la duración
-      if (resizeDurationRef.current !== appointment.duration) {
-        setPreviewDuration(resizeDurationRef.current); // Mantener nueva duración
-      } else {
-        setPreviewDuration(appointment.duration); // Resetear solo si no hubo cambio
+    };
+    
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        console.log('[AppointmentItem] Cancelando resize con ESC');
+        
+        // ✅ LIMPIAR TODO COMO EN mouseUp
+        const overlayElement = document.getElementById('resize-capture-overlay');
+        if (overlayElement) {
+          overlayElement.remove();
+        }
+        
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        document.body.style.pointerEvents = '';
+        document.body.style.overflow = originalOverflow;
+        delete document.body.dataset.resizing;
+        
+        // ✅ RESTAURAR DURACIÓN ORIGINAL
+        setCurrentPreviewDuration(originalDuration);
+        setPreviewDuration(originalDuration);
+        setIsResizing(false);
+        setHasResizeConflict(false);
+        
+        if (onDraggingDurationChange) {
+          onDraggingDurationChange(false);
+        }
+        
+        overlay.removeEventListener('mousemove', handleMouseMove);
+        overlay.removeEventListener('mouseup', handleMouseUp);
+        document.removeEventListener('keydown', handleKeyDown);
       }
     };
     
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
+    // ✅ REGISTRAR LISTENERS EN OVERLAY (no en document)
+    overlay.addEventListener('mousemove', handleMouseMove);
+    overlay.addEventListener('mouseup', handleMouseUp);
     document.addEventListener('keydown', handleKeyDown);
-  }, [appointment.id, appointment.duration, slotDuration, onDurationChange, onDraggingDurationChange, tooltipTimeout]);
+    
+  }, [appointment.id, appointment.duration, appointment.startTime, appointment.roomId, minuteGranularity, height, onDurationChange, onDraggingDurationChange, appointments]);
 
   useEffect(() => {
     if (isDragging) {
@@ -375,28 +554,56 @@ export function AppointmentItem({
     }
   }, [isDragging]);
 
+  // ✅ FORZAR RE-RENDER INMEDIATO cuando cambia currentPreviewDuration durante resize
+  useEffect(() => {
+    if (isResizing) {
+      // El cambio de estado ya causa re-render, pero asegurar que height se recalcule
+      const newHeight = getHeight();
+      console.log('[AppointmentItem] 📏 Altura actualizada durante resize:', {
+        currentPreviewDuration,
+        newHeight,
+        appointmentId: appointment.id
+      });
+    }
+  }, [currentPreviewDuration, isResizing, getHeight, appointment.id]);
+
   return (
     <>
       <div
         ref={appointmentRef}
         data-appointment-item="true"
+        data-appointment-id={appointment.id}
+        data-resizing={isResizing ? "true" : undefined}
         className={cn(
           "absolute rounded-md flex flex-col group transition-all duration-200",
           isDragging && !isDraggingDuration && "opacity-50",
           "hover:shadow-lg hover:z-20",
-          appointment.isContinuation && "border-l-2 border-dashed border-gray-300"
+          appointment.isContinuation && "border-l-2 border-dashed border-gray-300",
+          // ✅ ESTILO SUTIL PARA CITAS OPTIMISTAS (opcional)
+          isOptimistic && "ring-1 ring-purple-300 ring-opacity-50",
+          // Estilos de borde durante el resize
+          isResizing && hasResizeConflict && "ring-2 ring-red-500 ring-opacity-80",
+          isResizing && !hasResizeConflict && "ring-2 ring-green-500 ring-opacity-80",
+          // ✅ CLASE CSS ESPECÍFICA PARA RESIZE
+          isResizing && "appointment-resizing",
+          isResizing && hasResizeConflict && "appointment-resize-conflict"
         )}
         style={{
           backgroundColor,
           borderLeft: `4px solid ${borderColor}`,
           borderBottom: `3px solid ${borderColor}`,
           color: textColor,
-          cursor: isDraggingDuration ? 'ns-resize' : 'move',
+          cursor: isDraggingDuration ? 'ns-resize' : (isOptimistic ? 'default' : 'move'), // ✅ Cursor diferente para optimistas
           height: `${height}px`,
           width: '100%', // Ocupar todo el ancho disponible
-          transition: isDraggingDuration ? 'height 0.1s ease-out' : undefined
+          // ✅ ELIMINAR TRANSICIÓN DURANTE RESIZE para feedback inmediato
+          transition: isResizing ? 'none' : 'all 0.2s ease-out',
+          // ✅ FEEDBACK VISUAL DURANTE RESIZE
+          transform: isResizing ? 'scale(1.02)' : 'scale(1)',
+          boxShadow: isResizing ? '0 8px 25px rgba(0, 0, 0, 0.2)' : undefined,
+          zIndex: isResizing ? 30 : 'auto' // ✅ Por debajo de modales (50) e indicador (40)
         }}
-        draggable={!isDraggingDuration} // Solo draggable si no está estirando
+        draggable={!isDraggingDuration && !isOptimistic} // ✅ Solo draggable si no está estirando Y no es optimista
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
         onMouseEnter={handleMouseEnter}
@@ -418,54 +625,77 @@ export function AppointmentItem({
       >
         {/* Contenedor interno con overflow-hidden */}
         <div className="relative h-full overflow-hidden rounded-md">
+          
+          {/* ✅ INDICADOR VISUAL DE EXTENSIÓN DURANTE RESIZE */}
+          {isResizing && (
+            <div 
+              className="absolute bottom-0 left-0 right-0 h-2 bg-gradient-to-t from-purple-500/60 to-transparent z-30"
+              style={{
+                background: hasResizeConflict 
+                  ? 'linear-gradient(to top, rgba(239, 68, 68, 0.6), transparent)'
+                  : 'linear-gradient(to top, rgba(147, 51, 234, 0.6), transparent)'
+              }}
+            />
+          )}
+
           {/* Flechas de ajuste de hora - al lado del botón + */}
           {showQuickActions && !isCompact && (
             <div 
-              className="absolute bottom-4 right-8 z-40 flex flex-col gap-0.5 transition-all duration-200" 
+              className={cn(
+                "absolute bottom-4 right-8 z-40 flex flex-col gap-0.5 transition-all duration-200",
+                isDragging && "pointer-events-none" // Desactivar durante drag
+              )}
               onClick={(e) => e.stopPropagation()}
               onMouseDown={(e) => e.stopPropagation()}
             >
-              <button 
-                className="p-0.5 rounded bg-purple-500/20 hover:bg-purple-500/30 transition-all duration-150"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                }}
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  if (onTimeAdjust) {
-                    onTimeAdjust(appointment.id, 'up');
-                  }
-                }}
-                title="Mover arriba según granularidad"
-              >
-                <ChevronUp className="h-3 w-3 text-purple-700" />
-              </button>
-              <button 
-                className="p-0.5 rounded bg-purple-500/20 hover:bg-purple-500/30 transition-all duration-150"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                }}
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  if (onTimeAdjust) {
-                    onTimeAdjust(appointment.id, 'down');
-                  }
-                }}
-                title="Mover abajo según granularidad"
-              >
-                <ChevronDown className="h-3 w-3 text-purple-700" />
-              </button>
+              {canMoveUp && (
+                <button 
+                  className="p-0.5 rounded bg-purple-500/20 hover:bg-purple-500/30 transition-all duration-150"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (onTimeAdjust) {
+                      onTimeAdjust(appointment.id, 'up');
+                    }
+                  }}
+                  title="Mover arriba según granularidad"
+                >
+                  <ChevronUp className="h-3 w-3 text-purple-700" />
+                </button>
+              )}
+              {canMoveDown && (
+                <button 
+                  className="p-0.5 rounded bg-purple-500/20 hover:bg-purple-500/30 transition-all duration-150"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (onTimeAdjust) {
+                      onTimeAdjust(appointment.id, 'down');
+                    }
+                  }}
+                  title="Mover abajo según granularidad"
+                >
+                  <ChevronDown className="h-3 w-3 text-purple-700" />
+                </button>
+              )}
             </div>
           )}
           
           {/* Menú de acciones rápidas - posicionado abajo a la derecha */}
           {showQuickActions && !isCompact && (
             <div 
-              className="absolute bottom-4 right-1 z-40 transition-all duration-200" 
+              className={cn(
+                "absolute bottom-4 right-1 z-40 transition-all duration-200",
+                isDragging && "pointer-events-none" // Desactivar durante drag
+              )}
               onClick={(e) => e.stopPropagation()}
               onMouseDown={(e) => e.stopPropagation()}
             >
@@ -476,10 +706,12 @@ export function AppointmentItem({
                     onMouseDown={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
+                      console.log('[AppointmentItem] 🔘 BOTÓN + MOUSE DOWN');
                     }}
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
+                      console.log('[AppointmentItem] 🔘 BOTÓN + CLICK');
                     }}
                   >
                     <Plus className="h-3 w-3 text-gray-700 transition-transform duration-200 group-data-[state=open]:rotate-45" />
@@ -493,7 +725,7 @@ export function AppointmentItem({
                   onCloseAutoFocus={(e) => e.preventDefault()}
                 >
                   <DropdownMenuSub>
-                    <DropdownMenuSubTrigger>
+                    <DropdownMenuSubTrigger className="cursor-pointer">
                       <Tag className="mr-2 h-4 w-4" />
                       Etiquetas
                     </DropdownMenuSubTrigger>
@@ -505,14 +737,18 @@ export function AppointmentItem({
                           key={tag.id}
                           onClick={(e) => {
                             e.stopPropagation();
+                            console.log('[AppointmentItem] 🏷️ CLICK ETIQUETA:', { tagId: tag.id, tagName: tag.name, isSelected, appointmentId: appointment.id });
                             if (onTagsUpdate) {
                               const newTags = isSelected
                                 ? appointment.tags?.filter(id => id !== tag.id) || []
                                 : [...(appointment.tags || []), tag.id];
+                              console.log('[AppointmentItem] 🏷️ LLAMANDO onTagsUpdate:', { appointmentId: appointment.id, newTags });
                               onTagsUpdate(appointment.id, newTags);
+                            } else {
+                              console.log('[AppointmentItem] ❌ NO HAY onTagsUpdate disponible!');
                             }
                           }}
-                          className="flex items-center justify-between"
+                          className="flex items-center justify-between cursor-pointer hover:bg-gray-100"
                         >
                           <div className="flex items-center gap-2">
                             <div
@@ -530,67 +766,52 @@ export function AppointmentItem({
                 
                 <DropdownMenuItem onClick={(e) => {
                   e.stopPropagation();
-                  if (onMoveAppointment) {
-                    onMoveAppointment(appointment.id);
-                  }
-                }}>
-                  <Move className="mr-2 h-4 w-4" />
+                  console.log("Mover cita");
+                }} className="cursor-pointer hover:bg-gray-100">
+                  <Move className="h-4 w-4 mr-2" />
                   Mover
                 </DropdownMenuItem>
                 
                 <DropdownMenuItem onClick={(e) => {
                   e.stopPropagation();
-                  // TODO: Implementar marcar como no asistido
-                }}>
-                  <XCircle className="mr-2 h-4 w-4" />
+                  console.log("No asistido");
+                }} className="cursor-pointer hover:bg-gray-100">
+                  <XCircle className="h-4 w-4 mr-2" />
                   No asistido
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={(e) => {
                   e.stopPropagation();
-                  // TODO: Implementar comentarios
-                }}>
-                  <MessageSquare className="mr-2 h-4 w-4" />
-                  Comentarios
+                  console.log("Información");
+                }} className="cursor-pointer hover:bg-gray-100">
+                  <MessageSquare className="h-4 w-4 mr-2" />
+                  Información
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={(e) => {
                   e.stopPropagation();
-                  // TODO: Implementar validar
-                }}>
-                  <CheckCircle className="mr-2 h-4 w-4" />
-                  Validar
+                  console.log("Duplicar");
+                }} className="cursor-pointer hover:bg-gray-100">
+                  <Copy className="h-4 w-4 mr-2" />
+                  Duplicar
                 </DropdownMenuItem>
-                <DropdownMenuSeparator />
+                
                 <DropdownMenuItem 
-                  className="text-red-600"
                   onClick={(e) => {
                     e.stopPropagation();
-                    // TODO: Implementar eliminar
-                  }}
+                    // ✅ ELIMINACIÓN OPTIMISTA DESDE MENÚ HOVER
+                    if (onDeleteAppointment) {
+                      onDeleteAppointment(appointment.id, true); // showConfirm = true
+                    } else {
+                      console.log("onDeleteAppointment no disponible");
+                    }
+                  }} 
+                  className="text-red-600 hover:bg-red-50 cursor-pointer"
                 >
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Eliminar cita
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Eliminar
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>)}
-
-          {/* Indicador de extensión - esquina inferior izquierda */}
-          {appointment.estimatedDurationMinutes && 
-           appointment.duration > appointment.estimatedDurationMinutes && 
-           !isCompact && (
-            <button
-              className="absolute bottom-1 left-1 z-30 p-0.5 rounded-full bg-amber-500/90 hover:bg-amber-600 transition-all duration-200 shadow-sm hover:shadow group"
-              onClick={(e) => {
-                e.stopPropagation();
-                if (onRevertExtension) {
-                  onRevertExtension(appointment.id);
-                }
-              }}
-              title={`Revertir a duración original (${appointment.estimatedDurationMinutes} min)`}
-            >
-              <RefreshCw className="h-3 w-3 text-white group-hover:rotate-180 transition-transform duration-300" />
-            </button>
-          )}
 
           {/* Indicadores de etiquetas en la parte superior */}
           {appointment.tags && appointment.tags.length > 0 && !isCompact && (
@@ -631,40 +852,64 @@ export function AppointmentItem({
               <Clock className="h-3 w-3 text-gray-600 flex-shrink-0" />
               <div className={cn(
                 "font-medium truncate",
-                isCompact ? "text-[10px]" : "text-xs"
+                isCompact ? "text-[10px]" : "text-xs",
+                // ✅ RESALTAR DURANTE RESIZE
+                isResizing && "text-white font-bold bg-black/20 px-1 rounded"
               )}>
                 {(() => {
-                  const [hours, minutes] = appointment.startTime.split(':').map(Number);
-                  const startMinutes = hours * 60 + minutes;
-                  const endMinutes = startMinutes + displayDuration;
-                  const endHours = Math.floor(endMinutes / 60);
-                  const endMins = endMinutes % 60;
-                  const endTime = `${endHours.toString().padStart(2, '0')}:${endMins.toString().padStart(2, '0')}`;
-                  return `${appointment.startTime} - ${endTime}`;
+                  // ✅ MOSTRAR DURACIÓN EN TIEMPO REAL DURANTE RESIZE
+                  const durationToShow = isResizing ? currentPreviewDuration : appointment.duration;
+                  
+                  // ✅ USAR ENDTIME OPTIMISTA: Solo recalcular durante resize, resto usar appointment.endTime
+                  const showTime = appointment.startTime;
+                  let endTime: string;
+                  
+                  if (isResizing) {
+                    // Durante resize: calcular endTime dinámicamente
+                    const [hours, minutes] = showTime.split(':').map(Number);
+                    const startMinutes = hours * 60 + minutes;
+                    const endMinutes = startMinutes + durationToShow;
+                    const endHours = Math.floor(endMinutes / 60);
+                    const endMins = endMinutes % 60;
+                    endTime = `${endHours.toString().padStart(2, '0')}:${endMins.toString().padStart(2, '0')}`;
+                  } else {
+                    // ✅ FUERA DE RESIZE: Usar appointment.endTime (ya actualizado optimísticamente)
+                    endTime = appointment.endTime;
+                  }
+                  
+                  // ✅ MOSTRAR INDICADOR VISUAL DE CAMBIO DURANTE RESIZE
+                  const baseText = `${showTime} - ${endTime}`;
+                  if (isResizing) {
+                    return `${baseText} (${durationToShow}min)`;
+                  }
+                  return baseText;
                 })()}
               </div>
             </div>
             
             {/* Nombre del cliente - ligeramente más grande */}
-            <div 
-              className={cn(
-                "group flex items-center gap-1 mt-0.5",
-                isCompact ? "text-[11px]" : "text-[13px]",
-                onClientNameClick && "cursor-pointer hover:text-violet-600 transition-colors"
-              )}
-              onClick={(e) => {
-                if (onClientNameClick) {
-                  e.stopPropagation();
-                  onClientNameClick(appointment);
-                }
-              }}
-            >
-              <span className="font-normal truncate">
-                {appointment.name}
-              </span>
-              {onClientNameClick && (
-                <ExternalLink className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity text-violet-600 flex-shrink-0" />
-              )}
+            <div className={cn("mt-0.5", isCompact ? "text-[11px]" : "text-[13px]")}>
+              {/* ✅ ÁREA CLICKABLE LIMITADA: Solo nombre + ícono */}
+              <div 
+                className={cn(
+                  "group inline-flex items-center gap-1", // ✅ inline-flex en lugar de flex para ocupar solo el contenido
+                  onClientNameClick && "cursor-pointer hover:text-violet-600 transition-colors",
+                  isDragging && onClientNameClick && "pointer-events-none" // Desactivar click durante drag
+                )}
+                onClick={(e) => {
+                  if (onClientNameClick) {
+                    e.stopPropagation();
+                    onClientNameClick(appointment);
+                  }
+                }}
+              >
+                <span className="font-normal truncate">
+                  {appointment.name}
+                </span>
+                {onClientNameClick && (
+                  <ExternalLink className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity text-violet-600 flex-shrink-0" />
+                )}
+              </div>
             </div>
             
             {/* Espacio reservado para futuras etiquetas */}
@@ -677,27 +922,27 @@ export function AppointmentItem({
         {/* Zona de estiramiento profesional integrada en la cita */}
         <div
           className={cn(
-            "absolute bottom-0 left-0 w-full h-4", // Aumentar altura para mejor área de interacción
+            "absolute bottom-0 left-0 w-full h-4 resize-handle", // ✅ Añadir clase CSS
             "cursor-ns-resize",
             "group", // Añadir group para controlar hover states
             "transition-all duration-150",
-            // Durante el resize, mostrar feedback visual
-            isResizing && "bg-purple-500/30"
+            // Durante el resize, mostrar feedback visual MUCHO MÁS OBVIO
+            isResizing && "bg-purple-500/40 backdrop-blur-sm"
           )}
           onMouseDown={handleResizeStart}
           onMouseEnter={(e) => e.stopPropagation()} // Evitar que se propague el hover
         >
-          {/* Fondo que aparece al hover */}
+          {/* Fondo que aparece al hover - MÁS VISIBLE */}
           <div 
             className={cn(
               "absolute inset-0",
-              "bg-purple-500/0 group-hover:bg-purple-500/20",
+              "bg-purple-500/0 group-hover:bg-purple-500/30",
               "transition-colors duration-150",
-              isResizing && "bg-purple-500/30"
+              isResizing && "bg-purple-500/40"
             )}
           />
           
-          {/* Indicador visual de líneas paralelas */}
+          {/* Indicador visual de líneas paralelas - MÁS PROMINENTE */}
           <div className={cn(
             "absolute bottom-1 left-1/2 -translate-x-1/2",
             "flex flex-col gap-0.5",
@@ -706,40 +951,108 @@ export function AppointmentItem({
             isResizing && "opacity-100"
           )}>
             <div className={cn(
-              "w-8 h-0.5 rounded-full",
+              "w-10 h-1 rounded-full", // Más grande y visible
               "bg-gray-500/70 group-hover:bg-purple-500",
-              isResizing && "bg-purple-600"
+              isResizing && "bg-purple-600 shadow-lg"
             )} />
             <div className={cn(
-              "w-8 h-0.5 rounded-full",
+              "w-10 h-1 rounded-full", // Más grande y visible
               "bg-gray-500/70 group-hover:bg-purple-500",
-              isResizing && "bg-purple-600"
+              isResizing && "bg-purple-600 shadow-lg"
             )} />
           </div>
+
+          {/* ✅ INDICADOR DE DURACIÓN DURANTE RESIZE */}
+          {isResizing && (
+            <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-black/90 text-white px-2 py-1 rounded text-xs font-medium z-50 whitespace-nowrap">
+              {currentPreviewDuration}min
+              {hasResizeConflict && (
+                <span className="ml-2 text-red-300">¡Conflicto!</span>
+              )}
+            </div>
+          )}
         </div>
+
+        {/* ✅ INDICADOR DE EXTENSIÓN - Posición más alta para identificación visual */}
+        {appointment.estimatedDurationMinutes && 
+         appointment.duration > appointment.estimatedDurationMinutes && 
+         !isCompact && (
+          <button
+            className={cn(
+              "absolute top-1 left-1 z-30 p-0.5 rounded-full bg-amber-500/90 hover:bg-amber-600 transition-all duration-200 shadow-sm hover:shadow group",
+              isDragging && "pointer-events-none" // Desactivar durante drag
+            )}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (onRevertExtension) {
+                onRevertExtension(appointment.id);
+              }
+            }}
+            title={`Revertir a duración original (${appointment.estimatedDurationMinutes} min)`}
+          >
+            <RotateCcw className="h-2.5 w-2.5 text-white" />
+            
+            {/* Tooltip mejorado que aparece al hacer hover */}
+            <div className="absolute left-1/2 top-full mt-1 transform -translate-x-1/2 bg-black text-white text-xs rounded px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-40">
+              Cita extendida: {appointment.duration}min → {appointment.estimatedDurationMinutes}min
+              <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 border-2 border-transparent border-b-black"></div>
+            </div>
+          </button>
+        )}
+
+        {/* ✅ SPINNER OPTIMISTA - Esquina inferior derecha */}
+        {showOptimisticSpinner && (
+          <div className="absolute bottom-1 right-1 z-30">
+            <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+          </div>
+        )}
       </div>
 
-      {/* Tooltip al hacer hover - visible incluso durante el drag */}
-      {(showTooltip || isDraggingDuration) && (
+      {(showTooltip || isDraggingDuration) && typeof document !== 'undefined' && createPortal(
         <div
-          className="fixed pointer-events-none z-[9999]"
+          className="fixed pointer-events-none"
           style={{
-            left: `${tooltipPosition.x + 10}px`, // Offset para que no tape el cursor
-            top: `${(() => {
-              // Calcular la posición del tooltip considerando el espacio disponible
-              const tooltipHeight = 200; // Altura estimada del tooltip
-              const headerHeight = 120; // Aumentar altura estimada del header para más margen
-              const margin = 30; // Margen de seguridad aumentado
+            zIndex: 999999, // Z-index máximo para estar sobre todo
+            left: `${(() => {
+              const tooltipWidth = 280; // Ancho estimado del tooltip
+              const windowWidth = window.innerWidth;
+              const rect = appointmentRef.current?.getBoundingClientRect();
               
-              // Si el tooltip se posicionaría muy arriba (solaparía con el header)
-              // o si la posición Y es menor a un threshold seguro
-              if (tooltipPosition.y - tooltipHeight < headerHeight + margin || tooltipPosition.y < 200) {
-                // Posicionar el tooltip debajo del cursor en lugar de encima
-                return tooltipPosition.y + 20;
+              if (!rect) return tooltipPosition.x;
+              
+              // Intentar posicionar a la derecha de la cita
+              const rightPosition = rect.right + 10;
+              
+              // Si el tooltip se saldría por la derecha, posicionarlo a la izquierda
+              if (rightPosition + tooltipWidth > windowWidth - 20) {
+                // Posicionar a la izquierda de la cita
+                return Math.max(10, rect.left - tooltipWidth - 10);
               }
               
-              // Posición normal: encima del cursor
-              return tooltipPosition.y - tooltipHeight - 10;
+              return rightPosition;
+            })()}px`,
+            top: `${(() => {
+              const tooltipHeight = 200; // Altura estimada del tooltip
+              const windowHeight = window.innerHeight;
+              const navbarHeight = 64; // Altura estimada del navbar
+              const rect = appointmentRef.current?.getBoundingClientRect();
+              
+              if (!rect) return tooltipPosition.y;
+              
+              // Intentar posicionar alineado con el top de la cita
+              let top = rect.top;
+              
+              // Asegurar que el tooltip no se superponga con el navbar
+              const minY = navbarHeight + 10;
+              top = Math.max(minY, top);
+              
+              // Si el tooltip se saldría por abajo, ajustar hacia arriba
+              if (top + tooltipHeight > windowHeight - 20) {
+                // Intentar posicionar más arriba pero sin salir del viewport
+                top = Math.max(minY, windowHeight - tooltipHeight - 20);
+              }
+              
+              return top;
             })()}px`,
             transform: 'none' // Eliminar el transform cuando calculamos la posición exacta
           }}
@@ -748,7 +1061,7 @@ export function AppointmentItem({
             title={appointment.name}
             date={appointment.date}
             time={appointment.startTime}
-            duration={displayDuration}
+            duration={isResizing ? currentPreviewDuration : appointment.duration}
             color={backgroundColor}
             roomName={undefined} // No mostrar sala en tooltip de hover
             clientName={appointment.name}
@@ -763,8 +1076,10 @@ export function AppointmentItem({
                 onClientNameClick(appointment);
               }
             }}
+            endTime={appointment.endTime} // ✅ PASAR endTime directamente de la cita
           />
-        </div>
+        </div>,
+        document.body
       )}
     </>
   )

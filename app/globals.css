@@ -450,3 +450,98 @@ input[type="checkbox"] {
   animation: spin-around 6s linear infinite;
 }
 
+/* ✅ ANIMACIÓN PARA CITAS OPTIMISTAS */
+@keyframes pulse-subtle {
+  0%, 100% {
+    opacity: 0.85;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.95;
+    transform: scale(1.01);
+  }
+}
+
+.animate-pulse-subtle {
+  animation: pulse-subtle 2s ease-in-out infinite;
+}
+
+/* ✅ SISTEMA DE RESIZE MEJORADO - CURSORS Y ESTADOS */
+
+/* Cursor global para resize activo */
+body[data-resizing="true"] {
+  cursor: ns-resize !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  -ms-user-select: none !important;
+}
+
+body[data-resizing="true"] * {
+  cursor: ns-resize !important;
+}
+
+/* Área de resize visible */
+.resize-handle {
+  cursor: ns-resize;
+  transition: background-color 0.15s ease-in-out;
+}
+
+.resize-handle:hover {
+  background-color: rgba(124, 58, 237, 0.1);
+}
+
+/* Overlay invisible para capturar mouse durante resize */
+.resize-capture-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9999;
+  cursor: ns-resize !important;
+  background: transparent;
+  user-select: none;
+}
+
+/* Estados de cita durante resize */
+.appointment-resizing {
+  z-index: 200 !important;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.25) !important;
+  transform: scale(1.02) !important;
+  transition: none !important; /* Sin transición para feedback inmediato */
+  border: 2px solid rgba(147, 51, 234, 0.8) !important;
+}
+
+/* Indicador de conflicto durante resize */
+.appointment-resize-conflict {
+  background-color: rgba(239, 68, 68, 0.9) !important;
+  border: 2px solid #ef4444 !important;
+  box-shadow: 0 8px 25px rgba(239, 68, 68, 0.4) !important;
+}
+
+/* Indicador visual de nueva duración */
+.resize-duration-preview {
+  position: absolute;
+  bottom: 2px;
+  right: 4px;
+  background: rgba(0, 0, 0, 0.9);
+  color: white;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  z-index: 201;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(4px);
+}
+
+/* Efectos visuales adicionales para resize */
+.appointment-item[data-resizing="true"] {
+  filter: brightness(1.1) contrast(1.1);
+}
+
+.appointment-item[data-resizing="true"] .resize-handle {
+  background: linear-gradient(45deg, rgba(147, 51, 234, 0.6), rgba(168, 85, 247, 0.6)) !important;
+}
+

@@ -57,6 +57,10 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const internalSetActiveClinic = useCallback((clinic: ClinicaApiOutput | null) => {
     console.log("[ClinicContext] internalSetActiveClinic called with:", JSON.stringify(clinic, (key, value) => key === 'linkedScheduleTemplate' || key === 'independentScheduleBlocks' ? '...' : value, 2));
+    
+    const previousClinicId = activeClinic?.id;
+    const newClinicId = clinic?.id;
+    
     if (clinic) {
       // Remove old detailed logs if not needed
       // console.log(`[ClinicContext] internalSetActiveClinic - Checking scheduleJson:`, clinic.scheduleJson); 
@@ -65,13 +69,86 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     } else {
       console.log("[ClinicContext] internalSetActiveClinic - Clinic is null");
     }
+    
     setActiveClinicState(clinic);
     if (clinic?.id) {
       localStorage.setItem('activeClinicId', String(clinic.id));
+      
+      // ✅ PREFETCH INTELIGENTE: Solo si cambió la clínica
+      if (String(previousClinicId) !== String(newClinicId)) {
+        console.log(`[ClinicContext] 🚀 Clínica cambió de ${previousClinicId} a ${newClinicId}. Iniciando prefetch de agenda...`);
+        
+                 // ✅ PREFETCH usando QueryClient directamente (no hooks)
+         import('@/lib/query-client').then(({ getQueryClient }) => {
+           import('@/lib/hooks/use-appointments-query').then(({ getCurrentWeekKey, getWeekKey, getDayKey }) => {
+             const queryClient = getQueryClient();
+             const clinicIdStr = String(clinic.id);
+             
+             try {
+               const currentDate = new Date(); // ✅ USAR FECHA ACTUAL VÁLIDA
+               const currentWeek = getCurrentWeekKey();
+               const prevWeek = getWeekKey(currentDate, -1);
+               const nextWeek = getWeekKey(currentDate, +1);
+               const today = getDayKey(currentDate);
+            
+            console.log(`[ClinicContext] 🚀 Prefetching agenda para clínica ${clinicIdStr}:`, {
+              currentWeek, prevWeek, nextWeek, today
+            });
+            
+            // ✅ PREFETCH SLIDING WINDOW (3 semanas) + DÍA ACTUAL
+            const prefetchPromises = [
+              // Semanas
+              ...([prevWeek, currentWeek, nextWeek].map(week =>
+                queryClient.prefetchQuery({
+                  queryKey: ['appointments', 'week', week, clinicIdStr],
+                  queryFn: async () => {
+                    const response = await fetch(`/api/appointments?clinicId=${clinicIdStr}&week=${week}`);
+                    if (!response.ok) throw new Error('Error fetching week appointments');
+                    const data = await response.json();
+                    return {
+                      appointments: data.map((apt: any) => ({ ...apt, date: new Date(apt.date) })),
+                      weekKey: week
+                    };
+                  },
+                  staleTime: 2 * 60 * 1000, // 2 minutos
+                })
+              )),
+              // Día actual
+              queryClient.prefetchQuery({
+                queryKey: ['appointments', 'day', today, clinicIdStr],
+                queryFn: async () => {
+                  const response = await fetch(`/api/appointments?clinicId=${clinicIdStr}&date=${today}`);
+                  if (!response.ok) throw new Error('Error fetching day appointments');
+                  const data = await response.json();
+                  return {
+                    appointments: data.map((apt: any) => ({ ...apt, date: new Date(apt.date) })),
+                    dayKey: today
+                  };
+                },
+                staleTime: 30 * 1000, // 30 segundos
+              })
+            ];
+            
+                           Promise.all(prefetchPromises)
+                 .then(() => {
+                   console.log(`[ClinicContext] ✅ Prefetch completado para clínica ${clinicIdStr}`);
+                 })
+                 .catch(error => {
+                   console.error(`[ClinicContext] ❌ Error en prefetch para clínica ${clinicIdStr}:`, error);
+                 });
+             
+             } catch (error) {
+               console.error(`[ClinicContext] ❌ Error generando keys de prefetch para clínica ${clinicIdStr}:`, error);
+             }
+           });
+         }).catch(error => {
+           console.error('[ClinicContext] ❌ Error importando utils de prefetch:', error);
+         });
+      }
     } else {
       localStorage.removeItem('activeClinicId');
     }
-  }, []);
+  }, [activeClinic?.id]);
 
   const fetchAndUpdateDetailedClinic = useCallback(async (clinicId: string) => {
     if (status !== 'authenticated') {

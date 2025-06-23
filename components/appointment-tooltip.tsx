@@ -21,6 +21,7 @@ interface AppointmentTooltipProps {
   services?: string[];
   tags?: Tag[];
   onClientNameClick?: () => void;
+  endTime?: string; // ✅ AÑADIR endTime para usar directamente cuando esté disponible
 }
 
 export const AppointmentTooltip: React.FC<AppointmentTooltipProps> = ({
@@ -34,19 +35,22 @@ export const AppointmentTooltip: React.FC<AppointmentTooltipProps> = ({
   clientPhone,
   services = [],
   tags = [],
-  onClientNameClick
+  onClientNameClick,
+  endTime: providedEndTime // ✅ RECIBIR endTime como prop
 }) => {
   // Formatear la fecha correctamente
   const formattedDate = typeof date === 'string' 
     ? date 
     : format(date, "EEEE, d 'de' MMMM", { locale: es });
   
-  // Calcular hora de fin
-  const [hours, minutes] = time.split(':').map(Number);
-  const totalMinutes = hours * 60 + minutes + duration;
-  const endHours = Math.floor(totalMinutes / 60);
-  const endMinutes = totalMinutes % 60;
-  const endTime = `${endHours.toString().padStart(2, '0')}:${endMinutes.toString().padStart(2, '0')}`;
+  // ✅ USAR endTime directamente si está disponible, sino calcularlo
+  const endTime = providedEndTime || (() => {
+    const [hours, minutes] = time.split(':').map(Number);
+    const totalMinutes = hours * 60 + minutes + duration;
+    const endHours = Math.floor(totalMinutes / 60);
+    const endMinutes = totalMinutes % 60;
+    return `${endHours.toString().padStart(2, '0')}:${endMinutes.toString().padStart(2, '0')}`;
+  })();
   
   return (
     <div

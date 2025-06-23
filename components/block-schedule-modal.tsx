@@ -60,12 +60,10 @@ export function BlockScheduleModal({
   const [cabins, setCabins] = useState<Room[]>(clinicRooms)
 
   useEffect(() => {
-    console.log("[BlockScheduleModal] useEffect - Open:", open, "BlockToEdit:", blockToEdit);
     if (open) {
       setCabins(clinicRooms)
 
       if (blockToEdit) {
-        console.log("[BlockScheduleModal] Editing block:", blockToEdit);
         setDate(blockToEdit.startDate)
         setStartTime(blockToEdit.startTime)
         setEndTime(blockToEdit.endTime)
@@ -76,7 +74,6 @@ export function BlockScheduleModal({
         setEndDate(blockToEdit.endDate)
         setRecurrenceEndDate(blockToEdit.recurrenceEndDate)
       } else {
-        console.log("[BlockScheduleModal] Creating new block.");
         setDate(new Date())
         setStartTime("09:00")
         setEndTime("10:00")
@@ -87,10 +84,8 @@ export function BlockScheduleModal({
         setEndDate(null)
         setRecurrenceEndDate(addDays(new Date(), 30))
       }
-    } else {
-       console.log("[BlockScheduleModal] Modal closed.");
     }
-  }, [open, blockToEdit, clinicRooms])
+  }, [open, blockToEdit?.id])
 
   useEffect(() => {
     // Ajustar fechas de fin si se vuelven inválidas respecto a la fecha de inicio

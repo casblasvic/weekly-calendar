@@ -46,6 +46,7 @@ import {
   XCircle,
   CheckCircle2,
   ArrowUpRight,
+  RefreshCw,
 } from "lucide-react"
 import { useState, forwardRef, useEffect, useRef, useMemo } from "react"
 import { cn } from "@/lib/utils"
@@ -114,6 +115,8 @@ interface AppointmentDialogProps {
     isValidated?: boolean; // Nuevo campo para saber si la cita está validada
     startTime?: string; // Hora de inicio de la cita (HH:mm o ISO string)
     endTime?: string; // Hora de fin de la cita (HH:mm o ISO string)
+    duration?: number; // Duración real de la cita en minutos
+    estimatedDurationMinutes?: number; // Duración teórica basada en servicios
   };
   onSaveAppointment?: (appointment: {
     id?: string; // Incluir el ID si es una edición
@@ -171,6 +174,13 @@ export function AppointmentDialog({
   const [initialTime, setInitialTime] = useState<string | undefined>() // Hora inicial para detectar cambios
   const servicesContainerRef = useRef<HTMLDivElement>(null)
   
+  // ✅ ESTADO DE LOADING para renderizado optimista
+  const [isSaving, setIsSaving] = useState(false)
+  
+  // ✅ DETECCIÓN DE CITA OPTIMISTA para botón dinámico
+  const isOptimisticAppointment = existingAppointment?.id?.toString().startsWith('temp-')
+  const canSave = !isOptimisticAppointment && !isSaving // Solo permitir guardar si NO es optimista
+  
   // Nuevo estado para controlar servicios a validar
   const [servicesToValidate, setServicesToValidate] = useState<Record<string, 'VALIDATED' | 'NO_SHOW' | null>>({})
   
@@ -191,6 +201,19 @@ export function AppointmentDialog({
 
   // Obtener slotDuration del contexto de granularidad
   const { slotDuration, minuteGranularity } = useGranularity();
+
+  // NUEVO: Recalcular módulos basándose en la duración real de servicios seleccionados
+  useEffect(() => {
+    if (selectedServices.length > 0 && userModifiedServices && !userModifiedModules) {
+      // Solo recalcular si el usuario modificó servicios pero NO módulos manualmente
+      const totalDurationMinutes = selectedServices.reduce((sum, s) => sum + s.duration, 0)
+      const calculatedModules = Math.max(1, Math.ceil(totalDurationMinutes / minuteGranularity))
+      
+      if (calculatedModules !== modules) {
+        setModules(calculatedModules)
+      }
+    }
+  }, [selectedServices, minuteGranularity, userModifiedServices, userModifiedModules, modules])
 
   // Calcular endTime cuando cambie selectedTime o modules
   useEffect(() => {
@@ -213,6 +236,9 @@ export function AppointmentDialog({
       setUserModifiedModules(false)
       setUserModifiedServices(false)
       setInitialTime(selectedTime)
+      setIsSaving(false) // ✅ RESETEAR LOADING al abrir modal
+    } else {
+      setIsSaving(false) // ✅ RESETEAR LOADING al cerrar modal
     }
   }, [isOpen, selectedTime])
 
@@ -331,7 +357,7 @@ export function AppointmentDialog({
       if (isSelected) {
         // Quitar el servicio
         setSelectedServices((prev) => prev.filter((s) => s.id !== serviceId))
-        setModules((prev) => Math.max(1, prev - Math.ceil(service.duration / 15)))
+        setModules((prev) => Math.max(1, prev - Math.ceil(service.duration / minuteGranularity)))
         setServicesToValidate((prev) => {
           const newState = { ...prev }
           delete newState[serviceId]
@@ -348,7 +374,7 @@ export function AppointmentDialog({
           realServiceId: service.serviceId // Guardar el ID del servicio real para el backend
         }
         setSelectedServices((prev) => [...prev, serviceToAdd])
-        setModules((prev) => prev + Math.ceil(service.duration / 15))
+        setModules((prev) => prev + Math.ceil(service.duration / minuteGranularity))
         setUserModifiedServices(true)
       }
     } else if (service.type === 'package' && service.items) {
@@ -362,7 +388,7 @@ export function AppointmentDialog({
         const totalDuration = service.items.reduce((sum: number, item: any) => 
           sum + (item.service.durationMinutes || 0), 0
         )
-        setModules((prev) => Math.max(1, prev - Math.ceil(totalDuration / 15)))
+        setModules((prev) => Math.max(1, prev - Math.ceil(totalDuration / minuteGranularity)))
         setServicesToValidate((prev) => {
           const newState = { ...prev }
           packageServiceIds.forEach((id) => delete newState[id])
@@ -382,7 +408,7 @@ export function AppointmentDialog({
         
         setSelectedServices((prev) => [...prev, ...packageServices])
         const totalDuration = packageServices.reduce((sum, s) => sum + s.duration, 0)
-        setModules((prev) => prev + Math.ceil(totalDuration / 15))
+        setModules((prev) => prev + Math.ceil(totalDuration / minuteGranularity))
         setUserModifiedServices(true)
       }
     } else {
@@ -391,7 +417,7 @@ export function AppointmentDialog({
       
       if (isSelected) {
         setSelectedServices((prev) => prev.filter((s) => s.id !== service.id))
-        setModules((prev) => Math.max(1, prev - Math.ceil(service.duration / 15)))
+        setModules((prev) => Math.max(1, prev - Math.ceil(service.duration / minuteGranularity)))
         setServicesToValidate((prev) => {
           const newState = { ...prev }
           delete newState[service.id]
@@ -400,7 +426,7 @@ export function AppointmentDialog({
         setUserModifiedServices(true)
       } else {
         setSelectedServices((prev) => [...prev, service])
-        setModules((prev) => prev + Math.ceil(service.duration / 15))
+        setModules((prev) => prev + Math.ceil(service.duration / minuteGranularity))
         setUserModifiedServices(true)
       }
     }
@@ -419,7 +445,7 @@ export function AppointmentDialog({
     const service = selectedServices.find((s) => s.id === serviceId)
     if (service) {
       setSelectedServices((prev) => prev.filter((s) => s.id !== serviceId))
-      setModules((prev) => Math.max(1, prev - Math.ceil(service.duration / 15)))
+      setModules((prev) => Math.max(1, prev - Math.ceil(service.duration / minuteGranularity)))
       
       // También quitar de servicios a validar
       setServicesToValidate((prev) => {
@@ -439,30 +465,25 @@ export function AppointmentDialog({
   const handleDelete = async () => {
     if (!existingAppointment?.id) return
     
+    // ✅ CONFIRMACIÓN ÚNICA
     if (!confirm('¿Estás seguro de que deseas eliminar esta cita?')) {
       return
     }
     
+    console.log('[AppointmentDialog] 🗑️ Usuario confirmó eliminación');
+    
     try {
-      const response = await fetch(`/api/appointments?id=${existingAppointment.id}`, {
-        method: 'DELETE',
-      })
-
-      if (response.ok) {
-        // NO mostrar segunda alerta - solo refrescar y cerrar
-        
-        // Refrescar la agenda si existe la función
-        if (onMoveAppointment) {
-          onMoveAppointment()
-        }
-        onClose()
-      } else {
-        const error = await response.json()
-        alert(`Error al eliminar: ${error.error || 'Error desconocido'}`)
+      // ✅ RENDERIZADO OPTIMISTA: Cerrar modal INMEDIATAMENTE
+      onClose();
+      
+      // ✅ EJECUTAR ELIMINACIÓN OPTIMISTA en background
+      if (onMoveAppointment) {
+        console.log('[AppointmentDialog] 🗑️ Llamando eliminación optimista...');
+        await onMoveAppointment();
       }
     } catch (error) {
-      console.error('Error deleting appointment:', error)
-      alert('Error al eliminar la cita')
+      console.error('[AppointmentDialog] 🗑️ Error en eliminación:', error);
+      // El error ya se maneja en handleDeleteAppointment del weekly-agenda
     }
   }
 
@@ -470,48 +491,65 @@ export function AppointmentDialog({
     if (!clinic || !professional || !selectedTime || !roomId || selectedServices.length === 0) {
       return
     }
-
-    const serviceIds = selectedServices.map(service => {
-      if (service.id.startsWith('bono-')) {
-        return service.realServiceId // Usar el ID del servicio real para el backend
-      } else if (service.id.includes('-')) {
-        // Para servicios de paquetes, obtener el ID del servicio
-        const parts = service.id.split('-')
-        return parts[parts.length - 1]
-      }
-      return service.id
-    })
-
-    // Calcular duración teórica de los servicios vs duración real
-    const theoreticalDuration = selectedServices.reduce((sum, s) => sum + s.duration, 0)
-    const actualDuration = modules * minuteGranularity
-    const hasExtension = actualDuration > theoreticalDuration
-    const extensionMinutes = hasExtension ? actualDuration - theoreticalDuration : 0
-
-    const appointmentData = {
-      id: existingAppointment?.id, // Incluir el ID si es una edición
-      clinicId: clinic.id,
-      professionalId: professional.id,
-      personId: initialClient?.id || '',
-      date: format(date, 'yyyy-MM-dd'),
-      startTime: selectedTime,
-      endTime,
-      services: serviceIds,
-      notes: appointmentComment,
-      roomId: roomId, // CORREGIDO: usar roomId, no equipmentId
-      tags: selectedTags, // Añadir las etiquetas seleccionadas
-      // Información de extensión si aplica
-      estimatedDurationMinutes: theoreticalDuration,
-      durationMinutes: actualDuration,
-      hasExtension,
-      extensionMinutes
-    }
-
-    if (onSaveAppointment) {
-      await onSaveAppointment(appointmentData)
-    }
     
-    onClose()
+    // ✅ ACTIVAR LOADING para feedback inmediato
+    setIsSaving(true)
+
+    try {
+      const serviceIds = selectedServices.map(service => {
+        if (service.id.startsWith('bono-')) {
+          return service.realServiceId // Usar el ID del servicio real para el backend
+        } else if (service.id.includes('-')) {
+          // Para servicios de paquetes, obtener el ID del servicio
+          const parts = service.id.split('-')
+          return parts[parts.length - 1]
+        }
+        return service.id
+      })
+
+      // Calcular duración teórica de los servicios vs duración real
+      const theoreticalDuration = selectedServices.reduce((sum, s) => sum + s.duration, 0)
+      const actualDuration = modules * minuteGranularity
+      const hasExtension = actualDuration > theoreticalDuration
+      const extensionMinutes = hasExtension ? actualDuration - theoreticalDuration : 0
+
+      const appointmentData = {
+        id: existingAppointment?.id, // Incluir el ID si es una edición
+        clinicId: clinic.id,
+        professionalId: professional.id,
+        personId: initialClient?.id || '',
+        date: format(date, 'yyyy-MM-dd'),
+        startTime: selectedTime,
+        endTime,
+        services: serviceIds,
+        notes: appointmentComment,
+        roomId: roomId, // CORREGIDO: usar roomId, no equipmentId
+        tags: selectedTags, // Añadir las etiquetas seleccionadas
+        // Información de extensión si aplica
+        estimatedDurationMinutes: theoreticalDuration,
+        durationMinutes: actualDuration,
+        hasExtension,
+        extensionMinutes,
+        // ✅ AÑADIR DATOS PARA RENDERIZADO OPTIMISTA
+        selectedServicesData: selectedServices, // Servicios completos con nombres, duraciones, etc.
+        clientData: initialClient // Cliente completo para el renderizado optimista
+      }
+
+      // ✅ RENDERIZADO OPTIMISTA: Cerrar modal INMEDIATAMENTE
+      onClose()
+
+      // ✅ EJECUTAR API en background - el renderizado optimista ya se ve
+      if (onSaveAppointment) {
+        await onSaveAppointment(appointmentData)
+      }
+    } catch (error) {
+      console.error('[AppointmentDialog] Error saving appointment:', error)
+      // Si hay error, reabrir modal para que usuario pueda reintentar
+      // onClose() ya se ejecutó, pero podríamos mostrar un toast de error
+    } finally {
+      // ✅ DESACTIVAR LOADING (aunque modal ya esté cerrado)
+      setIsSaving(false)
+    }
   }
 
   const handleValidate = async () => {
@@ -653,6 +691,8 @@ export function AppointmentDialog({
   // Initialize from existing appointment when editing
   useEffect(() => {
     if (isEditing && existingAppointment) {
+
+      
       // Inicializar notas
       setAppointmentComment(existingAppointment.notes || "")
       
@@ -670,7 +710,7 @@ export function AppointmentDialog({
           // Extraer las horas usando la utilidad
           const startTimeStr = extractTimeFromString(existingAppointment.startTime);
           const durationMinutes = calculateDurationInMinutes(startTimeStr, endTimeStr);
-          setModules(Math.ceil(durationMinutes / 15))
+          setModules(Math.ceil(durationMinutes / minuteGranularity))
         }
       }
       
@@ -747,7 +787,7 @@ export function AppointmentDialog({
       
       // IMPORTANTE: Solo recalcular duración si NO tenemos endTime de la BD
       if (!existingAppointment.endTime) {
-        setModules(Math.ceil(selectedServices.reduce((sum, s) => sum + s.duration, 0) / 15))
+        setModules(Math.ceil(selectedServices.reduce((sum, s) => sum + s.duration, 0) / minuteGranularity))
       }
     }
   }, [isEditing, existingAppointment, allServicesData, allBonosData, allPackagesData])
@@ -893,6 +933,36 @@ export function AppointmentDialog({
                         <span> - {endTime}</span>
                       )}
                     </span>
+                    
+                    {/* ✅ ICONO REVERTIR EXTENSIÓN - Al lado de las horas */}
+                    {existingAppointment?.estimatedDurationMinutes && 
+                     existingAppointment?.duration && 
+                     existingAppointment.duration > existingAppointment.estimatedDurationMinutes && (
+                      <button
+                        className="ml-2 p-1 rounded-md hover:bg-orange-100 transition-colors"
+                        onClick={async () => {
+                          if (!existingAppointment?.id) return;
+                          
+                          try {
+                            const response = await fetch(`/api/appointments/${existingAppointment.id}/revert-extension`, {
+                              method: 'DELETE',
+                            });
+                            
+                            if (response.ok) {
+                              onClose(); // Cerrar modal después de revertir
+                              // El optimistic update se maneja automáticamente
+                            } else {
+                              console.error('Error al revertir extensión');
+                            }
+                          } catch (error) {
+                            console.error('Error:', error);
+                          }
+                        }}
+                        title={`Revertir a duración original (${existingAppointment.estimatedDurationMinutes} min)`}
+                      >
+                        <RefreshCw className="h-3.5 w-3.5 text-orange-600 hover:text-orange-700" />
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -1309,9 +1379,21 @@ export function AppointmentDialog({
                           size="sm"
                           className="bg-purple-600 hover:bg-purple-700"
                           onClick={handleSave}
-                          disabled={!selectedServices.length || isAppointmentValidated}
+                          disabled={!selectedServices.length || isAppointmentValidated || isSaving || isOptimisticAppointment}
                         >
-                          Guardar
+                          {isSaving ? (
+                            <>
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              Guardando...
+                            </>
+                          ) : isOptimisticAppointment ? (
+                            <>
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              Procesando...
+                            </>
+                          ) : (
+                            'Guardar'
+                          )}
                         </Button>
                       </div>
                     </div>

@@ -13,7 +13,8 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const appointmentId = params.id
+    const resolvedParams = await params; // ✅ ARREGLO NextJS 15
+    const appointmentId = resolvedParams.id;
     console.log(' [API] Revirtiendo extensión de cita:', appointmentId)
 
     // Verificar que la cita existe y pertenece al sistema del usuario

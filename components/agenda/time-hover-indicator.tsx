@@ -29,10 +29,10 @@ const TimeHoverIndicator: React.FC<TimeHoverIndicatorProps> = ({
   
   return (
     <>
-      {/* Línea horizontal */}
+      {/* Línea horizontal - z-50 para estar sobre cabeceras */}
       <div
         className={cn(
-          "absolute left-0 right-0 pointer-events-none z-10",
+          "absolute left-0 right-0 pointer-events-none z-50",
           isDaily ? "bg-blue-500" : "bg-blue-400"
         )}
         style={{
@@ -42,10 +42,10 @@ const TimeHoverIndicator: React.FC<TimeHoverIndicatorProps> = ({
         }}
       />
       
-      {/* Indicador de hora */}
+      {/* Indicador de hora - z-50 para estar sobre cabeceras */}
       <div
         className={cn(
-          "absolute left-0 pointer-events-none z-10",
+          "absolute left-0 pointer-events-none z-50",
           fontSize,
           padding,
           "bg-blue-500 text-white rounded-r-md shadow-sm",

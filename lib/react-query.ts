@@ -16,8 +16,8 @@ export const queryClient = new QueryClient({
         
         return (isNetworkError || isServerError) && failureCount < 3;
       },
-      // 1 minuto por defecto - para datos que cambian con frecuencia media
-      staleTime: 1000 * 60 * 1,
+      // ✅ NO cache por defecto - evita problemas de hidratación SSR
+      staleTime: 0,
       // No revalidar la ventana cuando recupera el foco por defecto
       refetchOnWindowFocus: false,
       // Revalida al recuperar conexión 

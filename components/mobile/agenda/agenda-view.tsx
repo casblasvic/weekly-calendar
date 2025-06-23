@@ -267,16 +267,16 @@ function MobileAgendaViewContent({ showMainSidebar = false }: MobileAgendaViewPr
   }, []);
   // <<< FIN PLACEHOLDERS >>>
 
-  // <<< Leer configuración horaria desde la nueva estructura >>>
+  // <<< Leer configuración horaria desde la nueva estructura - SIN VALORES POR DEFECTO >>>
   const scheduleConfig = useMemo(() => {
-    if (!activeClinic) return { openTime: "09:00", closeTime: "18:00", slotDuration: 15 }; // Fallback inicial
+    if (!activeClinic) return null; // SIN valores por defecto hardcodeados
     
     // Prioridad 1: Horario independiente
     if (activeClinic.independentSchedule) {
        console.log("[MobileAgendaView Config] Using independent schedule config");
        return {
-          openTime: activeClinic.independentSchedule.openTime || "09:00",
-          closeTime: activeClinic.independentSchedule.closeTime || "18:00",
+          openTime: activeClinic.independentSchedule.openTime,
+          closeTime: activeClinic.independentSchedule.closeTime,
           slotDuration: activeClinic.independentSchedule.slotDuration || 15,
        }
     }
@@ -284,22 +284,20 @@ function MobileAgendaViewContent({ showMainSidebar = false }: MobileAgendaViewPr
     if (activeClinic.linkedScheduleTemplate) {
        console.log("[MobileAgendaView Config] Using linked template config");
        return {
-         openTime: activeClinic.linkedScheduleTemplate.openTime || "09:00",
-         closeTime: activeClinic.linkedScheduleTemplate.closeTime || "18:00",
+         openTime: activeClinic.linkedScheduleTemplate.openTime,
+         closeTime: activeClinic.linkedScheduleTemplate.closeTime,
          slotDuration: activeClinic.linkedScheduleTemplate.slotDuration || 15,
        }
     }
-    // Fallback final si no hay ninguno
-    console.log("[MobileAgendaView Config] Using fallback config");
-    return { openTime: "09:00", closeTime: "18:00", slotDuration: 15 };
+    // Si no hay configuración, retornar null
+    console.log("[MobileAgendaView Config] No schedule configuration found");
+    return null;
     
   }, [activeClinic]);
 
-  const { 
-      openTime: effectiveOpenTime, 
-      closeTime: effectiveCloseTime, 
-      slotDuration 
-  } = scheduleConfig;
+  const effectiveOpenTime = scheduleConfig?.openTime;
+  const effectiveCloseTime = scheduleConfig?.closeTime;
+  const slotDuration = scheduleConfig?.slotDuration || 15;
   // <<< FIN LECTURA CONFIGURACIÓN >>>
 
   const correctSchedule = useMemo(() => {
@@ -355,6 +353,11 @@ function MobileAgendaViewContent({ showMainSidebar = false }: MobileAgendaViewPr
   }, [theme])
 
   const timeSlots = useMemo(() => {
+    // NO generar timeSlots si no hay configuración válida
+    if (!effectiveOpenTime || !effectiveCloseTime) {
+      console.log('[MobileAgendaView timeSlots] No hay configuración de horario válida, retornando array vacío');
+      return [];
+    }
     console.log(`[MobileAgendaView timeSlots] Generating slots with effectiveOpenTime: ${effectiveOpenTime}, effectiveCloseTime: ${effectiveCloseTime}, slotDuration: ${slotDuration}`);
     return getTimeSlots(effectiveOpenTime, effectiveCloseTime, slotDuration); // Usar valores efectivos
   }, [effectiveOpenTime, effectiveCloseTime, slotDuration]);
@@ -818,6 +821,34 @@ function MobileAgendaViewContent({ showMainSidebar = false }: MobileAgendaViewPr
   const renderCalendarView = () => {
       // <<< LOG PARA VER TIMESLOTS USADOS >>>
       console.log("[MobileAgendaView - renderCalendarView] Rendering with timeSlots:", timeSlots);
+      
+      // Mostrar mensaje cuando no hay configuración de horario
+      if (timeSlots.length === 0) {
+        return (
+          <div className="flex items-center justify-center h-full">
+            <div className="text-center p-8">
+              <h3 className="text-lg font-medium text-gray-700 mb-2">
+                Horario no configurado
+              </h3>
+              <p className="text-gray-500 mb-4">
+                La clínica no tiene un horario configurado. Por favor, configura el horario para poder gestionar las citas.
+              </p>
+              <Button
+                onClick={() => {
+                  // Navegar a configuración de horarios
+                  if (activeClinic?.id) {
+                    window.location.href = `/configuracion/clinicas/${activeClinic.id}?tab=horarios`;
+                  }
+                }}
+                className="bg-purple-600 hover:bg-purple-700 text-white"
+              >
+                Configurar horario
+              </Button>
+            </div>
+          </div>
+        );
+      }
+      
       return (
         <div className="relative flex-1 overflow-auto" style={{ paddingBottom: "60px" }}>
           <div className="min-w-fit">
@@ -953,20 +984,17 @@ function MobileAgendaViewContent({ showMainSidebar = false }: MobileAgendaViewPr
                 </div>
               ))}
 
-              {/* Indicador de hora actual */}
-              {containerRef.current && (
+              {/* Indicador de hora actual - Temporalmente comentado hasta resolver props */}
+              {/* {containerRef.current && effectiveOpenTime && effectiveCloseTime && (
                 <CurrentTimeIndicator
-                  config={{
-                    slotDuration: slotDuration,
-                  }}
                   key="mobile-indicator"
                   timeSlots={timeSlots}
-                  rowHeight={AGENDA_CONFIG.ROW_HEIGHT}
-                  isMobile={true}
                   className="z-50"
                   agendaRef={getCompatibleAgendaRef()}
+                  clinicOpenTime={effectiveOpenTime}
+                  clinicCloseTime={effectiveCloseTime}
                 />
-              )}
+              )} */}
             </div>
           </div>
         </div>

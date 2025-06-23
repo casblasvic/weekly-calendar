@@ -16,6 +16,8 @@ export async function GET(request: NextRequest) {
     const clinicId = searchParams.get('clinicId');
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
+    const weekParam = searchParams.get('week');
+    const dateParam = searchParams.get('date');
 
     const where: any = {
       systemId: session.user.systemId,
@@ -25,12 +27,66 @@ export async function GET(request: NextRequest) {
       where.clinicId = clinicId;
     }
 
-    if (startDate && endDate) {
+    // ✅ NUEVO: Soporte para parámetro de semana (para cache inteligente)
+    if (weekParam) {
+      console.log(`[API] 🗓️ Received week param: ${weekParam}`);
+      
+      // ✅ PARSEAR weekParam format: "Wyyyy-ww" (ej: "W2024-25") 
+      const weekMatch = weekParam.match(/W(\d{4})-(\d{1,2})/);
+      if (weekMatch) {
+        const year = parseInt(weekMatch[1]);
+        const weekNumber = parseInt(weekMatch[2]);
+        
+        console.log(`[API] 🗓️ Parsing week: year=${year}, weekNumber=${weekNumber}`);
+        
+        // ✅ CALCULAR usando date-fns para consistencia con frontend
+        const { startOfWeek: startOfWeekFn, addWeeks, addDays } = require('date-fns');
+        
+        // Crear fecha del 4 de enero del año (siempre está en semana 1 ISO)
+        const jan4 = new Date(year, 0, 4);
+        const startOfWeek1 = startOfWeekFn(jan4, { weekStartsOn: 1 }); // Lunes de semana 1
+        
+        // Calcular semana objetivo
+        const targetWeekStart = addWeeks(startOfWeek1, weekNumber - 1);
+        const monday = targetWeekStart;
+        const sunday = addDays(monday, 6);
+        
+                 // ✅ TIMEZONE CORREGIDO: Usar timezone local en lugar de Z (UTC)
+         const startOfWeekTZ = new Date(`${monday.getFullYear()}-${String(monday.getMonth() + 1).padStart(2, '0')}-${String(monday.getDate()).padStart(2, '0')}T00:00:00`);
+         const endOfWeekTZ = new Date(`${sunday.getFullYear()}-${String(sunday.getMonth() + 1).padStart(2, '0')}-${String(sunday.getDate()).padStart(2, '0')}T23:59:59.999`);
+        
+                 console.log(`[API] 🗓️ Week range: ${startOfWeekTZ.toISOString()} to ${endOfWeekTZ.toISOString()}`);
+         
+         where.startTime = {
+           gte: startOfWeekTZ,
+           lte: endOfWeekTZ,
+         };
+      }
+    }
+    // ✅ NUEVO: Soporte para parámetro de día único (date)
+         else if (dateParam) {
+       console.log(`[API] 📅 Received date param: ${dateParam}`);
+       // ✅ TIMEZONE CORREGIDO: Sin Z para usar timezone local
+       const startOfDay = new Date(`${dateParam}T00:00:00`);
+       const endOfDay = new Date(`${dateParam}T23:59:59.999`);
+      
+      console.log(`[API] 📅 Day range: ${startOfDay.toISOString()} to ${endOfDay.toISOString()}`);
+      
+      where.startTime = {
+        gte: startOfDay,
+        lte: endOfDay,
+      };
+    }
+    // ✅ MANTENER: Soporte legacy para startDate/endDate
+    else if (startDate && endDate) {
       console.log(`[API] Received dates: startDate=${startDate}, endDate=${endDate}`);
-      // For daily view, startDate and endDate are the same 'YYYY-MM-DD' string.
-      // new Date('YYYY-MM-DD') creates a date at midnight UTC.
-      const startOfDay = new Date(`${startDate}T00:00:00.000Z`);
-      const endOfDay = new Date(`${endDate}T23:59:59.999Z`);
+      // ✅ TIMEZONE CORREGIDO: Usar timezone de clínica en lugar de UTC
+      // TODO: Obtener timezone de la clínica basado en clinicId
+      const clinicTimezone = 'Europe/Madrid'; // Default - debería venir de clínica
+      
+      // Crear fechas en timezone de clínica
+      const startOfDay = new Date(`${startDate}T00:00:00`);
+      const endOfDay = new Date(`${endDate}T23:59:59.999`);
 
       console.log(`[API] Querying between: gte=${startOfDay.toISOString()}, lte=${endOfDay.toISOString()}`);
 
@@ -79,6 +135,7 @@ export async function GET(request: NextRequest) {
                 name: true,
                 colorCode: true,
                 categoryId: true,
+                durationMinutes: true,  // ✅ AÑADIR duración para cálculos
               }
             }
           }
@@ -339,42 +396,81 @@ export async function POST(request: NextRequest) {
     const completeAppointment = await prisma.appointment.findUnique({
       where: { id: appointment.id },
       include: {
-        person: true,
-        professionalUser: true,
-        clinic: true,
-        equipment: true, // Cambiar room por equipment
+        person: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            phone: true,
+            email: true,
+          }
+        },
+        professionalUser: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+          }
+        },
+        clinic: {
+          select: {
+            id: true,
+            name: true,
+          }
+        },
+        equipment: {
+          select: {
+            id: true,
+            name: true,
+          }
+        },
+        // ✅ INCLUIR SERVICIOS IGUAL QUE EN GET
+        services: {
+          include: {
+            service: {
+              select: {
+                id: true,
+                name: true,
+                colorCode: true,
+                categoryId: true,
+                durationMinutes: true,
+                price: true, // ✅ AÑADIR PRECIO TAMBIÉN
+              }
+            }
+          }
+        },
+        tags: {
+          include: {
+            tag: {
+              select: {
+                id: true,
+                name: true,
+                color: true,
+              }
+            }
+          }
+        }
       }
     });
 
-    // Obtener los servicios asociados a la cita
-    const appointmentServices = await prisma.$queryRaw`
-      SELECT 
-        s.id,
-        s.name,
-        s.price,
-        s."durationMinutes"
-      FROM saasavatar.appointment_services as_join
-      JOIN saasavatar.services s ON as_join."serviceId" = s.id
-      WHERE as_join."appointmentId" = ${appointment.id}
-    `;
+    // ✅ DEBUG: Verificar datos antes de mapear
+    console.log('🔍 [API POST] Services from DB:', JSON.stringify(completeAppointment?.services, null, 2));
+    console.log('🔍 [API POST] Tags from DB:', JSON.stringify(completeAppointment?.tags, null, 2));
+    console.log('🔍 [API POST] Equipment from DB:', JSON.stringify(completeAppointment?.equipment, null, 2));
 
-    // Asegurar que las fechas se serialicen correctamente
+    // Asegurar que las fechas se serialicen correctamente y mapear datos igual que GET
     const responseData = {
       ...completeAppointment,
       startTime: completeAppointment?.startTime.toISOString(),
       endTime: completeAppointment?.endTime.toISOString(),
       createdAt: completeAppointment?.createdAt.toISOString(),
       updatedAt: completeAppointment?.updatedAt.toISOString(),
-      // Agregar los servicios en el formato esperado por el frontend
-      services: (appointmentServices as any[]).map(s => ({
-        service: {
-          id: s.id,
-          name: s.name,
-          price: s.price,
-          duration: s.durationMinutes
-        }
-      }))
+      // ✅ Mapear etiquetas igual que en GET
+      tags: completeAppointment?.tags?.map(t => t.tagId) || [],
+      // ✅ Los servicios ya vienen incluidos en completeAppointment con todos los datos
     };
+
+    console.log('🔍 [API POST] Final response data services:', JSON.stringify(responseData.services, null, 2));
 
     return NextResponse.json(responseData, { status: 201 });
   } catch (error) {
@@ -841,7 +937,19 @@ export async function PUT(request: NextRequest) {
       }
     });
 
-    return NextResponse.json(completeAppointment, { status: 200 });
+    // ✅ MAPEAR RESPUESTA IGUAL QUE EN GET para consistencia
+    const responseData = {
+      ...completeAppointment,
+      startTime: completeAppointment?.startTime.toISOString(),
+      endTime: completeAppointment?.endTime.toISOString(),
+      createdAt: completeAppointment?.createdAt.toISOString(),
+      updatedAt: completeAppointment?.updatedAt.toISOString(),
+      // ✅ CRUCIAL: Mapear etiquetas igual que en GET (array de IDs)
+      tags: completeAppointment?.tags?.map(t => t.tagId) || [],
+    };
+
+    console.log('🔍 [API PUT] Final response tags:', responseData.tags);
+    return NextResponse.json(responseData, { status: 200 });
   } catch (error) {
     console.error('Error updating appointment:', error);
     return NextResponse.json(

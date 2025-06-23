@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '@/utils/api-client';
 import { CACHE_TIME } from '@/lib/react-query';
+import { useClinic } from '@/contexts/clinic-context';
 
 /**
  * AppPrefetcher es un componente invisible que se encarga de precargar datos
@@ -16,6 +17,7 @@ import { CACHE_TIME } from '@/lib/react-query';
 export function AppPrefetcher() {
   const queryClient = useQueryClient();
   const pathname = usePathname();
+  const { activeClinic } = useClinic();
 
   // Prefetching basado en la página actual
   useEffect(() => {
@@ -55,13 +57,42 @@ export function AppPrefetcher() {
       }
       
       else if (pathname?.includes('/agenda')) {
-        // Prefetch datos para la agenda
-        const today = new Date().toISOString().split('T')[0];
-        queryClient.prefetchQuery({
-          queryKey: ['appointments', today],
-          queryFn: () => api.cached.get(`/api/appointments?date=${today}`),
-          staleTime: CACHE_TIME.CORTO // Datos que cambian frecuentemente
+        // ✅ PREFETCH MEJORADO: Usar nuevo sistema de sliding window
+        const { getCurrentWeekKey, getWeekKey, getDayKey } = await import('@/lib/hooks/use-appointments-query');
+        
+        const currentWeek = getCurrentWeekKey();
+        const prevWeek = getWeekKey(currentWeek, -1);
+        const nextWeek = getWeekKey(currentWeek, +1);
+        const today = getDayKey(new Date());
+        
+        // ✅ USAR CLÍNICA ACTIVA DEL CONTEXTO
+        const activeClinicId = activeClinic?.id;
+        
+        // Solo hacer prefetch si hay una clínica activa
+        if (!activeClinicId) {
+          console.log('[AppPrefetcher] No hay clínica activa, saltando prefetch de agenda');
+          return;
+        }
+        
+        // ✅ PREFETCH SLIDING WINDOW (3 semanas)
+        [prevWeek, currentWeek, nextWeek].forEach(week => {
+          if (!queryClient.getQueryData(['appointments', 'week', week, activeClinicId])) {
+            queryClient.prefetchQuery({
+              queryKey: ['appointments', 'week', week, activeClinicId],
+              queryFn: () => api.cached.get(`/api/appointments?clinicId=${activeClinicId}&week=${week}`),
+              staleTime: CACHE_TIME.CORTO
+            });
+          }
         });
+        
+        // ✅ PREFETCH DÍA ACTUAL (prioritario)
+        if (!queryClient.getQueryData(['appointments', 'day', today, activeClinicId])) {
+          queryClient.prefetchQuery({
+            queryKey: ['appointments', 'day', today, activeClinicId],
+            queryFn: () => api.cached.get(`/api/appointments?clinicId=${activeClinicId}&date=${today}`),
+            staleTime: CACHE_TIME.MUY_CORTO
+          });
+        }
       }
     };
     

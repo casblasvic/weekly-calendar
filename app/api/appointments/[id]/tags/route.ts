@@ -4,7 +4,7 @@ import { auth } from "@/lib/auth";
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await auth();
@@ -18,7 +18,8 @@ export async function PUT(
     }
 
     const { tagIds } = await request.json();
-    const appointmentId = params.id;
+    const resolvedParams = await params;
+    const appointmentId = resolvedParams.id;
 
     // Verificar que la cita existe y pertenece al sistema
     const appointment = await prisma.appointment.findFirst({

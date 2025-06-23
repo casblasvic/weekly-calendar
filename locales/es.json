@@ -168,10 +168,24 @@
     "search": "Buscar",
         "print": "Imprimir",
         "comments": "Comentarios",
-        "viewAll": "Ver todos",
-        "viewDetails": "Ver desglose"
+            "viewAll": "Ver todos",
+    "viewDetails": "Ver desglose"
+  },
+  "agenda": {
+    "noScheduleConfigured": {
+      "title": "Horario no configurado",
+      "description": "La clínica no tiene un horario configurado. Por favor, configura el horario para poder gestionar las citas.",
+      "action": "Configurar horario"
     },
-    "sidebar": {
+    "noCabinsConfigured": {
+      "title": "Sin cabinas disponibles",
+      "description": "No hay cabinas configuradas para esta clínica. Por favor, añade al menos una cabina para poder gestionar las citas.",
+      "action": "Configurar cabinas"
+    },
+    "loadingSchedule": "Cargando horario de la clínica...",
+    "noActiveClinic": "Por favor, selecciona una clínica para ver la agenda."
+  },
+  "sidebar": {
         "dashboard": "Inicio",
         "calendar": "Agenda",
         "clients": "Clientes",

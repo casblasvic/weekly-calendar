@@ -1,535 +1,271 @@
 "use client"
 
-import type React from "react"
-import { useEffect, useState, useCallback, useRef, useLayoutEffect } from "react"
-import { format, parse, isWithinInterval, addMinutes, startOfDay, differenceInMinutes } from "date-fns"
+import React, { useRef, useCallback, useLayoutEffect } from "react"
+import { AGENDA_CONFIG } from "@/config/agenda-config"
 import { cn } from "@/lib/utils"
-
-// Variable para controlar los logs de debug del CurrentTimeIndicator
-const debugCurrentTimeIndicator = false;
 
 interface CurrentTimeIndicatorProps {
   timeSlots: string[]
-  rowHeight: number
-  isMobile: boolean
+  isMobile?: boolean
   className?: string
   agendaRef: React.RefObject<HTMLDivElement | null> | React.RefObject<HTMLDivElement>
   clinicOpenTime?: string
   clinicCloseTime?: string
-  config: any
 }
 
 export const CurrentTimeIndicator: React.FC<CurrentTimeIndicatorProps> = ({
   timeSlots,
-  rowHeight,
-  isMobile,
+  isMobile = false,
   className,
   agendaRef,
   clinicOpenTime,
   clinicCloseTime,
-  config,
 }) => {
-  const [currentTime, setCurrentTime] = useState(new Date())
-  const [position, setPosition] = useState<{ top: number; display: string } | null>(null)
-  const [nearestSlotTime, setNearestSlotTime] = useState<string | null>(null)
-  const [isWithinTimeRange, setIsWithinTimeRange] = useState(false)
-  const [isVisible, setIsVisible] = useState(true)
-  const [indicatorWidth, setIndicatorWidth] = useState<number | null>(null)
   const indicatorRef = useRef<HTMLDivElement>(null)
-  const updateTimerRef = useRef<NodeJS.Timeout | null>(null)
-  
-  // Mover los useRef aquí al inicio para evitar errores de orden de hooks
-  const prevPositionRef = useRef<{ top: number; display: string } | null>(null);
-  const prevVisibilityRef = useRef<boolean>(false);
-  const skipRenderRef = useRef<boolean>(false);
-  // Añadir esta ref a nivel de componente, no dentro de updatePosition
-  const currentUpdateIdRef = useRef<Symbol | null>(null);
-  // Añadir una ref para el id del scroll inicial
-  const scrollIdRef = useRef<Symbol | null>(null);
+  const animationRef = useRef<number | null>(null)
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null)
 
-  // Verificar si la hora actual está dentro del horario de la clínica
-  const isWithinClinicHours = useCallback(() => {
-    if (!clinicOpenTime || !clinicCloseTime) return true // Si no hay horario configurado, mostrar siempre
-
-    const currentTimeString = format(currentTime, "HH:mm")
-    const currentMinutes = parseTime(currentTimeString)
-    const openMinutes = parseTime(clinicOpenTime)
-    const closeMinutes = parseTime(clinicCloseTime)
-
-    return currentMinutes >= openMinutes && currentMinutes <= closeMinutes
-  }, [currentTime, clinicOpenTime, clinicCloseTime])
-
-  // Nueva función para verificar si está dentro del rango de timeSlots renderizados
-  const isWithinRenderedTimeRange = useCallback(() => {
-    if (!timeSlots.length) return false
-    
-    const currentTimeString = format(currentTime, "HH:mm")
-    const currentMinutes = parseTime(currentTimeString)
-    
-    // Obtener el primer y último slot renderizado
-    const firstSlot = timeSlots[0]
-    const lastSlot = timeSlots[timeSlots.length - 1]
-    
-    const firstSlotMinutes = parseTime(firstSlot)
-    const lastSlotMinutes = parseTime(lastSlot)
-    
-    // IMPORTANTE: El indicador debe mostrarse hasta el último slot + duración del slot
-    // Si el último slot es 20:00 y los slots son de 30 min, debe mostrarse hasta 20:30
-    const slotDurationMinutes = timeSlots.length > 1 ? 
-      parseTime(timeSlots[1]) - parseTime(timeSlots[0]) : 30 // Default 30 min si no se puede calcular
-    
-    const effectiveEndMinutes = lastSlotMinutes + slotDurationMinutes
-    
-    // Solo mostrar si está entre el primer slot y el último slot + duración (inclusive)
-    return currentMinutes >= firstSlotMinutes && currentMinutes <= effectiveEndMinutes
-  }, [currentTime, timeSlots])
-
-  // Verificar si mostrar - ahora incluye ambas validaciones
-  const shouldShow = isWithinTimeRange && isVisible && isWithinClinicHours() && isWithinRenderedTimeRange() && position !== null
-
-  // Asegurar que el indicador sea visible si hay slots de tiempo
-  useEffect(() => {
-    setIsVisible(timeSlots.length > 0)
-  }, [timeSlots.length])
-
-  // Actualizar el tiempo actual cada minuto con memoización para prevenir doble renderizado
-  const updateCurrentTime = useCallback(() => {
-    setCurrentTime(new Date())
-  }, []);
-
-  // Actualizar el tiempo actual cada minuto con memoización para prevenir doble renderizado
-  useEffect(() => {
-    // Limpiar cualquier timer anterior para evitar actualizaciones duplicadas
-    if (updateTimerRef.current) {
-      clearInterval(updateTimerRef.current);
-      updateTimerRef.current = null;
+  // ✅ ESTRATEGIA INTELIGENTE: Usar granularidades DOM reales ya renderizadas
+  const calculatePosition = useCallback((): { top: number; visible: boolean; timeText: string; withinView: boolean } | null => {
+    if (!timeSlots.length || !agendaRef.current) {
+      return null
     }
 
-    // Actualizar inmediatamente
-    updateCurrentTime();
-
-    // Configurar intervalo para actualizar cada minuto
-    // Usamos 60500ms en lugar de 60000ms para evitar posibles solapamientos
-    const timer = setInterval(updateCurrentTime, 60500);
-    updateTimerRef.current = timer;
-
-    return () => {
-      if (updateTimerRef.current) {
-        clearInterval(updateTimerRef.current);
-        updateTimerRef.current = null;
+    const now = new Date()
+    const currentHour = now.getHours()
+    const currentMinute = now.getMinutes()
+    const currentTimeString = `${currentHour.toString().padStart(2, '0')}:${currentMinute.toString().padStart(2, '0')}`
+    
+    // ✅ VERIFICAR HORARIO DE CLÍNICA
+    if (clinicOpenTime && clinicCloseTime) {
+      if (currentTimeString < clinicOpenTime || currentTimeString > clinicCloseTime) {
+        return { top: 0, visible: false, timeText: currentTimeString, withinView: false }
       }
-    };
-  }, [updateCurrentTime]);
-
-  const updatePosition = useCallback(() => {
-    if (!agendaRef.current || timeSlots.length === 0) return;
-
-    const currentTime = new Date();
-    const currentTimeString = format(currentTime, "HH:mm");
-    const currentTimeMinutes = parseTime(currentTimeString);
-
-    if (debugCurrentTimeIndicator) console.log(`[CurrentTimeIndicator] Hora actual: ${currentTime} (${currentTimeMinutes} min)`);
-
-    // Verificar si la hora actual está después del effectiveEndTime
-    const effectiveEndTime = clinicCloseTime || timeSlots[timeSlots.length - 1];
-    const effectiveEndMinutes = parseTime(effectiveEndTime);
-    
-    if (currentTimeMinutes > effectiveEndMinutes) {
-      if (debugCurrentTimeIndicator) console.log(`[CurrentTimeIndicator] Hora actual (${currentTimeString}) está después del cierre (${effectiveEndTime}). No renderizar.`);
-      setPosition(null);
-      return;
     }
 
-    // Buscar TODOS los slots con hour-column
-    const container = agendaRef.current;
-    const slots = Array.from(container.querySelectorAll('.hour-column[data-time]'));
-    if (debugCurrentTimeIndicator) console.log(`[CurrentTimeIndicator] Slots encontrados: ${slots.length}`);
-    if (debugCurrentTimeIndicator) console.log(`[CurrentTimeIndicator] Container: ${container.className}`);
-    if (debugCurrentTimeIndicator) console.log(`[CurrentTimeIndicator] Primer slot: ${slots[0]?.getAttribute('data-time')}, Último slot: ${slots[slots.length-1]?.getAttribute('data-time')}`);
-
-    if (slots.length === 0) {
-      if (debugCurrentTimeIndicator) console.log('[CurrentTimeIndicator] No se encontraron slots en el contenedor');
-      return null;
+    // ✅ NUEVA ESTRATEGIA: Buscar elementos DOM reales con data-time
+    const container = agendaRef.current
+    const hourElements = Array.from(container.querySelectorAll('[data-time]'))
+    
+    if (hourElements.length === 0) {
+      console.warn('[TimeIndicator] No se encontraron elementos con data-time')
+      return null
     }
+
+    const currentTotalMinutes = currentHour * 60 + currentMinute
     
-    // Obtener el contenedor de referencia para posiciones relativas
-    const containerRect = container.getBoundingClientRect();
+    // ✅ ENCONTRAR EL ELEMENTO DOM ANTERIOR/ACTUAL
+    let targetElement: Element | null = null
+    let targetMinutes = -1
     
-    // Función simple: buscar el slot anterior o igual a la hora actual
-    function findCorrectSlot() {
-      let bestSlot: Element | null = null;
-      let nextSlot: Element | null = null;
-      let bestSlotTime: number | null = null;
-
-      for (let i = 0; i < slots.length; i++) {
-        const slot = slots[i];
-        const slotTime = slot.getAttribute('data-time');
-        const slotMinutes = parseTime(slotTime || '');
-
-        if (slotMinutes > currentTimeMinutes) {
-          // El slot actual es futuro: usar el anterior como base y este como siguiente
-          bestSlot = i > 0 ? slots[i - 1] : slot;
-          bestSlotTime = parseTime(bestSlot.getAttribute('data-time') || '');
-          nextSlot = slot;
-          break;
-        }
-
-        // Si estamos en la última iteración y no se ha roto el bucle, usar el último slot
-        if (i === slots.length - 1) {
-          bestSlot = slot;
-          bestSlotTime = slotMinutes;
-          nextSlot = null;
-        }
+    for (let i = hourElements.length - 1; i >= 0; i--) {
+      const element = hourElements[i]
+      const timeAttribute = element.getAttribute('data-time')
+      if (!timeAttribute) continue
+      
+      const [elementHour, elementMinute] = timeAttribute.split(':').map(Number)
+      const elementTotalMinutes = elementHour * 60 + elementMinute
+      
+      if (elementTotalMinutes <= currentTotalMinutes) {
+        targetElement = element
+        targetMinutes = elementTotalMinutes
+        break
       }
+    }
+
+    if (!targetElement) {
+      // Si no hay elemento anterior, usar el primero
+      targetElement = hourElements[0]
+      const firstTime = targetElement.getAttribute('data-time')!
+      const [firstHour, firstMinute] = firstTime.split(':').map(Number)
+      targetMinutes = firstHour * 60 + firstMinute
+    }
+
+    // ✅ USAR POSICIÓN REAL DEL DOM + INTERPOLACIÓN PRECISA
+    const elementRect = (targetElement as HTMLElement).getBoundingClientRect()
+    const containerRect = container.getBoundingClientRect()
+    
+    // Posición base del elemento relativa al contenedor
+    const baseTop = elementRect.top - containerRect.top + container.scrollTop
+    
+    // ✅ CALCULAR INTERPOLACIÓN HASTA LA SIGUIENTE GRANULARIDAD
+    const offsetMinutes = currentTotalMinutes - targetMinutes
+    
+    // Buscar siguiente elemento para calcular spacing real
+    const targetTime = targetElement.getAttribute('data-time')!
+    const targetIndex = timeSlots.indexOf(targetTime)
+    let spacingHeight = AGENDA_CONFIG.ROW_HEIGHT // Fallback
+    
+    if (targetIndex >= 0 && targetIndex < timeSlots.length - 1) {
+      // Calcular spacing real entre esta granularidad y la siguiente
+      const nextTime = timeSlots[targetIndex + 1]
+      const [nextHour, nextMinute] = nextTime.split(':').map(Number)
+      const nextTotalMinutes = nextHour * 60 + nextMinute
+      const minuteSpacing = nextTotalMinutes - targetMinutes
       
-      if (!bestSlot || bestSlotTime === null) {
-        if (debugCurrentTimeIndicator) console.log('[CurrentTimeIndicator] No se encontró un slot adecuado');
-        return null;
+      // Usar proporción real: offsetMinutes / minuteSpacing * altura
+      const interpolationRatio = Math.min(offsetMinutes / minuteSpacing, 1)
+      spacingHeight = elementRect.height // Usar altura real del elemento
+      
+      const finalTop = baseTop + (interpolationRatio * spacingHeight)
+      
+      // ✅ DEBUG LOG comentado para evitar spam
+      // console.log('[TimeIndicator] 🎯 POSICIONAMIENTO DOM:', {
+      //   currentTime: currentTimeString,
+      //   targetTime,
+      //   targetElement: targetElement.tagName + '.' + targetElement.className,
+      //   baseTop,
+      //   offsetMinutes,
+      //   minuteSpacing,
+      //   interpolationRatio,
+      //   spacingHeight,
+      //   finalTop
+      // })
+      
+      // ✅ VERIFICAR SI ESTÁ DENTRO DEL VIEWPORT
+      let withinView = true
+      const scrollContainer = container.parentElement
+      if (scrollContainer) {
+        const scrollTop = scrollContainer.scrollTop
+        const scrollBottom = scrollTop + scrollContainer.clientHeight
+        const headerOffset = 100
+        withinView = finalTop >= (scrollTop + headerOffset) && finalTop <= scrollBottom
       }
-      
-      if (debugCurrentTimeIndicator) console.log(`[CurrentTimeIndicator] Slot seleccionado: ${bestSlot.getAttribute('data-time')} (${bestSlotTime} min)`);
-      if (debugCurrentTimeIndicator) console.log(`[CurrentTimeIndicator] Siguiente slot: ${nextSlot?.getAttribute('data-time') || 'ninguno'}`);
-      if (debugCurrentTimeIndicator) console.log(`[CurrentTimeIndicator] Vista: ${isMobile ? 'móvil' : 'desktop'}`);
-      if (debugCurrentTimeIndicator) console.log(`[CurrentTimeIndicator] Verificación DOM - slot actual offsetTop:`, (bestSlot as HTMLElement).offsetTop);
-      if (debugCurrentTimeIndicator) console.log(`[CurrentTimeIndicator] Verificación DOM - container offsetTop:`, container.offsetTop);
-      
-      return { bestSlot, bestSlotTime, nextSlot };
+
+      return {
+        top: Math.max(0, finalTop),
+        visible: true,
+        timeText: currentTimeString,
+        withinView
+      }
     }
 
-    const { bestSlot, bestSlotTime, nextSlot } = findCorrectSlot();
-    
-    if (!bestSlot) {
-      if (debugCurrentTimeIndicator) console.log('[CurrentTimeIndicator] No se encontró slot válido');
-      setPosition(null);
-      return;
+    // Fallback si no hay siguiente elemento
+    return {
+      top: Math.max(0, baseTop),
+      visible: true,
+      timeText: currentTimeString,
+      withinView: true
     }
+  }, [timeSlots, agendaRef, clinicOpenTime, clinicCloseTime])
 
-    // Calcular posición relativa tomando como referencia el primer slot (para compensar headers)
-    const baseOffset = (slots[0] as HTMLElement).offsetTop;
-    const relativeTop = (bestSlot as HTMLElement).offsetTop - baseOffset;
-    
-    if (debugCurrentTimeIndicator) console.log(`[CurrentTimeIndicator] Slot base: ${bestSlot.getAttribute('data-time')} en posición ${relativeTop}px`);
-    if (debugCurrentTimeIndicator) console.log(`[CurrentTimeIndicator] Hora actual completa: ${format(currentTime, "HH:mm:ss")}`);
-    if (debugCurrentTimeIndicator) console.log(`[CurrentTimeIndicator] currentTimeMinutes: ${currentTimeMinutes}, slotMinutes: ${bestSlotTime}`);
-    if (debugCurrentTimeIndicator) console.log(`[CurrentTimeIndicator] DEBUG - offsetTop directo: ${(bestSlot as HTMLElement).offsetTop}px`);
-    if (debugCurrentTimeIndicator) console.log(`[CurrentTimeIndicator] DEBUG - Altura del slot: ${(bestSlot as HTMLElement).offsetHeight}px`);
-    
-    // Verificar si el problema es con la vista semanal
-    const totalSlots = slots.length;
-    const slotIndex = slots.indexOf(bestSlot);
-    if (debugCurrentTimeIndicator) console.log(`[CurrentTimeIndicator] Slot ${slotIndex + 1} de ${totalSlots}`);
-    
-    // Si la posición calculada es mayor que la altura del contenedor, hay un problema
-    const containerHeight = container.scrollHeight || container.offsetHeight;
-    if (debugCurrentTimeIndicator) console.log(`[CurrentTimeIndicator] Altura total del contenedor: ${containerHeight}px`);
-    
-    // Si necesitamos interpolar hasta el siguiente slot
-    if (nextSlot) {
-      
-      const nextRelativeTop = (nextSlot as HTMLElement).offsetTop - baseOffset;
-      const slotHeight = nextRelativeTop - relativeTop;
-      
-      // Calcular minutos desde el slot actual
-      const minutesIntoSlot = currentTimeMinutes - bestSlotTime;
-      const slotDurationMinutes = parseTime(nextSlot.getAttribute('data-time') || '') - bestSlotTime;
-      
-      // Interpolar la posición
-      const interpolation = (minutesIntoSlot / slotDurationMinutes) * slotHeight;
-      const position = relativeTop + interpolation;
-      
-      if (debugCurrentTimeIndicator) console.log(`[CurrentTimeIndicator] Interpolación: ${minutesIntoSlot}/${slotDurationMinutes} * ${slotHeight}px = +${interpolation}px`);
-      if (debugCurrentTimeIndicator) console.log(`[CurrentTimeIndicator] Posición final: ${position}px`);
-      
-      setPosition({
-        top: position,
-        display: 'flex'
-      });
-    } else {
-      // Último slot del día o no hay siguiente slot visible
-      const slotDurationMinutes = (config?.slotDuration ?? 30);
-      const minutesIntoSlot = currentTimeMinutes - (bestSlotTime as number);
-      const slotHeightDynamic = (bestSlot as HTMLElement).offsetHeight;
-      const interpolation = (minutesIntoSlot / slotDurationMinutes) * slotHeightDynamic;
-      const clampedInterpolation = Math.max(0, Math.min(interpolation, rowHeight));
-      const position = relativeTop + clampedInterpolation;
-      if (debugCurrentTimeIndicator) console.log(`[CurrentTimeIndicator] Interpolación último slot: ${minutesIntoSlot}/${slotDurationMinutes} * ${slotHeightDynamic}px = +${clampedInterpolation}px`);
-      if (debugCurrentTimeIndicator) console.log(`[CurrentTimeIndicator] Posición final: ${position}px`);
-      if (debugCurrentTimeIndicator) console.log(`[CurrentTimeIndicator] Timezone offset: ${new Date().getTimezoneOffset()} minutos`);
-      
-      setPosition({
-        top: position,
-        display: 'flex'
-      });
-    }
-  }, [timeSlots]);
 
-  // Efecto para scroll inicial sin causar parpadeos
-  useEffect(() => {
-    // No ejecutar si no hay elementos esenciales
-    if (!position || !agendaRef.current || !isWithinTimeRange || !isWithinClinicHours()) return;
-    
-    // Pequeño delay para asegurar que el DOM esté completamente renderizado
-    const timeoutId = setTimeout(() => {
-      if (!agendaRef.current) return;
-      
-      // Calcular posición para centrar la línea de tiempo actual
-      const agendaHeight = agendaRef.current.clientHeight;
-      const centerOffset = Math.max(0, position.top - (agendaHeight / 2));
-      
-      // Hacer scroll suave al centro
-      agendaRef.current.scrollTo({
-        top: centerOffset,
-        behavior: "smooth"
-      });
-      
-      if (debugCurrentTimeIndicator) console.log('[CurrentTimeIndicator] Centrado automático:', {
-        position: position.top,
-        agendaHeight,
-        centerOffset
-      });
-    }, 100);
-    
-    return () => clearTimeout(timeoutId);
-  }, []); // Solo ejecutar una vez al montar el componente
 
-  // Actualizar la posición cuando cambie el tiempo o los slots, de manera optimizada
-  useEffect(() => {
-    if (timeSlots.length === 0) return;
-    
-    // Evitar múltiples actualizaciones superpuestas
-    let updateScheduled = false;
-    
-    const scheduleUpdate = () => {
-      if (updateScheduled) return;
-      updateScheduled = true;
-      requestAnimationFrame(() => {
-        updatePosition();
-        updateScheduled = false;
-      });
-    };
-    
-    // Ejecución inmediata
-    scheduleUpdate();
-
-    // Ejecución tardía para asegurar montaje completo del DOM tras navegación/cambio de fecha
-    const lateTimeout = setTimeout(scheduleUpdate, 150);
-
-    // Repetir cada minuto para seguir la hora actual
-    const intervalId = setInterval(scheduleUpdate, 60000);
-
-    // Limpieza
-    return () => {
-      clearInterval(intervalId);
-      clearTimeout(lateTimeout);
-    };
-  }, [timeSlots, updatePosition, rowHeight]);
-
-  // Recalcular posición cuando el DOM del contenedor cambie (navegación entre días)
+  // ✅ EFECTO PRINCIPAL - DEPENDENCIAS ESTABLES PARA EVITAR BUCLES INFINITOS
   useLayoutEffect(() => {
-    const container = agendaRef.current;
-    if (!container) return;
+    if (!timeSlots.length) return
 
-    const observer = new MutationObserver(() => {
-      // Recalcular posición tras cambios en el DOM (añadir filas, etc.)
-      updatePosition();
-    });
+    // ✅ LIMPIAR TIMERS ANTERIORES
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current)
+      clearInterval(timeoutRef.current)
+    }
+    if (animationRef.current) {
+      cancelAnimationFrame(animationRef.current)
+    }
 
-    observer.observe(container, { childList: true, subtree: true });
+    // ✅ FUNCIÓN LOCAL PARA EVITAR DEPENDENCIAS INESTABLES
+    const localUpdate = () => {
+      if (!indicatorRef.current) return
 
-    return () => observer.disconnect();
-  }, [agendaRef, updatePosition]);
-
-  // Actualizar las referencias solo después de un renderizado completo
-  useEffect(() => {
-    prevPositionRef.current = position;
-    prevVisibilityRef.current = shouldShow;
-    skipRenderRef.current = false;
-  }, [position, shouldShow]);
-
-  // Efecto para aplicar estilos basados en la posición calculada
-  useEffect(() => {
-    if (indicatorRef.current && position !== null && isVisible) {
-      if (debugCurrentTimeIndicator) console.log(`[CurrentTimeIndicator] APLICANDO POSICIÓN: ${position.top}px al DOM`);
+      const position = calculatePosition()
       
-      indicatorRef.current.style.borderTop = '2px solid red';
-      indicatorRef.current.style.setProperty('--current-time-indicator-border-color', 'red');
-      
-      // Usar directamente la propiedad top en lugar de transform para evitar offsets adicionales
-      indicatorRef.current.style.top = `${Math.max(position?.top ?? 0, 0)}px`;
-      indicatorRef.current.style.transform = 'none'; // Eliminar cualquier transform anterior
-      indicatorRef.current.style.display = 'block';
-      indicatorRef.current.style.visibility = 'visible';
-      indicatorRef.current.style.opacity = '1';
-      
-      if (debugCurrentTimeIndicator) console.log(`[CurrentTimeIndicator] DOM actualizado - top: ${indicatorRef.current.style.top}`);
-      
-      const span = indicatorRef.current.querySelector('span');
-      if (span) {
-        // Estilo sin fondo rojo - solo borde y texto rojo
-        (span as HTMLElement).style.backgroundColor = 'white';
-        (span as HTMLElement).style.color = 'red';
-        (span as HTMLElement).style.border = '1px solid red';
-        (span as HTMLElement).style.padding = '2px 6px';
-        (span as HTMLElement).style.borderRadius = '4px';
-        (span as HTMLElement).style.fontWeight = '600';
-        (span as HTMLElement).style.fontSize = '12px';
-        
-        // Posición sticky horizontal real
-        (span as HTMLElement).style.position = 'absolute';
-        (span as HTMLElement).style.left = '0px';
-        (span as HTMLElement).style.top = '-1px';
-        (span as HTMLElement).style.transform = 'translateY(-50%)';
-        (span as HTMLElement).style.visibility = 'visible';
-        (span as HTMLElement).style.zIndex = '20';
-        (span as HTMLElement).style.minWidth = '50px';
-        (span as HTMLElement).style.textAlign = 'center';
-        
-        // Crear un contenedor sticky si no existe
-        let stickyContainer = indicatorRef.current.querySelector('.time-label-sticky');
-        if (!stickyContainer) {
-          stickyContainer = document.createElement('div');
-          stickyContainer.className = 'time-label-sticky';
-          indicatorRef.current.appendChild(stickyContainer);
-        }
-        
-        // Estilos del contenedor sticky
-        (stickyContainer as HTMLElement).style.position = 'sticky';
-        (stickyContainer as HTMLElement).style.left = '20px';
-        (stickyContainer as HTMLElement).style.width = '50px';
-        (stickyContainer as HTMLElement).style.height = '2px';
-        (stickyContainer as HTMLElement).style.zIndex = '25';
-        
-        // Mover la etiqueta al contenedor sticky
-        if (span.parentElement !== stickyContainer) {
-          stickyContainer.appendChild(span);
-        }
+      if (!position || !position.visible || !position.withinView) {
+        indicatorRef.current.style.display = 'none'
+        return
       }
-    } else if (indicatorRef.current) {
-      indicatorRef.current.style.display = 'none';
-      indicatorRef.current.style.opacity = '0';
-      indicatorRef.current.style.visibility = 'hidden';
-      indicatorRef.current.style.borderTop = 'none';
-      // Resetear la posición top en lugar de transform
-      indicatorRef.current.style.top = '0';
-      indicatorRef.current.style.transform = 'none';
-      const labelElement = indicatorRef.current.querySelector('.current-time-label');
-      if (labelElement) {
-        (labelElement as HTMLElement).style.visibility = 'hidden';
+
+      const indicator = indicatorRef.current
+      indicator.style.display = 'block'
+      indicator.style.top = `${position.top}px`
+      
+      const timeLabel = indicator.querySelector('.time-label')
+      if (timeLabel) {
+        timeLabel.textContent = position.timeText
       }
     }
-  }, [position, isVisible]);
 
-  // --- useEffect para escuchar window.resize con lógica scroll/client Width y rAF ---
-  useEffect(() => {
-    const indicatorElement = indicatorRef.current; // Cache ref value
-    let rafId: number | null = null; // Variable para guardar el ID del rAF
-
-    const handleWindowResize = () => {
-      // Cancelar cualquier rAF pendiente para evitar ejecuciones múltiples
-      if (rafId !== null) {
-        cancelAnimationFrame(rafId);
+    // ✅ FUNCIÓN LOCAL PARA INICIAR UPDATES
+    const initializeUpdates = () => {
+      const update = () => {
+        localUpdate()
+        
+        // Programar siguiente actualización cada minuto exacto
+        const now = new Date()
+        const nextMinute = new Date(now)
+        nextMinute.setMinutes(now.getMinutes() + 1, 0, 0)
+        const msUntilNextMinute = nextMinute.getTime() - now.getTime()
+        
+        timeoutRef.current = setTimeout(() => {
+          update()
+          timeoutRef.current = setInterval(update, 60000)
+        }, msUntilNextMinute)
       }
 
-      // Solicitar un nuevo frame para leer y aplicar dimensiones
-      rafId = requestAnimationFrame(() => {
-        if (agendaRef.current && indicatorElement) {
-          // Buscar el contenedor de las columnas de tiempo/cabinas
-          const timeGrid = agendaRef.current.querySelector('.overflow-x-auto');
-          const scrollContainer = timeGrid || agendaRef.current;
-          
-          // Leer el ancho total del contenido scrollable
-          const totalContentWidth = scrollContainer.scrollWidth;
-          
-          // Aplicar el ancho total del contenido
-          if (totalContentWidth > 0) { 
-            indicatorElement.style.width = `${totalContentWidth}px`;
-            setIndicatorWidth(totalContentWidth);
-          }
+      update()
+    }
+
+    // ✅ INICIALIZAR DESPUÉS DEL RENDERIZADO
+    animationRef.current = requestAnimationFrame(() => {
+      setTimeout(initializeUpdates, 50)
+    })
+
+    // ✅ LISTENER DE SCROLL - FUNCIÓN LOCAL
+    const scrollContainer = agendaRef.current?.parentElement
+    let scrollListener: (() => void) | null = null
+    
+    if (scrollContainer) {
+      scrollListener = () => {
+        if (animationRef.current) {
+          cancelAnimationFrame(animationRef.current)
         }
-        rafId = null; // Resetear el ID después de ejecutar
-      }); // Fin requestAnimationFrame
-    };
-
-    // Llamada inicial para establecer el ancho correcto al montar
-    const initialTimeout = setTimeout(handleWindowResize, 50); 
-
-    // Añadir listener
-    window.addEventListener('resize', handleWindowResize);
-
-    // Limpieza al desmontar
-    return () => {
-      clearTimeout(initialTimeout);
-      // Cancelar rAF si está pendiente al desmontar
-      if (rafId !== null) {
-        cancelAnimationFrame(rafId);
+        animationRef.current = requestAnimationFrame(localUpdate)
       }
-      window.removeEventListener('resize', handleWindowResize);
-    };
-  }, [agendaRef]); 
-  // --- FIN: useEffect con window.resize --- 
+      
+      scrollContainer.addEventListener('scroll', scrollListener, { passive: true })
+    }
 
-  if (debugCurrentTimeIndicator) console.log('[CurrentTimeIndicator] debug:', { position, isVisible });
+    // ✅ CLEANUP
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current)
+        clearInterval(timeoutRef.current)
+      }
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current)
+      }
+      if (scrollListener && scrollContainer) {
+        scrollContainer.removeEventListener('scroll', scrollListener)
+      }
+    }
+  }, [timeSlots.length]) // ✅ SOLO timeSlots.length como dependencia estable
 
-  // Logging detallado para debugging
-  if (debugCurrentTimeIndicator) console.log('[CurrentTimeIndicator] horario debug:', {
-    currentTime: format(currentTime, "HH:mm"),
-    clinicOpenTime,
-    clinicCloseTime,
-    timeSlots: timeSlots.length > 0 ? `${timeSlots[0]} - ${timeSlots[timeSlots.length - 1]}` : 'none',
-    effectiveEndTime: timeSlots.length > 0 ? 
-      (() => {
-        const lastSlot = timeSlots[timeSlots.length - 1]
-        const slotDuration = timeSlots.length > 1 ? 
-          parseTime(timeSlots[1]) - parseTime(timeSlots[0]) : 30 // Default 30 min si no se puede calcular
-        const endMinutes = parseTime(lastSlot) + slotDuration
-        const hours = Math.floor(endMinutes / 60)
-        const minutes = endMinutes % 60
-        return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`
-      })() : 'none',
-    isWithinClinicHours: isWithinClinicHours(),
-    isWithinRenderedTimeRange: isWithinRenderedTimeRange(),
-    shouldShow
-  })
-
-  // Forzar el indicador a mostrarse si isVisible es true, usando effectivePosition
-  const effectivePosition = position !== null ? Math.max(position.top, 0) : 0;
-
-  if (!isVisible) {
-    return null;
-  }
-
-  // Usar una mezcla de estilos CSS y estilos inline para mayor control
   return (
     <div
       ref={indicatorRef}
       className={cn(
-        "current-time-indicator", // Clase principal de CSS
-        "pointer-events-none", // Evitar que intercepte eventos del ratón
-        "z-50", // Mantener por encima de otros elementos relevantes
-        "absolute h-0.5 bg-red-500",
+        "absolute left-0 w-full pointer-events-none",
+        "z-[30]", // Por debajo de cabeceras (z-40) pero por encima de citas (z-10)
         className
       )}
       style={{
-        position: 'absolute',
-        left: 0,
         height: '2px',
-        width: indicatorWidth !== null ? `${indicatorWidth}px` : '100%',
+        backgroundColor: '#dc2626', // red-600
         display: 'none',
-        opacity: 0,
-        visibility: 'hidden'
       }}
       aria-hidden="true"
     >
-      {/* La etiqueta se gestiona en el useEffect */}
-      <span className="current-time-label" style={{ position: 'absolute', visibility: 'hidden' }}>
-         {format(currentTime || new Date(), "HH:mm")}
-      </span>
+      {/* ✅ ETIQUETA DE HORA COMPACTA */}
+      <div 
+        className="absolute -top-2 left-1 px-1.5 py-0.5 text-[10px] font-medium text-red-600 bg-white border border-red-300 rounded-sm"
+        style={{ 
+          zIndex: 32,
+          fontSize: '10px',
+          lineHeight: '12px'
+        }}
+      >
+        <span className="time-label">00:00</span>
+      </div>
     </div>
-  );
-}
-
-// Función auxiliar para convertir tiempo a minutos
-const parseTime = (time: string): number => {
-  const [hours, minutes] = time.split(":").map(Number)
-  return hours * 60 + minutes
-}
+  )
+} 

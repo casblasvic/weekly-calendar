@@ -31,39 +31,34 @@ export const DragPreview: React.FC<DragPreviewProps> = ({
   const minuteHeight = slotHeight / slotDuration; // píxeles por minuto
   const height = Math.max(duration * minuteHeight, 40); // Mínimo 40px para que quepa el contenido
   
-  // Ajustar la posición para que el contenido siempre esté visible
+  // El tooltip debe seguir al cursor pero manteniéndose visible
   const [adjustedPosition, setAdjustedPosition] = React.useState({ x: preview.x, y: preview.y });
   
   React.useEffect(() => {
-    const previewHeight = height + 40; // Altura estimada del tooltip
-    const previewWidth = 280; // Ancho estimado del tooltip
+    const tooltipWidth = 280; // Ancho estimado del tooltip
+    const tooltipHeight = height + 40; // Altura estimada del tooltip
     
-    // Posición inicial con más offset para no tapar la sombra
-    let x = preview.x + 20; // Más separación horizontal
-    let y = preview.y - previewHeight - 15; // Aparece arriba del cursor con más separación
+    // Posición base: seguir al cursor con un pequeño offset
+    let x = preview.x + 10;
+    let y = preview.y - 40; // Arriba del cursor
     
     // Obtener dimensiones del viewport
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
     
+    // Si el tooltip se sale por la derecha, ajustar
+    if (x + tooltipWidth > viewportWidth - 10) {
+      x = preview.x - tooltipWidth - 10; // A la izquierda del cursor
+    }
+    
     // Si el tooltip se sale por arriba, mostrarlo abajo
-    if (y < 20) {
-      y = preview.y + 30; // Más separación cuando aparece abajo
+    if (y < 10) {
+      y = preview.y + 10;
     }
     
-    // Si el tooltip se sale por la derecha, mostrarlo a la izquierda
-    if (x + previewWidth > viewportWidth - 20) {
-      x = preview.x - previewWidth - 20; // A la izquierda del cursor
-    }
-    
-    // Asegurar que no se salga por abajo
-    if (y + previewHeight > viewportHeight - 20) {
-      y = viewportHeight - previewHeight - 20;
-    }
-    
-    // Asegurar que no se salga por arriba
-    if (y < 20) {
-      y = 20;
+    // Si el tooltip se sale por abajo, ajustar
+    if (y + tooltipHeight > viewportHeight - 10) {
+      y = viewportHeight - tooltipHeight - 10;
     }
     
     setAdjustedPosition({ x, y });
@@ -84,10 +79,9 @@ export const DragPreview: React.FC<DragPreviewProps> = ({
         duration={duration}
         color={color}
         roomName={roomName}
-        clientName={clientName}
-        clientPhone={clientPhone}
-        services={services}
-        height={height}
+        clientName={clientName || ''}
+        clientPhone={clientPhone || ''}
+        services={services || []}
       />
       
       {/* Tooltip arrow - solo si no está muy a la derecha */}

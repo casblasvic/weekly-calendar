@@ -3,7 +3,6 @@
 import "@/styles/globals.css"
 
 import { SessionProvider } from "next-auth/react"
-import { ClinicProvider } from "@/contexts/clinic-context"
 import { LastClientProvider } from "@/contexts/last-client-context"
 import { ClientCardProvider } from "@/contexts/client-card-context"
 import { CabinProvider } from "@/contexts/CabinContext"
@@ -68,22 +67,20 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                       <QueryProvider>
                         <AppProviders>
                           <EquipmentProvider>
-                            <ClinicProvider>
-                              <FamilyProvider>
-                                <CabinProvider>
-                                  <LastClientProvider>
-                                    <ClientCardProvider>
-                                      <ServicioProvider>
-                                        <ConsumoServicioProvider>
-                                          {children}
-                                          <Toaster />
-                                        </ConsumoServicioProvider>
-                                      </ServicioProvider>
-                                    </ClientCardProvider>
-                                  </LastClientProvider>
-                                </CabinProvider>
-                              </FamilyProvider>
-                            </ClinicProvider>
+                            <FamilyProvider>
+                              <CabinProvider>
+                                <LastClientProvider>
+                                  <ClientCardProvider>
+                                    <ServicioProvider>
+                                      <ConsumoServicioProvider>
+                                        {children}
+                                        <Toaster />
+                                      </ConsumoServicioProvider>
+                                    </ServicioProvider>
+                                  </ClientCardProvider>
+                                </LastClientProvider>
+                              </CabinProvider>
+                            </FamilyProvider>
                           </EquipmentProvider>
                         </AppProviders>
                       </QueryProvider>

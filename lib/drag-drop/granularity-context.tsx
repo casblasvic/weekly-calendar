@@ -24,10 +24,16 @@ export function GranularityProvider({ children }: GranularityProviderProps) {
   const { config, loading } = useScheduleConfig({ clinicId })
   const [minuteGranularity, setMinuteGranularity] = useState(config.createGranularity)
   
-  // Actualizar cuando cambie la configuración de BD
+  // ✅ ESTABILIZAR VALORES: Solo cambiar cuando NO esté loading
+  const [stableConfig, setStableConfig] = useState(config)
+  
+  // Actualizar solo cuando termine de cargar y haya valores definitivos
   useEffect(() => {
-    setMinuteGranularity(config.createGranularity)
-  }, [config.createGranularity])
+    if (!loading) {
+      setStableConfig(config)
+      setMinuteGranularity(config.createGranularity)
+    }
+  }, [config, loading])
   
   // Si no hay clínica activa, usar valores por defecto
   if (!activeClinic) {
@@ -51,8 +57,8 @@ export function GranularityProvider({ children }: GranularityProviderProps) {
       value={{ 
         minuteGranularity,
         setMinuteGranularity,
-        slotDuration: config.slotDuration,
-        moveGranularity: config.moveGranularity,
+        slotDuration: stableConfig.slotDuration, // ✅ Usar config estable
+        moveGranularity: stableConfig.moveGranularity, // ✅ Usar config estable
         isLoading: loading
       }}
     >

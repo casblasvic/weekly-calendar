@@ -80,8 +80,8 @@ export function hasAppointmentChanged(
 export function getChangedFields(
   original: { date: Date; time: string; roomId: string },
   updated: { date: Date; time: string; roomId: string }
-): Partial<{ startTime: Date; equipmentId: string }> {
-  const changes: Partial<{ startTime: Date; equipmentId: string }> = {};
+): Partial<{ startTime: Date; roomId: string }> {
+  const changes: Partial<{ startTime: Date; roomId: string }> = {};
   
   if (original.date.toDateString() !== updated.date.toDateString() || original.time !== updated.time) {
     const [hours, minutes] = updated.time.split(':').map(Number);
@@ -91,7 +91,7 @@ export function getChangedFields(
   }
   
   if (original.roomId !== updated.roomId) {
-    changes.equipmentId = updated.roomId;
+    changes.roomId = updated.roomId; // SIEMPRE usar roomId para cabinas
   }
   
   return changes;
