@@ -23,6 +23,9 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { useGranularity } from '@/lib/drag-drop/granularity-context'
 import { useMoveAppointment } from '@/contexts/move-appointment-context'
+import { validateGranularityMove } from '@/utils/appointment-validation'
+import { validateAppointmentResize } from '@/utils/appointment-validation'
+import { useWeeklyAgendaData } from '@/lib/hooks/use-weekly-agenda-data'
 
 // Función para ajustar el brillo del color
 function adjustColorBrightness(color: string, amount: number) {
@@ -204,85 +207,64 @@ export function AppointmentItem({
     }
   };
 
-  // Calcular si hay espacio disponible para mover la cita arriba o abajo
+  // ✅ OBTENER DATOS DEL CACHE para validación consistente
+  const { appointments: cacheAppointments } = useWeeklyAgendaData(appointment.date);
+
+  // ✅ VALIDACIÓN CENTRALIZADA: Usar función unificada para botones de granularidad
   const canMoveUp = useMemo(() => {
-    if (!appointments || appointments.length === 0 || !activeClinic) return true;
+    // ✅ USAR DATOS DEL CACHE para garantizar consistencia absoluta
+    const appointmentsToUse = cacheAppointments || appointments || [];
     
-    // Parsear la hora de inicio actual
-    const [currentHour, currentMinute] = appointment.startTime.split(':').map(Number);
-    const currentStartMinutes = currentHour * 60 + currentMinute;
+    if (appointmentsToUse.length === 0 || !activeClinic) return true;
     
-    // Calcular la nueva hora si movemos hacia arriba
-    const newStartMinutes = currentStartMinutes - minuteGranularity;
-    const newHours = Math.floor(newStartMinutes / 60);
-    const newMinutes = newStartMinutes % 60;
-    const newTime = `${newHours.toString().padStart(2, '0')}:${newMinutes.toString().padStart(2, '0')}`;
+    const validation = validateGranularityMove(
+      appointment,
+      'up',
+      minuteGranularity,
+      appointmentsToUse,
+      activeClinic
+    );
     
-    // Verificar límites de horario de la clínica
-    if (!isTimeSlotAvailable(appointment.date, newTime, activeClinic)) {
-      return false;
-    }
-    
-    // Verificar conflictos con otras citas
-    for (const otherApt of appointments) {
-      if (otherApt.id === appointment.id) continue;
-      if (otherApt.roomId !== appointment.roomId) continue;
-      
-      const [otherHour, otherMinute] = otherApt.startTime.split(':').map(Number);
-      const otherStartMinutes = otherHour * 60 + otherMinute;
-      const otherEndMinutes = otherStartMinutes + otherApt.duration;
-      
-      // Si la nueva posición entraría en conflicto
-      if (newStartMinutes < otherEndMinutes && (newStartMinutes + appointment.duration) > otherStartMinutes) {
-        return false;
-      }
-    }
-    
-    return true;
-  }, [appointments, appointment, minuteGranularity, activeClinic]);
+    return validation.isValid;
+  }, [appointment, cacheAppointments, appointments, minuteGranularity, activeClinic]);
 
   const canMoveDown = useMemo(() => {
-    if (!appointments || appointments.length === 0 || !activeClinic) return true;
+    // ✅ USAR DATOS DEL CACHE para garantizar consistencia absoluta
+    const appointmentsToUse = cacheAppointments || appointments || [];
     
-    // Parsear la hora de inicio actual
-    const [currentHour, currentMinute] = appointment.startTime.split(':').map(Number);
-    const currentStartMinutes = currentHour * 60 + currentMinute;
+    if (appointmentsToUse.length === 0 || !activeClinic) return true;
     
-    // Calcular la nueva hora si movemos hacia abajo
-    const newStartMinutes = currentStartMinutes + minuteGranularity;
-    const newEndMinutes = newStartMinutes + appointment.duration;
-    const newHours = Math.floor(newStartMinutes / 60);
-    const newMinutes = newStartMinutes % 60;
-    const newTime = `${newHours.toString().padStart(2, '0')}:${newMinutes.toString().padStart(2, '0')}`;
+    const validation = validateGranularityMove(
+      appointment,
+      'down', 
+      minuteGranularity,
+      appointmentsToUse,
+      activeClinic
+    );
     
-    // Verificar límites de horario de la clínica usando el horario de fin de la cita
-    const endHours = Math.floor(newEndMinutes / 60);
-    const endMins = newEndMinutes % 60;
-    const endTime = `${endHours.toString().padStart(2, '0')}:${endMins.toString().padStart(2, '0')}`;
+    return validation.isValid;
+  }, [appointment, cacheAppointments, appointments, minuteGranularity, activeClinic]);
+
+  // ✅ NUEVA: VALIDACIÓN PARA OCULTAR HOVER DE ESTIRAR
+  const canResize = useMemo(() => {
+    // ✅ USAR DATOS DEL CACHE para garantizar consistencia absoluta
+    const appointmentsToUse = cacheAppointments || appointments || [];
     
-    // Verificar que tanto el inicio como el fin estén dentro del horario de la clínica
-    const businessHours = getBusinessHours(appointment.date, activeClinic);
-    if (!businessHours || newTime < businessHours.open || endTime > businessHours.close) {
-      return false;
-    }
+    if (appointmentsToUse.length === 0 || !activeClinic) return true;
     
-    // Verificar conflictos con otras citas
-    for (const otherApt of appointments) {
-      if (otherApt.id === appointment.id) continue;
-      if (otherApt.roomId !== appointment.roomId) continue;
-      
-      const [otherHour, otherMinute] = otherApt.startTime.split(':').map(Number);
-      const otherStartMinutes = otherHour * 60 + otherMinute;
-      const otherEndMinutes = otherStartMinutes + otherApt.duration;
-      
-      // Si la nueva posición entraría en conflicto
-      if (newStartMinutes < otherEndMinutes && newEndMinutes > otherStartMinutes) {
-        return false;
-      }
-    }
+    // Probar si se puede extender al menos una granularidad más
+    const extendedDuration = appointment.duration + minuteGranularity;
     
-    return true;
-  }, [appointments, appointment, minuteGranularity, activeClinic]);
+    const validation = validateAppointmentResize(
+      appointment,
+      extendedDuration,
+      appointmentsToUse,
+      activeClinic,
+      minuteGranularity
+    );
+    
+    return validation.isValid;
+  }, [appointment, cacheAppointments, appointments, minuteGranularity, activeClinic]);
 
   const handleMouseMove = (e: React.MouseEvent) => {
     // ✅ CORRECCIÓN: Solo bloquear granularidades si NO estamos dragging
@@ -433,14 +415,17 @@ export function AppointmentItem({
       const granularDelta = Math.round(deltaMinutes / minuteGranularity) * minuteGranularity;
       let newDuration = Math.max(minuteGranularity, originalDuration + granularDelta);
       
-      // ✅ DETECCIÓN DE CONFLICTOS SUAVE
+      // ✅ DETECCIÓN DE CONFLICTOS SUAVE - USAR DATOS DEL CACHE
       let hasConflict = false;
-      if (appointments.length > 0) {
+      // ✅ USAR DATOS DEL CACHE para garantizar consistencia absoluta
+      const appointmentsToUse = cacheAppointments || appointments || [];
+      
+      if (appointmentsToUse.length > 0) {
         const [startHours, startMinutes] = appointment.startTime.split(':').map(Number);
         const appointmentStartMinutes = startHours * 60 + startMinutes;
         const appointmentEndMinutes = appointmentStartMinutes + newDuration;
         
-        const conflictingAppointment = appointments.find(apt => {
+        const conflictingAppointment = appointmentsToUse.find(apt => {
           if (apt.id === appointment.id || String(apt.roomId) !== String(appointment.roomId)) {
             return false;
           }
@@ -552,7 +537,7 @@ export function AppointmentItem({
     overlay.addEventListener('mousemove', handleMouseMove);
     overlay.addEventListener('mouseup', handleMouseUp);
           document.addEventListener('keydown', handleKeyDown);
-  }, [appointment.id, appointment.duration, appointment.startTime, appointment.roomId, minuteGranularity, height, onDurationChange, onDraggingDurationChange, appointments]);
+  }, [appointment.id, appointment.duration, appointment.startTime, appointment.roomId, minuteGranularity, height, onDurationChange, onDraggingDurationChange, cacheAppointments, appointments]);
 
   useEffect(() => {
     if (isDragging) {
@@ -632,12 +617,12 @@ export function AppointmentItem({
         onMouseUp={(e) => e.stopPropagation()}
       >
         {/* Contenedor interno con overflow-hidden */}
-        <div className="relative h-full overflow-hidden rounded-md">
+        <div className="overflow-hidden relative h-full rounded-md">
           
           {/* ✅ INDICADOR VISUAL DE EXTENSIÓN DURANTE RESIZE */}
           {isResizing && (
             <div 
-              className="absolute bottom-0 left-0 right-0 h-2 bg-gradient-to-t from-purple-500/60 to-transparent z-30"
+              className="absolute right-0 bottom-0 left-0 z-30 h-2 bg-gradient-to-t to-transparent from-purple-500/60"
               style={{
                 background: hasResizeConflict 
                   ? 'linear-gradient(to top, rgba(239, 68, 68, 0.6), transparent)'
@@ -672,7 +657,7 @@ export function AppointmentItem({
                   }}
                   title="Mover arriba según granularidad"
                 >
-                  <ChevronUp className="h-3 w-3 text-purple-700" />
+                  <ChevronUp className="w-3 h-3 text-purple-700" />
                 </button>
               )}
               {canMoveDown && (
@@ -691,7 +676,7 @@ export function AppointmentItem({
                   }}
                   title="Mover abajo según granularidad"
                 >
-                  <ChevronDown className="h-3 w-3 text-purple-700" />
+                  <ChevronDown className="w-3 h-3 text-purple-700" />
                 </button>
               )}
             </div>
@@ -734,7 +719,7 @@ export function AppointmentItem({
                 >
                   <DropdownMenuSub>
                     <DropdownMenuSubTrigger className="cursor-pointer">
-                      <Tag className="mr-2 h-4 w-4" />
+                      <Tag className="mr-2 w-4 h-4" />
                       Etiquetas
                     </DropdownMenuSubTrigger>
                   <DropdownMenuSubContent className="w-56">
@@ -756,16 +741,16 @@ export function AppointmentItem({
                               console.log('[AppointmentItem] ❌ NO HAY onTagsUpdate disponible!');
                             }
                           }}
-                          className="flex items-center justify-between cursor-pointer hover:bg-gray-100"
+                          className="flex justify-between items-center cursor-pointer hover:bg-gray-100"
                         >
-                          <div className="flex items-center gap-2">
+                          <div className="flex gap-2 items-center">
                             <div
                               className="w-3 h-3 rounded-full"
                               style={{ backgroundColor: tag.color }}
                             />
                             <span>{tag.name}</span>
                           </div>
-                          {isSelected && <Check className="h-4 w-4" />}
+                          {isSelected && <Check className="w-4 h-4" />}
                         </DropdownMenuItem>
                       );
                     })}
@@ -779,7 +764,7 @@ export function AppointmentItem({
                     onMoveAppointment(appointment.id);
                   }
                 }} className="cursor-pointer hover:bg-gray-100">
-                  <Move className="h-4 w-4 mr-2" />
+                  <Move className="mr-2 w-4 h-4" />
                   Mover
                 </DropdownMenuItem>
                 
@@ -787,21 +772,21 @@ export function AppointmentItem({
                   e.stopPropagation();
                   console.log("No asistido");
                 }} className="cursor-pointer hover:bg-gray-100">
-                  <XCircle className="h-4 w-4 mr-2" />
+                  <XCircle className="mr-2 w-4 h-4" />
                   No asistido
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={(e) => {
                   e.stopPropagation();
                   console.log("Información");
                 }} className="cursor-pointer hover:bg-gray-100">
-                  <MessageSquare className="h-4 w-4 mr-2" />
+                  <MessageSquare className="mr-2 w-4 h-4" />
                   Información
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={(e) => {
                   e.stopPropagation();
                   console.log("Duplicar");
                 }} className="cursor-pointer hover:bg-gray-100">
-                  <Copy className="h-4 w-4 mr-2" />
+                  <Copy className="mr-2 w-4 h-4" />
                   Duplicar
                 </DropdownMenuItem>
                 
@@ -815,9 +800,9 @@ export function AppointmentItem({
                       console.log("onDeleteAppointment no disponible");
                     }
                   }} 
-                  className="text-red-600 hover:bg-red-50 cursor-pointer"
+                  className="text-red-600 cursor-pointer hover:bg-red-50"
                 >
-                  <Trash2 className="h-4 w-4 mr-2" />
+                  <Trash2 className="mr-2 w-4 h-4" />
                   Eliminar
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -859,8 +844,8 @@ export function AppointmentItem({
 
           <div className={cn("px-2", isCompact ? "py-1" : "py-2")}>
             {/* Hora de inicio y fin con icono de reloj - más compacto */}
-            <div className="flex items-center gap-1">
-              <Clock className="h-3 w-3 text-gray-600 flex-shrink-0" />
+            <div className="flex gap-1 items-center">
+              <Clock className="flex-shrink-0 w-3 h-3 text-gray-600" />
               <div className={cn(
                 "font-medium truncate",
                 isCompact ? "text-[10px]" : "text-xs",
@@ -918,31 +903,32 @@ export function AppointmentItem({
                   {appointment.name}
                 </span>
                 {onClientNameClick && (
-                  <ExternalLink className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity text-violet-600 flex-shrink-0" />
+                  <ExternalLink className="flex-shrink-0 w-3 h-3 text-violet-600 opacity-0 transition-opacity group-hover:opacity-100" />
                 )}
               </div>
             </div>
             
             {/* Espacio reservado para futuras etiquetas */}
-            <div className="mt-1 flex flex-wrap gap-1">
+            <div className="flex flex-wrap gap-1 mt-1">
               {/* Las etiquetas se añadirán aquí más adelante */}
             </div>
           </div>
         </div>
 
         {/* Zona de estiramiento profesional integrada en la cita */}
-        <div
-          className={cn(
-            "absolute bottom-0 left-0 w-full h-4 resize-handle", // ✅ Añadir clase CSS
-            "cursor-ns-resize",
-            "group", // Añadir group para controlar hover states
-            "transition-all duration-150",
-            // Durante el resize, mostrar feedback visual MUCHO MÁS OBVIO
-            isResizing && "bg-purple-500/40 backdrop-blur-sm"
-          )}
-          onMouseDown={handleResizeStart}
-          onMouseEnter={(e) => e.stopPropagation()} // Evitar que se propague el hover
-        >
+        {canResize && (
+          <div
+            className={cn(
+              "absolute bottom-0 left-0 w-full h-4 resize-handle", // ✅ Añadir clase CSS
+              "cursor-ns-resize",
+              "group", // Añadir group para controlar hover states
+              "transition-all duration-150",
+              // Durante el resize, mostrar feedback visual MUCHO MÁS OBVIO
+              isResizing && "bg-purple-500/40 backdrop-blur-sm"
+            )}
+            onMouseDown={handleResizeStart}
+            onMouseEnter={(e) => e.stopPropagation()} // Evitar que se propague el hover
+          >
           {/* Fondo que aparece al hover - MÁS VISIBLE */}
           <div 
             className={cn(
@@ -975,7 +961,7 @@ export function AppointmentItem({
 
           {/* ✅ INDICADOR DE DURACIÓN DURANTE RESIZE */}
           {isResizing && (
-            <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-black/90 text-white px-2 py-1 rounded text-xs font-medium z-50 whitespace-nowrap">
+            <div className="absolute -top-8 left-1/2 z-50 px-2 py-1 text-xs font-medium text-white whitespace-nowrap rounded -translate-x-1/2 bg-black/90">
               {currentPreviewDuration}min
               {hasResizeConflict && (
                 <span className="ml-2 text-red-300">¡Conflicto!</span>
@@ -983,6 +969,7 @@ export function AppointmentItem({
             </div>
           )}
         </div>
+        )}
 
         {/* ✅ INDICADOR DE EXTENSIÓN - Posición más alta para identificación visual */}
         {appointment.estimatedDurationMinutes && 
@@ -1004,17 +991,17 @@ export function AppointmentItem({
             <RotateCcw className="h-2.5 w-2.5 text-white" />
             
             {/* Tooltip mejorado que aparece al hacer hover */}
-            <div className="absolute left-1/2 top-full mt-1 transform -translate-x-1/2 bg-black text-white text-xs rounded px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-40">
+            <div className="absolute top-full left-1/2 z-40 px-2 py-1 mt-1 text-xs text-white whitespace-nowrap bg-black rounded opacity-0 transition-opacity duration-200 transform -translate-x-1/2 pointer-events-none group-hover:opacity-100">
               Cita extendida: {appointment.duration}min → {appointment.estimatedDurationMinutes}min
-              <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 border-2 border-transparent border-b-black"></div>
+              <div className="absolute bottom-full left-1/2 border-2 border-transparent transform -translate-x-1/2 border-b-black"></div>
             </div>
           </button>
         )}
 
         {/* ✅ SPINNER OPTIMISTA - Esquina inferior derecha */}
         {showOptimisticSpinner && (
-          <div className="absolute bottom-1 right-1 z-30">
-            <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+          <div className="absolute right-1 bottom-1 z-30">
+            <div className="w-3 h-3 rounded-full border-2 animate-spin border-white/30 border-t-white"></div>
           </div>
         )}
       </div>

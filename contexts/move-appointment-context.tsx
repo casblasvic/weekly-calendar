@@ -6,6 +6,7 @@ import { es } from 'date-fns/locale'
 import { useQueryClient } from '@tanstack/react-query'
 import { getWeekKey } from '@/lib/hooks/use-appointments-query'
 import { useClinic } from '@/contexts/clinic-context'
+import { validateAppointmentSlot, ValidationResult } from '@/utils/appointment-validation'
 
 // Tipos
 interface Appointment {
@@ -35,8 +36,9 @@ interface PreviewSlot {
   date: Date
   time: string
   roomId: string
-  isValid: boolean
-  conflictReason?: string
+  isValid?: boolean
+  conflicts?: any[]
+  reason?: string
 }
 
 interface MoveAppointmentContextType {
@@ -63,7 +65,8 @@ interface MoveAppointmentContextType {
   
   // Helpers
   isMovingAppointment: boolean
-  isValidSlot: (date: Date, time: string, roomId: string) => { isValid: boolean; reason?: string }
+  isValidSlot: (date: Date, time: string, roomId: string, appointments: any[]) => { isValid: boolean; reason?: string }
+  validateSlot: (slot: { date: Date; time: string; roomId: string }, appointments: any[]) => ValidationResult | null
 }
 
 const MoveAppointmentContext = createContext<MoveAppointmentContextType | undefined>(undefined)
@@ -140,43 +143,44 @@ export function MoveAppointmentProvider({
     setPreviewSlot(null)
   }, [appointmentInMovement, onGoBackToAppointment])
 
-  // Validar si un slot es válido para la cita
-  const isValidSlot = useCallback((date: Date, time: string, roomId: string): { isValid: boolean; reason?: string } => {
+  // ✅ NUEVA FUNCIÓN: Validar slot usando función centralizada
+  const validateSlot = useCallback((slot: { date: Date; time: string; roomId: string }, appointments: any[] = []): ValidationResult | null => {
     if (!appointmentInMovement) {
-      return { isValid: false, reason: 'No hay cita en movimiento' }
+      return null;
     }
 
-    const { appointment } = appointmentInMovement
+    const { appointment } = appointmentInMovement;
     
-    // No permitir mover a la misma posición
-    if (
-      date.getTime() === appointment.date.getTime() &&
-      time === appointment.startTime &&
-      roomId === appointment.roomId
-    ) {
-      return { isValid: false, reason: 'Misma posición actual' }
-    }
-
-    // Validar que el slot tenga suficiente duración
-    const [hours, minutes] = time.split(':').map(Number)
-    const startMinutes = hours * 60 + minutes
-    const endMinutes = startMinutes + appointment.duration
-    const endHours = Math.floor(endMinutes / 60)
-    const endMins = endMinutes % 60
+    // ✅ ELIMINADO: Check problemático que impedía desplazamientos
+    // La función validateAppointmentSlot con excludeAppointmentId ya maneja esto correctamente
     
-    // Verificar límites de horario (asumiendo 8:00-20:00 como ejemplo)
-    if (endHours > 20) {
-      return { isValid: false, reason: 'Excede horario laboral' }
+    // ✅ USAR LISTA DE CITAS RECIBIDA COMO PARÁMETRO Y EXCLUIR CITA EN MOVIMIENTO
+    return validateAppointmentSlot({
+      targetDate: slot.date,
+      targetTime: slot.time,
+      duration: appointment.duration,
+      roomId: slot.roomId,
+      appointments, // ✅ USAR LISTA REAL, NO VACÍA
+      excludeAppointmentId: appointment.id, // ✅ EXCLUIR CITA EN MOVIMIENTO PARA PERMITIR DESPLAZAMIENTOS
+      activeClinic,
+      granularity: 15,
+      allowAdjustments: true
+    });
+  }, [appointmentInMovement, activeClinic]);
+
+  // Validar si un slot es válido para la cita (mantener por compatibilidad)
+  const isValidSlot = useCallback((date: Date, time: string, roomId: string, appointments: any[] = []): { isValid: boolean; reason?: string } => {
+    const validation = validateSlot({ date, time, roomId }, appointments);
+    
+    if (!validation) {
+      return { isValid: false, reason: 'No hay cita en movimiento' };
     }
-
-    // TODO: Aquí se pueden agregar más validaciones:
-    // - Verificar conflictos con otras citas
-    // - Verificar disponibilidad de la sala
-    // - Verificar horarios de la clínica
-    // - Verificar disponibilidad del profesional
-
-    return { isValid: true }
-  }, [appointmentInMovement])
+    
+    return {
+      isValid: validation.isValid,
+      reason: validation.reason
+    };
+  }, [validateSlot])
 
   // Completar movimiento
   const completeMovingAppointment = useCallback(async (
@@ -461,7 +465,8 @@ export function MoveAppointmentProvider({
     isMovingAppointment: !!appointmentInMovement,
     isValidSlot,
     registerOptimisticFunctions,
-    unregisterOptimisticFunctions
+    unregisterOptimisticFunctions,
+    validateSlot
   }
 
   return (

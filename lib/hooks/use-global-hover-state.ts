@@ -4,6 +4,7 @@ interface HoverInfo {
   cellId: string
   offsetY: number
   exactTime: string
+  granularityType?: 'normal' | 'blue' | 'green'
 }
 
 interface GlobalHoverState {

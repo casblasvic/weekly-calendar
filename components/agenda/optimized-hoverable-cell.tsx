@@ -12,6 +12,8 @@ import { useGlobalHoverState } from '@/lib/hooks/use-global-hover-state'
 import { useDragTime } from '@/lib/drag-drop/drag-time-context'
 import { useClinic } from '@/contexts/clinic-context'
 import { useMoveAppointment } from '@/contexts/move-appointment-context'
+import { useWeeklyAgendaData } from '@/lib/hooks/use-weekly-agenda-data'
+import { validateAppointmentSlot } from '@/utils/appointment-validation'
 
 // Constantes para el efecto zebra
 const ZEBRA_LIGHT = 'bg-gray-50 dark:bg-gray-800/50'
@@ -106,8 +108,11 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
 }) => {
   const cellRef = useRef<HTMLDivElement>(null)
   
+  // ✅ USAR DATOS DIRECTOS DEL CACHE para garantizar consistencia con el sistema de drop
+  const { appointments: cacheAppointments } = useWeeklyAgendaData(day)
+  
   // Obtener información de cabinas del contexto
-  const { activeClinicCabins } = useClinic()
+  const { activeClinic } = useClinic()
   
   // Usar el nuevo contexto de drag
   const { 
@@ -125,13 +130,41 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
   const { hoveredInfo, setHoveredInfo, clearHover } = useGlobalHoverState()
   
   // ✅ DETECTAR CITA EN MOVIMIENTO para granularidades verdes
-  const { appointmentInMovement, isMovingAppointment, confirmMove } = useMoveAppointment()
+  const { appointmentInMovement, isMovingAppointment, confirmMove, validateSlot } = useMoveAppointment()
   
   // Generar un ID único para esta celda
   const cellId = `${day.toISOString()}-${time}-${cabinId}`
   
   // Solo mostrar el hover si es para esta celda específica
   const showHover = hoveredInfo?.cellId === cellId
+  
+  // ✅ VALIDACIÓN DE CONFLICTOS PARA FEEDBACK VISUAL - USANDO CACHE DIRECTO
+  const validateHoverSlot = useCallback((exactTime: string) => {
+    // ✅ USAR DATOS DEL CACHE para garantizar consistencia absoluta
+    const appointmentsToUse = cacheAppointments || appointments || [];
+    
+    // Para movimiento de citas
+    if (isMovingAppointment && appointmentInMovement) {
+      return validateSlot({ date: day, time: exactTime, roomId: cabinId }, appointmentsToUse);
+    }
+    
+    // Para drag & drop
+    if (isDragging && draggedAppointment) {
+      return validateAppointmentSlot({
+        targetDate: day,
+        targetTime: exactTime,
+        duration: draggedAppointment.duration,
+        roomId: cabinId,
+        appointments: appointmentsToUse,
+        excludeAppointmentId: draggedAppointment.id,
+        activeClinic: activeClinic || undefined,
+        granularity: minuteGranularity,
+        allowAdjustments: false
+      });
+    }
+    
+    return null;
+  }, [isMovingAppointment, appointmentInMovement, validateSlot, day, cabinId, cacheAppointments, appointments, isDragging, draggedAppointment, activeClinic, minuteGranularity]);
   
   // Hook optimizado para el drag preview local
   const { 
@@ -201,27 +234,128 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
       const [hours, minutes] = time.split(':').map(Number);
       const hoverTimeInMinutes = hours * 60 + minutes + offsetMinutes;
       
-      return appointments.some(apt => {
-        // ✅ EXCLUIR la cita que está siendo arrastrada actualmente usando el contexto
+      // ✅ USAR DATOS DEL CACHE para garantizar consistencia absoluta
+      const appointmentsToUse = cacheAppointments || appointments || [];
+      
+      const conflictingAppointments = appointmentsToUse.filter(apt => {
+        // ✅ DURANTE DRAG: NO excluir la cita siendo arrastrada para mostrar granularidades azules
+        // Solo excluir para validación de conflictos, NO para granularidades azules
         if (isDragging && draggedAppointment && apt.id === draggedAppointment.id) {
-          return false; // No contar la cita que se está arrastrando
+          return false; // No contar como conflicto la cita que se está arrastrando
         }
+        
+        // ✅ EXCLUIR la cita que está siendo MOVIDA actualmente
+        if (isMovingAppointment && appointmentInMovement && apt.id === appointmentInMovement.appointment.id) {
+          return false; // No contar la cita que se está moviendo
+        }
+        
+        // ✅ FILTRADO COMPLETO: Solo conflictos en misma fecha + cabina + clínica + sistema
+        
+        // Verificar misma fecha
+        const aptDate = apt.date instanceof Date ? apt.date : new Date(apt.date);
+        const isSameDate = aptDate.toDateString() === day.toDateString();
+        if (!isSameDate) return false; // No es conflicto si es diferente fecha
+        
+        // Verificar misma cabina
+        const isSameCabin = String(apt.roomId) === String(cabinId);
+        if (!isSameCabin) return false; // No es conflicto si es diferente cabina
+        
+        // TODO: Agregar verificación de clínica y sistema cuando estén disponibles en apt
+        // const isSameClinic = apt.clinicId === currentClinicId;
+        // const isSameSystem = apt.systemId === currentSystemId;
         
         // Obtener hora de inicio y fin de la cita
         const aptStartTime = typeof apt.startTime === 'string' ? apt.startTime : '00:00';
         const [aptHours, aptMinutes] = aptStartTime.split(':').map(Number);
         const aptStartMinutes = aptHours * 60 + aptMinutes;
-        const aptEndMinutes = aptStartMinutes + apt.duration;
-
-        // Verificar si el punto del hover está dentro del rango de la cita
-        return hoverTimeInMinutes >= aptStartMinutes && hoverTimeInMinutes < aptEndMinutes;
+        const aptEndMinutes = aptStartMinutes + (apt.duration || 60);
+        
+        // Verificar superposición en tiempo
+        const isTimeOverlap = hoverTimeInMinutes >= aptStartMinutes && hoverTimeInMinutes < aptEndMinutes;
+        
+        return isTimeOverlap; // Solo es conflicto si hay superposición temporal en misma fecha+cabina
       });
+      
+      const hasConflict = conflictingAppointments.length > 0;
+      
+      // ✅ LOG SOLO CUANDO HAY PROBLEMA: Conflictos en celdas que deberían ser azules
+      if (hasConflict && isDragging && draggedAppointment) {
+        const [hours, minutes] = time.split(':').map(Number);
+        const hoverTimeInMinutes = hours * 60 + minutes + offsetMinutes;
+        const [aptHours, aptMinutes] = draggedAppointment.originalTime.split(':').map(Number);
+        const aptStartMinutes = aptHours * 60 + aptMinutes;
+        const aptEndMinutes = aptStartMinutes + draggedAppointment.duration;
+        const isInOriginalRange = hoverTimeInMinutes >= aptStartMinutes && hoverTimeInMinutes < aptEndMinutes;
+        
+        if (isInOriginalRange) {
+          console.error('🚫 [PROBLEMA] Celda DEBERÍA ser azul pero detecta conflictos:', {
+            celda: `${time} (${day.toDateString()}) - Cabina: ${cabinId}`,
+            hoverTime: `${Math.floor(hoverTimeInMinutes / 60)}:${(hoverTimeInMinutes % 60).toString().padStart(2, '0')}`,
+            citaOriginal: `${draggedAppointment.originalTime} (ID: ${draggedAppointment.id})`,
+            conflictosDetectados: conflictingAppointments.map(apt => ({
+              id: apt.id,
+              time: apt.startTime,
+              duration: apt.duration,
+              roomId: apt.roomId,
+              date: (apt.date instanceof Date ? apt.date : new Date(apt.date)).toDateString(),
+              esMismaCita: apt.id === draggedAppointment.id,
+              esMismaFecha: (apt.date instanceof Date ? apt.date : new Date(apt.date)).toDateString() === day.toDateString(),
+              esMismaCabina: String(apt.roomId) === String(cabinId)
+            })),
+            deberiaExcluir: draggedAppointment.id
+          });
+        }
+      }
+      
+      return hasConflict;
     };
     
     // Si hay drag activo, SIEMPRE mostrar granularidades (ignorar cita sombreada)
     // Si NO hay drag, verificar que no haya citas reales en esa posición
     const hasAppointment = hasAppointmentAtPositionLocal(cappedOffset);
-    const allowGranularity = isDragging ? true : !hasAppointment;
+    
+    // ✅ NUEVA LÓGICA: Determinar tipo de granularidad a mostrar
+    let allowGranularity = false;
+    let granularityType: 'normal' | 'blue' | 'green' = 'normal';
+    
+    if (isDragging && draggedAppointment) {
+      const isInOriginalRange = isInDraggedAppointmentRange(cappedOffset);
+      const isGreenZone = allowGreenGranularityInOriginalRange(cappedOffset);
+      
+      if (isGreenZone) {
+        // VERDE: Permitir desplazamiento dentro del rango original (misma cabina)
+        allowGranularity = true;
+        granularityType = 'green';
+      } else if (isInOriginalRange) {
+        // AZUL: Mostrar en toda la franja horaria de la cita original (todas las cabinas)
+        allowGranularity = true;
+        granularityType = 'blue';
+      } else if (!hasAppointment) {
+        // VERDE: Slot libre para nueva posición
+        allowGranularity = true;
+        granularityType = 'green';
+      }
+      
+      // ✅ LOG SOLO CUANDO HAY PROBLEMA: Debería ser azul pero no lo es
+      if (isInOriginalRange && granularityType !== 'blue') {
+        console.error('❌ [ERROR] DEBERÍA SER AZUL pero no se asigna:', {
+          granularityType,
+          celda: `${time} (${day.toDateString()}) - Cabina: ${cabinId}`,
+          isInOriginalRange,
+          isGreenZone,
+          hasAppointment,
+          allowGranularity
+        });
+      }
+    } else if (isMovingAppointment) {
+      // Durante movimiento, usar la lógica existente
+      allowGranularity = !hasAppointment;
+      granularityType = 'green';
+    } else {
+      // Modo normal (sin drag ni movimiento)
+      allowGranularity = !hasAppointment;
+      granularityType = 'normal';
+    }
     
     if (allowGranularity) {
       const totalMinutes = baseMinutes + cappedOffset
@@ -230,13 +364,14 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
       const exactTime = `${displayHours.toString().padStart(2, '0')}:${displayMinutes.toString().padStart(2, '0')}`
       
       // ✅ ANTI-BUCLE: Solo actualizar si el valor ha cambiado realmente
-      const hoverKey = `${cellId}-${exactTime}-${cappedOffset}`
+      const hoverKey = `${cellId}-${exactTime}-${cappedOffset}-${granularityType}`
       if (lastHoverInfoRef.current !== hoverKey) {
         lastHoverInfoRef.current = hoverKey
         setHoveredInfo({
           cellId,
           offsetY: (cappedOffset / slotDuration) * cellHeight,
-          exactTime
+          exactTime,
+          granularityType
         })
       }
     } else {
@@ -246,7 +381,7 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
         clearHover()
       }
     }
-  }, [baseMinutes, slotDuration, minuteGranularity, appointments, day, time, cabinId, isInteractive, active, overrideForCell, cellHeight, cellId, setHoveredInfo, clearHover, isDraggingDuration, isDragging, draggedAppointment])
+  }, [baseMinutes, slotDuration, minuteGranularity, cacheAppointments, appointments, day, time, cabinId, isInteractive, active, overrideForCell, cellHeight, cellId, setHoveredInfo, clearHover, isDraggingDuration, isDragging, draggedAppointment, isMovingAppointment, appointmentInMovement])
 
   const handleMouseLeave = useCallback(() => {
     clearHover()
@@ -262,15 +397,25 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
     
     // ✅ BLOQUEAR CREACIÓN DE NUEVAS CITAS SI HAY UNA CITA EN MOVIMIENTO
     if (isMovingAppointment && appointmentInMovement) {
-      // En lugar de abrir modal para nueva cita, confirmar movimiento
+      const targetTime = hoveredInfo?.exactTime || time;
+      
+      // ✅ VALIDAR ANTES DE CONFIRMAR MOVIMIENTO - USAR DATOS DEL CACHE
+      const appointmentsToUse = cacheAppointments || appointments || [];
+      const validation = validateSlot({ date: day, time: targetTime, roomId: cabinId }, appointmentsToUse);
+      
+      if (validation && !validation.isValid) {
+        console.log('[HoverableCell] ❌ Movimiento bloqueado por conflicto:', validation.reason);
+        return; // No permitir click si hay conflicto
+      }
+      
       console.log('[HoverableCell] 🎯 Confirmando movimiento de cita a:', {
         date: day,
-        time: hoveredInfo?.exactTime || time,
+        time: targetTime,
         roomId: cabinId
       });
       
-      // ✅ USAR FUNCIÓN REAL DE CONFIRMACIÓN
-      confirmMove(day, hoveredInfo?.exactTime || time, cabinId);
+      // ✅ CONFIRMAR MOVIMIENTO SOLO SI ES VÁLIDO
+      confirmMove(day, targetTime, cabinId);
       return;
     }
     
@@ -282,19 +427,31 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
     } else if (isInteractive) {
       onCellClick(day, time, cabinId)
     }
-  }, [overrideForCell, active, setSelectedOverride, setIsOverrideModalOpen, isInteractive, showHover, hoveredInfo, onCellClick, day, time, cabinId, isMovingAppointment, appointmentInMovement, confirmMove])
+  }, [overrideForCell, active, setSelectedOverride, setIsOverrideModalOpen, isInteractive, showHover, hoveredInfo, onCellClick, day, time, cabinId, isMovingAppointment, appointmentInMovement, confirmMove, validateSlot, cacheAppointments, appointments])
 
   const handleDropWithExactTime = useCallback((e: React.DragEvent) => {
     if (active && isAvailable && !overrideForCell) {
-      // Usar el tiempo actual del drag (ya ajustado automáticamente a granularidad por el contexto)
       const exactTime = currentDragTime || time;
       
-      onDrop(e, day, exactTime, cabinId);
+      // ✅ VALIDAR ANTES DE CONFIRMAR DROP
+      if (isDragging && draggedAppointment) {
+        const validation = validateHoverSlot(exactTime);
+        
+        if (validation && !validation.isValid) {
+          console.log('[HoverableCell] ❌ Drop cancelado por conflicto:', validation.reason);
+          
+          // ✅ CANCELAR DROP - Volver a posición original como cuando se presiona ESC
+          e.preventDefault();
+          endDrag();
+          return;
+        }
+      }
       
-      // Finalizar el drag en el contexto
+      // ✅ PROCEDER CON DROP SOLO SI ES VÁLIDO
+      onDrop(e, day, exactTime, cabinId);
       endDrag();
     }
-  }, [active, isAvailable, overrideForCell, currentDragTime, time, onDrop, day, cabinId, endDrag])
+  }, [active, isAvailable, overrideForCell, currentDragTime, time, onDrop, day, cabinId, endDrag, isDragging, draggedAppointment, validateHoverSlot])
   
   // ANTI-BUCLE: Solo ref para tracking de posición
   const lastDragPositionRef = useRef<string | null>(null)
@@ -352,6 +509,50 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
 
   // Preview simplificado - solo mostrar línea de granularidad objetivo
   // El sistema de granularidad ya existente se encargará de mostrar la línea visual
+
+  // ✅ CORREGIDA: Función para detectar si estamos en el rango horario de la cita siendo arrastrada
+  const isInDraggedAppointmentRange = (offsetMinutes: number): boolean => {
+    if (!isDragging || !draggedAppointment) {
+      return false;
+    }
+    
+    const [hours, minutes] = time.split(':').map(Number);
+    const hoverTimeInMinutes = hours * 60 + minutes + offsetMinutes;
+    
+    // Obtener rango horario de la cita original siendo arrastrada
+    const [aptHours, aptMinutes] = draggedAppointment.originalTime.split(':').map(Number);
+    const aptStartMinutes = aptHours * 60 + aptMinutes;
+    const aptEndMinutes = aptStartMinutes + draggedAppointment.duration;
+    
+    // ✅ AZULES EN TODA LA VISTA: Solo verificar rango horario (SIN restricción de fecha/cabina)
+    // Las granularidades azules deben aparecer en TODAS las fechas y TODAS las cabinas
+    const isInTimeRange = hoverTimeInMinutes >= aptStartMinutes && hoverTimeInMinutes < aptEndMinutes;
+    
+    return isInTimeRange;
+  };
+
+  // ✅ CORREGIDA: Función para detectar si permitimos granularidad verde (desplazamiento en rango original)
+  const allowGreenGranularityInOriginalRange = (offsetMinutes: number): boolean => {
+    if (!isDragging || !draggedAppointment) return false;
+    
+    const [hours, minutes] = time.split(':').map(Number);
+    const hoverTimeInMinutes = hours * 60 + minutes + offsetMinutes;
+    
+    // ✅ VERDES PARA DESPLAZAMIENTO: Solo en la misma fecha + misma cabina + rango horario original
+    const isSameDate = draggedAppointment.originalDate.toDateString() === day.toDateString();
+    const isSameCabin = draggedAppointment.originalRoomId === cabinId;
+    
+    if (!isSameDate || !isSameCabin) return false;
+    
+    // Obtener rango horario de la cita original
+    const [aptHours, aptMinutes] = draggedAppointment.originalTime.split(':').map(Number);
+    const aptStartMinutes = aptHours * 60 + aptMinutes;
+    const aptEndMinutes = aptStartMinutes + draggedAppointment.duration;
+    
+    const isInRange = hoverTimeInMinutes >= aptStartMinutes && hoverTimeInMinutes < aptEndMinutes;
+    
+    return isInRange;
+  };
 
   return (
     <div
@@ -438,22 +639,31 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
         </div>
       )}
 
-      {/* ✅ GRANULARIDADES VERDES - PRIORIDAD 1: Movimiento de citas (SIEMPRE tiene prioridad) */}
+      {/* ✅ GRANULARIDADES CON VALIDACIÓN - PRIORIDAD 1: Movimiento de citas (SIEMPRE tiene prioridad) */}
       {showHover && isInteractive && !overrideForCell && isMovingAppointment && (() => {
+        // ✅ VALIDAR CONFLICTOS PARA FEEDBACK VISUAL
+        const validation = validateHoverSlot(hoveredInfo!.exactTime);
+        const isValid = validation?.isValid !== false; // null o true = verde, false = rojo
+        const lineColor = isValid ? 'bg-green-500' : 'bg-red-500';
+        const bgColor = isValid ? 'bg-green-100/80 border-green-500 text-green-800' : 'bg-red-100/80 border-red-500 text-red-800';
+        const textColor = isValid ? 'text-green-600' : 'text-red-600';
+        
         return (
           <div>
-            {/* Línea verde igual que en drag & drop para continuidad visual */}
+            {/* Línea verde/roja según validación */}
             <div
-              className="absolute right-0 left-0 z-50 bg-green-500 pointer-events-none"
+              className={cn("absolute right-0 left-0 z-50 pointer-events-none", lineColor)}
               style={{
                 top: `${hoveredInfo!.offsetY}px`,
                 height: '2px',
                 opacity: 0.8
               }}
             />
-            {/* Indicador de hora verde */}
+            {/* Indicador de hora verde/rojo */}
             <div
-              className="absolute left-0 pointer-events-none z-50 text-xs px-1 py-0.5 bg-green-500 text-white rounded-r font-medium"
+              className={cn("absolute left-0 pointer-events-none z-50 text-xs px-1 py-0.5 text-white rounded-r font-medium", 
+                isValid ? 'bg-green-500' : 'bg-red-500'
+              )}
               style={{
                 top: `${hoveredInfo!.offsetY}px`,
                 transform: 'translateY(-50%)',
@@ -463,10 +673,10 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
               {hoveredInfo!.exactTime}
             </div>
             
-            {/* ✅ PREVIEW DE LA CITA EN MOVIMIENTO - DEBAJO DE LA GRANULARIDAD */}
+            {/* ✅ PREVIEW DE LA CITA EN MOVIMIENTO con validación */}
             {appointmentInMovement && (
               <div
-                className="absolute right-1 left-1 z-40 text-green-800 rounded-md border-2 border-green-500 shadow-lg pointer-events-none bg-green-100/80"
+                className={cn("absolute right-1 left-1 z-40 rounded-md border-2 shadow-lg pointer-events-none", bgColor)}
                 style={{
                   top: `${hoveredInfo!.offsetY}px`,
                   height: `${(appointmentInMovement.appointment.duration / slotDuration) * cellHeight}px`,
@@ -475,8 +685,13 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
               >
                 <div className="overflow-hidden p-1 text-xs font-medium">
                   <div className="truncate">{appointmentInMovement.appointment.name}</div>
-                  <div className="text-xs text-green-600 truncate">{appointmentInMovement.appointment.service}</div>
-                  <div className="text-xs text-green-600">{appointmentInMovement.appointment.duration}min</div>
+                  <div className={cn("text-xs truncate", textColor)}>{appointmentInMovement.appointment.service}</div>
+                  <div className={cn("text-xs", textColor)}>
+                    {appointmentInMovement.appointment.duration}min
+                    {!isValid && validation?.reason && (
+                      <span className="block text-[9px] mt-0.5">⚠️ {validation.reason}</span>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
@@ -484,33 +699,71 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
         );
       })()}
 
-      {/* ✅ GRANULARIDADES VERDES - PRIORIDAD 2: Drag & Drop (Solo cuando NO hay movimiento activo) */}
-      {showHover && isInteractive && !overrideForCell && !isMovingAppointment && isDragging && (
-        <div>
-          {/* Línea verde para drag & drop */}
-          <div
-            className="absolute right-0 left-0 z-50 bg-green-500 pointer-events-none"
-            style={{
-              top: `${hoveredInfo!.offsetY}px`,
-              height: '2px',
-              opacity: 0.8
-            }}
-          />
-          {/* Indicador de hora verde */}
-          <div
-            className="absolute left-0 pointer-events-none z-50 text-xs px-1 py-0.5 bg-green-500 text-white rounded-r font-medium"
-            style={{
-              top: `${hoveredInfo!.offsetY}px`,
-              transform: 'translateY(-50%)',
-              fontSize: '10px'
-            }}
-          >
-            {hoveredInfo!.exactTime}
+      {/* ✅ GRANULARIDADES CON VALIDACIÓN - PRIORIDAD 2: Drag & Drop (Solo cuando NO hay movimiento activo) */}
+      {showHover && isInteractive && !overrideForCell && !isMovingAppointment && isDragging && (() => {        
+        // ✅ MOSTRAR GRANULARIDADES AZULES EN TODA LA FRANJA HORARIA DE LA CITA ORIGINAL
+        if (hoveredInfo?.granularityType === 'blue') {
+          console.log('🔵 [RENDER] ¡GRANULARIDAD AZUL RENDERIZADA!');
+          return (
+            <div>
+              {/* Línea AZUL para indicar rango horario de cita original */}
+              <div
+                className="absolute right-0 left-0 bg-blue-400 pointer-events-none z-45"
+                style={{
+                  top: `${hoveredInfo!.offsetY}px`,
+                  height: '2px',
+                  opacity: 0.7
+                }}
+              />
+              {/* Indicador de hora AZUL */}
+              <div
+                className="absolute left-0 pointer-events-none z-45 text-xs px-1 py-0.5 text-white rounded-r font-medium bg-blue-500"
+                style={{
+                  top: `${hoveredInfo!.offsetY}px`,
+                  transform: 'translateY(-50%)',
+                  fontSize: '10px'
+                }}
+              >
+                {hoveredInfo!.exactTime}
+              </div>
+            </div>
+          );
+        }
+        
+        // ✅ VALIDAR CONFLICTOS PARA GRANULARIDADES VERDES
+        const validation = validateHoverSlot(hoveredInfo!.exactTime);
+        const isValid = validation?.isValid !== false;
+        const lineColor = isValid ? 'bg-green-500' : 'bg-red-500';
+        
+        return (
+          <div>
+            {/* Línea verde/roja para drag & drop */}
+            <div
+              className={cn("absolute right-0 left-0 z-50 pointer-events-none", lineColor)}
+              style={{
+                top: `${hoveredInfo!.offsetY}px`,
+                height: '2px',
+                opacity: 0.8
+              }}
+            />
+            {/* Indicador de hora verde/rojo */}
+            <div
+              className={cn("absolute left-0 pointer-events-none z-50 text-xs px-1 py-0.5 text-white rounded-r font-medium",
+                isValid ? 'bg-green-500' : 'bg-red-500'
+              )}
+              style={{
+                top: `${hoveredInfo!.offsetY}px`,
+                transform: 'translateY(-50%)',
+                fontSize: '10px'
+              }}
+            >
+              {hoveredInfo!.exactTime}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
-      {/* Línea de hora al hacer hover (Granularidad AZUL) - PRIORIDAD 3: Solo cuando NO hay movimiento NI drag */}
+      {/* Línea de hora al hacer hover (Granularidad NORMAL) - PRIORIDAD 3: Solo cuando NO hay movimiento NI drag */}
       {showHover && isInteractive && !overrideForCell && !isMovingAppointment && !isDragging && (
         <div>
           <TimeHoverIndicator 
@@ -522,7 +775,7 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
         </div>
       )}
 
-      {/* ✅ GRANULARIDADES VERDES + PREVIEW PARA DRAG & DROP - SOLO cuando NO hay movimiento activo */}
+      {/* ✅ GRANULARIDADES CON VALIDACIÓN + PREVIEW PARA DRAG & DROP - SOLO cuando NO hay movimiento activo */}
       {isDragging && draggedAppointment && isInteractive && !overrideForCell && !isMovingAppointment && (() => {
         // VERIFICACIÓN ULTRA ESTRICTA: Solo mostrar en la celda exacta
         const isDragInThisColumn = currentDragRoomId === cabinId;
@@ -544,16 +797,15 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
           return null;
         }
         
-        // Debug log para esta implementación específica
-        console.log('[GranularidadVerdeDragContext] 🔍 Drag & drop context activo:', {
-          isDragging,
-          draggedAppointment: draggedAppointment?.id,
-          isMovingAppointment,
-          currentDragTime
-        });
+        // ✅ VALIDAR CONFLICTOS PARA FEEDBACK VISUAL
+        const validation = validateHoverSlot(currentDragTime!);
+        const isValid = validation?.isValid !== false;
+        const lineColor = isValid ? 'bg-green-500' : 'bg-red-500';
+        const bgColor = isValid ? 'bg-green-100/80 border-green-500 text-green-800' : 'bg-red-100/80 border-red-500 text-red-800';
+        const textColor = isValid ? 'text-green-600' : 'text-red-600';
         
         // Calcular posición exacta de la línea
-        const [dragHours, dragMinutes] = currentDragTime.split(':').map(Number);
+        const [dragHours, dragMinutes] = currentDragTime!.split(':').map(Number);
         const dragTotalMinutes = dragHours * 60 + dragMinutes;
         const [cellHours, cellMinutes] = time.split(':').map(Number);
         const cellStartMinutes = cellHours * 60 + cellMinutes;
@@ -563,9 +815,9 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
         
         return (
           <div key={`drag-preview-${currentDragTime}-${cabinId}-${day.toDateString()}`}>
-            {/* Línea verde */}
+            {/* Línea verde/roja */}
             <div
-              className="absolute right-0 left-0 z-50 bg-green-500 pointer-events-none"
+              className={cn("absolute right-0 left-0 z-50 pointer-events-none", lineColor)}
               style={{
                 top: `${offsetY}px`,
                 height: '2px',
@@ -573,9 +825,11 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
               }}
             />
             
-            {/* Indicador de hora */}
+            {/* Indicador de hora con validación */}
             <div
-              className="absolute left-0 pointer-events-none z-50 text-xs px-1 py-0.5 bg-green-500 text-white rounded-r font-medium"
+              className={cn("absolute left-0 pointer-events-none z-50 text-xs px-1 py-0.5 text-white rounded-r font-medium",
+                isValid ? 'bg-green-500' : 'bg-red-500'
+              )}
               style={{
                 top: `${offsetY}px`,
                 transform: 'translateY(-50%)',
@@ -585,9 +839,9 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
               {currentDragTime}
             </div>
             
-            {/* ✅ PREVIEW DE LA CITA EN DRAG & DROP - DEBAJO DE LA GRANULARIDAD */}
+            {/* ✅ PREVIEW DE LA CITA EN DRAG & DROP con validación */}
             <div
-              className="absolute right-1 left-1 z-40 text-green-800 rounded-md border-2 border-green-500 shadow-lg pointer-events-none bg-green-100/80"
+              className={cn("absolute right-1 left-1 z-40 rounded-md border-2 shadow-lg pointer-events-none", bgColor)}
               style={{
                 top: `${offsetY}px`,
                 height: `${(draggedAppointment.duration / slotDuration) * cellHeight}px`,
@@ -595,19 +849,22 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
               }}
             >
               <div className="overflow-hidden p-1 text-xs font-medium">
-                <div className="truncate">{/* Buscar la cita real para obtener el nombre */}
-                  {(() => {
-                    const realAppointment = appointments.find(apt => apt.id === draggedAppointment.id);
-                    return realAppointment?.name || draggedAppointment.startTime;
-                  })()}
-                </div>
-                <div className="text-xs text-green-600 truncate">
+                <div className="truncate">{(() => {
+                  const realAppointment = appointments.find(apt => apt.id === draggedAppointment.id);
+                  return realAppointment?.name || draggedAppointment.startTime;
+                })()}</div>
+                <div className={cn("text-xs truncate", textColor)}>
                   {(() => {
                     const realAppointment = appointments.find(apt => apt.id === draggedAppointment.id);
                     return realAppointment?.service || 'Servicio';
                   })()}
                 </div>
-                <div className="text-xs text-green-600">{draggedAppointment.duration}min</div>
+                <div className={cn("text-xs", textColor)}>
+                  {draggedAppointment.duration}min
+                  {!isValid && validation?.reason && (
+                    <span className="block text-[9px] mt-0.5">⚠️ {validation.reason}</span>
+                  )}
+                </div>
               </div>
             </div>
           </div>
