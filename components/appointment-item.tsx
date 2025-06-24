@@ -21,6 +21,8 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
 } from "@/components/ui/dropdown-menu"
+import { useGranularity } from '@/lib/drag-drop/granularity-context'
+import { useMoveAppointment } from '@/contexts/move-appointment-context'
 
 // Función para ajustar el brillo del color
 function adjustColorBrightness(color: string, amount: number) {
@@ -127,6 +129,11 @@ export function AppointmentItem({
     getTagById: () => undefined,
     getTags: () => []
   }
+  
+  // ✅ DETECTAR SI ESTA CITA ESTÁ EN MOVIMIENTO
+  const { appointmentInMovement } = useMoveAppointment();
+  const isThisAppointmentMoving = appointmentInMovement?.appointment.id === appointment.id;
+  
   const appointmentRef = useRef<HTMLDivElement>(null)
   const [showTooltip, setShowTooltip] = useState(false)
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 })
@@ -544,8 +551,7 @@ export function AppointmentItem({
     // ✅ REGISTRAR LISTENERS EN OVERLAY (no en document)
     overlay.addEventListener('mousemove', handleMouseMove);
     overlay.addEventListener('mouseup', handleMouseUp);
-    document.addEventListener('keydown', handleKeyDown);
-    
+          document.addEventListener('keydown', handleKeyDown);
   }, [appointment.id, appointment.duration, appointment.startTime, appointment.roomId, minuteGranularity, height, onDurationChange, onDraggingDurationChange, appointments]);
 
   useEffect(() => {
@@ -581,6 +587,8 @@ export function AppointmentItem({
           appointment.isContinuation && "border-l-2 border-dashed border-gray-300",
           // ✅ ESTILO SUTIL PARA CITAS OPTIMISTAS (opcional)
           isOptimistic && "ring-1 ring-purple-300 ring-opacity-50",
+          // ✅ TRANSPARENCIA CUANDO ESTÁ EN MODO MOVIMIENTO
+          isThisAppointmentMoving && "opacity-60 scale-95 ring-2 ring-purple-400 ring-opacity-70",
           // Estilos de borde durante el resize
           isResizing && hasResizeConflict && "ring-2 ring-red-500 ring-opacity-80",
           isResizing && !hasResizeConflict && "ring-2 ring-green-500 ring-opacity-80",
@@ -766,7 +774,10 @@ export function AppointmentItem({
                 
                 <DropdownMenuItem onClick={(e) => {
                   e.stopPropagation();
-                  console.log("Mover cita");
+                  console.log('[AppointmentItem] Iniciando movimiento de cita:', appointment.id);
+                  if (onMoveAppointment) {
+                    onMoveAppointment(appointment.id);
+                  }
                 }} className="cursor-pointer hover:bg-gray-100">
                   <Move className="h-4 w-4 mr-2" />
                   Mover

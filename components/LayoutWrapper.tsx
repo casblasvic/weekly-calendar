@@ -20,17 +20,22 @@ import { MobileDrawerMenu } from "@/components/mobile/layout/drawer-menu"
 import { MobileClinicButton } from "@/components/mobile-clinic-button"
 import { FloatingMenu } from "./ui/floating-menu"
 import { GranularityProvider } from "@/lib/drag-drop/granularity-context"
+import { MoveAppointmentProvider } from "@/contexts/move-appointment-context"
+import { MoveAppointmentUI } from "@/components/move-appointment-ui"
+import { format } from "date-fns"
 
 interface LayoutWrapperProps {
   children: React.ReactNode
+  user: any
 }
 
-export function LayoutWrapper({ children }: LayoutWrapperProps) {
+export function LayoutWrapper({ children, user }: LayoutWrapperProps) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [hasMounted, setHasMounted] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
   const [isSidebarVisible, setIsSidebarVisible] = useState(false)
   const pathname = usePathname()
+  const router = useRouter()
   const sidebarRef = useRef<HTMLDivElement>(null)
   const lastPathname = useRef<string>(pathname || "")
   
@@ -218,6 +223,23 @@ export function LayoutWrapper({ children }: LayoutWrapperProps) {
     } as React.CSSProperties; // Cast para incluir CSS Variables
   }, [isMobile, isSidebarVisible, isSidebarCollapsed]);
 
+  // ✅ FUNCIÓN PARA VOLVER A LA CITA ORIGINAL (funcionalidad "deshacer")
+  const handleGoBackToAppointment = useCallback((appointment: any) => {
+    console.log('[LayoutWrapper] 🔄 Navegando de vuelta a cita original:', appointment.name)
+    
+    // Determinar vista apropiada y navegar
+    const appointmentDate = appointment.date instanceof Date ? appointment.date : new Date(appointment.date)
+    const dateString = format(appointmentDate, 'yyyy-MM-dd')
+    
+    // Si estamos en agenda, ir a vista diaria centrada en la cita
+    if (pathname.includes('/agenda')) {
+      router.push(`/agenda?view=day&date=${dateString}&center=${appointment.id}`)
+    } else {
+      // Si no, ir a agenda diaria
+      router.push(`/agenda?view=day&date=${dateString}&center=${appointment.id}`)
+    }
+  }, [router, pathname])
+
   // Si no estamos montados, mostrar un layout básico
   if (!hasMounted) {
     return <div className="min-h-screen">{children}</div>
@@ -256,7 +278,13 @@ export function LayoutWrapper({ children }: LayoutWrapperProps) {
       >
         {/* Envolver children con GranularityProvider */}
         <GranularityProvider>
-          {children}
+          <MoveAppointmentProvider 
+            onGoBackToAppointment={handleGoBackToAppointment}
+          >
+            {children}
+            {/* UI para citas en movimiento - DENTRO del provider */}
+            <MoveAppointmentUI />
+          </MoveAppointmentProvider>
         </GranularityProvider>
       </main>
     </div>

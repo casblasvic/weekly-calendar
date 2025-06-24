@@ -213,7 +213,7 @@ export function useWeeklyAgendaData(currentDate: Date) {
       
       const processed = {
         id: apt.id,
-        name: `${apt.person?.firstName || ''} ${apt.person?.lastName || ''}`.trim() || 'Cliente',
+        name: apt.name || `${apt.person?.firstName || ''} ${apt.person?.lastName || ''}`.trim() || 'Cliente',
         service: apt.services?.map((s: any) => s.service?.name).filter(Boolean).join(", ") || 'Sin servicio',
         startTime: processTime(apt.startTime, '00:00'),
         endTime: processTime(apt.endTime, '01:00'),

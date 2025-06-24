@@ -2,9 +2,7 @@
 
 "use client"
 
-import React, { useMemo } from "react"
-
-import { useState, useEffect, useCallback, useRef } from "react"
+import React, { useMemo, useState, useEffect, useCallback, useRef } from "react"
 import { format, parse, parseISO, isAfter, isBefore, getDay, getDate, isSameDay, addDays, subDays, set, addMinutes, isEqual, startOfWeek, endOfWeek } from "date-fns"
 import { es } from "date-fns/locale"
 import { toZonedTime } from 'date-fns-tz'
@@ -53,6 +51,7 @@ import { DragItem } from "@/lib/drag-drop/types"
 import { getAppointmentDuration } from "@/lib/drag-drop/utils"
 import { utcToClinicTime } from "@/lib/timezone-utils"
 import { useWeeklyAgendaData } from '@/lib/hooks/use-weekly-agenda-data'
+import { useMoveAppointment } from "@/contexts/move-appointment-context"
 
 interface Clinica {
   // ... otras propiedades existentes ...
@@ -230,20 +229,71 @@ export default function DayView({
   // Añadir este estado cerca de los otros estados al inicio del componente
   const [updateKey, setUpdateKey] = useState(0)
 
-  // ✅ USAR SISTEMA DE CACHE como vista semanal
-  const { 
-    appointments: cachedAppointments, 
-    isLoading: loadingAppointments,
-    isDataStable,
+  // ✅ Hook para datos de agenda con funciones optimistas
+  const {
+    appointments: cachedAppointments,
     fetchAppointments,
-    invalidateCache,
-    // ✅ FUNCIONES OPTIMISTAS GLOBALES
     addOptimisticAppointment,
     updateOptimisticAppointment,
-    updateOptimisticTags,
     deleteOptimisticAppointment,
-    replaceOptimisticAppointment
+    updateOptimisticTags,
+    invalidateCache,
+    isDataStable
   } = useWeeklyAgendaData(currentDate);
+
+  // ✅ Hook para mover citas
+  const { startMovingAppointment, appointmentInMovement, isMovingAppointment, registerOptimisticFunctions, unregisterOptimisticFunctions } = useMoveAppointment();
+
+  // ✅ REGISTRAR FUNCIONES OPTIMISTAS CON EL CONTEXTO
+  useEffect(() => {
+    registerOptimisticFunctions({
+      updateOptimisticAppointment,
+      invalidateCache
+    });
+
+    // Cleanup: desregistrar al desmontar
+    return () => {
+      unregisterOptimisticFunctions();
+    };
+  }, [registerOptimisticFunctions, unregisterOptimisticFunctions, updateOptimisticAppointment, invalidateCache]);
+
+  // ✅ CALLBACK PARA MOVIMIENTO OPTIMISTA DE CITAS
+  const handleMoveComplete = useCallback(async (
+    originalAppointment: any,
+    newDate: Date,
+    newTime: string,
+    newRoomId: string
+  ): Promise<boolean> => {
+    console.log('[DayView] 🚀 Movimiento de cita confirmado:', {
+      appointmentId: originalAppointment.id,
+      from: { date: originalAppointment.date, time: originalAppointment.startTime, roomId: originalAppointment.roomId },
+      to: { date: newDate, time: newTime, roomId: newRoomId }
+    });
+
+    try {
+      // ✅ RENDERIZADO OPTIMISTA INMEDIATO
+      const [hours, minutes] = newTime.split(':').map(Number);
+      const startMinutes = hours * 60 + minutes;
+      const endMinutes = startMinutes + originalAppointment.duration;
+      const endHours = Math.floor(endMinutes / 60);
+      const endMins = endMinutes % 60;
+      const newEndTime = `${endHours.toString().padStart(2, '0')}:${endMins.toString().padStart(2, '0')}`;
+
+      updateOptimisticAppointment(originalAppointment.id, {
+        date: newDate,
+        startTime: newTime,
+        endTime: newEndTime,
+        roomId: newRoomId
+      });
+
+      console.log('[DayView] ✅ Cita movida optimísticamente');
+      return true;
+
+    } catch (error) {
+      console.error('[DayView] ❌ Error en movimiento optimista:', error);
+      return false;
+    }
+  }, [updateOptimisticAppointment]);
 
   // ✅ CREAR activeCabins IGUAL QUE WEEKLY-AGENDA para acceso a colores
   const activeCabins = useMemo(() => {
@@ -754,6 +804,12 @@ export default function DayView({
       return;
     }
     
+    // ✅ BLOQUEAR CREACIÓN DE NUEVAS CITAS SI HAY UNA CITA EN MOVIMIENTO
+    if (appointmentInMovement) {
+      console.log('[DayView] 🚫 Bloqueando creación de nueva cita - hay una cita en movimiento');
+      return;
+    }
+    
     const clinicIdStr = activeClinic?.id ? String(activeClinic.id) : undefined;
 
     // Verificar si la celda está bloqueada por un override
@@ -801,7 +857,106 @@ export default function DayView({
       
       try {
         // ✅ RENDERIZADO OPTIMISTA INMEDIATO ANTES DE API - SINCRONIZADO CON WEEKLY-AGENDA
-        if (isUpdate) {
+        if (!isUpdate) {
+          // ✅ NUEVA CITA: RENDERIZADO OPTIMISTA GLOBAL INMEDIATO - ANTES de llamar API
+          console.log('[DayView] 🚀 RENDERIZADO OPTIMISTA GLOBAL - Creando cita inmediatamente');
+          
+          // ✅ CREAR CITA OPTIMISTA CON DATOS REALES DEL MODAL (misma lógica que weekly-agenda)
+          const tempId = `temp-${Date.now()}`;
+          
+          // ✅ OBTENER NOMBRE DEL CLIENTE CORRECTAMENTE
+          let clientName = 'Cliente'; // Fallback por defecto
+          
+          if (selectedPerson) {
+            clientName = `${selectedPerson.firstName} ${selectedPerson.lastName}`;
+            console.log('[DayView] 👤 Cliente desde estado:', clientName);
+          }
+          
+          // Crear fechas desde los datos del modal
+          const appointmentDate = new Date(appointmentData.date);
+          const [startHours, startMinutes] = appointmentData.startTime.split(':').map(Number);
+          const [endHours, endMinutes] = appointmentData.endTime.split(':').map(Number);
+          
+          const startDateTime = new Date(appointmentDate);
+          startDateTime.setHours(startHours, startMinutes, 0, 0);
+          
+          const endDateTime = new Date(appointmentDate);
+          endDateTime.setHours(endHours, endMinutes, 0, 0);
+          
+          // ✅ USAR SERVICIOS REALES del modal para color optimista
+          const realServicesData = appointmentData.selectedServicesData || [];
+          console.log('[DayView] 🎨 Servicios para color optimista:', realServicesData);
+          
+          // ✅ CONVERTIR SERVICIOS CON ESTRUCTURA IDÉNTICA A LA API FINAL
+          const optimisticServices = realServicesData.map((service: any) => ({
+            id: `temp-service-${Date.now()}-${service.id}`,
+            appointmentId: tempId,
+            serviceId: service.id,
+            quantity: 1,
+            status: 'SCHEDULED',
+            service: {
+              id: service.id,
+              name: service.name,
+              colorCode: service.color || '#8B5CF6',
+              categoryId: service.category || 'default',
+              durationMinutes: service.duration || 15,
+              price: service.price || 0
+            }
+          }));
+          
+          // ✅ CALCULAR COLOR REAL (misma lógica que weekly-agenda)
+          let appointmentColor = '#9CA3AF';
+          if (optimisticServices.length > 0) {
+            const serviceTypes = new Set(optimisticServices.map((s: any) => s.service?.categoryId));
+            const uniqueColors = new Set(optimisticServices.map((s: any) => s.service?.colorCode).filter(Boolean));
+            
+            if (serviceTypes.size === 1 && uniqueColors.size === 1) {
+              const firstColor = Array.from(uniqueColors)[0] as string;
+              appointmentColor = firstColor || appointmentColor;
+            } else {
+              const cabin = activeCabins.find(c => c.id === appointmentData.roomId);
+              appointmentColor = cabin?.color || appointmentColor;
+            }
+          } else {
+            // Sin servicios - usar color de cabina
+            const cabin = activeCabins.find(c => c.id === appointmentData.roomId);
+            if (cabin?.color) {
+              appointmentColor = cabin.color;
+              console.log('[DayView] 🎨 Optimista - Color de cabina (sin servicios):', appointmentColor);
+            }
+          }
+          
+          // ✅ CREAR CITA OPTIMISTA COMPLETA
+          const optimisticAppointment = {
+            id: tempId,
+            name: clientName,
+            service: optimisticServices.map((s: any) => s.service?.name).filter(Boolean).join(", ") || realServicesData.map((s: any) => s.name).join(", ") || 'Servicios seleccionados',
+            date: startDateTime,
+            roomId: appointmentData.roomId,
+            startTime: format(startDateTime, 'HH:mm'),
+            endTime: format(endDateTime, 'HH:mm'),
+            duration: Math.ceil((endDateTime.getTime() - startDateTime.getTime()) / (1000 * 60)),
+            color: appointmentColor,
+            phone: selectedPerson?.phone || '',
+            services: optimisticServices,
+            tags: appointmentData.tags || [],
+            notes: appointmentData.notes || '',
+            personId: appointmentData.personId || selectedPerson?.id || '',
+          };
+          
+          console.log('[DayView] 🎨 Cita optimista completa creada:', {
+            id: optimisticAppointment.id,
+            name: optimisticAppointment.name,
+            service: optimisticAppointment.service,
+            color: optimisticAppointment.color,
+            duration: optimisticAppointment.duration
+          });
+          
+          // ✅ USAR SISTEMA OPTIMISTA GLOBAL - VISIBLE EN AMBAS VISTAS
+          addOptimisticAppointment(optimisticAppointment);
+          console.log('[DayView] ✅ Cita optimista añadida al CACHE GLOBAL');
+          
+        } else if (isUpdate) {
           console.log('[DayView] 🚀 RENDERIZADO OPTIMISTA INMEDIATO - Actualizando cita antes de API');
           
           if (appointmentData.id) {
@@ -1347,7 +1502,7 @@ export default function DayView({
         variant: "destructive",
       });
     }
-  }, [appointments, formatDateForAPI, invalidateCache, toast]);
+  }, [appointments, formatDateForAPI, invalidateCache, toast, updateOptimisticAppointment]);
 
   const { minuteGranularity } = useGranularity();
 
@@ -1474,7 +1629,7 @@ export default function DayView({
         variant: "destructive",
       });
     }
-  }, [appointments, formatDateForAPI, findAvailableSlot, invalidateCache, toast]);
+  }, [appointments, formatDateForAPI, findAvailableSlot, invalidateCache, toast, updateOptimisticAppointment]);
 
   const handleTimeAdjust = useCallback(async (appointmentId: string, direction: 'up' | 'down') => {
     console.log('[DayView handleTimeAdjust] Ajustando hora:', { appointmentId, direction, minuteGranularity });
@@ -1796,10 +1951,34 @@ export default function DayView({
     }
   }, [updateOptimisticTags, invalidateCache]);
 
-  const handleMoveAppointment = useCallback(() => {
-    // TODO: Implementar lógica de mover cita
-    console.log('[handleMoveAppointment] Función de mover cita pendiente de implementar');
-  }, []);
+  const handleMoveAppointment = useCallback((appointmentId: string) => {
+    console.log('[DayView] 🚀 Iniciando movimiento de cita:', appointmentId);
+    
+    // Buscar la cita en el estado local
+    const appointmentToMove = dayAppointments.find(app => app.id === appointmentId);
+    if (!appointmentToMove) {
+      console.error('[DayView] ❌ Cita no encontrada para mover:', appointmentId);
+      return;
+    }
+
+    console.log('[DayView] ✅ Cita encontrada para mover:', appointmentToMove.name);
+    
+    // ✅ USAR CONTEXTO DE MOVIMIENTO REAL
+    startMovingAppointment({
+      ...appointmentToMove,
+      color: appointmentToMove.color || '#3B82F6' // Asegurar que color esté presente
+    });
+    
+    console.log('[DayView] 📋 Cita puesta en modo movimiento:', {
+      id: appointmentToMove.id,
+      name: appointmentToMove.name,
+      date: appointmentToMove.date,
+      time: appointmentToMove.startTime,
+      room: appointmentToMove.roomId,
+      duration: appointmentToMove.duration,
+      service: appointmentToMove.service
+    });
+  }, [dayAppointments, startMovingAppointment]);
 
   const handleDeleteAppointment = useCallback(async (appointmentId: string) => {
     console.log('[handleDeleteAppointment] Eliminar cita:', appointmentId);
@@ -2120,8 +2299,12 @@ export default function DayView({
           }}
           onSaveAppointment={handleSaveAppointment}
           onMoveAppointment={() => {
-            // TODO: Implementar lógica de mover cita
-            console.log('[onMoveAppointment] Función de mover cita pendiente de implementar');
+            // Usar el ID de la cita que se está editando
+            if (selectedAppointment?.id) {
+              handleMoveAppointment(selectedAppointment.id);
+            } else {
+              console.error('[DayView] No hay cita seleccionada para mover');
+            }
           }}
           showClientDetailsOnOpen={showClientDetailsOnOpen}
         />

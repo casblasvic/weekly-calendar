@@ -45,6 +45,8 @@ import { DragItem, DropResult } from "@/lib/drag-drop/types"
 import { getAppointmentDuration } from "@/lib/drag-drop/utils"
 import { useGranularity } from "@/lib/drag-drop/granularity-context"
 import { DragTimeProvider } from "@/lib/drag-drop/drag-time-context"
+import { useMoveAppointment } from "@/contexts/move-appointment-context"
+import { MoveAppointmentProvider } from "@/contexts/move-appointment-context"
 
 // Función para generar slots de tiempo
 function getTimeSlots(startTime: string, endTime: string, interval = 15): string[] {
@@ -308,6 +310,60 @@ export default function WeeklyAgenda({
 
   // Obtener configuración de granularidad desde el contexto
   const { minuteGranularity, slotDuration, moveGranularity } = useGranularity();
+  
+  // ✅ Hook para mover citas - LLAMADA ÚNICA para evitar instancias múltiples del contexto
+  const { startMovingAppointment, appointmentInMovement, isMovingAppointment, registerOptimisticFunctions, unregisterOptimisticFunctions } = useMoveAppointment();
+
+  // ✅ REGISTRAR FUNCIONES OPTIMISTAS CON EL CONTEXTO
+  useEffect(() => {
+    registerOptimisticFunctions({
+      updateOptimisticAppointment,
+      invalidateCache
+    });
+
+    // Cleanup: desregistrar al desmontar
+    return () => {
+      unregisterOptimisticFunctions();
+    };
+  }, [registerOptimisticFunctions, unregisterOptimisticFunctions, updateOptimisticAppointment, invalidateCache]);
+
+  // ✅ CALLBACK PARA MOVIMIENTO OPTIMISTA DE CITAS
+  const handleMoveComplete = useCallback(async (
+    originalAppointment: any,
+    newDate: Date,
+    newTime: string,
+    newRoomId: string
+  ): Promise<boolean> => {
+    console.log('[WeeklyAgenda] 🚀 Movimiento de cita confirmado:', {
+      appointmentId: originalAppointment.id,
+      from: { date: originalAppointment.date, time: originalAppointment.startTime, roomId: originalAppointment.roomId },
+      to: { date: newDate, time: newTime, roomId: newRoomId }
+    });
+
+    try {
+      // ✅ RENDERIZADO OPTIMISTA INMEDIATO
+      const [hours, minutes] = newTime.split(':').map(Number);
+      const startMinutes = hours * 60 + minutes;
+      const endMinutes = startMinutes + originalAppointment.duration;
+      const endHours = Math.floor(endMinutes / 60);
+      const endMins = endMinutes % 60;
+      const newEndTime = `${endHours.toString().padStart(2, '0')}:${endMins.toString().padStart(2, '0')}`;
+
+      updateOptimisticAppointment(originalAppointment.id, {
+        date: newDate,
+        startTime: newTime,
+        endTime: newEndTime,
+        roomId: newRoomId
+      });
+
+      console.log('[WeeklyAgenda] ✅ Cita movida optimísticamente');
+      return true;
+
+    } catch (error) {
+      console.error('[WeeklyAgenda] ❌ Error en movimiento optimista:', error);
+      return false;
+    }
+  }, [updateOptimisticAppointment]);
 
   // Efecto para notificar al componente padre sobre el cambio en las citas
   useEffect(() => {
@@ -762,6 +818,12 @@ export default function WeeklyAgenda({
     //                   : time;
     
     console.log("[WeeklyAgenda] handleCellClick called with:", { day, time, roomId });
+    
+    // ✅ BLOQUEAR CREACIÓN DE NUEVAS CITAS SI HAY UNA CITA EN MOVIMIENTO
+    if (appointmentInMovement) {
+      console.log('[WeeklyAgenda] 🚫 Bloqueando creación de nueva cita - hay una cita en movimiento');
+      return;
+    }
     
     // Verificar si la celda está bloqueada por un override
     const dayString = format(day, "yyyy-MM-dd")
@@ -1483,10 +1545,33 @@ export default function WeeklyAgenda({
   }, [updateOptimisticTags, invalidateCache]);
 
   const handleMoveAppointment = useCallback((appointmentId: string) => {
-    console.log('[handleMoveAppointment] Mover cita:', appointmentId);
-    // TODO: Implementar lógica de mover cita
-    // Por ahora solo mostramos un mensaje de que la funcionalidad está pendiente
-  }, []);
+    console.log('[WeeklyAgenda] 🚀 Iniciando movimiento de cita:', appointmentId);
+    
+    // Buscar la cita en el estado local
+    const appointmentToMove = appointmentsList.find(app => app.id === appointmentId);
+    if (!appointmentToMove) {
+      console.error('[WeeklyAgenda] ❌ Cita no encontrada para mover:', appointmentId);
+      return;
+    }
+
+    console.log('[WeeklyAgenda] ✅ Cita encontrada para mover:', appointmentToMove.name);
+    
+    // ✅ USAR CONTEXTO DE MOVIMIENTO REAL  
+    startMovingAppointment(appointmentToMove);
+    
+    console.log('[WeeklyAgenda] 📋 Cita puesta en modo movimiento:', {
+      id: appointmentToMove.id,
+      name: appointmentToMove.name,
+      date: appointmentToMove.date,
+      time: appointmentToMove.startTime,
+      room: appointmentToMove.roomId,
+      duration: appointmentToMove.duration,
+      service: appointmentToMove.service
+    });
+    
+    // TODO: Integrar con MoveAppointmentProvider
+    // startMovingAppointment(appointmentToMove);
+  }, [appointmentsList, startMovingAppointment]);
 
   const validateDropPosition = useCallback((dropResult: DropResult, draggedItem: DragItem): boolean => {
     const { date, time, roomId } = dropResult;
@@ -2477,582 +2562,579 @@ export default function WeeklyAgenda({
   return (
     <DragTimeProvider>
       <HydrationWrapper>
-      {/* Asegurar que el contenedor principal sea flex y ocupe toda la altura */}
-      <div className="flex flex-col h-full" style={transitionStyles}>
-        {/* El bloque de AgendaNavBar eliminado completamente */}
+          {/* Asegurar que el contenedor principal sea flex y ocupe toda la altura */}
+          <div className="flex flex-col h-full" style={transitionStyles}>
+            {/* El bloque de AgendaNavBar eliminado completamente */}
+            
+            {/* Contenedor de la rejilla que debe tener scroll */}
+            <div ref={gridContainerRef} className="relative flex-1 overflow-auto">
+                {renderWeeklyGrid()}
+                {/* Asegurarse de que CurrentTimeIndicator esté relacionado con este div si usa refs */}
+            </div>
+            
+          </div>
         
-        {/* Contenedor de la rejilla que debe tener scroll */}
-        <div ref={gridContainerRef} className="relative flex-1 overflow-auto">
-            {renderWeeklyGrid()}
-            {/* Asegurarse de que CurrentTimeIndicator esté relacionado con este div si usa refs */}
-        </div>
-        
-      </div>
-    
 
-      {/* MODAL DE BLOQUEO/OVERRIDE (fuera del contenedor flex principal) */} 
-      <BlockScheduleModal
-        open={isOverrideModalOpen}
-        onOpenChange={(isOpen) => setIsOverrideModalOpen(isOpen)}
-        clinicRooms={activeCabins.map(cabin => ({
-          ...cabin,
-          id: cabin.id.toString()
-        }))}
-        blockToEdit={selectedOverride}
-        clinicId={String(activeClinic?.id)}
-        clinicConfig={{
-          openTime: timeSlots[0], 
-          closeTime: timeSlots[timeSlots.length - 1],
-        }}
-      />
-        
-      {/* MODAL DE BÚSQUEDA DE PERSONAS */}
-      {isSearchDialogOpen && (
-        <PersonSearchDialog
-          isOpen={isSearchDialogOpen}
-          onClose={() => setIsSearchDialogOpen(false)}
-          onPersonSelect={handleClientSelect}
-        />
-      )}
-        
-      {/* MODAL DE NUEVO CLIENTE */}
-      {isNewClientDialogOpen && (
-        <NewClientDialog 
-          isOpen={isNewClientDialogOpen} 
-          onClose={() => setIsNewClientDialogOpen(false)} 
-        />
-      )}
-        
-      {/* MODAL DE VISIÓN RÁPIDA DEL CLIENTE */}
-      {isClientQuickViewOpen && (
-        <ClientQuickViewDialog
-          isOpen={isClientQuickViewOpen}
-          onOpenChange={setIsClientQuickViewOpen}
-          client={selectedClientForQuickView}
-        />
-      )}
-        
-      {/* MODAL DE CITAS */}
-      {selectedSlot && selectedClient && (
-        <AppointmentDialog 
-          isOpen={isAppointmentDialogOpen}
-          onClose={() => {
-            console.log('[WeeklyAgenda] AppointmentDialog onClose called')
-            console.log('[WeeklyAgenda] Current selectedSlot:', selectedSlot)
-            console.log('[WeeklyAgenda] Current selectedClient:', selectedClient)
-            setIsAppointmentDialogOpen(false);
-            setSelectedClient(null); // Limpiar cliente al cerrar
-            setSelectedSlot(null);
-            setSelectedAppointment(null); // Limpiar cita seleccionada
-            setShowClientDetailsOnOpen(false); // Resetear el estado
-          }}
-          date={selectedSlot.date}
-          initialClient={selectedClient}
-          selectedTime={selectedAppointment ? selectedAppointment.startTime : selectedSlot.time}  // Usar hora actual de la cita si está editando
-          roomId={selectedSlot.roomId}
-          isEditing={!!selectedAppointment}
-          existingAppointment={selectedAppointment}
-          clinic={{ id: activeClinic?.id?.toString() || '', name: activeClinic?.name || '' }}
-          professional={{ id: '', name: '' }} // TODO: implementar selección de profesional
-          onSearchClick={() => { 
-            setIsAppointmentDialogOpen(false); 
-            setIsSearchDialogOpen(true); 
-          }}
-          onNewClientClick={handleNewClientClick}
-          onMoveAppointment={async () => {
-            // ✅ ELIMINACIÓN OPTIMISTA: Usar la nueva función de eliminación
-            if (selectedAppointment?.id) {
-              await handleDeleteAppointment(selectedAppointment.id, false); // No mostrar confirm() - ya se hizo en modal
-              // ✅ CERRAR MODAL INMEDIATAMENTE después de eliminación optimista
-              setIsAppointmentDialogOpen(false);
-              setSelectedClient(null);
-              setSelectedSlot(null);
-              setSelectedAppointment(null);
-            }
-          }}
-          onSaveAppointment={async (appointmentData) => {
-            const isUpdate = !!appointmentData.id;
+          {/* MODAL DE BLOQUEO/OVERRIDE (fuera del contenedor flex principal) */} 
+          <BlockScheduleModal
+            open={isOverrideModalOpen}
+            onOpenChange={(isOpen) => setIsOverrideModalOpen(isOpen)}
+            clinicRooms={activeCabins.map(cabin => ({
+              ...cabin,
+              id: cabin.id.toString()
+            }))}
+            blockToEdit={selectedOverride}
+            clinicId={String(activeClinic?.id)}
+            clinicConfig={{
+              openTime: timeSlots[0], 
+              closeTime: timeSlots[timeSlots.length - 1],
+            }}
+          />
             
-            // ✅ CREAR FUNCIÓN HELPER PARA GENERAR CITA OPTIMISTA
-            const createOptimisticAppointment = (data: any, selectedClientData: Person | null = null) => {
-              // Generar ID temporal para nuevas citas
-              const tempId = `temp-${Date.now()}`;
-              
-              // ✅ OBTENER NOMBRE DEL CLIENTE CORRECTAMENTE
-              let clientName = 'Cliente'; // Fallback por defecto
-              
-              // ✅ PRIORIDAD 1: Cliente pasado como parámetro
-              if (selectedClientData) {
-                clientName = `${selectedClientData.firstName} ${selectedClientData.lastName}`;
-                console.log('[WeeklyAgenda] 👤 Cliente desde parámetro:', clientName);
-              }
-              // ✅ PRIORIDAD 2: Cliente del estado global
-              else if (selectedClient) {
-                clientName = `${selectedClient.firstName} ${selectedClient.lastName}`;
-                console.log('[WeeklyAgenda] 👤 Cliente desde estado global:', clientName);
-              }
-              // ✅ PRIORIDAD 3: Cliente desde datos del modal
-              else if (data.person?.name) {
-                clientName = data.person.name;
-                console.log('[WeeklyAgenda] 👤 Cliente desde datos del modal:', clientName);
-              }
-              
-              console.log('[WeeklyAgenda] 👤 NOMBRE CLIENTE FINAL para optimista:', clientName);
-              
-              // Simular fecha en timezone de clínica (igual que fetchAppointments)
-              const clinicTz = (activeClinic as any)?.countryInfo?.timezone || (activeClinic as any)?.country?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
-              
-              // Crear fechas desde los datos del modal
-              const appointmentDate = new Date(data.date);
-              const [startHours, startMinutes] = data.startTime.split(':').map(Number);
-              const [endHours, endMinutes] = data.endTime.split(':').map(Number);
-              
-              const startDateTime = new Date(appointmentDate);
-              startDateTime.setHours(startHours, startMinutes, 0, 0);
-              
-              const endDateTime = new Date(appointmentDate);
-              endDateTime.setHours(endHours, endMinutes, 0, 0);
-              
-              // ✅ USAR EXACTAMENTE LA MISMA LÓGICA DE COLOR QUE fetchAppointments
-              let appointmentColor = '#9CA3AF'; // Color por defecto (gris)
-              
-              // ✅ USAR SERVICIOS REALES del modal en lugar de mock data
-              const realServicesData = data.selectedServicesData || [];
-              console.log('[WeeklyAgenda] 🎨 Servicios para color optimista:', realServicesData);
-              
-              // ✅ CONVERTIR SERVICIOS CON ESTRUCTURA IDÉNTICA A LA API FINAL
-              const optimisticServices = realServicesData.map((service: any) => ({
-                id: `temp-service-${Date.now()}-${service.id}`, // ID temporal único
-                appointmentId: tempId, // Appointment temporal
-                serviceId: service.id, // ID real del servicio
-                quantity: 1,
-                status: 'SCHEDULED',
-                service: {
-                  id: service.id,
-                  name: service.name,
-                  colorCode: service.color || '#8B5CF6', // ✅ Usar color real del servicio
-                  categoryId: service.category || 'default',
-                  durationMinutes: service.duration || 15,
-                  price: service.price || 0
-                }
-              }));
-              
-              console.log('[WeeklyAgenda] 🎨 Servicios optimistas procesados:', optimisticServices);
-              
-              if (optimisticServices && optimisticServices.length > 0) {
-                // ✅ USAR EXACTAMENTE LA MISMA LÓGICA QUE fetchAppointments y API response
-                const serviceTypes = new Set(optimisticServices.map((s: any) => s.service?.categoryId));
-                const uniqueColors = new Set(optimisticServices.map((s: any) => s.service?.colorCode).filter(Boolean));
-                
-                console.log('[WeeklyAgenda] 🎨 Optimista - Service types:', Array.from(serviceTypes));
-                console.log('[WeeklyAgenda] 🎨 Optimista - Unique colors:', Array.from(uniqueColors));
-                
-                if (serviceTypes.size === 1 && uniqueColors.size === 1) {
-                                     // Todos los servicios del mismo tipo - usar el color del servicio real
-                   const firstColor = Array.from(uniqueColors)[0] as string;
-                   appointmentColor = firstColor || appointmentColor;
-                  console.log('[WeeklyAgenda] 🎨 Optimista - Color de servicio único:', appointmentColor);
+          {/* MODAL DE BÚSQUEDA DE PERSONAS */}
+          {isSearchDialogOpen && (
+            <PersonSearchDialog
+              isOpen={isSearchDialogOpen}
+              onClose={() => setIsSearchDialogOpen(false)}
+              onPersonSelect={handleClientSelect}
+            />
+          )}
+            
+          {/* MODAL DE NUEVO CLIENTE */}
+          {isNewClientDialogOpen && (
+            <NewClientDialog 
+              isOpen={isNewClientDialogOpen} 
+              onClose={() => setIsNewClientDialogOpen(false)} 
+            />
+          )}
+            
+          {/* MODAL DE VISIÓN RÁPIDA DEL CLIENTE */}
+          {isClientQuickViewOpen && (
+            <ClientQuickViewDialog
+              isOpen={isClientQuickViewOpen}
+              onOpenChange={setIsClientQuickViewOpen}
+              client={selectedClientForQuickView}
+            />
+          )}
+            
+          {/* MODAL DE CITAS */}
+          {selectedSlot && selectedClient && (
+            <AppointmentDialog 
+              isOpen={isAppointmentDialogOpen}
+              onClose={() => {
+                console.log('[WeeklyAgenda] AppointmentDialog onClose called')
+                console.log('[WeeklyAgenda] Current selectedSlot:', selectedSlot)
+                console.log('[WeeklyAgenda] Current selectedClient:', selectedClient)
+                setIsAppointmentDialogOpen(false);
+                setSelectedClient(null); // Limpiar cliente al cerrar
+                setSelectedSlot(null);
+                setSelectedAppointment(null); // Limpiar cita seleccionada
+                setShowClientDetailsOnOpen(false); // Resetear el estado
+              }}
+              date={selectedSlot.date}
+              initialClient={selectedClient}
+              selectedTime={selectedAppointment ? selectedAppointment.startTime : selectedSlot.time}  // Usar hora actual de la cita si está editando
+              roomId={selectedSlot.roomId}
+              isEditing={!!selectedAppointment}
+              existingAppointment={selectedAppointment}
+              clinic={{ id: activeClinic?.id?.toString() || '', name: activeClinic?.name || '' }}
+              professional={{ id: '', name: '' }} // TODO: implementar selección de profesional
+              onSearchClick={() => { 
+                setIsAppointmentDialogOpen(false); 
+                setIsSearchDialogOpen(true); 
+              }}
+              onNewClientClick={handleNewClientClick}
+              onMoveAppointment={async () => {
+                // Usar la función de mover en lugar de eliminar
+                if (selectedAppointment?.id) {
+                  handleMoveAppointment(selectedAppointment.id);
                 } else {
-                  // Múltiples tipos de servicios - usar el color de la cabina
-                  const cabin = activeCabins.find(c => c.id === data.roomId);
-                  if (cabin?.color) {
-                    appointmentColor = cabin.color;
-                    console.log('[WeeklyAgenda] 🎨 Optimista - Color de cabina:', appointmentColor);
-                  } else {
-                                         // Fallback al primer color disponible
-                     const firstColor = Array.from(uniqueColors)[0] as string;
-                     appointmentColor = firstColor || '#8B5CF6';
-                    console.log('[WeeklyAgenda] 🎨 Optimista - Color fallback:', appointmentColor);
-                  }
+                  console.error('[WeeklyAgenda] No hay cita seleccionada para mover');
                 }
-              } else {
-                // Sin servicios - usar color de cabina
-                const cabin = activeCabins.find(c => c.id === data.roomId);
-                if (cabin?.color) {
-                  appointmentColor = cabin.color;
-                  console.log('[WeeklyAgenda] 🎨 Optimista - Color de cabina (sin servicios):', appointmentColor);
-                }
-              }
-              
-              // ✅ CREAR CITA CON ESTRUCTURA BÁSICA PERO SERVICIOS COMPLETOS
-              const optimisticAppointment: WeeklyAgendaAppointment = {
-                id: tempId,
-                name: clientName,
-                service: optimisticServices.map((s: any) => s.service?.name).filter(Boolean).join(", ") || realServicesData.map((s: any) => s.name).join(", ") || 'Servicios seleccionados',
-                date: startDateTime,
-                roomId: data.roomId,
-                startTime: format(startDateTime, 'HH:mm'),
-                endTime: format(endDateTime, 'HH:mm'), // ✅ OBLIGATORIA para WeeklyAgendaAppointment
-                duration: Math.ceil((endDateTime.getTime() - startDateTime.getTime()) / (1000 * 60)),
-                color: appointmentColor,
-                phone: selectedClientData?.phone || selectedClient?.phone || '',
-                services: optimisticServices, // ✅ SERVICIOS CON ESTRUCTURA COMPLETA
-                tags: data.tags || [],
-                notes: data.notes || '',
-                personId: data.personId || selectedClientData?.id || selectedClient?.id || '', // ✅ PersonId válido
-              };
-              
-              console.log('[WeeklyAgenda] 🎨 Cita optimista completa creada:', {
-                id: optimisticAppointment.id,
-                name: optimisticAppointment.name,
-                service: optimisticAppointment.service,
-                color: optimisticAppointment.color,
-                services: optimisticAppointment.services,
-                duration: optimisticAppointment.duration,
-                personId: optimisticAppointment.personId,
-                servicesCount: optimisticAppointment.services?.length || 0,
-                firstServiceStructure: optimisticAppointment.services?.[0] || 'N/A',
-              });
-              
-              return optimisticAppointment;
-            };
-            
-            // ✅ RENDERIZADO OPTIMISTA GLOBAL INMEDIATO - ANTES de llamar API  
-            if (!isUpdate) {
-              console.log('[WeeklyAgenda] 🚀 RENDERIZADO OPTIMISTA GLOBAL - Creando cita inmediatamente');
-              
-              // ✅ CREAR CITA OPTIMISTA CON DATOS REALES DEL MODAL
-              const optimisticAppointment = createOptimisticAppointment(appointmentData, selectedClient);
-              
-              // ✅ USAR SISTEMA OPTIMISTA GLOBAL - VISIBLE EN AMBAS VISTAS
-              addOptimisticAppointment(optimisticAppointment);
-              console.log('[WeeklyAgenda] ✅ Cita optimista añadida al CACHE GLOBAL');
-            } else {
-              // ✅ RENDERIZADO OPTIMISTA INMEDIATO PARA EDICIONES - ANTES de API
-              console.log('[WeeklyAgenda] 🚀 RENDERIZADO OPTIMISTA INMEDIATO - Actualizando cita antes de API');
-              
-              if (appointmentData.id) {
-                // Buscar la cita actual en appointmentsList para preservar datos
-                const currentAppointment = appointmentsList.find(apt => apt.id === appointmentData.id);
-                if (currentAppointment) {
-                  // ✅ DETERMINAR QUÉ CAMPOS ACTUALIZAR SEGÚN LO QUE CAMBIÓ
-                  const updateFields: any = {};
+              }}
+              onSaveAppointment={async (appointmentData) => {
+                const isUpdate = !!appointmentData.id;
+                
+                // ✅ CREAR FUNCIÓN HELPER PARA GENERAR CITA OPTIMISTA
+                const createOptimisticAppointment = (data: any, selectedClientData: Person | null = null) => {
+                  // Generar ID temporal para nuevas citas
+                  const tempId = `temp-${Date.now()}`;
                   
-                  // ✅ SIEMPRE actualizar tags si están presentes
-                  if (appointmentData.tags !== undefined) {
-                    updateFields.tags = appointmentData.tags;
+                  // ✅ OBTENER NOMBRE DEL CLIENTE CORRECTAMENTE
+                  let clientName = 'Cliente'; // Fallback por defecto
+                  
+                  // ✅ PRIORIDAD 1: Cliente pasado como parámetro
+                  if (selectedClientData) {
+                    clientName = `${selectedClientData.firstName} ${selectedClientData.lastName}`;
+                    console.log('[WeeklyAgenda] 👤 Cliente desde parámetro:', clientName);
+                  }
+                  // ✅ PRIORIDAD 2: Cliente del estado global
+                  else if (selectedClient) {
+                    clientName = `${selectedClient.firstName} ${selectedClient.lastName}`;
+                    console.log('[WeeklyAgenda] 👤 Cliente desde estado global:', clientName);
+                  }
+                  // ✅ PRIORIDAD 3: Cliente desde datos del modal
+                  else if (data.person?.name) {
+                    clientName = data.person.name;
+                    console.log('[WeeklyAgenda] 👤 Cliente desde datos del modal:', clientName);
                   }
                   
-                  // ✅ ACTUALIZAR SERVICIOS si están presentes - CON DATOS REALES 100%
-                  const servicesChanged = appointmentData.services && appointmentData.services.length > 0;
-                  if (servicesChanged) {
-                    console.log('[WeeklyAgenda] 🔧 Servicios cambiaron, detectados IDs:', appointmentData.services);
-                    
-                    // ✅ OBTENER DATOS REALES de servicios desde allServicesData
-                    const realServices = appointmentData.services.map((serviceId: string) => {
-                      return allServicesData.find((s: any) => s.id === serviceId);
-                    }).filter(Boolean); // Eliminar servicios no encontrados
-                    
-                    console.log('[WeeklyAgenda] 🔧 Servicios reales encontrados:', realServices.length, 'de', appointmentData.services.length);
-                    
-                    // ✅ CREAR ESTRUCTURA COMPLETA con datos reales (100% igual que API)
-                    const optimisticServices = realServices.map((service: any) => ({
-                      id: `temp-service-${Date.now()}-${service.id}`,
-                      appointmentId: appointmentData.id,
-                      serviceId: service.id,
-                      quantity: 1,
-                      status: 'SCHEDULED',
-                      service: {
-                        id: service.id,
-                        name: service.name,                           // ✅ NOMBRE REAL
-                        colorCode: service.colorCode || '#8B5CF6',   // ✅ COLOR REAL
-                        categoryId: service.categoryId || 'default', // ✅ CATEGORÍA REAL
-                        durationMinutes: service.durationMinutes || 15, // ✅ DURACIÓN REAL
-                        price: service.price || 0                    // ✅ PRECIO REAL
-                      }
-                    }));
-                    
-                    // ✅ CALCULAR COLOR REAL basado en servicios reales (misma lógica que API)
-                    let newColor = '#9CA3AF'; // Color por defecto
-                    
-                    if (optimisticServices.length > 0) {
-                      const serviceTypes = new Set(optimisticServices.map((s: any) => s.service?.categoryId));
-                      const uniqueColors = new Set(optimisticServices.map((s: any) => s.service?.colorCode).filter(Boolean));
-                      
-                      if (serviceTypes.size === 1 && uniqueColors.size === 1) {
-                        // Todos los servicios del mismo tipo - usar color del servicio
-                        const firstColor = Array.from(uniqueColors)[0] as string;
-                        newColor = firstColor || newColor;
-                        console.log('[WeeklyAgenda] 🎨 Color optimista de servicio único:', newColor);
-                      } else {
-                        // Múltiples tipos - usar color de cabina
-                        const cabin = activeCabins.find(c => c.id === currentAppointment.roomId);
-                        newColor = cabin?.color || newColor;
-                        console.log('[WeeklyAgenda] 🎨 Color optimista de cabina (múltiples tipos):', newColor);
-                      }
+                  console.log('[WeeklyAgenda] 👤 NOMBRE CLIENTE FINAL para optimista:', clientName);
+                  
+                  // Simular fecha en timezone de clínica (igual que fetchAppointments)
+                  const clinicTz = (activeClinic as any)?.countryInfo?.timezone || (activeClinic as any)?.country?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+                  
+                  // Crear fechas desde los datos del modal
+                  const appointmentDate = new Date(data.date);
+                  const [startHours, startMinutes] = data.startTime.split(':').map(Number);
+                  const [endHours, endMinutes] = data.endTime.split(':').map(Number);
+                  
+                  const startDateTime = new Date(appointmentDate);
+                  startDateTime.setHours(startHours, startMinutes, 0, 0);
+                  
+                  const endDateTime = new Date(appointmentDate);
+                  endDateTime.setHours(endHours, endMinutes, 0, 0);
+                  
+                  // ✅ USAR EXACTAMENTE LA MISMA LÓGICA DE COLOR QUE fetchAppointments
+                  let appointmentColor = '#9CA3AF'; // Color por defecto (gris)
+                  
+                  // ✅ USAR SERVICIOS REALES del modal en lugar de mock data
+                  const realServicesData = data.selectedServicesData || [];
+                  console.log('[WeeklyAgenda] 🎨 Servicios para color optimista:', realServicesData);
+                  
+                  // ✅ CONVERTIR SERVICIOS CON ESTRUCTURA IDÉNTICA A LA API FINAL
+                  const optimisticServices = realServicesData.map((service: any) => ({
+                    id: `temp-service-${Date.now()}-${service.id}`, // ID temporal único
+                    appointmentId: tempId, // Appointment temporal
+                    serviceId: service.id, // ID real del servicio
+                    quantity: 1,
+                    status: 'SCHEDULED',
+                    service: {
+                      id: service.id,
+                      name: service.name,
+                      colorCode: service.color || '#8B5CF6', // ✅ Usar color real del servicio
+                      categoryId: service.category || 'default',
+                      durationMinutes: service.duration || 15,
+                      price: service.price || 0
                     }
+                  }));
+                  
+                  console.log('[WeeklyAgenda] 🎨 Servicios optimistas procesados:', optimisticServices);
+                  
+                  if (optimisticServices && optimisticServices.length > 0) {
+                    // ✅ USAR EXACTAMENTE LA MISMA LÓGICA QUE fetchAppointments y API response
+                    const serviceTypes = new Set(optimisticServices.map((s: any) => s.service?.categoryId));
+                    const uniqueColors = new Set(optimisticServices.map((s: any) => s.service?.colorCode).filter(Boolean));
                     
-                    // ✅ TEXTO REAL con nombres de servicios (100% igual que API)
-                    const newServiceText = optimisticServices.map((s: any) => s.service?.name).filter(Boolean).join(", ") || 'Sin servicio';
+                    console.log('[WeeklyAgenda] 🎨 Optimista - Service types:', Array.from(serviceTypes));
+                    console.log('[WeeklyAgenda] 🎨 Optimista - Unique colors:', Array.from(uniqueColors));
                     
-                    // ✅ CALCULAR NUEVA DURACIÓN TOTAL basándose en servicios reales (igual que DayView)
-                    const newTotalDuration = optimisticServices.reduce((total: number, service: any) => {
-                      const serviceDuration = service.service?.durationMinutes || 15;
-                      console.log('[WeeklyAgenda] 🔍 Sumando duración de servicio:', {
-                        serviceName: service.service?.name,
-                        serviceDuration,
-                        totalAcumulado: total + serviceDuration
-                      });
-                      return total + serviceDuration;
-                    }, 0);
-                    
-                    console.log('[WeeklyAgenda] 🔍 DURACIÓN TOTAL CALCULADA:', {
-                      optimisticServicesCount: optimisticServices.length,
-                      newTotalDuration,
-                      oldDuration: currentAppointment.duration
-                    });
-                    
-                    // ✅ SEGURIDAD: Solo recalcular duración si hay servicios válidos
-                    if (newTotalDuration > 0) {
-                      // ✅ RECALCULAR ENDTIME basándose en nueva duración (igual que DayView)
-                      const currentStartTime = currentAppointment.startTime;
-                      const [startHours, startMinutes] = currentStartTime.split(':').map(Number);
-                      const startTotalMinutes = startHours * 60 + startMinutes;
-                      const endTotalMinutes = startTotalMinutes + newTotalDuration;
-                      const endHours = Math.floor(endTotalMinutes / 60);
-                      const endMins = endTotalMinutes % 60;
-                      const newEndTime = `${endHours.toString().padStart(2, '0')}:${endMins.toString().padStart(2, '0')}`;
-                      
-                      updateFields.services = optimisticServices;
-                      updateFields.service = newServiceText;
-                      updateFields.color = newColor;
-                      updateFields.durationMinutes = newTotalDuration; // ✅ CORREGIDO: durationMinutes en lugar de duration
-                      updateFields.duration = newTotalDuration; // ✅ Mantener ambos para compatibilidad
-                      updateFields.endTime = newEndTime; // ✅ Nuevo endTime
+                    if (serviceTypes.size === 1 && uniqueColors.size === 1) {
+                                         // Todos los servicios del mismo tipo - usar el color del servicio real
+                       const firstColor = Array.from(uniqueColors)[0] as string;
+                       appointmentColor = firstColor || appointmentColor;
+                      console.log('[WeeklyAgenda] 🎨 Optimista - Color de servicio único:', appointmentColor);
                     } else {
-                      console.log('[WeeklyAgenda] ⚠️ Nueva duración calculada es 0, solo actualizando servicios y color');
-                      // Solo actualizar servicios, color y texto, no duración ni endTime
-                      updateFields.services = optimisticServices;
-                      updateFields.service = newServiceText;
-                      updateFields.color = newColor;
-                    }
-                  }
-                  
-                  // ✅ ACTUALIZAR DURACIÓN/TIEMPOS - Pero NO sobrescribir si ya se calculó desde servicios
-                  const modalEndTimeChanged = appointmentData.endTime && appointmentData.endTime !== currentAppointment.endTime;
-                  const baseDurationChanged = appointmentData.durationMinutes && appointmentData.durationMinutes !== currentAppointment.duration;
-                  const extensionsChanged = appointmentData.hasExtension !== undefined || appointmentData.extensionMinutes !== undefined;
-                  
-                  // ✅ SOLO procesar cambios de duración/tiempo si NO hubo cambios de servicios (evitar sobrescribir)
-                  if ((modalEndTimeChanged || baseDurationChanged || extensionsChanged) && !servicesChanged) {
-                    // ✅ PRIORIDAD 1: Usar endTime directamente del modal (servicios/módulos ya calculados)
-                    if (modalEndTimeChanged && appointmentData.endTime) {
-                      console.log('[WeeklyAgenda] 🕐 EndTime cambió en modal (servicios/módulos):', {
-                        oldEndTime: currentAppointment.endTime,
-                        newEndTime: appointmentData.endTime,
-                        durationMinutes: appointmentData.durationMinutes
-                      });
-                      
-                      updateFields.endTime = appointmentData.endTime; // ✅ USAR ENDTIME DEL MODAL directamente
-                      
-                      // ✅ SIEMPRE actualizar duración - CRÍTICO PARA RENDERIZADO OPTIMISTA
-                      if (appointmentData.durationMinutes) {
-                        updateFields.durationMinutes = appointmentData.durationMinutes; // ✅ CORREGIDO: durationMinutes
-                        updateFields.duration = appointmentData.durationMinutes; // ✅ Mantener ambos para compatibilidad
-                        console.log('[WeeklyAgenda] 🕐 Duración actualizada desde modal:', appointmentData.durationMinutes);
+                      // Múltiples tipos de servicios - usar el color de la cabina
+                      const cabin = activeCabins.find(c => c.id === data.roomId);
+                      if (cabin?.color) {
+                        appointmentColor = cabin.color;
+                        console.log('[WeeklyAgenda] 🎨 Optimista - Color de cabina:', appointmentColor);
                       } else {
-                        // ✅ FALLBACK: Calcular duración desde startTime/endTime
-                        const currentStartTime = currentAppointment.startTime;
-                        const [startHours, startMinutes] = currentStartTime.split(':').map(Number);
-                        const [endHours, endMinutes] = appointmentData.endTime.split(':').map(Number);
-                        const startTotalMinutes = startHours * 60 + startMinutes;
-                        const endTotalMinutes = endHours * 60 + endMinutes;
-                        const calculatedDuration = endTotalMinutes - startTotalMinutes;
-                        updateFields.durationMinutes = calculatedDuration > 0 ? calculatedDuration : currentAppointment.duration; // ✅ CORREGIDO: durationMinutes
-                        updateFields.duration = calculatedDuration > 0 ? calculatedDuration : currentAppointment.duration; // ✅ Mantener ambos para compatibilidad
-                        console.log('[WeeklyAgenda] 🕐 Duración calculada desde startTime/endTime:', updateFields.duration);
+                                         // Fallback al primer color disponible
+                         const firstColor = Array.from(uniqueColors)[0] as string;
+                         appointmentColor = firstColor || '#8B5CF6';
+                        console.log('[WeeklyAgenda] 🎨 Optimista - Color fallback:', appointmentColor);
                       }
-                    } 
-                    // ✅ PRIORIDAD 2: Recalcular solo si no hay endTime del modal
-                    else if (baseDurationChanged || extensionsChanged) {
-                      // ✅ CALCULAR DURACIÓN TOTAL incluyendo extensiones/módulos (granularidad)
-                      const baseDuration = appointmentData.durationMinutes || currentAppointment.duration;
-                      const extensionMinutes = appointmentData.hasExtension ? (appointmentData.extensionMinutes || 0) : 0;
-                      const totalDuration = baseDuration + extensionMinutes;
-                      
-                      console.log('[WeeklyAgenda] 🕐 Duración/extensiones cambiaron (recalculando):', {
-                        baseDuration: baseDuration,
-                        extensionMinutes: extensionMinutes,
-                        totalDuration: totalDuration,
-                        hasExtension: appointmentData.hasExtension,
-                        vs: currentAppointment.duration
-                      });
-                      
-                      const currentStartTime = currentAppointment.startTime;
-                      
-                      // Recalcular endTime con duración total (base + extensiones)
-                      const [startHours, startMinutes] = currentStartTime.split(':').map(Number);
-                      const startTotalMinutes = startHours * 60 + startMinutes;
-                      const endTotalMinutes = startTotalMinutes + totalDuration;
-                      const endHours = Math.floor(endTotalMinutes / 60);
-                      const endMins = endTotalMinutes % 60;
-                      const newEndTime = `${endHours.toString().padStart(2, '0')}:${endMins.toString().padStart(2, '0')}`;
-                      
-                      updateFields.durationMinutes = totalDuration; // ✅ CORREGIDO: durationMinutes para módulos/granularidad
-                      updateFields.duration = totalDuration; // ✅ Mantener ambos para compatibilidad
-                      updateFields.endTime = newEndTime;     // ✅ HORA FIN calculada con extensiones
                     }
-                    // ✅ NO actualizar startTime - mantener original para preservar fecha
+                  } else {
+                    // Sin servicios - usar color de cabina
+                    const cabin = activeCabins.find(c => c.id === data.roomId);
+                    if (cabin?.color) {
+                      appointmentColor = cabin.color;
+                      console.log('[WeeklyAgenda] 🎨 Optimista - Color de cabina (sin servicios):', appointmentColor);
+                    }
                   }
                   
-                  // ✅ APLICAR SOLO LOS CAMPOS QUE REALMENTE CAMBIARON
-                  console.log('[WeeklyAgenda] 🚀 ENVIANDO A updateOptimisticAppointment:', {
-                    appointmentId: appointmentData.id,
-                    updateFields: updateFields,
-                    durationInUpdateFields: updateFields.duration,
-                    durationMinutesInUpdateFields: updateFields.durationMinutes, // ✅ AÑADIR NUEVO CAMPO
-                    hasValidDuration: typeof updateFields.duration === 'number'
+                  // ✅ CREAR CITA CON ESTRUCTURA BÁSICA PERO SERVICIOS COMPLETOS
+                  const optimisticAppointment: WeeklyAgendaAppointment = {
+                    id: tempId,
+                    name: clientName,
+                    service: optimisticServices.map((s: any) => s.service?.name).filter(Boolean).join(", ") || realServicesData.map((s: any) => s.name).join(", ") || 'Servicios seleccionados',
+                    date: startDateTime,
+                    roomId: data.roomId,
+                    startTime: format(startDateTime, 'HH:mm'),
+                    endTime: format(endDateTime, 'HH:mm'), // ✅ OBLIGATORIA para WeeklyAgendaAppointment
+                    duration: Math.ceil((endDateTime.getTime() - startDateTime.getTime()) / (1000 * 60)),
+                    color: appointmentColor,
+                    phone: selectedClientData?.phone || selectedClient?.phone || '',
+                    services: optimisticServices, // ✅ SERVICIOS CON ESTRUCTURA COMPLETA
+                    tags: data.tags || [],
+                    notes: data.notes || '',
+                    personId: data.personId || selectedClientData?.id || selectedClient?.id || '', // ✅ PersonId válido
+                  };
+                  
+                  console.log('[WeeklyAgenda] 🎨 Cita optimista completa creada:', {
+                    id: optimisticAppointment.id,
+                    name: optimisticAppointment.name,
+                    service: optimisticAppointment.service,
+                    color: optimisticAppointment.color,
+                    services: optimisticAppointment.services,
+                    duration: optimisticAppointment.duration,
+                    personId: optimisticAppointment.personId,
+                    servicesCount: optimisticAppointment.services?.length || 0,
+                    firstServiceStructure: optimisticAppointment.services?.[0] || 'N/A',
                   });
                   
-                  updateOptimisticAppointment(appointmentData.id, updateFields);
+                  return optimisticAppointment;
+                };
+                
+                // ✅ RENDERIZADO OPTIMISTA GLOBAL INMEDIATO - ANTES de llamar API  
+                if (!isUpdate) {
+                  console.log('[WeeklyAgenda] 🚀 RENDERIZADO OPTIMISTA GLOBAL - Creando cita inmediatamente');
                   
-                  console.log('[WeeklyAgenda] ✅ Servicios y duración actualizados inmediatamente:', {
-                    fieldsUpdated: Object.keys(updateFields),
-                    tags: appointmentData.tags,
-                    tagsChanged: JSON.stringify(appointmentData.tags) !== JSON.stringify(currentAppointment.tags),
-                    durationChanged: baseDurationChanged || extensionsChanged,
-                    oldDuration: currentAppointment.duration,
-                    newDuration: updateFields.duration || 'sin cambio',
-                    oldEndTime: currentAppointment.endTime,
-                    newEndTime: updateFields.endTime || 'sin cambio',
-                    updateFields: updateFields
+                  // ✅ CREAR CITA OPTIMISTA CON DATOS REALES DEL MODAL
+                  const optimisticAppointment = createOptimisticAppointment(appointmentData, selectedClient);
+                  
+                  // ✅ USAR SISTEMA OPTIMISTA GLOBAL - VISIBLE EN AMBAS VISTAS
+                  addOptimisticAppointment(optimisticAppointment);
+                  console.log('[WeeklyAgenda] ✅ Cita optimista añadida al CACHE GLOBAL');
+                } else {
+                  // ✅ RENDERIZADO OPTIMISTA INMEDIATO PARA EDICIONES - ANTES de API
+                  console.log('[WeeklyAgenda] 🚀 RENDERIZADO OPTIMISTA INMEDIATO - Actualizando cita antes de API');
+                  
+                  if (appointmentData.id) {
+                    // Buscar la cita actual en appointmentsList para preservar datos
+                    const currentAppointment = appointmentsList.find(apt => apt.id === appointmentData.id);
+                    if (currentAppointment) {
+                      // ✅ DETERMINAR QUÉ CAMPOS ACTUALIZAR SEGÚN LO QUE CAMBIÓ
+                      const updateFields: any = {};
+                      
+                      // ✅ SIEMPRE actualizar tags si están presentes
+                      if (appointmentData.tags !== undefined) {
+                        updateFields.tags = appointmentData.tags;
+                      }
+                      
+                      // ✅ ACTUALIZAR SERVICIOS si están presentes - CON DATOS REALES 100%
+                      const servicesChanged = appointmentData.services && appointmentData.services.length > 0;
+                      if (servicesChanged) {
+                        console.log('[WeeklyAgenda] 🔧 Servicios cambiaron, detectados IDs:', appointmentData.services);
+                        
+                        // ✅ OBTENER DATOS REALES de servicios desde allServicesData
+                        const realServices = appointmentData.services.map((serviceId: string) => {
+                          return allServicesData.find((s: any) => s.id === serviceId);
+                        }).filter(Boolean); // Eliminar servicios no encontrados
+                        
+                        console.log('[WeeklyAgenda] 🔧 Servicios reales encontrados:', realServices.length, 'de', appointmentData.services.length);
+                        
+                        // ✅ CREAR ESTRUCTURA COMPLETA con datos reales (100% igual que API)
+                        const optimisticServices = realServices.map((service: any) => ({
+                          id: `temp-service-${Date.now()}-${service.id}`,
+                          appointmentId: appointmentData.id,
+                          serviceId: service.id,
+                          quantity: 1,
+                          status: 'SCHEDULED',
+                          service: {
+                            id: service.id,
+                            name: service.name,                           // ✅ NOMBRE REAL
+                            colorCode: service.colorCode || '#8B5CF6',   // ✅ COLOR REAL
+                            categoryId: service.categoryId || 'default', // ✅ CATEGORÍA REAL
+                            durationMinutes: service.durationMinutes || 15, // ✅ DURACIÓN REAL
+                            price: service.price || 0                    // ✅ PRECIO REAL
+                          }
+                        }));
+                        
+                        // ✅ CALCULAR COLOR REAL basado en servicios reales (misma lógica que API)
+                        let newColor = '#9CA3AF'; // Color por defecto
+                        
+                        if (optimisticServices.length > 0) {
+                          const serviceTypes = new Set(optimisticServices.map((s: any) => s.service?.categoryId));
+                          const uniqueColors = new Set(optimisticServices.map((s: any) => s.service?.colorCode).filter(Boolean));
+                          
+                          if (serviceTypes.size === 1 && uniqueColors.size === 1) {
+                            // Todos los servicios del mismo tipo - usar color del servicio
+                            const firstColor = Array.from(uniqueColors)[0] as string;
+                            newColor = firstColor || newColor;
+                            console.log('[WeeklyAgenda] 🎨 Color optimista de servicio único:', newColor);
+                          } else {
+                            // Múltiples tipos - usar color de cabina
+                            const cabin = activeCabins.find(c => c.id === currentAppointment.roomId);
+                            newColor = cabin?.color || newColor;
+                            console.log('[WeeklyAgenda] 🎨 Color optimista de cabina (múltiples tipos):', newColor);
+                          }
+                        }
+                        
+                        // ✅ TEXTO REAL con nombres de servicios (100% igual que API)
+                        const newServiceText = optimisticServices.map((s: any) => s.service?.name).filter(Boolean).join(", ") || 'Sin servicio';
+                        
+                        // ✅ CALCULAR NUEVA DURACIÓN TOTAL basándose en servicios reales (igual que DayView)
+                        const newTotalDuration = optimisticServices.reduce((total: number, service: any) => {
+                          const serviceDuration = service.service?.durationMinutes || 15;
+                          console.log('[WeeklyAgenda] 🔍 Sumando duración de servicio:', {
+                            serviceName: service.service?.name,
+                            serviceDuration,
+                            totalAcumulado: total + serviceDuration
+                          });
+                          return total + serviceDuration;
+                        }, 0);
+                        
+                        console.log('[WeeklyAgenda] 🔍 DURACIÓN TOTAL CALCULADA:', {
+                          optimisticServicesCount: optimisticServices.length,
+                          newTotalDuration,
+                          oldDuration: currentAppointment.duration
+                        });
+                        
+                        // ✅ SEGURIDAD: Solo recalcular duración si hay servicios válidos
+                        if (newTotalDuration > 0) {
+                          // ✅ RECALCULAR ENDTIME basándose en nueva duración (igual que DayView)
+                          const currentStartTime = currentAppointment.startTime;
+                          const [startHours, startMinutes] = currentStartTime.split(':').map(Number);
+                          const startTotalMinutes = startHours * 60 + startMinutes;
+                          const endTotalMinutes = startTotalMinutes + newTotalDuration;
+                          const endHours = Math.floor(endTotalMinutes / 60);
+                          const endMins = endTotalMinutes % 60;
+                          const newEndTime = `${endHours.toString().padStart(2, '0')}:${endMins.toString().padStart(2, '0')}`;
+                          
+                          updateFields.services = optimisticServices;
+                          updateFields.service = newServiceText;
+                          updateFields.color = newColor;
+                          updateFields.durationMinutes = newTotalDuration; // ✅ CORREGIDO: durationMinutes en lugar de duration
+                          updateFields.duration = newTotalDuration; // ✅ Mantener ambos para compatibilidad
+                          updateFields.endTime = newEndTime; // ✅ Nuevo endTime
+                        } else {
+                          console.log('[WeeklyAgenda] ⚠️ Nueva duración calculada es 0, solo actualizando servicios y color');
+                          // Solo actualizar servicios, color y texto, no duración ni endTime
+                          updateFields.services = optimisticServices;
+                          updateFields.service = newServiceText;
+                          updateFields.color = newColor;
+                        }
+                      }
+                      
+                      // ✅ ACTUALIZAR DURACIÓN/TIEMPOS - Pero NO sobrescribir si ya se calculó desde servicios
+                      const modalEndTimeChanged = appointmentData.endTime && appointmentData.endTime !== currentAppointment.endTime;
+                      const baseDurationChanged = appointmentData.durationMinutes && appointmentData.durationMinutes !== currentAppointment.duration;
+                      const extensionsChanged = appointmentData.hasExtension !== undefined || appointmentData.extensionMinutes !== undefined;
+                      
+                      // ✅ SOLO procesar cambios de duración/tiempo si NO hubo cambios de servicios (evitar sobrescribir)
+                      if ((modalEndTimeChanged || baseDurationChanged || extensionsChanged) && !servicesChanged) {
+                        // ✅ PRIORIDAD 1: Usar endTime directamente del modal (servicios/módulos ya calculados)
+                        if (modalEndTimeChanged && appointmentData.endTime) {
+                          console.log('[WeeklyAgenda] 🕐 EndTime cambió en modal (servicios/módulos):', {
+                            oldEndTime: currentAppointment.endTime,
+                            newEndTime: appointmentData.endTime,
+                            durationMinutes: appointmentData.durationMinutes
+                          });
+                          
+                          updateFields.endTime = appointmentData.endTime; // ✅ USAR ENDTIME DEL MODAL directamente
+                          
+                          // ✅ SIEMPRE actualizar duración - CRÍTICO PARA RENDERIZADO OPTIMISTA
+                          if (appointmentData.durationMinutes) {
+                            updateFields.durationMinutes = appointmentData.durationMinutes; // ✅ CORREGIDO: durationMinutes
+                            updateFields.duration = appointmentData.durationMinutes; // ✅ Mantener ambos para compatibilidad
+                            console.log('[WeeklyAgenda] 🕐 Duración actualizada desde modal:', appointmentData.durationMinutes);
+                          } else {
+                            // ✅ FALLBACK: Calcular duración desde startTime/endTime
+                            const currentStartTime = currentAppointment.startTime;
+                            const [startHours, startMinutes] = currentStartTime.split(':').map(Number);
+                            const [endHours, endMinutes] = appointmentData.endTime.split(':').map(Number);
+                            const startTotalMinutes = startHours * 60 + startMinutes;
+                            const endTotalMinutes = endHours * 60 + endMinutes;
+                            const calculatedDuration = endTotalMinutes - startTotalMinutes;
+                            updateFields.durationMinutes = calculatedDuration > 0 ? calculatedDuration : currentAppointment.duration; // ✅ CORREGIDO: durationMinutes
+                            updateFields.duration = calculatedDuration > 0 ? calculatedDuration : currentAppointment.duration; // ✅ Mantener ambos para compatibilidad
+                            console.log('[WeeklyAgenda] 🕐 Duración calculada desde startTime/endTime:', updateFields.duration);
+                          }
+                        } 
+                        // ✅ PRIORIDAD 2: Recalcular solo si no hay endTime del modal
+                        else if (baseDurationChanged || extensionsChanged) {
+                          // ✅ CALCULAR DURACIÓN TOTAL incluyendo extensiones/módulos (granularidad)
+                          const baseDuration = appointmentData.durationMinutes || currentAppointment.duration;
+                          const extensionMinutes = appointmentData.hasExtension ? (appointmentData.extensionMinutes || 0) : 0;
+                          const totalDuration = baseDuration + extensionMinutes;
+                          
+                          console.log('[WeeklyAgenda] 🕐 Duración/extensiones cambiaron (recalculando):', {
+                            baseDuration: baseDuration,
+                            extensionMinutes: extensionMinutes,
+                            totalDuration: totalDuration,
+                            hasExtension: appointmentData.hasExtension,
+                            vs: currentAppointment.duration
+                          });
+                          
+                          const currentStartTime = currentAppointment.startTime;
+                          
+                          // Recalcular endTime con duración total (base + extensiones)
+                          const [startHours, startMinutes] = currentStartTime.split(':').map(Number);
+                          const startTotalMinutes = startHours * 60 + startMinutes;
+                          const endTotalMinutes = startTotalMinutes + totalDuration;
+                          const endHours = Math.floor(endTotalMinutes / 60);
+                          const endMins = endTotalMinutes % 60;
+                          const newEndTime = `${endHours.toString().padStart(2, '0')}:${endMins.toString().padStart(2, '0')}`;
+                          
+                          updateFields.durationMinutes = totalDuration; // ✅ CORREGIDO: durationMinutes para módulos/granularidad
+                          updateFields.duration = totalDuration; // ✅ Mantener ambos para compatibilidad
+                          updateFields.endTime = newEndTime;     // ✅ HORA FIN calculada con extensiones
+                        }
+                        // ✅ NO actualizar startTime - mantener original para preservar fecha
+                      }
+                      
+                      // ✅ APLICAR SOLO LOS CAMPOS QUE REALMENTE CAMBIARON
+                      console.log('[WeeklyAgenda] 🚀 ENVIANDO A updateOptimisticAppointment:', {
+                        appointmentId: appointmentData.id,
+                        updateFields: updateFields,
+                        durationInUpdateFields: updateFields.duration,
+                        durationMinutesInUpdateFields: updateFields.durationMinutes, // ✅ AÑADIR NUEVO CAMPO
+                        hasValidDuration: typeof updateFields.duration === 'number'
+                      });
+                      
+                      updateOptimisticAppointment(appointmentData.id, updateFields);
+                      
+                      console.log('[WeeklyAgenda] ✅ Servicios y duración actualizados inmediatamente:', {
+                        fieldsUpdated: Object.keys(updateFields),
+                        tags: appointmentData.tags,
+                        tagsChanged: JSON.stringify(appointmentData.tags) !== JSON.stringify(currentAppointment.tags),
+                        durationChanged: baseDurationChanged || extensionsChanged,
+                        oldDuration: currentAppointment.duration,
+                        newDuration: updateFields.duration || 'sin cambio',
+                        oldEndTime: currentAppointment.endTime,
+                        newEndTime: updateFields.endTime || 'sin cambio',
+                        updateFields: updateFields
+                      });
+                    }
+                  }
+                }
+                
+                try {
+                  const method = isUpdate ? 'PUT' : 'POST';
+                  
+                  // ✅ LLAMAR API EN BACKGROUND
+                  console.log('[WeeklyAgenda] 🔄 Llamando API en background...');
+                  const response = await fetch('/api/appointments', {
+                    method: method,
+                    headers: {
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(appointmentData),
                   });
-                }
-              }
-            }
-            
-            try {
-              const method = isUpdate ? 'PUT' : 'POST';
-              
-              // ✅ LLAMAR API EN BACKGROUND
-              console.log('[WeeklyAgenda] 🔄 Llamando API en background...');
-              const response = await fetch('/api/appointments', {
-                method: method,
-                headers: {
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(appointmentData),
-              });
       
-              if (!response.ok) {
-                throw new Error(isUpdate ? 'Error updating appointment' : 'Error creating appointment');
-              }
+                  if (!response.ok) {
+                    throw new Error(isUpdate ? 'Error updating appointment' : 'Error creating appointment');
+                  }
       
-              const savedAppointment = await response.json();
-              console.log('[WeeklyAgenda] ✅ API Response recibida:', savedAppointment);
-                
-              // ✅ ACTUALIZAR CON DATOS REALES DE LA API - MISMA LÓGICA QUE fetchAppointments
-              const clinicTz = (activeClinic as any)?.countryInfo?.timezone || (activeClinic as any)?.country?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
-              const startTime = new Date(savedAppointment.startTime);
-              const endTime = new Date(savedAppointment.endTime);
-                
-              // Determinar el color basado en los servicios creados - EXACTA LÓGICA DE fetchAppointments
-              let appointmentColor = '#9CA3AF'; // Color por defecto (gris)
-              
-              console.log('[WeeklyAgenda] 🎨 API Response - Servicios recibidos:', savedAppointment.services);
-              console.log('[WeeklyAgenda] 🎨 API Response - Equipment:', savedAppointment.equipment);
-              
-              if (savedAppointment.services && savedAppointment.services.length > 0) {
-                const serviceTypes = new Set(savedAppointment.services.map((s: any) => s.service?.categoryId));
-                const uniqueColors = new Set(savedAppointment.services.map((s: any) => s.service?.colorCode).filter(Boolean));
-                
-                console.log('[WeeklyAgenda] 🎨 API Response - Service types:', Array.from(serviceTypes));
-                console.log('[WeeklyAgenda] 🎨 API Response - Unique colors:', Array.from(uniqueColors));
-                
-                if (serviceTypes.size === 1 && uniqueColors.size === 1) {
-                  // Todos los servicios del mismo tipo - usar el color del servicio
-                  const firstColor = Array.from(uniqueColors)[0];
-                  appointmentColor = (typeof firstColor === 'string' ? firstColor : null) || appointmentColor;
-                  console.log('[WeeklyAgenda] 🎨 API Response - Color de servicio único:', appointmentColor);
-                } else if (savedAppointment.equipment?.color) {
-                  // Múltiples tipos de servicios - usar el color de la cabina
-                  appointmentColor = savedAppointment.equipment.color;
-                  console.log('[WeeklyAgenda] 🎨 API Response - Color de cabina:', appointmentColor);
-                } else {
-                  // ✅ FALLBACK: Si no hay colores, usar violeta como backup
-                  appointmentColor = '#8B5CF6';
-                  console.log('[WeeklyAgenda] 🎨 API Response - Usando fallback violeta:', appointmentColor);
+                  const savedAppointment = await response.json();
+                  console.log('[WeeklyAgenda] ✅ API Response recibida:', savedAppointment);
+                    
+                  // ✅ ACTUALIZAR CON DATOS REALES DE LA API - MISMA LÓGICA QUE fetchAppointments
+                  const clinicTz = (activeClinic as any)?.countryInfo?.timezone || (activeClinic as any)?.country?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+                  const startTime = new Date(savedAppointment.startTime);
+                  const endTime = new Date(savedAppointment.endTime);
+                    
+                  // Determinar el color basado en los servicios creados - EXACTA LÓGICA DE fetchAppointments
+                  let appointmentColor = '#9CA3AF'; // Color por defecto (gris)
+                  
+                  console.log('[WeeklyAgenda] 🎨 API Response - Servicios recibidos:', savedAppointment.services);
+                  console.log('[WeeklyAgenda] 🎨 API Response - Equipment:', savedAppointment.equipment);
+                  
+                  if (savedAppointment.services && savedAppointment.services.length > 0) {
+                    const serviceTypes = new Set(savedAppointment.services.map((s: any) => s.service?.categoryId));
+                    const uniqueColors = new Set(savedAppointment.services.map((s: any) => s.service?.colorCode).filter(Boolean));
+                    
+                    console.log('[WeeklyAgenda] 🎨 API Response - Service types:', Array.from(serviceTypes));
+                    console.log('[WeeklyAgenda] 🎨 API Response - Unique colors:', Array.from(uniqueColors));
+                    
+                    if (serviceTypes.size === 1 && uniqueColors.size === 1) {
+                      // Todos los servicios del mismo tipo - usar el color del servicio
+                      const firstColor = Array.from(uniqueColors)[0];
+                      appointmentColor = (typeof firstColor === 'string' ? firstColor : null) || appointmentColor;
+                      console.log('[WeeklyAgenda] 🎨 API Response - Color de servicio único:', appointmentColor);
+                    } else if (savedAppointment.equipment?.color) {
+                      // Múltiples tipos de servicios - usar el color de la cabina
+                      appointmentColor = savedAppointment.equipment.color;
+                      console.log('[WeeklyAgenda] 🎨 API Response - Color de cabina:', appointmentColor);
+                    } else {
+                      // ✅ FALLBACK: Si no hay colores, usar violeta como backup
+                      appointmentColor = '#8B5CF6';
+                      console.log('[WeeklyAgenda] 🎨 API Response - Usando fallback violeta:', appointmentColor);
+                    }
+                  }
+                    
+                  // Obtener los IDs de las etiquetas de la respuesta - EXACTA LÓGICA DE fetchAppointments
+                  const tagIds = savedAppointment.tags?.map((tagRelation: any) => tagRelation.tagId || tagRelation) || [];
+                    
+                  // ✅ CREAR CITA FINAL CON EXACTAMENTE EL MISMO FORMATO QUE fetchAppointments
+                  const finalAppointment: WeeklyAgendaAppointment = {
+                    id: savedAppointment.id,
+                    name: `${savedAppointment.person.firstName} ${savedAppointment.person.lastName}`,
+                    service: savedAppointment.services?.map((s: any) => s.service?.name).filter(Boolean).join(", ") || 'Sin servicio',
+                    date: startTime,
+                    roomId: savedAppointment.roomId,
+                    startTime: format(startTime, 'HH:mm'),
+                    endTime: format(endTime, 'HH:mm'), // ✅ OBLIGATORIA para WeeklyAgendaAppointment
+                    duration: Math.ceil((endTime.getTime() - startTime.getTime()) / (1000 * 60)),
+                    color: appointmentColor,
+                    phone: savedAppointment.person.phone,
+                    services: savedAppointment.services || [],
+                    tags: tagIds,
+                    notes: savedAppointment.notes,
+                    personId: savedAppointment.person.id, // ✅ Añadir personId para transición transparente
+                  };
+                  
+                  console.log('[WeeklyAgenda] 🎨 Cita final creada para reemplazo:', {
+                    id: finalAppointment.id,
+                    name: finalAppointment.name,
+                    service: finalAppointment.service,
+                    color: finalAppointment.color,
+                    services: finalAppointment.services,
+                    duration: finalAppointment.duration
+                  });
+                    
+                  // ✅ EVITAR DOBLE ACTUALIZACIÓN OPTIMISTA - Solo para creaciones, no para ediciones
+                  if (isUpdate) {
+                    console.log('[WeeklyAgenda] ✅ Edición completada - NO hacer segunda actualización optimista');
+                    // ✅ PARA EDICIONES: No hacer segunda actualización - ya está renderizada optimísticamente
+                  } else {
+                    console.log('[WeeklyAgenda] 🔄 Reemplazando cita optimista con datos reales:', finalAppointment);
+                    // ✅ BUSCAR Y REEMPLAZAR CITA TEMPORAL EN CACHE GLOBAL
+                    const currentAppointments = appointmentsList;
+                    const tempAppointment = currentAppointments.find(app => app.id.toString().startsWith('temp-'));
+                    
+                    if (tempAppointment) {
+                      console.log('[WeeklyAgenda] 🔄 Reemplazando cita temporal en cache global:', tempAppointment.id, '→', finalAppointment.id);
+                      replaceOptimisticAppointment(tempAppointment.id, finalAppointment);
+                    } else {
+                      console.log('[WeeklyAgenda] ⚠️ No se encontró cita temporal, añadiendo al cache global');
+                      addOptimisticAppointment(finalAppointment);
+                    }
+                  }
+                    
+                  console.log('[WeeklyAgenda] ✅ Renderizado optimista completado exitosamente');
+                  
+                } catch (error) {
+                  console.error(`Error ${isUpdate ? 'updating' : 'creating'} appointment:`, error);
+                  
+                  // ✅ REVERTIR RENDERIZADO OPTIMISTA EN CASO DE ERROR
+                  if (isUpdate && appointmentData.id) {
+                    console.log('[WeeklyAgenda] ❌ Error API - Revirtiendo cambios optimistas de edición');
+                    await invalidateCache(); // Restaurar estado real
+                  } else if (!isUpdate) {
+                    console.log('[WeeklyAgenda] ❌ Error en API - Revirtiendo cita optimista');
+                    // ✅ BUSCAR Y ELIMINAR CITA TEMPORAL DEL CACHE GLOBAL
+                    const currentAppointments = appointmentsList;
+                    const tempAppointment = currentAppointments.find(app => app.id.toString().startsWith('temp-'));
+                    
+                    if (tempAppointment) {
+                      console.log('[WeeklyAgenda] ❌ Eliminando cita temporal del cache global:', tempAppointment.id);
+                      deleteOptimisticAppointment(tempAppointment.id);
+                    }
+                  }
+                  
+                  // Mostrar mensaje de error contextual
+                  alert(`Error al ${isUpdate ? 'actualizar' : 'crear'} la cita. Por favor, inténtalo de nuevo.`);
                 }
-              }
-                
-              // Obtener los IDs de las etiquetas de la respuesta - EXACTA LÓGICA DE fetchAppointments
-              const tagIds = savedAppointment.tags?.map((tagRelation: any) => tagRelation.tagId || tagRelation) || [];
-                
-              // ✅ CREAR CITA FINAL CON EXACTAMENTE EL MISMO FORMATO QUE fetchAppointments
-              const finalAppointment: WeeklyAgendaAppointment = {
-                id: savedAppointment.id,
-                name: `${savedAppointment.person.firstName} ${savedAppointment.person.lastName}`,
-                service: savedAppointment.services?.map((s: any) => s.service?.name).filter(Boolean).join(", ") || 'Sin servicio',
-                date: startTime,
-                roomId: savedAppointment.roomId,
-                startTime: format(startTime, 'HH:mm'),
-                endTime: format(endTime, 'HH:mm'), // ✅ OBLIGATORIA para WeeklyAgendaAppointment
-                duration: Math.ceil((endTime.getTime() - startTime.getTime()) / (1000 * 60)),
-                color: appointmentColor,
-                phone: savedAppointment.person.phone,
-                services: savedAppointment.services || [],
-                tags: tagIds,
-                notes: savedAppointment.notes,
-                personId: savedAppointment.person.id, // ✅ Añadir personId para transición transparente
-              };
-              
-              console.log('[WeeklyAgenda] 🎨 Cita final creada para reemplazo:', {
-                id: finalAppointment.id,
-                name: finalAppointment.name,
-                service: finalAppointment.service,
-                color: finalAppointment.color,
-                services: finalAppointment.services,
-                duration: finalAppointment.duration
-              });
-                
-              // ✅ EVITAR DOBLE ACTUALIZACIÓN OPTIMISTA - Solo para creaciones, no para ediciones
-              if (isUpdate) {
-                console.log('[WeeklyAgenda] ✅ Edición completada - NO hacer segunda actualización optimista');
-                // ✅ PARA EDICIONES: No hacer segunda actualización - ya está renderizada optimísticamente
-              } else {
-                console.log('[WeeklyAgenda] 🔄 Reemplazando cita optimista con datos reales:', finalAppointment);
-                // ✅ BUSCAR Y REEMPLAZAR CITA TEMPORAL EN CACHE GLOBAL
-                const currentAppointments = appointmentsList;
-                const tempAppointment = currentAppointments.find(app => app.id.toString().startsWith('temp-'));
-                
-                if (tempAppointment) {
-                  console.log('[WeeklyAgenda] 🔄 Reemplazando cita temporal en cache global:', tempAppointment.id, '→', finalAppointment.id);
-                  replaceOptimisticAppointment(tempAppointment.id, finalAppointment);
-                } else {
-                  console.log('[WeeklyAgenda] ⚠️ No se encontró cita temporal, añadiendo al cache global');
-                  addOptimisticAppointment(finalAppointment);
-                }
-              }
-                
-              console.log('[WeeklyAgenda] ✅ Renderizado optimista completado exitosamente');
-              
-            } catch (error) {
-              console.error(`Error ${isUpdate ? 'updating' : 'creating'} appointment:`, error);
-              
-              // ✅ REVERTIR RENDERIZADO OPTIMISTA EN CASO DE ERROR
-              if (isUpdate && appointmentData.id) {
-                console.log('[WeeklyAgenda] ❌ Error API - Revirtiendo cambios optimistas de edición');
-                await invalidateCache(); // Restaurar estado real
-              } else if (!isUpdate) {
-                console.log('[WeeklyAgenda] ❌ Error en API - Revirtiendo cita optimista');
-                // ✅ BUSCAR Y ELIMINAR CITA TEMPORAL DEL CACHE GLOBAL
-                const currentAppointments = appointmentsList;
-                const tempAppointment = currentAppointments.find(app => app.id.toString().startsWith('temp-'));
-                
-                if (tempAppointment) {
-                  console.log('[WeeklyAgenda] ❌ Eliminando cita temporal del cache global:', tempAppointment.id);
-                  deleteOptimisticAppointment(tempAppointment.id);
-                }
-              }
-              
-              // Mostrar mensaje de error contextual
-              alert(`Error al ${isUpdate ? 'actualizar' : 'crear'} la cita. Por favor, inténtalo de nuevo.`);
-            }
-          }}
-          showClientDetailsOnOpen={showClientDetailsOnOpen}
-        />
-      )}
-    </HydrationWrapper>
+              }}
+              showClientDetailsOnOpen={showClientDetailsOnOpen}
+            />
+          )}
+        </HydrationWrapper>
     </DragTimeProvider>
   )
 }
