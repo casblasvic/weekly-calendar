@@ -59,7 +59,7 @@ export function ScheduleBlocksProvider({ children }: { children: ReactNode }) {
       const loadedBlocks = await interfaz.getAllScheduleBlocks();
       setBlocks(loadedBlocks || []);
       setDataFetched(true);
-      console.log("ScheduleBlocksContext: Datos cargados correctamente");
+      // console.log("ScheduleBlocksContext: Datos cargados correctamente"); // Log optimizado
     } catch (error) {
       console.error("Error al cargar bloques de agenda:", error);
       setBlocks([]);
@@ -146,17 +146,17 @@ export function ScheduleBlocksProvider({ children }: { children: ReactNode }) {
   };
 
   const fetchOverridesByDateRange = useCallback(async (clinicId: string, startDate: string, endDate: string) => {
-    console.log(`[ScheduleBlocksContext] Fetching overrides for clinic ${clinicId} from ${startDate} to ${endDate}`);
+    // console.log(`[ScheduleBlocksContext] Fetching overrides for clinic ${clinicId} from ${startDate} to ${endDate}`); // Log optimizado
     setLoadingOverrides(true);
     setErrorOverrides(null);
     setLastFetchedRange({ clinicId, startDate, endDate });
     try {
       const apiUrl = `/api/cabin-schedule-overrides?clinicId=${clinicId}&startDate=${startDate}&endDate=${endDate}`;
-      console.log(`[ScheduleBlocksContext] Calling API URL: ${apiUrl}`);
+      // console.log(`[ScheduleBlocksContext] Calling API URL: ${apiUrl}`); // Log optimizado
 
       const response = await fetch(apiUrl);
 
-      console.log(`[ScheduleBlocksContext] API Response Status: ${response.status}`);
+      // console.log(`[ScheduleBlocksContext] API Response Status: ${response.status}`); // Log optimizado
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -166,7 +166,7 @@ export function ScheduleBlocksProvider({ children }: { children: ReactNode }) {
 
       const data = await response.json();
       
-      console.log('[ScheduleBlocksContext] Raw data received from API:', data);
+      // console.log('[ScheduleBlocksContext] Raw data received from API:', data); // Log optimizado
 
       const overridesWithDates = data.map((override: any) => {
         const startDateLocal = override.startDate && typeof override.startDate === 'string' ? startOfDay(parseISO(override.startDate)) : null;
@@ -184,7 +184,7 @@ export function ScheduleBlocksProvider({ children }: { children: ReactNode }) {
       });
 
       // >>> NUEVO LOG: Mostrar datos procesados al cargar <<<
-      console.log('>>> FETCHED Overrides:', JSON.stringify(overridesWithDates, null, 2));
+      // console.log('>>> FETCHED Overrides:', JSON.stringify(overridesWithDates, null, 2)); // Log optimizado
 
       setCabinOverrides(overridesWithDates);
       // console.log('[ScheduleBlocksContext] Overrides fetched and parsed successfully:', overridesWithDates); // Log original

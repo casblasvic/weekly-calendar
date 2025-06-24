@@ -111,7 +111,7 @@ export const FileProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           const baseFiles: BaseFile[] = loadedFiles.map(convertToBaseFile);
           setFiles(baseFiles);
           setDataFetched(true); 
-          console.log("FileContext: Carga inicial de archivos OMITIDA");
+          // console.log("FileContext: Carga inicial de archivos OMITIDA"); // Log optimizado
         } catch (error) {
           console.error("Error al cargar archivos:", error);
           setFiles([]);

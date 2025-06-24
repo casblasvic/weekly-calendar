@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect } from "react"
+import React, { useState, useEffect, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { useRouter } from "next/navigation"
 import { useStorage } from "@/contexts/storage-context"
@@ -34,13 +34,8 @@ export default function ConfiguracionAlmacenamientoPage() {
   const [globalQuota, setGlobalQuota] = useState<any>(null)
   const [dataLoaded, setDataLoaded] = useState(false)
   
-  // Cargar datos iniciales
-  useEffect(() => {
-    loadInitialData()
-  }, [needsUpdate])
-  
   // Función para cargar datos iniciales
-  const loadInitialData = async () => {
+  const loadInitialData = useCallback(async () => {
     try {
       // Obtener lista de clínicas desde la interfaz
       const clinicsList = await getActiveClinicas();
@@ -89,7 +84,12 @@ export default function ConfiguracionAlmacenamientoPage() {
       toast.error("Error al cargar los datos de almacenamiento");
       setDataLoaded(true); // Marcar como cargado incluso con error para mostrar una UI
     }
-  };
+  }, [getActiveClinicas, getStorageStats, getQuota]);
+  
+  // Cargar datos iniciales
+  useEffect(() => {
+    loadInitialData()
+  }, [loadInitialData, needsUpdate])
   
   // Actualizar cuota global o por clínica
   const handleUpdateQuota = (size: number, isUnlimited: boolean) => {
@@ -208,7 +208,7 @@ export default function ConfiguracionAlmacenamientoPage() {
           <h1 className="text-2xl font-bold">Configuración de almacenamiento</h1>
           <p className="text-gray-500">Gestiona el espacio de almacenamiento para cada clínica</p>
         </div>
-        <Button href="/configuracion/almacenamiento">Volver</Button>
+        <Button onClick={() => router.push("/configuracion/almacenamiento")}>Volver</Button>
       </div>
       
       {!dataLoaded ? (

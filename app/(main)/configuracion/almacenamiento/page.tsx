@@ -74,11 +74,11 @@ export default function GlobalStoragePage() {
         const globalQuota = storage.getQuota('global');
         setQuota(globalQuota);
         
-        const connectedProviders = storage.getConnectedProviders();
+        const connectedProviders = await storage.getConnectedProviders();
         setProviders(connectedProviders);
         
         // Obtener archivos
-        const filesList = files.getFilesByFilter({ isDeleted: false });
+        const filesList = await files.getFilesByFilter({ isDeleted: false });
         setAllFiles(filesList);
         
         // Procesar cuotas de clínicas
@@ -91,11 +91,11 @@ export default function GlobalStoragePage() {
           if (clinic && clinic.id) {  // Verificar que la clínica sea válida
             const clinicId = clinic.id.toString();
             try {
-              const clinicQuota = storage.getQuota('clinic', clinicId);
+              const clinicQuota = await storage.getQuota('clinic', clinicId);
               quotasMap[clinicId] = clinicQuota;
               
               // Cargar estadísticas de cada clínica
-              const clinicStatsData = storage.getStorageStats(clinicId);
+              const clinicStatsData = await storage.getStorageStats(clinicId);
               statsMap[clinicId] = clinicStatsData;
               
               // Sumar al total asignado si tiene cuota específica
@@ -119,7 +119,7 @@ export default function GlobalStoragePage() {
     };
     
     loadInitialData();
-  }, [storage, files, needsUpdate]);
+  }, [storage, files, needsUpdate, availableClinics]);
 
   // Los cálculos que antes estaban en el resto del useMemo
   const calculatedValues = useMemo(() => {
@@ -247,8 +247,8 @@ export default function GlobalStoragePage() {
   }, []);
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      <div className="flex items-start gap-4">
+    <div className="container p-6 mx-auto space-y-6">
+      <div className="flex gap-4 items-start">
         <div>
           <h1 className="text-2xl font-bold">Gestión de Almacenamiento Global</h1>
           <p className="text-gray-500">Administra el almacenamiento para todos los centros del sistema</p>
@@ -256,7 +256,7 @@ export default function GlobalStoragePage() {
         <div className="ml-auto">
           <Link href="/configuracion/almacenamiento/configuracion">
             <Button variant="default">
-              <Settings className="h-4 w-4 mr-2" />
+              <Settings className="mr-2 w-4 h-4" />
               Configuración avanzada
             </Button>
           </Link>
@@ -274,11 +274,11 @@ export default function GlobalStoragePage() {
         
         {/* Pestaña de resumen */}
         <TabsContent value="overview" className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <Card className="col-span-1 md:col-span-1">
               <CardHeader className="pb-2">
-                <CardTitle className="text-md flex items-center gap-2">
-                  <Server className="h-5 w-5" />
+                <CardTitle className="flex gap-2 items-center text-md">
+                  <Server className="w-5 h-5" />
                   Espacio total disponible
                 </CardTitle>
                 <CardDescription>
@@ -313,28 +313,28 @@ export default function GlobalStoragePage() {
                     {/* Barra de progreso global */}
                     <div className="mt-2">
                       <div className="relative">
-                        <div className="bg-gray-200 rounded-full h-3 w-full overflow-hidden">
+                        <div className="overflow-hidden w-full h-3 bg-gray-200 rounded-full">
                           {/* Barra de asignado (azul) */}
                           <div 
-                            className="bg-blue-600 h-3 rounded-full" 
+                            className="h-3 bg-blue-600 rounded-full" 
                             style={{ width: `${Math.min(100, (totalAssigned / SYSTEM_TOTAL_STORAGE) * 100)}%` }}
                           ></div>
                         </div>
                         {/* Barra de utilizado (verde) superpuesta */}
                         <div 
-                          className="absolute top-0 left-0 bg-green-500 h-3 rounded-full" 
+                          className="absolute top-0 left-0 h-3 bg-green-500 rounded-full" 
                           style={{ width: `${Math.min(100, (storageStats?.used / SYSTEM_TOTAL_STORAGE) * 100)}%` }}
                         ></div>
                       </div>
                       <div className="flex justify-between mt-1 text-xs text-gray-500">
                         <span>0%</span>
-                        <div className="flex items-center gap-4">
-                          <div className="flex items-center gap-1">
-                            <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                        <div className="flex gap-4 items-center">
+                          <div className="flex gap-1 items-center">
+                            <div className="w-2 h-2 bg-green-500 rounded-full"></div>
                             <span>Utilizado ({((storageStats?.used / SYSTEM_TOTAL_STORAGE) * 100).toFixed(1)}%)</span>
                           </div>
-                          <div className="flex items-center gap-1">
-                            <div className="w-2 h-2 rounded-full bg-blue-600"></div>
+                          <div className="flex gap-1 items-center">
+                            <div className="w-2 h-2 bg-blue-600 rounded-full"></div>
                             <span>Asignado ({((totalAssigned / SYSTEM_TOTAL_STORAGE) * 100).toFixed(1)}%)</span>
                           </div>
                         </div>
@@ -382,7 +382,7 @@ export default function GlobalStoragePage() {
                         }) : <div className="text-sm text-gray-500">No hay clínicas disponibles</div>}
                     
                     {Array.isArray(clinics) && clinics.length > 3 && (
-                      <div className="text-xs text-center text-blue-600 hover:text-blue-800 cursor-pointer mt-1" onClick={() => setActiveTab('quotas')}>
+                      <div className="mt-1 text-xs text-center text-blue-600 cursor-pointer hover:text-blue-800" onClick={() => setActiveTab('quotas')}>
                         Ver todas las clínicas ({clinics.length})
                       </div>
                     )}
@@ -396,16 +396,16 @@ export default function GlobalStoragePage() {
           
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Database className="h-5 w-5" />
+              <CardTitle className="flex gap-2 items-center">
+                <Database className="w-5 h-5" />
                 Distribución por entidad
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
+                <div className="flex justify-between items-center">
                   <div className="flex items-center">
-                    <div className="w-3 h-3 rounded-full bg-blue-500 mr-2" />
+                    <div className="mr-2 w-3 h-3 bg-blue-500 rounded-full" />
                     <span className="text-sm">Equipamiento</span>
                   </div>
                   <span className="text-sm font-medium">
@@ -417,9 +417,9 @@ export default function GlobalStoragePage() {
                   </span>
                 </div>
                 
-                <div className="flex items-center justify-between">
+                <div className="flex justify-between items-center">
                   <div className="flex items-center">
-                    <div className="w-3 h-3 rounded-full bg-green-500 mr-2" />
+                    <div className="mr-2 w-3 h-3 bg-green-500 rounded-full" />
                     <span className="text-sm">Servicios</span>
                   </div>
                   <span className="text-sm font-medium">
@@ -431,9 +431,9 @@ export default function GlobalStoragePage() {
                   </span>
                 </div>
                 
-                <div className="flex items-center justify-between">
+                <div className="flex justify-between items-center">
                   <div className="flex items-center">
-                    <div className="w-3 h-3 rounded-full bg-purple-500 mr-2" />
+                    <div className="mr-2 w-3 h-3 bg-purple-500 rounded-full" />
                     <span className="text-sm">Clientes</span>
                   </div>
                   <span className="text-sm font-medium">
@@ -445,9 +445,9 @@ export default function GlobalStoragePage() {
                   </span>
                 </div>
                 
-                <div className="flex items-center justify-between">
+                <div className="flex justify-between items-center">
                   <div className="flex items-center">
-                    <div className="w-3 h-3 rounded-full bg-yellow-500 mr-2" />
+                    <div className="mr-2 w-3 h-3 bg-yellow-500 rounded-full" />
                     <span className="text-sm">Otros</span>
                   </div>
                   <span className="text-sm font-medium">
@@ -478,8 +478,8 @@ export default function GlobalStoragePage() {
           <div className="grid grid-cols-1 gap-4">
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Briefcase className="h-5 w-5" />
+                <CardTitle className="flex gap-2 items-center">
+                  <Briefcase className="w-5 h-5" />
                   Configuración de cuotas por clínica
                 </CardTitle>
                 <CardDescription>
@@ -504,12 +504,12 @@ export default function GlobalStoragePage() {
         
         {/* Pestaña de proveedores */}
         <TabsContent value="providers">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             {/* Proveedor Local */}
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <HardDrive className="h-5 w-5" />
+                <CardTitle className="flex gap-2 items-center">
+                  <HardDrive className="w-5 h-5" />
                   Almacenamiento Local
                 </CardTitle>
                 <CardDescription>
@@ -536,8 +536,8 @@ export default function GlobalStoragePage() {
             {/* Google Drive */}
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Cloud className="h-5 w-5" />
+                <CardTitle className="flex gap-2 items-center">
+                  <Cloud className="w-5 h-5" />
                   Google Drive
                 </CardTitle>
                 <CardDescription>
@@ -577,8 +577,8 @@ export default function GlobalStoragePage() {
             {/* Dropbox */}
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Cloud className="h-5 w-5" />
+                <CardTitle className="flex gap-2 items-center">
+                  <Cloud className="w-5 h-5" />
                   Dropbox
                 </CardTitle>
                 <CardDescription>

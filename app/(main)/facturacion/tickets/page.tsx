@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
-import { Eye, Edit3, Trash2, Lock, PlusCircle, HelpCircle, ArrowLeft, Printer, FileX, Unlock, Wallet } from 'lucide-react';
+import { Eye, Edit3, Trash2, Lock, PlusCircle, HelpCircle, ArrowLeft, Printer, FileX, Unlock, Wallet, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
@@ -473,55 +473,65 @@ const TicketsTable = ({
 
 
 export default function ListadoTicketsPage() {
+  // ✅ TODOS LOS HOOKS AL PRINCIPIO (ANTES DE CUALQUIER EARLY RETURN)
   const { t } = useTranslation();
-  const { activeClinic } = useClinic();
+  const { activeClinic, isInitialized } = useClinic();
   const router = useRouter();
-  console.log("Active Clinic on Tickets Page Load:", activeClinic);
-
-  const todayForQuery = format(new Date(), 'yyyy-MM-dd');
-  const { data: todaySessionData, isLoading: isLoadingTodaySession } = useDailyCashSessionQuery(
-    activeClinic?.id,
-    todayForQuery,
-    undefined,
-    { enabled: !!activeClinic?.id }
-  );
-
-  const isTodaySessionOpen = todaySessionData?.status === CashSessionStatus.OPEN;
-
-  // Estado para la paginación (ejemplo básico, se puede expandir)
+  
+  // Estados locales
   const [pendingPage, setPendingPage] = useState(1);
   const [closedPage, setClosedPage] = useState(1);
-  const pageSize = 10; // O obtener de configuración
-
+  const [selectedClosedIds, setSelectedClosedIds] = useState<string[]>([]);
+  
+  // Variables derivadas
+  const todayForQuery = format(new Date(), 'yyyy-MM-dd');
+  const pageSize = 10;
+  
+  // Filtros para queries
   const pendingTicketsFilters: TicketFilters = {
-    clinicId: activeClinic?.id,
-    status: [TicketStatus.OPEN], // Solo OPEN. PENDING_PAYMENT es un ticket OPEN con deuda.
+    clinicId: activeClinic?.id || '',
+    status: [TicketStatus.OPEN],
     page: pendingPage,
     pageSize,
   };
 
   const closedTicketsFilters: TicketFilters = {
-    clinicId: activeClinic?.id,
+    clinicId: activeClinic?.id || '',
     status: [TicketStatus.CLOSED, TicketStatus.ACCOUNTED, TicketStatus.VOID],
     page: closedPage,
     pageSize,
   };
+
+  // ✅ Hooks de queries con enabled condicional
+  const { data: todaySessionData, isLoading: isLoadingTodaySession } = useDailyCashSessionQuery(
+    activeClinic?.id || '',
+    todayForQuery,
+    undefined,
+    { enabled: !!activeClinic?.id && isInitialized }
+  );
 
   const {
     data: pendingTicketsData,
     isLoading: isLoadingPending,
     isError: isErrorPending,
     error: errorPending,
-  } = useTicketsQuery(pendingTicketsFilters, { enabled: !!activeClinic?.id });
+  } = useTicketsQuery(pendingTicketsFilters, { enabled: !!activeClinic?.id && isInitialized });
 
   const {
     data: closedTicketsData,
     isLoading: isLoadingClosed,
     isError: isErrorClosed,
     error: errorClosed,
-  } = useTicketsQuery(closedTicketsFilters, { enabled: !!activeClinic?.id });
+  } = useTicketsQuery(closedTicketsFilters, { enabled: !!activeClinic?.id && isInitialized });
 
-  const [selectedClosedIds, setSelectedClosedIds] = useState<string[]>([]);
+  // Hooks de mutaciones
+  const reopenTicketMutation = useReopenTicketMutation();
+  const deleteTicketMutation = useDeleteTicketMutation();
+  const queryClient = useQueryClient();
+
+  // ✅ LÓGICA Y HANDLERS (NO HOOKS)
+  console.log("Active Clinic on Tickets Page Load:", activeClinic);
+  const isTodaySessionOpen = todaySessionData?.status === CashSessionStatus.OPEN;
 
   const handleToggleSelectClosed = (ticketId: string, checked: boolean) => {
     setSelectedClosedIds((prev) => {
@@ -535,11 +545,9 @@ export default function ListadoTicketsPage() {
     setSelectedClosedIds(checked ? ticketIdsToToggle : []);
   };
 
-  const reopenTicketMutation = useReopenTicketMutation();
-  const deleteTicketMutation = useDeleteTicketMutation();
-  const queryClient = useQueryClient(); // Asegúrate que queryClient está disponible
-
   const handleBulkReopen = async () => {
+    if (!activeClinic?.id) return;
+    
     if (selectedClosedIds.length === 0) {
       toast({
         title: t("common.noSelection"),
@@ -559,7 +567,7 @@ export default function ListadoTicketsPage() {
 
     for (const ticketId of selectedClosedIds) {
       try {
-        await reopenTicketMutation.mutateAsync({ ticketId, clinicId: activeClinic?.id });
+        await reopenTicketMutation.mutateAsync({ ticketId, clinicId: activeClinic.id });
         successCount++;
       } catch (error) {
         console.error(`Error reabriendo ticket ${ticketId}:`, error);
@@ -567,7 +575,7 @@ export default function ListadoTicketsPage() {
       }
     }
 
-    setSelectedClosedIds([]); // Limpiar selección
+    setSelectedClosedIds([]);
 
     if (errorCount > 0) {
       toast({
@@ -582,42 +590,62 @@ export default function ListadoTicketsPage() {
       });
     }
     
-    // Invalidar queries relevantes para asegurar que la UI está fresca
-    if (activeClinic?.id) {
-      queryClient.invalidateQueries({ queryKey: ['openTicketsCount', activeClinic.id, 'OPEN']});
-    }
-    queryClient.invalidateQueries({ queryKey: ['tickets'] }); // Invalida todas las listas de tickets
+    queryClient.invalidateQueries({ queryKey: ['openTicketsCount', activeClinic.id, 'OPEN']});
+    queryClient.invalidateQueries({ queryKey: ['tickets'] });
   };
 
-  interface FooterButtonsProps {
-  isTodaySessionOpen: boolean;
-  isLoadingTodaySession: boolean;
-  activeClinicId: string | undefined;
-}
+  // ✅ EARLY RETURNS AL FINAL (DESPUÉS DE TODOS LOS HOOKS)
+  if (!isInitialized) {
+    return (
+      <div className="container relative p-4 mx-auto md:p-6 lg:p-8">
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="w-8 h-8 text-purple-600 animate-spin" />
+          <span className="ml-2">Inicializando clínicas...</span>
+        </div>
+      </div>
+    );
+  }
 
-// --- FOOTER CON BOTONES ---
+  if (!activeClinic) {
+    return (
+      <div className="container relative p-4 mx-auto md:p-6 lg:p-8">
+        <div className="text-center">
+          <h3 className="text-lg font-medium text-gray-700 mb-2">
+            Sin clínica seleccionada
+          </h3>
+          <p className="text-gray-500">
+            Selecciona una clínica para ver los tickets.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // ✅ COMPONENTE FOOTER (DEFINIDO DENTRO DEL SCOPE)
+  interface FooterButtonsProps {
+    isTodaySessionOpen: boolean;
+    isLoadingTodaySession: boolean;
+    activeClinicId: string;
+  }
+
   const FooterButtons = ({ isTodaySessionOpen, isLoadingTodaySession, activeClinicId }: FooterButtonsProps) => {
-    const todayStr = new Date().toISOString().substring(0,10); // YYYY-MM-DD
+    const todayStr = new Date().toISOString().substring(0,10);
     return (
       <footer className="fixed bottom-0 z-40 border-t bg-white/80 backdrop-blur-md shadow-[0_-2px_10px_rgba(0,0,0,0.05)]"
         style={{ left: 'var(--sidebar-width, 16rem)', right: 0 }}>
         <div className="container mx-auto flex items-center justify-between py-2 px-4">
-          {/* Izquierda */}
           <div>
             <Button
               variant="outline"
               size="sm"
               className="gap-1 text-xs text-gray-700 border-gray-300 h-8 hover:bg-gray-50"
-              onClick={() => router.push(`/caja/${todayStr}?clinicId=${activeClinicId || ''}&returnTo=/facturacion/tickets`)}
+              onClick={() => router.push(`/caja/${todayStr}?clinicId=${activeClinicId}&returnTo=/facturacion/tickets`)}
               disabled={isLoadingTodaySession || !isTodaySessionOpen}
             >
               <Wallet className="h-3.5 w-3.5" /> {t('cash.viewCash', 'Ver caja')}
             </Button>
           </div>
-
-          {/* Derecha */}
           <div className="flex items-center gap-2">
-            {/* Botón nuevo abono - deshabilitado */}
             <Button variant="secondary" size="sm" disabled className="h-8 text-xs">
               {t('tickets.newCreditNote', 'Nuevo abono')}
             </Button>
@@ -633,22 +661,13 @@ export default function ListadoTicketsPage() {
     );
   };
 
-  if (!activeClinic) {
-    return (
-      <div className="p-4">
-        <p>{t("common.selectClinicToViewData")}</p>
-      </div>
-    );
-  }
-
+  // ✅ RENDER PRINCIPAL
   return (
     <div className="container relative p-4 mx-auto md:p-6 lg:p-8 pb-24">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-semibold">{t('tickets.pageTitle')}</h1>
-        {/* Los botones de Acción Globales se moverán al footer */}
       </div>
 
-      {/* Tabla de Tickets Pendientes */}
       <TicketsTable 
         title={t('tickets.pendingTickets')}
         ticketsData={pendingTicketsData?.data}
@@ -658,7 +677,6 @@ export default function ListadoTicketsPage() {
         activeClinic={activeClinic}
       />
 
-      {/* Tabla de Tickets Cerrados/Contabilizados */}
       <TicketsTable 
         title={t('tickets.closedTickets')}
         ticketsData={closedTicketsData?.data}
@@ -672,7 +690,6 @@ export default function ListadoTicketsPage() {
         onToggleSelectAll={handleToggleSelectAllClosed}
       />
 
-      {/* Botón Bulk Reopen */}
       <div className="flex justify-end mt-4">
         <Button
           disabled={selectedClosedIds.length === 0 || reopenTicketMutation.isPending}
@@ -686,7 +703,7 @@ export default function ListadoTicketsPage() {
       <FooterButtons 
         isTodaySessionOpen={isTodaySessionOpen} 
         isLoadingTodaySession={isLoadingTodaySession} 
-        activeClinicId={activeClinic?.id}
+        activeClinicId={activeClinic.id}
       />
     </div>
   );

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, use } from "react"
+import { useState, useEffect, use, useCallback } from "react"
 import { useRouter, useParams } from "next/navigation"
 import { ArrowLeft, Save, Trash2, User, MapPin, Phone, Building, FileText, Settings, UserPlus } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -181,11 +181,7 @@ export default function PersonDetailPage({ params }: { params: Promise<{ id: str
     fetchCountries()
   }, [])
 
-  useEffect(() => {
-    loadPerson()
-  }, [resolvedParams.id])
-
-  const loadPerson = async () => {
+  const loadPerson = useCallback(async () => {
     setLoading(true)
     try {
       const data = await getPersonById(resolvedParams.id)
@@ -218,7 +214,11 @@ export default function PersonDetailPage({ params }: { params: Promise<{ id: str
     } finally {
       setLoading(false)
     }
-  }
+  }, [resolvedParams.id, setValue])
+
+  useEffect(() => {
+    loadPerson()
+  }, [loadPerson])
 
   const onSubmit = async (data: any) => {
     setSaving(true)

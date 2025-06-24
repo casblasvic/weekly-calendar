@@ -160,7 +160,7 @@ export function MobileAgendaView({ showMainSidebar = false }: MobileAgendaViewPr
 }
 
 function MobileAgendaViewContent({ showMainSidebar = false }: MobileAgendaViewProps) {
-  const { activeClinic, isLoading } = useClinic()
+  const { activeClinic, isLoading, isInitialized } = useClinic()
   const { cabinOverrides } = useScheduleBlocks();
   const { activeClinicCabins, isLoadingCabinsContext } = useClinic();
   const [currentDate, setCurrentDate] = useState<Date | null>(null)
@@ -193,7 +193,7 @@ function MobileAgendaViewContent({ showMainSidebar = false }: MobileAgendaViewPr
   
   // <<< FUNCIONES RELACIONADAS VACÍAS/PLACEHOLDERS >>>
   const fetchAppointments = async () => {
-    console.log('[MobileAgendaView] fetchAppointments called - activeClinic:', activeClinic?.id, 'currentDate:', currentDate);
+    // console.log('[MobileAgendaView] fetchAppointments called - activeClinic:', activeClinic?.id, 'currentDate:', currentDate); // Log optimizado
     
     if (!activeClinic?.id || !currentDate) {
       console.log('[MobileAgendaView] Missing activeClinic ID or currentDate, skipping fetch');
@@ -206,7 +206,7 @@ function MobileAgendaViewContent({ showMainSidebar = false }: MobileAgendaViewPr
     try {
       // Para la vista móvil, solo cargamos las citas del día actual
       const url = `/api/appointments?clinicId=${activeClinic.id}&startDate=${format(currentDate, 'yyyy-MM-dd')}&endDate=${format(currentDate, 'yyyy-MM-dd')}`;
-      console.log('[MobileAgendaView] Fetching appointments from:', url);
+      // console.log('[MobileAgendaView] Fetching appointments from:', url); // Log optimizado
       
       const response = await fetch(url);
       
@@ -215,7 +215,7 @@ function MobileAgendaViewContent({ showMainSidebar = false }: MobileAgendaViewPr
       }
       
       const data = await response.json();
-      console.log('[MobileAgendaView] Received appointments:', data);
+      // console.log('[MobileAgendaView] Received appointments:', data); // Log optimizado
       
       // Procesar las citas para el formato esperado
       const processedAppointments = data.map((apt: any) => ({
@@ -243,7 +243,7 @@ function MobileAgendaViewContent({ showMainSidebar = false }: MobileAgendaViewPr
       }));
       
       setAppointments(processedAppointments);
-      console.log('[MobileAgendaView] Processed appointments:', processedAppointments);
+      // console.log('[MobileAgendaView] Processed appointments:', processedAppointments); // Log optimizado
     } catch (error) {
       console.error('[MobileAgendaView] Error fetching appointments:', error);
       setAppointmentError('Error al cargar las citas');
@@ -282,7 +282,7 @@ function MobileAgendaViewContent({ showMainSidebar = false }: MobileAgendaViewPr
     }
     // Prioridad 2: Plantilla vinculada
     if (activeClinic.linkedScheduleTemplate) {
-       console.log("[MobileAgendaView Config] Using linked template config");
+       // console.log("[MobileAgendaView Config] Using linked template config"); // Log optimizado
        return {
          openTime: activeClinic.linkedScheduleTemplate.openTime,
          closeTime: activeClinic.linkedScheduleTemplate.closeTime,
@@ -310,7 +310,7 @@ function MobileAgendaViewContent({ showMainSidebar = false }: MobileAgendaViewPr
       console.log("[MobileAgendaView Schedule] Using independent blocks.");
       blocksToUse = activeClinic.independentScheduleBlocks;
     } else if (activeClinic.linkedScheduleTemplate?.blocks && activeClinic.linkedScheduleTemplate.blocks.length > 0) {
-      console.log("[MobileAgendaView Schedule] Using template blocks.");
+      // console.log("[MobileAgendaView Schedule] Using template blocks."); // Log optimizado
       blocksToUse = activeClinic.linkedScheduleTemplate.blocks;
     } else {
       console.log("[MobileAgendaView Schedule] No blocks found.");
@@ -318,7 +318,7 @@ function MobileAgendaViewContent({ showMainSidebar = false }: MobileAgendaViewPr
     
     // Usar openTime/closeTime efectivos obtenidos de scheduleConfig
     const resultingSchedule = convertBlocksToWeekSchedule(blocksToUse, effectiveOpenTime, effectiveCloseTime);
-    console.log("[MobileAgendaView Schedule] Resulting correctSchedule:", JSON.stringify(resultingSchedule));
+    // console.log("[MobileAgendaView Schedule] Resulting correctSchedule:", JSON.stringify(resultingSchedule)); // Log optimizado
     return resultingSchedule;
   }, [activeClinic, effectiveOpenTime, effectiveCloseTime]); // <-- Añadir dependencias
 
@@ -340,7 +340,7 @@ function MobileAgendaViewContent({ showMainSidebar = false }: MobileAgendaViewPr
   }, [activeClinicCabins]);
 
   const appColors = useMemo(() => {
-    console.log("Actualizando colores con el tema:", theme);
+    // console.log("Actualizando colores con el tema:", theme); // Log optimizado
     return {
       primary: theme?.primaryColor || '#7c3aed',
       secondary: theme?.secondaryColor || '#8b5cf6',
@@ -355,17 +355,23 @@ function MobileAgendaViewContent({ showMainSidebar = false }: MobileAgendaViewPr
   const timeSlots = useMemo(() => {
     // NO generar timeSlots si no hay configuración válida
     if (!effectiveOpenTime || !effectiveCloseTime) {
-      console.log('[MobileAgendaView timeSlots] No hay configuración de horario válida, retornando array vacío');
+      // console.log('[MobileAgendaView timeSlots] No hay configuración de horario válida, retornando array vacío'); // Log optimizado
       return [];
     }
-    console.log(`[MobileAgendaView timeSlots] Generating slots with effectiveOpenTime: ${effectiveOpenTime}, effectiveCloseTime: ${effectiveCloseTime}, slotDuration: ${slotDuration}`);
+    // console.log(`[MobileAgendaView timeSlots] Generating slots with effectiveOpenTime: ${effectiveOpenTime}, effectiveCloseTime: ${effectiveCloseTime}, slotDuration: ${slotDuration}`); // Log optimizado
     return getTimeSlots(effectiveOpenTime, effectiveCloseTime, slotDuration); // Usar valores efectivos
   }, [effectiveOpenTime, effectiveCloseTime, slotDuration]);
 
   // Efecto para cargar servicios o manejar errores
   useEffect(() => {
     if (isLoading) {
-      console.info("Cargando datos de clínica...");
+      // console.info("Cargando datos de clínica..."); // Log optimizado
+      return;
+    }
+    
+    // ✅ ESPERAR A QUE LA INICIALIZACIÓN ESTÉ COMPLETA
+    if (!isInitialized) {
+      // console.info("Esperando inicialización de clínicas..."); // Log optimizado
       return;
     }
     
@@ -378,7 +384,7 @@ function MobileAgendaViewContent({ showMainSidebar = false }: MobileAgendaViewPr
     }
 
     // Continuar con la lógica normal...
-  }, [isLoading, activeClinic, currentDate]);
+  }, [isLoading, isInitialized, activeClinic, currentDate]);
 
   const toggleDrawer = () => setIsDrawerOpen(!isDrawerOpen)
 
@@ -498,23 +504,23 @@ function MobileAgendaViewContent({ showMainSidebar = false }: MobileAgendaViewPr
 
   useEffect(() => {
     // <<< LOG AL INICIO DEL useEffect >>>
-    console.log("[MobileAgendaView - useEffect] Initializing date check. activeClinic:", activeClinic ? activeClinic.id : 'null', "correctSchedule:", correctSchedule ? 'Exists' : 'null');
+    // console.log("[MobileAgendaView - useEffect] Initializing date check. activeClinic:", activeClinic ? activeClinic.id : 'null', "correctSchedule:", correctSchedule ? 'Exists' : 'null'); // Log optimizado
 
     if (!activeClinic || !correctSchedule) {
-      console.log("[MobileAgendaView - useEffect] Waiting for activeClinic and correctSchedule to load before setting initial date.");
+      // console.log("[MobileAgendaView - useEffect] Waiting for activeClinic and correctSchedule to load before setting initial date."); // Log optimizado
       return; // Esperar a que la clínica y el horario estén cargados
     }
 
     const today = new Date();
     const todayIsValid = isValid(today);
     // <<< LOG ANTES DE isDayAvailable >>>
-    console.log(`[MobileAgendaView - useEffect] Initializing date. Today: ${today} Is valid: ${todayIsValid}`);
-    console.log(`[MobileAgendaView - useEffect] Using correctSchedule:`, JSON.stringify(correctSchedule));
+    // console.log(`[MobileAgendaView - useEffect] Initializing date. Today: ${today} Is valid: ${todayIsValid}`); // Log optimizado
+    // console.log(`[MobileAgendaView - useEffect] Using correctSchedule:`, JSON.stringify(correctSchedule)); // Log optimizado
 
     if (todayIsValid && isDayAvailable(today)) {
       setCurrentDate(today);
       // <<< LOG FECHA ACTUAL ESTABLECIDA >>>
-      console.log(`[MobileAgendaView - useEffect] Today is available. Set current date to: ${format(today, 'yyyy-MM-dd')}`);
+      // console.log(`[MobileAgendaView - useEffect] Today is available. Set current date to: ${format(today, 'yyyy-MM-dd')}`); // Log optimizado
     } else if (todayIsValid) {
       // Comprobar si ALGÚN día de la semana está abierto en el horario
       const isAnyDayOpen = Object.values(correctSchedule).some(day => day.isOpen);
@@ -819,8 +825,8 @@ function MobileAgendaViewContent({ showMainSidebar = false }: MobileAgendaViewPr
 
   // Contenedor de la vista de calendario con mejor manejo de errores
   const renderCalendarView = () => {
-      // <<< LOG PARA VER TIMESLOTS USADOS >>>
-      console.log("[MobileAgendaView - renderCalendarView] Rendering with timeSlots:", timeSlots);
+      // <<< LOG ELIMINADO PARA OPTIMIZAR RENDIMIENTO >>>
+      // console.log("[MobileAgendaView - renderCalendarView] Rendering with timeSlots:", timeSlots);
       
       // Mostrar mensaje cuando no hay configuración de horario
       if (timeSlots.length === 0) {

@@ -39,7 +39,7 @@ export function getTimeSlots(startTime: string, endTime: string, interval = 15):
   const startMinutes = startHour * 60 + startMinute
   const endMinutes = endHour * 60 + endMinute
 
-  console.log(`Generating time slots from ${startTime} to ${endTime} (${startMinutes} to ${endMinutes} minutes)`)
+  // console.log(`Generating time slots from ${startTime} to ${endTime} (${startMinutes} to ${endMinutes} minutes)`) // Log optimizado
 
   // Generar slots de tiempo INCLUYENDO la hora de cierre
   for (let minutes = startMinutes; minutes <= endMinutes; minutes += interval) {
@@ -48,7 +48,7 @@ export function getTimeSlots(startTime: string, endTime: string, interval = 15):
     slots.push(`${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}`)
   }
 
-  console.log(`Generated ${slots.length} time slots: ${slots[0]} to ${slots[slots.length - 1]}`)
+  // console.log(`Generated ${slots.length} time slots: ${slots[0]} to ${slots[slots.length - 1]}`) // Log optimizado
   return slots
 }
 

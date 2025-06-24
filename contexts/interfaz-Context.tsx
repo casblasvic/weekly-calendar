@@ -164,7 +164,7 @@ export function InterfazProvider({ children }: { children: ReactNode }) {
         // Simular inicialización asíncrona si fuera necesario
         // Por ahora, simplemente lo marcamos como inicializado
         setInitialized(true);
-        console.log("[InterfazProvider] Context initialized."); // Log para confirmar
+        // console.log("[InterfazProvider] Context initialized."); // Log eliminado para reducir noise
   }, []); // <--- Se ejecuta solo una vez al montar
 
   // Crear un objeto con todas las funciones del servicio de datos
@@ -448,7 +448,7 @@ export function InterfazProvider({ children }: { children: ReactNode }) {
      return null; // O un componente <LoadingSpinner /> si prefieres
   }
 
-  console.log("[InterfazProvider] Rendering children with context."); // Log
+  // console.log("[InterfazProvider] Rendering children with context."); // Log eliminado para reducir noise
 
   return (
     <InterfazContext.Provider value={interfaz}>

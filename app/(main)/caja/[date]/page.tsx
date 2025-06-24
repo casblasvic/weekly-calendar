@@ -41,25 +41,28 @@ interface CashPageProps {
 }
 
 export default function CashPage({ params }: CashPageProps) {
+  const { t } = useTranslation(['cash', 'common']);
+  const { activeClinic, isInitialized } = useClinic();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { t } = useTranslation();
-  const { activeClinic } = useClinic();
   const { toast } = useToast();
 
-  const { date } = use(params); // Unwrap
+  // Unwrap params al principio
+  const { date } = use(params);
   const returnToQueryParam = searchParams.get('returnTo');
   const clinicIdFromParams = searchParams.get('clinicId');
   const sessionIdFromParams = searchParams.get('sessionId');
   const clinicId = clinicIdFromParams || activeClinic?.id;
 
-  const { data: sessionData, isLoading, isError, refetch } = useDailyCashSessionQuery(clinicId, date, sessionIdFromParams ?? undefined);
-  const clinicIdQueryParam = searchParams.get('clinicId');
-  const returnToPath = `/caja/${date}${clinicIdQueryParam ? `?clinicId=${clinicIdQueryParam}` : ''}`;
-  const session = sessionData; // Para no renombrar en todo el código por ahora
+  // ✅ TODOS LOS HOOKS AL PRINCIPIO - antes de early returns
+  const { data: sessionData, isLoading, isError, refetch } = useDailyCashSessionQuery(
+    clinicId, 
+    date, 
+    sessionIdFromParams ?? undefined,
+    { enabled: !!clinicId && isInitialized }
+  );
 
   const [closeFormData, setCloseFormData] = useState<Partial<CloseCashSessionPayload>>({});
-
   const closeSessionMutation = useCloseCashSessionMutation();
   const reopenMutation = useReopenCashSessionMutation();
   const reconcileMutation = useReconcileCashSessionMutation();
@@ -69,14 +72,28 @@ export default function CashPage({ params }: CashPageProps) {
   const [drawerFilters, setDrawerFilters] = useState<{methodType: PaymentMethodType | null, posTerminalId?: string|null}>({methodType: null});
   const [isVerifyDrawerOpen, setIsVerifyDrawerOpen] = useState(false);
 
-  const { data: pendingPayments = [], refetch: refetchPending } = usePendingPaymentVerificationsQuery({ clinicId, sessionId: session?.id || undefined, methodType: drawerFilters.methodType || undefined, posTerminalId: drawerFilters.posTerminalId });
+  const session = sessionData; // Para no renombrar en todo el código por ahora
+  const { data: pendingPayments = [], refetch: refetchPending } = usePendingPaymentVerificationsQuery({ 
+    clinicId, 
+    sessionId: session?.id || undefined, 
+    methodType: drawerFilters.methodType || undefined, 
+    posTerminalId: drawerFilters.posTerminalId 
+  }, { enabled: !!session?.id && isInitialized });
+
   const verifyMutation = useVerifyPaymentMutation();
 
-  // const { data: totalsData, isLoading: isLoadingTotals } = useCashSessionTotalsQuery(session?.id); // Removed duplicate declaration
+  const { data: totals, isFetching: isTotalsFetching } = useCashSessionTotalsQuery(
+    session?.id, 
+    { enabled: !!session?.id && isInitialized }
+  );
 
-  const { data: totals, isFetching: isTotalsFetching } = useCashSessionTotalsQuery(session?.id, { enabled: !!session?.id });
-  const totalsData = totals as import('@/lib/hooks/use-cash-session-totals').CashSessionTotalsResponse | undefined; // This is the totalsData to be used
+  const [countedByPos, setCountedByPos] = useState<Record<string,string>>({});
+  const [countedTransfer, setCountedTransfer] = useState('');
+  const [countedCheck, setCountedCheck] = useState('');
 
+  const {data:logData=[]}=useChangeLogs('CASH_SESSION',session?.id);
+
+  // Hooks useMemo y useEffect
   const totalFacturado = useMemo(() => {
     if (!session || !session.ticketsAccountedInSession) return 0;
     return session.ticketsAccountedInSession.reduce((sum, ticket) => {
@@ -94,17 +111,58 @@ export default function CashPage({ params }: CashPageProps) {
     }, 0);
   }, [session]);
 
-  const [countedByPos, setCountedByPos] = useState<Record<string,string>>({});
-  const [countedTransfer, setCountedTransfer] = useState('');
-  const [countedCheck, setCountedCheck] = useState('');
-  // notesUI state removed, notes are now handled via closeFormData.notes
-  // directCashPayoutsUI state removed, will be a derived const using closeFormData.directCashPayouts
+  const paymentsForDrawer = useMemo(()=>{
+    if(!session) return [] as any[];
+    const arr:any[] = [];
+
+    // Siempre procesar pagos registrados
+    session.ticketsAccountedInSession?.forEach(ticket=>{
+      ticket.payments?.forEach(pay=>{
+        if(drawerFilters.methodType && pay.paymentMethodDefinition.type!==drawerFilters.methodType) return;
+        if(drawerFilters.posTerminalId && (pay as any).posTerminalId!==drawerFilters.posTerminalId) return;
+        arr.push({
+          ticketId: ticket.id,
+          ticketNumber: ticket.ticketNumber,
+          clientName: ticket.person ? `${ticket.person.firstName} ${ticket.person.lastName||''}`.trim(): '',
+          posName: pay.posTerminal?.name || '—',
+          amount: pay.amount,
+          methodName: pay.paymentMethodDefinition.name,
+          paymentId: pay.id,
+        });
+      });
+    });
+
+    // Para pagos aplazados: si no hay Payment rows, mostrar dueAmount
+    if(drawerFilters.methodType===PaymentMethodType.DEFERRED_PAYMENT && arr.length===0){
+      session.ticketsAccountedInSession?.forEach(ticket=>{
+        const paid = ticket.paidAmountDirectly ?? 0;
+        const deferredAmount = (ticket.dueAmount !== null && ticket.dueAmount !== undefined) ? ticket.dueAmount : (ticket.finalAmount - paid);
+        if(deferredAmount>0.0001){
+          arr.push({
+            ticketId: ticket.id,
+            ticketNumber: ticket.ticketNumber,
+            clientName: ticket.person ? `${ticket.person.firstName} ${ticket.person.lastName||''}`.trim(): '',
+            posName: '—',
+            amount: deferredAmount,
+            methodName: t('cash.summary.deferredTotal','Pago aplazado'),
+            paymentId: ticket.id,
+          });
+        }
+      });
+    }
+    return arr;
+  },[session, drawerFilters, t]);
+
+  const hasCashPayments = useMemo(()=>{
+    if(!session) return false;
+    return session.ticketsAccountedInSession?.some(ticket=>ticket.payments?.some(p=>p.paymentMethodDefinition.type===PaymentMethodType.CASH));
+  },[session]);
 
   // Determinar estado de la sesión para lógicas tempranas
   const currentStatus = session?.status;
   const isSessionOpen = currentStatus === CashSessionStatus.OPEN;
 
-  // Sincronizar countedCard total según recuento por TPV
+  // useEffect hooks
   useEffect(() => {
     const total = Object.values(countedByPos).reduce((sum, v) => sum + (parseFloat(v) || 0), 0);
     setCloseFormData(prev => ({ ...prev, countedCard: total }));
@@ -154,16 +212,12 @@ export default function CashPage({ params }: CashPageProps) {
       } else if (!isSessionOpen) { // Only clear if session is closed and no value from session
         setCountedTransfer('');
       }
-      // If session is open and session.countedBankTransfer is null,
-      // the CountedTransfer input will be empty unless the user types.
 
       if (session.countedCheck !== null && typeof session.countedCheck !== 'undefined') {
         setCountedCheck(getStringFromDecimalOrNumber(session.countedCheck));
       } else if (!isSessionOpen) { // Only clear if session is closed and no value from session
         setCountedCheck('');
       }
-      // If session is open and session.countedCheck is null,
-      // the CountedCheck input will be empty unless the user types.
 
     } else {
       // No session, reset all form data and related states
@@ -182,18 +236,22 @@ export default function CashPage({ params }: CashPageProps) {
       setCountedTransfer('');
       setCountedCheck('');
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, isSessionOpen, activeClinic?.currency]);
+
+  // Variables calculadas
+  const clinicIdQueryParam = searchParams.get('clinicId');
+  const returnToPath = `/caja/${date}${clinicIdQueryParam ? `?clinicId=${clinicIdQueryParam}` : ''}`;
+  const totalsData = totals as import('@/lib/hooks/use-cash-session-totals').CashSessionTotalsResponse | undefined;
 
   const formatCurrency = (val: number) => new Intl.NumberFormat('es-ES', { style: 'currency', currency: activeClinic?.currency || 'EUR' }).format(val);
 
-  // --- NUEVOS CÁLCULOS BASADOS EN totals (totales por TPV) ---
-  // Solo mostramos totales si:
-  // 1) Existe un sessionId válido
-  // 2) Ya tenemos datos (totalsData)
-  // 3) La query ha terminado de cargar para ese sessionId
-  const cardTotalsAvailable = !!session?.id && !!totalsData && !isTotalsFetching;
+  const formatDateClinic = (d:Date)=>{
+    const tz = (activeClinic as any)?.country?.timezone || undefined;
+    return new Intl.DateTimeFormat('es-ES',{dateStyle:'short', timeStyle:'short', timeZone: tz}).format(d);
+  }
 
+  // --- NUEVOS CÁLCULOS BASADOS EN totals (totales por TPV) ---
+  const cardTotalsAvailable = !!session?.id && !!totalsData && !isTotalsFetching;
   const totalCardAmountFromTotals = cardTotalsAvailable ? totalsData!.cardByPos.reduce((sum, pos) => sum + pos.expectedTotal, 0) : null;
   const cardDetailsFromTotals = cardTotalsAvailable ? totalsData!.cardByPos.flatMap(pos => [
     { label: `${t('cash.summary.terminal', 'TPV')}: ${pos.posName}`, value: pos.expectedTotal, isHeader: true },
@@ -209,62 +267,59 @@ export default function CashPage({ params }: CashPageProps) {
 
   const cardHighlight = cardTotalsAvailable ? totalsData!.cardByPos.some(pos => pos.expectedDeferred > 0) : false;
 
-  // --- FIN NUEVOS CÁLCULOS ---
-
-  const paymentsForDrawer = React.useMemo(()=>{
-    if(!session) return [] as any[];
-    const arr:any[] = [];
-
-    // Siempre procesar pagos registrados
-    session.ticketsAccountedInSession?.forEach(ticket=>{
-      ticket.payments?.forEach(pay=>{
-        if(drawerFilters.methodType && pay.paymentMethodDefinition.type!==drawerFilters.methodType) return;
-        if(drawerFilters.posTerminalId && (pay as any).posTerminalId!==drawerFilters.posTerminalId) return;
-        arr.push({
-          ticketId: ticket.id,
-          ticketNumber: ticket.ticketNumber,
-          clientName: ticket.person ? `${ticket.person.firstName} ${ticket.person.lastName||''}`.trim(): '',
-          posName: pay.posTerminal?.name || '—',
-          amount: pay.amount,
-          methodName: pay.paymentMethodDefinition.name,
-          paymentId: pay.id,
-        });
-      });
-    });
-
-    // Para pagos aplazados: si no hay Payment rows, mostrar dueAmount
-    if(drawerFilters.methodType===PaymentMethodType.DEFERRED_PAYMENT && arr.length===0){
-      session.ticketsAccountedInSession?.forEach(ticket=>{
-        const paid = ticket.paidAmountDirectly ?? 0;
-        const deferredAmount = (ticket.dueAmount !== null && ticket.dueAmount !== undefined) ? ticket.dueAmount : (ticket.finalAmount - paid);
-        if(deferredAmount>0.0001){
-          arr.push({
-            ticketId: ticket.id,
-            ticketNumber: ticket.ticketNumber,
-            clientName: ticket.person ? `${ticket.person.firstName} ${ticket.person.lastName||''}`.trim(): '',
-            posName: '—',
-            amount: deferredAmount,
-            methodName: t('cash.summary.deferredTotal','Pago aplazado'),
-            paymentId: ticket.id,
-          });
-        }
-      });
-    }
-    return arr;
-  },[session, drawerFilters]);
-
   const cashPaymentsCount = paymentsForDrawer.filter(p=>p.methodName && drawerFilters.methodType===PaymentMethodType.CASH).length;
 
-  const hasCashPayments = React.useMemo(()=>{
-    if(!session) return false;
-    return session.ticketsAccountedInSession?.some(ticket=>ticket.payments?.some(p=>p.paymentMethodDefinition.type===PaymentMethodType.CASH));
-  },[session]);
+  const hasPendingTransfer = pendingPayments.some(p=>p.paymentMethodDefinition.type==='BANK_TRANSFER');
+  const hasPendingCheck = pendingPayments.some(p=>p.paymentMethodDefinition.type==='CHECK');
 
-  const {data:logData=[]}=useChangeLogs('CASH_SESSION',session?.id);
+  // Valores para UI, considerando que `session` puede ser null inicialmente
+  const openingBalanceCash = session?.openingBalanceCash ?? 0;
+  const serverExpectedCash = session?.expectedCash ?? 0;
+  const paymentTotals: CashSessionPaymentTotal[] = session?.paymentTotals || [];
+  const ticketsInSession: CashSessionTicket[] = session?.ticketsAccountedInSession || [];
 
-  const formatDateClinic = (d:Date)=>{
-    const tz = (activeClinic as any)?.country?.timezone || undefined;
-    return new Intl.DateTimeFormat('es-ES',{dateStyle:'short', timeStyle:'short', timeZone: tz}).format(d);
+  // Calculate true total for cash payments by summing all relevant entries
+  const totalCashAmount = paymentTotals
+    .filter(pt => pt.paymentMethodType === PaymentMethodType.CASH)
+    .reduce((sum, pt) => sum + (pt.totalAmount || 0), 0);
+
+  const totalCashDirectAmount = paymentTotals
+    .filter(pt => pt.paymentMethodType === PaymentMethodType.CASH)
+    .reduce((sum, pt) => sum + (pt.directAmount || 0), 0);
+
+  const totalCashDebtPaymentAmount = paymentTotals
+    .filter(pt => pt.paymentMethodType === PaymentMethodType.CASH)
+    .reduce((sum, pt) => sum + (pt.debtPaymentAmount || 0), 0);
+
+  // Para los inputs, usar valores de la sesión si está cerrada/reconciliada, o del form si está abierta
+  const countedCashUI = isSessionOpen ? (closeFormData.countedCash ?? '') : (session?.countedCash ?? '');
+  const manualCashInputUI = isSessionOpen ? (closeFormData.manualCashInput?.toString() ?? '') : (session?.manualCashInput?.toString() ?? '');
+  const cashExpensesUI = isSessionOpen ? (closeFormData.cashExpenses?.toString() ?? '') : '';
+  const cashCardExpectedAmount = totalCashAmount;
+  const cashCardDifference = (parseFloat(countedCashUI.toString() || '0')) - cashCardExpectedAmount;
+
+  // New live calculations for the sidebar
+  const totalCashPaymentAmount = paymentTotals.find(pt => pt.paymentMethodType === PaymentMethodType.CASH)?.totalAmount || 0;
+  
+  const liveExpectedCashInDrawer = 
+    (session?.openingBalanceCash ?? 0) + 
+    (parseFloat(closeFormData.manualCashInput?.toString() ?? '0') || 0) + 
+    totalCashPaymentAmount - 
+    (parseFloat(closeFormData.cashExpenses?.toString() ?? '0') || 0);
+
+  const liveDifferenceCash = (closeFormData.countedCash ?? 0) - liveExpectedCashInDrawer;
+  const transferDifference = (parseFloat(countedTransfer) || 0) - transferAmount;
+  const checkDifference = (parseFloat(countedCheck) || 0) - checkAmount;
+  const cashWithdrawalUI = isSessionOpen ? (closeFormData.cashWithdrawals ?? '') : (session?.cashWithdrawals ?? '');
+  const nextDayOpeningCashUI = isSessionOpen ? ((parseFloat(countedCashUI.toString()) || 0) - (parseFloat(cashWithdrawalUI.toString()) || 0)) : ((session?.countedCash ?? 0) - (session?.cashWithdrawals ?? 0));
+
+  // ✅ EARLY RETURNS AL FINAL - después de todos los hooks
+  if (!isInitialized) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Skeleton className="w-64 h-32" />
+      </div>
+    );
   }
 
   if (isLoading) {
@@ -364,58 +419,6 @@ export default function CashPage({ params }: CashPageProps) {
       setIsClosingSession(false);
     }
   };
-
-  // Valores para UI, considerando que `session` puede ser null inicialmente
-  const openingBalanceCash = session?.openingBalanceCash ?? 0;
-  const serverExpectedCash = session?.expectedCash ?? 0; // Renamed to avoid conflict, used for initial/closed state
-  const paymentTotals: CashSessionPaymentTotal[] = session?.paymentTotals || [];
-  console.log('[FE DEBUG] Raw session.paymentTotals:', JSON.stringify(session?.paymentTotals, null, 2));
-  const ticketsInSession: CashSessionTicket[] = session?.ticketsAccountedInSession || [];
-
-  // Calculate true total for cash payments by summing all relevant entries
-  const totalCashAmount = paymentTotals
-    .filter(pt => pt.paymentMethodType === PaymentMethodType.CASH)
-    .reduce((sum, pt) => sum + (pt.totalAmount || 0), 0);
-
-  const totalCashDirectAmount = paymentTotals
-    .filter(pt => pt.paymentMethodType === PaymentMethodType.CASH)
-    .reduce((sum, pt) => sum + (pt.directAmount || 0), 0);
-
-  const totalCashDebtPaymentAmount = paymentTotals
-    .filter(pt => pt.paymentMethodType === PaymentMethodType.CASH)
-    .reduce((sum, pt) => sum + (pt.debtPaymentAmount || 0), 0);
-
-  console.log('[FE DEBUG] Calculated totalCashAmount:', totalCashAmount);
-  console.log('[FE DEBUG] Calculated totalCashDirectAmount:', totalCashDirectAmount);
-  console.log('[FE DEBUG] Calculated totalCashDebtPaymentAmount:', totalCashDebtPaymentAmount);
-
-  // Para los inputs, usar valores de la sesión si está cerrada/reconciliada, o del form si está abierta
-  const countedCashUI = isSessionOpen ? (closeFormData.countedCash ?? '') : (session?.countedCash ?? '');
-  const manualCashInputUI = isSessionOpen ? (closeFormData.manualCashInput?.toString() ?? '') : (session?.manualCashInput?.toString() ?? '');
-  const cashExpensesUI = isSessionOpen ? (closeFormData.cashExpenses?.toString() ?? '') : ''; // Assuming cashExpenses are not stored directly on session for closed view, or adjust if they are
-  const cashCardExpectedAmount = totalCashAmount;
-  const cashCardDifference = (parseFloat(countedCashUI.toString() || '0')) - cashCardExpectedAmount;
-  // differenceCashUI (sidebar) should reflect the specific cash reconciliation, not the overall session difference including opening balance for this display.
-  // This specific cashCardDifference is for the summary card, which is now removed for CASH method.
-  // const differenceCashUI_old = isSessionOpen ? cashCardDifference : (session?.differenceCash ?? 0);
-
-  // New live calculations for the sidebar
-  const totalCashPaymentAmount = paymentTotals.find(pt => pt.paymentMethodType === PaymentMethodType.CASH)?.totalAmount || 0;
-  
-  const liveExpectedCashInDrawer = 
-    (session?.openingBalanceCash ?? 0) + 
-    (parseFloat(closeFormData.manualCashInput?.toString() ?? '0') || 0) + 
-    totalCashPaymentAmount - 
-    (parseFloat(closeFormData.cashExpenses?.toString() ?? '0') || 0);
-
-  const liveDifferenceCash = (closeFormData.countedCash ?? 0) - liveExpectedCashInDrawer;
-  const transferDifference = (parseFloat(countedTransfer) || 0) - transferAmount;
-  const checkDifference = (parseFloat(countedCheck) || 0) - checkAmount;
-  const cashWithdrawalUI = isSessionOpen ? (closeFormData.cashWithdrawals ?? '') : (session?.cashWithdrawals ?? '');
-  const nextDayOpeningCashUI = isSessionOpen ? ((parseFloat(countedCashUI.toString()) || 0) - (parseFloat(cashWithdrawalUI.toString()) || 0)) : ((session?.countedCash ?? 0) - (session?.cashWithdrawals ?? 0));
-
-  const hasPendingTransfer = pendingPayments.some(p=>p.paymentMethodDefinition.type==='BANK_TRANSFER');
-  const hasPendingCheck = pendingPayments.some(p=>p.paymentMethodDefinition.type==='CHECK');
 
   return (
     <div className="flex flex-col h-full">

@@ -29,6 +29,7 @@ interface ClinicContextType {
   setActiveClinicById: (id: string) => Promise<void>
   clinics: PrismaClinic[]
   isLoading: boolean
+  isInitialized: boolean
   error: string | null
   refetchClinics: () => Promise<void>
   getAllClinicas: () => Promise<PrismaClinic[]>
@@ -51,6 +52,7 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [activeClinicCabins, setActiveClinicCabins] = useState<Cabin[] | null>(null)
   const [isLoadingClinics, setIsLoadingClinics] = useState(true)
   const [isLoadingCabinsContext, setIsLoadingCabinsContext] = useState(false)
+  const [isInitialized, setIsInitialized] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
   const { data: session, status } = useSession();
@@ -91,9 +93,9 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
                const nextWeek = getWeekKey(currentDate, +1);
                const today = getDayKey(currentDate);
             
-            console.log(`[ClinicContext] 🚀 Prefetching agenda para clínica ${clinicIdStr}:`, {
-              currentWeek, prevWeek, nextWeek, today
-            });
+            // console.log(`[ClinicContext] 🚀 Prefetching agenda para clínica ${clinicIdStr}:`, { // Log optimizado
+            //   currentWeek, prevWeek, nextWeek, today
+            // });
             
             // ✅ PREFETCH SLIDING WINDOW (3 semanas) + DÍA ACTUAL
             const prefetchPromises = [
@@ -131,7 +133,7 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             
                            Promise.all(prefetchPromises)
                  .then(() => {
-                   console.log(`[ClinicContext] ✅ Prefetch completado para clínica ${clinicIdStr}`);
+                   // console.log(`[ClinicContext] ✅ Prefetch completado para clínica ${clinicIdStr}`); // Log optimizado
                  })
                  .catch(error => {
                    console.error(`[ClinicContext] ❌ Error en prefetch para clínica ${clinicIdStr}:`, error);
@@ -161,7 +163,7 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
     // Asegurarse de que el ID es una cadena
     const idToFetch = String(clinicId);
-    console.log(`[ClinicContext] fetchAndUpdateDetailedClinic - START - Fetching details for clinic: ${idToFetch}`);
+    // console.log(`[ClinicContext] fetchAndUpdateDetailedClinic - START - Fetching details for clinic: ${idToFetch}`); // Log optimizado
     setIsLoadingDetails(true);
     try {
       setError(null);
@@ -192,6 +194,11 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setError(err instanceof Error ? err.message : `Error fetching details for clinic ${idToFetch}`);
     } finally {
       setIsLoadingDetails(false);
+      // ✅ MARCAR COMO INICIALIZADO cuando se completa la carga de detalles
+      if (!isInitialized) {
+        console.log(`[ClinicContext] fetchAndUpdateDetailedClinic - Clinic details loaded, marking as initialized.`);
+        setIsInitialized(true);
+      }
       console.log(`[ClinicContext] fetchAndUpdateDetailedClinic - END - Finished for clinic: ${idToFetch}`);
     }
   }, [internalSetActiveClinic, setError, status]);
@@ -260,22 +267,30 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         internalSetActiveClinic(null);
         setActiveClinicCabins(null);
         setIsLoadingClinics(false);
+        setIsInitialized(true); // ✅ Marcar como inicializado cuando no hay autenticación
         setError(null);
     } else {
         setIsLoadingClinics(true);
+        setIsInitialized(false); // ✅ Resetear inicialización mientras se determina el estado
     }
   }, [fetchClinics, status, internalSetActiveClinic]);
 
   useEffect(() => {
-    console.log("[ClinicContext] useEffect[clinics, isLoading] - Checking active clinic status...");
+    // console.log("[ClinicContext] useEffect[clinics, isLoading] - Checking active clinic status..."); // Log optimizado
     
     // Si está cargando o no hay clínicas, no hacer nada aún
     if (isLoadingClinics || !clinics || clinics.length === 0) {
-      console.log(`[ClinicContext] useEffect - Skipping activation logic (isLoading: ${isLoadingClinics}, clinics#: ${clinics?.length})`);
+      // console.log(`[ClinicContext] useEffect - Skipping activation logic (isLoading: ${isLoadingClinics}, clinics#: ${clinics?.length})`); // Log optimizado
       // Si no hay clínicas pero sí una activa, limpiarla
       if (!isLoadingClinics && clinics?.length === 0 && activeClinic) {
           console.log("[ClinicContext] useEffect - No clinics available, clearing active clinic.");
           internalSetActiveClinic(null);
+      }
+      
+      // ✅ MARCAR COMO INICIALIZADO si no está cargando y no hay clínicas
+      if (!isLoadingClinics && clinics?.length === 0) {
+        console.log("[ClinicContext] useEffect - No clinics available, marking as initialized.");
+        setIsInitialized(true);
       }
       return; 
     }
@@ -312,6 +327,11 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           } else if (activeClinic) { // Verificar que activeClinic no sea null aquí
               // Simplemente registrar que ya está activa y con detalles (o al menos, la carga finalizó)
               console.log(`[ClinicContext] useEffect - Clinic ${clinicIdToFetch} is already active. Load finished (details presence checked elsewhere).`);
+              // ✅ MARCAR COMO INICIALIZADO cuando la clínica ya está activa y cargada
+              if (!isInitialized) {
+                console.log(`[ClinicContext] useEffect - Clinic ${clinicIdToFetch} already active, marking as initialized.`);
+                setIsInitialized(true);
+              }
           }
       }
     } 
@@ -321,9 +341,14 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       if(activeClinic) { // Solo limpiar si había una activa antes
          internalSetActiveClinic(null); 
       }
+      // ✅ MARCAR COMO INICIALIZADO incluso si no hay clínica para activar
+      if (!isInitialized) {
+        console.log("[ClinicContext] useEffect - No clinic to activate, marking as initialized.");
+        setIsInitialized(true);
+      }
     }
 
-  }, [clinics, isLoadingClinics, activeClinic?.id, internalSetActiveClinic, fetchAndUpdateDetailedClinic, isLoadingDetails]); // << dependencia activeClinic eliminada, activeClinic.id ya está
+  }, [clinics, isLoadingClinics, activeClinic?.id, internalSetActiveClinic, fetchAndUpdateDetailedClinic, isLoadingDetails, isInitialized]); // Incluir isInitialized
 
   // --- Simplificar getClinicaById --- 
   const getClinicaById = useCallback(async (id: string): Promise<ClinicaApiOutput | null> => {
@@ -589,7 +614,7 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     try {
       setError(null);
       
-      console.log(`[ClinicContext] fetchCabinsForClinic - Fetching cabins for clinic: ${clinicId} and systemId: ${systemId}`);
+      // console.log(`[ClinicContext] fetchCabinsForClinic - Fetching cabins for clinic: ${clinicId} and systemId: ${systemId}`); // Log optimizado
       const response = await fetch(`/api/clinics/${clinicId}/cabins?systemId=${systemId}`);
       if (!response.ok) {
         if (response.status === 404) {
@@ -602,7 +627,7 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         }
       } else {
         const cabinsData: Cabin[] = await response.json();
-        console.log(`[ClinicContext] fetchCabinsForClinic - Received cabins data for clinic ${clinicId}:`, cabinsData);
+        // console.log(`[ClinicContext] fetchCabinsForClinic - Received cabins data for clinic ${clinicId}:`, cabinsData); // Log optimizado 
         setActiveClinicCabins(cabinsData);
       }
     } catch (err) {
@@ -648,7 +673,7 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   // --- Log para verificar cambios en activeClinicCabins ---
   useEffect(() => {
-    console.log("ClinicProvider - Estado activeClinicCabins actualizado:", activeClinicCabins);
+    // console.log("ClinicProvider - Estado activeClinicCabins actualizado:", activeClinicCabins); // Log optimizado
   }, [activeClinicCabins]);
   // --- Fin Log ---
 
@@ -659,6 +684,7 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setActiveClinicById,
     clinics,
     isLoading: isLoadingClinics || isLoadingDetails || isLoadingCabinsContext,
+    isInitialized,
     error,
     refetchClinics: exposedRefetchClinics,
     getAllClinicas: async () => clinics,
@@ -679,6 +705,7 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     isLoadingClinics,
     isLoadingDetails,
     isLoadingCabinsContext,
+    isInitialized,
     error,
     exposedRefetchClinics,
     getClinicaById,

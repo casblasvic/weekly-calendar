@@ -151,7 +151,7 @@ export default function GestionFamilias() {
     }
     console.log("[familias/page.tsx] useMemo resultado filteredAndSortedFamilies:", JSON.stringify(sorted));
     return sorted;
-  }, [filteredFamilies, sortConfig]);
+  }, [filteredFamilies, sortConfig, families]);
 
   // DEBUG: Renderizar directamente desde el estado 'families' para probar - REVERTIDO
   // const familiesToRender = Array.isArray(families) ? families : [];

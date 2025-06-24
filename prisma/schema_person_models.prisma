@@ -1,132 +1,69 @@
-// Nuevos modelos para la migración de Person - Fase 1
-// IMPORTANTE: Estos modelos se agregarán al final del schema.prisma principal
+// ===================================================================
+// DOCUMENTACIÓN DE REFERENCIA: Modelos Person
+// ===================================================================
+// IMPORTANTE: Estos modelos están IMPLEMENTADOS en prisma/schema.prisma
+// Este archivo sirve como documentación y referencia de diseño.
+// NO contiene definiciones ejecutables para evitar duplicaciones.
 
-model Person {
-  id                      String                   @id @default(cuid())
-  firstName               String
-  lastName                String
-  email                   String?
-  phone                   String?
-  birthDate               DateTime?
-  gender                  String?
-  address                 String?
-  city                    String?
-  postalCode              String?
-  stateProvince           String?
-  countryIsoCode          String?
-  nationalId              String?
-  nationalIdType          String?
-  passportNumber          String?
-  passportCountry         String?
-  taxId                   String?
-  notes                   String?
-  createdAt               DateTime                 @default(now())
-  updatedAt               DateTime                 @updatedAt
-  systemId                String
+/*
+MODELO PERSON - Implementado en schema.prisma líneas 2541-2580
+================
+Campos principales:
+- id, firstName, lastName (requeridos)
+- email, phone, birthDate, gender (opcionales)
+- address, city, postalCode, stateProvince, countryIsoCode (geográficos)
+- nationalId, nationalIdType, passportNumber, passportCountry, taxId (identificación)
+- notes (texto libre)
+- systemId (relación con System)
+- createdAt, updatedAt (auditoría)
 
-  // Relaciones
-  system                  System                   @relation(fields: [systemId], references: [id], onDelete: Cascade)
-  functionalRoles         PersonFunctionalRole[]
+Relaciones:
+- system: System (many-to-one)
+- functionalRoles: PersonFunctionalRole[] (one-to-many)
+- appointments: Appointment[] (one-to-many)
+- tickets: Ticket[] (one-to-many)
+- invoices: Invoice[] (one-to-many) 
+- timeLogs: TimeLog[] (one-to-many)
+- bonoInstances: BonoInstance[] (one-to-many)
+- packageInstances: PackageInstance[] (one-to-many)
+- loyaltyLedgers: LoyaltyLedger[] (one-to-many)
+- debtLedgers: DebtLedger[] (one-to-many)
+- payerPayments: Payment[] @relation("PayerPersonPayments") (one-to-many)
 
-  @@index([systemId])
-  @@index([email])
-  @@index([phone])
-  @@map("persons")
-}
+MODELO PERSONFUNCTIONALROLE - Implementado en schema.prisma líneas 2581-2602
+============================
+Campos:
+- id, personId, roleType (requeridos)
+- isActive, startDate, endDate (gestión temporal)
+- systemId, createdAt, updatedAt (auditoría)
 
-model PersonFunctionalRole {
-  id              String                @id @default(cuid())
-  personId        String
-  roleType        String                // 'CLIENT', 'LEAD', 'CONTACT', 'EMPLOYEE'
-  isActive        Boolean               @default(true)
-  startDate       DateTime              @default(now())
-  endDate         DateTime?
-  createdAt       DateTime              @default(now())
-  updatedAt       DateTime              @updatedAt
-  systemId        String
+Relaciones:
+- person: Person (many-to-one)
+- system: System (many-to-one)
+- leadData: PersonLeadData? (one-to-one opcional)
+- contactData: PersonContactData? (one-to-one opcional)
+- clientData: PersonClientData? (one-to-one opcional)
 
-  // Relaciones
-  person          Person                @relation(fields: [personId], references: [id], onDelete: Cascade)
-  system          System                @relation(fields: [systemId], references: [id], onDelete: Cascade)
-  leadData        PersonLeadData?
-  contactData     PersonContactData?
+MODELO PERSONLEADDATA - Implementado en schema.prisma líneas 2603-2628
+=====================
+Gestión de leads y oportunidades de negocio.
 
-  @@unique([personId, roleType])
-  @@index([personId])
-  @@index([systemId])
-  @@map("person_functional_roles")
-}
+MODELO PERSONCONTACTDATA - Implementado en schema.prisma líneas 2629-2644
+========================
+Datos de contacto empresarial.
 
-model PersonLeadData {
-  id                      String                @id @default(cuid())
-  functionalRoleId        String                @unique
-  status                  String                @default("NEW")
-  source                  String?
-  companyName             String?
-  assignedToUserId        String?
-  companyId               String?
-  conversionDate          DateTime?
-  conversionToRole        String?
-  lastContactDate         DateTime?
-  nextFollowUpDate        DateTime?
-  priority                String?
-  estimatedValue          Float?
-  interests               String?
-  
-  // Relaciones
-  functionalRole          PersonFunctionalRole  @relation(fields: [functionalRoleId], references: [id], onDelete: Cascade)
-  assignedToUser          User?                 @relation(fields: [assignedToUserId], references: [id], onDelete: SetNull)
-  company                 Company?              @relation(fields: [companyId], references: [id], onDelete: SetNull)
-  opportunities           Opportunity[]
+MODELO PERSONCLIENTDATA - Implementado en schema.prisma líneas 2671-2698
+=======================
+Datos específicos de clientes con consentimientos GDPR.
 
-  @@index([functionalRoleId])
-  @@index([assignedToUserId])
-  @@index([companyId])
-  @@map("person_lead_data")
-}
+MODELO OPPORTUNITY - Implementado en schema.prisma líneas 2645-2670
+==================
+Gestión de oportunidades de negocio vinculadas a leads.
+*/
 
-model PersonContactData {
-  id                      String                @id @default(cuid())
-  functionalRoleId        String                @unique
-  position                String?
-  department              String?
-  companyId               String
-  isPrimary               Boolean               @default(false)
-  preferredContactMethod  String?
-  
-  // Relaciones
-  functionalRole          PersonFunctionalRole  @relation(fields: [functionalRoleId], references: [id], onDelete: Cascade)
-  company                 Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+// ===================================================================
+// FIN DE DOCUMENTACIÓN
+// ===================================================================
 
-  @@index([functionalRoleId])
-  @@index([companyId])
-  @@map("person_contact_data")
-}
-
-model Opportunity {
-  id                      String                @id @default(cuid())
-  name                    String
-  description             String?
-  leadDataId              String
-  stage                   String                @default("PROSPECTING")
-  probability             Float?
-  estimatedValue          Float?
-  estimatedCloseDate      DateTime?
-  actualCloseDate         DateTime?
-  wonLostReason           String?
-  notes                   String?
-  clinicId                String
-  createdAt               DateTime              @default(now())
-  updatedAt               DateTime              @updatedAt
-  systemId                String
-
-  // Relaciones
-  leadData                PersonLeadData        @relation(fields: [leadDataId], references: [id], onDelete: Restrict)
-  clinic                  Clinic                @relation(fields: [clinicId], references: [id], onDelete: Restrict)
-  system                  System                @relation(fields: [systemId], references: [id], onDelete: Cascade)
-
-  @@index([leadDataId])
-  @@index([clinicId])
-  @@index([systemId])
-  @@map("opportunities")
-}
+// Las definiciones de estos modelos han sido movidas a prisma/schema.prisma
+// para evitar duplicaciones. Este archivo permanece como documentación de referencia.

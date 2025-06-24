@@ -1,67 +1,79 @@
-// --- NUEVO MODELO: Gastos Operativos ---
-model Expense {
-  id            String   @id @default(cuid())
-  expenseNumber String   // Número de gasto (ej: "GTO-2024-001")
-  date          DateTime // Fecha del gasto
-  
-  // Tipo de gasto
-  expenseTypeId String
-  expenseType   ExpenseType @relation(fields: [expenseTypeId], references: [id])
-  
-  // Proveedor (opcional, puede ser un gasto sin proveedor formal)
-  supplierId String?
-  supplier   Company? @relation("SupplierExpenses", fields: [supplierId], references: [id], onDelete: SetNull)
-  
-  // Importes
-  currencyCode   String  @default("EUR")
-  subtotalAmount Decimal @db.Decimal(15, 2)
-  vatAmount      Decimal @db.Decimal(15, 2)
-  totalAmount    Decimal @db.Decimal(15, 2)
-  
-  // Detalles
-  description String
-  reference   String? // Número de factura del proveedor, etc.
-  
-  // Estado y pago
-  status    String   @default("PENDING") // PENDING, APPROVED, PAID, CANCELLED
-  paymentId String?
-  payment   Payment? @relation(fields: [paymentId], references: [id])
-  
-  // IVA
-  vatTypeId String?
-  vatType   VATType? @relation(fields: [vatTypeId], references: [id])
-  
-  // Asignación organizacional
-  clinicId String?
-  clinic   Clinic? @relation(fields: [clinicId], references: [id])
-  
-  // Sistema y entidad legal
-  systemId      String
-  system        System      @relation(fields: [systemId], references: [id])
-  legalEntityId String
-  legalEntity   LegalEntity @relation(fields: [legalEntityId], references: [id])
-  
-  // Relación con asientos contables
-  journalEntries JournalEntry[]
-  
-  // Auditoría
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  createdBy String?
-  createdByUser User? @relation("ExpenseCreatedBy", fields: [createdBy], references: [id])
-  
-  @@unique([expenseNumber, systemId])
-  @@index([date])
-  @@index([expenseTypeId])
-  @@index([supplierId])
-  @@index([status])
-  @@index([clinicId])
-  @@index([systemId])
-  @@index([legalEntityId])
-  @@map("expenses")
-}
+// ===================================================================
+// DOCUMENTACIÓN DE REFERENCIA: Modelo Expense
+// ===================================================================
+// IMPORTANTE: Este modelo está IMPLEMENTADO en prisma/schema.prisma
+// Este archivo sirve como documentación y referencia de diseño.
+// NO contiene definiciones ejecutables para evitar duplicaciones.
 
-// Relaciones inversas que hay que añadir a otros modelos:
+/*
+MODELO EXPENSE - Implementado en schema.prisma líneas 2466-2510
+==============
+Gestión de gastos operativos de la empresa.
+
+Campos principales:
+- id: String @id @default(cuid())
+- expenseNumber: String (ej: "GTO-2024-001")
+- date: DateTime (fecha del gasto)
+- description: String (descripción del gasto)
+- reference: String? (número de factura del proveedor, etc.)
+
+Importes:
+- currencyCode: String @default("EUR")
+- subtotalAmount: Decimal @db.Decimal(15, 2)
+- vatAmount: Decimal @db.Decimal(15, 2)
+- totalAmount: Decimal @db.Decimal(15, 2)
+
+Clasificación:
+- expenseTypeId: String (relación con ExpenseType)
+- supplierId: String? (proveedor opcional)
+- userId: String? (usuario relacionado)
+- clinicId: String? (clínica específica)
+- legalEntityId: String (entidad legal obligatoria)
+- vatTypeId: String? (tipo de IVA)
+
+Estado y pago:
+- status: ExpenseStatus @default(PENDING) // PENDING, APPROVED, PAID, CANCELLED
+- paymentId: String? (pago asociado)
+
+Auditoría:
+- systemId: String (sistema)
+- createdAt: DateTime @default(now())
+- updatedAt: DateTime @updatedAt
+- createdBy: String? (usuario creador)
+
+Relaciones:
+- expenseType: ExpenseType (many-to-one)
+- supplier: Company? @relation("SupplierExpenses") (many-to-one opcional)
+- user: User? @relation("UserExpenses") (many-to-one opcional)
+- payment: Payment? (one-to-one opcional)
+- vatType: VATType? (many-to-one opcional)
+- clinic: Clinic? (many-to-one opcional)
+- system: System (many-to-one)
+- legalEntity: LegalEntity (many-to-one)
+- journalEntries: JournalEntry[] (one-to-many)
+- createdByUser: User? @relation("ExpenseCreatedBy") (many-to-one opcional)
+
+Índices:
+- @@unique([expenseNumber, systemId])
+- @@index([date])
+- @@index([expenseTypeId])
+- @@index([supplierId])
+- @@index([userId])
+- @@index([status])
+- @@index([clinicId])
+- @@index([systemId])
+- @@index([legalEntityId])
+
+ENUM EXPENSESTATUS - Implementado en schema.prisma líneas 2941-2947
+==================
+- PENDING: Pendiente de aprobación
+- APPROVED: Aprobado pero no pagado
+- PAID: Pagado
+- CANCELLED: Cancelado
+*/
+
+// RELACIONES INVERSAS REQUERIDAS EN OTROS MODELOS:
+// ===================================================
 // 
 // En ExpenseType:
 //   expenses Expense[]
@@ -70,7 +82,7 @@ model Expense {
 //   expenses Expense[] @relation("SupplierExpenses")
 //
 // En Payment:
-//   expense Expense?
+//   Expense Expense[]
 //
 // En VATType:
 //   expenses Expense[]
@@ -85,8 +97,18 @@ model Expense {
 //   expenses Expense[]
 //
 // En User:
-//   createdExpenses Expense[] @relation("ExpenseCreatedBy")
+//   userExpenses Expense[] @relation("UserExpenses")
+//   expensesCreatedBy Expense[] @relation("ExpenseCreatedBy")
 //
 // En JournalEntry:
 //   expenseId String?
 //   expense   Expense? @relation(fields: [expenseId], references: [id])
+
+// ===================================================================
+// FIN DE DOCUMENTACIÓN
+// ===================================================================
+
+// Las definiciones de estos modelos han sido movidas a prisma/schema.prisma
+// para evitar duplicaciones. Este archivo permanece como documentación de referencia.
+
+

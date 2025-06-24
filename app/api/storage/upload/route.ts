@@ -1,114 +1,169 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { v4 as uuidv4 } from 'uuid';
+// ===================================================================
+// API ENDPOINT: Upload de Archivos del Sistema de Storage
+// ===================================================================
+// Basado en: docs/SISTEMA_STORAGE_ARQUITECTURA.md
 
-// Importar fs y path de forma segura solo en el servidor
-const fs = require('fs');
-const path = require('path');
-const storageService = require('@/lib/storage/storage-service').storageService;
+import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@/lib/db'
+import { writeFile, mkdir } from 'fs/promises'
+import { join } from 'path'
+// TODO: Implementar autenticación del servidor
+// import { getServerSession } from 'next-auth/next'
+// import { authOptions } from '@/lib/auth'
+import { 
+  EntityType, 
+  generateStoragePath, 
+  validateFileUpload,
+  getFileTypeInfo,
+  StorageUploadConfig,
+  getRecommendedSecurityLevel
+} from '@/types/storage'
 
 /**
  * API para subir archivos al servidor
  * POST /api/storage/upload
  */
 export async function POST(request: NextRequest) {
-  console.log("API: Recibida solicitud de carga de archivo");
-  
   try {
-    const formData = await request.formData();
-    const file = formData.get('file') as File;
-    const entityType = formData.get('entityType') as string;
-    const entityId = formData.get('entityId') as string;
-    const clinicId = formData.get('clinicId') as string;
+    // TODO: Verificar autenticación del servidor
+    // const session = await getServerSession(authOptions)
+    // if (!session?.user?.id) {
+    //   return NextResponse.json(
+    //     { error: 'No autorizado' },
+    //     { status: 401 }
+    //   )
+    // }
     
-    // Usar el fileId proporcionado o generar uno nuevo
-    const fileId = formData.get('fileId') as string || uuidv4();
-    
-    console.log("API: Datos recibidos:", { 
-      entityType, 
-      entityId, 
-      clinicId, 
-      fileId, 
-      fileType: file?.type, 
-      fileName: file?.name 
-    });
-    
-    if (!file || !entityType || !entityId || !clinicId) {
-      console.error("API: Faltan parámetros requeridos");
+    // TEMPORAL: Usuario hardcodeado para desarrollo
+    const session = { user: { id: 'dev-user-id' } }
+
+    // Obtener datos del form
+    const formData = await request.formData()
+    const file = formData.get('file') as File
+    const entityType = formData.get('entityType') as EntityType
+    const entityId = formData.get('entityId') as string
+    const category = formData.get('category') as string
+    const securityLevel = formData.get('securityLevel') as string
+    const altText = formData.get('altText') as string | null
+    const caption = formData.get('caption') as string | null
+    const order = formData.get('order') ? parseInt(formData.get('order') as string) : null
+
+    // Validaciones básicas
+    if (!file || !entityType || !entityId || !category) {
       return NextResponse.json(
-        { error: 'Se requieren todos los parámetros: file, entityType, entityId, clinicId' },
+        { error: 'Datos requeridos faltantes' },
         { status: 400 }
-      );
+      )
     }
-    
-    // Obtener metadatos adicionales del formulario
-    const isPrimary = formData.get('isPrimary') === 'true';
-    const position = parseInt(formData.get('position') as string || '0');
-    
-    // Determinar tipo de archivo
-    const fileType = file.type.startsWith('image/') 
-      ? 'images' 
-      : file.type.includes('pdf') || file.type.includes('word') || file.type.includes('excel')
-        ? 'documents'
-        : 'other';
-    
-    // Verificar si el directorio base existe
-    const baseDir = path.join(process.cwd(), 'storage');
-    if (!fs.existsSync(baseDir)) {
-      console.log("API: Creando directorio base:", baseDir);
-      fs.mkdirSync(baseDir, { recursive: true });
+
+    // Obtener información del tipo de archivo
+    const fileTypeInfo = getFileTypeInfo(file.type)
+    if (!fileTypeInfo.isSupported) {
+      return NextResponse.json(
+        { error: `Tipo de archivo no soportado: ${file.type}` },
+        { status: 400 }
+      )
     }
-    
-    // Crear la ruta simplificada
-    const simplePath = path.join(
-      baseDir, 
-      'clinicas',
+
+    // Configuración de validación
+    const uploadConfig: StorageUploadConfig = {
+      entityType,
+      entityId,
+      category,
+      securityLevel: securityLevel as any,
+      allowedTypes: [file.type as any],
+      maxSize: fileTypeInfo.maxSize
+    }
+
+    // Validar archivo
+    const validation = validateFileUpload(file, uploadConfig)
+    if (!validation.isValid) {
+      return NextResponse.json(
+        { error: validation.error },
+        { status: 400 }
+      )
+    }
+
+    // Obtener clínica activa del usuario (TODO: implementar lógica real)
+    const clinicId = 'default-clinic-id' // Placeholder
+
+    // Generar path de storage
+    const storagePath = generateStoragePath(
       clinicId,
       entityType,
       entityId,
-      fileType
-    );
-    
-    // Asegurar que existe la estructura
-    fs.mkdirSync(simplePath, { recursive: true });
-    
-    // Determinar nombre de archivo
-    const extension = file.name.split('.').pop() || '';
-    const fileName = `${fileId}.${extension}`;
-    const filePath = path.join(simplePath, fileName);
-    
-    // Convertir archivo a buffer
-    const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
-    
-    // Escribir archivo
-    fs.writeFileSync(filePath, buffer);
-    
-    // URL pública para acceder al archivo
-    const relativePath = `clinicas/${clinicId}/${entityType}/${entityId}/${fileType}/${fileName}`;
-    const publicUrl = `/api/storage/file?path=${relativePath}`;
-    
+      category,
+      file.name
+    )
+
+    // Crear directorio si no existe
+    const fullStoragePath = join(process.cwd(), 'storage', storagePath)
+    const dirPath = fullStoragePath.substring(0, fullStoragePath.lastIndexOf('/'))
+    await mkdir(dirPath, { recursive: true })
+
+    // Guardar archivo físico
+    const bytes = await file.arrayBuffer()
+    const buffer = Buffer.from(bytes)
+    await writeFile(fullStoragePath, buffer)
+
+    // URL pública del archivo
+    const fileUrl = `/storage/${storagePath}`
+
+    // Guardar en base de datos según el tipo
+    let savedRecord
+    if (fileTypeInfo.isImage) {
+      savedRecord = await prisma.entityImage.create({
+        data: {
+          entityId,
+          entityType: entityType as any,
+          imageUrl: fileUrl,
+          altText: altText || null,
+          caption: caption || null,
+          order: order,
+          isProfilePic: category === 'profile',
+          uploadedByUserId: session.user.id,
+          systemId: 'default-system-id' // TODO: obtener del contexto
+        }
+      })
+    } else {
+      savedRecord = await prisma.entityDocument.create({
+        data: {
+          entityId,
+          entityType: entityType as any,
+          documentUrl: fileUrl,
+          fileName: file.name,
+          fileType: file.type,
+          fileSize: file.size,
+          description: altText || null,
+          uploadedByUserId: session.user.id,
+          systemId: 'default-system-id' // TODO: obtener del contexto
+        }
+      })
+    }
+
+    // Respuesta de éxito
     return NextResponse.json({
       success: true,
-      fileName,
-      fileSize: buffer.length,
-      mimeType: file.type,
-      path: relativePath,
-      localPath: filePath,
-      publicUrl: publicUrl,
-      storageProvider: 'local',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      metadata: {
-        isPrimary,
-        position
+      file: {
+        id: savedRecord.id,
+        name: file.name,
+        url: fileUrl,
+        size: file.size,
+        type: file.type,
+        category,
+        securityLevel,
+        isImage: fileTypeInfo.isImage,
+        isDocument: fileTypeInfo.isDocument,
+        isMedia: fileTypeInfo.isMedia,
+        uploadedAt: savedRecord.createdAt
       }
-    });
-  } catch (error: any) {
-    console.error('API: Error general al subir archivo:', error);
-    console.error("API: Stack:", error.stack);
+    })
+
+  } catch (error) {
+    console.error('Error en upload de archivo:', error)
     return NextResponse.json(
-      { success: false, error: error.message },
+      { error: 'Error interno del servidor' },
       { status: 500 }
-    );
+    )
   }
 } 

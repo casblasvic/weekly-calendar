@@ -59,10 +59,10 @@ export function AgendaNavBar({
         }))
 
       setClinicRooms(rooms)
-      console.log("AgendaNavBar - Cabinas activas actualizadas desde contexto:", rooms)
+      // console.log("AgendaNavBar - Cabinas activas actualizadas desde contexto:", rooms) // Log optimizado
     } else {
       setClinicRooms([])
-      console.log("AgendaNavBar - No hay cabinas activas en el contexto o están cargando.")
+      // console.log("AgendaNavBar - No hay cabinas activas en el contexto o están cargando.") // Log optimizado
     }
   }, [activeClinicCabins])
 

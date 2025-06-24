@@ -35,7 +35,7 @@ export function MobileClinicButton({ onClick, isOpen }: MobileClinicButtonProps)
   useEffect(() => {
     const checkIfMobile = () => {
       const isMobile = window.innerWidth < 768
-      console.log("MobileClinicButton - Detectado móvil:", isMobile)
+      // console.log("MobileClinicButton - Detectado móvil:", isMobile) // Log optimizado
       setVisible(isMobile)
     }
     
@@ -49,7 +49,7 @@ export function MobileClinicButton({ onClick, isOpen }: MobileClinicButtonProps)
   
   // Efecto para depuración
   useEffect(() => {
-    console.log("MobileClinicButton - visible:", visible, "isOpen:", isOpen)
+    // console.log("MobileClinicButton - visible:", visible, "isOpen:", isOpen) // Log optimizado
   }, [visible, isOpen])
   
   if (!visible) return null

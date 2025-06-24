@@ -48,7 +48,7 @@ interface ResponsiveAgendaViewProps {
 export default function ResponsiveAgendaView({ date: initialDateProp, initialView }: ResponsiveAgendaViewProps) {
   const router = useRouter()
   const pathname = usePathname()
-  const { activeClinic, isLoading: isLoadingClinic } = useClinic();
+  const { activeClinic, isLoading: isLoadingClinic, isInitialized } = useClinic();
   const { cabins } = useCabins();
 
   // --- Lógica de estado movida desde AgendaContainer ---
@@ -148,7 +148,7 @@ export default function ResponsiveAgendaView({ date: initialDateProp, initialVie
     return filtered;
   }, [cabins]);
 
-  const isLoading = isLoadingClinic || cabins === undefined;
+  const isLoading = !isInitialized || isLoadingClinic || cabins === undefined;
 
   const roomsProp = activeCabinsForAgenda.map(convertCabinToRoom);
 

@@ -164,7 +164,7 @@ export default function DayView({
 }: DayViewProps) {
   const router = useRouter()
   const { t } = useTranslation()
-  const { activeClinic, isLoading: isLoadingClinic, activeClinicCabins } = useClinic()
+  const { activeClinic, isLoading: isLoadingClinic, activeClinicCabins, isInitialized } = useClinic()
   const { theme } = useTheme()
   const {
     createBlock, updateBlock, deleteBlock,
@@ -176,13 +176,7 @@ export default function DayView({
   const { toast } = useToast()
 
   // Log inicial para depuración
-  console.log('[DayView] Component rendering with:', {
-    dateString,
-    containerMode,
-    initialAppointmentsLength: initialAppointments.length,
-    activeClinicId: activeClinic?.id,
-    isLoadingClinic
-  });
+  // console.log('[DayView] Component rendering with:', { dateString, containerMode, initialAppointmentsLength: initialAppointments.length, activeClinicId: activeClinic?.id, isLoadingClinic }); // Log optimizado
 
   // Parsear la fecha una vez
   const currentDate = useMemo(() => {
@@ -205,9 +199,9 @@ export default function DayView({
   // Verificar si no hay clínica activa
   if (!activeClinic) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-center p-8">
-          <h3 className="text-lg font-medium text-gray-700 mb-2">
+      <div className="flex justify-center items-center h-full">
+        <div className="p-8 text-center">
+          <h3 className="mb-2 text-lg font-medium text-gray-700">
             {t('agenda.noActiveClinic')}
           </h3>
         </div>
@@ -260,7 +254,7 @@ export default function DayView({
     const sortedCabins = activeClinicCabins
       .filter((cabin) => cabin.isActive)
       .sort((a, b) => a.order - b.order);
-    console.log("[DayView] activeCabins calculadas:", sortedCabins.length);
+    // console.log("[DayView] activeCabins calculadas:", sortedCabins.length); // Log optimizado
     return sortedCabins;
   }, [activeClinicCabins]);
 
@@ -287,13 +281,13 @@ export default function DayView({
   const activeClinicId = useMemo(() => activeClinic?.id, [activeClinic?.id]);
 
   useEffect(() => {
-    console.log('[DayView] useEffect triggered:', {
-      containerMode,
-      initialAppointmentsLength,
-      shouldFetch: !containerMode || initialAppointmentsLength === 0,
-      activeClinicId,
-      currentDate: currentDate?.toISOString()
-    });
+    // console.log('[DayView] useEffect triggered:', { // Log optimizado
+    //   containerMode,
+    //   initialAppointmentsLength,
+    //   shouldFetch: !containerMode || initialAppointmentsLength === 0,
+    //   activeClinicId,
+    //   currentDate: currentDate?.toISOString()
+    // });
     
     // Solo cargar desde la API si no estamos en modo contenedor
     if (!containerMode || initialAppointmentsLength === 0) {
@@ -307,14 +301,14 @@ export default function DayView({
   // <<< ADD useMemo to calculate correctSchedule >>>
   const correctSchedule = useMemo(() => {
     if (!activeClinic) return null;
-    console.log("[DayView useMemo] Deriving correct schedule from activeClinic:", activeClinic);
+    // console.log("[DayView useMemo] Deriving correct schedule from activeClinic:", activeClinic); // Log optimizado
     const templateBlocks = activeClinic.linkedScheduleTemplate?.blocks;
     const independentBlocks = activeClinic.independentScheduleBlocks;
     const defaultOpen = (activeClinic as any)?.openTime || "00:00";
     const defaultClose = (activeClinic as any)?.closeTime || "23:59";
     let blocksToUse: (ScheduleTemplateBlock | ClinicScheduleBlock)[] | undefined | null = null;
     if (templateBlocks && templateBlocks.length > 0) {
-      console.log("[DayView useMemo] Using template blocks.");
+      // console.log("[DayView useMemo] Using template blocks."); // Log optimizado
       blocksToUse = templateBlocks;
     } else if (independentBlocks && independentBlocks.length > 0) {
       console.log("[DayView useMemo] Using independent blocks.");
@@ -358,7 +352,7 @@ export default function DayView({
     // Intentar obtener de la plantilla vinculada
     const templateDuration = (activeClinic as any).linkedScheduleTemplate?.slotDuration;
     if (templateDuration !== undefined && templateDuration !== null) {
-      console.log("[DayView] Using template slotDuration:", Number(templateDuration));
+      // console.log("[DayView] Using template slotDuration:", Number(templateDuration)); // Log optimizado
       return Number(templateDuration);
     }
     
@@ -375,7 +369,7 @@ export default function DayView({
   }, [activeClinic]);
   
   // <<< UPDATE this log to show correctSchedule >>>
-  console.log("[DayView] Derived schedule config:", { openTime, closeTime, slotDuration, schedule: correctSchedule });
+  // console.log("[DayView] Derived schedule config:", { openTime, closeTime, slotDuration, schedule: correctSchedule }); // Log optimizado
   // -----------------------------------------
 
   // <<< UPDATE timeSlots calculation to use correctSchedule >>>
@@ -408,7 +402,7 @@ export default function DayView({
     }
     
     // --- LOG DETALLADO --- 
-    console.log(`[DayView] Generating time slots for ${format(currentDate, 'yyyy-MM-dd')} (Day key: ${dayKey}). Final range: ${dayStartTime} - ${dayEndTime}`);
+    // console.log(`[DayView] Generating time slots for ${format(currentDate, 'yyyy-MM-dd')} (Day key: ${dayKey}). Final range: ${dayStartTime} - ${dayEndTime}`); // Log optimizado
     
     // Validación final antes de generar slots
     if (!dayStartTime || !dayEndTime || dayEndTime <= dayStartTime) { 
@@ -418,6 +412,16 @@ export default function DayView({
 
     return getTimeSlots(dayStartTime, dayEndTime, slotDuration);
   }, [correctSchedule, currentDate, openTime, closeTime, slotDuration]); // Dependencias correctas
+
+  // ✅ ESPERAR A QUE LA INICIALIZACIÓN ESTÉ COMPLETA
+  if (!isInitialized) {
+    return (
+      <div className="flex justify-center items-center h-full">
+        <Loader2 className="w-8 h-8 text-purple-600 animate-spin" />
+        <span className="ml-2">Inicializando clínicas...</span>
+      </div>
+    );
+  }
 
   // Función para verificar si un día está activo en la configuración
   const isDayActive = useCallback(
@@ -531,7 +535,7 @@ export default function DayView({
         block: 'center',     // ✅ Centrar verticalmente para mejor UX
         inline: 'nearest'    // ✅ Sin scroll horizontal
       });
-      
+     
       console.log('[DayView] 📍 AUTO-SCROLL DIRECTO en:', targetTime);
     } else {
       // ✅ FALLBACK: Buscar la hora más cercana
@@ -569,46 +573,86 @@ export default function DayView({
     hasAutoScrolledRef.current = true;
   }, [timeSlots]);
 
-  // ✅ POSICIONAMIENTO SIMPLE Y DIRECTO
+  // ✅ CÁLCULO DE POSICIÓN INICIAL PARA RENDERIZADO DIRECTO
+  const calculateInitialScrollPosition = useCallback(() => {
+    if (timeSlots.length === 0) return 0;
+
+    const now = new Date();
+    const currentHour = now.getHours();
+    const currentMinute = now.getMinutes();
+    const currentTimeString = `${currentHour.toString().padStart(2, '0')}:${currentMinute.toString().padStart(2, '0')}`;
+    
+    const clinicOpenTime = timeSlots[0];
+    const clinicCloseTime = timeSlots[timeSlots.length - 1];
+    
+    // Si está fuera de horario, posicionar al inicio
+    if (currentTimeString < clinicOpenTime || currentTimeString > clinicCloseTime) {
+      return 0;
+    }
+
+    // Calcular posición basada en la hora actual
+    const roundedMinute = Math.floor(currentMinute / 15) * 15;
+    const targetTime = `${currentHour.toString().padStart(2, '0')}:${roundedMinute.toString().padStart(2, '0')}`;
+    
+    // Encontrar el índice del slot de tiempo objetivo
+    const targetIndex = timeSlots.findIndex(slot => slot === targetTime);
+    
+    if (targetIndex !== -1) {
+      // Calcular posición aproximada (altura de fila * índice) - centrar en viewport
+      const rowHeight = 40; // Altura estándar de fila
+      const targetPosition = targetIndex * rowHeight;
+      const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 600;
+      
+      // Centrar la posición objetivo en el viewport
+      return Math.max(0, targetPosition - (viewportHeight / 2));
+    }
+    
+    return 0;
+  }, [timeSlots]);
+
+  // ✅ POSICIONAMIENTO INICIAL DIRECTO - SIN DELAY NI AUTO-SCROLL POSTERIOR
   useEffect(() => {
     if (!timeSlots.length || hasAutoScrolledRef.current) return;
     
-    // ✅ LIMPIAR TIMEOUT ANTERIOR
-    if (autoScrollTimeoutRef.current) {
-      clearTimeout(autoScrollTimeoutRef.current);
+    // ✅ POSICIONAMIENTO INMEDIATO EN EL PRIMER RENDERIZADO
+    const initialPosition = calculateInitialScrollPosition();
+    
+    if (agendaRef.current && initialPosition > 0) {
+      // ✅ ESTABLECER POSICIÓN INICIAL INMEDIATAMENTE SIN ANIMACIÓN
+      agendaRef.current.scrollTop = initialPosition;
+      console.log('[DayView] 📍 POSICIONAMIENTO INICIAL DIRECTO en posición:', initialPosition);
     }
     
-    // ✅ DELAY SIMPLE Y FIJO: Dar tiempo suficiente para renderizado pero sin complejidad
-    autoScrollTimeoutRef.current = setTimeout(positionToCurrentTime, 1000); // ✅ Tiempo fijo suficiente para renderizado completo
-    
-    return () => {
-      if (autoScrollTimeoutRef.current) {
-        clearTimeout(autoScrollTimeoutRef.current);
-        autoScrollTimeoutRef.current = null;
+    // ✅ SI NECESITAMOS PRECISIÓN PERFECTA, USAMOS requestAnimationFrame PARA EL SIGUIENTE FRAME
+    requestAnimationFrame(() => {
+      if (agendaRef.current && !hasAutoScrolledRef.current) {
+        positionToCurrentTime();
       }
-    };
-  }, [currentDate, activeClinic?.id]); // ✅ SOLO depender de currentDate y clínica para evitar múltiples auto-scrolls
+    });
+    
+    hasAutoScrolledRef.current = true;
+  }, [currentDate, activeClinic?.id, timeSlots, calculateInitialScrollPosition, positionToCurrentTime]);
   
   // ✅ RESETEAR auto-scroll cuando cambie la clínica o el día
   useEffect(() => {
     hasAutoScrolledRef.current = false;
   }, [activeClinic?.id, currentDate]);
 
-  console.log('[DayView] Filtering appointments:', {
-    currentDate: currentDate,
-    currentDateString: currentDate.toDateString(),
-    currentDateISO: currentDate.toISOString(),
-    totalAppointments: appointments.length,
-    filteredAppointments: dayAppointments.length,
-    appointmentDates: appointments.map(apt => ({
-      id: apt.id,
-      date: apt.date,
-      dateType: typeof apt.date,
-      isValidDate: apt.date instanceof Date,
-      dateString: apt.date instanceof Date ? apt.date.toDateString() : 'INVALID',
-      matches: apt.date instanceof Date ? apt.date.toDateString() === currentDate.toDateString() : false
-    }))
-  });
+  // console.log('[DayView] Filtering appointments:', { // Log optimizado
+  //   currentDate: currentDate,
+  //   currentDateString: currentDate.toDateString(),
+  //   currentDateISO: currentDate.toISOString(),
+  //   totalAppointments: appointments.length,
+  //   filteredAppointments: dayAppointments.length,
+  //   appointmentDates: appointments.map(apt => ({
+  //     id: apt.id,
+  //     date: apt.date,
+  //     dateType: typeof apt.date,
+  //     isValidDate: apt.date instanceof Date,
+  //     dateString: apt.date instanceof Date ? apt.date.toDateString() : 'INVALID',
+  //     matches: apt.date instanceof Date ? apt.date.toDateString() === currentDate.toDateString() : false
+  //   }))
+  // });
 
   // Corregir: findOverrideForCell debe esperar string para cabinId
   const findOverrideForCell = (currentViewDate: Date, timeSlot: string, cabinId: string, overrides: CabinScheduleOverride[], clinicId?: string): CabinScheduleOverride | null => {
@@ -1677,17 +1721,17 @@ export default function DayView({
   // Verificar si no hay horario configurado
   if (timeSlots.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-center p-8">
-          <h3 className="text-lg font-medium text-gray-700 mb-2">
+      <div className="flex justify-center items-center h-full">
+        <div className="p-8 text-center">
+          <h3 className="mb-2 text-lg font-medium text-gray-700">
             {t('agenda.noScheduleConfigured.title')}
           </h3>
-          <p className="text-gray-500 mb-4">
+          <p className="mb-4 text-gray-500">
             {t('agenda.noScheduleConfigured.description')}
           </p>
           <Button
             onClick={() => router.push(`/configuracion/clinicas/${activeClinic.id}?tab=horarios`)}
-            className="bg-purple-600 hover:bg-purple-700 text-white"
+            className="text-white bg-purple-600 hover:bg-purple-700"
           >
             {t('agenda.noScheduleConfigured.action')}
           </Button>
@@ -1699,17 +1743,17 @@ export default function DayView({
   // Verificar si no hay cabinas configuradas
   if (!activeCabins || activeCabins.length === 0 || rooms.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-center p-8">
-          <h3 className="text-lg font-medium text-gray-700 mb-2">
+      <div className="flex justify-center items-center h-full">
+        <div className="p-8 text-center">
+          <h3 className="mb-2 text-lg font-medium text-gray-700">
             {t('agenda.noCabinsConfigured.title')}
           </h3>
-          <p className="text-gray-500 mb-4">
+          <p className="mb-4 text-gray-500">
             {t('agenda.noCabinsConfigured.description')}
           </p>
           <Button
             onClick={() => router.push(`/configuracion/clinicas/${activeClinic.id}?tab=cabinas`)}
-            className="bg-purple-600 hover:bg-purple-700 text-white"
+            className="text-white bg-purple-600 hover:bg-purple-700"
           >
             {t('agenda.noCabinsConfigured.action')}
           </Button>
@@ -1805,14 +1849,14 @@ export default function DayView({
 
   // Corregir renderDayGrid para usar String(cabin.id) en findOverrideForCell
   const renderDayGrid = () => {
-      console.log("[DayView] renderDayGrid - valor de rooms:", JSON.stringify(rooms));
+      // console.log("[DayView] renderDayGrid - valor de rooms:", JSON.stringify(rooms)); // Log optimizado
       const clinicIdStr = activeClinic?.id ? String(activeClinic.id) : undefined;
       return (
           <div className="overflow-visible relative flex-1 bg-white">
               {/* Cabecera de la tabla (fija) - z-40 para estar sobre granularidades */}
               <div className="grid sticky top-0 z-40 bg-white border-b shadow-sm" 
                    style={{ gridTemplateColumns: `80px repeat(${rooms.length > 0 ? rooms.length : 1}, minmax(100px, 1fr))` }}> 
-                  <div className="sticky left-0 z-40 w-20 p-2 text-sm font-medium text-purple-600 bg-white border-b border-r border-gray-200 hour-column">
+                  <div className="sticky left-0 z-40 p-2 w-20 text-sm font-medium text-purple-600 bg-white border-r border-b border-gray-200 hour-column">
                     Hora
                   </div>
                   {rooms.length > 0 ? (
@@ -1837,7 +1881,7 @@ export default function DayView({
                       {/* Celda de Hora */}
                       <div 
                         data-time={time}
-                        className="sticky left-0 z-20 w-20 p-2 text-sm font-medium text-purple-600 bg-white border-t border-r border-gray-200 hour-column">
+                        className="sticky left-0 z-20 p-2 w-20 text-sm font-medium text-purple-600 bg-white border-t border-r border-gray-200 hour-column">
                         {time}
                       </div>
                       {/* Celdas de Cabinas */}
@@ -1973,15 +2017,15 @@ export default function DayView({
                   ))}
                   {/* Indicador de hora actual */}
                   {openTime && closeTime && (
-                    <CurrentTimeIndicator
-                      key={`indicator-${format(currentDate, 'yyyy-MM-dd')}`}
-                      timeSlots={timeSlots}
-                      isMobile={false}
+                  <CurrentTimeIndicator
+                    key={`indicator-${format(currentDate, 'yyyy-MM-dd')}`}
+                    timeSlots={timeSlots}
+                    isMobile={false}
                       className="z-30"
-                      agendaRef={agendaRef}
-                      clinicOpenTime={openTime}
-                      clinicCloseTime={closeTime}
-                    />
+                    agendaRef={agendaRef}
+                    clinicOpenTime={openTime}
+                    clinicCloseTime={closeTime}
+                  />
                   )}
               </div>
           </div>

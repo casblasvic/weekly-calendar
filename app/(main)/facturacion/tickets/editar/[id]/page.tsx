@@ -108,7 +108,29 @@ export default function EditarTicketPage({ params }: EditTicketPageProps) {
   
   const { id } = use(params);
   const isNewTicket = id === 'new'; // << NUEVO
-  const { activeClinic } = useClinic();
+  const { activeClinic, isInitialized } = useClinic();
+
+  // Patrón isInitialized - No renderizar hasta que esté listo
+  if (!isInitialized) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600 mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Inicializando editor de tickets...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!activeClinic) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <p className="text-muted-foreground">No hay clínica activa seleccionada</p>
+        </div>
+      </div>
+    )
+  }
   const { t } = useTranslation();
 
   const [isReadOnly, setIsReadOnly] = useState(isNewTicket ? false : true); // default editable for new

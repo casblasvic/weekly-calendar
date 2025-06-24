@@ -1,0 +1,10 @@
+// TEMPORALMENTE DESHABILITADO - Problema con Buffer en NextResponse
+// TODO: Resolver conversión de Buffer a BodyInit para servir archivos binarios
+
+// ===================================================================
+// API ENDPOINT: Servir y Eliminar Archivos Individuales del Sistema de Storage
+// ===================================================================
+// Basado en: docs/SISTEMA_STORAGE_ARQUITECTURA.md
+
+// Contenido original del archivo para referencia futura
+// Error a resolver: Buffer no es compatible con BodyInit en NextResponse/Response 

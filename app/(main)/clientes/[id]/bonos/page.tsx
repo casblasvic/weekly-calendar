@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, use } from "react"
+import { useState, useEffect, use, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
@@ -53,11 +53,7 @@ export default function BonosPage({ params }: { params: Promise<{ id: string }> 
   const [bonos, setBonos] = useState<BonoInstance[]>([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    loadBonos()
-  }, [resolvedParams.id])
-
-  const loadBonos = async () => {
+  const loadBonos = useCallback(async () => {
     setLoading(true)
     try {
       const bonosData = await getPersonBonos(resolvedParams.id)
@@ -67,7 +63,11 @@ export default function BonosPage({ params }: { params: Promise<{ id: string }> 
     } finally {
       setLoading(false)
     }
-  }
+  }, [resolvedParams.id])
+
+  useEffect(() => {
+    loadBonos()
+  }, [loadBonos])
 
   const formatDate = (dateString: string) => {
     try {

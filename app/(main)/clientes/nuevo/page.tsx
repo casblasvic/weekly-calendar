@@ -107,7 +107,7 @@ const CustomDatePicker = React.forwardRef<
         dropdownMode="select"
         isClearable={false}
         placeholderText="Seleccione una fecha"
-        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+        className="px-3 py-2 w-full text-sm rounded-md border border-input bg-background ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
         calendarClassName="date-picker-custom"
         renderCustomHeader={({
           date,
@@ -121,7 +121,7 @@ const CustomDatePicker = React.forwardRef<
           <div>
             <div className="flex justify-between px-4 pt-2">
               <button onClick={decreaseMonth} disabled={prevMonthButtonDisabled} type="button" className="p-1">
-                <ChevronLeft className="h-4 w-4 text-white" />
+                <ChevronLeft className="w-4 h-4 text-white" />
               </button>
               <div className="flex gap-2">
                 <select
@@ -146,7 +146,7 @@ const CustomDatePicker = React.forwardRef<
                 </select>
               </div>
               <button onClick={increaseMonth} disabled={nextMonthButtonDisabled} type="button" className="p-1">
-                <ChevronRight className="h-4 w-4 text-white" />
+                <ChevronRight className="w-4 h-4 text-white" />
               </button>
             </div>
           </div>
@@ -175,16 +175,19 @@ const CustomDatePicker = React.forwardRef<
           </button>
         </div>
       </DatePicker>
-      <CalendarIcon className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 opacity-50 pointer-events-none" />
+      <CalendarIcon className="absolute right-3 top-1/2 w-4 h-4 opacity-50 transform -translate-y-1/2 pointer-events-none" />
     </div>
   )
 })
 CustomDatePicker.displayName = "CustomDatePicker"
 
 export default function NuevoClientePage() {
-  const [showLegalRepresentative, setShowLegalRepresentative] = useState(false)
+  const { activeClinic, isInitialized } = useClinic()
   const { createClient } = useClient()
-  const { activeClinic } = useClinic()
+  const [showLegalRepresentative, setShowLegalRepresentative] = useState(false)
+  const [datePickerHeaderColor, setDatePickerHeaderColor] = useState("#8b5cf6")
+
+  // ✅ TODOS LOS HOOKS AL PRINCIPIO - antes de early returns
   const router = useRouter()
   const { toast } = useToast()
 
@@ -207,6 +210,28 @@ export default function NuevoClientePage() {
     },
   })
 
+  // ✅ EARLY RETURNS AL FINAL - después de todos los hooks
+  if (!isInitialized) {
+    return (
+      <div className="flex justify-center items-center min-h-screen">
+        <div className="text-center">
+          <div className="mx-auto mb-4 w-8 h-8 rounded-full border-b-2 border-purple-600 animate-spin"></div>
+          <p className="text-muted-foreground">Inicializando formulario de cliente...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!activeClinic) {
+    return (
+      <div className="flex justify-center items-center min-h-screen">
+        <div className="text-center">
+          <p className="text-muted-foreground">No hay clínica activa seleccionada</p>
+        </div>
+      </div>
+    )
+  }
+
   async function onSubmit(values: FormValues) {
     try {
       // Verificar que haya una clínica activa
@@ -219,21 +244,28 @@ export default function NuevoClientePage() {
         return
       }
 
-      // Formatear los datos para la API
+      // Formatear los datos para la API (modelo Person de Prisma)
       const clientData = {
-        name: `${values.nombre} ${values.primerApellido} ${values.segundoApellido || ''}`.trim(),
-        clientNumber: values.numeroDocumento,
-        phone: values.telefono,
-        email: values.email,
-        address: values.direccion,
-        birthDate: values.fechaNacimiento ? format(values.fechaNacimiento, 'yyyy-MM-dd') : undefined,
-        notes: `Conoció la clínica a través de: ${values.comoNosHaConocido}`,
-        clinic: activeClinic.name,
-        clinicId: activeClinic.id,
-        // Si hay representante legal, añadirlo a las notas
-        ...(showLegalRepresentative && values.representante ? {
-          notes: `Conoció la clínica a través de: ${values.comoNosHaConocido}\nRepresentante legal: ${values.representante.nombre} ${values.representante.apellidos || ''} (${values.representante.parentesco})`
-        } : {})
+        firstName: values.nombre,
+        lastName: `${values.primerApellido} ${values.segundoApellido || ''}`.trim(),
+        email: values.email || null,
+        phone: values.telefono || null,
+        birthDate: values.fechaNacimiento || null,
+        gender: values.sexo || null,
+        address: values.direccion || null,
+        city: values.localidad || null,
+        postalCode: values.cp || null,
+        countryIsoCode: "ES", // Asumiendo España por defecto
+        nationalId: values.numeroDocumento || null,
+        nationalIdType: values.tipoDocumento || null,
+        notes: showLegalRepresentative && values.representante ? 
+          `Conoció la clínica a través de: ${values.comoNosHaConocido}\nRepresentante legal: ${values.representante.nombre} ${values.representante.apellidos || ''} (${values.representante.parentesco})` :
+          `Conoció la clínica a través de: ${values.comoNosHaConocido}`,
+        // Campos opcionales adicionales según el modelo Person
+        stateProvince: null,
+        passportNumber: null,
+        passportCountry: null,
+        taxId: null
       }
       
       // Crear el cliente usando el contexto
@@ -242,7 +274,7 @@ export default function NuevoClientePage() {
       // Mostrar mensaje de éxito
       toast({
         title: "Cliente creado",
-        description: `Se ha creado el cliente ${newClient.name} correctamente.`,
+        description: `Se ha creado el cliente ${newClient.firstName} ${newClient.lastName} correctamente.`,
         variant: "default",
       })
       
@@ -267,16 +299,17 @@ export default function NuevoClientePage() {
   }
 
   return (
-    <div className="container mx-auto py-10">
-      <Form form={form} onSubmit={onSubmit}>
-        <div className="space-y-8">
+    <div className="container py-10 mx-auto">
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit)}>
+          <div className="space-y-8">
           {/* Datos personales */}
-          <div className="rounded-lg border bg-card text-card-foreground shadow-sm">
-            <div className="flex flex-row items-center p-6 gap-2">
-              <User className="h-5 w-5 text-purple-600" />
+          <div className="rounded-lg border shadow-sm bg-card text-card-foreground">
+            <div className="flex flex-row gap-2 items-center p-6">
+              <User className="w-5 h-5 text-purple-600" />
               <h3 className="text-lg font-semibold">Datos personales</h3>
             </div>
-            <div className="p-6 pt-0 grid gap-6 md:grid-cols-2">
+            <div className="grid gap-6 p-6 pt-0 md:grid-cols-2">
               <FormField
                 control={form.control}
                 name="fechaNacimiento"
@@ -426,12 +459,12 @@ export default function NuevoClientePage() {
 
           {/* Datos del representante legal */}
           {showLegalRepresentative && (
-            <div className="rounded-lg border bg-card text-card-foreground shadow-sm">
-              <div className="flex flex-row items-center p-6 gap-2">
-                <User className="h-5 w-5 text-purple-600" />
+            <div className="rounded-lg border shadow-sm bg-card text-card-foreground">
+              <div className="flex flex-row gap-2 items-center p-6">
+                <User className="w-5 h-5 text-purple-600" />
                 <h3 className="text-lg font-semibold">Datos del representante legal</h3>
               </div>
-              <div className="p-6 pt-0 grid gap-6 md:grid-cols-2">
+              <div className="grid gap-6 p-6 pt-0 md:grid-cols-2">
                 <FormField
                   control={form.control}
                   name="representante.parentesco"
@@ -556,12 +589,12 @@ export default function NuevoClientePage() {
           )}
 
           {/* Datos de contacto */}
-          <div className="rounded-lg border bg-card text-card-foreground shadow-sm">
-            <div className="flex flex-row items-center p-6 gap-2">
-              <MapPin className="h-5 w-5 text-purple-600" />
+          <div className="rounded-lg border shadow-sm bg-card text-card-foreground">
+            <div className="flex flex-row gap-2 items-center p-6">
+              <MapPin className="w-5 h-5 text-purple-600" />
               <h3 className="text-lg font-semibold">Datos de contacto</h3>
             </div>
-            <div className="p-6 pt-0 grid gap-6 md:grid-cols-2">
+            <div className="grid gap-6 p-6 pt-0 md:grid-cols-2">
               <FormField
                 control={form.control}
                 name="cp"
@@ -638,7 +671,7 @@ export default function NuevoClientePage() {
             <Button
               type="button"
               onClick={() => setDatePickerHeaderColor("#" + Math.floor(Math.random() * 16777215).toString(16))}
-              className="bg-blue-600 hover:bg-blue-700 mr-2"
+              className="mr-2 bg-blue-600 hover:bg-blue-700"
             >
               Cambiar color del encabezado
             </Button>
@@ -646,7 +679,8 @@ export default function NuevoClientePage() {
               Guardar
             </Button>
           </div>
-        </div>
+          </div>
+        </form>
       </Form>
     </div>
   )

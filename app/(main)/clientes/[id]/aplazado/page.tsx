@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, use } from "react"
+import { useState, useEffect, use, useCallback } from "react"
 import { Card } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
@@ -55,11 +55,7 @@ export default function AplazadoPage({ params }: { params: Promise<{ id: string 
   const [deferredPayments, setDeferredPayments] = useState<DeferredPayment[]>([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    loadDeferredPayments()
-  }, [resolvedParams.id])
-
-  const loadDeferredPayments = async () => {
+  const loadDeferredPayments = useCallback(async () => {
     setLoading(true)
     try {
       const payments = await getDeferredPayments(resolvedParams.id)
@@ -69,7 +65,11 @@ export default function AplazadoPage({ params }: { params: Promise<{ id: string 
     } finally {
       setLoading(false)
     }
-  }
+  }, [resolvedParams.id])
+
+  useEffect(() => {
+    loadDeferredPayments()
+  }, [loadDeferredPayments])
 
   const formatAmount = (amount: number) => {
     return new Intl.NumberFormat('es-ES', {

@@ -52,7 +52,7 @@ export const ServicioProvider = ({ children }: { children: ReactNode }) => {
           const loadedServicios = await interfaz.getAllServicios();
           setServicios(loadedServicios as Servicio[]); // Cast a Servicio (PrismaService)
           setDataFetched(true);
-          console.log("ServicioContext: Datos cargados correctamente");
+          // console.log("ServicioContext: Datos cargados correctamente"); // Log optimizado
         } catch (error) {
           console.error("Error al cargar datos iniciales en ServicioContext:", error);
         }
@@ -82,9 +82,9 @@ export const ServicioProvider = ({ children }: { children: ReactNode }) => {
         // Asegurar valores default si son obligatorios en Prisma
         name: servicio.name || "Servicio sin nombre",
         durationMinutes: servicio.durationMinutes || 0,
-        isActive: servicio.isActive ?? true,
-        requiresMedicalSignOff: servicio.requiresMedicalSignOff ?? false,
-        pointsAwarded: servicio.pointsAwarded ?? 0,
+        // Los campos de ServiceSetting ya no están directamente en Service
+        // requiresMedicalSignOff: servicio.requiresMedicalSignOff ?? false,
+        // pointsAwarded: servicio.pointsAwarded ?? 0,
         // price, code, categoryId, vatTypeId, colorCode deben venir en el objeto
       };
       const nuevoServicio = await interfaz.createServicio(servicioParaCrear as any); // Usar any temporalmente

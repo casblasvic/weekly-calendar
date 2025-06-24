@@ -6,7 +6,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Service, Category, VATType } from '@prisma/client';
+import { Service, Category, VATType, ServiceSetting } from '@prisma/client';
+
+// Tipo que incluye la relación con ServiceSetting
+type ServiceWithSettings = Service & {
+  settings?: ServiceSetting | null;
+};
 import { toast as sonnerToast } from "sonner";
 import { z } from 'zod';
 import type { CheckedState } from '@radix-ui/react-checkbox';
@@ -45,7 +50,7 @@ type ServiceFormData = {
 interface ServiceFormModalProps {
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
-  service: Service | null; // Null para crear, objeto para editar
+  service: ServiceWithSettings | null; // Null para crear, objeto para editar
   allCategories: Category[];
   allVatTypes: VATType[];
   onSave: () => void; 
@@ -74,9 +79,9 @@ export default function ServiceFormModal({
             price: service.price,
             code: service.code,
             colorCode: service.colorCode,
-            requiresMedicalSignOff: service.requiresMedicalSignOff,
-            pointsAwarded: service.pointsAwarded,
-            isActive: service.isActive,
+            requiresMedicalSignOff: service.settings?.requiresMedicalSignOff ?? false,
+            pointsAwarded: service.settings?.pointsAwarded ?? 0,
+            isActive: service.settings?.appearsInApp ?? true,
             categoryId: service.categoryId,
             vatTypeId: service.vatTypeId,
           });

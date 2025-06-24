@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 import { useClinic } from '@/contexts/clinic-context';
 import { useToast } from "@/components/ui/use-toast";
@@ -35,18 +35,39 @@ import { CashSessionStatus } from '@prisma/client';
 export default function ListadoCajasDiaPage() {
   const router = useRouter();
   const { t } = useTranslation();
-  const { activeClinic } = useClinic();
+  const { activeClinic, isInitialized } = useClinic();
   const { toast } = useToast();
+  const searchParams = useSearchParams();
 
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
   const [statusFilter, setStatusFilter] = useState<CashSessionStatus | 'ALL'>('ALL');
-  const [clinicFilter, setClinicFilter] = useState<string | undefined>(activeClinic?.id); // Inicializar con activeClinic?.id o undefined
+      const [clinicFilter, setClinicFilter] = useState<string | undefined>(activeClinic.id); // ✅ activeClinic está garantizado
 
-  useEffect(() => {
-    if (!clinicFilter && activeClinic?.id) {
-      setClinicFilter(activeClinic.id);
-    }
-  }, [activeClinic?.id]);
+  if (!isInitialized) {
+    return (
+      <div className="container mx-auto p-6">
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="w-8 h-8 text-purple-600 animate-spin" />
+          <span className="ml-2">Inicializando clínicas...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!activeClinic) {
+    return (
+      <div className="container mx-auto p-6">
+        <div className="text-center">
+          <h3 className="text-lg font-medium text-gray-700 mb-2">
+            Sin clínica seleccionada
+          </h3>
+          <p className="text-gray-500">
+            Selecciona una clínica para ver las cajas del día.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   const buildFilters = (): CashSessionFilters => {
     const activeFilters: CashSessionFilters = {
@@ -92,16 +113,7 @@ export default function ListadoCajasDiaPage() {
     refetchOnMount: 'always', // Forzar refetch siempre que el componente se monte
   });
 
-  // Mientras no tengamos clínica activa mostramos spinner
-  if (!clinicFilter) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-150px)]">
-        <Loader2 className="w-12 h-12 mb-4 text-purple-600 animate-spin" />
-      </div>
-    );
-  }
-
-  const formatCurrency = (val: number) => new Intl.NumberFormat('es-ES', { style: 'currency', currency: activeClinic?.currency || 'EUR' }).format(val);
+  const formatCurrency = (val: number) => new Intl.NumberFormat('es-ES', { style: 'currency', currency: activeClinic.currency || 'EUR' }).format(val); // ✅ activeClinic está garantizado
 
   if (isLoading) {
     return (

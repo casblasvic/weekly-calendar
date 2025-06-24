@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react"
 import { useRouter, useSearchParams, useParams } from "next/navigation"
-import { FileQuestion, Plus, Minus, ChevronUp, ChevronDown, MessageSquare, Users, HelpCircle, X, Send, ShoppingCart, AlertCircle, Save, AlertTriangle, Star, Ticket, Pencil, Trash2 } from "lucide-react"
+import { FileQuestion, Plus, Minus, ChevronUp, ChevronDown, MessageSquare, Users, HelpCircle, X, Send, ShoppingCart, AlertCircle, Save, AlertTriangle, Star, Ticket, Pencil, Trash2, ArrowLeft } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -24,6 +24,9 @@ import ImageGallery from "@/components/ui/image-gallery"
 import DocumentList from "@/components/ui/document-list"
 import FileUploader from "@/components/ui/file-uploader"
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card"
+import { useClinic } from "@/contexts/clinic-context"
+import { useEntityStorage } from "@/hooks/use-entity-storage"
+import { StorageUploader } from "@/components/ui/storage-uploader"
 
 // Usar SOLO contextos especializados (no importar useInterfaz directamente)
 import { useIVA } from "@/contexts/iva-context"
@@ -33,7 +36,12 @@ import { useServicio, Servicio } from "@/contexts/servicios-context"
 import { useImages } from "@/contexts/image-context"
 import { useDocuments } from "@/contexts/document-context"
 import { useEquipment } from "@/contexts/equipment-context"
-import { EntityImage, EntityDocument, EntityType, Service as PrismaService } from '@prisma/client'
+import { EntityImage, EntityDocument, EntityType, Service as PrismaService, ServiceSetting } from '@prisma/client'
+
+// Tipo extendido para Service que incluye la relación settings
+type ServiceWithSettings = PrismaService & {
+  settings?: Partial<ServiceSetting> | null;
+};
 
 // Función para generar IDs únicos sin dependencias externas
 const generateId = () => {
@@ -78,29 +86,58 @@ interface PageParams {
   [key: string]: string | string[];
 }
 
-// Helper para mapear EntityImage a ImageFileLike
-const mapEntityImageToImageFileLike = (img: EntityImage): ImageFileLike => ({
+// Helper para mapear EntityImage a ImageFile para ImageGallery
+const mapEntityImageToImageFileLike = (img: EntityImage) => ({
   id: img.id,
-  name: img.name,
-  url: img.url,
-  size: img.size,
-  isPrimary: img.isPrimary,
-  order: img.order,
+  fileName: img.imageUrl.split('/').pop() || 'image.jpg',
+  fileSize: 0, // TODO: Añadir fileSize al schema EntityImage
+  mimeType: 'image/jpeg', // Default, TODO: añadir al schema
+  path: img.imageUrl,
+  url: img.imageUrl,
+  isProfilePic: img.isProfilePic,
+  isPrimary: img.isProfilePic,
+  order: img.order || 0,
   entityId: img.entityId,
   entityType: img.entityType,
   createdAt: img.createdAt,
+  updatedAt: img.updatedAt || img.createdAt,
+  clinicId: img.systemId || '',
+  category: 'default',
+  securityLevel: 'internal' as const,
+  tags: [],
+  categories: [],
+  storageProvider: 'local' as const,
+  createdBy: img.uploadedByUserId || '',
+  isDeleted: false,
+  isPublic: false,
+  metadata: {},
 });
 
-// Helper para mapear EntityDocument a DocumentFileLike
-const mapEntityDocumentToDocumentFileLike = (doc: EntityDocument): DocumentFileLike => ({
+// Helper para mapear EntityDocument a DocumentFile para DocumentList
+const mapEntityDocumentToDocumentFileLike = (doc: EntityDocument) => ({
   id: doc.id,
-  name: doc.name,
-  url: doc.url,
-  size: doc.size,
-  type: doc.type,
+  fileName: doc.fileName,
+  fileSize: doc.fileSize || 0,
+  mimeType: doc.fileType || 'application/octet-stream',
+  path: doc.documentUrl,
+  url: doc.documentUrl,
+  name: doc.fileName,
+  size: doc.fileSize || 0,
+  type: doc.fileType || 'application/octet-stream',
   entityId: doc.entityId,
   entityType: doc.entityType,
   createdAt: doc.createdAt,
+  updatedAt: doc.updatedAt || doc.createdAt,
+  clinicId: doc.systemId || '',
+  category: 'default',
+  securityLevel: 'internal' as const,
+  tags: [],
+  categories: [],
+  storageProvider: 'local' as const,
+  createdBy: doc.uploadedByUserId || '',
+  isDeleted: false,
+  isPublic: false,
+  metadata: {},
 });
 
 export default function NuevoServicio() {
@@ -115,7 +152,7 @@ export default function NuevoServicio() {
   // Usar contextos especializados en lugar de interfaz directamente
   const { getTarifaById } = useTarif();
   const { getTiposIVAByTarifaId } = useIVA();
-  const { getRootFamilies, getFamiliasByTarifaId } = useFamily();
+  const { getFamilias, familias: familiasGlobales } = useFamily();
   const { 
     getServicioById, 
     crearServicio, 
@@ -159,8 +196,8 @@ export default function NuevoServicio() {
   const [serviceDocuments, setServiceDocuments] = useState<EntityDocument[]>([]);
   const [isLoadingAssets, setIsLoadingAssets] = useState(false);
 
-  // Estados para el servicio actual - Inicializar precios a "0.00"
-  const [servicio, setServicio] = useState<Partial<PrismaService>>({
+  // Estados para el servicio actual - Usar el tipo extendido y remover isActive 
+  const [servicio, setServicio] = useState<Partial<ServiceWithSettings>>({
     name: "",
     code: "",
     categoryId: null,
@@ -168,10 +205,11 @@ export default function NuevoServicio() {
     vatTypeId: null,
     colorCode: coloresAgenda[0]?.id || null,
     durationMinutes: 45,
-    requiresMedicalSignOff: false,
-    isActive: true,
-    pointsAwarded: 0,
     description: null,
+    settings: {
+      requiresMedicalSignOff: false,
+      pointsAwarded: 0,
+    },
   });
 
   // Estados para detectar cambios y estado inicial
@@ -210,7 +248,7 @@ export default function NuevoServicio() {
       }
     };
     fetchExistingCodes();
-  }, []); // <<< CAMBIO AQUÍ: Array de dependencias vacío
+  }, [getAllServicios]); // Agregar getAllServicios a dependencias
 
   // Modificar handleInputChange para usar campos Prisma y normalizeString
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -219,15 +257,19 @@ export default function NuevoServicio() {
 
     if (type === 'checkbox') {
       processedValue = checked;
-      // Mapeo especial para isActive (inverso de deshabilitado)
-      if (name === 'isActive') {
-        setServicio(prev => ({ ...prev, isActive: checked }));
+      // Mapeo especial para campos en settings
+      if (name === 'requiresMedicalSignOff') {
+        setServicio(prev => ({ 
+          ...prev, 
+          settings: { 
+            ...prev.settings, 
+            requiresMedicalSignOff: checked 
+          } 
+        }));
         setHayCambios(true);
-        return; // Evitar que se procese dos veces
-      } else if (name === 'requiresMedicalSignOff') {
-        processedValue = checked;
+        return;
       }
-      // Ignorar otros checkboxes que no mapean directamente por ahora
+      // Remover manejo de isActive ya que no existe en Service
       else {
          console.warn(`Checkbox ${name} no mapeado a PrismaService, ignorando.`);
          return;
@@ -241,7 +283,18 @@ export default function NuevoServicio() {
         else if (name === 'price') {
            processedValue = value; // Mantener string
         }
-        // Ignorar otros numéricos no mapeados (ej: comision)
+        // Para pointsAwarded, manejar en settings
+        else if (name === 'pointsAwarded') {
+           setServicio(prev => ({ 
+             ...prev, 
+             settings: { 
+               ...prev.settings, 
+               pointsAwarded: parseInt(value, 10) || 0 
+             } 
+           }));
+           setHayCambios(true);
+           return;
+        }
         else {
             console.warn(`Input numérico ${name} no mapeado a PrismaService, ignorando.`);
             return;
@@ -250,8 +303,6 @@ export default function NuevoServicio() {
         processedValue = value;
         if (name === 'code') {
             setIsCodeManuallyEdited(true);
-            // Opcional: Normalizar código al escribir
-            // processedValue = normalizeString(value);
         } else if (name === 'name') {
            // Generar código automáticamente si no se ha editado manualmente
            if (!isCodeManuallyEdited && !servicio.code) {
@@ -282,15 +333,18 @@ export default function NuevoServicio() {
   };
 
   const handleCheckboxChange = (id: string, checked: boolean) => {
-      // Mapear solo los checkboxes relevantes a PrismaService
-      if (id === 'isActive') {
-        setServicio(prev => ({ ...prev, isActive: !!checked }));
-        setHayCambios(true);
-      } else if (id === 'requiresMedicalSignOff') {
-        setServicio(prev => ({ ...prev, requiresMedicalSignOff: !!checked }));
+      // Mapear solo los checkboxes relevantes a ServiceWithSettings
+      if (id === 'requiresMedicalSignOff') {
+        setServicio(prev => ({ 
+          ...prev, 
+          settings: { 
+            ...prev.settings, 
+            requiresMedicalSignOff: checked 
+          } 
+        }));
         setHayCambios(true);
       }
-      // Otros checkboxes (deshabilitado, etc.) se manejan en handleInputChange o se ignoran
+      // Remover manejo de isActive ya que no existe
       else {
           console.warn(`Checkbox ${id} no mapeado directamente, ignorando.`);
       }
@@ -325,10 +379,8 @@ export default function NuevoServicio() {
         console.log("[useEffect DatosIniciales] IVA cargado:", ivaData?.length);
         setTiposIVA(ivaData || []); // Asegurar array
         
-        console.log("[useEffect DatosIniciales] Intentando cargar Familias...");
-        const familiasData = await getFamiliasByTarifaId(tarifaId);
-        console.log("[useEffect DatosIniciales] Familias cargadas:", familiasData?.length);
-        setFamilias(Array.isArray(familiasData) ? familiasData : []);
+        console.log("[useEffect DatosIniciales] Usando familias globales...");
+        setFamilias(familiasGlobales || []); // Usar familias globales directamente
       } catch (error) {
         console.error("[useEffect DatosIniciales] Error:", error);
         setFamilias([]); // Limpiar en caso de error
@@ -340,7 +392,7 @@ export default function NuevoServicio() {
 
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps 
-  }, [tarifaId]); // <<< ELIMINAR getTarifaById, getTiposIVAByTarifaId, getFamiliasByTarifaId
+  }, [tarifaId, getTarifaById, getTiposIVAByTarifaId, familiasGlobales]); // Agregar dependencias correctas
   
   // useEffect para filtrar equipos cuando la tarifa o los equipos globales cambien
   useEffect(() => {
@@ -380,8 +432,8 @@ export default function NuevoServicio() {
           console.log("[useEffect FetchServicio] Datos cargados:", JSON.parse(JSON.stringify(servicioData)));
           
           if (servicioData) {
-            // MAPEO INICIAL a Partial<PrismaService>
-            const servicioParaEstado: Partial<PrismaService> = {
+            // MAPEO INICIAL a ServiceWithSettings
+            const servicioParaEstado: Partial<ServiceWithSettings> = {
               id: servicioData.id,
               name: servicioData.name || "",
               code: servicioData.code || "",
@@ -391,9 +443,10 @@ export default function NuevoServicio() {
               colorCode: servicioData.colorCode || coloresAgenda[0]?.id || null,
               durationMinutes: servicioData.durationMinutes || 0,
               description: servicioData.description || null,
-              requiresMedicalSignOff: servicioData.requiresMedicalSignOff ?? false,
-              pointsAwarded: servicioData.pointsAwarded ?? 0,
-              isActive: servicioData.isActive ?? true,
+              settings: {
+                requiresMedicalSignOff: (servicioData as any).settings?.requiresMedicalSignOff ?? false,
+                pointsAwarded: (servicioData as any).settings?.pointsAwarded ?? 0,
+              },
             };
 
             setServicio(servicioParaEstado);
@@ -425,8 +478,8 @@ export default function NuevoServicio() {
           toast({ title: "Error", description: "No se pudo cargar el servicio.", variant: "destructive" });
         }
       } else {
-         // Es un servicio nuevo, usar estado inicial ya definido con Partial<PrismaService>
-         const estadoInicialNuevo: Partial<PrismaService> = {
+         // Es un servicio nuevo, usar estado inicial ya definido con ServiceWithSettings
+         const estadoInicialNuevo: Partial<ServiceWithSettings> = {
              name: "",
              code: "",
              categoryId: null,
@@ -434,10 +487,11 @@ export default function NuevoServicio() {
              vatTypeId: null,
              colorCode: coloresAgenda[0]?.id || null,
              durationMinutes: 45,
-             isActive: true,
-             requiresMedicalSignOff: false,
-             pointsAwarded: 0,
              description: null,
+             settings: {
+               requiresMedicalSignOff: false,
+               pointsAwarded: 0,
+             },
          };
          setServicio(estadoInicialNuevo);
          setInitialServicio(JSON.stringify(estadoInicialNuevo));
@@ -447,7 +501,7 @@ export default function NuevoServicio() {
     };
     fetchServicio();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [servicioId, tarifaId, router]); // <<< ELIMINAR getServicioById, getImagesByEntity, getDocumentsByEntity
+  }, [servicioId, tarifaId, router, getServicioById, getImagesByEntity, getDocumentsByEntity]); // Agregar dependencias
 
   // Añadir depuración de familias
   useEffect(() => {
@@ -575,7 +629,7 @@ export default function NuevoServicio() {
           throw new Error("El formato del precio no es válido.");
       }
 
-      // Construir el objeto para guardar
+      // Construir el objeto para guardar - ajustar para estructura Prisma real
       const servicioParaGuardar: Omit<PrismaService, 'id' | 'createdAt' | 'updatedAt' | 'systemId'> = {
         name: servicio.name!.trim(),
         code: servicio.code!.trim(),
@@ -585,11 +639,9 @@ export default function NuevoServicio() {
         colorCode: servicio.colorCode || null,
         durationMinutes: servicio.durationMinutes || 0,
         description: servicio.description || null,
-        isActive: servicio.isActive ?? true,
-        requiresMedicalSignOff: servicio.requiresMedicalSignOff ?? false,
-        pointsAwarded: servicio.pointsAwarded ?? 0,
       };
 
+      // Para settings, se manejará por separado en el contexto/API
       console.log("[guardarServicioReal] Datos a guardar (Prisma mapeado):", JSON.parse(JSON.stringify(servicioParaGuardar)));
 
       if (currentServicioId) {
@@ -612,7 +664,7 @@ export default function NuevoServicio() {
 
       if (servicioActualizado) {
          // Mapear de nuevo al estado local
-         const servicioParaEstado: Partial<PrismaService> = {
+         const servicioParaEstado: Partial<ServiceWithSettings> = {
              id: servicioActualizado.id,
              name: servicioActualizado.name || "",
              code: servicioActualizado.code || "",
@@ -622,9 +674,10 @@ export default function NuevoServicio() {
              colorCode: servicioActualizado.colorCode || null,
              durationMinutes: servicioActualizado.durationMinutes || 0,
              description: servicioActualizado.description || null,
-             isActive: servicioActualizado.isActive ?? true,
-             requiresMedicalSignOff: servicioActualizado.requiresMedicalSignOff ?? false,
-             pointsAwarded: servicioActualizado.pointsAwarded ?? 0,
+             settings: {
+               requiresMedicalSignOff: (servicioActualizado as any).settings?.requiresMedicalSignOff ?? false,
+               pointsAwarded: (servicioActualizado as any).settings?.pointsAwarded ?? 0,
+             },
          };
          console.log("[guardarServicioReal] Actualizando estado local y estado inicial.");
          setServicio(servicioParaEstado);
@@ -698,9 +751,9 @@ export default function NuevoServicio() {
 
   // Función para renderizar el agente con tooltip
   const renderAgente = (agente: typeof agentesSoporte[0]) => (
-    <div key={agente.id} className="flex items-center justify-between p-3 hover:bg-gray-100 rounded-md cursor-pointer" onClick={() => setAgenteSeleccionado(agente.id)}>
+    <div key={agente.id} className="flex justify-between items-center p-3 rounded-md cursor-pointer hover:bg-gray-100" onClick={() => setAgenteSeleccionado(agente.id)}>
       <div className="flex items-center">
-        <Avatar className="h-8 w-8 mr-2">
+        <Avatar className="mr-2 w-8 h-8">
           <AvatarImage src={agente.avatar} alt={agente.nombre} />
           <AvatarFallback>{agente.nombre.charAt(0)}</AvatarFallback>
         </Avatar>
@@ -984,36 +1037,36 @@ export default function NuevoServicio() {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-gray-50 overflow-hidden">
+    <div className="flex overflow-hidden flex-col h-screen bg-gray-50">
       {/* NO hay barra superior aquí */}
       
       {/* Área de Contenido Scrolleable */}
-      <div className="flex-grow overflow-y-auto min-h-0">
-        <div className="container mx-auto px-4 py-6 pb-12">
+      <div className="overflow-y-auto flex-grow min-h-0">
+        <div className="container px-4 py-6 pb-12 mx-auto">
           {/* Título dentro del contenido */}
-           <h1 className="text-2xl font-semibold text-gray-800 dark:text-gray-200 mb-6">
+           <h1 className="mb-6 text-2xl font-semibold text-gray-800 dark:text-gray-200">
             {isNew ? "Nuevo Servicio" : "Editar Servicio"}
           </h1>
           
           {/* Grid principal */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
             {/* Columna Izquierda */}
-            <div className="lg:col-span-2 space-y-6">
+            <div className="space-y-6 lg:col-span-2">
               <Card>
                 <CardContent className="p-6 space-y-4">
-                  <h2 className={`text-lg font-semibold mb-4 ${colorEncabezado}`}>Información Básica</h2>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <h2 className={`mb-4 text-lg font-semibold ${colorEncabezado}`}>Información Básica</h2>
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     <div>
-                      <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">Nombre del Servicio *</label>
+                      <label htmlFor="name" className="block mb-1 text-sm font-medium text-gray-700">Nombre del Servicio *</label>
                       <Input id="name" name="name" value={servicio.name || ''} onChange={handleInputChange} required className={selectHoverClass} />
                     </div>
                     <div>
-                      <label htmlFor="code" className="block text-sm font-medium text-gray-700 mb-1">Código *</label>
+                      <label htmlFor="code" className="block mb-1 text-sm font-medium text-gray-700">Código *</label>
                       <Input id="code" name="code" value={servicio.code || ''} onChange={handleInputChange} required className={selectHoverClass} />
                     </div>
                   </div>
                    <div>
-                      <label htmlFor="categoryId" className="block text-sm font-medium text-gray-700 mb-1">Familia *</label>
+                      <label htmlFor="categoryId" className="block mb-1 text-sm font-medium text-gray-700">Familia *</label>
                       <Select name="categoryId" value={servicio.categoryId || ''} onValueChange={(value) => handleSelectChange('categoryId', value)}>
                         <SelectTrigger className={cn("w-full", selectHoverClass)}>
                           <SelectValue placeholder="Selecciona una familia" />
@@ -1029,11 +1082,11 @@ export default function NuevoServicio() {
                       </Select>
                     </div>
                      <div>
-                      <label htmlFor="tarifaBase" className="block text-sm font-medium text-gray-700 mb-1">Tarifa Base</label>
+                      <label htmlFor="tarifaBase" className="block mb-1 text-sm font-medium text-gray-700">Tarifa Base</label>
                       <Input id="tarifaBase" name="tarifaBase" value={(tarifa as any)?.name || 'Cargando...'} readOnly disabled className="bg-gray-100" />
                     </div>
                     <div>
-                      <label htmlFor="vatTypeId" className="block text-sm font-medium text-gray-700 mb-1">Tipo de IVA *</label>
+                      <label htmlFor="vatTypeId" className="block mb-1 text-sm font-medium text-gray-700">Tipo de IVA *</label>
                        <Select name="vatTypeId" value={servicio.vatTypeId || ''} onValueChange={(value) => handleSelectChange('vatTypeId', value)}>
                           <SelectTrigger className={cn("w-full", selectHoverClass)}>
                             <SelectValue placeholder="Selecciona un tipo de IVA" />
@@ -1049,20 +1102,20 @@ export default function NuevoServicio() {
                         </Select>
                     </div>
                      <div>
-                         <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">Descripción</label>
+                         <label htmlFor="description" className="block mb-1 text-sm font-medium text-gray-700">Descripción</label>
                          <Input id="description" name="description" value={servicio.description || ''} onChange={handleInputChange} className={selectHoverClass} />
                      </div>
                 </CardContent>
               </Card>
                <Card>
                 <CardContent className="p-6 space-y-4">
-                  <h2 className={`text-lg font-semibold mb-4 ${colorEncabezado}`}>Configuración y Precios</h2>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
+                  <h2 className={`mb-4 text-lg font-semibold ${colorEncabezado}`}>Configuración y Precios</h2>
+                  <div className="grid grid-cols-1 gap-4 items-end sm:grid-cols-3">
                     <div className="sm:col-span-1">
-                        <label htmlFor="durationMinutes" className="block text-sm font-medium text-gray-700 mb-1">Duración (minutos) *</label>
+                        <label htmlFor="durationMinutes" className="block mb-1 text-sm font-medium text-gray-700">Duración (minutos) *</label>
                         <div className="flex items-center">
-                          <Button variant="outline" size="icon" onClick={() => handleDuracionChange(-1)} className="rounded-r-none h-10 w-10">
-                            <Minus className="h-4 w-4" />
+                          <Button variant="outline" size="icon" onClick={() => handleDuracionChange(-1)} className="w-10 h-10 rounded-r-none">
+                            <Minus className="w-4 h-4" />
                           </Button>
                           <Input
                             id="durationMinutes"
@@ -1073,15 +1126,15 @@ export default function NuevoServicio() {
                             min="1"
                             step="1"
                             required
-                            className={cn("w-20 text-center rounded-none h-10 hide-number-arrows", selectHoverClass)}
+                            className={cn("w-20 h-10 text-center rounded-none hide-number-arrows", selectHoverClass)}
                           />
-                          <Button variant="outline" size="icon" onClick={() => handleDuracionChange(1)} className="rounded-l-none h-10 w-10">
-                            <Plus className="h-4 w-4" />
+                          <Button variant="outline" size="icon" onClick={() => handleDuracionChange(1)} className="w-10 h-10 rounded-l-none">
+                            <Plus className="w-4 h-4" />
                           </Button>
                         </div>
                      </div>
                     <div className="sm:col-span-2">
-                      <label htmlFor="colorCode" className="block text-sm font-medium text-gray-700 mb-1">Color Agenda</label>
+                      <label htmlFor="colorCode" className="block mb-1 text-sm font-medium text-gray-700">Color Agenda</label>
                       <Select name="colorCode" value={servicio.colorCode || ''} onValueChange={(value) => handleSelectChange('colorCode', value)}>
                         <SelectTrigger className={cn("w-full", selectHoverClass)}>
                           <SelectValue placeholder="Selecciona un color" />
@@ -1100,30 +1153,25 @@ export default function NuevoServicio() {
                       </Select>
                     </div>
                   </div>
-                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     <div>
-                        <label htmlFor="price" className="block text-sm font-medium text-gray-700 mb-1">Precio Venta (Base)</label>
+                        <label htmlFor="price" className="block mb-1 text-sm font-medium text-gray-700">Precio Venta (Base)</label>
                         <Input id="price" name="price" type="text" // Usar text para formato
                                value={typeof servicio.price === 'number' ? servicio.price.toFixed(2) : String(servicio.price || '0.00')} // Mostrar formato
                                onChange={handleInputChange} // Usar handleInputChange genérico
                                onBlur={handleNumericInputBlur} // Formatear al perder foco
                                required={false} // No estrictamente requerido si puede ser 0
                                className={selectHoverClass} />
-                        <p className="text-xs text-gray-500 mt-1">El precio final incluirá IVA.</p>
+                        <p className="mt-1 text-xs text-gray-500">El precio final incluirá IVA.</p>
                     </div>
                     {/* Sección Equipo eliminada */}
                   </div>
                   {/* Sección Comisión eliminada */}
-                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4">
+                   <div className="grid grid-cols-1 gap-4 pt-4 md:grid-cols-2">
                        <div className="flex items-center space-x-2">
-                         <Checkbox id="requiresMedicalSignOff" name="requiresMedicalSignOff" checked={!!servicio.requiresMedicalSignOff} onCheckedChange={(checked) => handleCheckboxChange('requiresMedicalSignOff', !!checked)} />
+                         <Checkbox id="requiresMedicalSignOff" name="requiresMedicalSignOff" checked={!!servicio.settings?.requiresMedicalSignOff} onCheckedChange={(checked) => handleCheckboxChange('requiresMedicalSignOff', !!checked)} />
                          <label htmlFor="requiresMedicalSignOff" className="text-sm font-medium">Requiere Firma Médica</label>
                        </div>
-                       <div className="flex items-center space-x-2">
-                         <Checkbox id="isActive" name="isActive" checked={!!servicio.isActive} onCheckedChange={(checked) => handleCheckboxChange('isActive', !!checked)} />
-                         <label htmlFor="isActive" className="text-sm font-medium">Servicio Activo</label>
-                       </div>
-                       {/* Añadir campo para pointsAwarded si es necesario */}                       
                    </div>
                 </CardContent>
               </Card>
@@ -1134,16 +1182,16 @@ export default function NuevoServicio() {
                  </CardHeader>
                  <CardContent>
                      {/* Placeholder para la gestión de ServiceConsumption */}
-                     <p className="text-sm text-gray-500 italic">Funcionalidad pendiente de implementación.</p>
+                     <p className="text-sm italic text-gray-500">Funcionalidad pendiente de implementación.</p>
                  </CardContent>
                </Card>
             </div>
 
             {/* Columna Derecha */}
-            <div className="lg:col-span-1 space-y-6">
+            <div className="space-y-6 lg:col-span-1">
               <Card>
                 <CardContent className="p-6">
-                  <h2 className={`text-lg font-semibold mb-4 ${colorEncabezado}`}>Imágenes</h2>
+                  <h2 className={`mb-4 text-lg font-semibold ${colorEncabezado}`}>Imágenes</h2>
                   <ImageGallery
                     images={serviceImages.map(mapEntityImageToImageFileLike)}
                     onAddImages={handleAddImages}
@@ -1160,7 +1208,7 @@ export default function NuevoServicio() {
               {/* Tooltips */}
               <HoverCard openDelay={100} closeDelay={50}>
                 <HoverCardTrigger asChild>
-                  <Button variant="ghost_destructive_table" size="icon_table" onClick={() => console.log('Eliminar consumos')} >
+                  <Button variant="outline" size="icon" onClick={() => console.log('Eliminar consumos')} >
                     <Trash2 className="w-4 h-4" />
                   </Button>
                 </HoverCardTrigger>
@@ -1169,7 +1217,7 @@ export default function NuevoServicio() {
               
               <HoverCard openDelay={100} closeDelay={50}>
                 <HoverCardTrigger asChild>
-                  <Button variant="ghost_table" size="icon_table" onClick={() => handleSubSectionNavigation('bonos', 'Bonos')} >
+                  <Button variant="outline" size="icon" onClick={() => handleSubSectionNavigation('bonos', 'Bonos')} >
                     <Ticket className="w-4 h-4" />
                   </Button>
                 </HoverCardTrigger>
@@ -1178,7 +1226,7 @@ export default function NuevoServicio() {
               
               <HoverCard openDelay={100} closeDelay={50}>
                 <HoverCardTrigger asChild>
-                  <Button variant="ghost_table" size="icon_table" onClick={() => handleSubSectionNavigation('puntos', 'Puntos')} >
+                  <Button variant="outline" size="icon" onClick={() => handleSubSectionNavigation('puntos', 'Puntos')} >
                     <Star className="w-4 h-4" />
                   </Button>
                 </HoverCardTrigger>
@@ -1190,8 +1238,8 @@ export default function NuevoServicio() {
       </div> {/* Fin Área de Contenido Scrolleable */}
 
       {/* Barra de Acciones Inferior Original (Fija) */}
-      <div className="flex-shrink-0 border-t bg-white shadow-md dark:bg-gray-800 dark:border-gray-700">
-        <div className="container mx-auto px-4 py-3 flex justify-between items-center">
+      <div className="flex-shrink-0 bg-white border-t shadow-md dark:bg-gray-800 dark:border-gray-700">
+        <div className="container flex justify-between items-center px-4 py-3 mx-auto">
           <Button variant="outline" onClick={handleCancel} className={buttonSecondaryClass}>Cancelar</Button>
           <div className="flex space-x-2">
               {/* Botones para subsecciones si el servicio está guardado */}
@@ -1200,7 +1248,7 @@ export default function NuevoServicio() {
                       <HoverCard openDelay={100} closeDelay={50}>
                           <HoverCardTrigger asChild>
                               <Button variant="outline" size="icon" onClick={() => handleSubSectionNavigation('consumos', 'Consumos')} className={buttonNavClass}>
-                                  <ShoppingCart className="h-4 w-4" />
+                                  <ShoppingCart className="w-4 h-4" />
                               </Button>
                           </HoverCardTrigger>
                           <HoverCardContent><p>Gestionar Consumos</p></HoverCardContent>
@@ -1208,7 +1256,7 @@ export default function NuevoServicio() {
                       <HoverCard openDelay={100} closeDelay={50}>
                           <HoverCardTrigger asChild>
                               <Button variant="outline" size="icon" onClick={() => handleSubSectionNavigation('bonos', 'Bonos')} className={buttonNavClass}>
-                                  <Ticket className="h-4 w-4" />
+                                  <Ticket className="w-4 h-4" />
                               </Button>
                           </HoverCardTrigger>
                           <HoverCardContent><p>Configurar Bonos</p></HoverCardContent>
@@ -1216,18 +1264,18 @@ export default function NuevoServicio() {
                       <HoverCard openDelay={100} closeDelay={50}>
                           <HoverCardTrigger asChild>
                               <Button variant="outline" size="icon" onClick={() => handleSubSectionNavigation('puntos', 'Puntos')} className={buttonNavClass}>
-                                  <Star className="h-4 w-4" />
+                                  <Star className="w-4 h-4" />
                               </Button>
                           </HoverCardTrigger>
                           <HoverCardContent><p>Configurar Puntos</p></HoverCardContent>
                       </HoverCard>
                       {/* Separador visual */}
-                      <div className="border-l border-gray-300 h-6 my-auto mx-2"></div>
+                      <div className="mx-2 my-auto h-6 border-l border-gray-300"></div>
                   </>
               )}
              <Button onClick={() => handleGuardar()} disabled={isSaving || !hayCambios} className={buttonPrimaryClass}>
               {isSaving ? "Guardando..." : (hayCambios ? "Guardar Cambios" : "Guardado")}
-              {!isSaving && <Save className="ml-2 h-4 w-4" />}
+              {!isSaving && <Save className="ml-2 w-4 h-4" />}
             </Button>
           </div>
         </div>
@@ -1237,10 +1285,10 @@ export default function NuevoServicio() {
       <Dialog open={mostrarModalCamposObligatorios} onOpenChange={setMostrarModalCamposObligatorios}>
           <DialogContent>
               <DialogHeader>
-                  <DialogTitle className="flex items-center"><AlertTriangle className="text-red-500 mr-2" /> Campos Obligatorios Faltantes</DialogTitle>
+                  <DialogTitle className="flex items-center"><AlertTriangle className="mr-2 text-red-500" /> Campos Obligatorios Faltantes</DialogTitle>
                   <DialogDescription>
                       Por favor, completa los siguientes campos antes de guardar:
-                      <ul className="list-disc pl-5 mt-2 text-red-600">
+                      <ul className="pl-5 mt-2 list-disc text-red-600">
                           {camposFaltantes.map(campo => <li key={campo}>{campo}</li>)}
                       </ul>
                   </DialogDescription>
@@ -1254,7 +1302,7 @@ export default function NuevoServicio() {
       <Dialog open={mostrarModalConfirmacion} onOpenChange={setMostrarModalConfirmacion}>
           <DialogContent>
               <DialogHeader>
-                  <DialogTitle className="flex items-center"><AlertCircle className="text-yellow-500 mr-2" /> Cambios sin Guardar</DialogTitle>
+                  <DialogTitle className="flex items-center"><AlertCircle className="mr-2 text-yellow-500" /> Cambios sin Guardar</DialogTitle>
                   <DialogDescription>{mensajeConfirmacion}</DialogDescription>
               </DialogHeader>
               <DialogFooter>
@@ -1274,7 +1322,7 @@ export default function NuevoServicio() {
       <Dialog open={mostrarModalConfirmacionSinPrecioIVA} onOpenChange={setMostrarModalConfirmacionSinPrecioIVA}>
            <DialogContent>
               <DialogHeader>
-                  <DialogTitle className="flex items-center"><AlertCircle className="text-yellow-500 mr-2" /> Confirmar Guardado sin Precio</DialogTitle>
+                  <DialogTitle className="flex items-center"><AlertCircle className="mr-2 text-yellow-500" /> Confirmar Guardado sin Precio</DialogTitle>
                   <DialogDescription>{mensajeConfirmacion}</DialogDescription>
               </DialogHeader>
               <DialogFooter>
@@ -1287,7 +1335,7 @@ export default function NuevoServicio() {
        <Dialog open={showSaveToContinueModal} onOpenChange={setShowSaveToContinueModal}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle className="flex items-center"><Save className="text-blue-500 mr-2"/> Guardar para Continuar</DialogTitle>
+              <DialogTitle className="flex items-center"><Save className="mr-2 text-blue-500"/> Guardar para Continuar</DialogTitle>
               <DialogDescription>
                 {currentServicioId
                   ? `Hay cambios sin guardar. ¿Deseas guardarlos antes de ir a la sección "${subSectionDisplayName}"?`

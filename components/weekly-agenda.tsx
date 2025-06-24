@@ -91,7 +91,7 @@ export default function WeeklyAgenda({
   // console.log(`[WeeklyAgenda] Component Mounted/Rendered. Initial Date: ${initialDate}`);
   const router = useRouter()
   const { t } = useTranslation()
-  const { activeClinic, activeClinicCabins, isLoading: isLoadingClinic, isLoadingCabinsContext } = useClinic()
+  const { activeClinic, activeClinicCabins, isLoading: isLoadingClinic, isLoadingCabinsContext, isInitialized } = useClinic()
   const { cabinOverrides, loadingOverrides, fetchOverridesByDateRange } = useScheduleBlocks()
   
   // Precarga de datos para el modal de citas - ejecutar siempre para tenerlos en caché
@@ -174,7 +174,7 @@ export default function WeeklyAgenda({
   
   // ✅ FUNCIÓN DE COMPATIBILIDAD: Usar refetch del cache
   const fetchAppointments = useCallback(async () => {
-    console.log('[WeeklyAgenda] 🔄 fetchAppointments called - usando cache hook');
+    // console.log('[WeeklyAgenda] 🔄 fetchAppointments called - usando cache hook'); // Log optimizado
     if (!activeClinic?.id) {
       console.log('[WeeklyAgenda] No activeClinic ID, skipping fetch');
       return;
@@ -183,7 +183,7 @@ export default function WeeklyAgenda({
     // ✅ USAR REFETCH DEL HOOK en lugar de fetch manual
     try {
       await refetchFromCache();
-      console.log('[WeeklyAgenda] ✅ Refetch desde cache completado');
+      // console.log('[WeeklyAgenda] ✅ Refetch desde cache completado'); // Log optimizado
     } catch (error) {
       console.error('[WeeklyAgenda] ❌ Error en refetch desde cache:', error);
     }
@@ -275,7 +275,7 @@ export default function WeeklyAgenda({
   
   // Fetch appointments cuando cambia la clínica o la semana
   useEffect(() => {
-    console.log('[WeeklyAgenda] useEffect triggered - activeClinic:', activeClinicId, 'currentDate:', formattedCurrentDate);
+    // console.log('[WeeklyAgenda] useEffect triggered - activeClinic:', activeClinicId, 'currentDate:', formattedCurrentDate); // Log optimizado
     if (activeClinicId) {
       fetchAppointments();
     }
@@ -403,6 +403,11 @@ export default function WeeklyAgenda({
     // console.log("[WeeklyAgenda] useMemo - Recalculando activeCabins. Cantidad:", cabinsCount);
     return activeClinicCabins?.filter(cabin => cabin.isActive).sort((a, b) => a.order - b.order) ?? []; 
   }, [activeClinicCabins, cabinsCount, cabinsIds]); // ✅ Dependencias más específicas
+
+  // ✅ ESPERAR A QUE LA INICIALIZACIÓN ESTÉ COMPLETA
+  if (!isInitialized) {
+    return <div className="flex items-center justify-center h-full"><Loader2 className="w-8 h-8 text-purple-600 animate-spin" /> Inicializando clínicas...</div>;
+  }
 
   // Considerar el estado de carga de la clínica Y de las cabinas del contexto
   if (isLoadingClinic || isLoadingCabinsContext) { 
@@ -549,14 +554,14 @@ export default function WeeklyAgenda({
 
   // Efecto para realizar limpieza cuando el componente se desmonta o cambia de clínica
   useEffect(() => {
-    console.log("[WeeklyAgenda] Inicializado con clínica:", effectiveClinic?.id);
+    // console.log("[WeeklyAgenda] Inicializado con clínica:", effectiveClinic?.id); // Log optimizado
     
     // ✅ RESETEAR AUTO-SCROLL cuando cambia la clínica para permitir scroll en nueva clínica
     hasAutoScrolledRef.current = false;
     
     // Esta función se ejecutará al desmontar el componente o cuando cambie effectiveClinic
     return () => {
-      console.log("[WeeklyAgenda] Limpiando recursos para clínica:", effectiveClinic?.id);
+      // console.log("[WeeklyAgenda] Limpiando recursos para clínica:", effectiveClinic?.id); // Log optimizado
       
       // Limpiar todos los estados con datos específicos de la clínica
       setSelectedOverride(null);
@@ -588,7 +593,7 @@ export default function WeeklyAgenda({
   // --- NUEVO useEffect para cargar overrides --- 
   useEffect(() => {
     if (effectiveClinic?.id) {
-      console.log("[WeeklyAgenda] useEffect - Fetching overrides for week starting:", format(startOfWeek(currentDate, { weekStartsOn: 1 }), "yyyy-MM-dd"));
+      // console.log("[WeeklyAgenda] useEffect - Fetching overrides for week starting:", format(startOfWeek(currentDate, { weekStartsOn: 1 }), "yyyy-MM-dd")); // Log optimizado
       const monday = startOfWeek(currentDate, { weekStartsOn: 1 });
       const sunday = addDays(monday, 6);
       const startDate = format(monday, "yyyy-MM-dd");
@@ -605,102 +610,142 @@ export default function WeeklyAgenda({
   const hasAutoScrolledRef = useRef(false);
   const autoScrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
-  useEffect(() => {
-    // ✅ SOLO UNA VEZ POR CLÍNICA
-    if (!timeSlots.length || hasAutoScrolledRef.current) return;
+  // ✅ CÁLCULO DE POSICIÓN INICIAL PARA RENDERIZADO DIRECTO
+  const calculateInitialScrollPosition = useCallback(() => {
+    if (timeSlots.length === 0) return 0;
+
+    const now = new Date();
+    const currentHour = now.getHours();
+    const currentMinute = now.getMinutes();
+    const currentTimeString = `${currentHour.toString().padStart(2, '0')}:${currentMinute.toString().padStart(2, '0')}`;
     
-    // ✅ LIMPIAR TIMEOUT ANTERIOR
-    if (autoScrollTimeoutRef.current) {
-      clearTimeout(autoScrollTimeoutRef.current);
+    const clinicOpenTime = timeSlots[0];
+    const clinicCloseTime = timeSlots[timeSlots.length - 1];
+    
+    // Si está fuera de horario, posicionar al inicio
+    if (currentTimeString < clinicOpenTime || currentTimeString > clinicCloseTime) {
+      return 0;
+    }
+
+    // Calcular posición basada en la hora actual
+    const roundedMinute = Math.floor(currentMinute / 15) * 15;
+    const targetTime = `${currentHour.toString().padStart(2, '0')}:${roundedMinute.toString().padStart(2, '0')}`;
+    
+    // Encontrar el índice del slot de tiempo objetivo
+    const targetIndex = timeSlots.findIndex(slot => slot === targetTime);
+    
+    if (targetIndex !== -1) {
+      // Calcular posición aproximada (altura de fila * índice) - centrar en viewport
+      const rowHeight = 40; // Altura estándar de fila
+      const targetPosition = targetIndex * rowHeight;
+      const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 600;
+      
+      // Centrar la posición objetivo en el viewport
+      return Math.max(0, targetPosition - (viewportHeight / 2));
     }
     
-    const positionToCurrentTime = () => {
-      const now = new Date();
-      const currentHour = now.getHours();
-      const currentMinute = now.getMinutes();
-      const currentTimeString = `${currentHour.toString().padStart(2, '0')}:${currentMinute.toString().padStart(2, '0')}`;
-      
-      // Verificar si estamos en horario de clínica
-      if (timeSlots.length === 0) {
-        console.log('[WeeklyAgenda] No hay timeSlots configurados, no posicionar');
-        hasAutoScrolledRef.current = true;
-        return;
-      }
-      
-      const clinicOpenTime = timeSlots[0];
-      const clinicCloseTime = timeSlots[timeSlots.length - 1];
-      
-      if (currentTimeString < clinicOpenTime || currentTimeString > clinicCloseTime) {
-        console.log('[WeeklyAgenda] Fuera de horario de clínica, no posicionar');
-        hasAutoScrolledRef.current = true;
-        return;
-      }
+    return 0;
+  }, [timeSlots]);
 
-      if (!agendaRef.current) {
-        hasAutoScrolledRef.current = true;
-        return;
-      }
-
-      // ✅ BUSCAR HORA ACTUAL CON PRECISIÓN DE 15 MINUTOS
-      const roundedMinute = Math.floor(currentMinute / 15) * 15;
-      const targetTime = `${currentHour.toString().padStart(2, '0')}:${roundedMinute.toString().padStart(2, '0')}`;
-      const targetElement = agendaRef.current.querySelector(`[data-time="${targetTime}"]`);
-      
-      if (targetElement) {
-        // ✅ POSICIONAMIENTO DIRECTO SIN ANIMACIÓN para máxima estabilidad
-        targetElement.scrollIntoView({ 
-          behavior: 'auto',    // ✅ Sin animación - posicionamiento inmediato
-          block: 'center',     // ✅ Centrar verticalmente para mejor UX
-          inline: 'nearest'    // ✅ Sin scroll horizontal
-        });
-        
-        console.log('[WeeklyAgenda] 📍 AUTO-SCROLL DIRECTO en:', targetTime);
-      } else {
-        // ✅ FALLBACK: Buscar la hora más cercana
-        const hourElements = Array.from(agendaRef.current.querySelectorAll('[data-time]'));
-        const currentTotalMinutes = currentHour * 60 + currentMinute;
-        
-        let closestElement: Element | null = null;
-        let closestDiff = Infinity;
-        
-        for (const element of hourElements) {
-          const timeAttribute = element.getAttribute('data-time');
-          if (!timeAttribute) continue;
-          
-          const [elementHour, elementMinute] = timeAttribute.split(':').map(Number);
-          const elementTotalMinutes = elementHour * 60 + elementMinute;
-          const diff = Math.abs(elementTotalMinutes - currentTotalMinutes);
-          
-          if (diff < closestDiff) {
-            closestDiff = diff;
-            closestElement = element;
-          }
-        }
-        
-        if (closestElement) {
-          closestElement.scrollIntoView({ 
-            behavior: 'auto', 
-            block: 'center', 
-            inline: 'nearest' 
-          });
-          console.log('[WeeklyAgenda] 📍 AUTO-SCROLL DIRECTO en hora más cercana');
-        }
-      }
-      
-      // ✅ MARCAR COMO COMPLETADO
-      hasAutoScrolledRef.current = true;
-    };
-
-    // ✅ DELAY SIMPLE Y FIJO: Dar tiempo suficiente para renderizado pero sin complejidad
-    autoScrollTimeoutRef.current = setTimeout(positionToCurrentTime, 1000); // ✅ Tiempo fijo suficiente para renderizado completo
+  const positionToCurrentTime = useCallback(() => {
+    const now = new Date();
+    const currentHour = now.getHours();
+    const currentMinute = now.getMinutes();
+    const currentTimeString = `${currentHour.toString().padStart(2, '0')}:${currentMinute.toString().padStart(2, '0')}`;
     
-    return () => {
-      if (autoScrollTimeoutRef.current) {
-        clearTimeout(autoScrollTimeoutRef.current);
-        autoScrollTimeoutRef.current = null;
+    // Verificar si estamos en horario de clínica
+    if (timeSlots.length === 0) {
+      console.log('[WeeklyAgenda] No hay timeSlots configurados, no posicionar');
+      hasAutoScrolledRef.current = true;
+      return;
+    }
+    
+    const clinicOpenTime = timeSlots[0];
+    const clinicCloseTime = timeSlots[timeSlots.length - 1];
+    
+    if (currentTimeString < clinicOpenTime || currentTimeString > clinicCloseTime) {
+      console.log('[WeeklyAgenda] Fuera de horario de clínica, no posicionar');
+      hasAutoScrolledRef.current = true;
+      return;
+    }
+
+    if (!agendaRef.current) {
+      hasAutoScrolledRef.current = true;
+      return;
+    }
+
+    // ✅ BUSCAR HORA ACTUAL CON PRECISIÓN DE 15 MINUTOS
+    const roundedMinute = Math.floor(currentMinute / 15) * 15;
+    const targetTime = `${currentHour.toString().padStart(2, '0')}:${roundedMinute.toString().padStart(2, '0')}`;
+    const targetElement = agendaRef.current.querySelector(`[data-time="${targetTime}"]`);
+    
+    if (targetElement) {
+      // ✅ POSICIONAMIENTO DIRECTO SIN ANIMACIÓN para máxima estabilidad
+      targetElement.scrollIntoView({ 
+        behavior: 'auto',    // ✅ Sin animación - posicionamiento inmediato
+        block: 'center',     // ✅ Centrar verticalmente para mejor UX
+        inline: 'nearest'    // ✅ Sin scroll horizontal
+      });
+      
+      console.log('[WeeklyAgenda] 📍 AUTO-SCROLL DIRECTO en:', targetTime);
+    } else {
+      // ✅ FALLBACK: Buscar la hora más cercana
+      const hourElements = Array.from(agendaRef.current.querySelectorAll('[data-time]'));
+      const currentTotalMinutes = currentHour * 60 + currentMinute;
+      
+      let closestElement: Element | null = null;
+      let closestDiff = Infinity;
+      
+      for (const element of hourElements) {
+        const timeAttribute = element.getAttribute('data-time');
+        if (!timeAttribute) continue;
+        
+        const [elementHour, elementMinute] = timeAttribute.split(':').map(Number);
+        const elementTotalMinutes = elementHour * 60 + elementMinute;
+        const diff = Math.abs(elementTotalMinutes - currentTotalMinutes);
+        
+        if (diff < closestDiff) {
+          closestDiff = diff;
+          closestElement = element;
+        }
       }
-    };
-  }, [activeClinicId]); // ✅ SOLO depender de activeClinicId para evitar múltiples auto-scrolls
+      
+      if (closestElement) {
+        closestElement.scrollIntoView({ 
+          behavior: 'auto', 
+          block: 'center', 
+          inline: 'nearest' 
+        });
+        console.log('[WeeklyAgenda] 📍 AUTO-SCROLL DIRECTO en hora más cercana');
+      }
+    }
+    
+    // ✅ MARCAR COMO COMPLETADO
+    hasAutoScrolledRef.current = true;
+  }, [timeSlots]);
+  
+  // ✅ POSICIONAMIENTO INICIAL DIRECTO - SIN DELAY NI AUTO-SCROLL POSTERIOR
+  useEffect(() => {
+    if (!timeSlots.length || hasAutoScrolledRef.current) return;
+    
+    // ✅ POSICIONAMIENTO INMEDIATO EN EL PRIMER RENDERIZADO
+    const initialPosition = calculateInitialScrollPosition();
+    
+    if (agendaRef.current && initialPosition > 0) {
+      // ✅ ESTABLECER POSICIÓN INICIAL INMEDIATAMENTE SIN ANIMACIÓN
+      agendaRef.current.scrollTop = initialPosition;
+      console.log('[WeeklyAgenda] 📍 POSICIONAMIENTO INICIAL DIRECTO en posición:', initialPosition);
+    }
+    
+    // ✅ SI NECESITAMOS PRECISIÓN PERFECTA, USAMOS requestAnimationFrame PARA EL SIGUIENTE FRAME
+    requestAnimationFrame(() => {
+      if (agendaRef.current && !hasAutoScrolledRef.current) {
+        positionToCurrentTime();
+      }
+    });
+    
+    hasAutoScrolledRef.current = true;
+  }, [activeClinicId, timeSlots, calculateInitialScrollPosition, positionToCurrentTime]);
   
   // ✅ RESETEAR auto-scroll cuando cambie la clínica
   useEffect(() => {

@@ -16,7 +16,7 @@ export const convertBlocksToWeekSchedule = (
     defaultOpenTime: string, // Estos defaults podrían eliminarse si no se usan
     defaultCloseTime: string // Estos defaults podrían eliminarse si no se usan
 ): WeekSchedule => {
-    console.log("[scheduleUtils] convertBlocksToWeekSchedule - Input blocks:", blocks);
+    // console.log("[scheduleUtils] convertBlocksToWeekSchedule - Input blocks:", blocks); // Log optimizado
     // Inicializar con todos los días cerrados
     const initialSchedule: WeekSchedule = {
         monday: { isOpen: false, ranges: [] }, tuesday: { isOpen: false, ranges: [] },
@@ -60,7 +60,7 @@ export const convertBlocksToWeekSchedule = (
         return acc;
     }, JSON.parse(JSON.stringify(initialSchedule))); // Usar deep copy para evitar mutaciones inesperadas
 
-    console.log("[scheduleUtils] Resulting schedule:", weekSchedule);
+    // console.log("[scheduleUtils] Resulting schedule:", weekSchedule); // Log optimizado
     return weekSchedule;
 };
 

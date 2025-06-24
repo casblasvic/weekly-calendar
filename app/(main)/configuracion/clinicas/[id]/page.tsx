@@ -142,7 +142,7 @@ const menuItems = [
 ]
 
 const SectionTitle = ({ icon: Icon, title, color }: { icon: any; title: string; color: string }) => (
-  <div className={`flex items-center space-x-2 mb-4 pb-2 border-b ${color}`}>
+  <div className={`flex items-center pb-2 mb-4 space-x-2 border-b ${color}`}>
     <Icon className="w-5 h-5" />
     <h3 className={`text-lg font-medium ${color}`}>{title}</h3>
   </div>
@@ -212,7 +212,7 @@ function ClinicBanksTabContent({ clinicId }: ClinicBanksTabContentProps) {
 
   return (
     <div className="mt-4 space-y-4">
-       <div className="flex items-center justify-between mb-4">
+       <div className="flex justify-between items-center mb-4">
          {/* <h3 className="text-lg font-semibold">{t('config_clinics.banks.title')}</h3> */}
          <p className="text-sm text-muted-foreground">{t('config_clinics.banks.description')}</p>
          {/* Botón Añadir Banco */}
@@ -221,7 +221,7 @@ function ClinicBanksTabContent({ clinicId }: ClinicBanksTabContentProps) {
          <Link href="/configuracion/bancos/nuevo">
            <Button variant="default" size="sm" className="bg-purple-600 hover:bg-purple-700">
               {/* El contenido se queda igual, sin span extra */}
-              <PlusCircle className="w-4 h-4 mr-2" />
+              <PlusCircle className="mr-2 w-4 h-4" />
               {t('config_clinics.banks.add_button')}
            </Button>
          </Link>
@@ -301,15 +301,15 @@ function ClinicPaymentsTabContent({ clinicId }: ClinicPaymentsTabContentProps) {
 
   return (
     // El div exterior ya tiene overflow-x-auto
-    <div className="mt-4 space-y-4 overflow-x-auto">
-      <div className="flex items-center justify-between mb-4">
+    <div className="overflow-x-auto mt-4 space-y-4">
+      <div className="flex justify-between items-center mb-4">
          <p className="text-sm text-muted-foreground">{t('config_clinics.payments.description')}</p>
          <Button
              variant="outline"
              size="sm"
              onClick={() => router.push(`/configuracion/metodos-pago/nuevo?redirectBackTo=${redirectToUrl}`)}
           >
-              <PlusCircle className="w-4 h-4 mr-2" />
+              <PlusCircle className="mr-2 w-4 h-4" />
               {t('config_clinics.payments.add_button')}
           </Button>
       </div>
@@ -317,7 +317,7 @@ function ClinicPaymentsTabContent({ clinicId }: ClinicPaymentsTabContentProps) {
       {/* <<< Contenedor con overflow >>> */}
       <div className="overflow-x-auto">
         {isLoading ? (
-          <div className="w-full p-4 space-y-2">
+          <div className="p-4 space-y-2 w-full">
             <Skeleton className="w-full h-10" />
             <Skeleton className="w-full h-10" />
             <Skeleton className="w-full h-10" />
@@ -367,8 +367,34 @@ export default function ClinicaDetailPage() {
     isLoading: isLoadingContext, // <<< AÑADIR isLoading del contexto
     fetchCabinsForClinic,
     activeClinicCabins,
-    isLoadingCabinsContext
+    isLoadingCabinsContext,
+    isInitialized // <<< AGREGAR isInitialized
   } = clinicContext
+
+  // Patrón isInitialized - No renderizar hasta que esté listo
+  if (!isInitialized) {
+    return (
+      <div className="flex justify-center items-center min-h-screen">
+        <div className="text-center">
+          <div className="mx-auto mb-4 w-8 h-8 rounded-full border-b-2 border-purple-600 animate-spin"></div>
+          <p className="text-muted-foreground">Inicializando configuración de clínica...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // <<< CORREGIR: Usar clinicDataFromContext que está disponible desde el hook inicial >>>
+  // <<< En lugar de clinicData que se declara después >>>
+  if (!clinicDataFromContext && !clinics.length) {
+    return (
+      <div className="flex justify-center items-center min-h-screen">
+        <div className="text-center">
+          <p className="text-muted-foreground">No hay clínicas disponibles</p>
+        </div>
+      </div>
+    )
+  }
+
   const { templates } = useTemplates()
   const { getTarifaById, tarifas } = useTarif()
   // Obtener funciones y datos necesarios del contexto de equipamiento
@@ -1648,9 +1674,9 @@ export default function ClinicaDetailPage() {
         <h1 className="text-2xl font-bold">Configuración de Clínica: {clinicData?.name}</h1>
                     </div>
 
-      <div className="flex items-start gap-6">
+      <div className="flex gap-6 items-start">
         <div className="w-64 shrink-0">
-          <div className="sticky p-4 border rounded-lg shadow top-4 bg-card">
+          <div className="sticky top-4 p-4 rounded-lg border shadow bg-card">
             <div className="flex flex-col space-y-1">
               {menuItems.map((item) => {
                 const Icon = item.icon
@@ -1691,7 +1717,7 @@ export default function ClinicaDetailPage() {
                         id="prefix"
                         name="prefix" // <<< Añadir name
                         value={formData?.prefix || ''} // <<< Usar formData
-                        className="text-sm h-9"
+                        className="h-9 text-sm"
                         onChange={handleFormChange} // <<< Usar handleFormChange
                       />
                         </div>
@@ -1740,7 +1766,7 @@ export default function ClinicaDetailPage() {
                         id="commercialName"
                         name="commercialName" // <<< Añadir name
                         value={formData?.commercialName || ''} // <<< Usar formData
-                        className="text-sm h-9"
+                        className="h-9 text-sm"
                         onChange={handleFormChange} // <<< Usar handleFormChange
                       />
                       </div>
@@ -1753,7 +1779,7 @@ export default function ClinicaDetailPage() {
                         id="businessName"
                         name="businessName"
                         value={formData?.businessName || ''}
-                        className="text-sm h-9"
+                        className="h-9 text-sm"
                         onChange={handleFormChange}
                       />
                     </div>
@@ -1767,7 +1793,7 @@ export default function ClinicaDetailPage() {
                         id="cif"
                         name="cif"
                         value={formData?.cif || ''}
-                        className="text-sm h-9"
+                        className="h-9 text-sm"
                         onChange={handleFormChange}
                       />
                     </div>
@@ -1786,7 +1812,7 @@ export default function ClinicaDetailPage() {
                         onValueChange={(value) => handleFormChange({ target: { name: 'legalEntityId', value: value === "NONE" ? null : value, type: 'select' } } as any)}
                         disabled={isLoadingLegalEntities}
                       >
-                        <SelectTrigger className="text-sm h-9" disabled={isLoadingLegalEntities}>
+                        <SelectTrigger className="h-9 text-sm" disabled={isLoadingLegalEntities}>
                           <SelectValue placeholder={isLoadingLegalEntities ? "Cargando sociedades..." : "Selecciona una sociedad"} />
                         </SelectTrigger>
                         <SelectContent>
@@ -1803,14 +1829,14 @@ export default function ClinicaDetailPage() {
 
                     {/* Tarjeta de Datos Fiscales de la Sociedad Mercantil Seleccionada (COMIENZO) */}
                     {selectedLegalEntityForDisplay && (
-                      <div className="md:col-span-1 mt-1"> {/* Ajustado a md:col-span-1 */}
+                      <div className="mt-1 md:col-span-1"> {/* Ajustado a md:col-span-1 */}
                         <Accordion type="single" collapsible className="w-full">
                           <AccordionItem value="legal-entity-fiscal-data">
-                            <AccordionTrigger className="text-sm py-3">
+                            <AccordionTrigger className="py-3 text-sm">
                               Datos Fiscales Adicionales: {selectedLegalEntityForDisplay.name}
                             </AccordionTrigger>
                             <AccordionContent>
-                              <div className="space-y-1 text-xs pt-2 pb-1 pl-2 pr-2 border-t">
+                              <div className="pt-2 pr-2 pb-1 pl-2 space-y-1 text-xs border-t">
                                 {selectedLegalEntityForDisplay.taxIdentifierFields && typeof selectedLegalEntityForDisplay.taxIdentifierFields === 'object' && Object.keys(selectedLegalEntityForDisplay.taxIdentifierFields).length > 0 ? (
                                   Object.entries(selectedLegalEntityForDisplay.taxIdentifierFields).map(([key, value]) => (
                                     <div key={key} className="flex justify-between">
@@ -1819,7 +1845,7 @@ export default function ClinicaDetailPage() {
                                     </div>
                                   ))
                                 ) : (
-                                  <p className="text-gray-500 italic">No hay identificadores fiscales adicionales para esta sociedad.</p>
+                                  <p className="italic text-gray-500">No hay identificadores fiscales adicionales para esta sociedad.</p>
                                 )}
                               </div>
                             </AccordionContent>
@@ -1846,7 +1872,7 @@ export default function ClinicaDetailPage() {
                         onValueChange={(value) => handleFormChange({ target: { name: 'countryIsoCode', value: value, type: 'select' } } as any)}
                         disabled={isLoadingCountries} // Deshabilitar mientras carga
                       >
-                        <SelectTrigger className="text-sm h-9" disabled={isLoadingCountries}>
+                        <SelectTrigger className="h-9 text-sm" disabled={isLoadingCountries}>
                           <SelectValue placeholder={isLoadingCountries ? "Cargando países..." : "Selecciona un país"} />
                         </SelectTrigger>
                         <SelectContent>
@@ -1875,7 +1901,7 @@ export default function ClinicaDetailPage() {
                         id="province"
                         name="province" // <<< Añadir name
                         value={formData?.province || ''} // <<< Usar formData
-                        className="text-sm h-9"
+                        className="h-9 text-sm"
                         onChange={handleFormChange} // <<< Usar handleFormChange
                       />
                       </div>
@@ -1887,7 +1913,7 @@ export default function ClinicaDetailPage() {
                         id="city"
                         name="city" // <<< Añadir name
                         value={formData?.city || ''} // <<< Usar formData
-                        className="text-sm h-9"
+                        className="h-9 text-sm"
                         onChange={handleFormChange} // <<< Usar handleFormChange
                       />
                     </div>
@@ -1899,7 +1925,7 @@ export default function ClinicaDetailPage() {
                         id="postalCode"
                         name="postalCode" // <<< Añadir name
                         value={formData?.postalCode || ''} // <<< Usar formData
-                        className="text-sm h-9"
+                        className="h-9 text-sm"
                         onChange={handleFormChange} // <<< Usar handleFormChange
                       />
                     </div>
@@ -1911,7 +1937,7 @@ export default function ClinicaDetailPage() {
                         id="address"
                         name="address" // <<< Añadir name
                         value={formData?.address || ''} // <<< Usar formData
-                        className="text-sm h-9"
+                        className="h-9 text-sm"
                         onChange={handleFormChange} // <<< Usar handleFormChange
                       />
                     </div>
@@ -1924,7 +1950,7 @@ export default function ClinicaDetailPage() {
                         Teléfono
                       </Label>
                       {/* <<< ENVOLVER INPUT EN FLEX Y AÑADIR SELECT >>> */}
-                      <div className="flex items-center gap-2"> 
+                      <div className="flex gap-2 items-center"> 
                         <Select
                           name="phone1CountryIsoCode" // Nombre para el handler
                           value={formData?.phone1CountryIsoCode || ""}
@@ -1955,7 +1981,7 @@ export default function ClinicaDetailPage() {
                           name="phone" // Asegurar que el input tiene nombre
                           value={formData.phone || ''} // Leer de formData
                           onChange={handleFormChange} // Usar handler general
-                          className="flex-1 text-sm h-9" // Ajustar clase
+                          className="flex-1 h-9 text-sm" // Ajustar clase
                         />
                       </div>
                       {/* Mostrar error si falla la carga de países */}
@@ -1969,7 +1995,7 @@ export default function ClinicaDetailPage() {
                         Teléfono 2
                       </Label>
                        {/* <<< ENVOLVER INPUT EN FLEX Y AÑADIR SELECT >>> */}
-                       <div className="flex items-center gap-2">
+                       <div className="flex gap-2 items-center">
                          <Select
                            name="phone2CountryIsoCode" // Nombre para el handler
                            value={formData?.phone2CountryIsoCode || ""}
@@ -2000,7 +2026,7 @@ export default function ClinicaDetailPage() {
                            name="phone2" // Asegurar que el input tiene nombre
                            value={formData.phone2 || ''} // Leer de formData
                            onChange={handleFormChange} // Usar handler general
-                           className="flex-1 text-sm h-9" // Ajustar clase
+                           className="flex-1 h-9 text-sm" // Ajustar clase
                          />
                        </div>
                        {/* Mostrar error si falla la carga de países */}
@@ -2018,7 +2044,7 @@ export default function ClinicaDetailPage() {
                         name="email" // <<< Añadir name
                         type="email"
                         value={formData?.email || ''} // <<< Usar formData
-                        className="text-sm h-9"
+                        className="h-9 text-sm"
                         onChange={handleFormChange} // <<< Usar handleFormChange
                       />
                     </div>
@@ -2034,7 +2060,7 @@ export default function ClinicaDetailPage() {
                         type="number"
                         step="0.01"
                         value={formData?.initialCash ?? ''} // <<< Usar formData
-                        className="text-sm h-9"
+                        className="h-9 text-sm"
                         onChange={handleFormChange} // <<< Usar handleFormChange
                       />
                     </div>
@@ -2047,7 +2073,7 @@ export default function ClinicaDetailPage() {
                         // onValueChange={(value) => debouncedHandleOtherFieldUpdate({ ticketSize: value })} // <<< Modificar
                         onValueChange={(value) => handleFormChange({ target: { name: 'ticketSize', value: value, type: 'select' } } as any)} // <<< Usar handleFormChange
                   >
-                        <SelectTrigger className="text-sm h-9">
+                        <SelectTrigger className="h-9 text-sm">
                           <SelectValue placeholder="Seleccionar tamaño" />
                         </SelectTrigger>
                         <SelectContent>
@@ -2065,7 +2091,7 @@ export default function ClinicaDetailPage() {
                         // onValueChange={(value) => debouncedHandleOtherFieldUpdate({ tariffId: value })} // <<< Modificar
                         onValueChange={(value) => handleFormChange({ target: { name: 'tariffId', value: value, type: 'select' } } as any)} // <<< Usar handleFormChange
                       >
-                        <SelectTrigger className="text-sm h-9">
+                        <SelectTrigger className="h-9 text-sm">
                           <SelectValue placeholder="Seleccionar tarifa" />
                         </SelectTrigger>
                         <SelectContent>
@@ -2089,7 +2115,7 @@ export default function ClinicaDetailPage() {
                         id="ip" // <<< Añadir id si falta
                         name="ip" // <<< Añadir name
                         value={formData?.ip || ''} // <<< Usar formData
-                        className="text-sm h-9"
+                        className="h-9 text-sm"
                         onChange={handleFormChange} // <<< Usar handleFormChange
                       />
                     </div>
@@ -2406,7 +2432,7 @@ export default function ClinicaDetailPage() {
                     <TabsContent value="excepciones" className="mt-4">
                       <Card>
                         <CardHeader>
-                          <div className="flex items-center justify-between">
+                          <div className="flex justify-between items-center">
                             <div>
                               <CardTitle>Excepciones de Horario</CardTitle>
                               <CardDescription>
@@ -2415,7 +2441,7 @@ export default function ClinicaDetailPage() {
                               </CardDescription>
                             </div>
                             <Button size="sm" disabled>
-                              <Plus className="mr-2 h-4 w-4" /> Añadir Nueva Excepción
+                              <Plus className="mr-2 w-4 h-4" /> Añadir Nueva Excepción
                             </Button>
                           </div>
                         </CardHeader>
@@ -2448,14 +2474,14 @@ export default function ClinicaDetailPage() {
               {activeTab === "cabinas" && (
                 <Card className="p-6">
                   <div className="space-y-4">
-                    <div className="flex items-center justify-between">
+                    <div className="flex justify-between items-center">
                       <h3 className="text-lg font-medium">Cabinas de la clínica: {clinicData?.name}</h3>
                       <Button onClick={() => {
                           setEditingCabin(null); // Asegurar que no hay cabina en edición
                           setIsCabinDialogOpen(true); // Abrir diálogo para nueva cabina
                         }}
                       >
-                        <PlusCircle className="w-4 h-4 mr-2" /> Nueva cabina
+                        <PlusCircle className="mr-2 w-4 h-4" /> Nueva cabina
                         </Button>
                     </div>
                     <SearchInput
@@ -2463,7 +2489,7 @@ export default function ClinicaDetailPage() {
                             value={cabinFilterText} 
                       onChange={setCabinFilterText}
                         />
-                    <div className="border rounded-md">
+                    <div className="rounded-md border">
                       <Table>
                         <TableHeader>
                           <TableRow>
@@ -2504,7 +2530,7 @@ export default function ClinicaDetailPage() {
                                   <TableCell>{cabin.code ?? '-'}</TableCell>
                                   <TableCell>{cabin.name}</TableCell>
                                   <TableCell>
-                                    <div className="w-6 h-6 border rounded-full" style={{ backgroundColor: cabin.color ?? '#ffffff' }}></div>
+                                    <div className="w-6 h-6 rounded-full border" style={{ backgroundColor: cabin.color ?? '#ffffff' }}></div>
                                   </TableCell>
                                   <TableCell className="text-center">
                                     <Checkbox
@@ -2618,7 +2644,7 @@ export default function ClinicaDetailPage() {
               {activeTab === "usuarios" && (
                 <Card className="p-6">
                   <div className="flex flex-col gap-4">
-                    <div className="flex items-center justify-between">
+                    <div className="flex justify-between items-center">
                       <h3 className="text-lg font-medium">Usuarios de la clínica: {clinicData.name}</h3>
                     </div>
                     
@@ -2635,7 +2661,7 @@ export default function ClinicaDetailPage() {
                 <Card className="p-6">
                   <CardHeader>
                     <CardTitle className="flex items-center">
-                      <CreditCard className="w-5 h-5 mr-2 text-purple-600" />
+                      <CreditCard className="mr-2 w-5 h-5 text-purple-600" />
                       {t('config_clinics.tabs.entidades')} 
                     </CardTitle>
                     {/* CardDescription eliminada */}
@@ -2651,7 +2677,7 @@ export default function ClinicaDetailPage() {
                 <Card className="p-6">
                   <CardHeader>
                     <CardTitle className="flex items-center">
-                      <CreditCard className="w-5 h-5 mr-2 text-orange-600" /> {/* Color opcional */}
+                      <CreditCard className="mr-2 w-5 h-5 text-orange-600" /> {/* Color opcional */}
                       {t('config_clinics.tabs.pagos')} 
                     </CardTitle>
                     <CardDescription>
@@ -2760,7 +2786,7 @@ export default function ClinicaDetailPage() {
               setIsCabinDialogOpen(true)
             }}
           >
-            <Plus className="w-4 h-4 mr-2" />
+            <Plus className="mr-2 w-4 h-4" />
             Nueva cabina
           </Button>
         )}
@@ -2771,7 +2797,7 @@ export default function ClinicaDetailPage() {
               router.push(`/configuracion/clinicas/${clinicId}/equipamiento/nuevo`)
             }}
           >
-            <Plus className="w-4 h-4 mr-2" />
+            <Plus className="mr-2 w-4 h-4" />
             Nuevo equipamiento
           </Button>
         )}
@@ -2780,7 +2806,7 @@ export default function ClinicaDetailPage() {
             className="px-4 py-2 text-sm text-white bg-blue-600 rounded-md shadow-md hover:bg-blue-700"
             onClick={() => setShowNewUserDialog(true)}
           >
-            <Plus className="w-4 h-4 mr-2" />
+            <Plus className="mr-2 w-4 h-4" />
             Nuevo usuario
           </Button>
         )}
