@@ -311,6 +311,7 @@ export default function WeeklyAgenda({
   // Obtener configuración de granularidad desde el contexto
   const { minuteGranularity, slotDuration, moveGranularity } = useGranularity();
   
+
   // ✅ Hook para mover citas - LLAMADA ÚNICA para evitar instancias múltiples del contexto
   const { startMovingAppointment, appointmentInMovement, isMovingAppointment, registerOptimisticFunctions, unregisterOptimisticFunctions } = useMoveAppointment();
 
@@ -462,27 +463,27 @@ export default function WeeklyAgenda({
 
   // ✅ ESPERAR A QUE LA INICIALIZACIÓN ESTÉ COMPLETA
   if (!isInitialized) {
-    return <div className="flex items-center justify-center h-full"><Loader2 className="w-8 h-8 text-purple-600 animate-spin" /> Inicializando clínicas...</div>;
+    return <div className="flex justify-center items-center h-full"><Loader2 className="w-8 h-8 text-purple-600 animate-spin" /> Inicializando clínicas...</div>;
   }
 
   // Considerar el estado de carga de la clínica Y de las cabinas del contexto
   if (isLoadingClinic || isLoadingCabinsContext) { 
       console.log(`[WeeklyAgenda] Mostrando carga: isLoadingClinic=${isLoadingClinic}, isLoadingCabinsContext=${isLoadingCabinsContext}`);
-      return <div className="flex items-center justify-center h-full"><Loader2 className="w-8 h-8 text-purple-600 animate-spin" /> Cargando datos de clínica/cabinas...</div>;
+      return <div className="flex justify-center items-center h-full"><Loader2 className="w-8 h-8 text-purple-600 animate-spin" /> Cargando datos de clínica/cabinas...</div>;
   }
   
   // Añadir una comprobación explícita por si activeClinicCabins es null/undefined después de la carga (error inesperado)
   if (!activeClinicCabins) {
       console.error("[WeeklyAgenda] Error: activeClinicCabins es null/undefined después de la carga.");
-      return <div className="flex items-center justify-center h-full text-red-600">Error al cargar la configuración de cabinas.</div>;
+      return <div className="flex justify-center items-center h-full text-red-600">Error al cargar la configuración de cabinas.</div>;
   }
   
   // Verificar si no hay clínica activa
   if (!activeClinic) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-center p-8">
-          <h3 className="text-lg font-medium text-gray-700 mb-2">
+      <div className="flex justify-center items-center h-full">
+        <div className="p-8 text-center">
+          <h3 className="mb-2 text-lg font-medium text-gray-700">
             {t('agenda.noActiveClinic')}
           </h3>
         </div>
@@ -493,17 +494,17 @@ export default function WeeklyAgenda({
   // Verificar si no hay horario configurado
   if (timeSlots.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-center p-8">
-          <h3 className="text-lg font-medium text-gray-700 mb-2">
+      <div className="flex justify-center items-center h-full">
+        <div className="p-8 text-center">
+          <h3 className="mb-2 text-lg font-medium text-gray-700">
             {t('agenda.noScheduleConfigured.title')}
           </h3>
-          <p className="text-gray-500 mb-4">
+          <p className="mb-4 text-gray-500">
             {t('agenda.noScheduleConfigured.description')}
           </p>
           <Button
             onClick={() => router.push(`/configuracion/clinicas/${activeClinic.id}?tab=horarios`)}
-            className="bg-purple-600 hover:bg-purple-700 text-white"
+            className="text-white bg-purple-600 hover:bg-purple-700"
           >
             {t('agenda.noScheduleConfigured.action')}
           </Button>
@@ -515,17 +516,17 @@ export default function WeeklyAgenda({
   // Verificar si no hay cabinas configuradas
   if (activeCabins.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-center p-8">
-          <h3 className="text-lg font-medium text-gray-700 mb-2">
+      <div className="flex justify-center items-center h-full">
+        <div className="p-8 text-center">
+          <h3 className="mb-2 text-lg font-medium text-gray-700">
             {t('agenda.noCabinsConfigured.title')}
           </h3>
-          <p className="text-gray-500 mb-4">
+          <p className="mb-4 text-gray-500">
             {t('agenda.noCabinsConfigured.description')}
           </p>
           <Button
             onClick={() => router.push(`/configuracion/clinicas/${activeClinic.id}?tab=cabinas`)}
-            className="bg-purple-600 hover:bg-purple-700 text-white"
+            className="text-white bg-purple-600 hover:bg-purple-700"
           >
             {t('agenda.noCabinsConfigured.action')}
           </Button>
@@ -1992,20 +1993,20 @@ export default function WeeklyAgenda({
             }}
             ref={agendaRef}
           >
-            {/* Columna de tiempo - Fija en ambas direcciones - z-50 para estar sobre granularidades */}
+            {/* Columna de tiempo - Fija en ambas direcciones - z-40 para estar sobre granularidades */}
             <div
-              className="sticky left-0 top-0 z-50 w-20 p-4 bg-white border-b border-r border-gray-300 hour-header"
+              className="sticky top-0 left-0 z-40 p-4 w-20 bg-white border-r border-b border-gray-300 hour-header"
             >
               <div className="text-sm text-gray-500">Hora</div>
             </div>
 
-            {/* Cabeceras de días - Fijas - z-50 para estar sobre granularidades */}
+            {/* Cabeceras de días - Fijas - z-40 para estar sobre granularidades */}
             {weekDays.map((day, index) => {
               const today = isToday(day);
               const active = isDayActive(day);
               return (
                 <div key={index} className={cn(
-                  "sticky top-0 bg-white border-b border-gray-300 day-header z-50",
+                  "sticky top-0 bg-white border-b border-gray-300 day-header z-40",
                   today ? "border-l-2 border-r-2 border-purple-300" : "border-l border-r border-gray-300",
                   !active && "bg-gray-100"
                 )}>
@@ -2018,10 +2019,10 @@ export default function WeeklyAgenda({
                     onClick={() => active && handleDayClick(day)}
                     title={active ? "Ir a vista diaria" : "Día no activo"}
                   >
-                    <div className="flex items-center justify-start gap-2">
+                    <div className="flex gap-2 justify-start items-center">
                       <div>
                         <div className="text-base font-medium capitalize">{format(day, "EEEE", { locale: es })}</div>
-                        <div className={cn("text-sm", today ? "text-purple-600 font-bold" : "text-gray-500")}>
+                        <div className={cn("text-sm", today ? "font-bold text-purple-600" : "text-gray-500")}>
                           {format(day, "d/M/yyyy")}
                         </div>
                       </div>
@@ -2059,7 +2060,7 @@ export default function WeeklyAgenda({
               <React.Fragment key={time}>
                 {/* Celda de Hora - CORREGIDO: Añadido z-index */}
                 <div
-                  className="sticky left-0 z-20 w-20 p-2 text-sm font-medium text-purple-600 bg-white border-b border-r border-gray-300 hour-column"
+                  className="sticky left-0 z-20 p-2 w-20 text-sm font-medium text-purple-600 bg-white border-r border-b border-gray-300 hour-column"
                   data-time={time}
                 >
                   {time}
@@ -2171,7 +2172,7 @@ export default function WeeklyAgenda({
                           );
                           // ***** FIN INTEGRACIÓN EN REND *****
                         }) : (
-                          <div className="flex items-center justify-center h-full p-1 text-xs italic text-center text-gray-400 border-t border-r border-gray-200 last:border-r-0" style={{ height: `${AGENDA_CONFIG.ROW_HEIGHT}px` }}>
+                          <div className="flex justify-center items-center p-1 h-full text-xs italic text-center text-gray-400 border-t border-r border-gray-200 last:border-r-0" style={{ height: `${AGENDA_CONFIG.ROW_HEIGHT}px` }}>
                             Sin cabinas activas
                           </div>
                         )}
@@ -2615,7 +2616,7 @@ export default function WeeklyAgenda({
             {/* El bloque de AgendaNavBar eliminado completamente */}
             
             {/* Contenedor de la rejilla que debe tener scroll */}
-            <div ref={gridContainerRef} className="relative flex-1 overflow-auto">
+            <div ref={gridContainerRef} className="overflow-auto relative flex-1" data-scroll-container>
                 {renderWeeklyGrid()}
                 {/* Asegurarse de que CurrentTimeIndicator esté relacionado con este div si usa refs */}
             </div>

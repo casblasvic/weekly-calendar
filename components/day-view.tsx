@@ -244,6 +244,7 @@ export default function DayView({
   // ✅ Hook para mover citas
   const { startMovingAppointment, appointmentInMovement, isMovingAppointment, registerOptimisticFunctions, unregisterOptimisticFunctions } = useMoveAppointment();
 
+
   // ✅ REGISTRAR FUNCIONES OPTIMISTAS CON EL CONTEXTO
   useEffect(() => {
     registerOptimisticFunctions({
@@ -2045,10 +2046,10 @@ export default function DayView({
       const clinicIdStr = activeClinic?.id ? String(activeClinic.id) : undefined;
       return (
           <div className="overflow-visible relative flex-1 bg-white">
-              {/* Cabecera de la tabla (fija) - z-50 para estar sobre granularidades */}
-              <div className="grid sticky top-0 z-50 bg-white border-b shadow-sm" 
+              {/* Cabecera de la tabla (fija) - z-40 para estar sobre granularidades */}
+              <div className="grid sticky top-0 z-40 bg-white border-b shadow-sm" 
                    style={{ gridTemplateColumns: `80px repeat(${rooms.length > 0 ? rooms.length : 1}, minmax(100px, 1fr))` }}> 
-                  <div className="sticky left-0 z-50 p-2 w-20 text-sm font-medium text-purple-600 bg-white border-r border-b border-gray-200 hour-column">
+                  <div className="sticky left-0 z-40 p-2 w-20 text-sm font-medium text-purple-600 bg-white border-r border-b border-gray-200 hour-column">
                     Hora
                   </div>
                   {rooms.length > 0 ? (
@@ -2065,7 +2066,7 @@ export default function DayView({
               </div>
 
               {/* Contenedor scrollable para slots */}
-              <div className="relative" ref={agendaRef}>
+              <div className="relative" ref={agendaRef} data-scroll-container>
                   {timeSlots.map((time, timeIndex) => (
                     <div key={time} className="grid border-b" 
                          data-time={time}

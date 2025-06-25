@@ -7,9 +7,9 @@
   --z-cells: 10;
   --z-events: 20;
   --z-grid-container: 95; /* << NUEVO: Mayor que el indicador (90), menor que hour-column (100) */
-  --z-hour-column: 60; /* ✅ ACTUALIZADO: Por encima de granularidades (z-45, z-50) */
-  --z-day-headers: 60; /* ✅ ACTUALIZADO: Por encima de granularidades (z-45, z-50) */
-  --z-hour-header: 60; /* ✅ ACTUALIZADO: Por encima de granularidades (z-45, z-50) */
+  --z-hour-column: 100;
+  --z-day-headers: 110; /* Ajustado: > hour-column */
+  --z-hour-header: 110; /* Ajustado: > hour-column */
   /* --z-time-indicator-label: 130; /* Superior al indicador pero menor que cabeceras */
 
   /* Nuevos valores para el indicador */

@@ -191,14 +191,34 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (!cellRef.current || !isInteractive || !active || overrideForCell || isDraggingDuration) return
 
+    // ✅ DEBUG ESPECÍFICO PARA ANALIZAR SALTOS DE GRANULARIDADES
+    const debugDate = day.toISOString().split('T')[0]; // formato YYYY-MM-DD
+    const isDebugDay = debugDate === '2025-06-26';
+    const isFirstCabin = cabinIndex === 0; // Primera cabina
+    const shouldDebug = false; // ✅ DESACTIVADO: Funciona perfectamente
+
     // Verificar si el target es una cita - PERO solo bloquear si NO hay drag activo
     const target = e.target as HTMLElement
     
-    // CORREGIDO: Durante drag, permitir granularidades sobre la cita translúcida
+    // ✅ MEJORADO: Detección más precisa de citas para evitar interferencias
     const appointmentElement = target.closest('[data-appointment-item]')
     if (appointmentElement && !isDragging) {
-      clearHover()
-      return
+      // ✅ VERIFICAR: Solo bloquear si realmente estamos sobre el contenido de la cita
+      const isOverAppointmentContent = target.closest('.appointment-content') || 
+                                      target.closest('[data-appointment-content]') ||
+                                      appointmentElement.contains(target);
+      
+      if (isOverAppointmentContent) {
+        if (shouldDebug) {
+          console.log(`[DEBUG-GRANULARITY] ${time} - Bloqueado por cita`, {
+            appointmentId: appointmentElement.getAttribute('data-appointment-id'),
+            isDragging,
+            targetElement: target.tagName
+          });
+        }
+        clearHover()
+        return
+      }
     }
     
     // Si estamos haciendo drag Y hay una cita translúcida, verificar si es la cita siendo arrastrada
@@ -219,11 +239,65 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
     const relativeY = e.clientY - rect.top
     const percentage = Math.max(0, Math.min(1, relativeY / rect.height))
     
+    // ✅ ANTI-BUCLE SIMPLIFICADO: Solo evitar eventos idénticos consecutivos
+    const mouseKey = `${Math.round(relativeY / 2)}-${Math.round(percentage * 100)}`
+    if (lastHoverInfoRef.current === mouseKey) {
+      return; // ✅ BLOQUEAR: Solo si es exactamente la misma posición
+    }
+    
     // Calcular el minuto dentro del slot basado en la granularidad
     const slotProgress = percentage * slotDuration
-    const minuteOffset = Math.round(slotProgress / minuteGranularity) * minuteGranularity
-    // CORREGIDO: Permitir granularidades hasta el final de la celda (inclusive)
+    
+    // ✅ MEJORADO: Granularidades más tolerantes y fáciles de usar
+    // Expandir cada granularidad para que cubra más área
+    const rawMinuteOffset = Math.round(slotProgress / minuteGranularity) * minuteGranularity
+    
+    // ✅ NUEVO: Crear zonas más amplias para cada granularidad
+    // Cada granularidad "atrae" el mouse desde ±1.5 minutos de distancia
+    const granularityZones = [];
+    for (let offset = 0; offset <= slotDuration; offset += minuteGranularity) {
+      granularityZones.push(offset);
+    }
+    
+    // Encontrar la granularidad más cercana al slotProgress actual
+    let closestGranularity = rawMinuteOffset;
+    let minDistance = Math.abs(slotProgress - rawMinuteOffset);
+    
+    granularityZones.forEach(zone => {
+      const distance = Math.abs(slotProgress - zone);
+      if (distance < minDistance && zone <= slotDuration) {
+        minDistance = distance;
+        closestGranularity = zone;
+      }
+    });
+    
+    const minuteOffset = closestGranularity;
     let cappedOffset = Math.min(minuteOffset, slotDuration)
+    
+    // ✅ DEBUG ESPECÍFICO: Ver por qué no aparece minuteOffset: 15
+    if (shouldDebug && slotProgress > 10) {
+      console.log(`[DEBUG-CALC] ${time} - Cálculo granularidad`, {
+        slotProgress: Math.round(slotProgress * 100) / 100,
+        rawMinuteOffset,
+        closestGranularity,
+        minuteOffset,
+        cappedOffset,
+        slotDuration,
+        minuteGranularity,
+        granularityZones: granularityZones.join(', ')
+      });
+    }
+    
+    // ✅ DETECTAR: Granularidad crítica 15 (08:45 en celda 08:30)
+    if (shouldDebug && minuteOffset === 15 && time === '08:30') {
+      console.log(`🎯 [GRANULARIDAD-15-ENCONTRADA] ${time}`, {
+        slotProgress: Math.round(slotProgress * 100) / 100,
+        relativeY: Math.round(relativeY),
+        percentage: Math.round(percentage * 1000) / 1000,
+        minuteOffset,
+        cappedOffset
+      });
+    }
     
     // ✅ CORRECCIÓN: Durante drag, mostrar granularidades NORMALES
     // El contexto de drag se encarga de calcular la posición final
@@ -323,8 +397,28 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
       const displayMinutes = totalMinutes % 60
       const exactTime = `${displayHours.toString().padStart(2, '0')}:${displayMinutes.toString().padStart(2, '0')}`
       
-      // ✅ ANTI-BUCLE: Solo actualizar si el valor ha cambiado realmente
-      const hoverKey = `${cellId}-${exactTime}-${cappedOffset}-${granularityType}`
+      if (shouldDebug) {
+        // ✅ LOGGING SELECTIVO: Solo mostrar cuando cambia la granularidad actual
+        const currentGranularityKey = `${exactTime}-${granularityType}`;
+        if (!lastGranularityLoggedRef.current || lastGranularityLoggedRef.current !== currentGranularityKey) {
+          lastGranularityLoggedRef.current = currentGranularityKey;
+          console.log(`[DEBUG-GRANULARITY] ${time} - MOSTRAR granularidad`, {
+            relativeY: Math.round(relativeY),
+            percentage: Math.round(percentage * 1000) / 1000,
+            slotProgress: Math.round(slotProgress * 100) / 100,
+            minuteOffset,
+            cappedOffset,
+            exactTime,
+            granularityType,
+            hasAppointment,
+            allowGranularity,
+            mouseKey  // ✅ AÑADIR: Para ver la clave actual
+          });
+        }
+      }
+      
+      // ✅ ANTI-BUCLE ACTUALIZADO: Usar la nueva clave simplificada
+      const hoverKey = `${mouseKey}-${exactTime}-${cappedOffset}-${granularityType}`
       if (lastHoverInfoRef.current !== hoverKey) {
         lastHoverInfoRef.current = hoverKey
         setHoveredInfo({
@@ -335,13 +429,31 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
         })
       }
     } else {
-      // ✅ ANTI-BUCLE: Solo limpiar si no estaba ya limpio
-      if (lastHoverInfoRef.current !== 'cleared') {
-        lastHoverInfoRef.current = 'cleared'
+      if (shouldDebug) {
+        console.log(`[DEBUG-GRANULARITY] ${time} - NO MOSTRAR granularidad`, {
+          relativeY: Math.round(relativeY),
+          percentage: Math.round(percentage * 1000) / 1000,
+          slotProgress: Math.round(slotProgress * 100) / 100,
+          minuteOffset,
+          cappedOffset,
+          hasAppointment,
+          allowGranularity,
+          isDragging,
+          draggedAppointment: !!draggedAppointment,
+          isMovingAppointment,
+          granularityType,
+          mouseKey  // ✅ AÑADIR: Para ver la clave actual
+        });
+      }
+      
+      // ✅ ANTI-BUCLE ACTUALIZADO: Solo limpiar si no estaba ya limpio
+      const clearKey = `${mouseKey}-cleared`
+      if (lastHoverInfoRef.current !== clearKey) {
+        lastHoverInfoRef.current = clearKey
         clearHover()
       }
     }
-  }, [baseMinutes, slotDuration, minuteGranularity, cacheAppointments, appointments, day, time, cabinId, isInteractive, active, overrideForCell, cellHeight, cellId, setHoveredInfo, clearHover, isDraggingDuration, isDragging, draggedAppointment, isMovingAppointment, appointmentInMovement])
+  }, [baseMinutes, slotDuration, minuteGranularity, cacheAppointments, appointments, day, time, cabinId, isInteractive, active, overrideForCell, cellHeight, cellId, setHoveredInfo, clearHover, isDraggingDuration, isDragging, draggedAppointment, isMovingAppointment, appointmentInMovement, cabinIndex])
 
   const handleMouseLeave = useCallback(() => {
     clearHover()
@@ -391,23 +503,45 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
 
   const handleDropWithExactTime = useCallback((e: React.DragEvent) => {
     if (active && isAvailable && !overrideForCell) {
-      const exactTime = currentDragTime || time;
+      // ✅ MEJORADO: Usar la posición actual de la sombra si está disponible y es válida
+      let exactTime = currentDragTime || time;
       
-      // ✅ VALIDAR ANTES DE CONFIRMAR DROP
-      if (isDragging && draggedAppointment) {
-        const validation = validateHoverSlot(exactTime);
+      // Si soltamos fuera de la tabla pero tenemos una posición de sombra válida, usarla
+      if (isDragging && draggedAppointment && currentDragTime) {
+        // Verificar si la posición de la sombra es válida
+        const shadowValidation = validateHoverSlot(currentDragTime);
         
-        if (validation && !validation.isValid) {
-          console.log('[HoverableCell] ❌ Drop cancelado por conflicto:', validation.reason);
+        if (shadowValidation && shadowValidation.isValid) {
+          // ✅ USAR POSICIÓN DE LA SOMBRA: Es válida, usar esa posición
+          exactTime = currentDragTime;
+          console.log('[HoverableCell] ✅ Usando posición válida de la sombra:', currentDragTime);
+        } else {
+          // ❌ POSICIÓN DE SOMBRA INVÁLIDA: Usar validación normal
+          const normalValidation = validateHoverSlot(time);
+          if (normalValidation && !normalValidation.isValid) {
+            console.log('[HoverableCell] ❌ Drop cancelado - ni sombra ni posición actual son válidas');
+            e.preventDefault();
+            endDrag();
+            return;
+          }
+        }
+      } else {
+        // ✅ VALIDACIÓN NORMAL: Sin sombra, validar posición de drop normal
+        if (isDragging && draggedAppointment) {
+          const validation = validateHoverSlot(exactTime);
           
-          // ✅ CANCELAR DROP - Volver a posición original como cuando se presiona ESC
-          e.preventDefault();
-          endDrag();
-          return;
+          if (validation && !validation.isValid) {
+            console.log('[HoverableCell] ❌ Drop cancelado por conflicto:', validation.reason);
+            
+            // ✅ CANCELAR DROP - Volver a posición original como cuando se presiona ESC
+            e.preventDefault();
+            endDrag();
+            return;
+          }
         }
       }
       
-      // ✅ PROCEDER CON DROP SOLO SI ES VÁLIDO
+      // ✅ PROCEDER CON DROP CON LA POSICIÓN CORRECTA (sombra o normal)
       onDrop(e, day, exactTime, cabinId);
       endDrag();
     }
@@ -418,6 +552,10 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
   
   // ✅ ANTI-BUCLE: Ref para tracking de hover state para evitar bucles infinitos
   const lastHoverInfoRef = useRef<string | null>(null)
+  // ✅ THROTTLING DE LOGS: Para reducir spam en debug
+  const lastLogKeyRef = useRef<string | null>(null)
+  // ✅ TRACKING DE GRANULARIDADES: Para logging selectivo
+  const lastGranularityLoggedRef = useRef<string | null>(null)
 
   // Manejar drag over para actualizar posición en tiempo real
   const handleDragOverCell = useCallback((e: React.DragEvent) => {
@@ -556,27 +694,43 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
       {active && isAvailable && !overrideForCell && (() => {
         // Identificar si es una de las primeras horas del día para extender el área
         const [currentHour, currentMinutes] = time.split(':').map(Number);
-        const isTopArea = currentHour <= 10; // Primeras horas del día hasta las 10 AM
         
-        // CORREGIDO: NO crear área extendida en celdas :15, :30, :45 para evitar superponer la celda anterior
-        const isQuarterHour = currentMinutes === 15 || currentMinutes === 30 || currentMinutes === 45;
+        // ✅ REDUCIDO: Solo para las primeras 2 horas del día
+        const isVeryEarlyHour = currentHour <= 8; // Solo hasta las 8 AM
+        const isFirstGranularityOfDay = currentHour <= 8 && currentMinutes === 0; // Solo 08:00
         
-        // CORREGIDO: NO crear área extendida en 10:00 porque bloquea la parte inferior de 09:45
-        const blocks09_45 = currentHour === 10 && currentMinutes === 0;
+        // ✅ MÁS RESTRICTIVO: Solo donde realmente se necesita
+        const shouldHaveExtendedArea = isFirstGranularityOfDay;
         
-        return isTopArea && !isQuarterHour && !blocks09_45;
+        return shouldHaveExtendedArea;
       })() && (
         <div
           className="absolute right-0 left-0 pointer-events-auto"
           style={{
-            top: '-20px', // Extender 20px hacia arriba para mejor acceso
-            height: '20px',
-            zIndex: 5
+            // ✅ ÁREA REDUCIDA: Menos intrusiva para evitar interferencias
+            top: (() => {
+              const [currentHour, currentMinutes] = time.split(':').map(Number);
+              // Solo primera granularidad del día: área mínima
+              if (currentHour <= 8 && currentMinutes === 0) {
+                return '-15px'; // Reducido de -30px a -15px
+              }
+              return '-10px'; // Reducido de -20px a -10px
+            })(),
+            height: (() => {
+              const [currentHour, currentMinutes] = time.split(':').map(Number);
+              // Solo primera granularidad del día: altura mínima
+              if (currentHour <= 8 && currentMinutes === 0) {
+                return '15px'; // Reducido de 30px a 15px
+              }
+              return '10px'; // Reducido de 20px a 10px
+            })(),
+            zIndex: 15 // ✅ MAYOR Z-INDEX para estar por encima de cabeceras si es necesario
           }}
           onDragOver={handleDragOverCell}
           onDragLeave={handleDragLeave}
           onDrop={handleDropWithExactTime}
-          title={`Zona extendida para drop en ${time} (más fácil acceso)`}
+          onClick={handleClick} // ✅ NUEVO: También manejar clicks para movimiento de citas
+          title={`Zona extendida para acceso fácil a ${time}`}
         />
       )}
       {/* Visualización del bloque */}
@@ -612,7 +766,7 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
           <div>
             {/* Línea verde/roja según validación */}
             <div
-              className={cn("absolute right-0 left-0 z-40 pointer-events-none", lineColor)}
+              className={cn("absolute right-0 left-0 z-50 pointer-events-none", lineColor)}
               style={{
                 top: `${hoveredInfo!.offsetY}px`,
                 height: '2px',
@@ -621,7 +775,7 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
             />
             {/* Indicador de hora verde/rojo */}
             <div
-              className={cn("absolute left-0 pointer-events-none z-40 text-xs px-1 py-0.5 text-white rounded-r font-medium", 
+              className={cn("absolute left-0 pointer-events-none z-50 text-xs px-1 py-0.5 text-white rounded-r font-medium", 
                 isValid ? 'bg-green-500' : 'bg-red-500'
               )}
               style={{
@@ -636,7 +790,7 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
             {/* ✅ PREVIEW DE LA CITA EN MOVIMIENTO con validación */}
             {appointmentInMovement && (
               <div
-                className={cn("absolute right-1 left-1 z-30 rounded-md border-2 shadow-lg pointer-events-none", bgColor)}
+                className={cn("absolute right-1 left-1 z-40 rounded-md border-2 shadow-lg pointer-events-none", bgColor)}
                 style={{
                   top: `${hoveredInfo!.offsetY}px`,
                   height: `${(appointmentInMovement.appointment.duration / slotDuration) * cellHeight}px`,
@@ -667,7 +821,7 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
             <div>
               {/* Línea AZUL para indicar rango horario de cita original */}
               <div
-                className="absolute right-0 left-0 bg-blue-400 pointer-events-none z-35"
+                className="absolute right-0 left-0 bg-blue-400 pointer-events-none z-30"
                 style={{
                   top: `${hoveredInfo!.offsetY}px`,
                   height: '2px',
@@ -676,7 +830,7 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
               />
               {/* Indicador de hora AZUL */}
               <div
-                className="absolute left-0 pointer-events-none z-35 text-xs px-1 py-0.5 text-white rounded-r font-medium bg-blue-500"
+                className="absolute left-0 pointer-events-none z-30 text-xs px-1 py-0.5 text-white rounded-r font-medium bg-blue-500"
                 style={{
                   top: `${hoveredInfo!.offsetY}px`,
                   transform: 'translateY(-50%)',
@@ -698,7 +852,7 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
           <div>
             {/* Línea verde/roja para drag & drop */}
             <div
-              className={cn("absolute right-0 left-0 z-40 pointer-events-none", lineColor)}
+              className={cn("absolute right-0 left-0 z-50 pointer-events-none", lineColor)}
               style={{
                 top: `${hoveredInfo!.offsetY}px`,
                 height: '2px',
@@ -707,7 +861,7 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
             />
             {/* Indicador de hora verde/rojo */}
             <div
-              className={cn("absolute left-0 pointer-events-none z-40 text-xs px-1 py-0.5 text-white rounded-r font-medium",
+              className={cn("absolute left-0 pointer-events-none z-50 text-xs px-1 py-0.5 text-white rounded-r font-medium",
                 isValid ? 'bg-green-500' : 'bg-red-500'
               )}
               style={{
@@ -776,7 +930,7 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
           <div key={`drag-preview-${currentDragTime}-${cabinId}-${day.toDateString()}`}>
             {/* Línea verde/roja */}
             <div
-              className={cn("absolute right-0 left-0 z-40 pointer-events-none", lineColor)}
+              className={cn("absolute right-0 left-0 z-50 pointer-events-none", lineColor)}
               style={{
                 top: `${offsetY}px`,
                 height: '2px',
@@ -786,7 +940,7 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
             
             {/* Indicador de hora con validación */}
             <div
-              className={cn("absolute left-0 pointer-events-none z-40 text-xs px-1 py-0.5 text-white rounded-r font-medium",
+              className={cn("absolute left-0 pointer-events-none z-50 text-xs px-1 py-0.5 text-white rounded-r font-medium",
                 isValid ? 'bg-green-500' : 'bg-red-500'
               )}
               style={{
@@ -800,7 +954,7 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
             
             {/* ✅ PREVIEW DE LA CITA EN DRAG & DROP con validación */}
             <div
-              className={cn("absolute right-1 left-1 z-30 rounded-md border-2 shadow-lg pointer-events-none", bgColor)}
+              className={cn("absolute right-1 left-1 z-40 rounded-md border-2 shadow-lg pointer-events-none", bgColor)}
               style={{
                 top: `${offsetY}px`,
                 height: `${(draggedAppointment.duration / slotDuration) * cellHeight}px`,

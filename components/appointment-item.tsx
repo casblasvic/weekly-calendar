@@ -6,6 +6,7 @@ import { useAppointmentTags } from "@/contexts/appointment-tags-context"
 import { useClinic } from "@/contexts/clinic-context"
 import { isTimeSlotAvailable, getBusinessHours } from "@/services/clinic-schedule-service"
 import { useMemo, useState, useRef, useEffect, useCallback } from "react"
+
 import { createPortal } from "react-dom"
 import { cn } from "@/lib/utils"
 import { AppointmentTooltip } from "@/components/appointment-tooltip"
@@ -26,6 +27,7 @@ import { useMoveAppointment } from '@/contexts/move-appointment-context'
 import { validateGranularityMove } from '@/utils/appointment-validation'
 import { validateAppointmentResize } from '@/utils/appointment-validation'
 import { useWeeklyAgendaData } from '@/lib/hooks/use-weekly-agenda-data'
+import { useScrollHoverClearance } from '@/lib/hooks/use-global-hover-state'
 
 // Función para ajustar el brillo del color
 function adjustColorBrightness(color: string, amount: number) {
@@ -592,7 +594,7 @@ export function AppointmentItem({
           borderLeft: `4px solid ${borderColor}`,
           borderBottom: `3px solid ${borderColor}`,
           color: textColor,
-          cursor: isDraggingDuration ? 'ns-resize' : (isOptimistic ? 'default' : 'move'), // ✅ Cursor diferente para optimistas
+          cursor: isDraggingDuration ? 'ns-resize' : (isOptimistic ? 'default' : 'move'), // ✅ RESTAURADO: cursor move para drag & drop
           height: `${expandedHeight}px`,
           width: '100%', // Ocupar todo el ancho disponible
           // ✅ ELIMINAR TRANSICIÓN DURANTE RESIZE para feedback inmediato
