@@ -159,44 +159,95 @@ export function useWeeklyAgendaData(currentDate: Date) {
       };
 
       // ✅ HELPER PARA PROCESAR DURACIÓN CON ESTIMACIÓN PRECISA Y VALIDACIÓN
-      const processDuration = (durationMinutes: any, startTimeValue: any, endTimeValue: any, estimatedDurationMinutes: any): number => {
+      const processDuration = (durationMinutes: any, startTimeValue: any, endTimeValue: any, estimatedDurationMinutes: any): number | null => {
         // PRIORIDAD 1: Usar durationMinutes si está disponible y es válido
         if (durationMinutes && durationMinutes > 0 && durationMinutes <= 1440) { // ✅ Máximo 24 horas
           return durationMinutes;
         }
         
-        // PRIORIDAD 2: Calcular desde startTime/endTime solo si son válidos
+        // PRIORIDAD 2: Calcular desde startTime/endTime SI están disponibles y válidos
         try {
-          let startDate: Date;
-          let endDate: Date;
+          let startMinutes: number;
+          let endMinutes: number;
           
+          // ✅ MANEJAR STARTTIME: Date objects, ISO strings, o formato HH:mm
           if ((startTimeValue as any) instanceof Date) {
-            startDate = startTimeValue as unknown as Date;
+            const startDate = startTimeValue as unknown as Date;
+            startMinutes = startDate.getHours() * 60 + startDate.getMinutes();
           } else if (typeof startTimeValue === 'string') {
-            startDate = new Date(startTimeValue);
-          } else {
-            // ✅ PRIORIDAD 3: Usar estimatedDurationMinutes antes del fallback
-            return estimatedDurationMinutes && estimatedDurationMinutes > 0 ? estimatedDurationMinutes : 60;
-          }
-          
-          if ((endTimeValue as any) instanceof Date) {
-            endDate = endTimeValue as unknown as Date;
-          } else if (typeof endTimeValue === 'string') {
-            endDate = new Date(endTimeValue);
-          } else {
-            // ✅ PRIORIDAD 3: Usar estimatedDurationMinutes antes del fallback
-            return estimatedDurationMinutes && estimatedDurationMinutes > 0 ? estimatedDurationMinutes : 60;
-          }
-          
-          if (!isNaN(startDate.getTime()) && !isNaN(endDate.getTime())) {
-            const diffMinutes = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60));
-            // ✅ VALIDACIÓN: Solo usar si es una duración razonable
-            if (diffMinutes > 0 && diffMinutes <= 1440) { // Entre 1 minuto y 24 horas
-              return diffMinutes;
+            // ✅ VERIFICAR SI ES FORMATO HH:mm
+            if (/^\d{2}:\d{2}$/.test(startTimeValue)) {
+              const [hours, mins] = startTimeValue.split(':').map(Number);
+              startMinutes = hours * 60 + mins;
+              // console.log('[useWeeklyAgendaData] ✅ StartTime parseado desde HH:mm:', startTimeValue, '=', startMinutes, 'minutos');
+            } else {
+              // ✅ ES ISO STRING: Parsear como fecha
+              const startDate = new Date(startTimeValue);
+              if (!isNaN(startDate.getTime())) {
+                startMinutes = startDate.getHours() * 60 + startDate.getMinutes();
+              } else {
+                // Sin startTime válido, ir a PRIORIDAD 3
+                if (estimatedDurationMinutes && estimatedDurationMinutes > 0) {
+                  return estimatedDurationMinutes;
+                }
+                return null;
+              }
             }
+          } else {
+            // Sin startTime válido, ir a PRIORIDAD 3
+            if (estimatedDurationMinutes && estimatedDurationMinutes > 0) {
+              return estimatedDurationMinutes;
+            }
+            return null;
+          }
+          
+          // ✅ MANEJAR ENDTIME: Date objects, ISO strings, o formato HH:mm
+          if ((endTimeValue as any) instanceof Date) {
+            const endDate = endTimeValue as unknown as Date;
+            endMinutes = endDate.getHours() * 60 + endDate.getMinutes();
+          } else if (typeof endTimeValue === 'string') {
+            // ✅ VERIFICAR SI ES FORMATO HH:mm
+            if (/^\d{2}:\d{2}$/.test(endTimeValue)) {
+              const [hours, mins] = endTimeValue.split(':').map(Number);
+              endMinutes = hours * 60 + mins;
+              // console.log('[useWeeklyAgendaData] ✅ EndTime parseado desde HH:mm:', endTimeValue, '=', endMinutes, 'minutos');
+            } else {
+              // ✅ ES ISO STRING: Parsear como fecha
+              const endDate = new Date(endTimeValue);
+              if (!isNaN(endDate.getTime())) {
+                endMinutes = endDate.getHours() * 60 + endDate.getMinutes();
+              } else {
+                // Sin endTime válido, ir a PRIORIDAD 3
+                if (estimatedDurationMinutes && estimatedDurationMinutes > 0) {
+                  return estimatedDurationMinutes;
+                }
+                return null;
+              }
+            }
+          } else {
+            // Sin endTime válido, ir a PRIORIDAD 3
+            if (estimatedDurationMinutes && estimatedDurationMinutes > 0) {
+              return estimatedDurationMinutes;
+            }
+            return null;
+          }
+          
+          // ✅ CALCULAR DURACIÓN desde minutos totales
+          const diffMinutes = endMinutes - startMinutes;
+          
+          // ✅ VALIDACIÓN: Solo usar si es una duración razonable
+          if (diffMinutes > 0 && diffMinutes <= 1440) { // Entre 1 minuto y 24 horas
+            // console.log('[useWeeklyAgendaData] ✅ Duración calculada desde startTime/endTime:', {
+            //   startTimeValue,
+            //   endTimeValue,
+            //   startMinutes,
+            //   endMinutes,
+            //   diffMinutes
+            // });
+            return diffMinutes;
           }
         } catch (e) {
-          // Error silencioso para evitar spam en consola
+          console.error('[useWeeklyAgendaData] Error procesando duración:', e);
         }
         
         // ✅ PRIORIDAD 3: Usar estimatedDurationMinutes de servicios si está disponible
@@ -204,12 +255,19 @@ export function useWeeklyAgendaData(currentDate: Date) {
           return estimatedDurationMinutes;
         }
         
-        // ✅ FALLBACK FINAL: 60 minutos solo si no hay estimación
-        return 60;
+        // ❌ NO HAY DATOS VÁLIDOS - NO RENDERIZAR ESTA CITA
+        console.warn('[useWeeklyAgendaData] ⚠️ Cita sin duración válida - NO SE RENDERIZARÁ:', { durationMinutes, startTimeValue, endTimeValue, estimatedDurationMinutes });
+        return null;
       };
 
       // ✅ MAPEAR AL FORMATO ESPERADO CON VALIDACIÓN COMPLETA
       const finalDuration = processDuration(apt.durationMinutes, apt.startTime, apt.endTime, apt.estimatedDurationMinutes);
+      
+      // ❌ SI NO HAY DURACIÓN VÁLIDA, NO RENDERIZAR ESTA CITA
+      if (finalDuration === null) {
+        console.warn('[useWeeklyAgendaData] ⚠️ Saltando cita sin duración válida:', apt.id);
+        return null; // Esta cita no se renderizará
+      }
       
       const processed = {
         id: apt.id,
@@ -240,14 +298,14 @@ export function useWeeklyAgendaData(currentDate: Date) {
       };
       
       return processed;
-    }) as WeeklyAgendaAppointment[];
+    }).filter(Boolean) as WeeklyAgendaAppointment[]; // ✅ FILTRAR CITAS NULAS (sin duración válida)
     
     // console.log('[useWeeklyAgendaData] ✅ Procesamiento completado:', processedAppointments.length, 'citas'); // ✅ DEBUG: Comentado para evitar spam en consola
     
 
     
     return processedAppointments;
-  }, [appointmentsData, activeClinicId]); // ✅ DEPENDENCIAS ESTABLES para evitar re-renders infinitos
+  }, [appointmentsData, activeClinic]); // ✅ DEPENDENCIAS ESTABLES para evitar re-renders infinitos
   
   // ✅ NUEVO: Estado de estabilización visual para evitar "flash" de citas incorrectas
   const isDataStable = useMemo(() => {

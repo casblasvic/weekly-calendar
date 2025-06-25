@@ -774,37 +774,45 @@ export async function PUT(request: NextRequest) {
         clinicId
       });
 
-      // Si hay cambio en la duración, verificar si es una extensión
-      // O si explícitamente se indica que hay extensión desde el modal
-      if ((newDurationMinutes && newDurationMinutes > existingAppointment.durationMinutes) || 
-          (hasExtension && extensionMinutes > 0)) {
+      // ✅ CORREGIDO: Solo crear extensión para cambios MANUALES de duración
+      // NO para cambios naturales por añadir/quitar servicios
+      let shouldCreateExtension = false;
+      let actualExtendedMinutes = 0;
+      let actualPreviousDuration = existingAppointment.durationMinutes;
+      let actualNewDuration = newDurationMinutes || existingAppointment.durationMinutes;
+      let extensionReason = '';
+
+      // ✅ CASO 1: Extensión explícita desde modal con flag isManualDurationChange
+      if (hasExtension && extensionMinutes > 0 && body.isManualDurationChange) {
+        shouldCreateExtension = true;
+        actualExtendedMinutes = extensionMinutes;
+        extensionReason = 'Extensión manual desde el modal de edición';
         
-        // Calcular minutos extendidos
-        let actualExtendedMinutes = extensionMinutes;
-        let actualPreviousDuration = existingAppointment.durationMinutes;
-        let actualNewDuration = newDurationMinutes || existingAppointment.durationMinutes;
-        let extensionReason = 'Resize manual desde la agenda';
-        
-        // Si viene del modal con datos explícitos, usar esos
-        if (hasExtension && extensionMinutes > 0) {
-          actualExtendedMinutes = extensionMinutes;
-          extensionReason = 'Extensión desde el modal de edición';
-          
-          // Si viene estimatedDurationMinutes del modal, usarlo como duración previa
-          if (estimatedDurationMinutes) {
-            actualPreviousDuration = estimatedDurationMinutes;
-          }
-        } else {
-          // Calculado por resize
-          actualExtendedMinutes = newDurationMinutes - existingAppointment.durationMinutes;
+        // Si viene estimatedDurationMinutes del modal, usarlo como duración previa
+        if (estimatedDurationMinutes) {
+          actualPreviousDuration = estimatedDurationMinutes;
         }
-        
-        console.log('📈 [API PUT] Detectada extensión de cita:', {
+      }
+      // ✅ CASO 2: Resize manual desde la agenda (NO desde modal con servicios)
+      else if (newDurationMinutes && 
+               newDurationMinutes > existingAppointment.durationMinutes && 
+               !body.userModifiedServices &&
+               !services) { // Si no se están modificando servicios, es resize manual
+        shouldCreateExtension = true;
+        actualExtendedMinutes = newDurationMinutes - existingAppointment.durationMinutes;
+        extensionReason = 'Resize manual desde la agenda';
+      }
+
+      // ✅ SOLO crear registro de extensión si es cambio MANUAL
+      if (shouldCreateExtension) {
+        console.log('📈 [API PUT] Detectada extensión MANUAL de cita:', {
           citaId: id,
           duracionAnterior: actualPreviousDuration,
           duracionNueva: actualNewDuration,
           minutosExtendidos: actualExtendedMinutes,
-          origen: extensionReason
+          origen: extensionReason,
+          isManualDurationChange: body.isManualDurationChange,
+          userModifiedServices: body.userModifiedServices
         });
 
         // Crear registro de extensión
@@ -820,6 +828,8 @@ export async function PUT(request: NextRequest) {
         });
 
         console.log('✅ [API PUT] Registro de extensión creado');
+      } else {
+        console.log('✅ [API PUT] NO se crea extensión - cambio natural por servicios o sin cambio manual');
       }
 
       // Actualizar datos básicos de la cita
@@ -870,6 +880,32 @@ export async function PUT(request: NextRequest) {
               status: 'SCHEDULED'
             }))
           });
+          
+          // ✅ CRÍTICO: Recalcular estimatedDurationMinutes cuando cambian los servicios
+          console.log('🔄 [API PUT] Recalculando estimatedDurationMinutes...');
+          const servicesFromDb = await tx.service.findMany({
+            where: { id: { in: services } }
+          });
+          
+          const newEstimatedDuration = servicesFromDb.reduce((sum, service) => 
+            sum + (service.durationMinutes || 0), 0
+          );
+          
+          console.log('📊 [API PUT] Nueva duración estimada calculada:', {
+            servicios: servicesFromDb.map(s => ({ name: s.name, duration: s.durationMinutes })),
+            duracionEstimadaAnterior: existingAppointment.estimatedDurationMinutes,
+            duracionEstimadaNueva: newEstimatedDuration
+          });
+          
+          // Actualizar estimatedDurationMinutes en la cita
+          await tx.appointment.update({
+            where: { id: id },
+            data: {
+              estimatedDurationMinutes: newEstimatedDuration
+            }
+          });
+          
+          console.log('✅ [API PUT] estimatedDurationMinutes actualizado a:', newEstimatedDuration);
         }
       }
 

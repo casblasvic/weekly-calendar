@@ -278,35 +278,6 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
       
       const hasConflict = conflictingAppointments.length > 0;
       
-      // ✅ LOG SOLO CUANDO HAY PROBLEMA: Conflictos en celdas que deberían ser azules
-      if (hasConflict && isDragging && draggedAppointment) {
-        const [hours, minutes] = time.split(':').map(Number);
-        const hoverTimeInMinutes = hours * 60 + minutes + offsetMinutes;
-        const [aptHours, aptMinutes] = draggedAppointment.originalTime.split(':').map(Number);
-        const aptStartMinutes = aptHours * 60 + aptMinutes;
-        const aptEndMinutes = aptStartMinutes + draggedAppointment.duration;
-        const isInOriginalRange = hoverTimeInMinutes >= aptStartMinutes && hoverTimeInMinutes < aptEndMinutes;
-        
-        if (isInOriginalRange) {
-          console.error('🚫 [PROBLEMA] Celda DEBERÍA ser azul pero detecta conflictos:', {
-            celda: `${time} (${day.toDateString()}) - Cabina: ${cabinId}`,
-            hoverTime: `${Math.floor(hoverTimeInMinutes / 60)}:${(hoverTimeInMinutes % 60).toString().padStart(2, '0')}`,
-            citaOriginal: `${draggedAppointment.originalTime} (ID: ${draggedAppointment.id})`,
-            conflictosDetectados: conflictingAppointments.map(apt => ({
-              id: apt.id,
-              time: apt.startTime,
-              duration: apt.duration,
-              roomId: apt.roomId,
-              date: (apt.date instanceof Date ? apt.date : new Date(apt.date)).toDateString(),
-              esMismaCita: apt.id === draggedAppointment.id,
-              esMismaFecha: (apt.date instanceof Date ? apt.date : new Date(apt.date)).toDateString() === day.toDateString(),
-              esMismaCabina: String(apt.roomId) === String(cabinId)
-            })),
-            deberiaExcluir: draggedAppointment.id
-          });
-        }
-      }
-      
       return hasConflict;
     };
     
@@ -336,17 +307,6 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
         granularityType = 'green';
       }
       
-      // ✅ LOG SOLO CUANDO HAY PROBLEMA: Debería ser azul pero no lo es
-      if (isInOriginalRange && granularityType !== 'blue') {
-        console.error('❌ [ERROR] DEBERÍA SER AZUL pero no se asigna:', {
-          granularityType,
-          celda: `${time} (${day.toDateString()}) - Cabina: ${cabinId}`,
-          isInOriginalRange,
-          isGreenZone,
-          hasAppointment,
-          allowGranularity
-        });
-      }
     } else if (isMovingAppointment) {
       // Durante movimiento, usar la lógica existente
       allowGranularity = !hasAppointment;
@@ -652,7 +612,7 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
           <div>
             {/* Línea verde/roja según validación */}
             <div
-              className={cn("absolute right-0 left-0 z-50 pointer-events-none", lineColor)}
+              className={cn("absolute right-0 left-0 z-40 pointer-events-none", lineColor)}
               style={{
                 top: `${hoveredInfo!.offsetY}px`,
                 height: '2px',
@@ -661,7 +621,7 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
             />
             {/* Indicador de hora verde/rojo */}
             <div
-              className={cn("absolute left-0 pointer-events-none z-50 text-xs px-1 py-0.5 text-white rounded-r font-medium", 
+              className={cn("absolute left-0 pointer-events-none z-40 text-xs px-1 py-0.5 text-white rounded-r font-medium", 
                 isValid ? 'bg-green-500' : 'bg-red-500'
               )}
               style={{
@@ -676,7 +636,7 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
             {/* ✅ PREVIEW DE LA CITA EN MOVIMIENTO con validación */}
             {appointmentInMovement && (
               <div
-                className={cn("absolute right-1 left-1 z-40 rounded-md border-2 shadow-lg pointer-events-none", bgColor)}
+                className={cn("absolute right-1 left-1 z-30 rounded-md border-2 shadow-lg pointer-events-none", bgColor)}
                 style={{
                   top: `${hoveredInfo!.offsetY}px`,
                   height: `${(appointmentInMovement.appointment.duration / slotDuration) * cellHeight}px`,
@@ -703,12 +663,11 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
       {showHover && isInteractive && !overrideForCell && !isMovingAppointment && isDragging && (() => {        
         // ✅ MOSTRAR GRANULARIDADES AZULES EN TODA LA FRANJA HORARIA DE LA CITA ORIGINAL
         if (hoveredInfo?.granularityType === 'blue') {
-          console.log('🔵 [RENDER] ¡GRANULARIDAD AZUL RENDERIZADA!');
           return (
             <div>
               {/* Línea AZUL para indicar rango horario de cita original */}
               <div
-                className="absolute right-0 left-0 bg-blue-400 pointer-events-none z-45"
+                className="absolute right-0 left-0 bg-blue-400 pointer-events-none z-35"
                 style={{
                   top: `${hoveredInfo!.offsetY}px`,
                   height: '2px',
@@ -717,7 +676,7 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
               />
               {/* Indicador de hora AZUL */}
               <div
-                className="absolute left-0 pointer-events-none z-45 text-xs px-1 py-0.5 text-white rounded-r font-medium bg-blue-500"
+                className="absolute left-0 pointer-events-none z-35 text-xs px-1 py-0.5 text-white rounded-r font-medium bg-blue-500"
                 style={{
                   top: `${hoveredInfo!.offsetY}px`,
                   transform: 'translateY(-50%)',
@@ -739,7 +698,7 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
           <div>
             {/* Línea verde/roja para drag & drop */}
             <div
-              className={cn("absolute right-0 left-0 z-50 pointer-events-none", lineColor)}
+              className={cn("absolute right-0 left-0 z-40 pointer-events-none", lineColor)}
               style={{
                 top: `${hoveredInfo!.offsetY}px`,
                 height: '2px',
@@ -748,7 +707,7 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
             />
             {/* Indicador de hora verde/rojo */}
             <div
-              className={cn("absolute left-0 pointer-events-none z-50 text-xs px-1 py-0.5 text-white rounded-r font-medium",
+              className={cn("absolute left-0 pointer-events-none z-40 text-xs px-1 py-0.5 text-white rounded-r font-medium",
                 isValid ? 'bg-green-500' : 'bg-red-500'
               )}
               style={{
@@ -817,7 +776,7 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
           <div key={`drag-preview-${currentDragTime}-${cabinId}-${day.toDateString()}`}>
             {/* Línea verde/roja */}
             <div
-              className={cn("absolute right-0 left-0 z-50 pointer-events-none", lineColor)}
+              className={cn("absolute right-0 left-0 z-40 pointer-events-none", lineColor)}
               style={{
                 top: `${offsetY}px`,
                 height: '2px',
@@ -827,7 +786,7 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
             
             {/* Indicador de hora con validación */}
             <div
-              className={cn("absolute left-0 pointer-events-none z-50 text-xs px-1 py-0.5 text-white rounded-r font-medium",
+              className={cn("absolute left-0 pointer-events-none z-40 text-xs px-1 py-0.5 text-white rounded-r font-medium",
                 isValid ? 'bg-green-500' : 'bg-red-500'
               )}
               style={{
@@ -841,7 +800,7 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
             
             {/* ✅ PREVIEW DE LA CITA EN DRAG & DROP con validación */}
             <div
-              className={cn("absolute right-1 left-1 z-40 rounded-md border-2 shadow-lg pointer-events-none", bgColor)}
+              className={cn("absolute right-1 left-1 z-30 rounded-md border-2 shadow-lg pointer-events-none", bgColor)}
               style={{
                 top: `${offsetY}px`,
                 height: `${(draggedAppointment.duration / slotDuration) * cellHeight}px`,

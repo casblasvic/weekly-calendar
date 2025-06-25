@@ -1123,19 +1123,30 @@
         "title": "Configuración",
         "description": "Gestiona la configuración general de la aplicación."
     },
-    "data_table": {
-        "select_all": "Seleccionar todo",
-        "select_row": "Seleccionar fila",
-        "open_menu": "Abrir menú",
-        "actions": "Acciones",
-        "previous": "Anterior",
-        "next": "Siguiente",
-        "rows_selected": "{{count}} fila(s) seleccionadas.",
-        "page": "Página",
-        "of": "de",
-        "rows_per_page": "Filas por página:",
-        "toggle_columns": "Columnas Visibles"
-    },
+      "data_table": {
+    "select_all": "Seleccionar todo",
+    "select_row": "Seleccionar fila",
+    "open_menu": "Abrir menú",
+    "actions": "Acciones",
+    "previous": "Anterior",
+    "next": "Siguiente",
+    "rows_selected": "{{count}} fila(s) seleccionadas.",
+    "page": "Página",
+    "of": "de",
+    "rows_per_page": "Filas por página:",
+    "toggle_columns": "Columnas Visibles"
+  },
+  "appointments": {
+    "durationModification": {
+      "extended": "Cita Extendida",
+      "reduced": "Cita Reducida",
+      "revertToServices": "Restablecer a duración de servicios",
+      "extendedBy": "+{{minutes}}min",
+      "reducedBy": "{{minutes}}min",
+      "extendedTooltip": "Restablecer a duración de servicios ({{duration}} min) - Extendida",
+      "reducedTooltip": "Restablecer a duración de servicios ({{duration}} min) - Reducida"
+    }
+  },
     "users": {
         "manageUsersTitle": "Gestión de Usuarios",
         "searchPlaceholder": "Buscar usuarios por nombre, apellido o email...",
@@ -2024,10 +2035,21 @@
     "Cant.": "Cant.",
     "Notas de descuento...": "Notas de descuento..."
   },
-  "clients": {
-    "title": "Clientes",
-    "pageTitle": "Gestión de Clientes",
-    "new": "Nuevo Cliente",
+      "appointments": {
+        "durationModification": {
+            "extended": "Cita Extendida",
+            "reduced": "Cita Reducida",
+            "revertToServices": "Restablecer a duración de servicios",
+            "extendedBy": "+{{minutes}}min",
+            "reducedBy": "{{minutes}}min",
+            "extendedTooltip": "Restablecer a duración de servicios ({{duration}} min) - Extendida",
+            "reducedTooltip": "Restablecer a duración de servicios ({{duration}} min) - Reducida"
+        }
+    },
+    "clients": {
+        "title": "Clientes",
+        "pageTitle": "Gestión de Clientes",
+        "new": "Nuevo Cliente",
     "edit": "Editar Cliente",
     "details": "Detalles del Cliente",
     "notFound": "No se encontró el cliente con ID",

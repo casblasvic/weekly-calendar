@@ -1656,7 +1656,17 @@ export default function DayView({
       const newMinutes = newStartDate.getMinutes();
       const newStartTime = `${newHours.toString().padStart(2, '0')}:${newMinutes.toString().padStart(2, '0')}`;
 
-      // ✅ No hacer update optimista, confiar en la invalidación
+      // Calcular nueva hora de fin manteniendo la duración
+      const newEndDate = new Date(newStartDate.getTime() + appointmentToUpdate.duration * 60 * 1000);
+      const newEndTime = `${newEndDate.getHours().toString().padStart(2, '0')}:${newEndDate.getMinutes().toString().padStart(2, '0')}`;
+
+      // ✅ RENDERIZADO OPTIMISTA INMEDIATO (igual que WeeklyAgenda)
+      console.log('[DayView handleTimeAdjust] 🚀 Aplicando cambio optimista inmediato...');
+      updateOptimisticAppointment(appointmentId, {
+        startTime: newStartTime,
+        endTime: newEndTime,
+        date: newStartDate
+      });
 
       // Preparar datos para la API
       const apiData = {
@@ -1690,6 +1700,9 @@ export default function DayView({
 
       console.log('[DayView handleTimeAdjust] Hora ajustada correctamente');
       
+      // ✅ NO INVALIDAR: Permitir que sistema optimista maneje la transición automáticamente
+      // await invalidateCache(); // ❌ COMENTADO: Esto causaba el "salto" visual
+      
       toast({
         title: "Hora ajustada",
         description: `La cita se movió ${direction === 'up' ? 'hacia arriba' : 'hacia abajo'} ${minuteGranularity} minutos`,
@@ -1707,7 +1720,7 @@ export default function DayView({
         variant: "destructive",
       });
     }
-  }, [appointments, formatDateForAPI, invalidateCache, toast, minuteGranularity]);
+  }, [appointments, formatDateForAPI, invalidateCache, toast, minuteGranularity, updateOptimisticAppointment]);
 
   // Hook de drag & drop optimizado
   const {
@@ -2032,10 +2045,10 @@ export default function DayView({
       const clinicIdStr = activeClinic?.id ? String(activeClinic.id) : undefined;
       return (
           <div className="overflow-visible relative flex-1 bg-white">
-              {/* Cabecera de la tabla (fija) - z-40 para estar sobre granularidades */}
-              <div className="grid sticky top-0 z-40 bg-white border-b shadow-sm" 
+              {/* Cabecera de la tabla (fija) - z-50 para estar sobre granularidades */}
+              <div className="grid sticky top-0 z-50 bg-white border-b shadow-sm" 
                    style={{ gridTemplateColumns: `80px repeat(${rooms.length > 0 ? rooms.length : 1}, minmax(100px, 1fr))` }}> 
-                  <div className="sticky left-0 z-40 p-2 w-20 text-sm font-medium text-purple-600 bg-white border-r border-b border-gray-200 hour-column">
+                  <div className="sticky left-0 z-50 p-2 w-20 text-sm font-medium text-purple-600 bg-white border-r border-b border-gray-200 hour-column">
                     Hora
                   </div>
                   {rooms.length > 0 ? (

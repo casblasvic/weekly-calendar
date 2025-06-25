@@ -7,9 +7,9 @@
   --z-cells: 10;
   --z-events: 20;
   --z-grid-container: 95; /* << NUEVO: Mayor que el indicador (90), menor que hour-column (100) */
-  --z-hour-column: 100;
-  --z-day-headers: 110; /* Ajustado: > hour-column */
-  --z-hour-header: 110; /* Ajustado: > hour-column */
+  --z-hour-column: 60; /* ✅ ACTUALIZADO: Por encima de granularidades (z-45, z-50) */
+  --z-day-headers: 60; /* ✅ ACTUALIZADO: Por encima de granularidades (z-45, z-50) */
+  --z-hour-header: 60; /* ✅ ACTUALIZADO: Por encima de granularidades (z-45, z-50) */
   /* --z-time-indicator-label: 130; /* Superior al indicador pero menor que cabeceras */
 
   /* Nuevos valores para el indicador */
@@ -154,3 +154,44 @@ div[class*="sticky"][class*="left-0"][class*="top-0"] {
   .hour-column { position: -webkit-sticky; z-index: var(--z-hour-column); }
 } 
 */
+
+/* ✅ AUTO-EXPANSION Y FLOATING CONTROLS PARA CITAS PEQUEÑAS */
+.appointment-auto-expand {
+  transition: height 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s ease;
+}
+
+.appointment-floating-controls {
+  animation: slideUp 0.2s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ✅ EFECTOS VISUALES PARA AUTO-EXPANSION */
+.appointment-item:hover .appointment-expanded-indicator {
+  opacity: 1;
+  animation: pulseBlue 2s ease-in-out infinite;
+}
+
+@keyframes pulseBlue {
+  0%, 100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+/* ✅ MEJORAR CONTROLES FLOTANTES */
+.floating-controls {
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}

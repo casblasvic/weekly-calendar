@@ -1176,15 +1176,42 @@ export default function WeeklyAgenda({
       
       // Encontrar la cita
       const appointmentToRevert = appointmentsList.find(apt => apt.id === appointmentId);
-      if (!appointmentToRevert || !appointmentToRevert.estimatedDurationMinutes) {
-        console.error('No se puede revertir: cita no encontrada o sin duración estimada');
+      if (!appointmentToRevert) {
+        console.error('No se puede revertir: cita no encontrada');
         return;
       }
 
-      // Calcular nueva hora de fin con duración estimada
+      // ✅ CALCULAR DURACIÓN CORRECTA DE SERVICIOS (misma lógica que appointment-item)
+      let targetDuration: number;
+      
+      // Intentar calcular desde services array si está disponible
+      if (appointmentToRevert.services && Array.isArray(appointmentToRevert.services) && appointmentToRevert.services.length > 0) {
+        targetDuration = appointmentToRevert.services.reduce((sum, service) => {
+          return sum + (service.durationMinutes || service.duration || 0);
+        }, 0);
+      } else if (appointmentToRevert.estimatedDurationMinutes) {
+        // Fallback: usar estimatedDurationMinutes si está disponible
+        targetDuration = appointmentToRevert.estimatedDurationMinutes;
+      } else {
+        console.error('No se puede calcular duración de servicios para restablecer');
+        return;
+      }
+
+      // Verificar que hay algo que revertir
+      if (targetDuration === appointmentToRevert.duration) {
+        console.log('La cita ya tiene la duración correcta, no hay nada que revertir');
+        toast({
+          title: "Sin cambios",
+          description: "La cita ya tiene la duración correcta",
+          duration: 2000
+        });
+        return;
+      }
+
+      // Calcular nueva hora de fin con duración corregida
       const [hours, minutes] = appointmentToRevert.startTime.split(':').map(Number);
       const startMinutes = hours * 60 + minutes;
-      const endMinutes = startMinutes + appointmentToRevert.estimatedDurationMinutes;
+      const endMinutes = startMinutes + targetDuration;
       const endHours = Math.floor(endMinutes / 60);
       const endMins = endMinutes % 60;
       const newEndTime = `${endHours.toString().padStart(2, '0')}:${endMins.toString().padStart(2, '0')}`;
@@ -1192,28 +1219,49 @@ export default function WeeklyAgenda({
       // ✅ RENDERIZADO OPTIMISTA GLOBAL - Unificado
       console.log('[WeeklyAgenda handleRevertExtension] 🚀 Aplicando cambio optimista global...');
       updateOptimisticAppointment(appointmentId, {
-        durationMinutes: appointmentToRevert.estimatedDurationMinutes, // ✅ CORREGIDO: durationMinutes para useWeeklyAgendaData
-        duration: appointmentToRevert.estimatedDurationMinutes,
+        durationMinutes: targetDuration, // ✅ CORREGIDO: durationMinutes para useWeeklyAgendaData
+        duration: targetDuration,
         endTime: newEndTime
       });
 
-      // Llamar a la API para revertir la extensión
+      // Llamar a la API para revertir la extensión con la duración correcta
       const response = await fetch(
         `/api/appointments/${appointmentId}/revert-extension`,
         {
           method: 'DELETE',
           headers: {
             'Content-Type': 'application/json',
-          }
+          },
+          body: JSON.stringify({ targetDuration }) // ✅ Enviar duración calculada
         }
       );
 
       if (!response.ok) {
-        throw new Error('Error al revertir la extensión');
+        const errorData = await response.json().catch(() => ({ error: 'Error desconocido' }));
+        console.error('[handleRevertExtension] Error del API:', errorData);
+        
+        // Verificar si es el error de "duración correcta" - no lanzar excepción
+        if (response.status === 400 && errorData.error?.includes('duración correcta')) {
+          console.log('[handleRevertExtension] La cita ya tiene la duración correcta - no es un error');
+          toast({
+            title: "Sin cambios",
+            description: "La cita ya tiene la duración correcta",
+            duration: 2000
+          });
+          return; // ✅ SALIR NORMALMENTE, no como error
+        } else {
+          // Solo lanzar excepción para errores reales
+          throw new Error(`Error del API: ${errorData.error || 'Error desconocido'}`);
+        }
       }
 
-      console.log('[handleRevertExtension] Extensión revertida correctamente');
+      console.log('[handleRevertExtension] Extensión revertida correctamente a:', targetDuration, 'minutos');
       
+      toast({
+        title: "Duración restablecida",
+        description: `Cita restablecida a ${targetDuration} minutos`,
+        duration: 2000
+      });
     } catch (error) {
       console.error('[handleRevertExtension] Error:', error);
       // ✅ Solo en caso de error, invalidar para restaurar estado correcto
@@ -1944,20 +1992,20 @@ export default function WeeklyAgenda({
             }}
             ref={agendaRef}
           >
-            {/* Columna de tiempo - Fija en ambas direcciones - z-40 para estar sobre granularidades */}
+            {/* Columna de tiempo - Fija en ambas direcciones - z-50 para estar sobre granularidades */}
             <div
-              className="sticky left-0 top-0 z-40 w-20 p-4 bg-white border-b border-r border-gray-300 hour-header"
+              className="sticky left-0 top-0 z-50 w-20 p-4 bg-white border-b border-r border-gray-300 hour-header"
             >
               <div className="text-sm text-gray-500">Hora</div>
             </div>
 
-            {/* Cabeceras de días - Fijas - z-40 para estar sobre granularidades */}
+            {/* Cabeceras de días - Fijas - z-50 para estar sobre granularidades */}
             {weekDays.map((day, index) => {
               const today = isToday(day);
               const active = isDayActive(day);
               return (
                 <div key={index} className={cn(
-                  "sticky top-0 bg-white border-b border-gray-300 day-header z-40",
+                  "sticky top-0 bg-white border-b border-gray-300 day-header z-50",
                   today ? "border-l-2 border-r-2 border-purple-300" : "border-l border-r border-gray-300",
                   !active && "bg-gray-100"
                 )}>
@@ -2652,6 +2700,7 @@ export default function WeeklyAgenda({
                   console.error('[WeeklyAgenda] No hay cita seleccionada para mover');
                 }
               }}
+              onDeleteAppointment={handleDeleteAppointment}
               onSaveAppointment={async (appointmentData) => {
                 const isUpdate = !!appointmentData.id;
                 
@@ -2757,6 +2806,16 @@ export default function WeeklyAgenda({
                   }
                   
                   // ✅ CREAR CITA CON ESTRUCTURA BÁSICA PERO SERVICIOS COMPLETOS
+                  
+                  // ✅ DEBUG EXPLÍCITO: Verificar qué duración se está usando
+                  console.log('[WeeklyAgenda] 🔍 DEBUG DURACIÓN OPTIMISTA:', {
+                    'data.durationMinutes': data.durationMinutes,
+                    'startDateTime': startDateTime.toISOString(),
+                    'endDateTime': endDateTime.toISOString(),
+                    'calculatedFromDates': Math.ceil((endDateTime.getTime() - startDateTime.getTime()) / (1000 * 60)),
+                    'willUse': data.durationMinutes || Math.ceil((endDateTime.getTime() - startDateTime.getTime()) / (1000 * 60))
+                  });
+                  
                   const optimisticAppointment: WeeklyAgendaAppointment = {
                     id: tempId,
                     name: clientName,
@@ -2765,13 +2824,15 @@ export default function WeeklyAgenda({
                     roomId: data.roomId,
                     startTime: format(startDateTime, 'HH:mm'),
                     endTime: format(endDateTime, 'HH:mm'), // ✅ OBLIGATORIA para WeeklyAgendaAppointment
-                    duration: Math.ceil((endDateTime.getTime() - startDateTime.getTime()) / (1000 * 60)),
+                    duration: data.durationMinutes || Math.ceil((endDateTime.getTime() - startDateTime.getTime()) / (1000 * 60)), // ✅ USAR DURACIÓN DEL MODAL DIRECTAMENTE
                     color: appointmentColor,
                     phone: selectedClientData?.phone || selectedClient?.phone || '',
                     services: optimisticServices, // ✅ SERVICIOS CON ESTRUCTURA COMPLETA
                     tags: data.tags || [],
                     notes: data.notes || '',
                     personId: data.personId || selectedClientData?.id || selectedClient?.id || '', // ✅ PersonId válido
+                    // ✅ CRÍTICO: Añadir estimatedDurationMinutes para evitar botón restablecer incorrecto
+                    estimatedDurationMinutes: data.estimatedDurationMinutes || optimisticServices.reduce((sum: number, s: any) => sum + (s.service?.durationMinutes || 0), 0)
                   };
                   
                   console.log('[WeeklyAgenda] 🎨 Cita optimista completa creada:', {
@@ -2780,25 +2841,37 @@ export default function WeeklyAgenda({
                     service: optimisticAppointment.service,
                     color: optimisticAppointment.color,
                     services: optimisticAppointment.services,
-                    duration: optimisticAppointment.duration,
+                    duration: optimisticAppointment.duration, // ✅ VERIFICAR ESTE VALOR ESPECÍFICAMENTE
                     personId: optimisticAppointment.personId,
                     servicesCount: optimisticAppointment.services?.length || 0,
                     firstServiceStructure: optimisticAppointment.services?.[0] || 'N/A',
+                    // ✅ DEBUG: Información de duración
+                    durationFromModal: data.durationMinutes,
+                    durationCalculated: Math.ceil((endDateTime.getTime() - startDateTime.getTime()) / (1000 * 60)),
+                    endTimeFromModal: data.endTime,
+                    startTimeFromModal: data.startTime,
+                    whichDurationUsed: data.durationMinutes ? 'modal' : 'calculated',
+                    // ✅ NUEVO DEBUG CRÍTICO
+                    finalObjectDuration: optimisticAppointment.duration,
+                    startTime: optimisticAppointment.startTime,
+                    endTime: optimisticAppointment.endTime
                   });
                   
                   return optimisticAppointment;
                 };
                 
-                // ✅ RENDERIZADO OPTIMISTA GLOBAL INMEDIATO - ANTES de llamar API  
+                                  // ✅ RENDERIZADO OPTIMISTA GLOBAL INMEDIATO - ANTES de llamar API  
+                let tempAppointmentId: string | null = null;
                 if (!isUpdate) {
                   console.log('[WeeklyAgenda] 🚀 RENDERIZADO OPTIMISTA GLOBAL - Creando cita inmediatamente');
                   
                   // ✅ CREAR CITA OPTIMISTA CON DATOS REALES DEL MODAL
                   const optimisticAppointment = createOptimisticAppointment(appointmentData, selectedClient);
+                  tempAppointmentId = optimisticAppointment.id; // ✅ GUARDAR ID TEMPORAL ESPECÍFICO
                   
                   // ✅ USAR SISTEMA OPTIMISTA GLOBAL - VISIBLE EN AMBAS VISTAS
                   addOptimisticAppointment(optimisticAppointment);
-                  console.log('[WeeklyAgenda] ✅ Cita optimista añadida al CACHE GLOBAL');
+                  console.log('[WeeklyAgenda] ✅ Cita optimista añadida al CACHE GLOBAL con ID:', tempAppointmentId);
                 } else {
                   // ✅ RENDERIZADO OPTIMISTA INMEDIATO PARA EDICIONES - ANTES de API
                   console.log('[WeeklyAgenda] 🚀 RENDERIZADO OPTIMISTA INMEDIATO - Actualizando cita antes de API');
@@ -3069,7 +3142,7 @@ export default function WeeklyAgenda({
                     roomId: savedAppointment.roomId,
                     startTime: format(startTime, 'HH:mm'),
                     endTime: format(endTime, 'HH:mm'), // ✅ OBLIGATORIA para WeeklyAgendaAppointment
-                    duration: Math.ceil((endTime.getTime() - startTime.getTime()) / (1000 * 60)),
+                    duration: savedAppointment.durationMinutes || Math.ceil((endTime.getTime() - startTime.getTime()) / (1000 * 60)), // ✅ USAR DIRECTAMENTE LA DURACIÓN DE LA API
                     color: appointmentColor,
                     phone: savedAppointment.person.phone,
                     services: savedAppointment.services || [],
@@ -3093,15 +3166,27 @@ export default function WeeklyAgenda({
                     // ✅ PARA EDICIONES: No hacer segunda actualización - ya está renderizada optimísticamente
                   } else {
                     console.log('[WeeklyAgenda] 🔄 Reemplazando cita optimista con datos reales:', finalAppointment);
-                    // ✅ BUSCAR Y REEMPLAZAR CITA TEMPORAL EN CACHE GLOBAL
+                    // ✅ BUSCAR Y REEMPLAZAR CITA TEMPORAL ESPECÍFICA EN CACHE GLOBAL
                     const currentAppointments = appointmentsList;
-                    const tempAppointment = currentAppointments.find(app => app.id.toString().startsWith('temp-'));
+                    
+                    // ✅ PRIORIDAD 1: Buscar por ID específico si existe
+                    let tempAppointment = null;
+                    if (tempAppointmentId) {
+                      tempAppointment = currentAppointments.find(app => app.id === tempAppointmentId);
+                      console.log('[WeeklyAgenda] 🔍 Búsqueda por ID específico:', tempAppointmentId, tempAppointment ? 'ENCONTRADA' : 'NO ENCONTRADA');
+                    }
+                    
+                    // ✅ FALLBACK: Buscar cualquier cita temporal si no encontramos la específica
+                    if (!tempAppointment) {
+                      tempAppointment = currentAppointments.find(app => app.id.toString().startsWith('temp-'));
+                      console.log('[WeeklyAgenda] 🔍 Búsqueda genérica de citas temporales:', tempAppointment ? 'ENCONTRADA' : 'NO ENCONTRADA');
+                    }
                     
                     if (tempAppointment) {
                       console.log('[WeeklyAgenda] 🔄 Reemplazando cita temporal en cache global:', tempAppointment.id, '→', finalAppointment.id);
                       replaceOptimisticAppointment(tempAppointment.id, finalAppointment);
                     } else {
-                      console.log('[WeeklyAgenda] ⚠️ No se encontró cita temporal, añadiendo al cache global');
+                      console.log('[WeeklyAgenda] ✅ No hay cita temporal que reemplazar, añadiendo directamente al cache');
                       addOptimisticAppointment(finalAppointment);
                     }
                   }

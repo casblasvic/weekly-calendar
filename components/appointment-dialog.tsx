@@ -47,6 +47,7 @@ import {
   CheckCircle2,
   ArrowUpRight,
   RefreshCw,
+  RotateCcw,
 } from "lucide-react"
 import { useState, forwardRef, useEffect, useRef, useMemo } from "react"
 import { cn } from "@/lib/utils"
@@ -139,6 +140,7 @@ interface AppointmentDialogProps {
   onSearchClick?: () => void;
   onNewClientClick?: () => void;
   showClientDetailsOnOpen?: boolean;
+  onDeleteAppointment?: (appointmentId: string, showConfirm: boolean) => Promise<void>;
 }
 
 export function AppointmentDialog({
@@ -157,6 +159,7 @@ export function AppointmentDialog({
   onSearchClick,
   onNewClientClick,
   showClientDetailsOnOpen,
+  onDeleteAppointment,
 }: AppointmentDialogProps) {
   const [activeTab, setActiveTab] = useState("servicios")
   const [selectedServices, setSelectedServices] = useState<Service[]>([])
@@ -477,9 +480,9 @@ export function AppointmentDialog({
       onClose();
       
       // ✅ EJECUTAR ELIMINACIÓN OPTIMISTA en background
-      if (onMoveAppointment) {
+      if (onDeleteAppointment) {
         console.log('[AppointmentDialog] 🗑️ Llamando eliminación optimista...');
-        await onMoveAppointment();
+        await onDeleteAppointment(existingAppointment.id, false); // showConfirm = false porque ya confirmamos
       }
     } catch (error) {
       console.error('[AppointmentDialog] 🗑️ Error en eliminación:', error);
@@ -507,10 +510,39 @@ export function AppointmentDialog({
         return service.id
       })
 
-      // Calcular duración teórica de los servicios vs duración real
+      // ✅ CORREGIDO: Lógica de extensión solo para cambios MANUALES
       const theoreticalDuration = selectedServices.reduce((sum, s) => sum + s.duration, 0)
-      const actualDuration = modules * minuteGranularity
-      const hasExtension = actualDuration > theoreticalDuration
+      let actualDuration = modules * minuteGranularity
+      
+      // ✅ VALIDACIÓN CRÍTICA: Asegurar que actualDuration sea un número válido
+      if (!actualDuration || actualDuration <= 0 || isNaN(actualDuration)) {
+        console.warn('[AppointmentDialog] ⚠️ actualDuration inválida, calculando desde horarios:', {
+          modules,
+          minuteGranularity,
+          originalActualDuration: actualDuration,
+          selectedTime,
+          endTime
+        });
+        
+        // ✅ FALLBACK: Calcular desde startTime/endTime
+        if (selectedTime && endTime) {
+          const [startHours, startMinutes] = selectedTime.split(':').map(Number);
+          const [endHours, endMinutes] = endTime.split(':').map(Number);
+          const startTotalMinutes = startHours * 60 + startMinutes;
+          const endTotalMinutes = endHours * 60 + endMinutes;
+          actualDuration = endTotalMinutes - startTotalMinutes;
+          console.log('[AppointmentDialog] ✅ Duración calculada desde horarios:', actualDuration);
+        } else {
+          // ✅ FALLBACK FINAL: Usar duración teórica de servicios
+          actualDuration = theoreticalDuration > 0 ? theoreticalDuration : 15;
+          console.warn('[AppointmentDialog] ⚠️ Usando duración de servicios como fallback:', actualDuration);
+        }
+      }
+      
+      // ✅ NUEVA LÓGICA: Solo considerar extensión si hay cambio MANUAL de módulos/tiempo
+      // NO cuando simplemente se añaden servicios (cambio natural)
+      const hasManualDurationChange = userModifiedModules && !userModifiedServices
+      const hasExtension = hasManualDurationChange && actualDuration > theoreticalDuration
       const extensionMinutes = hasExtension ? actualDuration - theoreticalDuration : 0
 
       const appointmentData = {
@@ -525,15 +557,31 @@ export function AppointmentDialog({
         notes: appointmentComment,
         roomId: roomId, // CORREGIDO: usar roomId, no equipmentId
         tags: selectedTags, // Añadir las etiquetas seleccionadas
-        // Información de extensión si aplica
+        // ✅ INFORMACIÓN CORREGIDA DE EXTENSIÓN
         estimatedDurationMinutes: theoreticalDuration,
         durationMinutes: actualDuration,
         hasExtension,
         extensionMinutes,
+        // ✅ METADATOS PARA DISTINGUIR ORIGEN DEL CAMBIO
+        isManualDurationChange: hasManualDurationChange,
+        userModifiedServices,
+        userModifiedModules,
         // ✅ AÑADIR DATOS PARA RENDERIZADO OPTIMISTA
         selectedServicesData: selectedServices, // Servicios completos con nombres, duraciones, etc.
         clientData: initialClient // Cliente completo para el renderizado optimista
       }
+
+      // ✅ DEBUG: Ver qué duración se está enviando
+      console.log('[AppointmentDialog] 🔍 DATOS ENVIADOS AL OPTIMISTA:', {
+        theoreticalDuration,
+        actualDuration,
+        modules,
+        minuteGranularity,
+        endTime,
+        selectedTime,
+        durationCalculation: `${modules} módulos × ${minuteGranularity} minutos = ${modules * minuteGranularity} minutos`,
+        appointmentDataDuration: appointmentData.durationMinutes
+      });
 
       // ✅ RENDERIZADO OPTIMISTA: Cerrar modal INMEDIATAMENTE
       onClose()
@@ -817,9 +865,9 @@ export function AppointmentDialog({
         <DialogContent className="w-[90vw] max-h-[85vh] md:w-full sm:max-w-[800px] p-0 overflow-hidden h-[600px] flex flex-col">
           <button
             onClick={onClose}
-            className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-0 disabled:pointer-events-none z-50"
+            className="absolute top-4 right-4 z-50 rounded-sm opacity-70 transition-opacity ring-offset-background hover:opacity-100 focus:outline-none focus:ring-0 disabled:pointer-events-none"
           >
-            <XIcon className="h-4 w-4" />
+            <XIcon className="w-4 h-4" />
             <span className="sr-only">Close</span>
           </button>
           
@@ -828,34 +876,34 @@ export function AppointmentDialog({
             <DialogDescription>Crear una nueva cita para el cliente {clientName}</DialogDescription>
           </VisuallyHidden>
           
-          <div className="flex h-full flex-col">
+          <div className="flex flex-col h-full">
             {/* Header horizontal a todo el ancho */}
             <div className="bg-gray-50 border-b">
-              <div className="px-4 py-3 flex items-center justify-between">
+              <div className="flex justify-between items-center px-4 py-3">
                 {/* Lado izquierdo con información del cliente */}
-                <div className="flex items-start gap-4">
+                <div className="flex gap-4 items-start">
                   {/* Nombre y resumen */}
                   <div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex gap-2 items-center">
                       <h2 className="text-lg font-medium text-violet-600">{clientName}</h2>
                       <button
-                        className="h-6 w-6 hover:bg-purple-50 rounded inline-flex items-center justify-center"
+                        className="inline-flex justify-center items-center w-6 h-6 rounded hover:bg-purple-50"
                         onClick={() => {
                           console.log('[AppointmentDialog] Opening client quick view', { showClientDetails, initialClient })
                           setShowClientDetails(true)
                         }}
                         title="Ver resumen rápido"
                       >
-                        <ExternalLink className="h-4 w-4 text-purple-600" />
+                        <ExternalLink className="w-4 h-4 text-purple-600" />
                       </button>
                     </div>
                     {/* Teléfono y acciones */}
-                    <div className="flex items-center gap-3 mt-1">
+                    <div className="flex gap-3 items-center mt-1">
                       <span className="text-sm text-gray-600">{initialClient.phone}</span>
                       <Button 
                         variant="ghost" 
                         size="icon" 
-                        className="h-5 w-5 hover:bg-violet-50"
+                        className="w-5 h-5 hover:bg-violet-50"
                         onClick={() => window.location.href = `tel:${initialClient.phone}`}
                         title="Llamar"
                       >
@@ -864,7 +912,7 @@ export function AppointmentDialog({
                       <Button 
                         variant="ghost" 
                         size="icon" 
-                        className="h-5 w-5 hover:bg-violet-50"
+                        className="w-5 h-5 hover:bg-violet-50"
                         onClick={() => window.open(`https://wa.me/${initialClient.phone?.replace(/\s+/g, '')}`, '_blank')}
                         title="WhatsApp"
                       >
@@ -873,7 +921,7 @@ export function AppointmentDialog({
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-5 w-5 hover:bg-purple-50"
+                        className="w-5 h-5 hover:bg-purple-50"
                         onClick={() => {
                           // TODO: Navegar a la ficha del cliente
                           window.location.href = `/clientes/${initialClient.id}`
@@ -887,30 +935,30 @@ export function AppointmentDialog({
                 </div>
 
                 {/* Lado derecho con acciones */}
-                <div className="flex items-center gap-2">
+                <div className="flex gap-2 items-center">
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-8 w-8"
+                    className="w-8 h-8"
                     onClick={() => {
                       if (onNewClientClick) onNewClientClick()
                     }}
                     title="Añadir nuevo cliente"
                   >
-                    <UserPlus className="h-4 w-4 text-blue-600" />
+                    <UserPlus className="w-4 h-4 text-blue-600" />
                   </Button>
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-8 w-8"
+                    className="w-8 h-8"
                     onClick={() => {
                       if (onSearchClick) onSearchClick()
                     }}
                     title="Buscar otro cliente"
                   >
-                    <Search className="h-4 w-4 text-orange-600" />
+                    <Search className="w-4 h-4 text-orange-600" />
                   </Button>
-                  <div className="w-px h-6 bg-gray-300 mx-1" />
+                  <div className="mx-1 w-px h-6 bg-gray-300" />
                 </div>
               </div>
             </div>
@@ -920,8 +968,8 @@ export function AppointmentDialog({
               {/* Panel lateral con fecha y hora de la cita */}
               <div className="w-[280px] border-r bg-white flex flex-col">
                 {/* Fecha y hora de la cita */}
-                <div className="p-4 border-b bg-gray-50">
-                  <div className="flex items-center gap-2">
+                <div className="p-4 bg-gray-50 border-b">
+                  <div className="flex gap-2 items-center">
                     <MapPin className="h-3.5 w-3.5 text-purple-600" />
                     <span className="text-xs text-gray-700">
                       {date ? format(date, 'dd/MM/yyyy') : 'Sin fecha'}
@@ -934,33 +982,65 @@ export function AppointmentDialog({
                       )}
                     </span>
                     
-                    {/* ✅ ICONO REVERTIR EXTENSIÓN - Al lado de las horas */}
+                    {/* ✅ BOTÓN RESTABLECER - Al lado de las horas - CORREGIDO para extensiones Y reducciones */}
                     {existingAppointment?.estimatedDurationMinutes && 
                      existingAppointment?.duration && 
-                     existingAppointment.duration > existingAppointment.estimatedDurationMinutes && (
+                     existingAppointment.duration !== existingAppointment.estimatedDurationMinutes && (
                       <button
-                        className="ml-2 p-1 rounded-md hover:bg-orange-100 transition-colors"
+                        className={cn(
+                          "p-1 ml-2 rounded-md transition-colors shadow-sm",
+                          // ✅ COLORES SEGÚN TIPO: Rojo para extensión, naranja para reducción
+                          existingAppointment.duration > existingAppointment.estimatedDurationMinutes ? (
+                            "hover:bg-red-100 bg-red-50" // Rojo para extendida
+                          ) : (
+                            "hover:bg-orange-100 bg-orange-50" // Naranja para reducida
+                          )
+                        )}
                         onClick={async () => {
                           if (!existingAppointment?.id) return;
                           
                           try {
+                            console.log('[Modal] Revirtiendo extensión:', existingAppointment.id);
+                            
                             const response = await fetch(`/api/appointments/${existingAppointment.id}/revert-extension`, {
                               method: 'DELETE',
+                              headers: {
+                                'Content-Type': 'application/json',
+                              },
                             });
                             
                             if (response.ok) {
+                              console.log('[Modal] Extensión revertida correctamente');
                               onClose(); // Cerrar modal después de revertir
                               // El optimistic update se maneja automáticamente
                             } else {
-                              console.error('Error al revertir extensión');
+                              const errorData = await response.json().catch(() => ({ error: 'Error desconocido' }));
+                              console.error('[Modal] Error al revertir extensión:', errorData);
+                              
+                              // Mostrar mensaje de error específico
+                              if (response.status === 400 && errorData.error?.includes('duración correcta')) {
+                                // Cita ya tiene duración correcta - no es un error crítico
+                                console.log('[Modal] La cita ya tiene la duración correcta');
+                                onClose(); // Cerrar modal igual
+                              } else {
+                                console.error('[Modal] Error inesperado:', response.status, errorData);
+                              }
                             }
                           } catch (error) {
-                            console.error('Error:', error);
+                            console.error('[Modal] Error de red:', error);
                           }
                         }}
-                        title={`Revertir a duración original (${existingAppointment.estimatedDurationMinutes} min)`}
+                        title={`Restablecer a duración de servicios (${existingAppointment.estimatedDurationMinutes} min)`}
                       >
-                        <RefreshCw className="h-3.5 w-3.5 text-orange-600 hover:text-orange-700" />
+                        <RotateCcw className={cn(
+                          "h-3.5 w-3.5 transition-colors",
+                          // ✅ COLORES SEGÚN TIPO: Rojo para extensión, naranja para reducción
+                          existingAppointment.duration > existingAppointment.estimatedDurationMinutes ? (
+                            "text-red-600 hover:text-red-700" // Rojo para extendida
+                          ) : (
+                            "text-orange-600 hover:text-orange-700" // Naranja para reducida
+                          )
+                        )} />
                       </button>
                     )}
                   </div>
@@ -976,7 +1056,7 @@ export function AppointmentDialog({
                   }}
                 >
                   {selectedServices.length === 0 ? (
-                    <div className="text-center text-gray-400 py-6">
+                    <div className="py-6 text-center text-gray-400">
                       <p className="text-sm">No hay servicios seleccionados</p>
                       <p className="text-xs">Selecciona servicios de la lista</p>
                     </div>
@@ -985,14 +1065,14 @@ export function AppointmentDialog({
                       {selectedServices.map((service) => (
                         <div 
                           key={service.id} 
-                          className="p-2 flex items-center justify-between"
+                          className="flex justify-between items-center p-2"
                         >
                           <div className="flex items-center gap-1.5 max-w-[160px]">
                             <div className="w-1.5 h-1.5 rounded-full bg-purple-600 shrink-0" />
                             <span className="text-xs text-gray-700 truncate">{service.name}</span>
-                            <span className="text-xs text-gray-500 ml-1 shrink-0">({service.duration}m)</span>
+                            <span className="ml-1 text-xs text-gray-500 shrink-0">({service.duration}m)</span>
                           </div>
-                          <div className="flex items-center gap-1">
+                          <div className="flex gap-1 items-center">
                             {isEditing && !isAppointmentValidated && (
                               <div className="flex items-center gap-0.5">
                                 <Button
@@ -1028,7 +1108,7 @@ export function AppointmentDialog({
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-5 w-5 shrink-0"
+                              className="w-5 h-5 shrink-0"
                               onClick={() => handleRemoveService(service.id)}
                               disabled={isAppointmentValidated}
                             >
@@ -1052,7 +1132,7 @@ export function AppointmentDialog({
                         return (
                           <div
                             key={tagId}
-                            className="w-5 h-5 rounded-full relative group cursor-pointer"
+                            className="relative w-5 h-5 rounded-full cursor-pointer group"
                             style={{ backgroundColor: tag.color }}
                             title={tag.name}
                           >
@@ -1061,7 +1141,7 @@ export function AppointmentDialog({
                                 e.stopPropagation()
                                 handleTagSelect(tagId)
                               }}
-                              className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-black/20 rounded-full transition-opacity"
+                              className="flex absolute inset-0 justify-center items-center rounded-full opacity-0 transition-opacity group-hover:opacity-100 bg-black/20"
                             >
                               <XIcon className="h-2.5 w-2.5 text-white" />
                             </button>
@@ -1074,7 +1154,7 @@ export function AppointmentDialog({
                   <div className="relative">
                     <Button 
                       variant="outline" 
-                      className="w-full justify-start font-light text-xs bg-white hover:bg-gray-50 border shadow-sm h-8"
+                      className="justify-start w-full h-8 text-xs font-light bg-white border shadow-sm hover:bg-gray-50"
                       onClick={(e) => {
                         e.preventDefault()
                         e.stopPropagation()
@@ -1112,7 +1192,7 @@ export function AppointmentDialog({
                         >
                           <div className="max-h-[220px] overflow-y-auto p-1">
                             {getTags().length === 0 ? (
-                              <div className="p-4 text-center text-gray-500 text-xs">
+                              <div className="p-4 text-xs text-center text-gray-500">
                                 No hay etiquetas disponibles
                               </div>
                             ) : (
@@ -1121,7 +1201,7 @@ export function AppointmentDialog({
                                   <button
                                     key={tag.id}
                                     type="button"
-                                    className="flex items-center justify-between px-3 py-2 cursor-pointer transition-colors hover:brightness-110 rounded text-left"
+                                    className="flex justify-between items-center px-3 py-2 text-left rounded transition-colors cursor-pointer hover:brightness-110"
                                     style={{
                                       backgroundColor: tag.color,
                                       color: "#FFFFFF",
@@ -1133,8 +1213,8 @@ export function AppointmentDialog({
                                       handleTagSelect(tag.id)
                                     }}
                                   >
-                                    <span className="font-medium text-sm">{tag.name}</span>
-                                    {selectedTags.includes(tag.id) && <Check className="h-4 w-4" />}
+                                    <span className="text-sm font-medium">{tag.name}</span>
+                                    {selectedTags.includes(tag.id) && <Check className="w-4 h-4" />}
                                   </button>
                                 ))}
                               </div>
@@ -1207,8 +1287,8 @@ export function AppointmentDialog({
               </div>
 
               {/* Panel derecho con pestañas de servicios */}
-              <div className="flex-1 flex flex-col bg-white min-h-0 overflow-hidden">
-                <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col h-full">
+              <div className="flex overflow-hidden flex-col flex-1 min-h-0 bg-white">
+                <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col flex-1 h-full">
                   <TabsList className="w-full justify-start h-auto px-3 py-1.5 bg-transparent border-b rounded-none shrink-0">
                     <TabsTrigger
                       value="servicios"
@@ -1243,8 +1323,8 @@ export function AppointmentDialog({
                   </TabsList>
                   
                   {/* Contenedor con scroll para los servicios de la pestaña */}
-                  <div className="flex-1 overflow-hidden min-h-0">
-                    <div className="h-full overflow-y-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: '#9333ea #f3f4f6' }}>
+                  <div className="overflow-hidden flex-1 min-h-0">
+                    <div className="overflow-y-auto h-full" style={{ scrollbarWidth: 'thin', scrollbarColor: '#9333ea #f3f4f6' }}>
                       {['servicios', 'bonos', 'paquetes'].map((tab) => (
                         <TabsContent key={tab} value={tab} className="m-0">
                           {/* Siempre mostrar contenido con altura fija, nunca skeleton */}
@@ -1252,7 +1332,7 @@ export function AppointmentDialog({
                             Object.entries(servicesByCategory).map(([category, servicesInCategory]) => (
                               <div key={category} className="border-b last:border-b-0">
                                 {/* Categoría con estilo más prominente */}
-                                <h3 className="text-xs font-bold text-gray-700 px-3 py-3 bg-gray-50 uppercase tracking-wider border-b border-gray-200 sticky top-0 z-10">
+                                <h3 className="sticky top-0 z-10 px-3 py-3 text-xs font-bold tracking-wider text-gray-700 uppercase bg-gray-50 border-b border-gray-200">
                                   {category}
                                 </h3>
                                 {/* Servicios con mejor separación visual */}
@@ -1276,18 +1356,18 @@ export function AppointmentDialog({
                                         )}
                                         onClick={() => handleServiceClick(service)}
                                       >
-                                        <div className="flex items-center justify-between">
+                                        <div className="flex justify-between items-center">
                                           <span className={cn(
-                                            "text-sm flex-1 mr-3 font-normal",
+                                            "flex-1 mr-3 text-sm font-normal",
                                             isSelected 
-                                              ? "text-purple-700 font-medium" 
+                                              ? "font-medium text-purple-700" 
                                               : "text-gray-700 group-hover:text-purple-700"
                                           )}>
                                             {service.name}
                                           </span>
-                                          <div className="flex items-center gap-3 shrink-0">
+                                          <div className="flex gap-3 items-center shrink-0">
                                             {isSelected && (
-                                              <CheckCircle2 className="h-4 w-4 text-purple-600" />
+                                              <CheckCircle2 className="w-4 h-4 text-purple-600" />
                                             )}
                                             {service.type !== 'package' && (
                                               <span className={cn(
@@ -1296,7 +1376,7 @@ export function AppointmentDialog({
                                                   ? "text-purple-600" 
                                                   : "text-gray-500 group-hover:text-purple-600"
                                               )}>
-                                                <Clock className="h-3 w-3 inline mr-1" />
+                                                <Clock className="inline mr-1 w-3 h-3" />
                                                 {service.duration}min
                                               </span>
                                             )}
@@ -1325,40 +1405,40 @@ export function AppointmentDialog({
                   <div className="px-3 py-2 border-t shrink-0">
                     <Input 
                       placeholder="Buscar servicio..." 
-                      className="bg-gray-50 h-8 text-xs" 
+                      className="h-8 text-xs bg-gray-50" 
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                     />
                   </div>
                   
                   {/* Controles inferiores */}
-                  <div className="px-3 py-3 border-t bg-white shrink-0">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2">
+                  <div className="px-3 py-3 bg-white border-t shrink-0">
+                    <div className="flex gap-3 justify-between items-center">
+                      <div className="flex gap-2 items-center">
                         <label className="text-xs text-gray-500">Módulos:</label>
-                        <div className="flex items-center gap-2">
+                        <div className="flex gap-2 items-center">
                           <Button
                             variant="outline"
                             size="icon"
-                            className="h-6 w-6"
+                            className="w-6 h-6"
                             onClick={() => {
                               setModules(Math.max(1, modules - 1))
                               setUserModifiedModules(true)
                             }}
                           >
-                            <ChevronDown className="h-3 w-3" />
+                            <ChevronDown className="w-3 h-3" />
                           </Button>
-                          <span className="text-xs font-medium w-8 text-center">{modules}</span>
+                          <span className="w-8 text-xs font-medium text-center">{modules}</span>
                           <Button
                             variant="outline"
                             size="icon"
-                            className="h-6 w-6"
+                            className="w-6 h-6"
                             onClick={() => {
                               setModules(modules + 1)
                               setUserModifiedModules(true)
                             }}
                           >
-                            <ChevronUp className="h-3 w-3" />
+                            <ChevronUp className="w-3 h-3" />
                           </Button>
                         </div>
                         <span className="text-xs text-gray-500">
@@ -1383,12 +1463,12 @@ export function AppointmentDialog({
                         >
                           {isSaving ? (
                             <>
-                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              <Loader2 className="mr-2 w-4 h-4 animate-spin" />
                               Guardando...
                             </>
                           ) : isOptimisticAppointment ? (
                             <>
-                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              <Loader2 className="mr-2 w-4 h-4 animate-spin" />
                               Procesando...
                             </>
                           ) : (

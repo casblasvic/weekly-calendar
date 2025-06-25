@@ -15,13 +15,29 @@ export async function DELETE(
 
     const resolvedParams = await params; // ✅ ARREGLO NextJS 15
     const appointmentId = resolvedParams.id;
-    console.log(' [API] Revirtiendo extensión de cita:', appointmentId)
+    
+    // ✅ OBTENER targetDuration del body si se proporciona
+    let requestBody = null;
+    try {
+      requestBody = await request.json();
+    } catch {
+      // Si no hay body, usar lógica legacy
+    }
+    
+    console.log(' [API] Revirtiendo extensión de cita:', appointmentId, requestBody)
 
-    // Verificar que la cita existe y pertenece al sistema del usuario
+    // Verificar que la cita existe y pertenece al sistema del usuario, incluyendo servicios
     const appointment = await prisma.appointment.findFirst({
       where: {
         id: appointmentId,
         systemId: session.user.systemId
+      },
+      include: {
+        services: {
+          include: {
+            service: true // Incluir detalles del servicio para obtener durationMinutes
+          }
+        }
       }
     })
 
@@ -29,39 +45,61 @@ export async function DELETE(
       return NextResponse.json({ error: 'Cita no encontrada' }, { status: 404 })
     }
 
-    // Verificar que la cita tiene una duración estimada
-    if (!appointment.estimatedDurationMinutes) {
+    // ✅ CALCULAR DURACIÓN CORRECTA DE SERVICIOS
+    let targetDuration: number;
+    
+    if (requestBody?.targetDuration) {
+      // Usar duración enviada desde frontend (ya calculada)
+      targetDuration = requestBody.targetDuration;
+      console.log(' [API] Usando duración proporcionada:', targetDuration);
+    } else {
+      // Calcular suma de servicios desde la base de datos
+      if (appointment.services && appointment.services.length > 0) {
+        targetDuration = appointment.services.reduce((sum, appointmentService) => {
+          return sum + (appointmentService.service.durationMinutes || 0);
+        }, 0);
+        console.log(' [API] Duración calculada desde servicios:', targetDuration);
+      } else if (appointment.estimatedDurationMinutes) {
+        // Fallback: usar estimatedDurationMinutes
+        targetDuration = appointment.estimatedDurationMinutes;
+        console.log(' [API] Usando estimatedDurationMinutes como fallback:', targetDuration);
+      } else {
+        return NextResponse.json({ 
+          error: 'No se puede determinar la duración correcta para restablecer' 
+        }, { status: 400 })
+      }
+    }
+
+    // Verificar que hay algo que revertir
+    if (appointment.durationMinutes === targetDuration) {
       return NextResponse.json({ 
-        error: 'La cita no tiene duración estimada definida' 
+        error: 'La cita ya tiene la duración correcta' 
       }, { status: 400 })
     }
 
-    // Verificar que la cita está realmente extendida
-    if (appointment.durationMinutes <= appointment.estimatedDurationMinutes) {
-      return NextResponse.json({ 
-        error: 'La cita no está extendida' 
-      }, { status: 400 })
-    }
-
-    // Calcular nueva hora de fin basada en la duración estimada
+    // Calcular nueva hora de fin basada en la duración calculada
     const newEndTime = new Date(appointment.startTime)
-    newEndTime.setMinutes(newEndTime.getMinutes() + appointment.estimatedDurationMinutes)
+    newEndTime.setMinutes(newEndTime.getMinutes() + targetDuration)
 
     console.log(' [API] Revirtiendo extensión:', {
       duracionActual: appointment.durationMinutes,
-      duracionEstimada: appointment.estimatedDurationMinutes,
+      duracionObjetivo: targetDuration,
       horaFinActual: appointment.endTime,
-      horaFinNueva: newEndTime
+      horaFinNueva: newEndTime,
+      servicios: appointment.services.map(s => ({ 
+        nombre: s.service.name, 
+        duracion: s.service.durationMinutes 
+      }))
     })
 
     // Iniciar transacción para actualizar la cita y eliminar extensiones
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Actualizar la cita con la duración original
+      // 1. Actualizar la cita con la duración correcta
       const updatedAppointment = await tx.appointment.update({
         where: { id: appointmentId },
         data: {
           endTime: newEndTime,
-          durationMinutes: appointment.estimatedDurationMinutes
+          durationMinutes: targetDuration
         }
       })
 
@@ -79,7 +117,8 @@ export async function DELETE(
 
     console.log(' [API] Extensión revertida exitosamente:', {
       citaId: result.id,
-      nuevaDuracion: result.durationMinutes
+      nuevaDuracion: result.durationMinutes,
+      duracionObjetivo: targetDuration
     })
 
     // Devolver la cita actualizada

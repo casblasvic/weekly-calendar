@@ -187,6 +187,12 @@ export function AppointmentItem({
   // Determinar si el contenido es compacto (menos de 30 minutos)
   const isCompact = appointment.duration < 30
 
+  // ✅ AUTO-EXPANSION: Siempre expandir citas pequeñas cuando aparecen controles - SIN FLOATING
+  const shouldAutoExpand = isCompact && showQuickActions
+  const expandedHeight = shouldAutoExpand ? Math.max(height, 110) : height // ✅ SIEMPRE 110px mínimo para todos los controles
+  
+  // ✅ ELIMINAR FLOATING CONTROLS: Siempre usar auto-expansion en lugar de floating
+
   // Determinar si es una cita optimista
   const isOptimistic = appointment.id.toString().startsWith('temp-');
   
@@ -498,7 +504,7 @@ export function AppointmentItem({
       // ✅ REMOVER LISTENERS
       overlay.removeEventListener('mousemove', handleMouseMove);
       overlay.removeEventListener('mouseup', handleMouseUp);
-      document.removeEventListener('keydown', handleKeyDown);
+          document.removeEventListener('keydown', handleKeyDown);
     };
     
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -587,7 +593,7 @@ export function AppointmentItem({
           borderBottom: `3px solid ${borderColor}`,
           color: textColor,
           cursor: isDraggingDuration ? 'ns-resize' : (isOptimistic ? 'default' : 'move'), // ✅ Cursor diferente para optimistas
-          height: `${height}px`,
+          height: `${expandedHeight}px`,
           width: '100%', // Ocupar todo el ancho disponible
           // ✅ ELIMINAR TRANSICIÓN DURANTE RESIZE para feedback inmediato
           transition: isResizing ? 'none' : 'all 0.2s ease-out',
@@ -631,186 +637,8 @@ export function AppointmentItem({
             />
           )}
 
-          {/* Flechas de ajuste de hora - al lado del botón + */}
-          {showQuickActions && !isCompact && (
-            <div 
-              className={cn(
-                "absolute bottom-4 right-8 z-40 flex flex-col gap-0.5 transition-all duration-200",
-                isDragging && "pointer-events-none" // Desactivar durante drag
-              )}
-              onClick={(e) => e.stopPropagation()}
-              onMouseDown={(e) => e.stopPropagation()}
-            >
-              {canMoveUp && (
-                <button 
-                  className="p-0.5 rounded bg-purple-500/20 hover:bg-purple-500/30 transition-all duration-150"
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                  }}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    if (onTimeAdjust) {
-                      onTimeAdjust(appointment.id, 'up');
-                    }
-                  }}
-                  title="Mover arriba según granularidad"
-                >
-                  <ChevronUp className="w-3 h-3 text-purple-700" />
-                </button>
-              )}
-              {canMoveDown && (
-                <button 
-                  className="p-0.5 rounded bg-purple-500/20 hover:bg-purple-500/30 transition-all duration-150"
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                  }}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    if (onTimeAdjust) {
-                      onTimeAdjust(appointment.id, 'down');
-                    }
-                  }}
-                  title="Mover abajo según granularidad"
-                >
-                  <ChevronDown className="w-3 h-3 text-purple-700" />
-                </button>
-              )}
-            </div>
-          )}
-          
-          {/* Menú de acciones rápidas - posicionado abajo a la derecha */}
-          {showQuickActions && !isCompact && (
-            <div 
-              className={cn(
-                "absolute bottom-4 right-1 z-40 transition-all duration-200",
-                isDragging && "pointer-events-none" // Desactivar durante drag
-              )}
-              onClick={(e) => e.stopPropagation()}
-              onMouseDown={(e) => e.stopPropagation()}
-            >
-              <DropdownMenu modal={false}>
-                <DropdownMenuTrigger asChild>
-                  <button 
-                    className="p-1 rounded-full bg-white/80 hover:bg-white shadow-sm hover:shadow transition-all duration-200 data-[state=open]:bg-white data-[state=open]:shadow group"
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      console.log('[AppointmentItem] 🔘 BOTÓN + MOUSE DOWN');
-                    }}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      console.log('[AppointmentItem] 🔘 BOTÓN + CLICK');
-                    }}
-                  >
-                    <Plus className="h-3 w-3 text-gray-700 transition-transform duration-200 group-data-[state=open]:rotate-45" />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent 
-                  align="end" 
-                  side="top" 
-                  sideOffset={5}
-                  className="w-48"
-                  onCloseAutoFocus={(e) => e.preventDefault()}
-                >
-                  <DropdownMenuSub>
-                    <DropdownMenuSubTrigger className="cursor-pointer">
-                      <Tag className="mr-2 w-4 h-4" />
-                      Etiquetas
-                    </DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent className="w-56">
-                    {getTags().map((tag) => {
-                      const isSelected = appointment.tags?.includes(tag.id);
-                      return (
-                        <DropdownMenuItem
-                          key={tag.id}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            console.log('[AppointmentItem] 🏷️ CLICK ETIQUETA:', { tagId: tag.id, tagName: tag.name, isSelected, appointmentId: appointment.id });
-                            if (onTagsUpdate) {
-                              const newTags = isSelected
-                                ? appointment.tags?.filter(id => id !== tag.id) || []
-                                : [...(appointment.tags || []), tag.id];
-                              console.log('[AppointmentItem] 🏷️ LLAMANDO onTagsUpdate:', { appointmentId: appointment.id, newTags });
-                              onTagsUpdate(appointment.id, newTags);
-                            } else {
-                              console.log('[AppointmentItem] ❌ NO HAY onTagsUpdate disponible!');
-                            }
-                          }}
-                          className="flex justify-between items-center cursor-pointer hover:bg-gray-100"
-                        >
-                          <div className="flex gap-2 items-center">
-                            <div
-                              className="w-3 h-3 rounded-full"
-                              style={{ backgroundColor: tag.color }}
-                            />
-                            <span>{tag.name}</span>
-                          </div>
-                          {isSelected && <Check className="w-4 h-4" />}
-                        </DropdownMenuItem>
-                      );
-                    })}
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
-                
-                <DropdownMenuItem onClick={(e) => {
-                  e.stopPropagation();
-                  console.log('[AppointmentItem] Iniciando movimiento de cita:', appointment.id);
-                  if (onMoveAppointment) {
-                    onMoveAppointment(appointment.id);
-                  }
-                }} className="cursor-pointer hover:bg-gray-100">
-                  <Move className="mr-2 w-4 h-4" />
-                  Mover
-                </DropdownMenuItem>
-                
-                <DropdownMenuItem onClick={(e) => {
-                  e.stopPropagation();
-                  console.log("No asistido");
-                }} className="cursor-pointer hover:bg-gray-100">
-                  <XCircle className="mr-2 w-4 h-4" />
-                  No asistido
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={(e) => {
-                  e.stopPropagation();
-                  console.log("Información");
-                }} className="cursor-pointer hover:bg-gray-100">
-                  <MessageSquare className="mr-2 w-4 h-4" />
-                  Información
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={(e) => {
-                  e.stopPropagation();
-                  console.log("Duplicar");
-                }} className="cursor-pointer hover:bg-gray-100">
-                  <Copy className="mr-2 w-4 h-4" />
-                  Duplicar
-                </DropdownMenuItem>
-                
-                <DropdownMenuItem 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    // ✅ ELIMINACIÓN OPTIMISTA DESDE MENÚ HOVER
-                    if (onDeleteAppointment) {
-                      onDeleteAppointment(appointment.id, true); // showConfirm = true
-                    } else {
-                      console.log("onDeleteAppointment no disponible");
-                    }
-                  }} 
-                  className="text-red-600 cursor-pointer hover:bg-red-50"
-                >
-                  <Trash2 className="mr-2 w-4 h-4" />
-                  Eliminar
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>)}
-
           {/* Indicadores de etiquetas en la parte superior */}
-          {appointment.tags && appointment.tags.length > 0 && !isCompact && (
+          {appointment.tags && appointment.tags.length > 0 && (
             <div className="flex items-center gap-0.5 mb-0.5 absolute top-1 right-1 z-20">
               {appointment.tags.slice(0, maxVisibleTags).map((tagId) => {
                 const tag = getTagById(tagId);
@@ -819,7 +647,10 @@ export function AppointmentItem({
                 return (
                   <div 
                     key={tag.id}
-                    className="w-2 h-2 rounded-full border border-white shadow-sm"
+                    className={cn(
+                      "rounded-full border border-white shadow-sm",
+                      isCompact ? "w-1.5 h-1.5" : "w-2 h-2" // Más pequeñas en citas compactas
+                    )}
                     style={{ 
                       backgroundColor: tag.color,
                       boxShadow: '0 1px 2px rgba(0, 0, 0, 0.1)'
@@ -830,7 +661,10 @@ export function AppointmentItem({
               })}
               {appointment.tags.length > maxVisibleTags && (
                 <div 
-                  className="text-[8px] w-3 h-2 rounded-full flex items-center justify-center"
+                  className={cn(
+                    "rounded-full flex items-center justify-center",
+                    isCompact ? "text-[6px] w-2 h-1.5" : "text-[8px] w-3 h-2"
+                  )}
                   style={{
                     backgroundColor: textColor === '#FFFFFF' ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.2)',
                     color: textColor
@@ -843,12 +677,11 @@ export function AppointmentItem({
           )}
 
           <div className={cn("px-2", isCompact ? "py-1" : "py-2")}>
-            {/* Hora de inicio y fin con icono de reloj - más compacto */}
+            {/* Hora de inicio y fin SIN icono - más legible */}
             <div className="flex gap-1 items-center">
-              <Clock className="flex-shrink-0 w-3 h-3 text-gray-600" />
               <div className={cn(
-                "font-medium truncate",
-                isCompact ? "text-[10px]" : "text-xs",
+                "font-semibold truncate", // ✅ MEJORADO: font-semibold y sin icono para mejor legibilidad
+                isCompact ? "text-[11px]" : "text-sm", // ✅ MEJORADO: Texto más grande
                 // ✅ RESALTAR DURANTE RESIZE
                 isResizing && "text-white font-bold bg-black/20 px-1 rounded"
               )}>
@@ -915,6 +748,219 @@ export function AppointmentItem({
           </div>
         </div>
 
+        {/* ✅ BOTONES MOVIDOS FUERA DEL OVERFLOW-HIDDEN PARA VISIBILIDAD EN AUTO-EXPANSION */}
+        
+        {/* Flechas de ajuste de hora - FUERA del overflow-hidden */}
+        {showQuickActions && (
+          <div 
+            className={cn(
+              "absolute z-40 flex flex-col gap-0.5 transition-all duration-200",
+              isDragging && "pointer-events-none", // Desactivar durante drag
+              shouldAutoExpand ? (
+                // ✅ AUTO-EXPANSION: Agrupados a la derecha para mejor usabilidad
+                "bottom-5 right-8"
+              ) : (
+                // Normal: mantener posición original pero también agrupados a la derecha cuando hay espacio
+                isCompact ? "bottom-2 right-4" : "bottom-4 right-8"
+              )
+            )}
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+          >
+            {canMoveUp && (
+              <button 
+                className={cn(
+                  "rounded transition-all duration-150",
+                  "hover:scale-110", // ✅ NUEVO: Efecto zoom hover para indicar clicabilidad
+                  // ✅ MEJORADO: Más pequeños en auto-expandido para mejor proporción
+                  shouldAutoExpand ? "p-0.5" : (isCompact ? "p-1" : "p-0.5"),
+                  "bg-purple-500/20 hover:bg-purple-500/30 text-purple-700"
+                )}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (onTimeAdjust) {
+                    onTimeAdjust(appointment.id, 'up');
+                  }
+                }}
+                title="Mover arriba según granularidad"
+              >
+                <ChevronUp className={cn(
+                  "text-purple-700", 
+                  // ✅ MEJORADO: Más pequeños en auto-expandido
+                  shouldAutoExpand ? "w-2.5 h-2.5" : "w-3 h-3"
+                )} />
+              </button>
+            )}
+            {canMoveDown && (
+              <button 
+                className={cn(
+                  "rounded transition-all duration-150",
+                  "hover:scale-110", // ✅ NUEVO: Efecto zoom hover para indicar clicabilidad
+                  // ✅ MEJORADO: Más pequeños en auto-expandido para mejor proporción
+                  shouldAutoExpand ? "p-0.5" : (isCompact ? "p-1" : "p-0.5"),
+                  "bg-purple-500/20 hover:bg-purple-500/30 text-purple-700"
+                )}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (onTimeAdjust) {
+                    onTimeAdjust(appointment.id, 'down');
+                  }
+                }}
+                title="Mover abajo según granularidad"
+              >
+                <ChevronDown className={cn(
+                  "text-purple-700", 
+                  // ✅ MEJORADO: Más pequeños en auto-expandido
+                  shouldAutoExpand ? "w-2.5 h-2.5" : "w-3 h-3"
+                )} />
+              </button>
+            )}
+          </div>
+        )}
+        
+        {/* Menú de acciones rápidas - FUERA del overflow-hidden */}
+        {showQuickActions && (
+          <div 
+            className={cn(
+              "absolute z-40 transition-all duration-200",
+              isDragging && "pointer-events-none", // Desactivar durante drag
+              shouldAutoExpand ? (
+                // ✅ AUTO-EXPANSION: Agrupado con botones de granularidad para mejor usabilidad
+                "bottom-5 right-1"
+              ) : (
+                // Normal: mantener posición original  
+                isCompact ? "bottom-2 right-1" : "bottom-4 right-1"
+              )
+            )}
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+          >
+            <DropdownMenu modal={false}>
+              <DropdownMenuTrigger asChild>
+                <button 
+                  className={cn(
+                    "rounded-full transition-all duration-200 data-[state=open]:shadow group",
+                    isCompact ? "p-1" : "p-1", // ✅ MEJOR TAMAÑO: Consistente y visible
+                    "bg-white hover:bg-gray-50 shadow-md hover:shadow-lg border border-gray-200 data-[state=open]:bg-gray-50"
+                  )}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                >
+                  <Plus className={cn(
+                    "text-gray-700 transition-transform duration-200 group-data-[state=open]:rotate-45",
+                    isCompact ? "h-3 w-3" : "h-3 w-3" // ✅ TAMAÑO CONSISTENTE: Bien visible
+                  )} />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent 
+                align="end" 
+                side="top" 
+                sideOffset={5}
+                className="w-48"
+                onCloseAutoFocus={(e) => e.preventDefault()}
+              >
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger className="cursor-pointer">
+                    <Tag className="mr-2 w-4 h-4" />
+                    Etiquetas
+                  </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="w-56">
+                  {getTags().map((tag) => {
+                    const isSelected = appointment.tags?.includes(tag.id);
+                    return (
+                      <DropdownMenuItem
+                        key={tag.id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (onTagsUpdate) {
+                            const newTags = isSelected
+                              ? appointment.tags?.filter(id => id !== tag.id) || []
+                              : [...(appointment.tags || []), tag.id];
+                            onTagsUpdate(appointment.id, newTags);
+                          }
+                        }}
+                        className="flex justify-between items-center cursor-pointer hover:bg-gray-100"
+                      >
+                        <div className="flex gap-2 items-center">
+                          <div
+                            className="w-3 h-3 rounded-full"
+                            style={{ backgroundColor: tag.color }}
+                          />
+                          <span>{tag.name}</span>
+                        </div>
+                        {isSelected && <Check className="w-4 h-4" />}
+                      </DropdownMenuItem>
+                    );
+                  })}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+              
+              <DropdownMenuItem onClick={(e) => {
+                e.stopPropagation();
+                if (onMoveAppointment) {
+                  onMoveAppointment(appointment.id);
+                }
+              }} className="cursor-pointer hover:bg-gray-100">
+                <Move className="mr-2 w-4 h-4" />
+                Mover
+              </DropdownMenuItem>
+              
+              <DropdownMenuItem onClick={(e) => {
+                e.stopPropagation();
+                console.log("No asistido");
+              }} className="cursor-pointer hover:bg-gray-100">
+                <XCircle className="mr-2 w-4 h-4" />
+                No asistido
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={(e) => {
+                e.stopPropagation();
+                console.log("Información");
+              }} className="cursor-pointer hover:bg-gray-100">
+                <MessageSquare className="mr-2 w-4 h-4" />
+                Información
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={(e) => {
+                e.stopPropagation();
+                console.log("Duplicar");
+              }} className="cursor-pointer hover:bg-gray-100">
+                <Copy className="mr-2 w-4 h-4" />
+                Duplicar
+              </DropdownMenuItem>
+              
+              <DropdownMenuItem 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (onDeleteAppointment) {
+                    onDeleteAppointment(appointment.id, true); // showConfirm = true
+                  } else {
+                    console.log("onDeleteAppointment no disponible");
+                  }
+                }} 
+                className="text-red-600 cursor-pointer hover:bg-red-50"
+              >
+                <Trash2 className="mr-2 w-4 h-4" />
+                Eliminar
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>)}
+
         {/* Zona de estiramiento profesional integrada en la cita */}
         {canResize && (
           <div
@@ -971,14 +1017,28 @@ export function AppointmentItem({
         </div>
         )}
 
-        {/* ✅ INDICADOR DE EXTENSIÓN - Posición más alta para identificación visual */}
+        {/* ✅ BOTÓN RESTABLECER DURACIÓN - Reposicionado a la izquierda de los botones */}
         {appointment.estimatedDurationMinutes && 
-         appointment.duration > appointment.estimatedDurationMinutes && 
-         !isCompact && (
+         appointment.duration !== appointment.estimatedDurationMinutes && (
           <button
             className={cn(
-              "absolute top-1 left-1 z-30 p-0.5 rounded-full bg-amber-500/90 hover:bg-amber-600 transition-all duration-200 shadow-sm hover:shadow group",
-              isDragging && "pointer-events-none" // Desactivar durante drag
+              "absolute z-30 transition-all duration-200 rounded-full shadow-sm hover:shadow",
+              "hover:scale-110", // ✅ NUEVO: Efecto zoom hover para indicar clicabilidad
+              isDragging && "pointer-events-none", // Desactivar durante drag
+              // ✅ POSICIONAMIENTO INTELIGENTE según tamaño de cita
+              shouldAutoExpand ? (
+                // ✅ AUTO-EXPANSION: Esquina inferior izquierda pequeño, igual que citas extendidas
+                "bottom-1 left-1 p-0.5"
+              ) : (
+                // Sin auto-expansion: esquina inferior izquierda, muy pequeño
+                "bottom-1 left-1 p-0.5"
+              ),
+              // ✅ LÓGICA COMPLETA: Rojo si extendida, naranja si reducida
+              appointment.duration > appointment.estimatedDurationMinutes ? (
+                "bg-red-500/90 hover:bg-red-600" // Rojo para extendida
+              ) : (
+                "bg-orange-500/90 hover:bg-orange-600" // Naranja para reducida
+              )
             )}
             onClick={(e) => {
               e.stopPropagation();
@@ -986,15 +1046,13 @@ export function AppointmentItem({
                 onRevertExtension(appointment.id);
               }
             }}
-            title={`Revertir a duración original (${appointment.estimatedDurationMinutes} min)`}
+            title={`Restablecer a duración de servicios (${appointment.estimatedDurationMinutes} min)`}
           >
-            <RotateCcw className="h-2.5 w-2.5 text-white" />
-            
-            {/* Tooltip mejorado que aparece al hacer hover */}
-            <div className="absolute top-full left-1/2 z-40 px-2 py-1 mt-1 text-xs text-white whitespace-nowrap bg-black rounded opacity-0 transition-opacity duration-200 transform -translate-x-1/2 pointer-events-none group-hover:opacity-100">
-              Cita extendida: {appointment.duration}min → {appointment.estimatedDurationMinutes}min
-              <div className="absolute bottom-full left-1/2 border-2 border-transparent transform -translate-x-1/2 border-b-black"></div>
-            </div>
+            <RotateCcw className={cn(
+              "text-white transition-all duration-200",
+              // ✅ MEJORADO: Tamaño adaptativo según vista - día más grande que semana
+              viewType === 'day' ? "w-2.5 h-2.5" : "w-2 h-2"
+            )} />
           </button>
         )}
 
@@ -1075,6 +1133,13 @@ export function AppointmentItem({
               }
             }}
             endTime={appointment.endTime} // ✅ PASAR endTime directamente de la cita
+            // ✅ NUEVA: Información de extensión/reducción para el tooltip
+            durationModification={appointment.estimatedDurationMinutes ? {
+              type: appointment.duration > appointment.estimatedDurationMinutes ? 'extension' : 
+                    appointment.duration < appointment.estimatedDurationMinutes ? 'reduction' : 'normal',
+              servicesDuration: appointment.estimatedDurationMinutes,
+              currentDuration: appointment.duration
+            } : undefined}
           />
         </div>,
         document.body

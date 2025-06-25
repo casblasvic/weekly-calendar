@@ -1,5 +1,5 @@
 import React from 'react';
-import { Calendar, Clock, MapPin, Phone, User, Briefcase, Tag } from 'lucide-react';
+import { Calendar, Clock, MapPin, Phone, User, Briefcase, Tag, RotateCcw } from 'lucide-react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 
@@ -7,6 +7,12 @@ interface Tag {
   id: string;
   name: string;
   color: string;
+}
+
+interface DurationModification {
+  type: 'normal' | 'extension' | 'reduction';
+  servicesDuration: number;
+  currentDuration: number;
 }
 
 interface AppointmentTooltipProps {
@@ -22,7 +28,28 @@ interface AppointmentTooltipProps {
   tags?: Tag[];
   onClientNameClick?: () => void;
   endTime?: string; // ✅ AÑADIR endTime para usar directamente cuando esté disponible
+  durationModification?: DurationModification; // ✅ NUEVA: Información de extensión/reducción
 }
+
+// ✅ FUNCIÓN AUXILIAR PARA TRADUCCIONES
+const getTranslation = (key: string, params?: any) => {
+  const translations: any = {
+    'appointments.durationModification.extended': 'Cita Extendida',
+    'appointments.durationModification.reduced': 'Cita Reducida',
+    'appointments.durationModification.extendedBy': '+{{minutes}}min',
+    'appointments.durationModification.reducedBy': '{{minutes}}min'
+  };
+  
+  let text = translations[key] || key;
+  
+  if (params) {
+    Object.keys(params).forEach(param => {
+      text = text.replace(`{{${param}}}`, params[param]);
+    });
+  }
+  
+  return text;
+};
 
 export const AppointmentTooltip: React.FC<AppointmentTooltipProps> = ({
   title,
@@ -36,7 +63,8 @@ export const AppointmentTooltip: React.FC<AppointmentTooltipProps> = ({
   services = [],
   tags = [],
   onClientNameClick,
-  endTime: providedEndTime // ✅ RECIBIR endTime como prop
+  endTime: providedEndTime, // ✅ RECIBIR endTime como prop
+  durationModification
 }) => {
   // Formatear la fecha correctamente
   const formattedDate = typeof date === 'string' 
@@ -119,6 +147,35 @@ export const AppointmentTooltip: React.FC<AppointmentTooltipProps> = ({
                   )}
                 </div>
               )}
+            </div>
+          </div>
+        )}
+        
+        {/* ✅ NUEVA: Información de Extensión/Reducción - DEBAJO DE LOS SERVICIOS */}
+        {durationModification && durationModification.type !== 'normal' && (
+          <div className={`flex items-center gap-2 px-2 py-1 rounded-md ${
+            durationModification.type === 'extension' 
+              ? 'bg-red-50 border border-red-200' 
+              : 'bg-orange-50 border border-orange-200'
+          }`}>
+            <RotateCcw className={`w-3.5 h-3.5 flex-shrink-0 ${
+              durationModification.type === 'extension' ? 'text-red-600' : 'text-orange-600'
+            }`} />
+            <div className="flex-1">
+              <div className={`text-xs font-medium ${
+                durationModification.type === 'extension' ? 'text-red-700' : 'text-orange-700'
+              }`}>
+                {getTranslation(`appointments.durationModification.${durationModification.type === 'extension' ? 'extended' : 'reduced'}`)}
+              </div>
+              <div className={`text-xs ${
+                durationModification.type === 'extension' ? 'text-red-600' : 'text-orange-600'
+              }`}>
+                {durationModification.currentDuration}min → {durationModification.servicesDuration}min
+                {durationModification.type === 'extension' 
+                  ? ` (${getTranslation('appointments.durationModification.extendedBy', { minutes: durationModification.currentDuration - durationModification.servicesDuration })})`
+                  : ` (${getTranslation('appointments.durationModification.reducedBy', { minutes: durationModification.currentDuration - durationModification.servicesDuration })})`
+                }
+              </div>
             </div>
           </div>
         )}

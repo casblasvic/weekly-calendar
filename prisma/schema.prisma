@@ -649,7 +649,7 @@ model Device {
 
 model Appointment {
   id                          String                 @id @default(cuid())
-  startTime                   DateTime               @db.Timestamptz(6)  // ✅ CORREGIDO: Ahora consistente con endTime
+  startTime                   DateTime               @db.Timestamptz(6)
   endTime                     DateTime               @db.Timestamptz(6)
   durationMinutes             Int
   status                      AppointmentStatus      @default(SCHEDULED)
@@ -664,8 +664,8 @@ model Appointment {
   actualUsageMinutes          Int?
   isUsageLocked               Boolean                @default(false)
   originalAppointmentId       String?
-  createdAt                   DateTime               @default(now()) @db.Timestamptz(6)  // ✅ CONSISTENCIA: Todos timestamptz
-  updatedAt                   DateTime               @updatedAt @db.Timestamptz(6)   // ✅ CONSISTENCIA: Todos timestamptz
+  createdAt                   DateTime               @default(now()) @db.Timestamptz(6)
+  updatedAt                   DateTime               @updatedAt @db.Timestamptz(6)
   estimatedDurationMinutes    Int?
   personId                    String
   roomId                      String?
