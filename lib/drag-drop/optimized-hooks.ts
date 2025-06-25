@@ -1,9 +1,25 @@
 import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
-import { DragItem, DropResult } from './types';
-import { 
-  hasAppointmentChanged,
-  getChangedFields
-} from './utils';
+
+// Tipos locales para evitar dependencias externas problematicas
+interface DragItem {
+  id: string;
+  title: string;
+  startTime: string;
+  endTime: string;
+  duration: number; // in minutes
+  roomId: string;
+  color: string;
+  personId: string;
+  currentDate: Date;
+  services?: Array<{ name: string }>;
+}
+
+interface DropResult {
+  date: Date;
+  time: string;
+  roomId: string;
+  minuteOffset?: number;
+}
 
 // Estado global mínimo para el drag & drop
 interface GlobalDragState {
@@ -22,11 +38,50 @@ interface GlobalDragState {
   mouseX: number;
   mouseY: number;
   dragDirection?: 'up' | 'down' | 'neutral';
-  initialOffsetMinutes?: number; // Offset inicial en minutos desde el inicio de la cita hasta donde se hizo clic
+  initialOffsetMinutes?: number;
 }
 
-// Hook para el estado global del drag (solo lo esencial)
-export function useGlobalDragState() {
+// Funciones opcionales del contexto para fusionar sistemas
+interface DragContextHooks {
+  startDragContext?: (appointment: any) => void;
+  endDragContext?: () => void;
+  updateDragPositionContext?: (date: Date, time: string, roomId: string) => void;
+}
+
+// Funciones utilitarias locales
+function hasAppointmentChanged(
+  original: { date: Date; time: string; roomId: string },
+  updated: { date: Date; time: string; roomId: string }
+): boolean {
+  return (
+    original.date.toDateString() !== updated.date.toDateString() ||
+    original.time !== updated.time ||
+    original.roomId !== updated.roomId
+  );
+}
+
+function getChangedFields(
+  original: { date: Date; time: string; roomId: string },
+  updated: { date: Date; time: string; roomId: string }
+): Partial<{ startTime: Date; roomId: string }> {
+  const changes: Partial<{ startTime: Date; roomId: string }> = {};
+  
+  if (original.date.toDateString() !== updated.date.toDateString() || original.time !== updated.time) {
+    const [hours, minutes] = updated.time.split(':').map(Number);
+    const newStartTime = new Date(updated.date);
+    newStartTime.setHours(hours, minutes, 0, 0);
+    changes.startTime = newStartTime;
+  }
+  
+  if (original.roomId !== updated.roomId) {
+    changes.roomId = updated.roomId;
+  }
+  
+  return changes;
+}
+
+// Hook para el estado global del drag
+export function useGlobalDragState(contextHooks?: DragContextHooks) {
   const [globalDragState, setGlobalDragState] = useState<GlobalDragState>({
     isActive: false,
     draggedItem: null,
@@ -37,8 +92,29 @@ export function useGlobalDragState() {
     dragDirection: 'neutral'
   });
 
+  const convertToContextFormat = useCallback((item: DragItem, initialOffsetMinutes?: number) => {
+    return {
+      id: item.id,
+      startTime: item.startTime,
+      endTime: item.endTime || item.startTime,
+      duration: item.duration,
+      roomId: item.roomId,
+      currentDate: item.currentDate,
+      originalDate: item.currentDate,
+      originalTime: item.startTime,
+      originalRoomId: item.roomId,
+      initialOffsetMinutes: initialOffsetMinutes || 0
+    };
+  }, []);
+
   const startDrag = useCallback((item: DragItem, e?: React.DragEvent, initialOffsetMinutes?: number) => {
-    // Capturar las coordenadas iniciales del mouse
+    console.log('[OptimizedHooks] 🚀 Iniciando drag - Sistema FUSIONADO:', {
+      systemOptimized: true,
+      systemContext: !!contextHooks?.startDragContext,
+      itemId: item.id,
+      initialOffset: initialOffsetMinutes
+    });
+
     const mouseX = e ? e.clientX : 0;
     const mouseY = e ? e.clientY : 0;
     
@@ -60,9 +136,23 @@ export function useGlobalDragState() {
       dragDirection: 'neutral',
       initialOffsetMinutes: initialOffsetMinutes || 0
     });
-  }, []);
+
+    if (contextHooks?.startDragContext) {
+      try {
+        const contextAppointment = convertToContextFormat(item, initialOffsetMinutes);
+        contextHooks.startDragContext(contextAppointment);
+        console.log('[OptimizedHooks] ✅ Contexto DragTime activado exitosamente');
+      } catch (error) {
+        console.warn('[OptimizedHooks] ⚠️ Error al activar contexto DragTime:', error);
+      }
+    } else {
+      console.log('[OptimizedHooks] ℹ️ Contexto DragTime no disponible (modo standalone)');
+    }
+  }, [convertToContextFormat, contextHooks]);
 
   const endDrag = useCallback(() => {
+    console.log('[OptimizedHooks] 🏁 Terminando drag - Sistema FUSIONADO');
+
     setGlobalDragState({
       isActive: false,
       draggedItem: null,
@@ -72,30 +162,33 @@ export function useGlobalDragState() {
       mouseY: 0,
       dragDirection: 'neutral'
     });
-  }, []);
 
-  // Ref para throttling de mouse position
+    if (contextHooks?.endDragContext) {
+      try {
+        contextHooks.endDragContext();
+        console.log('[OptimizedHooks] ✅ Contexto DragTime desactivado exitosamente');
+      } catch (error) {
+        console.warn('[OptimizedHooks] ⚠️ Error al desactivar contexto DragTime:', error);
+      }
+    }
+  }, [contextHooks]);
+
   const mouseUpdateTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const lastMouseUpdateRef = useRef<string>('')
 
   const updateMousePosition = useCallback((x: number, y: number) => {
-    // PROTECCIÓN ANTI-BUCLE: throttling de mouse updates
     const mouseKey = `${x}-${y}`
     
-    // Si es exactamente la misma posición del mouse, no hacer nada
     if (lastMouseUpdateRef.current === mouseKey) {
       return
     }
     
-    // Cancelar timeout anterior si existe
     if (mouseUpdateTimeoutRef.current) {
       clearTimeout(mouseUpdateTimeoutRef.current)
     }
     
-    // Throttling de mouse updates
     mouseUpdateTimeoutRef.current = setTimeout(() => {
       setGlobalDragState(prev => {
-        // Verificación adicional para evitar updates innecesarios
         if (prev.mouseX === x && prev.mouseY === y) {
           return prev;
         }
@@ -108,14 +201,12 @@ export function useGlobalDragState() {
       });
       
       lastMouseUpdateRef.current = mouseKey
-    }, 16) // ~60fps para suavidad sin causar bucles
+    }, 16)
   }, []);
 
-  // Ref para controlar la frecuencia de updates y evitar bucles infinitos
   const lastUpdateRef = useRef<string>('')
   const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   
-  // Cleanup de timeouts en unmount
   useEffect(() => {
     return () => {
       if (updateTimeoutRef.current) {
@@ -128,34 +219,29 @@ export function useGlobalDragState() {
   }, [])
 
   const updateCurrentPosition = useCallback((date: Date, time: string, roomId: string) => {
-    // PROTECCIÓN DEFINITIVA ANTI-BUCLE: throttling con ref y timeout
     const updateKey = `${date.toISOString()}-${time}-${roomId}`
     
-    // Si es exactamente la misma actualización, no hacer nada
     if (lastUpdateRef.current === updateKey) {
       return
     }
     
-    // Cancelar timeout anterior si existe
     if (updateTimeoutRef.current) {
       clearTimeout(updateTimeoutRef.current)
     }
     
-    // Usar timeout para throttling
     updateTimeoutRef.current = setTimeout(() => {
       setGlobalDragState(prev => {
-        // Verificación de seguridad adicional
         const currentDateStr = prev.currentPosition?.date.toISOString()
         
         if (prev.currentPosition && 
             currentDateStr === date.toISOString() &&
             prev.currentPosition.time === time &&
             prev.currentPosition.roomId === roomId) {
-          return prev; // No cambiar nada si es exactamente la misma posición
+          return prev;
         }
         
         const newPosition = {
-          date: new Date(date), // Crear nueva instancia
+          date: new Date(date),
           time,
           roomId
         }
@@ -165,17 +251,23 @@ export function useGlobalDragState() {
           currentPosition: newPosition
         };
       });
+
+      if (contextHooks?.updateDragPositionContext) {
+        try {
+          contextHooks.updateDragPositionContext(date, time, roomId);
+        } catch (error) {
+          console.warn('[OptimizedHooks] ⚠️ Error al actualizar posición en contexto:', error);
+        }
+      }
       
-      // Actualizar ref después del setState exitoso
       lastUpdateRef.current = updateKey
-    }, 5) // Throttling de 5ms para evitar spam
-  }, []);
+    }, 5)
+  }, [contextHooks]);
 
   const updateDragDirection = useCallback((direction: 'up' | 'down' | 'neutral') => {
     setGlobalDragState(prev => {
-      // Evitar bucle infinito: solo actualizar si la dirección realmente cambió
       if (prev.dragDirection === direction) {
-        return prev; // No cambiar nada si es la misma dirección
+        return prev;
       }
       return {
         ...prev,
@@ -184,7 +276,6 @@ export function useGlobalDragState() {
     });
   }, []);
 
-  // Efecto para manejar ESC
   useEffect(() => {
     if (!globalDragState.isActive) return;
 
@@ -227,7 +318,6 @@ export function useLocalDragPreview(
     exactTime: string;
   } | null>(null);
   
-  // Usar ref para trackear el último tiempo y evitar actualizaciones innecesarias
   const lastExactTimeRef = useRef<string | null>(null);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -242,30 +332,20 @@ export function useLocalDragPreview(
 
     const rect = cellRef.current.getBoundingClientRect();
     const mouseY = e.clientY;
-    
-    // Calcular la posición del cursor relativa a la celda
     const relativeY = mouseY - rect.top;
     
-    // Usar el offset inicial para mantener la posición consistente
     let adjustedY = relativeY;
     if (globalDragState.initialOffsetMinutes !== undefined && globalDragState.draggedItem) {
-      // Convertir minutos de offset a píxeles
       const minuteHeight = cellHeight / slotDuration;
       const offsetPixels = globalDragState.initialOffsetMinutes * minuteHeight;
       adjustedY = relativeY - offsetPixels;
     }
     
-    // Calcular minutos permitiendo valores negativos y superiores al slot
-    // Esto permite un movimiento continuo entre celdas
     const percentage = adjustedY / cellHeight;
     const minutesIntoSlot = Math.round(percentage * slotDuration);
     
-    // NO limitar los minutos aquí - permitir valores fuera del rango
-    // para mantener continuidad entre celdas
-    let finalMinutes = minutesIntoSlot;
     let finalCellTime = cellTime;
     
-    // Si los minutos son negativos, estamos en la celda anterior
     if (minutesIntoSlot < 0) {
       const [hours, minutes] = cellTime.split(':').map(Number);
       const totalMinutes = hours * 60 + minutes + minutesIntoSlot;
@@ -273,45 +353,25 @@ export function useLocalDragPreview(
         const displayHours = Math.floor(totalMinutes / 60);
         const displayMinutes = totalMinutes % 60;
         finalCellTime = `${displayHours.toString().padStart(2, '0')}:${displayMinutes.toString().padStart(2, '0')}`;
-        finalMinutes = 0; // Para el offsetY visual
       }
-    } 
-    // Si los minutos exceden el slot, estamos en la siguiente celda
-    else if (minutesIntoSlot >= slotDuration) {
+    } else if (minutesIntoSlot >= slotDuration) {
       const [hours, minutes] = cellTime.split(':').map(Number);
       const totalMinutes = hours * 60 + minutes + minutesIntoSlot;
       const displayHours = Math.floor(totalMinutes / 60);
       const displayMinutes = totalMinutes % 60;
       finalCellTime = `${displayHours.toString().padStart(2, '0')}:${displayMinutes.toString().padStart(2, '0')}`;
-      finalMinutes = slotDuration - 1; // Para el offsetY visual
-    }
-    // Si estamos dentro del rango normal
-    else {
+    } else {
       const [hours, minutes] = cellTime.split(':').map(Number);
       const totalMinutes = hours * 60 + minutes + minutesIntoSlot;
       const displayHours = Math.floor(totalMinutes / 60);
       const displayMinutes = totalMinutes % 60;
       finalCellTime = `${displayHours.toString().padStart(2, '0')}:${displayMinutes.toString().padStart(2, '0')}`;
-      finalMinutes = minutesIntoSlot;
     }
     
-    // PROTECCIÓN ANTI-BUCLE MÁXIMA: Deshabilitar updateDragDirection durante el drag
-    // Esta función causaba bucles infinitos durante stress tests y no es crítica para la funcionalidad
-    // Se puede rehabilitar en el futuro si es necesaria para otras funcionalidades
-    
-    // if (globalDragState.originalPosition) {
-    //   // Código de updateDragDirection deshabilitado temporalmente para evitar bucles
-    // }
-    
-    // PROTECCIÓN DEFINITIVA: Completamente deshabilitar localPreview durante drag para evitar bucles
-    // El preview se maneja en drag-time-context y granularidades, no necesitamos este preview local
     if (lastExactTimeRef.current !== finalCellTime) {
       lastExactTimeRef.current = finalCellTime;
-      // NO actualizar localPreview durante drag activo - causa bucles infinitos
-      // El feedback visual se maneja por otros medios (granularidades + drag-time-context)
     }
     
-    // Solo actualizar la posición global si cambió
     if (!globalDragState.currentPosition || 
         globalDragState.currentPosition.time !== finalCellTime ||
         globalDragState.currentPosition.date.toDateString() !== cellDay.toDateString() ||
@@ -319,7 +379,6 @@ export function useLocalDragPreview(
       updateCurrentPosition(cellDay, finalCellTime, cellRoomId);
     }
   }, [
-    // Solo incluir primitivos estables para evitar bucle infinito
     globalDragState.isActive, 
     globalDragState.initialOffsetMinutes,
     cellTime, 
@@ -328,8 +387,6 @@ export function useLocalDragPreview(
     cellRoomId, 
     updateCurrentPosition, 
     updateDragDirection
-    // REMOVIDO: globalDragState.currentPosition, globalDragState.originalPosition, globalDragState.draggedItem, cellDay, cellRef
-    // Estos objetos se recrean constantemente y causan bucle infinito
   ]);
 
   const handleDragLeave = useCallback(() => {
@@ -342,7 +399,6 @@ export function useLocalDragPreview(
       return false;
     }
     
-    // Verificar si esta celda es donde se debe mostrar el preview
     if (globalDragState.currentPosition) {
       return cellDay.toDateString() === globalDragState.currentPosition.date.toDateString() && 
              cellRoomId === globalDragState.currentPosition.roomId;
@@ -350,13 +406,10 @@ export function useLocalDragPreview(
     
     return false;
   }, [
-    // Solo incluir primitivos estables para evitar bucle infinito
     globalDragState.isActive,
     localPreview?.exactTime,
     localPreview?.offsetY,
     cellRoomId
-    // REMOVIDO: globalDragState completo y cellDay
-    // Estos objetos se recrean constantemente y causan invalidaciones innecesarias
   ]);
 
   return {
@@ -372,20 +425,19 @@ export function useOptimizedDragAndDrop(
   onDrop: (appointmentId: string, changes: any) => void,
   slotHeight: number = 60,
   slotDuration: number = 15,
-  validateDrop?: (dropResult: DropResult, draggedItem: DragItem) => boolean // Nueva función de validación
+  validateDrop?: (dropResult: DropResult, draggedItem: DragItem) => boolean,
+  contextHooks?: DragContextHooks
 ) {
-  const { globalDragState, startDrag, endDrag, updateMousePosition, updateCurrentPosition, updateDragDirection } = useGlobalDragState();
+  const { globalDragState, startDrag, endDrag, updateMousePosition, updateCurrentPosition, updateDragDirection } = useGlobalDragState(contextHooks);
 
   const handleDragStart = useCallback((
     e: React.DragEvent,
     item: DragItem,
     initialOffsetMinutes?: number
   ) => {
-    // Set drag data
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('application/json', JSON.stringify(item));
     
-    // Create custom drag image
     const dragImage = e.currentTarget.cloneNode(true) as HTMLElement;
     dragImage.style.position = 'absolute';
     dragImage.style.top = '-1000px';
@@ -419,29 +471,25 @@ export function useOptimizedDragAndDrop(
       roomId
     };
     
-    // Permitir soltar en la posición original
     const isOriginalPosition = 
       globalDragState.originalPosition.date.toDateString() === date.toDateString() &&
       globalDragState.originalPosition.time === exactTime &&
       globalDragState.originalPosition.roomId === roomId;
     
-    // Si no es la posición original, validar si es una posición válida
     if (!isOriginalPosition && validateDrop) {
       const isValid = validateDrop(dropResult, globalDragState.draggedItem);
       if (!isValid) {
         console.log('[DragDrop] Drop cancelado: posición no válida');
-        endDrag(); // Cancelar y volver a la posición original
+        endDrag();
         return;
       }
     }
     
-    // Check if anything changed
     if (hasAppointmentChanged(globalDragState.originalPosition, dropResult)) {
       const changes = getChangedFields(globalDragState.originalPosition, dropResult);
       onDrop(globalDragState.draggedItem.id, changes);
     }
     
-    // End drag
     endDrag();
   }, [globalDragState, onDrop, endDrag, validateDrop]);
 
@@ -449,25 +497,26 @@ export function useOptimizedDragAndDrop(
     endDrag();
   }, [endDrag]);
 
-  // Función dummy para handleDragOver (se maneja localmente en cada celda)
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
   }, []);
 
-  // Función dummy para setContainerRef (ya no es necesaria)
   const setContainerRef = useCallback(() => {
     // No-op
   }, []);
 
   return {
-    dragState: globalDragState, // Mantener compatibilidad con el nombre anterior
+    dragState: globalDragState,
     handleDragStart,
-    handleDragOver, // Función dummy para compatibilidad
+    handleDragOver,
     handleDrop,
     handleDragEnd,
-    setContainerRef, // Función dummy para compatibilidad
+    setContainerRef,
     updateMousePosition,
     updateCurrentPosition,
     updateDragDirection
   };
 }
+
+// Exportar tipos para compatibilidad
+export type { DragItem, DropResult, GlobalDragState, DragContextHooks };

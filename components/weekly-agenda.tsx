@@ -44,7 +44,7 @@ import OptimizedHoverableCell from "@/components/agenda/optimized-hoverable-cell
 import { DragItem, DropResult } from "@/lib/drag-drop/types"
 import { getAppointmentDuration } from "@/lib/drag-drop/utils"
 import { useGranularity } from "@/lib/drag-drop/granularity-context"
-import { DragTimeProvider } from "@/lib/drag-drop/drag-time-context"
+import { DragTimeProvider, useDragTime } from "@/lib/drag-drop/drag-time-context"
 import { useMoveAppointment } from "@/contexts/move-appointment-context"
 import { MoveAppointmentProvider } from "@/contexts/move-appointment-context"
 
@@ -83,6 +83,28 @@ interface WeeklyAgendaProps {
 }
 
 export default function WeeklyAgenda({
+  initialDate = format(new Date(), "yyyy-MM-dd"),
+  containerMode = false,
+  onAppointmentsChange,
+  appointments: initialAppointments = [],
+  onAppointmentClick,
+}: WeeklyAgendaProps) {
+  // ✅ ENVOLVER TODO EN DragTimeProvider DESDE EL PRINCIPIO
+  return (
+    <DragTimeProvider>
+      <WeeklyAgendaContent
+        initialDate={initialDate}
+        containerMode={containerMode}
+        onAppointmentsChange={onAppointmentsChange}
+        appointments={initialAppointments}
+        onAppointmentClick={onAppointmentClick}
+      />
+    </DragTimeProvider>
+  );
+}
+
+// ✅ COMPONENTE INTERNO QUE TIENE ACCESO AL CONTEXTO DragTime
+function WeeklyAgendaContent({
   initialDate = format(new Date(), "yyyy-MM-dd"),
   containerMode = false,
   onAppointmentsChange,
@@ -311,7 +333,6 @@ export default function WeeklyAgenda({
   // Obtener configuración de granularidad desde el contexto
   const { minuteGranularity, slotDuration, moveGranularity } = useGranularity();
   
-
   // ✅ Hook para mover citas - LLAMADA ÚNICA para evitar instancias múltiples del contexto
   const { startMovingAppointment, appointmentInMovement, isMovingAppointment, registerOptimisticFunctions, unregisterOptimisticFunctions } = useMoveAppointment();
 
@@ -1657,6 +1678,28 @@ export default function WeeklyAgenda({
     return !hasConflict;
   }, [appointmentsList]);
 
+  // ✅ CONEXIÓN AL CONTEXTO DRAGTIME para fusionar sistemas de drag & drop - SEGURA
+  let startDragContext, endDragContext, updateDragPositionContext;
+  try {
+    const dragTimeHooks = useDragTime();
+    startDragContext = dragTimeHooks.startDrag;
+    endDragContext = dragTimeHooks.endDrag;
+    updateDragPositionContext = dragTimeHooks.updateDragPosition;
+  } catch (error) {
+    // Si no estamos dentro del DragTimeProvider, usar funciones dummy
+    console.log('[WeeklyAgenda] DragTimeProvider no disponible, usando modo standalone');
+    startDragContext = () => {};
+    endDragContext = () => {};
+    updateDragPositionContext = () => {};
+  }
+
+  // ✅ CREAR HOOKS DEL CONTEXTO para pasar al sistema optimizado
+  const contextHooks = useMemo(() => ({
+    startDragContext,
+    endDragContext,
+    updateDragPositionContext
+  }), [startDragContext, endDragContext, updateDragPositionContext]);
+
   const {
     dragState: localDragState,
     handleDragStart,
@@ -1666,7 +1709,7 @@ export default function WeeklyAgenda({
     updateMousePosition,
     updateCurrentPosition,
     updateDragDirection
-  } = useOptimizedDragAndDrop(handleAppointmentDrop, 60, 15, validateDropPosition);
+  } = useOptimizedDragAndDrop(handleAppointmentDrop, 60, 15, validateDropPosition, contextHooks);
   
   // Usar ref para evitar re-renders en el useEffect del drag
   const isDraggingRef = useRef(false);
@@ -2616,7 +2659,7 @@ export default function WeeklyAgenda({
             {/* El bloque de AgendaNavBar eliminado completamente */}
             
             {/* Contenedor de la rejilla que debe tener scroll */}
-            <div ref={gridContainerRef} className="overflow-auto relative flex-1" data-scroll-container>
+            <div ref={gridContainerRef} className="overflow-auto relative flex-1">
                 {renderWeeklyGrid()}
                 {/* Asegurarse de que CurrentTimeIndicator esté relacionado con este div si usa refs */}
             </div>

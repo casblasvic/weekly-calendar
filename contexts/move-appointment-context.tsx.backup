@@ -1,7 +1,7 @@
 "use client"
 
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react'
-import { format, startOfWeek, endOfWeek, isSameWeek, isSameDay } from 'date-fns'
+import { format, startOfWeek, endOfWeek, isSameWeek } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { useQueryClient } from '@tanstack/react-query'
 import { getWeekKey } from '@/lib/hooks/use-appointments-query'
@@ -54,7 +54,7 @@ interface MoveAppointmentContextType {
   confirmMove: (targetDate: Date, targetTime: string, targetRoomId: string) => Promise<void>
   
   // ✅ NUEVA: Función para deshacer y volver a la cita original (acepta fecha actual de la vista)
-  cancelAndGoBack: (currentViewDate?: Date, viewMode?: 'week' | 'day') => void
+  cancelAndGoBack: (currentViewDate?: Date) => void
   
   // ✅ NUEVAS: Sistema de registro de funciones optimistas
   registerOptimisticFunctions: (functions: {
@@ -129,29 +129,23 @@ export function MoveAppointmentProvider({
     setPreviewSlot(null)
   }, [])
 
-  // ✅ CORREGIDA: Función para deshacer y volver a la cita ORIGINAL con soporte para vista día/semana
-  const cancelAndGoBack = useCallback((currentViewDate?: Date, viewMode?: 'week' | 'day') => {
+  // ✅ CORREGIDA: Función para deshacer y volver a la cita ORIGINAL (acepta fecha actual de la vista)
+  const cancelAndGoBack = useCallback((currentViewDate?: Date) => {
     if (appointmentInMovement) {
       console.log('[MoveAppointment] 🔄 Cancelando movimiento de cita:', appointmentInMovement.appointment.name)
       
-      // ✅ VERIFICAR: Solo redirigir si estamos viendo la misma UNIDAD (día o semana) de la cita ORIGINAL
+      // ✅ VERIFICAR: Solo redirigir si estamos viendo una semana DIFERENTE a la cita ORIGINAL
       const appointmentOriginalDate = appointmentInMovement.originalDate; // ✅ USAR FECHA ORIGINAL, no actual
-      const currentDate = currentViewDate || new Date(); // Fallback hoy
+      const currentDate = currentViewDate || new Date(); // O mejor obtener la fecha actual de la vista
       
-      const shouldRedirect = (() => {
-        if (viewMode === 'day') {
-          // Vista diaria: comparar día exacto
-          return !isSameDay(appointmentOriginalDate, currentDate);
-        }
-        // Vista semanal (default)
-        return !isSameWeek(appointmentOriginalDate, currentDate);
-      })();
-
-      if (!shouldRedirect) {
-        console.log('[MoveAppointment] ✅ Ya estamos en la vista correcta - cancelando sin redirección');
+      const isInSameWeek = isSameWeek(appointmentOriginalDate, currentDate);
+      
+      if (isInSameWeek) {
+        // ✅ YA ESTAMOS en la semana correcta - solo cancelar sin redirección
+        console.log('[MoveAppointment] ✅ Ya estamos en la semana de la cita ORIGINAL - cancelando sin redirección');
       } else {
-        // ✅ ESTAMOS en una vista diferente - cancelar Y redirigir AL ORIGEN
-        console.log('[MoveAppointment] 🔄 Vista diferente a la ORIGINAL - cancelando y redirigiendo al origen');
+        // ✅ ESTAMOS en una semana diferente - cancelar Y redirigir AL ORIGEN
+        console.log('[MoveAppointment] 🔄 Estamos en semana diferente a la ORIGINAL - cancelando y redirigiendo al origen');
         if (onGoBackToAppointment) {
           // ✅ CREAR cita ficticia con la fecha/hora ORIGINAL para navegación
           const originalAppointmentForNav = {

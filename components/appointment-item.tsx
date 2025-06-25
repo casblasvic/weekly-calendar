@@ -10,7 +10,7 @@ import { useMemo, useState, useRef, useEffect, useCallback } from "react"
 import { createPortal } from "react-dom"
 import { cn } from "@/lib/utils"
 import { AppointmentTooltip } from "@/components/appointment-tooltip"
-import { format } from "date-fns"
+import { format, startOfWeek, endOfWeek, isSameWeek, isSameDay } from "date-fns"
 import { es } from "date-fns/locale"
 import {
   DropdownMenu,
@@ -139,6 +139,12 @@ export function AppointmentItem({
   const { appointmentInMovement } = useMoveAppointment();
   const isThisAppointmentMoving = appointmentInMovement?.appointment.id === appointment.id;
   
+  // ✅ DETECTAR SI ESTA CITA ESTÁ SIENDO ARRASTRADA
+  const isThisAppointmentDragging = isDragging && dragState?.draggedItem?.id === appointment.id;
+  
+  // ✅ ESTADO COMBINADO: La cita está en operación de movimiento/arrastre
+  const isThisAppointmentInOperation = isThisAppointmentMoving || isThisAppointmentDragging;
+  
   const appointmentRef = useRef<HTMLDivElement>(null)
   const [showTooltip, setShowTooltip] = useState(false)
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 })
@@ -189,9 +195,22 @@ export function AppointmentItem({
   // Determinar si el contenido es compacto (menos de 30 minutos)
   const isCompact = appointment.duration < 30
 
-  // ✅ AUTO-EXPANSION: Siempre expandir citas pequeñas cuando aparecen controles - SIN FLOATING
-  const shouldAutoExpand = isCompact && showQuickActions
+  // ✅ REGLAS DE AUTO-EXPANSION CORREGIDAS: Solo durante hover
+  const shouldAutoExpand = useMemo(() => {
+    // ✅ NUNCA auto-expandir durante operaciones de drag/move
+    if (isThisAppointmentInOperation) return false;
+    
+    if (!isCompact) return false; // Solo citas compactas pueden auto-expandirse
+    if (isDraggingDuration) return false; // No auto-expandir durante resize
+    
+    // ✅ CORREGIDO: Solo auto-expandir cuando hay hover (showQuickActions)
+    return showQuickActions; // Solo durante hover, no siempre
+  }, [isCompact, showTooltip, isDraggingDuration, isThisAppointmentInOperation, showQuickActions]);
+
   const expandedHeight = shouldAutoExpand ? Math.max(height, 110) : height // ✅ SIEMPRE 110px mínimo para todos los controles
+  
+  // ✅ NUEVO: Calcular offset vertical para que la expansión sea hacia ARRIBA
+  const expandOffset = shouldAutoExpand ? (expandedHeight - height) : 0;
   
   // ✅ ELIMINAR FLOATING CONTROLS: Siempre usar auto-expansion en lugar de floating
 
@@ -203,17 +222,45 @@ export function AppointmentItem({
   const borderColor = adjustColorBrightness(backgroundColor, -20)
   const textColor = '#FFFFFF' // Color de texto blanco siempre
 
-  const handleMouseEnter = () => {
-    setShowTooltip(true)
-    setShowQuickActions(true)
-  };
-
-  const handleMouseLeave = () => {
-    if (!isDraggingDuration) {
-      setShowTooltip(false)
-      setShowQuickActions(false)
+  const handleMouseEnter = useCallback((e: React.MouseEvent) => {
+    // ✅ BLOQUEAR INTERACTIVIDAD durante operaciones de drag/move
+    if (isThisAppointmentInOperation) {
+      return;
     }
-  };
+    
+    if (tooltipTimeout) clearTimeout(tooltipTimeout);
+    
+    const rect = appointmentRef.current?.getBoundingClientRect();
+    if (rect) {
+      setTooltipPosition({ x: rect.left, y: rect.top });
+    }
+    
+    const timer = setTimeout(() => {
+      setShowTooltip(true);
+    }, 500);
+    
+    setTooltipTimeout(timer);
+    setShowQuickActions(true);
+  }, [tooltipTimeout, isThisAppointmentInOperation]);
+
+  const handleMouseLeave = useCallback(() => {
+    // ✅ SIEMPRE permitir mouse leave para limpiar estados
+    if (tooltipTimeout) clearTimeout(tooltipTimeout);
+    setShowTooltip(false);
+    setShowQuickActions(false);
+  }, [tooltipTimeout]);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    // ✅ BLOQUEAR INTERACTIVIDAD durante operaciones de drag/move
+    if (isThisAppointmentInOperation) {
+      return;
+    }
+    
+    const rect = appointmentRef.current?.getBoundingClientRect();
+    if (rect) {
+      setTooltipPosition({ x: e.clientX, y: rect.top });
+    }
+  }, [isThisAppointmentInOperation]);
 
   // ✅ OBTENER DATOS DEL CACHE para validación consistente
   const { appointments: cacheAppointments } = useWeeklyAgendaData(appointment.date);
@@ -274,29 +321,6 @@ export function AppointmentItem({
     return validation.isValid;
   }, [appointment, cacheAppointments, appointments, minuteGranularity, activeClinic]);
 
-  const handleMouseMove = (e: React.MouseEvent) => {
-    // ✅ CORRECCIÓN: Solo bloquear granularidades si NO estamos dragging
-    // Durante drag, permitir granularidades sobre la cita propia para movilidad suave
-    if (!isDragging) {
-      e.stopPropagation(); // Evitar que se muestren granularidades
-    }
-    
-    if (showTooltip) {
-      const rect = appointmentRef.current?.getBoundingClientRect();
-      if (rect) {
-        // Calcular posición relativa a la cita, no al cursor exacto
-        // Esto evita que el tooltip se aleje demasiado de la cita
-        const tooltipX = rect.right + 10; // Siempre a la derecha de la cita
-        const tooltipY = Math.min(e.clientY, rect.bottom - 20); // Limitado por el bottom de la cita
-        
-        setTooltipPosition({
-          x: tooltipX,
-          y: Math.max(rect.top, tooltipY) // No subir más allá del top de la cita
-        });
-      }
-    }
-  }
-
   const handleDragStart = (e: React.DragEvent) => {
     // ✅ BLOQUEO: No permitir drag en citas optimistas
     if (isOptimistic) {
@@ -338,10 +362,12 @@ export function AppointmentItem({
       
       e.dataTransfer.setDragImage(dragImage, e.nativeEvent.offsetX, e.nativeEvent.offsetY);
       
-      // Eliminar el elemento clonado después de un breve retraso
+      // ✅ CORREGIDO: Esperar más tiempo antes de eliminar la imagen para evitar terminar el drag prematuramente
       setTimeout(() => {
-        document.body.removeChild(dragImage);
-      }, 0);
+        if (document.body.contains(dragImage)) {
+          document.body.removeChild(dragImage);
+        }
+      }, 100);
     }
     
     if (onDragStart) onDragStart(appointment, e, initialOffsetMinutes)
@@ -580,8 +606,8 @@ export function AppointmentItem({
           appointment.isContinuation && "border-l-2 border-dashed border-gray-300",
           // ✅ ESTILO SUTIL PARA CITAS OPTIMISTAS (opcional)
           isOptimistic && "ring-1 ring-purple-300 ring-opacity-50",
-          // ✅ TRANSPARENCIA CUANDO ESTÁ EN MODO MOVIMIENTO
-          isThisAppointmentMoving && "opacity-60 scale-95 ring-2 ring-purple-400 ring-opacity-70",
+          // ✅ TRANSPARENCIA CUANDO ESTÁ EN MODO MOVIMIENTO O ARRASTRE
+          isThisAppointmentInOperation && "opacity-60 scale-95 ring-2 ring-purple-400 ring-opacity-70",
           // Estilos de borde durante el resize
           isResizing && hasResizeConflict && "ring-2 ring-red-500 ring-opacity-80",
           isResizing && !hasResizeConflict && "ring-2 ring-green-500 ring-opacity-80",
@@ -594,17 +620,18 @@ export function AppointmentItem({
           borderLeft: `4px solid ${borderColor}`,
           borderBottom: `3px solid ${borderColor}`,
           color: textColor,
-          cursor: isDraggingDuration ? 'ns-resize' : (isOptimistic ? 'default' : 'move'), // ✅ RESTAURADO: cursor move para drag & drop
+          cursor: isDraggingDuration ? 'ns-resize' : (isOptimistic ? 'default' : (isThisAppointmentInOperation ? 'default' : 'move')), // ✅ Sin cursor move durante operaciones
           height: `${expandedHeight}px`,
-          width: '100%', // Ocupar todo el ancho disponible
-          // ✅ ELIMINAR TRANSICIÓN DURANTE RESIZE para feedback inmediato
+          width: '100%',
           transition: isResizing ? 'none' : 'all 0.2s ease-out',
-          // ✅ FEEDBACK VISUAL DURANTE RESIZE
           transform: isResizing ? 'scale(1.02)' : 'scale(1)',
+          marginTop: isResizing ? 0 : `-${expandOffset}px`,
           boxShadow: isResizing ? '0 8px 25px rgba(0, 0, 0, 0.2)' : undefined,
-          zIndex: isResizing ? 30 : 'auto' // ✅ Por debajo de modales (50) e indicador (40)
+          zIndex: isResizing ? 30 : 'auto',
+          // ✅ DESACTIVAR POINTER EVENTS durante operaciones para que pasen a través
+          pointerEvents: isThisAppointmentInOperation ? 'none' : 'auto'
         }}
-        draggable={!isDraggingDuration && !isOptimistic} // ✅ Solo draggable si no está estirando Y no es optimista
+        draggable={!isDraggingDuration && !isOptimistic && !isThisAppointmentInOperation} // ✅ No draggable durante operaciones
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
         onMouseEnter={handleMouseEnter}
@@ -612,6 +639,9 @@ export function AppointmentItem({
         onMouseMove={handleMouseMove}
         onClick={(e) => {
           e.stopPropagation();
+          // ✅ BLOQUEAR CLICKS durante operaciones
+          if (isThisAppointmentInOperation) return;
+          
           // No abrir modal si acabamos de terminar un resize
           if (document.body.dataset.resizing === 'true') {
             console.log('Evitando apertura de modal de edición durante resize');
@@ -753,7 +783,7 @@ export function AppointmentItem({
         {/* ✅ BOTONES MOVIDOS FUERA DEL OVERFLOW-HIDDEN PARA VISIBILIDAD EN AUTO-EXPANSION */}
         
         {/* Flechas de ajuste de hora - FUERA del overflow-hidden */}
-        {showQuickActions && (
+        {showQuickActions && !isThisAppointmentInOperation && (
           <div 
             className={cn(
               "absolute z-40 flex flex-col gap-0.5 transition-all duration-200",
@@ -830,8 +860,8 @@ export function AppointmentItem({
           </div>
         )}
         
-        {/* Menú de acciones rápidas - FUERA del overflow-hidden */}
-        {showQuickActions && (
+        {/* Menú de acciones rápidas - FUERA del overflow-hidden - SOLO si NO está en operación */}
+        {showQuickActions && !isThisAppointmentInOperation && (
           <div 
             className={cn(
               "absolute z-40 transition-all duration-200",
@@ -961,7 +991,8 @@ export function AppointmentItem({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-        </div>)}
+        </div>
+        )}
 
         {/* Zona de estiramiento profesional integrada en la cita */}
         {canResize && (

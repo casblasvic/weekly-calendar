@@ -39,6 +39,49 @@ export function LayoutWrapper({ children, user }: LayoutWrapperProps) {
   const sidebarRef = useRef<HTMLDivElement>(null)
   const lastPathname = useRef<string>(pathname || "")
   
+  // ✅ CORREGIDA: Obtener fecha actual de la vista desde la URL (ruta + query params)
+  const getCurrentViewDate = useCallback((): Date => {
+    if (pathname?.includes('/agenda')) {
+      try {
+        // ✅ MÉTODO 1: Buscar fecha en la RUTA (e.g., /agenda/dia/2025-06-27)
+        const routeMatch = pathname.match(/\/agenda\/(?:dia|semana)\/(\d{4}-\d{2}-\d{2})/)
+        if (routeMatch && routeMatch[1]) {
+          const parsedDate = new Date(routeMatch[1])
+          if (!isNaN(parsedDate.getTime())) {
+            console.log('[LayoutWrapper] ✅ Fecha extraída de ruta:', format(parsedDate, 'yyyy-MM-dd'))
+            return parsedDate
+          }
+        }
+        
+        // ✅ MÉTODO 2: Buscar fecha en QUERY PARAMS (fallback)
+        const urlParams = new URLSearchParams(window.location.search)
+        const dateParam = urlParams.get('date')
+        if (dateParam) {
+          const parsedDate = new Date(dateParam)
+          if (!isNaN(parsedDate.getTime())) {
+            console.log('[LayoutWrapper] ✅ Fecha extraída de query params:', format(parsedDate, 'yyyy-MM-dd'))
+            return parsedDate
+          }
+        }
+      } catch (error) {
+        console.log('[LayoutWrapper] ⚠️ Error al extraer fecha de URL:', error)
+      }
+    }
+    
+    // ✅ FALLBACK: Solo usar fecha actual si NO hay nada más
+    console.log('[LayoutWrapper] ⚠️ No se pudo obtener fecha de vista - usando fecha actual')
+    return new Date()
+  }, [pathname])
+  
+  const currentViewDate = getCurrentViewDate()
+  
+  // ✅ DEBUGGING TEMPORAL: Ver qué fecha se está obteniendo
+  console.log('[LayoutWrapper] 🔍 DEBUGGING currentViewDate:', {
+    pathname,
+    currentViewDate: currentViewDate ? format(currentViewDate, 'yyyy-MM-dd') : 'undefined',
+    windowLocationHref: typeof window !== 'undefined' ? window.location.href : 'SSR'
+  })
+  
   // Función para alternar la barra lateral
   const toggleSidebar = useCallback(() => {
     console.log("TOGGLE SIDEBAR CALLED");
@@ -231,12 +274,25 @@ export function LayoutWrapper({ children, user }: LayoutWrapperProps) {
     const appointmentDate = appointment.date instanceof Date ? appointment.date : new Date(appointment.date)
     const dateString = format(appointmentDate, 'yyyy-MM-dd')
     
-    // Si estamos en agenda, ir a vista diaria centrada en la cita
-    if (pathname.includes('/agenda')) {
-      router.push(`/agenda?view=day&date=${dateString}&center=${appointment.id}`)
+    // ✅ DETECTAR VISTA ACTUAL desde la URL para preservarla
+    const currentView = (() => {
+      if (pathname.includes('/agenda/dia/')) return 'day'
+      if (pathname.includes('/agenda/semana/')) return 'week'
+      // Fallback: detectar desde query params si existe
+      const urlParams = new URLSearchParams(window.location.search)
+      const viewParam = urlParams.get('view')
+      return viewParam === 'day' ? 'day' : 'week' // Default a semana
+    })()
+    
+    console.log('[LayoutWrapper] 🔍 Vista detectada:', currentView, 'navegando a fecha:', dateString)
+    
+    // ✅ NAVEGAR PRESERVANDO LA VISTA ACTUAL
+    if (currentView === 'day') {
+      // Vista diaria: navegar a día específico
+      router.push(`/agenda/dia/${dateString}`)
     } else {
-      // Si no, ir a agenda diaria
-      router.push(`/agenda?view=day&date=${dateString}&center=${appointment.id}`)
+      // Vista semanal: navegar a semana que contiene la fecha
+      router.push(`/agenda/semana/${dateString}`)
     }
   }, [router, pathname])
 
@@ -283,7 +339,7 @@ export function LayoutWrapper({ children, user }: LayoutWrapperProps) {
           >
             {children}
             {/* UI para citas en movimiento - DENTRO del provider */}
-            <MoveAppointmentUI />
+            <MoveAppointmentUI currentViewDate={currentViewDate} />
           </MoveAppointmentProvider>
         </GranularityProvider>
       </main>
