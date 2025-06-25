@@ -237,6 +237,8 @@ export default function DayView({
     updateOptimisticAppointment,
     deleteOptimisticAppointment,
     updateOptimisticTags,
+    replaceOptimisticAppointment,
+    removeAllOptimisticAppointments,
     invalidateCache,
     isDataStable
   } = useWeeklyAgendaData(currentDate);
@@ -1261,9 +1263,28 @@ export default function DayView({
           console.log('[DayView] 🔄 Actualizando cache con datos reales de la API:', realAppointmentData);
           updateOptimisticAppointment(savedAppointment.id, realAppointmentData);
         } else {
-          // ✅ CREAR CON DATOS REALES DE LA API
-          console.log('[DayView] ➕ Añadiendo nueva cita con datos reales de la API:', realAppointmentData);
-          addOptimisticAppointment(realAppointmentData);
+          // ✅ REEMPLAZAR CITA OPTIMISTA CON DATOS REALES DE LA API
+          console.log('[DayView] 🔄 Buscando cita temporal para reemplazar con datos reales de la API');
+          
+          // Buscar cita temporal que reemplazar
+          const tempAppointment = appointments.find(apt => apt.id.toString().startsWith('temp-'));
+          
+          if (tempAppointment) {
+            console.log('[DayView] 🔄 Intentando reemplazar cita temporal:', tempAppointment.id, '→', realAppointmentData.id);
+            const replaced = replaceOptimisticAppointment(tempAppointment.id, realAppointmentData);
+            
+            if (!replaced) {
+              console.log('[DayView] ❌ FALLO REEMPLAZO - Limpiando citas temporales y añadiendo real');
+              const removedCount = removeAllOptimisticAppointments();
+              console.log('[DayView] 🧹 Eliminadas', removedCount, 'citas temporales');
+              addOptimisticAppointment(realAppointmentData);
+            } else {
+              console.log('[DayView] ✅ Reemplazo exitoso');
+            }
+          } else {
+            console.log('[DayView] ⚠️ NO ENCONTRADA CITA TEMPORAL - Añadiendo directamente');
+            addOptimisticAppointment(realAppointmentData);
+          }
         }
         
         console.log('[DayView handleSaveAppointment] ✅ Cita guardada y actualizada con datos reales');

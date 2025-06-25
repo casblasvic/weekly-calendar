@@ -482,25 +482,72 @@ export function useWeeklyAgendaData(currentDate: Date) {
     queryClient.invalidateQueries({ queryKey: ['appointments', 'week'] });
   }, [queryClient]);
 
-  const replaceOptimisticAppointment = useCallback((tempId: string, realAppointment: WeeklyAgendaAppointment) => {
+  // ✅ FUNCIÓN MEJORADA: Ahora devuelve boolean para verificar éxito
+  const replaceOptimisticAppointment = useCallback((tempId: string, realAppointment: WeeklyAgendaAppointment): boolean => {
     console.log('[useWeeklyAgendaData] 🔄 REEMPLAZANDO cita optimista con datos reales', tempId, '→', realAppointment.id);
     
     // ✅ USAR CACHE KEY CONSISTENTE con use-appointments-query.ts
     const clinicId = activeClinic?.id || null;
     const fullCacheKey = ['appointments', 'week', weekKey, clinicId];
     
+    let success = false;
+    
     // ✅ RENDERIZADO INMEDIATO: Reemplazar en cache directamente
     queryClient.setQueryData(fullCacheKey, (oldData: any) => {
-      if (!oldData) return oldData;
+      if (!oldData) {
+        console.warn('[useWeeklyAgendaData] ❌ No hay cache para reemplazar');
+        return oldData;
+      }
+      
+      const foundIndex = (oldData.appointments || []).findIndex((apt: any) => apt.id === tempId);
+      
+      if (foundIndex === -1) {
+        console.warn('[useWeeklyAgendaData] ❌ Cita temporal no encontrada para reemplazar:', tempId);
+        return oldData; // No modificar cache si no se encuentra
+      }
+      
+      success = true;
       const newData = {
         ...oldData,
         appointments: (oldData.appointments || []).map((apt: any) => 
           apt.id === tempId ? realAppointment : apt
         )
       };
+      
       console.log('[useWeeklyAgendaData] ✅ Cache actualizado - cita optimista reemplazada con datos reales');
       return newData;
     });
+    
+    return success;
+  }, [queryClient, weekKey, activeClinic]);
+
+  // ✅ NUEVA FUNCIÓN: Limpiar todas las citas temporales
+  const removeAllOptimisticAppointments = useCallback(() => {
+    console.log('[useWeeklyAgendaData] 🧹 Limpiando TODAS las citas temporales');
+    
+    const clinicId = activeClinic?.id || null;
+    const fullCacheKey = ['appointments', 'week', weekKey, clinicId];
+    
+    let removedCount = 0;
+    
+    queryClient.setQueryData(fullCacheKey, (oldData: any) => {
+      if (!oldData) return oldData;
+      
+      const filteredAppointments = (oldData.appointments || []).filter((apt: any) => {
+        const isTemporary = apt.id.toString().startsWith('temp-');
+        if (isTemporary) removedCount++;
+        return !isTemporary;
+      });
+      
+      console.log('[useWeeklyAgendaData] 🧹 Eliminadas', removedCount, 'citas temporales');
+      
+      return {
+        ...oldData,
+        appointments: filteredAppointments
+      };
+    });
+    
+    return removedCount;
   }, [queryClient, weekKey, activeClinic]);
 
   return {
@@ -520,6 +567,7 @@ export function useWeeklyAgendaData(currentDate: Date) {
     deleteOptimisticAppointment,
     clearOptimisticOperations,
     replaceOptimisticAppointment,
+    removeAllOptimisticAppointments,
     isDataStable
   };
 }

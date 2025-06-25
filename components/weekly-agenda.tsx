@@ -166,7 +166,8 @@ function WeeklyAgendaContent({
     updateOptimisticAppointment,
     updateOptimisticTags,
     deleteOptimisticAppointment,
-    replaceOptimisticAppointment
+    replaceOptimisticAppointment,
+    removeAllOptimisticAppointments
   } = useWeeklyAgendaData(currentDate);
   
 
@@ -3227,11 +3228,32 @@ function WeeklyAgendaContent({
                     }
                     
                     if (tempAppointment) {
-                      console.log('[WeeklyAgenda] 🔄 Reemplazando cita temporal en cache global:', tempAppointment.id, '→', finalAppointment.id);
-                      replaceOptimisticAppointment(tempAppointment.id, finalAppointment);
+                      console.log('[WeeklyAgenda] 🔄 Intentando reemplazar cita temporal en cache global:', tempAppointment.id, '→', finalAppointment.id);
+                      const replaced = replaceOptimisticAppointment(tempAppointment.id, finalAppointment);
+                      
+                      if (!replaced) {
+                        console.log('[WeeklyAgenda] ❌ FALLO REEMPLAZO - Limpiando citas temporales y añadiendo real');
+                        // ✅ LIMPIAR TODAS LAS CITAS TEMPORALES ANTES DE AÑADIR LA REAL
+                        const removedCount = removeAllOptimisticAppointments();
+                        console.log('[WeeklyAgenda] 🧹 Eliminadas', removedCount, 'citas temporales');
+                        
+                        // ✅ AHORA SÍ AÑADIR LA CITA REAL
+                        addOptimisticAppointment(finalAppointment);
+                        console.log('[WeeklyAgenda] ✅ Cita real añadida después de limpiar temporales');
+                      } else {
+                        console.log('[WeeklyAgenda] ✅ Reemplazo exitoso');
+                      }
                     } else {
-                      console.log('[WeeklyAgenda] ✅ No hay cita temporal que reemplazar, añadiendo directamente al cache');
+                      console.log('[WeeklyAgenda] ⚠️ NO ENCONTRADA CITA TEMPORAL - Limpiando y añadiendo real');
+                      // ✅ LIMPIAR CUALQUIER CITA TEMPORAL QUE PUEDA EXISTIR
+                      const removedCount = removeAllOptimisticAppointments();
+                      if (removedCount > 0) {
+                        console.log('[WeeklyAgenda] 🧹 Eliminadas', removedCount, 'citas temporales huérfanas');
+                      }
+                      
+                      // ✅ AÑADIR LA CITA REAL
                       addOptimisticAppointment(finalAppointment);
+                      console.log('[WeeklyAgenda] ✅ Cita real añadida (no había temporal que reemplazar)');
                     }
                   }
                     
