@@ -7,7 +7,7 @@ const prisma = new PrismaClient()
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { slug, systemId } = body
+    const { slug, systemId, webhookId } = body
 
     if (!slug || !systemId) {
       return NextResponse.json(
@@ -16,11 +16,17 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Verificar si el slug ya existe
+    // Verificar si el slug ya existe en OTRO webhook
     const existingWebhook = await prisma.webhook.findFirst({
       where: {
         slug,
-        systemId
+        systemId,
+        // Si estamos editando (webhookId existe), excluimos este mismo webhook de la búsqueda
+        ...(webhookId && {
+          id: {
+            not: webhookId
+          }
+        })
       }
     })
 

@@ -24,13 +24,32 @@ import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library'; 
 // Ya no necesitamos importar Permission aquí
 // import { Permission } from '@prisma/client'; // Comentar o eliminar si estaba duplicada
 
-import { hashPassword } from '../lib/hash';
+// --- FUNCIÓN HASH MOVIDA AQUÍ PARA EVITAR PROBLEMAS DE IMPORTACIÓN ---
+let bcrypt: any;
+async function initBcrypt() {
+  if (bcrypt) return bcrypt;
+  try {
+    bcrypt = await import('bcrypt');
+  } catch (error) {
+    bcrypt = await import('bcryptjs');
+    console.warn('[SEED HASH] bcryptjs en uso como fallback');
+  }
+  return bcrypt;
+}
+async function hashPassword(password: string): Promise<string> {
+  const saltRounds = 10;
+  const bcryptLib = await initBcrypt();
+  return await bcryptLib.hash(password, saltRounds);
+}
+// --- FIN FUNCIÓN HASH ---
+
 import path from 'path'; // Importar path
 import { fileURLToPath } from 'url'; // Importar fileURLToPath
-import { seedCountries } from './seed-countries.js';
-import { seedPersons } from './seed-persons.js';
-import { seedTags } from './seed-tags.js';
-import { getOrCreateCuid, getMappedId, initializeKnownIds, generateCuid } from './seed-helpers.js';
+import { seedCountries } from './seed-countries.ts';
+import { seedPersons } from './seed-persons.ts';
+import { seedTags } from './seed-tags.ts';
+import { seedWebhooks } from './seed-webhooks.ts'; // Importar el nuevo seeder
+import { getOrCreateCuid, getMappedId, initializeKnownIds, generateCuid } from './seed-helpers.ts';
 // <<< ELIMINAR Importación dinámica de mockData >>>
 // import seedCountries from './seed-countries'; // <<< ELIMINAR Importación (ya integrada)
 
@@ -1350,6 +1369,8 @@ async function main() {
   console.log('Creating example invoices...');
   // ... (Creación de Invoices con upsert completo) 
  
+  await seedWebhooks(system!.id); // Llamar al seeder de webhooks
+
   // <<< --- NUEVO: Crear Clientes de Ejemplo --- >>>
   console.log('Creating example Clients...');
   try {

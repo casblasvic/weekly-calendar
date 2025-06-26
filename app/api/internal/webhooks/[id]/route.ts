@@ -52,7 +52,7 @@ export async function PATCH(
     
     if (data.name !== undefined) updateData.name = data.name
     if (data.description !== undefined) updateData.description = data.description
-    if (data.direction !== undefined) updateData.direction = data.direction.toUpperCase()
+    if (data.direction !== undefined) updateData.direction = data.direction
     if (data.slug !== undefined) updateData.slug = data.slug
     if (data.isActive !== undefined) updateData.isActive = data.isActive
     if (data.allowedMethods !== undefined) updateData.allowedMethods = data.allowedMethods
@@ -126,11 +126,10 @@ export async function PATCH(
                    process.env.NEXTAUTH_URL || 
                    process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` :
                    `http://localhost:${process.env.PORT || 3001}`
-    const updatedUrl = data.slug !== existingWebhook.slug 
-      ? `${baseUrl}/api/webhooks/${session.user.systemId}/${data.slug}`
-      : existingWebhook.url
+    const updatedUrl = `${baseUrl}/api/webhooks/${webhookId}/${updatedWebhook.slug}`
 
-    if (data.slug !== existingWebhook.slug) {
+    // Actualizar la URL del webhook si es necesario
+    if (updatedWebhook.url !== updatedUrl) {
       await prisma.webhook.update({
         where: { id: webhookId },
         data: { url: updatedUrl }
@@ -184,11 +183,6 @@ export async function DELETE(
       where: { webhookId }
     })
 
-    // Eliminar ejecuciones relacionadas (si existen)
-    await prisma.webhookExecution.deleteMany({
-      where: { webhookId }
-    })
-
     // Eliminar el webhook
     await prisma.webhook.delete({
       where: { id: webhookId }
@@ -234,12 +228,12 @@ export async function GET(
         logs: {
           select: {
             id: true,
-            timestamp: true,
+            createdAt: true,
             statusCode: true,
             method: true
           },
           orderBy: {
-            timestamp: 'desc'
+            createdAt: 'desc'
           },
           take: 10
         }

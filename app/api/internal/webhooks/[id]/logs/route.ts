@@ -4,152 +4,87 @@ import { auth } from "@/lib/auth"
 
 const prisma = new PrismaClient()
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+interface RouteContext {
+  params: Promise<{
+    id: string
+  }>
+}
+
+// GET /api/internal/webhooks/[id]/logs - Obtener logs de un webhook
+export async function GET(request: NextRequest, { params }: RouteContext) {
+  const session = await auth()
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+  
+  // Accedemos a params DESPUÉS del primer await
+  const resolvedParams = await params
+  const webhookId = resolvedParams.id
+
+  const { searchParams } = new URL(request.url)
+  const filter = searchParams.get('filter')
+  const page = parseInt(searchParams.get('page') || '1');
+  const pageSize = parseInt(searchParams.get('pageSize') || '10');
+
   try {
-    const session = await auth()
-    if (!session?.user?.systemId) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 })
+    const whereClause: any = {
+      webhookId: webhookId,
+      ...(filter === 'errors' && { isSuccess: false })
     }
 
-    const resolvedParams = await params
-    const webhookId = resolvedParams.id
-    const { searchParams } = new URL(request.url)
-    
-    // Parámetros de consulta
-    const limit = parseInt(searchParams.get('limit') || '50')
-    const offset = parseInt(searchParams.get('offset') || '0')
-    const status = searchParams.get('status') // 'success', 'error', 'all'
-    const startDate = searchParams.get('startDate')
-    const endDate = searchParams.get('endDate')
-    const since = searchParams.get('since') // Para modo escucha
-
-    // Verificar que el webhook existe y pertenece al sistema
-    const webhook = await prisma.webhook.findFirst({
-      where: {
-        id: webhookId,
-        systemId: session.user.systemId
-      }
-    })
-
-    if (!webhook) {
-      return NextResponse.json({ error: "Webhook no encontrado" }, { status: 404 })
-    }
-
-    // Construir filtros
-    const filters: any = {
-      webhookId
-    }
-
-    // Filtro por estado
-    if (status === 'success') {
-      filters.AND = [
-        { statusCode: { gte: 200 } },
-        { statusCode: { lt: 300 } }
-      ]
-    } else if (status === 'error') {
-      filters.OR = [
-        { statusCode: { gte: 400 } },
-        { processingErrors: { isEmpty: false } }
-      ]
-    }
-
-    // Filtro por fecha (modo escucha usa 'since')
-    if (since) {
-      filters.timestamp = {
-        gte: new Date(since)
-      }
-    } else if (startDate || endDate) {
-      filters.timestamp = {}
-      if (startDate) {
-        filters.timestamp.gte = new Date(startDate)
-      }
-      if (endDate) {
-        filters.timestamp.lte = new Date(endDate)
-      }
-    }
-
-    // Obtener logs con paginación
-    const [logs, totalCount] = await Promise.all([
-      prisma.webhookLog.findMany({
-        where: filters,
-        orderBy: { timestamp: 'desc' },
-        take: Math.min(limit, 100), // Máximo 100 logs por request
-        skip: offset,
-        select: {
-          id: true,
-          method: true,
-          url: true,
-          statusCode: true,
-          timestamp: true,
-          wasProcessed: true,
-          sourceIp: true,
-          userAgent: true,
-          responseTime: true,
-          body: true,
-          queryParams: true, // Para requests GET
-          headers: true, // Headers de la petición
-          responseBody: true,
-          validationErrors: true,
-          processingErrors: true,
-          isValid: true
-        }
-      }),
-      prisma.webhookLog.count({
-        where: filters
-      })
-    ])
-
-    // Para modo escucha, retornar directamente los logs sin estadísticas
-    if (since) {
-      return NextResponse.json(logs)
-    }
-
-    // Calcular estadísticas básicas para el modo normal
-    const stats = {
-      total: totalCount,
-      success: await prisma.webhookLog.count({
-        where: {
-          webhookId,
-          statusCode: {
-            gte: 200,
-            lt: 300
-          }
-        }
-      }),
-      errors: await prisma.webhookLog.count({
-        where: {
-          webhookId,
-          OR: [
-            { statusCode: { gte: 400 } },
-            { processingErrors: { isEmpty: false } }
-          ]
-        }
-      }),
-      avgResponseTime: logs.length > 0 ? Math.round(
-        logs.reduce((acc, log) => acc + (log.responseTime || 0), 0) / logs.length
-      ) : 0
-    }
+    const [logs, totalCount] = await prisma.$transaction([
+        prisma.webhookLog.findMany({
+            where: whereClause,
+            orderBy: { createdAt: 'desc' },
+            skip: (page - 1) * pageSize,
+            take: pageSize,
+        }),
+        prisma.webhookLog.count({ where: whereClause })
+    ]);
 
     return NextResponse.json({
-      success: true,
-      logs,
-      stats,
-      pagination: {
-        offset,
-        limit,
-        total: totalCount,
-        hasMore: offset + limit < totalCount
-      }
-    })
-
+        logs,
+        totalCount
+    });
   } catch (error) {
-    console.error("Error fetching webhook logs:", error)
-    return NextResponse.json(
-      { error: "Error interno del servidor" },
-      { status: 500 }
-    )
+    console.error(`Error fetching logs for webhook ${webhookId}:`, error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
+}
+
+// DELETE /api/internal/webhooks/[id]/logs - Eliminar todos los logs de un webhook
+export async function DELETE(request: NextRequest, { params }: RouteContext) {
+    const session = await auth()
+    if (!session?.user?.systemId) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    
+    // Accedemos a params DESPUÉS del primer await
+    const resolvedParams = await params
+    const webhookId = resolvedParams.id
+
+    try {
+        // Verificación extra: Asegurarse de que el webhook pertenece al systemId del usuario
+        const webhook = await prisma.webhook.findFirst({
+            where: { 
+                id: webhookId,
+                systemId: session.user.systemId
+            }
+        });
+
+        if (!webhook) {
+            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        }
+
+        await prisma.webhookLog.deleteMany({
+            where: {
+                webhookId: webhookId,
+            },
+        });
+
+        return NextResponse.json({ message: 'Logs deleted successfully' });
+    } catch (error) {
+        console.error(`Error deleting logs for webhook ${webhookId}:`, error);
+        return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    }
 } 

@@ -1,14 +1,17 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "module": "commonjs",
+    "module": "CommonJS",
     "moduleResolution": "node",
-    "allowImportingTsExtensions": false,
-    "esModuleInterop": true,
-    "target": "ES2020"
+    "target": "ES2020",
+    "esModuleInterop": true
   },
   "ts-node": {
-    "esm": false,
+    "compilerOptions": {
+      "module": "CommonJS"
+    },
+    "esm": true,
     "experimentalSpecifierResolution": "node"
-  }
+  },
+  "include": ["prisma/seed.ts", "prisma/seed-webhooks.ts", "prisma/seed-countries.js", "prisma/seed-persons.js", "prisma/seed-tags.js", "prisma/seed-helpers.js"]
 }

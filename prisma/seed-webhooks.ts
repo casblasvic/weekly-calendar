@@ -27,8 +27,7 @@ export async function seedWebhooks(systemId: string) {
     console.log(`Creating webhooks for system: ${system.name}`)
 
     // 1. Webhook para datos de enchufes inteligentes Shelly
-    const shellyWebhook = await prisma.webhook.create({
-      data: {
+    const shellyData = {
         name: 'Shelly Smart Plug - Device Usage',
         description: 'Recibe datos de uso de equipos desde enchufes inteligentes Shelly',
         slug: 'shelly-device-usage',
@@ -36,17 +35,16 @@ export async function seedWebhooks(systemId: string) {
         isActive: true,
         direction: 'INCOMING',
         allowedMethods: ['POST'],
-        url: `${process.env.NEXTAUTH_URL || 'https://tu-app.com'}/api/webhooks/${systemId}/shelly-device-usage`,
-        token: `wh_${systemId}_shelly_${Math.random().toString(36).substring(2, 15)}`,
+        // URL se generará después
+        token: `wh_shelly_${Math.random().toString(36).substring(2, 15)}`,
         secretKey: `sk_shelly_${Math.random().toString(36).substring(2, 25)}`,
-        rateLimitPerMinute: 120, // Los enchufes pueden enviar muchos datos
-        ipWhitelist: [], // Abierto para IPs de Shelly Cloud
+        rateLimitPerMinute: 120,
+        ipWhitelist: [],
         customHeaders: {
           'X-Webhook-Source': 'shelly-cloud',
           'Content-Type': 'application/json'
         },
         triggerEvents: ['device.power_on', 'device.power_off', 'device.energy_report'],
-        // Schema esperado para datos de Shelly
         expectedSchema: {
           type: 'object',
           required: ['device_id', 'event_type', 'timestamp'],
@@ -65,18 +63,14 @@ export async function seedWebhooks(systemId: string) {
             user_id: { type: 'string' }
           }
         },
-        // Mapeo de campos de Shelly a AppointmentDeviceUsage
         dataMapping: {
           targetTable: 'appointment_device_usage',
           fieldMappings: {
-            // Campos requeridos
             'appointmentId': { source: 'appointment_id', required: true },
             'deviceId': { source: 'device_id', required: true, lookup: 'devices.deviceIdProvider' },
             'equipmentId': { source: 'device_id', required: true, lookup: 'equipment.deviceId->id' },
             'startedByUserId': { source: 'user_id', required: true },
             'systemId': { value: systemId },
-            
-            // Campos de tiempo
             'startedAt': { 
               source: 'timestamp', 
               condition: 'event_type === "power_on"',
@@ -87,8 +81,6 @@ export async function seedWebhooks(systemId: string) {
               condition: 'event_type === "power_off"',
               transform: 'datetime'
             },
-            
-            // Campos opcionales
             'appointmentServiceId': { source: 'service_id', required: false },
             'energyConsumption': { source: 'total_energy', transform: 'float' },
             'estimatedMinutes': { source: 'estimated_duration', default: 30 },
@@ -96,8 +88,6 @@ export async function seedWebhooks(systemId: string) {
               source: 'duration_minutes', 
               calculate: 'timeDifference(startedAt, endedAt)'
             },
-            
-            // Datos del dispositivo en JSON
             'deviceData': {
               construct: {
                 power_consumption: 'power_consumption',
@@ -110,20 +100,13 @@ export async function seedWebhooks(systemId: string) {
               }
             }
           },
-          
-          // Reglas de procesamiento
           processingRules: {
-            // Solo procesar si hay appointmentId
             filterCondition: 'appointment_id !== null && appointment_id !== ""',
-            
-            // Diferentes acciones según el evento
             eventHandling: {
               'power_on': 'CREATE_OR_UPDATE',
               'power_off': 'UPDATE_END_TIME',
               'energy_report': 'UPDATE_ENERGY_DATA'
             },
-            
-            // Validaciones adicionales
             validations: [
               'device_exists_in_system',
               'appointment_is_active',
@@ -132,14 +115,23 @@ export async function seedWebhooks(systemId: string) {
           }
         },
         createdByUserId: user.id
-      }
-    })
+    };
 
-    console.log(`✅ Created Shelly webhook: ${shellyWebhook.slug}`)
+    let shellyWebhook = await prisma.webhook.findUnique({ where: { systemId_slug: { systemId, slug: 'shelly-device-usage' } } });
+    if (shellyWebhook) {
+        shellyWebhook = await prisma.webhook.update({ where: { id: shellyWebhook.id }, data: { ...shellyData, url: `${process.env.NEXTAUTH_URL || 'https://tu-app.com'}/api/webhooks/${shellyWebhook.id}` } });
+    } else {
+        shellyWebhook = await prisma.webhook.create({ data: { ...shellyData, url: '' } }); // URL temporal vacía
+        shellyWebhook = await prisma.webhook.update({
+            where: { id: shellyWebhook.id },
+            data: { url: `${process.env.NEXTAUTH_URL || 'https://tu-app.com'}/api/webhooks/${shellyWebhook.id}` }
+        });
+    }
+
+    console.log(`✅ Ensured Shelly webhook: ${shellyWebhook.slug}`)
 
     // 2. Webhook para TP-Link Kasa
-    const kasaWebhook = await prisma.webhook.create({
-      data: {
+    const kasaData = {
         name: 'TP-Link Kasa - Equipment Monitoring',
         description: 'Recibe datos de monitoreo de equipos desde enchufes TP-Link Kasa',
         slug: 'kasa-equipment-monitor',
@@ -147,14 +139,11 @@ export async function seedWebhooks(systemId: string) {
         isActive: true,
         direction: 'INCOMING',
         allowedMethods: ['POST'],
-        url: `${process.env.NEXTAUTH_URL || 'https://tu-app.com'}/api/webhooks/${systemId}/kasa-equipment-monitor`,
-        token: `wh_${systemId}_kasa_${Math.random().toString(36).substring(2, 15)}`,
+        token: `wh_kasa_${Math.random().toString(36).substring(2, 15)}`,
         secretKey: `sk_kasa_${Math.random().toString(36).substring(2, 25)}`,
         rateLimitPerMinute: 60,
         ipWhitelist: [],
-        customHeaders: {
-          'X-Webhook-Source': 'kasa-cloud'
-        },
+        customHeaders: { 'X-Webhook-Source': 'kasa-cloud' },
         expectedSchema: {
           type: 'object',
           required: ['device_alias', 'state', 'timestamp'],
@@ -208,14 +197,18 @@ export async function seedWebhooks(systemId: string) {
           }
         },
         createdByUserId: user.id
-      }
-    })
-
-    console.log(`✅ Created Kasa webhook: ${kasaWebhook.slug}`)
+    };
+    let kasaWebhook = await prisma.webhook.findUnique({ where: { systemId_slug: { systemId, slug: 'kasa-equipment-monitor' } } });
+    if (kasaWebhook) {
+        kasaWebhook = await prisma.webhook.update({ where: { id: kasaWebhook.id }, data: { ...kasaData, url: `${process.env.NEXTAUTH_URL || 'https://tu-app.com'}/api/webhooks/${kasaWebhook.id}` } });
+    } else {
+        kasaWebhook = await prisma.webhook.create({ data: { ...kasaData, url: '' } });
+        kasaWebhook = await prisma.webhook.update({ where: { id: kasaWebhook.id }, data: { url: `${process.env.NEXTAUTH_URL || 'https://tu-app.com'}/api/webhooks/${kasaWebhook.id}` } });
+    }
+    console.log(`✅ Ensured Kasa webhook: ${kasaWebhook.slug}`)
 
     // 3. Webhook genérico para otros enchufes inteligentes
-    const genericWebhook = await prisma.webhook.create({
-      data: {
+    const genericData = {
         name: 'Generic Smart Plug Integration',
         description: 'Webhook genérico para cualquier enchufe inteligente compatible',
         slug: 'generic-smart-plug',
@@ -223,8 +216,7 @@ export async function seedWebhooks(systemId: string) {
         isActive: true,
         direction: 'INCOMING',
         allowedMethods: ['POST', 'PUT'],
-        url: `${process.env.NEXTAUTH_URL || 'https://tu-app.com'}/api/webhooks/${systemId}/generic-smart-plug`,
-        token: `wh_${systemId}_generic_${Math.random().toString(36).substring(2, 15)}`,
+        token: `wh_generic_${Math.random().toString(36).substring(2, 15)}`,
         secretKey: `sk_generic_${Math.random().toString(36).substring(2, 25)}`,
         rateLimitPerMinute: 100,
         ipWhitelist: [],
@@ -281,14 +273,18 @@ export async function seedWebhooks(systemId: string) {
           }
         },
         createdByUserId: user.id
-      }
-    })
-
-    console.log(`✅ Created Generic webhook: ${genericWebhook.slug}`)
+    };
+    let genericWebhook = await prisma.webhook.findUnique({ where: { systemId_slug: { systemId, slug: 'generic-smart-plug' } } });
+    if (genericWebhook) {
+        genericWebhook = await prisma.webhook.update({ where: { id: genericWebhook.id }, data: { ...genericData, url: `${process.env.NEXTAUTH_URL || 'https://tu-app.com'}/api/webhooks/${genericWebhook.id}` } });
+    } else {
+        genericWebhook = await prisma.webhook.create({ data: { ...genericData, url: '' } });
+        genericWebhook = await prisma.webhook.update({ where: { id: genericWebhook.id }, data: { url: `${process.env.NEXTAUTH_URL || 'https://tu-app.com'}/api/webhooks/${genericWebhook.id}` } });
+    }
+    console.log(`✅ Ensured Generic webhook: ${genericWebhook.slug}`)
 
     // 4. Webhook bidireccional para control de dispositivos
-    const controlWebhook = await prisma.webhook.create({
-      data: {
+    const controlData = {
         name: 'Device Control - Bidirectional',
         description: 'Control bidireccional de dispositivos (enviar comandos y recibir estado)',
         slug: 'device-control',
@@ -296,12 +292,11 @@ export async function seedWebhooks(systemId: string) {
         isActive: true,
         direction: 'BIDIRECTIONAL',
         allowedMethods: ['POST', 'GET'],
-        url: `${process.env.NEXTAUTH_URL || 'https://tu-app.com'}/api/webhooks/${systemId}/device-control`,
-        token: `wh_${systemId}_control_${Math.random().toString(36).substring(2, 15)}`,
+        token: `wh_control_${Math.random().toString(36).substring(2, 15)}`,
         secretKey: `sk_control_${Math.random().toString(36).substring(2, 25)}`,
         rateLimitPerMinute: 200,
         triggerEvents: ['appointment.service_started', 'appointment.service_ended'],
-        targetUrl: 'https://api.smart-devices.com/control', // URL destino para comandos
+        targetUrl: 'https://api.smart-devices.com/control',
         expectedSchema: {
           type: 'object',
           properties: {
@@ -313,12 +308,17 @@ export async function seedWebhooks(systemId: string) {
           }
         },
         createdByUserId: user.id
-      }
-    })
+    };
+    let controlWebhook = await prisma.webhook.findUnique({ where: { systemId_slug: { systemId, slug: 'device-control' } } });
+    if (controlWebhook) {
+        controlWebhook = await prisma.webhook.update({ where: { id: controlWebhook.id }, data: { ...controlData, url: `${process.env.NEXTAUTH_URL || 'https://tu-app.com'}/api/webhooks/${controlWebhook.id}` } });
+    } else {
+        controlWebhook = await prisma.webhook.create({ data: { ...controlData, url: '' } });
+        controlWebhook = await prisma.webhook.update({ where: { id: controlWebhook.id }, data: { url: `${process.env.NEXTAUTH_URL || 'https://tu-app.com'}/api/webhooks/${controlWebhook.id}` } });
+    }
+    console.log(`✅ Ensured Control webhook: ${controlWebhook.slug}`)
 
-    console.log(`✅ Created Control webhook: ${controlWebhook.slug}`)
-
-    console.log('\n🎯 Webhooks created successfully!')
+    console.log('\n🎯 Webhooks created/updated successfully!')
     console.log('\nWebhook URLs para configurar en tus dispositivos:')
     console.log(`📡 Shelly: ${shellyWebhook.url}`)
     console.log(`📡 Kasa: ${kasaWebhook.url}`)

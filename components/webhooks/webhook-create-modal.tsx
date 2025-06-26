@@ -1,358 +1,216 @@
 "use client"
 
-import { useState } from "react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { useState, useEffect, useCallback } from "react"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { CheckCircle } from "lucide-react"
-import { WebhookBasicForm } from "./forms/webhook-basic-form"
-import { WebhookHttpForm } from "./forms/webhook-http-form"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { CheckCircle, XCircle, Loader2 } from "lucide-react"
+import { cn } from "@/lib/utils"
 import { toast } from "sonner"
+import { useSession } from "next-auth/react"
+import { Stepper, Step } from "@/components/ui/stepper"
 
 interface WebhookCreateModalProps {
-  open: boolean
-  onOpenChange: (open: boolean) => void
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
   systemId?: string | null
+  onWebhookCreated?: () => void
 }
 
 interface WebhookFormData {
-  // Step 1: Basic
   name: string
   description: string
-  direction: "incoming" | "outgoing" | "bidirectional"
+  direction: 'incoming' | 'outgoing' | 'bidirectional'
   slug: string
   category: string
-  
-  // Step 2: HTTP
-  allowedMethods: string[]
-  requiresAuth: boolean
-  customHeaders: Record<string, string>
-  rateLimitPerMinute: number
-  ipWhitelist: string[]
-  secretKey: string
-  targetUrl?: string
-  triggerEvents?: string[]
-  
-  // Step 3: Data mapping (TODO)
-  expectedSchema?: any
-  dataMapping?: any
 }
 
-export function WebhookCreateModal({ open, onOpenChange, systemId: propSystemId }: WebhookCreateModalProps) {
-  const [currentStep, setCurrentStep] = useState(1)
+interface SlugValidation {
+  isAvailable: boolean
+  isChecking: boolean
+  suggestions: string[]
+}
+
+export function WebhookCreateModal({ open, onOpenChange, systemId: propSystemId, onWebhookCreated }: WebhookCreateModalProps) {
+  const [currentStep, setCurrentStep] = useState(0)
   const [formData, setFormData] = useState<WebhookFormData>({
-    // Valores por defecto
     name: "",
     description: "",
     direction: "incoming",
     slug: "",
-    category: "",
-    allowedMethods: ["POST"],
-    requiresAuth: true,
-    customHeaders: {},
-    rateLimitPerMinute: 60,
-    ipWhitelist: [],
-    secretKey: "",
-    targetUrl: "",
-    triggerEvents: []
+    category: "default"
+  })
+  
+  const { data: session } = useSession()
+  const systemId = propSystemId || session?.user?.systemId
+
+  const [slugValidation, setSlugValidation] = useState<SlugValidation>({
+    isAvailable: true,
+    isChecking: false,
+    suggestions: []
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
-  
-  // Usar systemId del prop o obtener de la sesión
-  const systemId = propSystemId
-  
-  const steps = [
-    { id: 1, title: "Configuración básica", isValid: Boolean(formData.name && formData.slug && formData.direction) },
-    { id: 2, title: "Configuración HTTP", isValid: formData.allowedMethods.length > 0 || (formData.direction === "outgoing" && formData.targetUrl) },
-    { id: 3, title: "Mapeo de datos", isValid: true }, // TODO: Validar cuando se implemente
-    { id: 4, title: "Revisión y creación", isValid: true }
-  ]
+  const [generatedToken, setGeneratedToken] = useState("")
+  const [hmacSecret, setHmacSecret] = useState("")
 
-  const canProceedToNext = () => {
-    const currentStepData = steps.find(s => s.id === currentStep)
-    return currentStepData?.isValid || false
-  }
-
-  const handleNext = () => {
-    if (currentStep < steps.length) {
-      setCurrentStep(currentStep + 1)
-    } else {
-      handleSubmit()
+  const validateSlug = useCallback(async (slug: string) => {
+    if (!slug || !systemId) return
+    setSlugValidation(prev => ({ ...prev, isChecking: true }))
+    try {
+      const response = await fetch('/api/internal/webhooks/validate-slug', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slug, systemId })
+      })
+      const validation = await response.json()
+      setSlugValidation({ isAvailable: validation.isAvailable, isChecking: false, suggestions: validation.suggestions || [] })
+    } catch (error) {
+      setSlugValidation({ isAvailable: false, isChecking: false, suggestions: [] })
     }
-  }
+  }, [systemId])
 
-  const handleSubmit = async () => {
-    if (!systemId) {
-      toast.error("Error: no se pudo obtener el ID del sistema")
-      return
+  useEffect(() => {
+    if (formData.slug) {
+      validateSlug(formData.slug)
     }
+  }, [formData.slug, validateSlug])
 
-    setIsSubmitting(true)
-    
+  const handleCreateWebhook = async () => {
+    if (!formData.name || !formData.slug || !systemId) {
+      toast.error("Por favor, completa los campos requeridos.");
+      return;
+    }
+    setIsSubmitting(true);
     try {
       const response = await fetch('/api/internal/webhooks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...formData, systemId })
-      })
-      
+        body: JSON.stringify({
+          ...formData,
+          systemId,
+          token: generatedToken,
+          secretKey: hmacSecret
+        })
+      });
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Error creating webhook')
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Error al crear el webhook');
       }
-      
-      const result = await response.json()
-      
-      toast.success("Webhook creado correctamente")
-      onOpenChange(false)
-      
-      // Refrescar la página para mostrar el nuevo webhook
-      window.location.reload()
-      
-      // Reset form
-      setCurrentStep(1)
-      setFormData({
-        name: "",
-        description: "",
-        direction: "incoming",
-        slug: "",
-        category: "",
-        allowedMethods: ["POST"],
-        requiresAuth: true,
-        customHeaders: {},
-        rateLimitPerMinute: 60,
-        ipWhitelist: [],
-        secretKey: "",
-        targetUrl: "",
-        triggerEvents: []
-      })
-    } catch (error) {
-      console.error('Error creating webhook:', error)
-      toast.error("Error al crear el webhook")
+      const newWebhook = await response.json();
+      const webhookUrl = `${window.location.origin}/api/webhooks/${newWebhook.id}`;
+      await fetch(`/api/internal/webhooks/${newWebhook.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: webhookUrl })
+      });
+      toast.success("¡Webhook creado exitosamente!");
+      onWebhookCreated?.();
+      onOpenChange?.(false);
+    } catch (error: any) {
+      toast.error(`Error: ${error.message}`);
     } finally {
-      setIsSubmitting(false)
+      setIsSubmitting(false);
     }
-  }
+  };
 
-  const renderStepContent = () => {
-    switch (currentStep) {
-      case 1:
-        return (
-          <WebhookBasicForm
-            data={{
-              name: formData.name,
-              description: formData.description,
-              direction: formData.direction,
-              slug: formData.slug,
-              category: formData.category
-            }}
-            onChange={(data) => setFormData(prev => ({ ...prev, ...data }))}
-            systemId={systemId}
-          />
-        )
-      case 2:
-        return (
-          <WebhookHttpForm
-            data={{
-              allowedMethods: formData.allowedMethods,
-              requiresAuth: formData.requiresAuth,
-              customHeaders: formData.customHeaders,
-              rateLimitPerMinute: formData.rateLimitPerMinute,
-              ipWhitelist: formData.ipWhitelist,
-              secretKey: formData.secretKey,
-              targetUrl: formData.targetUrl,
-              triggerEvents: formData.triggerEvents
-            }}
-            onChange={(data) => setFormData(prev => ({ ...prev, ...data }))}
-            direction={formData.direction}
-          />
-        )
-      case 3:
-        return (
-          <div className="space-y-6">
-            <div>
-              <h3 className="text-lg font-medium mb-2">Mapeo de Datos</h3>
-              <p className="text-sm text-muted-foreground">
-                Configura cómo se mapearán los datos recibidos a tu base de datos
-              </p>
-            </div>
-            <div className="text-center py-12 bg-muted/20 border-2 border-dashed rounded-lg">
-              <h3 className="text-lg font-medium mb-2">Próximamente</h3>
-              <p className="text-muted-foreground">
-                El visual data mapper estará disponible pronto
-              </p>
-            </div>
-          </div>
-        )
-      case 4:
-        return (
-          <div className="space-y-6">
-            <div>
-              <h3 className="text-lg font-medium mb-2">Revisión Final</h3>
-              <p className="text-sm text-muted-foreground">
-                Revisa la configuración antes de crear el webhook
-              </p>
-            </div>
-            
-            <div className="grid gap-6">
-              {/* Configuración básica */}
-              <div className="space-y-3">
-                <h4 className="font-medium">Configuración Básica</h4>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="text-muted-foreground">Nombre:</span>
-                    <p className="font-medium">{formData.name}</p>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Dirección:</span>
-                    <p className="font-medium">{formData.direction}</p>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Slug:</span>
-                    <p className="font-medium font-mono">{formData.slug}</p>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Categoría:</span>
-                    <p className="font-medium">{formData.category}</p>
-                  </div>
-                </div>
-                {formData.description && (
-                  <div>
-                    <span className="text-muted-foreground text-sm">Descripción:</span>
-                    <p className="text-sm">{formData.description}</p>
-                  </div>
-                )}
-              </div>
-
-              {/* Configuración HTTP */}
-              <div className="space-y-3">
-                <h4 className="font-medium">Configuración HTTP</h4>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="text-muted-foreground">Métodos permitidos:</span>
-                    <p className="font-medium">{formData.allowedMethods.join(", ")}</p>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Autenticación:</span>
-                    <p className="font-medium">{formData.requiresAuth ? "Requerida" : "No requerida"}</p>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Rate limit:</span>
-                    <p className="font-medium">{formData.rateLimitPerMinute} req/min</p>
-                  </div>
-                  {formData.ipWhitelist.length > 0 && (
-                    <div>
-                      <span className="text-muted-foreground">IPs permitidas:</span>
-                      <p className="font-medium">{formData.ipWhitelist.length} configuradas</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* URL final */}
-              <div className="p-4 bg-muted/20 rounded-lg">
-                <span className="text-muted-foreground text-sm">URL del webhook:</span>
-                <p className="font-mono text-sm break-all">
-                                     {typeof window !== 'undefined' ? window.location.origin : 'https://tu-app.com'}/api/webhooks/{systemId}/{formData.slug}
-                </p>
-              </div>
-            </div>
-          </div>
-        )
-      default:
-        return null
-    }
-  }
+  const steps = [
+    { label: "Información Básica" },
+    { label: "Seguridad" },
+    { label: "Confirmar" }
+  ];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl max-h-[95vh] overflow-hidden flex flex-col p-0">
-        {/* Header con padding apropiado */}
-        <DialogHeader className="flex-shrink-0 px-8 pt-8 pb-6">
-          <DialogTitle className="text-2xl font-semibold">Crear Nuevo Webhook</DialogTitle>
-          <p className="text-sm text-muted-foreground mt-2">
-            Configura un webhook para integrar tu aplicación con servicios externos
-          </p>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Crear Nuevo Webhook</DialogTitle>
+          <DialogDescription>Sigue los pasos para configurar tu nuevo webhook.</DialogDescription>
         </DialogHeader>
-        
-        {/* Stepper con mejor espaciado */}
-        <div className="flex-shrink-0 px-8 pb-6">
-          <div className="flex items-center justify-between bg-muted/30 rounded-lg p-4">
+        <div className="py-4">
+          <Stepper initialStep={0} activeStep={currentStep}>
             {steps.map((step, index) => (
-              <div key={step.id} className="flex items-center flex-1">
-                <div className="flex items-center">
-                  <div className={`
-                    w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium
-                    transition-all duration-200
-                    ${currentStep >= step.id 
-                      ? 'bg-primary text-primary-foreground shadow-lg scale-110' 
-                      : 'bg-background border-2 border-muted text-muted-foreground'
-                    }
-                  `}>
-                    {currentStep > step.id && step.isValid ? (
-                      <CheckCircle className="h-5 w-5" />
-                    ) : (
-                      step.id
-                    )}
-                  </div>
-                  <div className="ml-3">
-                    <span className={`block text-sm font-medium ${
-                      currentStep >= step.id ? 'text-foreground' : 'text-muted-foreground'
-                    }`}>
-                      {step.title}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      {currentStep > step.id && step.isValid ? 'Completado' : 
-                       currentStep === step.id ? 'En progreso' : 'Pendiente'}
-                    </span>
+              <Step key={index} label={step.label} />
+            ))}
+          </Stepper>
+        </div>
+        
+        <div className="space-y-6 py-4 min-h-[300px]">
+          {currentStep === 0 && (
+            <div className="space-y-4">
+               <div>
+                  <Label htmlFor="name">Nombre del webhook</Label>
+                  <Input id="name" value={formData.name} onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))} />
+                </div>
+                <div>
+                  <Label htmlFor="description">Descripción</Label>
+                  <Textarea id="description" value={formData.description} onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))} />
+                </div>
+                 <div>
+                  <Label htmlFor="slug">Slug</Label>
+                  <div className="relative">
+                    <Input id="slug" value={formData.slug} onChange={(e) => setFormData(prev => ({ ...prev, slug: e.target.value }))} className={cn(!slugValidation.isAvailable && "border-red-500")} />
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                        {slugValidation.isChecking ? <Loader2 className="h-4 w-4 animate-spin" /> : 
+                         slugValidation.isAvailable ? <CheckCircle className="h-4 w-4 text-green-500" /> : <XCircle className="h-4 w-4 text-red-500" />}
+                    </div>
                   </div>
                 </div>
-                {index < steps.length - 1 && (
-                  <div className={`flex-1 h-px mx-6 transition-colors duration-200 ${
-                    currentStep > step.id ? 'bg-primary' : 'bg-border'
-                  }`} />
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-        
-        {/* Content con scroll y padding perfecto */}
-        <div className="flex-1 overflow-auto px-8 pb-2">
-          <div className="min-h-[400px]">
-            {renderStepContent()}
-          </div>
-        </div>
-        
-        {/* Footer con separación visual clara */}
-        <div className="flex-shrink-0 bg-muted/10 border-t px-8 py-6">
-          <div className="flex justify-between items-center">
-            <div className="text-sm text-muted-foreground">
-              Paso {currentStep} de {steps.length}
             </div>
-            
-            <div className="flex gap-3">
-              <Button 
-                variant="outline"
-                onClick={() => setCurrentStep(Math.max(1, currentStep - 1))}
-                disabled={currentStep === 1}
-                className="min-w-[100px]"
-              >
-                Anterior
-              </Button>
-              
-              <Button 
-                onClick={handleNext}
-                disabled={!canProceedToNext() || isSubmitting}
-                className="min-w-[120px]"
-              >
-                {isSubmitting ? "Creando..." : 
-                 currentStep === steps.length ? 'Crear Webhook' : 'Siguiente'}
-              </Button>
+          )}
+          {currentStep === 1 && (
+            <div className="space-y-4">
+              <h4 className="font-medium">Configuración de Seguridad (Opcional)</h4>
+               <div>
+                  <Label>Bearer Token</Label>
+                   <div className="flex gap-2">
+                    <Input value={generatedToken} onChange={e => setGeneratedToken(e.target.value)} placeholder="Dejar en blanco o generar"/>
+                    <Button variant="outline" size="sm" onClick={() => setGeneratedToken('wh_bearer_' + Math.random().toString(36).substring(2))}>Generar</Button>
+                  </div>
+               </div>
+                <div>
+                  <Label>HMAC Secret</Label>
+                   <div className="flex gap-2">
+                    <Input value={hmacSecret} onChange={e => setHmacSecret(e.target.value)} placeholder="Dejar en blanco o generar"/>
+                    <Button variant="outline" size="sm" onClick={() => setHmacSecret('wh_hmac_' + Math.random().toString(36).substring(2))}>Generar</Button>
+                  </div>
+               </div>
             </div>
-          </div>
+          )}
+           {currentStep === 2 && (
+             <div className="space-y-4 rounded-lg border p-4">
+               <h3 className="font-semibold">Confirmar y Crear</h3>
+               <p><span className="font-medium">Nombre:</span> {formData.name}</p>
+               <p><span className="font-medium">Slug:</span> {formData.slug}</p>
+               <p className="font-mono text-sm break-all bg-muted p-2 rounded">
+                 URL: {`${window.location.origin}/api/webhooks/<ID_GENERADO_AL_GUARDAR>`}
+               </p>
+               {generatedToken && <p className="text-sm text-green-600">Se usará un Bearer Token.</p>}
+               {hmacSecret && <p className="text-sm text-green-600">Se usará una clave HMAC.</p>}
+             </div>
+           )}
         </div>
+
+        <DialogFooter>
+          <div className="flex w-full justify-between">
+            <Button variant="outline" onClick={() => setCurrentStep(prev => Math.max(0, prev - 1))} disabled={currentStep === 0}>
+              Anterior
+            </Button>
+            {currentStep < steps.length - 1 ? (
+              <Button onClick={() => setCurrentStep(prev => Math.min(steps.length - 1, prev + 1))} disabled={!formData.name || !formData.slug || !slugValidation.isAvailable}>
+                Siguiente
+              </Button>
+            ) : (
+              <Button onClick={handleCreateWebhook} disabled={isSubmitting}>
+                {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Crear Webhook
+              </Button>
+            )}
+          </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
-  )
+  );
 } 

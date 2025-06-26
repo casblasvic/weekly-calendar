@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator 
 } from "@/components/ui/dropdown-menu"
-import { Switch } from "@/components/ui/switch"
+
 import { 
   MoreHorizontal, 
   Copy, 
@@ -59,6 +59,32 @@ interface WebhookCardProps {
   onWebhookUpdate?: () => void
 }
 
+const getDirectionStyles = (direction: string) => {
+    const normalizedDirection = direction.toUpperCase()
+    switch (normalizedDirection) {
+      case "INCOMING":
+        return {
+          icon: <ArrowDown className="h-3 w-3" />,
+          className: "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300",
+        };
+      case "OUTGOING":
+        return {
+          icon: <ArrowUp className="h-3 w-3" />,
+          className: "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300",
+        };
+      case "BIDIRECTIONAL":
+        return {
+          icon: <ArrowUpDown className="h-3 w-3" />,
+          className: "bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300",
+        };
+      default:
+        return {
+          icon: <ArrowUpDown className="h-3 w-3" />,
+          className: "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300",
+        };
+    }
+}
+
 export function WebhookCard({ webhook, onWebhookUpdate }: WebhookCardProps) {
   const [isActive, setIsActive] = useState(webhook.isActive)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
@@ -66,7 +92,15 @@ export function WebhookCard({ webhook, onWebhookUpdate }: WebhookCardProps) {
   
   const successRate = webhook.totalCalls > 0 
     ? Math.round((webhook.successfulCalls / webhook.totalCalls) * 100)
-    : 0
+    : 0;
+
+  const directionStyles = getDirectionStyles(webhook.direction);
+
+  const getSuccessRateColor = () => {
+    if (successRate >= 95) return "text-green-600";
+    if (successRate >= 80) return "text-yellow-600";
+    return "text-red-600";
+  };
 
   const handleToggleActive = async () => {
     try {
@@ -93,7 +127,11 @@ export function WebhookCard({ webhook, onWebhookUpdate }: WebhookCardProps) {
   }
 
   const handleCopyUrl = async () => {
-    await navigator.clipboard.writeText(webhook.url)
+    // Construir la URL correcta
+    const baseUrl = window.location.origin
+    const correctUrl = `${baseUrl}/api/webhooks/${webhook.id}/${webhook.slug}`
+    
+    await navigator.clipboard.writeText(correctUrl)
     toast.success("URL copiada al portapapeles")
   }
 
@@ -130,58 +168,29 @@ export function WebhookCard({ webhook, onWebhookUpdate }: WebhookCardProps) {
     }
   }
 
-  const getDirectionIcon = () => {
-    switch (webhook.direction) {
-      case "incoming":
-        return <ArrowDown className="h-3 w-3" />
-      case "outgoing":
-        return <ArrowUp className="h-3 w-3" />
-      case "bidirectional":
-        return <ArrowUpDown className="h-3 w-3" />
-    }
-  }
-
-  const getDirectionColor = () => {
-    switch (webhook.direction) {
-      case "incoming":
-        return "bg-blue-500/10 text-blue-700 dark:text-blue-400"
-      case "outgoing":
-        return "bg-green-500/10 text-green-700 dark:text-green-400"
-      case "bidirectional":
-        return "bg-purple-500/10 text-purple-700 dark:text-purple-400"
-    }
-  }
-
-  const getSuccessRateColor = () => {
-    if (successRate >= 95) return "text-green-600"
-    if (successRate >= 80) return "text-yellow-600"
-    return "text-red-600"
-  }
-
   return (
     <>
       <Card className={cn(
-        "transition-all hover:shadow-md h-fit",
+        "transition-all hover:shadow-lg hover:border-primary/20 h-fit",
         !isActive && "opacity-60"
       )}>
-        <CardHeader className="pb-2 px-4 pt-4">
+        <CardHeader className="pb-2 px-3 pt-3">
           <div className="flex items-center justify-between">
             <div className="space-y-1 flex-1 min-w-0">
               <div className="flex items-center gap-2">
                 <h3 className="font-medium text-sm truncate">{webhook.name}</h3>
-                <Badge 
-                  variant="secondary" 
-                  className={cn("text-xs gap-1 px-1 py-0", getDirectionColor())}
-                >
-                  {getDirectionIcon()}
+                <Badge variant="outline" className={cn("text-xs gap-1 pl-1 pr-1.5 py-0.5 h-5", directionStyles.className)}>
+                  {directionStyles.icon}
+                  <span className="font-medium text-xs">{webhook.direction}</span>
                 </Badge>
               </div>
               
               <div className="flex items-center gap-1">
+                <span className="text-xs text-muted-foreground">slug:</span>
                 <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">
                   {webhook.slug}
                 </code>
-                <Badge variant="outline" className="text-xs px-1 py-0">
+                <Badge variant="outline" className="text-xs px-1 py-0 h-4">
                   {webhook.allowedMethods[0]}{webhook.allowedMethods.length > 1 ? '+' : ''}
                 </Badge>
               </div>
@@ -217,34 +226,47 @@ export function WebhookCard({ webhook, onWebhookUpdate }: WebhookCardProps) {
           </div>
         </CardHeader>
         
-        <CardContent className="px-4 pb-4 space-y-2">
-          {/* Estado y Switch */}
+        <CardContent className="px-3 pb-3 space-y-2">
+          {/* Estado y Botón */}
           <div className="flex items-center justify-between">
             <span className="text-xs text-muted-foreground">Estado</span>
-            <div className="flex items-center gap-1.5">
-              <span className={cn(
-                "text-xs",
-                isActive ? "text-green-600" : "text-muted-foreground"
-              )}>
-                {isActive ? "Activo" : "Inactivo"}
-              </span>
-              <Switch 
-                checked={isActive}
-                onCheckedChange={handleToggleActive}
-                className="scale-75"
-              />
-            </div>
+            <Button
+              variant={isActive ? "default" : "outline"}
+              size="sm"
+              onClick={handleToggleActive}
+              className={cn(
+                "h-6 w-12 text-xs font-medium",
+                isActive 
+                  ? "bg-green-500 hover:bg-green-600 text-white border-green-500" 
+                  : "bg-red-500 hover:bg-red-600 text-white border-red-500"
+              )}
+            >
+              {isActive ? "ON" : "OFF"}
+            </Button>
           </div>
           
           {/* Stats en una línea */}
           <div className="flex items-center justify-between text-xs">
-            <div className="flex items-center gap-3">
-              <span className="text-muted-foreground">
-                Calls: <span className="font-medium text-foreground">{webhook.totalCalls}</span>
-              </span>
-              <span className="text-muted-foreground">
-                Success: <span className={cn("font-medium", getSuccessRateColor())}>{successRate}%</span>
-              </span>
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="text-xs px-1.5 py-0.5 h-5 bg-blue-50 text-blue-700 border-blue-200">
+                Calls: {webhook.totalCalls || 0}
+              </Badge>
+              <Badge variant="outline" className={cn(
+                "text-xs px-1.5 py-0.5 h-5",
+                successRate >= 95 ? "bg-green-50 text-green-700 border-green-200" :
+                successRate >= 80 ? "bg-yellow-50 text-yellow-700 border-yellow-200" :
+                "bg-red-50 text-red-700 border-red-200"
+              )}>
+                Success: {successRate}%
+              </Badge>
+              <Badge variant="outline" className={cn(
+                "text-xs px-1.5 py-0.5 h-5",
+                (webhook.totalCalls - webhook.successfulCalls) > 0 
+                  ? "bg-red-50 text-red-700 border-red-200"
+                  : "bg-green-50 text-green-700 border-green-200"
+              )}>
+                Errors: {webhook.totalCalls - webhook.successfulCalls}
+              </Badge>
             </div>
             {webhook.lastTriggered && (
               <div className="flex items-center gap-1 text-muted-foreground">
@@ -255,14 +277,11 @@ export function WebhookCard({ webhook, onWebhookUpdate }: WebhookCardProps) {
           </div>
           
           {/* URL compacta */}
-          <div className="flex items-center gap-1 p-1.5 bg-muted rounded text-xs">
-            <code className="flex-1 truncate text-muted-foreground">{webhook.url}</code>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-4 w-4 p-0"
-              onClick={handleCopyUrl}
-            >
+          <div className="flex items-center gap-1 p-1.5 bg-muted rounded text-xs overflow-hidden">
+            <code className="flex-1 text-muted-foreground whitespace-nowrap overflow-x-auto">
+              {`${window.location?.origin}/api/webhooks/${webhook.id}/${webhook.slug}`}
+            </code>
+            <Button variant="ghost" size="sm" className="h-4 w-4 p-0 flex-shrink-0" onClick={handleCopyUrl}>
               <Copy className="h-2.5 w-2.5" />
             </Button>
           </div>
@@ -271,7 +290,7 @@ export function WebhookCard({ webhook, onWebhookUpdate }: WebhookCardProps) {
 
       {/* Modales */}
       <WebhookEditModal
-        key={`edit-${webhook.id}-${isEditModalOpen}`}
+        key={`edit-${webhook.id}`}
         webhook={webhook}
         open={isEditModalOpen}
         onOpenChange={setIsEditModalOpen}
@@ -285,4 +304,4 @@ export function WebhookCard({ webhook, onWebhookUpdate }: WebhookCardProps) {
       />
     </>
   )
-} 
+}

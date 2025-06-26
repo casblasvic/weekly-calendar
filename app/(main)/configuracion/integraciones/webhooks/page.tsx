@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -54,11 +54,12 @@ interface Webhook {
   category?: string
 }
 
-interface WebhookStats {
+interface WebhookStatsData {
   totalWebhooks: number
   activeWebhooks: number
   requestsToday: number
   successRate: number
+  totalErrorsToday: number
 }
 
 export default function WebhooksPage() {
@@ -66,11 +67,12 @@ export default function WebhooksPage() {
   const [selectedTab, setSelectedTab] = useState("all")
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [webhooks, setWebhooks] = useState<Webhook[]>([])
-  const [stats, setStats] = useState<WebhookStats>({
+  const [stats, setStats] = useState<WebhookStatsData>({
     totalWebhooks: 0,
     activeWebhooks: 0,
     requestsToday: 0,
-    successRate: 0
+    successRate: 0,
+    totalErrorsToday: 0,
   })
   const [isLoading, setIsLoading] = useState(true)
   
@@ -79,43 +81,51 @@ export default function WebhooksPage() {
   const systemId = session?.user?.systemId
   
   // Cargar webhooks desde la API
-  useEffect(() => {
-    // No cargar webhooks hasta que tengamos la sesión y el systemId
-    if (!systemId || status === 'loading') return
-    const loadWebhooks = async () => {
-      try {
-        setIsLoading(true)
-        const response = await fetch(`/api/internal/webhooks?systemId=${systemId}`)
-        
-        if (!response.ok) {
-          throw new Error('Failed to fetch webhooks')
-        }
-        
-        const data = await response.json()
-        setWebhooks(data.webhooks || [])
-        setStats(data.stats || {
-          totalWebhooks: 0,
-          activeWebhooks: 0,
-          requestsToday: 0,
-          successRate: 0
-        })
-      } catch (error) {
-        console.error('Error loading webhooks:', error)
-        // Mantener vacío en caso de error
-        setWebhooks([])
-        setStats({
-          totalWebhooks: 0,
-          activeWebhooks: 0,
-          requestsToday: 0,
-          successRate: 0
-        })
-      } finally {
-        setIsLoading(false)
+  const loadWebhooks = useCallback(async () => {
+    if (!systemId) return
+    try {
+      setIsLoading(true)
+      // Cargar webhooks y estadísticas en paralelo
+      const [webhooksResponse, statsResponse] = await Promise.all([
+        fetch(`/api/internal/webhooks?systemId=${systemId}`),
+        fetch(`/api/internal/webhooks/stats`)
+      ]);
+
+      if (!webhooksResponse.ok || !statsResponse.ok) {
+        throw new Error('Failed to fetch data')
       }
+      
+      const webhooksData = await webhooksResponse.json()
+      const statsData = await statsResponse.json()
+
+      setWebhooks(webhooksData.webhooks || [])
+      setStats(statsData || {
+        totalWebhooks: 0,
+        activeWebhooks: 0,
+        requestsToday: 0,
+        successRate: 0,
+        totalErrorsToday: 0,
+      })
+    } catch (error) {
+      console.error('Error loading webhooks data:', error)
+      setWebhooks([])
+      setStats({
+        totalWebhooks: 0,
+        activeWebhooks: 0,
+        requestsToday: 0,
+        successRate: 0,
+        totalErrorsToday: 0,
+      })
+    } finally {
+      setIsLoading(false)
     }
-    
-    loadWebhooks()
-  }, [systemId, status])
+  }, [systemId])
+  
+  useEffect(() => {
+    if (systemId && status === 'authenticated') {
+      loadWebhooks()
+    }
+  }, [systemId, status, loadWebhooks])
   
   const filteredWebhooks = webhooks.filter(webhook => {
     const matchesSearch = webhook.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -181,9 +191,9 @@ export default function WebhooksPage() {
       </div>
 
       {/* Webhooks List */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {filteredWebhooks.map((webhook) => (
-          <WebhookCard key={webhook.id} webhook={webhook} />
+          <WebhookCard key={webhook.id} webhook={webhook} onWebhookUpdate={loadWebhooks} />
         ))}
       </div>
 
@@ -214,6 +224,7 @@ export default function WebhooksPage() {
         open={isCreateModalOpen}
         onOpenChange={setIsCreateModalOpen}
         systemId={systemId}
+        onWebhookCreated={loadWebhooks}
       />
     </div>
   )

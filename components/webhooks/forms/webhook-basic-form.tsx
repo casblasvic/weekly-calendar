@@ -23,6 +23,7 @@ interface WebhookBasicFormProps {
   onChange: (data: any) => void
   systemId: string
   isEditing?: boolean
+  webhookId?: string
 }
 
 interface SlugValidation {
@@ -31,7 +32,7 @@ interface SlugValidation {
   suggestions: string[]
 }
 
-export function WebhookBasicForm({ data, onChange, systemId, isEditing = false }: WebhookBasicFormProps) {
+export function WebhookBasicForm({ data, onChange, systemId, isEditing = false, webhookId }: WebhookBasicFormProps) {
   const [slugValidation, setSlugValidation] = useState<SlugValidation>({
     isAvailable: true,
     isChecking: false,
@@ -58,7 +59,7 @@ export function WebhookBasicForm({ data, onChange, systemId, isEditing = false }
       const response = await fetch('/api/internal/webhooks/validate-slug', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slug, systemId })
+        body: JSON.stringify({ slug, systemId, webhookId: isEditing ? webhookId : undefined })
       })
       
       if (!response.ok) {
@@ -80,15 +81,7 @@ export function WebhookBasicForm({ data, onChange, systemId, isEditing = false }
         suggestions: []
       })
     }
-  }, [systemId])
-  
-  // Generar slug cuando cambia el nombre
-  useEffect(() => {
-    if (data.name && !data.slug) {
-      const newSlug = generateSlug(data.name)
-      onChange({ ...data, slug: newSlug })
-    }
-  }, [data.name, data.slug, data, onChange])
+  }, [systemId, isEditing, webhookId])
   
   // Validar slug cuando cambia
   useEffect(() => {
@@ -131,7 +124,18 @@ export function WebhookBasicForm({ data, onChange, systemId, isEditing = false }
             id="name"
             placeholder="Ej: Formulario de contacto web"
             value={data.name}
-            onChange={(e) => onChange({ ...data, name: e.target.value })}
+            onChange={(e) => {
+              const newName = e.target.value
+              onChange({ ...data, name: newName })
+              
+              // Generar slug automáticamente mientras se escribe
+              if (newName) {
+                const autoSlug = generateSlug(newName)
+                if (autoSlug !== data.slug) {
+                  onChange({ ...data, name: newName, slug: autoSlug })
+                }
+              }
+            }}
             className="w-full"
           />
           <p className="text-xs text-muted-foreground">
@@ -191,8 +195,6 @@ export function WebhookBasicForm({ data, onChange, systemId, isEditing = false }
             </SelectContent>
           </Select>
         </div>
-
-
 
         <Separator />
 
@@ -255,33 +257,6 @@ export function WebhookBasicForm({ data, onChange, systemId, isEditing = false }
                 ))}
               </div>
             </div>
-          )}
-
-          {/* URL Preview */}
-          {data.slug && (
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm">URL del webhook</CardTitle>
-                <CardDescription className="text-xs">
-                  Esta será la URL que recibirá las peticiones
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-center gap-2 p-3 bg-muted rounded text-sm font-mono">
-                  <code className="flex-1 truncate">
-                    {window.location?.origin || 'https://tu-app.com'}/api/webhooks/{systemId}/{data.slug}
-                  </code>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={copyUrl}
-                    className="h-6 w-6 p-0"
-                  >
-                    <Copy className="h-3 w-3" />
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
           )}
         </div>
       </div>

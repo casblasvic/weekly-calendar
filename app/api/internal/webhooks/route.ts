@@ -48,13 +48,14 @@ export async function GET(request: NextRequest) {
         logs: {
           select: {
             id: true,
-            timestamp: true,
-            statusCode: true
+            createdAt: true,
+            statusCode: true,
+            isSuccess: true
           },
           orderBy: {
-            timestamp: 'desc'
+            createdAt: 'desc'
           },
-          take: 1
+          take: 5
         }
       },
       orderBy: {
@@ -62,56 +63,10 @@ export async function GET(request: NextRequest) {
       }
     })
 
-    // Calcular estadísticas
-    const stats = {
-      totalWebhooks: webhooks.length,
-      activeWebhooks: webhooks.filter(w => w.isActive).length,
-      requestsToday: await prisma.webhookLog.count({
-        where: {
-          webhook: {
-            systemId
-          },
-          timestamp: {
-            gte: new Date(new Date().setHours(0, 0, 0, 0))
-          }
-        }
-      }),
-      successRate: webhooks.length > 0 ? 
-        webhooks.reduce((acc, w) => acc + (w.totalCalls > 0 ? (w.successfulCalls / w.totalCalls) * 100 : 100), 0) / webhooks.length 
-        : 0
-    }
-
-    // Formatear respuesta
-    const formattedWebhooks = webhooks.map(webhook => ({
-      id: webhook.id,
-      name: webhook.name,
-      description: webhook.description,
-      slug: webhook.slug,
-      direction: webhook.direction,
-      isActive: webhook.isActive,
-      url: webhook.url,
-      allowedMethods: webhook.allowedMethods,
-      totalCalls: webhook.totalCalls,
-      successfulCalls: webhook.successfulCalls,
-      lastTriggered: webhook.lastTriggered,
-      createdAt: webhook.createdAt,
-      createdBy: webhook.createdBy,
-      // Campos adicionales para el modal de edición
-      systemId: webhook.systemId,
-      token: webhook.token,
-      secretKey: webhook.secretKey,
-      rateLimitPerMinute: webhook.rateLimitPerMinute,
-      ipWhitelist: webhook.ipWhitelist,
-      customHeaders: webhook.customHeaders,
-      targetUrl: webhook.targetUrl,
-      triggerEvents: webhook.triggerEvents,
-      expectedSchema: webhook.expectedSchema,
-      dataMapping: webhook.dataMapping
-    }))
-
+    // Devolver el objeto webhook completo, sin formateo
     return NextResponse.json({
-      webhooks: formattedWebhooks,
-      stats
+      webhooks: webhooks,
+      stats: {} // Stats se manejan en un endpoint separado
     })
 
   } catch (error) {
@@ -171,14 +126,7 @@ export async function POST(request: NextRequest) {
     // Generar token único
     const token = `wh_${systemId.substring(0, 8)}_${Math.random().toString(36).substring(2, 15)}`
     
-    // Generar URL del webhook - detección dinámica de puerto
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 
-                   process.env.NEXTAUTH_URL || 
-                   process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` :
-                   `http://localhost:${process.env.PORT || 3001}`
-    const webhookUrl = `${baseUrl}/api/webhooks/${systemId}/${slug}`
-
-    // Crear webhook
+    // Crear webhook primero sin URL para obtener el ID
     const webhook = await prisma.webhook.create({
       data: {
         name,
@@ -187,7 +135,7 @@ export async function POST(request: NextRequest) {
         direction,
         systemId,
         allowedMethods,
-        url: webhookUrl,
+        url: '', // Temporalmente vacío
         token,
         secretKey,
         rateLimitPerMinute: rateLimitPerMinute || 60,
@@ -208,22 +156,30 @@ export async function POST(request: NextRequest) {
       }
     })
 
-    return NextResponse.json({
-      webhook: {
-        id: webhook.id,
-        name: webhook.name,
-        description: webhook.description,
-        slug: webhook.slug,
-        direction: webhook.direction,
-        isActive: webhook.isActive,
-        url: webhook.url,
-        token: webhook.token,
-        allowedMethods: webhook.allowedMethods,
-        totalCalls: webhook.totalCalls,
-        successfulCalls: webhook.successfulCalls,
-        createdAt: webhook.createdAt,
-        createdBy: webhook.createdBy
+    // Generar URL del webhook con el ID real
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 
+                   process.env.NEXTAUTH_URL || 
+                   process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` :
+                   `http://localhost:${process.env.PORT || 3001}`
+    const webhookUrl = `${baseUrl}/api/webhooks/${webhook.id}/${slug}`
+
+    // Actualizar el webhook con la URL correcta
+    const updatedWebhook = await prisma.webhook.update({
+      where: { id: webhook.id },
+      data: { url: webhookUrl },
+      include: {
+        createdBy: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true
+          }
+        }
       }
+    })
+
+    return NextResponse.json({
+      webhook: updatedWebhook
     }, { status: 201 })
 
   } catch (error) {

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -9,6 +9,9 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { toast } from "sonner"
+import { cn } from "@/lib/utils"
+import { Separator } from "@/components/ui/separator";
 import { 
   Terminal, 
   Copy, 
@@ -23,10 +26,12 @@ import {
   Clock,
   RefreshCw,
   Shield,
-  Edit
+  Edit,
+  Plus,
+  Trash2,
+  Wand2
 } from "lucide-react"
-import { toast } from "sonner"
-import { cn } from "@/lib/utils"
+
 
 interface WebhookCurlTesterProps {
   webhook: {
@@ -51,6 +56,7 @@ interface WebhookCurlTesterProps {
     }
   }
   onTestDataReceived?: (data: any) => void
+  onAuthChange?: (authConfig: { type: "none" | "bearer" | "hmac" | "api_key"; token?: string; secret?: string; apiKey?: string }) => void
 }
 
 const DEVICE_EXAMPLES = {
@@ -226,13 +232,25 @@ const DEVICE_EXAMPLES = {
   }
 }
 
-export function WebhookCurlTester({ webhook, onTestDataReceived }: WebhookCurlTesterProps) {
-  const [selectedDevice, setSelectedDevice] = useState<keyof typeof DEVICE_EXAMPLES>("shelly")
-  const [selectedEvent, setSelectedEvent] = useState<string>("status_report_get")
+// Función para generar valores de ejemplo
+const getExampleValue = (type: string, fieldName?: string) => {
+  const fieldSuffix = fieldName ? `_${fieldName}` : '';
+  switch (type.toLowerCase()) {
+    case 'string': return `"dato${fieldSuffix}"`;
+    case 'int':
+    case 'float':
+    case 'decimal': return '123';
+    case 'boolean': return 'true';
+    case 'datetime': return `"${new Date().toISOString()}"`;
+    case 'json': return `{"dato${fieldSuffix}": "valor"}`;
+    default: return `"dato${fieldSuffix}"`;
+  }
+};
+
+export function WebhookCurlTester({ webhook, onTestDataReceived, onAuthChange }: WebhookCurlTesterProps) {
+  // Estados principales
   const [customPayload, setCustomPayload] = useState("")
-  const [customHeaders, setCustomHeaders] = useState<Record<string, string>>({
-    "Content-Type": "application/json"
-  })
+
   const [customGetParams, setCustomGetParams] = useState<Record<string, string>>({})
   const [testResults, setTestResults] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -264,22 +282,80 @@ export function WebhookCurlTester({ webhook, onTestDataReceived }: WebhookCurlTe
   const [incomingData, setIncomingData] = useState<any[]>([])
   const [lastPollTime, setLastPollTime] = useState<Date | null>(null)
   
-  // Estados para seguridad
-  const [securityType, setSecurityType] = useState<"none" | "bearer" | "hmac" | "apikey">("none")
-  const [generatedToken, setGeneratedToken] = useState("")
-  const [generatedSecret, setGeneratedSecret] = useState("")
-  const [apiKey, setApiKey] = useState("")
+  // Estados para seguridad - Inicializar con valores del webhook
+  const [securityType, setSecurityType] = useState<"none" | "bearer" | "hmac" | "api_key">(webhook.authType || "none")
+  const [generatedToken, setGeneratedToken] = useState(webhook.token || "")
+  const [generatedSecret, setGeneratedSecret] = useState(webhook.secretKey || "")
+  const [apiKey, setApiKey] = useState("") // Asumimos que no hay api key por ahora
+  
+  // NUEVO: Estado para tipo de contenido
+  const [contentType, setContentType] = useState<"json" | "urlencoded">("json")
   
   // Estado para el comando curl generado
   const [curlCommand, setCurlCommand] = useState("")
+  const [selectedModel, setSelectedModel] = useState("")
+  const [bodyBuilderFields, setBodyBuilderFields] = useState<Array<{ id: number; key: string; value: string }>>([])
+  // Inicializar sin campos por defecto
+  const [selectedTableFields, setSelectedTableFields] = useState<Array<{ name: string; type: string; isOptional: boolean }>>([])
+  const [showCopiedTooltip, setShowCopiedTooltip] = useState(false)
+  const [showCopiedJsonTooltip, setShowCopiedJsonTooltip] = useState(false)
+  const [hasAutoMapped, setHasAutoMapped] = useState(false) // Nuevo estado para tracking del auto-mapeo
   
   // Obtener métodos permitidos del webhook
   const allowedMethods = webhook.allowedMethods || ["POST"]
   const isGetOnly = allowedMethods.includes("GET") && allowedMethods.length === 1
 
-  // Actualizar comando cURL cuando cambien los parámetros
+  const [prismaModels, setPrismaModels] = useState<string[]>([]);
+
+  // Inicializar customHeaders con Content-Type automático
+  const [customHeaders, setCustomHeaders] = useState<Record<string, string>>(() => {
+    const initialHeaders = webhook.customHeaders || {}
+    // Añadir Content-Type automáticamente si no existe
+    if (!initialHeaders["Content-Type"] && !isGetOnly) {
+      initialHeaders["Content-Type"] = "application/json"
+    }
+    return initialHeaders
+  })
+
+  // Cargar modelos de Prisma al montar el componente
   useEffect(() => {
-    const updateCurlCommand = async () => {
+    const fetchModels = async () => {
+      try {
+        const response = await fetch('/api/internal/prisma/schema-models')
+        if (response.ok) {
+          const models = await response.json()
+          setPrismaModels(models)
+        }
+      } catch (error) {
+        console.error('Error fetching Prisma models:', error)
+      }
+    }
+    fetchModels()
+  }, [])
+
+  const handleModelSelect = async (modelName: string) => {
+    if (!modelName || modelName === "none") {
+      setSelectedModel("");
+      setSelectedTableFields([]);
+      return;
+    }
+    
+    setSelectedModel(modelName);
+    
+    try {
+      const response = await fetch(`/api/internal/prisma/schema-models/${modelName}`);
+      if (response.ok) {
+        const fields = await response.json();
+        setSelectedTableFields(fields);
+      }
+    } catch (error) {
+      console.error(`Error fetching fields for model ${modelName}:`, error);
+    }
+  };
+
+  // Generar cURL cuando cambien los datos importantes
+  useEffect(() => {
+    const updateCurl = async () => {
       try {
         const command = await generateCurl()
         setCurlCommand(command)
@@ -287,65 +363,62 @@ export function WebhookCurlTester({ webhook, onTestDataReceived }: WebhookCurlTe
         console.error('Error generating curl:', error)
       }
     }
-    updateCurlCommand()
-  }, [selectedDevice, selectedEvent, customPayload, customHeaders, securityType, generatedToken, generatedSecret, apiKey])
+    updateCurl()
+  }, [securityType, generatedToken, generatedSecret, apiKey, customHeaders, bodyBuilderFields, customPayload])
 
-  const getCurrentExample = () => {
-    const device = DEVICE_EXAMPLES[selectedDevice]
-    const events = device.events as any
+  // Sincronizar bodyBuilderFields con customPayload SOLO cuando bodyBuilderFields cambia
+  useEffect(() => {
+    if (bodyBuilderFields.length === 0) return;
     
-    // Filtrar eventos según métodos permitidos
-    const compatibleEvents = Object.entries(events).filter(([key, event]: [string, any]) => {
-      return allowedMethods.includes(event.method)
-    })
-    
-    // Si el evento actual no es compatible, usar el primero compatible
-    const currentEvent = events[selectedEvent]
-    if (!currentEvent || !allowedMethods.includes(currentEvent.method)) {
-      const firstCompatible = compatibleEvents[0]
-      if (firstCompatible) {
-        const [newEventKey] = firstCompatible
-        setSelectedEvent(newEventKey)
-        return firstCompatible[1]
-      }
+    try {
+      const newPayload = bodyBuilderFields.reduce((acc, field) => {
+        if (field.key && field.value) {
+          try {
+            acc[field.key] = JSON.parse(field.value);
+          } catch {
+            acc[field.key] = field.value;
+          }
+        }
+        return acc;
+      }, {} as Record<string, any>);
+      
+      const newPayloadString = Object.keys(newPayload).length > 0 
+        ? JSON.stringify(newPayload, null, 2) 
+        : "";
+      
+      setCustomPayload(newPayloadString);
+    } catch (error) {
+      console.error('Error updating payload:', error);
     }
-    
-    return events[selectedEvent] || compatibleEvents[0]?.[1] || events[Object.keys(events)[0]]
-  }
+  }, [bodyBuilderFields]);
+
+  // Inicializar valores de seguridad del webhook SOLO una vez
+  useEffect(() => {
+    if (webhook.authType) {
+      setSecurityType(webhook.authType)
+    }
+    if (webhook.token) {
+      setGeneratedToken(webhook.token)
+    }
+    if (webhook.secretKey) {
+      setGeneratedSecret(webhook.secretKey)
+    }
+  }, [webhook.id]) // Solo cuando cambie el webhook
 
   const generateCurl = async () => {
-    const example = getCurrentExample()
-    
     // Usar el mapeo de datos si existe para generar el payload
     const webhookMapping = webhook.dataMapping?.fieldMappings
-    let generatedPayload = example.payload
+    let generatedPayload: any = {}
     
-    if (webhookMapping && !isGetOnly) {
-      // Generar payload desde el mapeo configurado
-      generatedPayload = {}
-      Object.entries(webhookMapping).forEach(([targetField, mapping]: [string, any]) => {
-        const sourceField = mapping.source
-        if (mapping.required !== false) { // Incluir campos requeridos y opcionales
-          // Valores de ejemplo según el tipo y nombre del campo
-          switch (mapping.type) {
-            case "string":
-              generatedPayload[sourceField] = sourceField === "device_id" ? "shelly-test-device" : 
-                                              sourceField === "timestamp" ? new Date().toISOString() : "test-value"
-              break
-            case "number":
-              generatedPayload[sourceField] = sourceField === "power" ? 250.5 : 
-                                              sourceField === "voltage" ? 220.0 :
-                                              sourceField === "current" ? 1.14 : 
-                                              sourceField === "energy" ? 1234.5 : 42.0
-              break
-            case "boolean":
-              generatedPayload[sourceField] = sourceField === "is_on" ? true : false
-              break
-            case "datetime":
-              generatedPayload[sourceField] = new Date().toISOString()
-              break
-            default:
-              generatedPayload[sourceField] = "test-value"
+    // Solo generar payload si hay campos configurados
+    if (bodyBuilderFields.length > 0 && bodyBuilderFields.some(f => f.key && f.value)) {
+      // Usar campos del constructor de body
+      bodyBuilderFields.forEach(field => {
+        if (field.key && field.value) {
+          try {
+            generatedPayload[field.key] = JSON.parse(field.value);
+          } catch {
+            generatedPayload[field.key] = field.value;
           }
         }
       })
@@ -358,43 +431,31 @@ export function WebhookCurlTester({ webhook, onTestDataReceived }: WebhookCurlTe
     
     let url = dynamicUrl
     let curlCommand = ""
-    const payload = customPayload || JSON.stringify(generatedPayload, null, 2)
     
-    if (isGetOnly) {
-      // Para GET, generar parámetros desde el mapeo
-      let params = ""
-      if (webhookMapping) {
-        const paramsList: string[] = []
-        Object.entries(webhookMapping).forEach(([targetField, mapping]: [string, any]) => {
-          const sourceField = mapping.source
-          if (mapping.required !== false) {
-            const value = sourceField === "device_id" ? "shelly-test-device" :
-                         sourceField === "power" ? "250.5" :
-                         sourceField === "voltage" ? "220.0" :
-                         sourceField === "current" ? "1.14" :
-                         sourceField === "is_on" ? "true" : 
-                         sourceField === "energy" ? "1234.5" :
-                         sourceField === "timestamp" ? new Date().toISOString() : "test-value"
-            paramsList.push(`${sourceField}=${encodeURIComponent(value)}`)
-          }
-        })
-        params = paramsList.length > 0 ? "?" + paramsList.join("&") : ""
-      } else {
-        params = example.urlParams || "?power=250.5&voltage=220.0&current=1.14&is_on=true&device_id=shelly-test-device"
-      }
-      
-      url = `${dynamicUrl}${params}`
-      curlCommand = `curl -X GET "${url}"`
+    // Determinar método HTTP (usar el primero permitido)
+    const method = allowedMethods.includes('POST') ? 'POST' : 
+                   allowedMethods.includes('PUT') ? 'PUT' :
+                   allowedMethods.includes('PATCH') ? 'PATCH' :
+                   allowedMethods.includes('GET') ? 'GET' : 'POST'
+    
+    if (isGetOnly || method === 'GET') {
+      // Para GET, solo mostrar URL base si no hay parámetros configurados
+      curlCommand = `curl -X GET "${dynamicUrl}"`
     } else {
       // Para POST/PUT/PATCH, usar payload en el body
-      curlCommand = `curl -X ${example.method} "${dynamicUrl}"`
+      curlCommand = `curl -X ${method} "${dynamicUrl}"`
       
-      // Headers básicos para métodos con body
+      // Headers - siempre incluir Content-Type desde customHeaders
       Object.entries(customHeaders).forEach(([key, value]) => {
-        curlCommand += ` \\\n  -H "${key}: ${value}"`
+        if (key && value) {
+          curlCommand += ` \\\n  -H "${key}: ${value}"`
+        }
       })
     }
 
+    // Preparar payload para HMAC si es necesario
+    const payload = customPayload || (Object.keys(generatedPayload).length > 0 ? JSON.stringify(generatedPayload, null, 2) : "")
+    
     // Aplicar seguridad según el tipo seleccionado
     switch (securityType) {
       case "bearer":
@@ -403,7 +464,7 @@ export function WebhookCurlTester({ webhook, onTestDataReceived }: WebhookCurlTe
         }
         break
       case "hmac":
-        if (generatedSecret && !isGetOnly) {
+        if (generatedSecret && !isGetOnly && payload) {
           try {
             const signature = await calculateHmacSignature(payload, generatedSecret)
             curlCommand += ` \\\n  -H "X-Signature: ${signature}"`
@@ -414,7 +475,7 @@ export function WebhookCurlTester({ webhook, onTestDataReceived }: WebhookCurlTe
           curlCommand += ` \\\n  -H "X-Signature: sha256=<calculated_from_url>"`
         }
         break
-      case "apikey":
+      case "api_key":
         if (apiKey) {
           curlCommand += ` \\\n  -H "X-API-Key: ${apiKey}"`
         }
@@ -431,7 +492,7 @@ export function WebhookCurlTester({ webhook, onTestDataReceived }: WebhookCurlTe
     }
     
     // Payload para métodos POST/PUT/PATCH
-    if (!isGetOnly) {
+    if (!isGetOnly && payload) {
       const escapedPayload = payload.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
       curlCommand += ` \\\n  -d '${escapedPayload}'`
     }
@@ -444,6 +505,13 @@ export function WebhookCurlTester({ webhook, onTestDataReceived }: WebhookCurlTe
     const token = `wh_${Math.random().toString(36).substring(2, 15)}${Math.random().toString(36).substring(2, 15)}`
     setGeneratedToken(token)
     toast.success("Bearer token generado")
+    // Notificar cambio al padre
+    onAuthChange?.({
+      type: "bearer",
+      token: token,
+      secret: generatedSecret,
+      apiKey: apiKey
+    })
     return token
   }
 
@@ -451,6 +519,13 @@ export function WebhookCurlTester({ webhook, onTestDataReceived }: WebhookCurlTe
     const secret = `hmac_${Math.random().toString(36).substring(2, 20)}${Math.random().toString(36).substring(2, 20)}`
     setGeneratedSecret(secret)
     toast.success("HMAC secret generado")
+    // Notificar cambio al padre
+    onAuthChange?.({
+      type: "hmac",
+      token: generatedToken,
+      secret: secret,
+      apiKey: apiKey
+    })
     return secret
   }
 
@@ -458,6 +533,13 @@ export function WebhookCurlTester({ webhook, onTestDataReceived }: WebhookCurlTe
     const key = `ak_${Math.random().toString(36).substring(2, 16)}${Math.random().toString(36).substring(2, 16)}`
     setApiKey(key)
     toast.success("API Key generada")
+    // Notificar cambio al padre
+    onAuthChange?.({
+      type: "api_key",
+      token: generatedToken,
+      secret: generatedSecret,
+      apiKey: key
+    })
     return key
   }
 
@@ -483,7 +565,78 @@ export function WebhookCurlTester({ webhook, onTestDataReceived }: WebhookCurlTe
 
   const handleCopyCurl = async () => {
     await navigator.clipboard.writeText(curlCommand)
+    setShowCopiedTooltip(true)
+    setTimeout(() => setShowCopiedTooltip(false), 2000)
     toast.success("Comando curl copiado al portapapeles")
+  }
+
+  const handleCopyJson = async () => {
+    await navigator.clipboard.writeText(customPayload)
+    setShowCopiedJsonTooltip(true)
+    setTimeout(() => setShowCopiedJsonTooltip(false), 2000)
+    toast.success("JSON copiado al portapapeles")
+  }
+
+  // NUEVA: Función para crear comando cURL desde tabla seleccionada
+  const createCurlFromTable = async () => {
+    if (!selectedModel || selectedTableFields.length === 0) {
+      toast.error("Selecciona una tabla primero")
+      return
+    }
+
+    // Generar campos automáticamente desde la tabla (incluyendo todos los campos)
+    const newBodyFields = selectedTableFields
+      .filter(field => {
+        // Excluir campos que típicamente son automáticos
+        const autoFields = ['id', 'createdAt', 'updatedAt', 'systemId']
+        return !autoFields.includes(field.name)
+      })
+      .map((field, index) => ({
+        id: Date.now() + index,
+        key: field.name,
+        value: getExampleValue(field.type, field.name)
+      }))
+
+    // Añadir a los campos existentes o reemplazarlos
+    setBodyBuilderFields(newBodyFields)
+    setHasAutoMapped(false) // Reset auto-mapeo para permitir nueva ejecución
+
+    // Esperar un tick para que se actualice el estado
+    setTimeout(async () => {
+      try {
+        // Regenerar comando cURL
+        const command = await generateCurl()
+        setCurlCommand(command)
+        
+        // Crear datos de prueba para enviar al mapeo
+        const testPayload = newBodyFields.reduce((acc, field) => {
+          if (field.key && field.value) {
+            try {
+              acc[field.key] = JSON.parse(field.value);
+            } catch {
+              acc[field.key] = field.value;
+            }
+          }
+          return acc;
+        }, {} as Record<string, any>);
+
+        // Enviar datos al componente padre para que actualice el mapeo
+        onTestDataReceived?.({
+          requestPayload: testPayload,
+          status: 200,
+          success: true,
+          timestamp: new Date().toISOString(),
+          method: 'POST',
+          synthetic: true, // Marcar como datos sintéticos
+          selectedTable: selectedModel // Añadir la tabla seleccionada
+        })
+
+        toast.success(`🚀 Comando cURL creado para tabla ${selectedModel} con ${newBodyFields.length} campos`)
+      } catch (error) {
+        console.error('Error creating cURL from table:', error)
+        toast.error("Error al crear comando cURL")
+      }
+    }, 100)
   }
 
   // Función para mapear automáticamente los datos
@@ -646,9 +799,13 @@ export function WebhookCurlTester({ webhook, onTestDataReceived }: WebhookCurlTe
     setExecutionLogs(["🚀 Iniciando prueba del webhook..."])
     
     try {
-      const example = getCurrentExample()
+      // Determinar método HTTP (usar el primero permitido)
+      const method = allowedMethods.includes('POST') ? 'POST' : 
+                     allowedMethods.includes('PUT') ? 'PUT' :
+                     allowedMethods.includes('PATCH') ? 'PATCH' :
+                     allowedMethods.includes('GET') ? 'GET' : 'POST'
       
-      setExecutionLogs(prev => [...prev, `📡 Preparando petición ${example.method}...`])
+      setExecutionLogs(prev => [...prev, `📡 Preparando petición ${method}...`])
       
       // Generar el comando cURL que se enviará
       const curlCommand = await generateCurl()
@@ -662,10 +819,16 @@ export function WebhookCurlTester({ webhook, onTestDataReceived }: WebhookCurlTe
       
       // Usar el payload generado desde el mapeo
       const webhookMapping = webhook.dataMapping?.fieldMappings
-      let generatedPayload = example.payload
+      let generatedPayload: any = {}
       
-      if (webhookMapping && !isGetOnly) {
-        generatedPayload = {}
+      if (bodyBuilderFields.length > 0 && bodyBuilderFields.some(f => f.key && f.value)) {
+        // Usar campos del constructor de body
+        bodyBuilderFields.forEach(field => {
+          if (field.key && field.value) {
+            generatedPayload[field.key] = field.value
+          }
+        })
+      } else if (webhookMapping && !isGetOnly) {
         Object.entries(webhookMapping).forEach(([targetField, mapping]: [string, any]) => {
           const sourceField = mapping.source
           if (mapping.required !== false) {
@@ -691,6 +854,13 @@ export function WebhookCurlTester({ webhook, onTestDataReceived }: WebhookCurlTe
             }
           }
         })
+      } else {
+        // Payload por defecto simple
+        generatedPayload = {
+          timestamp: new Date().toISOString(),
+          device_id: "test-device",
+          status: "test-value"
+        }
       }
       
       // ===== USAR URL DINÁMICA CON PUERTO CORRECTO =====
@@ -700,7 +870,11 @@ export function WebhookCurlTester({ webhook, onTestDataReceived }: WebhookCurlTe
       
       let url = dynamicBaseUrl
       let requestInit: RequestInit = {
-        method: example.method
+        method: method
+      }
+      
+      if (isGetOnly || method === 'GET') {
+        // Para GET, construir URL con parámetros
       }
       
       if (isGetOnly) {
@@ -723,7 +897,7 @@ export function WebhookCurlTester({ webhook, onTestDataReceived }: WebhookCurlTe
           })
           params = paramsList.length > 0 ? "?" + paramsList.join("&") : ""
         } else {
-          params = example.urlParams || ""
+          params = "?power=250.5&voltage=220.0&current=1.14&is_on=true&device_id=shelly-test-device"
         }
         
         url = `${dynamicBaseUrl}${params}`
@@ -814,7 +988,7 @@ export function WebhookCurlTester({ webhook, onTestDataReceived }: WebhookCurlTe
         success: response.ok,
         requestPayload,
         timestamp: new Date().toISOString(),
-        method: isGetOnly ? "GET" : example.method,
+        method: method,
         url: url
       }
       
@@ -885,10 +1059,7 @@ export function WebhookCurlTester({ webhook, onTestDataReceived }: WebhookCurlTe
     }
   }
 
-  const handlePayloadChange = (event: string) => {
-    setSelectedEvent(event)
-    setCustomPayload("") // Reset custom payload when changing event
-  }
+  // Función eliminada: handlePayloadChange ya no es necesaria
 
   const handleStopExecution = () => {
     if (abortController) {
@@ -1059,56 +1230,6 @@ export function WebhookCurlTester({ webhook, onTestDataReceived }: WebhookCurlTe
         </TabsList>
 
         <TabsContent value="generator" className="space-y-4">
-          {/* Selector de dispositivo */}
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label>Tipo de Dispositivo</Label>
-              <Select value={selectedDevice} onValueChange={(value: keyof typeof DEVICE_EXAMPLES) => setSelectedDevice(value)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.entries(DEVICE_EXAMPLES).map(([key, device]) => (
-                    <SelectItem key={key} value={key}>
-                      <div className="flex gap-2 items-center">
-                        {device.icon}
-                        {device.name}
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {!isGetOnly && (
-              <div className="space-y-2">
-                <Label>Evento</Label>
-                <Select value={selectedEvent} onValueChange={handlePayloadChange}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(DEVICE_EXAMPLES[selectedDevice].events)
-                      .filter(([key, event]: [string, any]) => allowedMethods.includes(event.method))
-                      .map(([key, event]: [string, any]) => (
-                        <SelectItem key={key} value={key}>
-                          <Badge variant="outline" className="mr-2">{event.method}</Badge>
-                          {key.replace(/_/g, ' ').toUpperCase()}
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-            
-            {isGetOnly && (
-              <div className="p-3 bg-blue-50 rounded border border-blue-200 dark:bg-blue-950/20">
-                <p className="text-sm text-blue-800 dark:text-blue-200">
-                  <strong>Webhook GET:</strong> Los datos se envían como parámetros en la URL (ideal para dispositivos IoT)
-                </p>
-              </div>
-            )}
-          </div>
 
           {/* Configuración de Seguridad */}
           <Card>
@@ -1129,7 +1250,15 @@ export function WebhookCurlTester({ webhook, onTestDataReceived }: WebhookCurlTe
                   <Button
                     variant={securityType === "none" ? "default" : "outline"}
                     size="sm"
-                    onClick={() => setSecurityType("none")}
+                    onClick={() => {
+                      setSecurityType("none")
+                      onAuthChange?.({
+                        type: "none",
+                        token: generatedToken,
+                        secret: generatedSecret,
+                        apiKey: apiKey
+                      })
+                    }}
                     className="px-3 py-2 h-auto"
                   >
                     <div className="text-center">
@@ -1141,7 +1270,15 @@ export function WebhookCurlTester({ webhook, onTestDataReceived }: WebhookCurlTe
                   <Button
                     variant={securityType === "bearer" ? "default" : "outline"}
                     size="sm"
-                    onClick={() => setSecurityType("bearer")}
+                    onClick={() => {
+                      setSecurityType("bearer")
+                      onAuthChange?.({
+                        type: "bearer",
+                        token: generatedToken,
+                        secret: generatedSecret,
+                        apiKey: apiKey
+                      })
+                    }}
                     className="px-3 py-2 h-auto"
                   >
                     <div className="text-center">
@@ -1153,7 +1290,15 @@ export function WebhookCurlTester({ webhook, onTestDataReceived }: WebhookCurlTe
                   <Button
                     variant={securityType === "hmac" ? "default" : "outline"}
                     size="sm"
-                    onClick={() => setSecurityType("hmac")}
+                    onClick={() => {
+                      setSecurityType("hmac")
+                      onAuthChange?.({
+                        type: "hmac",
+                        token: generatedToken,
+                        secret: generatedSecret,
+                        apiKey: apiKey
+                      })
+                    }}
                     className="px-3 py-2 h-auto"
                   >
                     <div className="text-center">
@@ -1163,9 +1308,17 @@ export function WebhookCurlTester({ webhook, onTestDataReceived }: WebhookCurlTe
                   </Button>
                   
                   <Button
-                    variant={securityType === "apikey" ? "default" : "outline"}
+                    variant={securityType === "api_key" ? "default" : "outline"}
                     size="sm"
-                    onClick={() => setSecurityType("apikey")}
+                    onClick={() => {
+                      setSecurityType("api_key")
+                      onAuthChange?.({
+                        type: "api_key",
+                        token: generatedToken,
+                        secret: generatedSecret,
+                        apiKey: apiKey
+                      })
+                    }}
                     className="px-3 py-2 h-auto"
                   >
                     <div className="text-center">
@@ -1227,7 +1380,7 @@ export function WebhookCurlTester({ webhook, onTestDataReceived }: WebhookCurlTe
                 </div>
               )}
 
-              {securityType === "apikey" && (
+              {securityType === "api_key" && (
                 <div className="space-y-2">
                   <Label>API Key</Label>
                   <div className="flex gap-2">
@@ -1315,92 +1468,211 @@ export function WebhookCurlTester({ webhook, onTestDataReceived }: WebhookCurlTe
             <CardHeader>
               <CardTitle className="flex gap-2 items-center text-base">
                 <Edit className="w-4 h-4" />
-                Configuración Manual
+                Datos de la Petición
               </CardTitle>
               <CardDescription>
-                Define manualmente los datos que se enviarán (sobrescribe el ejemplo automático)
+                Define los datos que se enviarán en el body (para POST/PUT) o como parámetros (para GET).
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {isGetOnly ? (
-                <div className="space-y-3">
-                  <Label>Parámetros GET (query string)</Label>
-                  <div className="space-y-2">
-                    {Object.entries(customGetParams).map(([key, value], index) => (
-                      <div key={index} className="flex gap-2">
-                        <Input
-                          placeholder="Parámetro"
-                          value={key}
-                          onChange={(e) => {
-                            const newParams = { ...customGetParams }
-                            delete newParams[key]
-                            newParams[e.target.value] = value
-                            setCustomGetParams(newParams)
-                          }}
-                          className="flex-1"
-                        />
-                        <Input
-                          placeholder="Valor"
-                          value={value}
-                          onChange={(e) => {
-                            setCustomGetParams(prev => ({ ...prev, [key]: e.target.value }))
-                          }}
-                          className="flex-1"
-                        />
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            const newParams = { ...customGetParams }
-                            delete newParams[key]
-                            setCustomGetParams(newParams)
-                          }}
-                        >
-                          ×
-                        </Button>
-                      </div>
-                    ))}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setCustomGetParams(prev => ({ ...prev, "": "" }))}
-                    >
-                      + Añadir Parámetro
-                    </Button>
-                  </div>
-                  
-                  {/* Preview URL */}
-                  <div className="p-3 bg-blue-50 rounded border border-blue-200 dark:bg-blue-950/20">
-                    <Label className="text-xs font-medium">URL resultante:</Label>
-                    <code className="block p-2 mt-1 font-mono text-xs break-all bg-white rounded border dark:bg-blue-950/50">
-                      {webhook.url}
-                      {Object.keys(customGetParams).length > 0 && Object.keys(customGetParams).some(k => k && customGetParams[k]) 
-                        ? `?${Object.entries(customGetParams)
-                            .filter(([k, v]) => k && v)
-                            .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
-                            .join('&')}`
-                        : getCurrentExample().urlParams || ""
-                      }
-                    </code>
-                  </div>
+                <div className="p-4 text-sm text-center text-muted-foreground">
+                  Los webhooks de tipo GET envían datos a través de parámetros en la URL. No se utiliza un body.
                 </div>
               ) : (
-                <div className="space-y-3">
-                  <Label>Payload JSON</Label>
-                  <Textarea
-                    placeholder="Escribe tu JSON personalizado o deja vacío para usar el ejemplo automático"
-                    value={customPayload}
-                    onChange={(e) => setCustomPayload(e.target.value)}
-                    className="min-h-[200px] font-mono text-sm"
-                  />
-                  {!customPayload && (
-                    <div className="p-3 rounded border bg-muted">
-                      <Label className="text-xs font-medium">Ejemplo automático:</Label>
-                      <pre className="mt-1 text-xs text-muted-foreground">
-                        {JSON.stringify(getCurrentExample().payload, null, 2)}
-                      </pre>
+                <div className="space-y-4">
+                  {/* Selector de tipo de contenido */}
+                  <div className="space-y-3">
+                    <Label>Tipo de Contenido</Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button
+                        variant={contentType === "json" ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => {
+                          setContentType("json")
+                          // Actualizar Content-Type automáticamente
+                          setCustomHeaders(prev => ({
+                            ...prev,
+                            "Content-Type": "application/json"
+                          }))
+                        }}
+                        className="px-3 py-2 h-auto"
+                      >
+                        <div className="text-center">
+                          <div className="text-xs font-medium">JSON</div>
+                          <div className="text-xs text-muted-foreground">Recomendado</div>
+                        </div>
+                      </Button>
+                      
+                      <Button
+                        variant={contentType === "urlencoded" ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => {
+                          setContentType("urlencoded")
+                          // Actualizar Content-Type automáticamente
+                          setCustomHeaders(prev => ({
+                            ...prev,
+                            "Content-Type": "application/x-www-form-urlencoded"
+                          }))
+                        }}
+                        className="px-3 py-2 h-auto"
+                      >
+                        <div className="text-center">
+                          <div className="text-xs font-medium">URL-encoded</div>
+                          <div className="text-xs text-muted-foreground">Formularios</div>
+                        </div>
+                      </Button>
                     </div>
-                  )}
+                    <p className="text-xs text-muted-foreground">
+                      💡 Internamente siempre se maneja como JSON. Si recibes URL-encoded se convierte automáticamente.
+                    </p>
+                  </div>
+                  <Separator />
+                  {/* Constructor Visual Mejorado */}
+                  <div className="space-y-3">
+                    <Label>Asistente de Payload desde Tabla</Label>
+                    <select 
+                      value={selectedModel} 
+                      onChange={(e) => handleModelSelect(e.target.value)}
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <option value="">Selecciona una tabla para autocompletar...</option>
+                      <option value="none">-- Ninguna --</option>
+                      {prismaModels.map(model => (
+                        <option key={model} value={model}>{model}</option>
+                      ))}
+                    </select>
+                    
+                    {/* Información de tabla seleccionada */}
+                    {selectedTableFields.length > 0 && (
+                      <Card className="p-4 bg-blue-50 border-blue-200 dark:bg-blue-950/20">
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <h4 className="font-medium text-blue-900 dark:text-blue-100">
+                                Tabla: {selectedModel}
+                              </h4>
+                              <p className="text-sm text-blue-700 dark:text-blue-300">
+                                {selectedTableFields.length} campos disponibles
+                              </p>
+                            </div>
+                            <Button 
+                              variant="default" 
+                              size="sm" 
+                              onClick={createCurlFromTable}
+                              className="gap-1 bg-blue-600 hover:bg-blue-700"
+                            >
+                              <Wand2 className="w-3 h-3" />
+                              Crear Comando cURL
+                            </Button>
+                          </div>
+                          
+                          <div className="space-y-2">
+                            <Label className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                              Campos disponibles ({selectedTableFields.filter(f => {
+                                const autoFields = ['id', 'createdAt', 'updatedAt', 'systemId']
+                                return !autoFields.includes(f.name)
+                              }).length} campos para mapear):
+                            </Label>
+                            <div className="text-xs bg-white dark:bg-gray-900 p-3 rounded border max-h-24 overflow-y-auto">
+                              <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                                {selectedTableFields
+                                  .filter(field => {
+                                    const autoFields = ['id', 'createdAt', 'updatedAt', 'systemId']
+                                    return !autoFields.includes(field.name)
+                                  })
+                                  .map((field) => (
+                                    <div key={field.name} className="flex items-center justify-between">
+                                      <div className="flex items-center gap-1">
+                                        <code className="text-blue-600 font-medium text-xs">{field.name}</code>
+                                        {!field.isOptional && <span className="text-red-500 text-xs">*</span>}
+                                        {field.isOptional && <span className="text-orange-500 text-xs">?</span>}
+                                      </div>
+                                      <span className="text-gray-500 text-xs">{field.type}</span>
+                                    </div>
+                                  ))
+                                }
+                              </div>
+                            </div>
+                            <p className="text-xs text-blue-600 dark:text-blue-400">
+                              <span className="text-red-500">*</span> = Requerido, 
+                              <span className="text-orange-500">?</span> = Opcional
+                            </p>
+                          </div>
+                        </div>
+                      </Card>
+                    )}
+                  </div>
+                  <Separator />
+                  <div className="space-y-3">
+                    <Label>Constructor de Body</Label>
+                    {bodyBuilderFields.length === 0 ? (
+                      <div className="text-center py-4 text-muted-foreground border-2 border-dashed rounded">
+                        <p className="text-sm">No hay campos configurados</p>
+                        <p className="text-xs">Selecciona una tabla y haz clic en "Crear Comando cURL" o añade campos manualmente</p>
+                      </div>
+                    ) : (
+                      bodyBuilderFields.map((field, index) => (
+                        <div key={field.id} className="flex gap-2 items-center">
+                          <Input placeholder="nombre_del_campo" value={field.key} onChange={(e) => {
+                            const newFields = [...bodyBuilderFields];
+                            newFields[index].key = e.target.value;
+                            setBodyBuilderFields(newFields);
+                          }}/>
+                          <Input placeholder="valor" value={field.value} onChange={(e) => {
+                            const newFields = [...bodyBuilderFields];
+                            newFields[index].value = e.target.value;
+                            setBodyBuilderFields(newFields);
+                          }}/>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            onClick={() => {
+                              const newFields = bodyBuilderFields.filter(f => f.id !== field.id)
+                              setBodyBuilderFields(newFields.length === 0 ? [{ id: Date.now(), key: '', value: '' }] : newFields)
+                            }}
+                            disabled={bodyBuilderFields.length === 1 && !field.key && !field.value}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      ))
+                    )}
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => {
+                        const newField = { id: Date.now(), key: '', value: '' }
+                        setBodyBuilderFields(bodyBuilderFields.length === 0 ? [newField] : [...bodyBuilderFields, newField])
+                      }}
+                    >
+                      <Plus className="mr-2 w-4 h-4"/>Añadir Campo
+                    </Button>
+                  </div>
+                  <Separator />
+                  {/* Previsualización JSON */}
+                  <div>
+                    <div className="flex justify-between items-center mb-2">
+                      <Label>Previsualización del Payload JSON</Label>
+                      {customPayload && (
+                        <Button size="sm" variant="outline" onClick={handleCopyJson} className="relative">
+                          <Copy className="mr-1 w-3 h-3" />
+                          Copiar
+                          {showCopiedJsonTooltip && (
+                            <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs px-2 py-1 rounded whitespace-nowrap">
+                              ¡Copiado!
+                            </div>
+                          )}
+                        </Button>
+                      )}
+                    </div>
+                    <Textarea
+                      readOnly
+                      value={customPayload}
+                      className="min-h-[150px] font-mono text-xs bg-muted/50"
+                      placeholder="El JSON se generará aquí..."
+                    />
+                  </div>
                 </div>
               )}
             </CardContent>
@@ -1413,9 +1685,14 @@ export function WebhookCurlTester({ webhook, onTestDataReceived }: WebhookCurlTe
                 <Terminal className="w-4 h-4" />
                 Comando cURL
               </CardTitle>
-              <Button size="sm" variant="outline" onClick={handleCopyCurl}>
+              <Button size="sm" variant="outline" onClick={handleCopyCurl} className="relative">
                 <Copy className="mr-1 w-3 h-3" />
                 Copiar
+                {showCopiedTooltip && (
+                  <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs px-2 py-1 rounded whitespace-nowrap">
+                    ¡Copiado!
+                  </div>
+                )}
               </Button>
             </CardHeader>
             <CardContent>
@@ -1452,10 +1729,15 @@ export function WebhookCurlTester({ webhook, onTestDataReceived }: WebhookCurlTe
                     size="sm"
                     variant="outline"
                     onClick={handleCopyCurl}
-                    className="gap-1"
+                    className="gap-1 relative"
                   >
                     <Copy className="w-3 h-3" />
                     Copiar
+                    {showCopiedTooltip && (
+                      <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs px-2 py-1 rounded whitespace-nowrap">
+                        ¡Copiado!
+                      </div>
+                    )}
                   </Button>
                   <Button
                     size="sm"
