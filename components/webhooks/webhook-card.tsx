@@ -93,6 +93,11 @@ export function WebhookCard({ webhook, onWebhookUpdate }: WebhookCardProps) {
   const successRate = webhook.totalCalls > 0 
     ? Math.round((webhook.successfulCalls / webhook.totalCalls) * 100)
     : 0;
+  
+  // Asegurar valores numéricos válidos
+  const totalCalls = webhook.totalCalls || 0;
+  const successfulCalls = webhook.successfulCalls || 0;
+  const errorCount = totalCalls - successfulCalls;
 
   const directionStyles = getDirectionStyles(webhook.direction);
 
@@ -103,6 +108,11 @@ export function WebhookCard({ webhook, onWebhookUpdate }: WebhookCardProps) {
   };
 
   const handleToggleActive = async () => {
+    // ✅ RENDERIZACIÓN OPTIMISTA - Actualizar UI inmediatamente
+    const previousState = isActive
+    const newState = !isActive
+    setIsActive(newState)
+    
     try {
       const response = await fetch(`/api/internal/webhooks/${webhook.id}`, {
         method: 'PATCH',
@@ -110,7 +120,7 @@ export function WebhookCard({ webhook, onWebhookUpdate }: WebhookCardProps) {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          isActive: !isActive
+          isActive: newState
         })
       })
 
@@ -118,9 +128,13 @@ export function WebhookCard({ webhook, onWebhookUpdate }: WebhookCardProps) {
         throw new Error('Error al actualizar webhook')
       }
 
-      setIsActive(!isActive)
-      toast.success(`Webhook ${!isActive ? 'activado' : 'desactivado'} correctamente`)
+      toast.success(`Webhook ${newState ? 'activado' : 'desactivado'} correctamente`)
+      
+      // Actualizar la lista de webhooks
+      onWebhookUpdate?.()
     } catch (error) {
+      // ❌ ROLLBACK - Revertir SOLO en caso de error
+      setIsActive(previousState)
       toast.error('Error al cambiar el estado del webhook')
       console.error('Error:', error)
     }
@@ -198,9 +212,9 @@ export function WebhookCard({ webhook, onWebhookUpdate }: WebhookCardProps) {
             
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                  <MoreHorizontal className="h-3 w-3" />
-                </Button>
+                            <Button variant="ghost" size="sm" className="h-6 w-6 p-0 hover:bg-transparent focus:ring-0 focus:ring-offset-0 border-0 outline-none shadow-none">
+              <MoreHorizontal className="h-3 w-3" />
+            </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-44">
                 <DropdownMenuItem onClick={handleCopyUrl} className="text-xs">
@@ -247,12 +261,12 @@ export function WebhookCard({ webhook, onWebhookUpdate }: WebhookCardProps) {
           
           {/* Stats en una línea */}
           <div className="flex items-center justify-between text-xs">
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className="text-xs px-1.5 py-0.5 h-5 bg-blue-50 text-blue-700 border-blue-200">
-                Calls: {webhook.totalCalls || 0}
+            <div className="flex items-center gap-1 flex-wrap">
+              <Badge variant="outline" className="text-xs px-1 py-0.5 h-4 bg-blue-50 text-blue-700 border-blue-200 whitespace-nowrap">
+                Calls: {totalCalls}
               </Badge>
               <Badge variant="outline" className={cn(
-                "text-xs px-1.5 py-0.5 h-5",
+                "text-xs px-1 py-0.5 h-4 whitespace-nowrap",
                 successRate >= 95 ? "bg-green-50 text-green-700 border-green-200" :
                 successRate >= 80 ? "bg-yellow-50 text-yellow-700 border-yellow-200" :
                 "bg-red-50 text-red-700 border-red-200"
@@ -260,12 +274,12 @@ export function WebhookCard({ webhook, onWebhookUpdate }: WebhookCardProps) {
                 Success: {successRate}%
               </Badge>
               <Badge variant="outline" className={cn(
-                "text-xs px-1.5 py-0.5 h-5",
-                (webhook.totalCalls - webhook.successfulCalls) > 0 
+                "text-xs px-1 py-0.5 h-4 whitespace-nowrap",
+                errorCount > 0 
                   ? "bg-red-50 text-red-700 border-red-200"
                   : "bg-green-50 text-green-700 border-green-200"
               )}>
-                Errors: {webhook.totalCalls - webhook.successfulCalls}
+                Errors: {errorCount}
               </Badge>
             </div>
             {webhook.lastTriggered && (
@@ -281,7 +295,7 @@ export function WebhookCard({ webhook, onWebhookUpdate }: WebhookCardProps) {
             <code className="flex-1 text-muted-foreground whitespace-nowrap overflow-x-auto">
               {`${window.location?.origin}/api/webhooks/${webhook.id}/${webhook.slug}`}
             </code>
-            <Button variant="ghost" size="sm" className="h-4 w-4 p-0 flex-shrink-0" onClick={handleCopyUrl}>
+            <Button variant="ghost" size="sm" className="h-4 w-4 p-0 flex-shrink-0 hover:bg-transparent focus:ring-0 focus:ring-offset-0 border-0 outline-none shadow-none" onClick={handleCopyUrl}>
               <Copy className="h-2.5 w-2.5" />
             </Button>
           </div>

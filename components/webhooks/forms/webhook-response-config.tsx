@@ -1,10 +1,11 @@
 "use client"
 
-import { useState } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { useState, useEffect } from "react"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
@@ -15,22 +16,14 @@ import {
   Database,
   Code,
   Settings,
-  Info
+  Info,
+  FileJson,
+  Server
 } from "lucide-react"
 
 interface WebhookResponseConfigProps {
-  data: {
-    responseConfig?: {
-      type: "simple" | "custom_json" | "created_record"
-      statusCode?: number
-      customJson?: string
-      includeId?: boolean
-      includeTimestamps?: boolean
-      customFields?: string[]
-      errorHandling?: "standard" | "custom"
-    }
-  }
-  onChange: (data: any) => void
+  initialConfig: any
+  onChange: (newConfig: any) => void
 }
 
 const RESPONSE_TYPES = [
@@ -57,202 +50,152 @@ const RESPONSE_TYPES = [
   }
 ]
 
-export function WebhookResponseConfig({ data, onChange }: WebhookResponseConfigProps) {
-  const [responseType, setResponseType] = useState(data.responseConfig?.type || "simple")
-  const [customJson, setCustomJson] = useState(data.responseConfig?.customJson || '{\n  "status": "success",\n  "message": "Data received successfully"\n}')
-  const [includeId, setIncludeId] = useState<boolean>(data.responseConfig?.includeId ?? true)
-  const [includeTimestamps, setIncludeTimestamps] = useState<boolean>(data.responseConfig?.includeTimestamps ?? true)
-  const [customFields, setCustomFields] = useState<string[]>(data.responseConfig?.customFields || [])
+export function WebhookResponseConfig({ initialConfig, onChange }: WebhookResponseConfigProps) {
+  const [config, setConfig] = useState({
+    type: "simple",
+    successStatusCode: 200,
+    errorStatusCode: 400,
+    successResponseBody: "",
+    errorResponseBody: "",
+    customJson: "{\n  \"status\": \"success\",\n  \"message\": \"Datos recibidos correctamente\"\n}",
+    includeRecordId: true,
+    includeTimestamps: true,
+    includeBody: true,
+    ...initialConfig
+  })
 
-  const handleConfigChange = (updates: any) => {
-    const newConfig = {
-      ...data.responseConfig,
-      ...updates
-    }
-    
-    onChange({
-      ...data,
-      responseConfig: newConfig
-    })
+  useEffect(() => {
+    onChange(config)
+  }, [config])
+
+  const handleSelectChange = (value: string) => {
+    setConfig(prev => ({ ...prev, type: value }))
   }
 
-  const handleResponseTypeChange = (type: string) => {
-    setResponseType(type as any)
-    handleConfigChange({ type })
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value, type } = e.target
+    const finalValue = type === 'number' ? parseInt(value, 10) : value
+    setConfig(prev => ({ ...prev, [name]: finalValue }))
+  }
+  
+  const handleSwitchChange = (checked: boolean, name: string) => {
+    setConfig(prev => ({ ...prev, [name]: checked }))
   }
 
-  const selectedType = RESPONSE_TYPES.find(t => t.value === responseType)
+  const selectedType = RESPONSE_TYPES.find(t => t.value === config.type)
 
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Settings className="h-5 w-5" />
-            Configuración de Respuestas
-          </CardTitle>
-          <CardDescription>
-            Define qué devuelve el webhook cuando recibe datos correctamente
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {/* Selector de tipo de respuesta */}
-          <div className="space-y-4">
-            <Label className="text-base font-medium">Tipo de Respuesta</Label>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              {RESPONSE_TYPES.map((type) => {
-                const Icon = type.icon
-                const isSelected = responseType === type.value
-                
-                return (
-                  <Card 
-                    key={type.value}
-                    className={`cursor-pointer transition-all hover:shadow-md ${
-                      isSelected ? 'ring-2 ring-primary bg-primary/5' : ''
-                    }`}
-                    onClick={() => handleResponseTypeChange(type.value)}
-                  >
-                    <CardContent className="p-4">
-                      <div className="flex items-start gap-3">
-                        <Icon className={`h-5 w-5 mt-0.5 ${
-                          isSelected ? 'text-primary' : 'text-muted-foreground'
-                        }`} />
-                        <div className="space-y-1">
-                          <div className="font-medium text-sm">{type.label}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {type.description}
-                          </div>
-                          <code className="text-xs bg-muted px-2 py-1 rounded block mt-2">
-                            {type.example}
-                          </code>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                )
-              })}
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Server className="h-5 w-5" />
+          Configuración de Respuesta
+        </CardTitle>
+        <CardDescription>
+          Define qué debe devolver el webhook al recibir una petición.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="space-y-2">
+          <Label>Tipo de Respuesta</Label>
+          <Select value={config.type} onValueChange={handleSelectChange}>
+            <SelectTrigger>
+              <SelectValue placeholder="Selecciona un tipo de respuesta..." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="simple">
+                <div className="flex items-center gap-2">
+                  <Code className="w-4 h-4" />
+                  <span>Respuesta Simple (Solo código de estado)</span>
+                </div>
+              </SelectItem>
+              <SelectItem value="created_record">
+                <div className="flex items-center gap-2">
+                  <Settings className="w-4 h-4" />
+                  <span>Devolver Registro Creado</span>
+                </div>
+              </SelectItem>
+              <SelectItem value="custom_json">
+                <div className="flex items-center gap-2">
+                  <FileJson className="w-4 h-4" />
+                  <span>JSON Personalizado</span>
+                </div>
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {config.type === 'simple' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="successStatusCode">Código de Éxito (2xx)</Label>
+              <Input
+                id="successStatusCode"
+                name="successStatusCode"
+                type="number"
+                value={config.successStatusCode}
+                onChange={handleInputChange}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="errorStatusCode">Código de Error (4xx/5xx)</Label>
+              <Input
+                id="errorStatusCode"
+                name="errorStatusCode"
+                type="number"
+                value={config.errorStatusCode}
+                onChange={handleInputChange}
+              />
             </div>
           </div>
-
-          <Separator />
-
-          {/* Configuración específica por tipo */}
-          {responseType === "custom_json" && (
-            <div className="space-y-4">
-              <Label className="text-base font-medium">JSON Personalizado</Label>
-              <Textarea
-                value={customJson}
-                onChange={(e) => {
-                  setCustomJson(e.target.value)
-                  handleConfigChange({ customJson: e.target.value })
-                }}
-                placeholder="Escribe tu respuesta JSON personalizada..."
-                className="font-mono text-xs min-h-[120px]"
+        )}
+        
+        {config.type === 'created_record' && (
+          <div className="space-y-4 p-4 border rounded-md">
+            <p className="text-sm text-muted-foreground">
+              El webhook devolverá un JSON con el ID y las marcas de tiempo del registro creado en la base de datos.
+            </p>
+            <div className="flex items-center space-x-2">
+              <Switch 
+                id="includeRecordId" 
+                checked={config.includeRecordId} 
+                onCheckedChange={(checked) => handleSwitchChange(checked, "includeRecordId")}
               />
-              <div className="text-xs text-muted-foreground">
-                💡 Puedes usar variables como <code>{`{{appointmentId}}`}</code>, <code>{`{{deviceId}}`}</code>, etc.
-              </div>
+              <Label htmlFor="includeRecordId">Incluir ID del registro</Label>
             </div>
-          )}
-
-          {responseType === "created_record" && (
-            <div className="space-y-6">
-              <div className="space-y-4">
-                <Label className="text-base font-medium">Configuración del Registro</Label>
-                
-                {/* Incluir ID */}
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label className="text-sm">Incluir ID único</Label>
-                    <div className="text-xs text-muted-foreground">
-                      Incluir el ID generado (CUID) del registro
-                    </div>
-                  </div>
-                  <Switch
-                    checked={includeId}
-                    onCheckedChange={(checked) => {
-                      setIncludeId(checked)
-                      handleConfigChange({ includeId: checked })
-                    }}
-                  />
-                </div>
-
-                {/* Incluir timestamps */}
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label className="text-sm">Incluir timestamps</Label>
-                    <div className="text-xs text-muted-foreground">
-                      Incluir createdAt y updatedAt
-                    </div>
-                  </div>
-                  <Switch
-                    checked={includeTimestamps}
-                    onCheckedChange={(checked) => {
-                      setIncludeTimestamps(checked)
-                      handleConfigChange({ includeTimestamps: checked })
-                    }}
-                  />
-                </div>
-              </div>
-
-              {/* Campos personalizados */}
-              <div className="space-y-3">
-                <Label className="text-sm font-medium">Campos a Incluir (Opcional)</Label>
-                <Textarea
-                  value={customFields.join(", ")}
-                  onChange={(e) => {
-                    const fields = e.target.value.split(",").map(f => f.trim()).filter(Boolean)
-                    setCustomFields(fields)
-                    handleConfigChange({ customFields: fields })
-                  }}
-                  placeholder="appointmentId, deviceId, startedAt, energyConsumption"
-                  className="text-xs"
-                />
-                <div className="text-xs text-muted-foreground">
-                  Lista separada por comas. Si está vacío, se incluyen todos los campos.
-                </div>
-              </div>
-
-              {/* Vista previa */}
-              <div className="bg-muted/50 p-4 rounded-lg border-l-4 border-primary">
-                <div className="text-sm font-medium mb-2 flex items-center gap-2">
-                  <Info className="h-4 w-4" />
-                  Vista Previa de Respuesta
-                </div>
-                <pre className="text-xs bg-background p-3 rounded overflow-auto">
-{`{
-  ${includeId ? '"id": "cm4abc123def456",\n  ' : ''}"appointmentId": "apt_789",
-  "deviceId": "shelly-device-123",
-  "startedAt": "2024-12-26T15:30:00Z",
-  "energyConsumption": 264.6,${includeTimestamps ? '\n  "createdAt": "2024-12-26T15:30:00Z",\n  "updatedAt": "2024-12-26T15:30:00Z"' : ''}
-  "status": "success"
-}`}
-                </pre>
-              </div>
+            <div className="flex items-center space-x-2">
+              <Switch 
+                id="includeTimestamps"
+                checked={config.includeTimestamps}
+                onCheckedChange={(checked) => handleSwitchChange(checked, "includeTimestamps")}
+              />
+              <Label htmlFor="includeTimestamps">Incluir `createdAt` y `updatedAt`</Label>
             </div>
-          )}
+            <div className="flex items-center space-x-2">
+              <Switch 
+                id="includeBody"
+                checked={config.includeBody || false}
+                onCheckedChange={(checked) => handleSwitchChange(checked, "includeBody")}
+              />
+              <Label htmlFor="includeBody">Incluir cuerpo completo del registro</Label>
+            </div>
+          </div>
+        )}
 
-          {/* Información adicional */}
-          <Card className="bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
-            <CardContent className="p-4">
-              <div className="flex items-start gap-3">
-                <Info className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5" />
-                <div className="space-y-2">
-                  <div className="font-medium text-blue-900 dark:text-blue-100">
-                    Códigos de Estado HTTP
-                  </div>
-                  <div className="text-sm text-blue-800 dark:text-blue-200 space-y-1">
-                    <div><strong>200 OK:</strong> Datos recibidos y procesados correctamente</div>
-                    <div><strong>400 Bad Request:</strong> Datos inválidos o faltantes</div>
-                    <div><strong>401 Unauthorized:</strong> Fallo en autenticación</div>
-                    <div><strong>500 Internal Error:</strong> Error del servidor</div>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </CardContent>
-      </Card>
-    </div>
+        {config.type === 'custom_json' && (
+          <div className="space-y-2">
+            <Label htmlFor="customJson">Cuerpo del JSON de Respuesta</Label>
+            <Textarea
+              id="customJson"
+              name="customJson"
+              value={config.customJson}
+              onChange={handleInputChange}
+              rows={8}
+              placeholder='{ "status": "ok" }'
+            />
+          </div>
+        )}
+      </CardContent>
+    </Card>
   )
 } 

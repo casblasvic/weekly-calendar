@@ -42,6 +42,7 @@ interface WebhookCurlTesterProps {
     secretKey?: string
     allowedMethods: string[]
     expectedSchema?: any
+    samplePayload?: any; // <-- Payload para reconstruir el estado
     authType?: "none" | "bearer" | "hmac" | "api_key"
     customHeaders?: Record<string, string>
     dataMapping?: {
@@ -56,7 +57,7 @@ interface WebhookCurlTesterProps {
     }
   }
   onTestDataReceived?: (data: any) => void
-  onAuthChange?: (authConfig: { type: "none" | "bearer" | "hmac" | "api_key"; token?: string; secret?: string; apiKey?: string }) => void
+  onConfigChange?: (config: { samplePayload?: any; dataMapping?: { targetTable?: string; }; customHeaders?: Record<string, string>; }) => void;
 }
 
 const DEVICE_EXAMPLES = {
@@ -247,10 +248,9 @@ const getExampleValue = (type: string, fieldName?: string) => {
   }
 };
 
-export function WebhookCurlTester({ webhook, onTestDataReceived, onAuthChange }: WebhookCurlTesterProps) {
+export function WebhookCurlTester({ webhook, onTestDataReceived, onConfigChange }: WebhookCurlTesterProps) {
   // Estados principales
   const [customPayload, setCustomPayload] = useState("")
-
   const [customGetParams, setCustomGetParams] = useState<Record<string, string>>({})
   const [testResults, setTestResults] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -299,14 +299,9 @@ export function WebhookCurlTester({ webhook, onTestDataReceived, onAuthChange }:
   const [selectedTableFields, setSelectedTableFields] = useState<Array<{ name: string; type: string; isOptional: boolean }>>([])
   const [showCopiedTooltip, setShowCopiedTooltip] = useState(false)
   const [showCopiedJsonTooltip, setShowCopiedJsonTooltip] = useState(false)
-  const [hasAutoMapped, setHasAutoMapped] = useState(false) // Nuevo estado para tracking del auto-mapeo
-  
-  // Obtener métodos permitidos del webhook
-  const allowedMethods = webhook.allowedMethods || ["POST"]
-  const isGetOnly = allowedMethods.includes("GET") && allowedMethods.length === 1
-
+  const [isGetOnly, setIsGetOnly] = useState(false);
   const [prismaModels, setPrismaModels] = useState<string[]>([]);
-
+  
   // Inicializar customHeaders con Content-Type automático
   const [customHeaders, setCustomHeaders] = useState<Record<string, string>>(() => {
     const initialHeaders = webhook.customHeaders || {}
@@ -317,7 +312,7 @@ export function WebhookCurlTester({ webhook, onTestDataReceived, onAuthChange }:
     return initialHeaders
   })
 
-  // Cargar modelos de Prisma al montar el componente
+  // Cargar modelos de Prisma al montar el componente (SOLO NOMBRES)
   useEffect(() => {
     const fetchModels = async () => {
       try {
@@ -357,14 +352,16 @@ export function WebhookCurlTester({ webhook, onTestDataReceived, onAuthChange }:
   useEffect(() => {
     const updateCurl = async () => {
       try {
+        // La llamada a generateCurl ahora usará el estado más reciente de customPayload
         const command = await generateCurl()
         setCurlCommand(command)
       } catch (error) {
         console.error('Error generating curl:', error)
       }
     }
+    
     updateCurl()
-  }, [securityType, generatedToken, generatedSecret, apiKey, customHeaders, bodyBuilderFields, customPayload])
+  }, [securityType, generatedToken, generatedSecret, apiKey, customHeaders, customPayload, webhook.url, selectedModel])
 
   // Sincronizar bodyBuilderFields con customPayload SOLO cuando bodyBuilderFields cambia
   useEffect(() => {
@@ -392,6 +389,8 @@ export function WebhookCurlTester({ webhook, onTestDataReceived, onAuthChange }:
     }
   }, [bodyBuilderFields]);
 
+
+
   // Inicializar valores de seguridad del webhook SOLO una vez
   useEffect(() => {
     if (webhook.authType) {
@@ -405,7 +404,7 @@ export function WebhookCurlTester({ webhook, onTestDataReceived, onAuthChange }:
     }
   }, [webhook.id]) // Solo cuando cambie el webhook
 
-  const generateCurl = async () => {
+  const generateCurl = async (payloadOverride?: string) => {
     // Usar el mapeo de datos si existe para generar el payload
     const webhookMapping = webhook.dataMapping?.fieldMappings
     let generatedPayload: any = {}
@@ -433,10 +432,11 @@ export function WebhookCurlTester({ webhook, onTestDataReceived, onAuthChange }:
     let curlCommand = ""
     
     // Determinar método HTTP (usar el primero permitido)
-    const method = allowedMethods.includes('POST') ? 'POST' : 
-                   allowedMethods.includes('PUT') ? 'PUT' :
-                   allowedMethods.includes('PATCH') ? 'PATCH' :
-                   allowedMethods.includes('GET') ? 'GET' : 'POST'
+    const methods = webhook.allowedMethods || ['POST'];
+    const method = methods.includes('POST') ? 'POST' :
+                   methods.includes('PUT') ? 'PUT' :
+                   methods.includes('PATCH') ? 'PATCH' :
+                   methods.includes('GET') ? 'GET' : 'POST'
     
     if (isGetOnly || method === 'GET') {
       // Para GET, solo mostrar URL base si no hay parámetros configurados
@@ -448,14 +448,21 @@ export function WebhookCurlTester({ webhook, onTestDataReceived, onAuthChange }:
       // Headers - siempre incluir Content-Type desde customHeaders
       Object.entries(customHeaders).forEach(([key, value]) => {
         if (key && value) {
-          curlCommand += ` \\\n  -H "${key}: ${value}"`
+        curlCommand += ` \\\n  -H "${key}: ${value}"`
         }
       })
     }
 
-    // Preparar payload para HMAC si es necesario
-    const payload = customPayload || (Object.keys(generatedPayload).length > 0 ? JSON.stringify(generatedPayload, null, 2) : "")
-    
+    // Preparar payload. Prioridad: override > customPayload desde estado > generatedPayload
+    let payload = ""
+    if (payloadOverride) {
+      payload = payloadOverride
+    } else if (customPayload.trim()) {
+      payload = customPayload
+    } else if (Object.keys(generatedPayload).length > 0) {
+      payload = JSON.stringify(generatedPayload, null, 2)
+    }
+
     // Aplicar seguridad según el tipo seleccionado
     switch (securityType) {
       case "bearer":
@@ -505,13 +512,7 @@ export function WebhookCurlTester({ webhook, onTestDataReceived, onAuthChange }:
     const token = `wh_${Math.random().toString(36).substring(2, 15)}${Math.random().toString(36).substring(2, 15)}`
     setGeneratedToken(token)
     toast.success("Bearer token generado")
-    // Notificar cambio al padre
-    onAuthChange?.({
-      type: "bearer",
-      token: token,
-      secret: generatedSecret,
-      apiKey: apiKey
-    })
+    // La notificación ahora se maneja a través de onConfigChange
     return token
   }
 
@@ -519,13 +520,7 @@ export function WebhookCurlTester({ webhook, onTestDataReceived, onAuthChange }:
     const secret = `hmac_${Math.random().toString(36).substring(2, 20)}${Math.random().toString(36).substring(2, 20)}`
     setGeneratedSecret(secret)
     toast.success("HMAC secret generado")
-    // Notificar cambio al padre
-    onAuthChange?.({
-      type: "hmac",
-      token: generatedToken,
-      secret: secret,
-      apiKey: apiKey
-    })
+    // La notificación ahora se maneja a través de onConfigChange
     return secret
   }
 
@@ -533,13 +528,7 @@ export function WebhookCurlTester({ webhook, onTestDataReceived, onAuthChange }:
     const key = `ak_${Math.random().toString(36).substring(2, 16)}${Math.random().toString(36).substring(2, 16)}`
     setApiKey(key)
     toast.success("API Key generada")
-    // Notificar cambio al padre
-    onAuthChange?.({
-      type: "api_key",
-      token: generatedToken,
-      secret: generatedSecret,
-      apiKey: key
-    })
+    // La notificación ahora se maneja a través de onConfigChange
     return key
   }
 
@@ -597,46 +586,33 @@ export function WebhookCurlTester({ webhook, onTestDataReceived, onAuthChange }:
         value: getExampleValue(field.type, field.name)
       }))
 
-    // Añadir a los campos existentes o reemplazarlos
+    // El estado de bodyBuilderFields se actualizará, y el useEffect se encargará
+    // de actualizar customPayload, que a su vez disparará la regeneración del cURL.
     setBodyBuilderFields(newBodyFields)
-    setHasAutoMapped(false) // Reset auto-mapeo para permitir nueva ejecución
 
-    // Esperar un tick para que se actualice el estado
-    setTimeout(async () => {
-      try {
-        // Regenerar comando cURL
-        const command = await generateCurl()
-        setCurlCommand(command)
-        
-        // Crear datos de prueba para enviar al mapeo
-        const testPayload = newBodyFields.reduce((acc, field) => {
-          if (field.key && field.value) {
+    // Notificar al padre para que el data-mapper pueda hacer el mapeo automático
+    const testPayload = newBodyFields.reduce((acc, field) => {
+        if (field.key && field.value) {
             try {
-              acc[field.key] = JSON.parse(field.value);
+                acc[field.key] = JSON.parse(field.value);
             } catch {
-              acc[field.key] = field.value;
+                acc[field.key] = field.value;
             }
-          }
-          return acc;
-        }, {} as Record<string, any>);
+        }
+        return acc;
+    }, {} as Record<string, any>);
 
-        // Enviar datos al componente padre para que actualice el mapeo
-        onTestDataReceived?.({
-          requestPayload: testPayload,
-          status: 200,
-          success: true,
-          timestamp: new Date().toISOString(),
-          method: 'POST',
-          synthetic: true, // Marcar como datos sintéticos
-          selectedTable: selectedModel // Añadir la tabla seleccionada
-        })
+    onTestDataReceived?.({
+      requestPayload: testPayload,
+      status: 200,
+      success: true,
+      timestamp: new Date().toISOString(),
+      method: 'POST',
+      synthetic: true, // Marcar como datos sintéticos
+      selectedTable: selectedModel, // Añadir la tabla seleccionada
+    })
 
-        toast.success(`🚀 Comando cURL creado para tabla ${selectedModel} con ${newBodyFields.length} campos`)
-      } catch (error) {
-        console.error('Error creating cURL from table:', error)
-        toast.error("Error al crear comando cURL")
-      }
-    }, 100)
+    toast.success(`🚀 Comando cURL y mapeo generados para ${selectedModel}`)
   }
 
   // Función para mapear automáticamente los datos
@@ -800,10 +776,11 @@ export function WebhookCurlTester({ webhook, onTestDataReceived, onAuthChange }:
     
     try {
       // Determinar método HTTP (usar el primero permitido)
-      const method = allowedMethods.includes('POST') ? 'POST' : 
-                     allowedMethods.includes('PUT') ? 'PUT' :
-                     allowedMethods.includes('PATCH') ? 'PATCH' :
-                     allowedMethods.includes('GET') ? 'GET' : 'POST'
+      const methods = webhook.allowedMethods || ['POST'];
+      const method = methods.includes('POST') ? 'POST' : 
+                     methods.includes('PUT') ? 'PUT' :
+                     methods.includes('PATCH') ? 'PATCH' :
+                     methods.includes('GET') ? 'GET' : 'POST'
       
       setExecutionLogs(prev => [...prev, `📡 Preparando petición ${method}...`])
       
@@ -1214,206 +1191,69 @@ export function WebhookCurlTester({ webhook, onTestDataReceived, onAuthChange }:
     }
   }, [isListening, listeningStartTime])
 
-  return (
-    <div className="space-y-6">
-      <div>
-        <h3 className="mb-2 text-lg font-medium">Generador de Curl y Tester</h3>
-        <p className="text-sm text-muted-foreground">
-          Genera comandos curl y prueba tu webhook con ejemplos de dispositivos reales
-        </p>
-      </div>
+  useEffect(() => {
+    // Cuando el payload o la tabla seleccionada cambien, notificar al padre.
+    if(onConfigChange) {
+      try {
+        const payload = customPayload ? JSON.parse(customPayload) : null;
+        onConfigChange({ 
+          samplePayload: payload, 
+          dataMapping: { 
+            targetTable: selectedModel 
+          }
+        });
+      } catch (error) {
+        // Si el JSON es inválido, no hacemos nada.
+        // El usuario está probablemente en medio de la escritura.
+      }
+    }
+  }, [customPayload, selectedModel, onConfigChange]);
 
+  // ---->>> LÓGICA DE REHIDRATACIÓN DE ESTADO <<<----
+  useEffect(() => {
+    if (webhook) {
+      // 1. Re-seleccionar la tabla de destino si existe
+      if (webhook.dataMapping?.targetTable) {
+        setSelectedModel(webhook.dataMapping.targetTable);
+        // Si hay una tabla, cargamos sus campos
+        handleModelSelect(webhook.dataMapping.targetTable);
+      }
+      
+      // 2. Reconstruir el constructor de body desde el payload guardado
+      if (webhook.samplePayload && typeof webhook.samplePayload === 'object' && Object.keys(webhook.samplePayload).length > 0) {
+        const fields = Object.entries(webhook.samplePayload).map(([key, value], index) => ({
+            id: Date.now() + index,
+            key,
+            // Convertir valores de objeto/array a string JSON para el input
+            value: typeof value === 'object' && value !== null ? JSON.stringify(value, null, 2) : String(value)
+        }));
+        setBodyBuilderFields(fields);
+      } else {
+        // Si no hay payload, limpiar los campos para evitar mostrar datos de un webhook anterior.
+        setBodyBuilderFields([]);
+      }
+      
+      // 3. Sincronizar el payload de texto
+      if (webhook.samplePayload) {
+          setCustomPayload(JSON.stringify(webhook.samplePayload, null, 2));
+      } else {
+          setCustomPayload("");
+      }
+      
+      // 4. Sincronizar métodos permitidos
+      setIsGetOnly((webhook.allowedMethods || []).includes("GET") && (webhook.allowedMethods || []).length === 1);
+    }
+  }, [webhook?.id]); // FIX: Re-hidratar SOLO cuando el webhook en sí cambia (cambia el ID)
+
+  return (
+    <div className="space-y-4">
       <Tabs defaultValue="generator" className="w-full">
-        <TabsList className="grid grid-cols-2 w-full">
-          <TabsTrigger value="generator">Generador</TabsTrigger>
-          <TabsTrigger value="tester">Pruebas</TabsTrigger>
+        <TabsList className="grid grid-cols-2 w-full h-8">
+          <TabsTrigger value="generator" className="text-xs">Generador cURL</TabsTrigger>
+          <TabsTrigger value="tester" className="text-xs">Pruebas Conexión</TabsTrigger>
         </TabsList>
 
         <TabsContent value="generator" className="space-y-4">
-
-          {/* Configuración de Seguridad */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex gap-2 items-center text-base">
-                <Shield className="w-4 h-4" />
-                Seguridad del Webhook
-              </CardTitle>
-              <CardDescription>
-                Configura la autenticación que se aplicará automáticamente al cURL
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Selector de tipo de seguridad */}
-              <div className="space-y-2">
-                <Label>Tipo de Autenticación</Label>
-                <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-                  <Button
-                    variant={securityType === "none" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => {
-                      setSecurityType("none")
-                      onAuthChange?.({
-                        type: "none",
-                        token: generatedToken,
-                        secret: generatedSecret,
-                        apiKey: apiKey
-                      })
-                    }}
-                    className="px-3 py-2 h-auto"
-                  >
-                    <div className="text-center">
-                      <div className="text-xs font-medium">Ninguna</div>
-                      <div className="text-xs text-muted-foreground">Público</div>
-                    </div>
-                  </Button>
-                  
-                  <Button
-                    variant={securityType === "bearer" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => {
-                      setSecurityType("bearer")
-                      onAuthChange?.({
-                        type: "bearer",
-                        token: generatedToken,
-                        secret: generatedSecret,
-                        apiKey: apiKey
-                      })
-                    }}
-                    className="px-3 py-2 h-auto"
-                  >
-                    <div className="text-center">
-                      <div className="text-xs font-medium">Bearer</div>
-                      <div className="text-xs text-muted-foreground">Token</div>
-                    </div>
-                  </Button>
-                  
-                  <Button
-                    variant={securityType === "hmac" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => {
-                      setSecurityType("hmac")
-                      onAuthChange?.({
-                        type: "hmac",
-                        token: generatedToken,
-                        secret: generatedSecret,
-                        apiKey: apiKey
-                      })
-                    }}
-                    className="px-3 py-2 h-auto"
-                  >
-                    <div className="text-center">
-                      <div className="text-xs font-medium">HMAC</div>
-                      <div className="text-xs text-muted-foreground">Seguro</div>
-                    </div>
-                  </Button>
-                  
-                  <Button
-                    variant={securityType === "api_key" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => {
-                      setSecurityType("api_key")
-                      onAuthChange?.({
-                        type: "api_key",
-                        token: generatedToken,
-                        secret: generatedSecret,
-                        apiKey: apiKey
-                      })
-                    }}
-                    className="px-3 py-2 h-auto"
-                  >
-                    <div className="text-center">
-                      <div className="text-xs font-medium">API Key</div>
-                      <div className="text-xs text-muted-foreground">Simple</div>
-                    </div>
-                  </Button>
-                </div>
-              </div>
-
-              {/* Configuración específica por tipo */}
-              {securityType === "bearer" && (
-                <div className="space-y-2">
-                  <Label>Bearer Token</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      value={generatedToken}
-                      onChange={(e) => setGeneratedToken(e.target.value)}
-                      placeholder="Token será generado automáticamente"
-                      className="flex-1"
-                    />
-                    <Button
-                      variant="outline"
-                      onClick={generateBearerToken}
-                      className="gap-1"
-                    >
-                      <RefreshCw className="w-3 h-3" />
-                      Generar
-                    </Button>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Se añadirá como header: <code>Authorization: Bearer {generatedToken || "token"}</code>
-                  </p>
-                </div>
-              )}
-
-              {securityType === "hmac" && (
-                <div className="space-y-2">
-                  <Label>HMAC Secret</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      value={generatedSecret}
-                      onChange={(e) => setGeneratedSecret(e.target.value)}
-                      placeholder="Secret será generado automáticamente"
-                      className="flex-1"
-                    />
-                    <Button
-                      variant="outline"
-                      onClick={generateHmacSecret}
-                      className="gap-1"
-                    >
-                      <RefreshCw className="w-3 h-3" />
-                      Generar
-                    </Button>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Se calculará automáticamente: <code>X-Signature: sha256=hash</code>
-                  </p>
-                </div>
-              )}
-
-              {securityType === "api_key" && (
-                <div className="space-y-2">
-                  <Label>API Key</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      value={apiKey}
-                      onChange={(e) => setApiKey(e.target.value)}
-                      placeholder="API Key será generada automáticamente"
-                      className="flex-1"
-                    />
-                    <Button
-                      variant="outline"
-                      onClick={generateApiKey}
-                      className="gap-1"
-                    >
-                      <RefreshCw className="w-3 h-3" />
-                      Generar
-                    </Button>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Se añadirá como header: <code>X-API-Key: {apiKey || "key"}</code>
-                  </p>
-                </div>
-              )}
-
-              {securityType === "none" && (
-                <div className="p-3 bg-blue-50 rounded border border-blue-200 dark:bg-blue-950/20">
-                  <p className="text-sm text-blue-800 dark:text-blue-200">
-                    <strong>Sin autenticación:</strong> El webhook será público y accesible sin credenciales (ideal para dispositivos IoT simples)
-                  </p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
 
           {/* Headers personalizados */}
           <div className="space-y-2">
@@ -1482,7 +1322,7 @@ export function WebhookCurlTester({ webhook, onTestDataReceived, onAuthChange }:
               ) : (
                 <div className="space-y-4">
                   {/* Selector de tipo de contenido */}
-                  <div className="space-y-3">
+                <div className="space-y-3">
                     <Label>Tipo de Contenido</Label>
                     <div className="grid grid-cols-2 gap-2">
                       <Button
@@ -1504,10 +1344,10 @@ export function WebhookCurlTester({ webhook, onTestDataReceived, onAuthChange }:
                         </div>
                       </Button>
                       
-                      <Button
+                        <Button
                         variant={contentType === "urlencoded" ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => {
+                          size="sm"
+                          onClick={() => {
                           setContentType("urlencoded")
                           // Actualizar Content-Type automáticamente
                           setCustomHeaders(prev => ({
@@ -1521,8 +1361,8 @@ export function WebhookCurlTester({ webhook, onTestDataReceived, onAuthChange }:
                           <div className="text-xs font-medium">URL-encoded</div>
                           <div className="text-xs text-muted-foreground">Formularios</div>
                         </div>
-                      </Button>
-                    </div>
+                        </Button>
+                      </div>
                     <p className="text-xs text-muted-foreground">
                       💡 Internamente siempre se maneja como JSON. Si recibes URL-encoded se convierte automáticamente.
                     </p>
@@ -1530,18 +1370,17 @@ export function WebhookCurlTester({ webhook, onTestDataReceived, onAuthChange }:
                   <Separator />
                   {/* Constructor Visual Mejorado */}
                   <div className="space-y-3">
-                    <Label>Asistente de Payload desde Tabla</Label>
-                    <select 
-                      value={selectedModel} 
-                      onChange={(e) => handleModelSelect(e.target.value)}
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <option value="">Selecciona una tabla para autocompletar...</option>
-                      <option value="none">-- Ninguna --</option>
-                      {prismaModels.map(model => (
-                        <option key={model} value={model}>{model}</option>
-                      ))}
-                    </select>
+                    <Label>Tabla Destino</Label>
+                    <Select onValueChange={handleModelSelect} value={selectedModel}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecciona una tabla para autocompletar..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {prismaModels.map(model => (
+                          <SelectItem key={model} value={model}>{model}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     
                     {/* Información de tabla seleccionada */}
                     {selectedTableFields.length > 0 && (
@@ -1556,17 +1395,17 @@ export function WebhookCurlTester({ webhook, onTestDataReceived, onAuthChange }:
                                 {selectedTableFields.length} campos disponibles
                               </p>
                             </div>
-                            <Button 
+                    <Button
                               variant="default" 
-                              size="sm" 
+                      size="sm"
                               onClick={createCurlFromTable}
                               className="gap-1 bg-blue-600 hover:bg-blue-700"
-                            >
+                    >
                               <Wand2 className="w-3 h-3" />
                               Crear Comando cURL
-                            </Button>
-                          </div>
-                          
+                    </Button>
+                  </div>
+                  
                           <div className="space-y-2">
                             <Label className="text-sm font-medium text-blue-900 dark:text-blue-100">
                               Campos disponibles ({selectedTableFields.filter(f => {
@@ -1592,8 +1431,8 @@ export function WebhookCurlTester({ webhook, onTestDataReceived, onAuthChange }:
                                     </div>
                                   ))
                                 }
-                              </div>
-                            </div>
+                  </div>
+                </div>
                             <p className="text-xs text-blue-600 dark:text-blue-400">
                               <span className="text-red-500">*</span> = Requerido, 
                               <span className="text-orange-500">?</span> = Opcional
@@ -1604,7 +1443,7 @@ export function WebhookCurlTester({ webhook, onTestDataReceived, onAuthChange }:
                     )}
                   </div>
                   <Separator />
-                  <div className="space-y-3">
+                <div className="space-y-3">
                     <Label>Constructor de Body</Label>
                     {bodyBuilderFields.length === 0 ? (
                       <div className="text-center py-4 text-muted-foreground border-2 border-dashed rounded">
@@ -1666,13 +1505,13 @@ export function WebhookCurlTester({ webhook, onTestDataReceived, onAuthChange }:
                         </Button>
                       )}
                     </div>
-                    <Textarea
+                  <Textarea
                       readOnly
-                      value={customPayload}
+                    value={customPayload}
                       className="min-h-[150px] font-mono text-xs bg-muted/50"
                       placeholder="El JSON se generará aquí..."
                     />
-                  </div>
+                    </div>
                 </div>
               )}
             </CardContent>
@@ -2122,7 +1961,68 @@ export function WebhookCurlTester({ webhook, onTestDataReceived, onAuthChange }:
             </Card>
           )}
 
+          {/* Cabeceras Personalizadas */}
+          <Card>
+              <CardHeader>
+                  <CardTitle className="text-base">Cabeceras Personalizadas</CardTitle>
+                  <CardDescription className="text-xs">
+                      Añade cabeceras HTTP personalizadas que se enviarán con cada petición.
+                  </CardDescription>
+              </CardHeader>
+              <CardContent>
+                  <div className="space-y-2">
+                      {Object.entries(customHeaders).map(([key, value]) => (
+                          <div key={key} className="flex gap-2 items-center">
+                              <Input value={key} readOnly className="h-8 font-mono text-xs bg-muted" />
+                              <Input value={value} readOnly className="h-8 font-mono text-xs bg-muted" />
+                              <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 flex-shrink-0"
+                                  onClick={() => {
+                                      const newHeaders = { ...customHeaders };
+                                      delete newHeaders[key];
+                                      onConfigChange?.({ customHeaders: newHeaders });
+                                  }}
+                              >
+                                  <Trash2 className="h-4 w-4" />
+                              </Button>
+                          </div>
+                      ))}
+                       {/* Añadir nueva cabecera (Lógica simple por ahora) */}
+                       <Button variant="outline" size="sm" className="mt-2" onClick={() => onConfigChange?.({ customHeaders: { ...customHeaders, 'Nueva-Cabecera': 'valor' } })}>
+                          <Plus className="h-4 w-4 mr-2" />
+                          Añadir Cabecera
+                      </Button>
+                  </div>
+              </CardContent>
+          </Card>
 
+          {/* Previsualización del Payload */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex gap-2 items-center">
+                <Terminal className="w-4 h-4" />
+                Previsualización del Payload
+              </CardTitle>
+              <CardDescription>
+                Aquí puedes ver cómo se verá el payload antes de enviarlo.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                <div>
+                  <Label className="text-xs font-medium">Payload</Label>
+                  <pre className="overflow-auto p-3 max-h-40 text-xs rounded bg-muted">
+                    {JSON.stringify(bodyBuilderFields.reduce((acc, field) => {
+                      acc[field.key] = field.value;
+                      return acc;
+                    }, {} as Record<string, any>), null, 2)}
+                  </pre>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>

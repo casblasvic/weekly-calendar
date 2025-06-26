@@ -83,6 +83,7 @@ model System {
   tags                         Tag[]
   appointmentDeviceUsage       AppointmentDeviceUsage[]
   webhooks                     Webhook[]
+  webhookLogs                  WebhookLog[]
 
   @@map("systems")
 }
@@ -725,8 +726,8 @@ model AppointmentDeviceUsage {
   deviceId             String
   startedAt            DateTime            @db.Timestamptz(6)
   endedAt              DateTime?           @db.Timestamptz(6)
-  estimatedMinutes     Int
-  actualMinutes        Int?
+  estimatedMinutes     Float
+  actualMinutes        Float?
   energyConsumption    Float?
   deviceData           Json?
   startedByUserId      String
@@ -2767,16 +2768,19 @@ model Webhook {
   targetUrl      String?    @db.Text
 
   // Configuración Incoming
-  dataMapping    Json?
-  expectedSchema Json?
-  customHeaders  Json?      // Para headers personalizados
-
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  createdByUserId String?
+  customHeaders     Json?
+  expectedSchema    Json?
+  samplePayload     Json?
+  dataMapping       Json?
+  responseConfig    Json?
+  isSystemWebhook   Boolean  @default(false)
+  integrationId     String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  createdByUserId   String?
 
   // Relations
-  system         System   @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  system            System   @relation(fields: [systemId], references: [id], onDelete: Cascade)
   createdBy      User?    @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
   logs           WebhookLog[]
 
@@ -2784,30 +2788,31 @@ model Webhook {
 }
 
 model WebhookLog {
-  id        String   @id @default(cuid())
-  webhookId String
-  webhook   Webhook  @relation(fields: [webhookId], references: [id], onDelete: Cascade)
-  
-  // Datos de la Petición Original (para poder re-ejecutar)
-  method    String
-  url       String   @db.Text
-  headers   Json
-  body      Json?    // El payload que recibimos
-  sourceIp  String?
+  id              String          @id @default(cuid())
+  webhookId       String
+  systemId        String
+  method          String
+  url             String
+  headers         Json
+  body            Json?
+  sourceIp        String?
+  statusCode      Int?
+  responseBody    Json?
+  isSuccess       Boolean         @default(false)
+  wasProcessed    Boolean         @default(false)
+  processingError String?       @db.Text
+  retries         Int             @default(0)
+  createdAt       DateTime        @default(now())
+  processedAt     DateTime?
+  webhook         Webhook         @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+  system          System          @relation(fields: [systemId], references: [id], onDelete: Cascade)
 
-  // Datos de Nuestra Respuesta
-  statusCode   Int?
-  responseBody Json?
-
-  // Estado del Procesamiento Interno
-  isSuccess        Boolean  @default(false)
-  wasProcessed     Boolean  @default(false)
-  processingError  String?  @db.Text
-
-  // Timestamps y Retries
-  retries          Int      @default(0)
-  createdAt        DateTime @default(now())
-  processedAt      DateTime @updatedAt
+  @@index([webhookId])
+  @@index([createdAt])
+  @@index([isSuccess])
+  @@index([wasProcessed])
+  @@index([systemId])
+  @@map("webhook_logs")
 }
 
 enum WebhookDirection {

@@ -20,7 +20,8 @@ import {
   Table,
   MapPin,
   Settings,
-  Target
+  Target,
+  Wand2
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -30,6 +31,7 @@ interface DataMapperFormProps {
     expectedSchema?: any
     dataMapping?: any
     targetTable?: string
+    samplePayload?: any
   }
   onChange: (data: any) => void
   testData?: any
@@ -45,60 +47,17 @@ interface FieldMapping {
   condition?: string
 }
 
-// Tablas disponibles para mapear (esto debería venir de una API)
-const AVAILABLE_TABLES = [
-  {
-    name: "appointment_device_usage",
-    displayName: "Uso de Equipos en Citas",
-    fields: [
-      { name: "id", type: "string", required: true, auto: true },
-      { name: "appointmentId", type: "string", required: true },
-      { name: "appointmentServiceId", type: "string", required: false },
-      { name: "equipmentId", type: "string", required: true },
-      { name: "deviceId", type: "string", required: true },
-      { name: "startedAt", type: "datetime", required: true },
-      { name: "endedAt", type: "datetime", required: false },
-      { name: "estimatedMinutes", type: "integer", required: true },
-      { name: "actualMinutes", type: "integer", required: false },
-      { name: "energyConsumption", type: "float", required: false },
-      { name: "deviceData", type: "json", required: false },
-      { name: "startedByUserId", type: "string", required: true },
-      { name: "systemId", type: "string", required: true, auto: true },
-      { name: "createdAt", type: "datetime", required: false, auto: true },
-      { name: "updatedAt", type: "datetime", required: false, auto: true }
-    ]
-  },
-  {
-    name: "appointments",
-    displayName: "Citas",
-    fields: [
-      { name: "id", type: "string", required: true, auto: true },
-      { name: "startTime", type: "datetime", required: true },
-      { name: "endTime", type: "datetime", required: true },
-      { name: "durationMinutes", type: "integer", required: true },
-      { name: "status", type: "string", required: true },
-      { name: "notes", type: "string", required: false },
-      { name: "professionalUserId", type: "string", required: true },
-      { name: "personId", type: "string", required: true },
-      { name: "systemId", type: "string", required: true, auto: true },
-      { name: "clinicId", type: "string", required: true }
-    ]
-  },
-  {
-    name: "persons",
-    displayName: "Personas",
-    fields: [
-      { name: "id", type: "string", required: true, auto: true },
-      { name: "firstName", type: "string", required: false },
-      { name: "lastName", type: "string", required: false },
-      { name: "email", type: "string", required: false },
-      { name: "phone", type: "string", required: false },
-      { name: "birthDate", type: "date", required: false },
-      { name: "gender", type: "string", required: false },
-      { name: "systemId", type: "string", required: true, auto: true }
-    ]
-  }
-]
+// Interfaz para la estructura de las tablas que obtendremos de la API
+interface AvailableTable {
+  name: string;
+  displayName: string;
+  fields: Array<{
+    name: string;
+    type: string;
+    required: boolean;
+    auto?: boolean;
+  }>;
+}
 
 const TRANSFORMATION_TYPES = [
   { value: "none", label: "Ninguna" },
@@ -114,244 +73,140 @@ const TRANSFORMATION_TYPES = [
   { value: "trim", label: "Eliminar espacios" }
 ]
 
+// NUEVO: Helper para sugerir la transformación correcta basada en el tipo de la BD
+const getSuggestedTransformation = (dbType: string): string => {
+  if (!dbType) return "none";
+  const type = dbType.toLowerCase();
+
+  if (type.includes('date') || type.includes('time')) return 'datetime';
+  if (type.includes('int')) return 'integer';
+  if (type.includes('float') || type.includes('decimal') || type.includes('double') || type.includes('numeric')) return 'float';
+  if (type.includes('bool')) return 'boolean';
+  if (type.includes('json')) return 'json';
+  
+  // Para strings (text, varchar, etc.), no se necesita transformación por defecto.
+  return 'none';
+};
+
 export function DataMapperForm({ webhook, data, onChange, testData }: DataMapperFormProps) {
-  const [selectedTable, setSelectedTable] = useState(data.targetTable || "")
-  const [fieldMappings, setFieldMappings] = useState<FieldMapping[]>([])
-  const [sampleJson, setSampleJson] = useState("")
-  const [parsedSample, setParsedSample] = useState<any>(null)
-  const [showPreview, setShowPreview] = useState(false)
-  const [hasAutoMapped, setHasAutoMapped] = useState(false)
+  const [selectedTable, setSelectedTable] = useState("");
+  const [fieldMappings, setFieldMappings] = useState<FieldMapping[]>([]);
+  const [parsedSample, setParsedSample] = useState<any>(null);
+  const [targetTableFields, setTargetTableFields] = useState<any[]>([]);
+  const [isLoadingFields, setIsLoadingFields] = useState(false);
 
-  const generateExampleFromSchema = useCallback((schema: any): any => {
-    if (!schema || !schema.properties) return {}
-    
-    const example: any = {}
-    Object.entries(schema.properties).forEach(([key, prop]: [string, any]) => {
-      switch (prop.type) {
-        case 'string':
-          example[key] = prop.enum ? prop.enum[0] : `example_${key}`
-          break
-        case 'number':
-          example[key] = 123.45
-          break
-        case 'integer':
-          example[key] = 123
-          break
-        case 'boolean':
-          example[key] = true
-          break
-        case 'array':
-          example[key] = ['item1', 'item2']
-          break
-        case 'object':
-          example[key] = generateExampleFromSchema(prop)
-          break
-        default:
-          example[key] = `value_${key}`
-      }
-    })
-    return example
-  }, [])
-
-  // Cargar mapeos existentes SOLO al inicio
+  // Efecto 1: Sincronizar estado interno con los props (la fuente de la verdad guardada)
   useEffect(() => {
-    if (data.dataMapping?.fieldMappings && fieldMappings.length === 0) {
-      setFieldMappings(Object.entries(data.dataMapping.fieldMappings).map(([target, config]: [string, any]) => ({
+    // Sincronizar tabla seleccionada
+    if (data?.targetTable && data.targetTable !== selectedTable) {
+      setSelectedTable(data.targetTable);
+    }
+    // Sincronizar payload de ejemplo
+    if (data?.samplePayload) {
+      setParsedSample(data.samplePayload);
+    }
+    // Sincronizar mapeos
+    if (data?.dataMapping?.fieldMappings) {
+      const mappingsArray = Object.entries(data.dataMapping.fieldMappings).map(([target, config]: [string, any]) => ({
         sourceField: config.source || "",
         targetField: target,
-        targetType: config.transform || config.type || "string",
+        targetType: config.type || "string",
         required: config.required || false,
         transformation: config.transform || "",
         defaultValue: config.default || "",
         condition: config.condition || ""
-      })))
+      }));
+      setFieldMappings(mappingsArray);
+    } else {
+      setFieldMappings([]);
     }
-  }, [data.dataMapping?.fieldMappings]) // Eliminar fieldMappings.length de dependencias
+  }, [data]);
 
-  // Cargar esquema esperado como ejemplo SOLO una vez
+  // Efecto 2: Reaccionar a datos de prueba sintéticos para iniciar el mapeo
   useEffect(() => {
-    if (data.expectedSchema && !sampleJson) {
-      // Crear un JSON de ejemplo basado en el esquema
-      const example = generateExampleFromSchema(data.expectedSchema)
-      setSampleJson(JSON.stringify(example, null, 2))
+    if (testData?.synthetic && testData.selectedTable) {
+      setSelectedTable(testData.selectedTable);
+      setParsedSample(testData.requestPayload);
     }
-  }, [data.expectedSchema, generateExampleFromSchema]) // Eliminar sampleJson de dependencias
+  }, [testData]);
 
-  // Auto-populación desde datos de prueba SOLO una vez
+  // Efecto 3: Obtener los campos de la tabla de destino cuando esta cambia
   useEffect(() => {
-    if (testData?.requestPayload && !parsedSample) {
-      // Si hay datos de prueba, usarlos automáticamente
-      setParsedSample(testData.requestPayload)
-      setSampleJson(JSON.stringify(testData.requestPayload, null, 2))
-      
-      // Si es sintético y tiene tabla seleccionada, usarla
-      if (testData.synthetic && testData.selectedTable && !selectedTable) {
-        setSelectedTable(testData.selectedTable)
-        onChange({
-          ...data,
-          targetTable: testData.selectedTable
-        })
+    const fetchTargetTableFields = async () => {
+      if (!selectedTable) {
+        setTargetTableFields([]);
+        return;
       }
-    }
-  }, [testData?.requestPayload, testData?.selectedTable]) // Añadir selectedTable
-
-  // ===== MAPEO INTELIGENTE MEJORADO =====
-  const autoMapFieldsIntelligent = useCallback(() => {
-    const dataSource = testData?.requestPayload || parsedSample
-    if (!dataSource || !selectedTable) {
-      toast.error("Necesitas seleccionar una tabla y tener datos de prueba")
-      return
-    }
-
-    const sourceFields = getAvailableSourceFields()
-    const targetTable = getTargetTable()
-    
-    if (!targetTable) return
-
-    const autoMappings: FieldMapping[] = []
-
-    // ===== MAPEO ESPECÍFICO PARA appointment_device_usage =====
-    if (selectedTable === "appointment_device_usage") {
-      const shellyMappings = [
-        // Mapeos directos para Shelly Smart Plugs
-        { source: "device_id", target: "deviceId", type: "string", required: true },
-        { source: "appointment_id", target: "appointmentId", type: "string", required: true },
-        { source: "appointment_service_id", target: "appointmentServiceId", type: "string", required: false },
-        { source: "equipment_id", target: "equipmentId", type: "string", required: true },
-        { source: "started_by_user_id", target: "startedByUserId", type: "string", required: true },
-        { source: "estimated_minutes", target: "estimatedMinutes", type: "integer", required: true },
-        { source: "actual_minutes", target: "actualMinutes", type: "integer", required: false },
-        
-        // Timestamp mappings
-        { source: "timestamp", target: "startedAt", type: "datetime", required: true },
-        { source: "started_at", target: "startedAt", type: "datetime", required: true },
-        { source: "ended_timestamp", target: "endedAt", type: "datetime", required: false },
-        { source: "ended_at", target: "endedAt", type: "datetime", required: false },
-        
-        // Energy mappings
-        { source: "energy_total", target: "energyConsumption", type: "float", required: false },
-        { source: "energy", target: "energyConsumption", type: "float", required: false },
-        { source: "power", target: "energyConsumption", type: "float", required: false },
-        { source: "consumption", target: "energyConsumption", type: "float", required: false },
-      ]
-
-      // Aplicar mapeos específicos de Shelly
-      shellyMappings.forEach(mapping => {
-        const sourceExists = sourceFields.includes(mapping.source)
-        if (sourceExists) {
-          autoMappings.push({
-            sourceField: mapping.source,
-            targetField: mapping.target,
-            targetType: mapping.type,
-            required: mapping.required,
-            transformation: mapping.type === "datetime" ? "datetime" : "",
-            defaultValue: "",
-            condition: ""
-          })
+      setIsLoadingFields(true);
+      try {
+        const response = await fetch(`/api/internal/prisma/schema-models/${selectedTable}`);
+        if (response.ok) {
+          const fields = await response.json();
+          setTargetTableFields(fields);
+        } else {
+          toast.error(`No se pudieron cargar los campos para la tabla ${selectedTable}`);
+          setTargetTableFields([]);
         }
-      })
-
-      // Mapear campos técnicos a deviceData JSON
-      const technicalFields = ["power", "voltage", "current", "is_on", "temperature", "fw_version", "ip_address", "action"]
-      const availableTechnicalFields = sourceFields.filter(field => 
-        technicalFields.some(tech => field.toLowerCase().includes(tech.toLowerCase()))
-      )
-
-      if (availableTechnicalFields.length > 0) {
-        autoMappings.push({
-          sourceField: "_computed_device_data", // Campo computado especial
-          targetField: "deviceData",
-          targetType: "json",
-          required: false,
-          transformation: "json",
-          defaultValue: `Datos técnicos: ${availableTechnicalFields.join(", ")}`,
-          condition: `Incluye: ${availableTechnicalFields.join(", ")}`
-        })
+      } catch (error) {
+        console.error(`Error fetching fields for ${selectedTable}:`, error);
+        setTargetTableFields([]);
+      } finally {
+        setIsLoadingFields(false);
       }
-    }
-
-    // ===== MAPEO GENÉRICO PARA OTRAS TABLAS =====
-    else {
-      targetTable.fields
-        .filter(field => !field.auto)
-        .forEach(targetField => {
-          const exactMatch = sourceFields.find(sf => sf === targetField.name)
-          const camelCaseMatch = sourceFields.find(sf => 
-            sf.toLowerCase() === targetField.name.toLowerCase().replace(/([A-Z])/g, '_$1').toLowerCase()
-          )
-          const similarMatch = sourceFields.find(sf => 
-            sf.toLowerCase().includes(targetField.name.toLowerCase()) ||
-            targetField.name.toLowerCase().includes(sf.toLowerCase())
-          )
-          
-          const sourceField = exactMatch || camelCaseMatch || similarMatch || ""
-          
-          if (sourceField || targetField.required) {
-            autoMappings.push({
-              sourceField,
-              targetField: targetField.name,
-              targetType: targetField.type,
-              required: targetField.required,
-              transformation: targetField.type === "datetime" ? "datetime" : "",
-              defaultValue: "",
-              condition: ""
-            })
-          }
-        })
-    }
-
-    // Remover duplicados por targetField
-    const uniqueMappings = autoMappings.filter((mapping, index, array) => 
-      array.findIndex(m => m.targetField === mapping.targetField) === index
-    )
-
-    setFieldMappings(uniqueMappings)
-    updateDataMapping(uniqueMappings)
+    };
+    fetchTargetTableFields();
+  }, [selectedTable]);
+  
+  const getAvailableSourceFields = useCallback((dataSourceOverride?: any) => {
+    const dataSource = dataSourceOverride || parsedSample;
+    if (!dataSource) return [];
     
-    const detectedFields = uniqueMappings.filter(m => m.sourceField).length
-    const tableName = targetTable.displayName
-    
-    toast.success(`🎯 Mapeo inteligente: ${detectedFields} campos detectados automáticamente para ${tableName}`)
-  }, [testData?.requestPayload, parsedSample, selectedTable])
+    const fields: string[] = [];
+    const extractFields = (obj: any, prefix = "") => {
+      Object.keys(obj).forEach(key => {
+        const fullKey = prefix ? `${prefix}.${key}` : key;
+        fields.push(fullKey);
+        if (typeof obj[key] === 'object' && obj[key] !== null && !Array.isArray(obj[key])) {
+          extractFields(obj[key], fullKey);
+        }
+      });
+    };
+    extractFields(dataSource);
+    return fields;
+  }, [parsedSample]);
 
-  // NUEVO: Auto-mapeo automático para datos sintéticos
+  // Efecto 4: Calcular el mapeo SOLO cuando los campos de destino y el payload están listos.
   useEffect(() => {
-    if (testData?.synthetic && testData?.requestPayload && selectedTable && !hasAutoMapped) {
-      // Si son datos sintéticos (desde "Crear comando cURL"), ejecutar auto-mapeo automáticamente
-      console.log("🎯 Ejecutando auto-mapeo automático para datos sintéticos")
-      setTimeout(() => {
-        autoMapFieldsIntelligent()
-        setHasAutoMapped(true)
-        toast.success("🎯 Auto-mapeo ejecutado automáticamente")
-      }, 1000) // Aumentar delay para asegurar que todo esté listo
+    if (targetTableFields.length > 0 && parsedSample) {
+        const sourceFields = getAvailableSourceFields(parsedSample);
+        const autoMappings: FieldMapping[] = [];
+        
+        targetTableFields
+            .filter(field => !['id', 'createdAt', 'updatedAt', 'systemId'].includes(field.name))
+            .forEach(targetField => {
+                if (sourceFields.includes(targetField.name)) {
+                    autoMappings.push({
+                        sourceField: targetField.name,
+                        targetField: targetField.name,
+                        targetType: targetField.type,
+                        required: !targetField.isOptional,
+                        transformation: getSuggestedTransformation(targetField.type),
+                        defaultValue: "",
+                        condition: "",
+                    });
+                }
+            });
+
+        if (autoMappings.length > 0) {
+            setFieldMappings(autoMappings);
+            updateDataMapping(selectedTable, autoMappings);
+            toast.success(`🎯 Mapeo automático: ${autoMappings.length} campos detectados.`);
+        }
     }
-  }, [testData?.synthetic, testData?.requestPayload, selectedTable, hasAutoMapped, autoMapFieldsIntelligent])
-
-  // NUEVO: Resetear hasAutoMapped cuando cambien datos o tabla
-  useEffect(() => {
-    setHasAutoMapped(false)
-  }, [selectedTable, testData?.requestPayload])
-
-  const handleTableChange = (tableName: string) => {
-    setSelectedTable(tableName)
-    onChange({
-      ...data,
-      targetTable: tableName
-    })
-  }
-
-  const handleSampleJsonChange = (value: string) => {
-    setSampleJson(value)
-    try {
-      const parsed = JSON.parse(value)
-      setParsedSample(parsed)
-    } catch (error) {
-      setParsedSample(null)
-    }
-  }
+  }, [targetTableFields, parsedSample]);
 
   const addFieldMapping = () => {
-    setFieldMappings([...fieldMappings, {
+    const newFieldMappings = [...fieldMappings, {
       sourceField: "",
       targetField: "",
       targetType: "string",
@@ -359,75 +214,69 @@ export function DataMapperForm({ webhook, data, onChange, testData }: DataMapper
       transformation: "",
       defaultValue: "",
       condition: ""
-    }])
-  }
+    }];
+    setFieldMappings(newFieldMappings);
+    updateDataMapping(selectedTable, newFieldMappings);
+  };
 
   const updateFieldMapping = (index: number, updates: Partial<FieldMapping>) => {
-    const updated = fieldMappings.map((mapping, i) => 
+    const newFieldMappings = fieldMappings.map((mapping, i) =>
       i === index ? { ...mapping, ...updates } : mapping
-    )
-    setFieldMappings(updated)
-    updateDataMapping(updated)
-  }
+    );
+    setFieldMappings(newFieldMappings);
+    updateDataMapping(selectedTable, newFieldMappings);
+  };
 
   const removeFieldMapping = (index: number) => {
-    const updated = fieldMappings.filter((_, i) => i !== index)
-    setFieldMappings(updated)
-    updateDataMapping(updated)
-  }
+    const newFieldMappings = fieldMappings.filter((_, i) => i !== index);
+    setFieldMappings(newFieldMappings);
+    updateDataMapping(selectedTable, newFieldMappings);
+  };
 
-  const updateDataMapping = (mappings: FieldMapping[]) => {
-    const fieldMappings: any = {}
+  const updateDataMapping = (table: string, mappings: FieldMapping[]) => {
+    const fieldMappingsObj: any = {};
     mappings.forEach(mapping => {
       if (mapping.targetField) {
-        fieldMappings[mapping.targetField] = {
+        fieldMappingsObj[mapping.targetField] = {
           source: mapping.sourceField,
           required: mapping.required,
           transform: mapping.transformation || undefined,
           default: mapping.defaultValue || undefined,
-          condition: mapping.condition || undefined
-        }
+          condition: mapping.condition || undefined,
+        };
       }
-    })
+    });
 
     onChange({
-      ...data,
       dataMapping: {
-        targetTable: selectedTable,
-        fieldMappings
-      }
-    })
-  }
-
-  const getAvailableSourceFields = () => {
-    // Priorizar testData sobre parsedSample
-    const dataSource = testData?.requestPayload || parsedSample
-    if (!dataSource) return []
-    
-    const fields: string[] = []
-    
-    const extractFields = (obj: any, prefix = "") => {
-      Object.keys(obj).forEach(key => {
-        const fullKey = prefix ? `${prefix}.${key}` : key
-        fields.push(fullKey)
-        
-        if (typeof obj[key] === 'object' && obj[key] !== null && !Array.isArray(obj[key])) {
-          extractFields(obj[key], fullKey)
-        }
-      })
-    }
-    
-    extractFields(dataSource)
-    return fields
-  }
-
-  const getTargetTable = () => {
-    return AVAILABLE_TABLES.find(table => table.name === selectedTable)
-  }
+        targetTable: table,
+        fieldMappings: fieldMappingsObj,
+      },
+    });
+  };
 
   const autoMapFields = () => {
-    autoMapFieldsIntelligent()
-  }
+    if (parsedSample && selectedTable && targetTableFields.length > 0) {
+      const sourceFields = getAvailableSourceFields(parsedSample);
+      const newMappings = targetTableFields
+        .filter(field => !['id', 'createdAt', 'updatedAt', 'systemId'].includes(field.name) && sourceFields.includes(field.name))
+        .map(targetField => ({
+            sourceField: targetField.name,
+            targetField: targetField.name,
+            targetType: targetField.type,
+            required: !targetField.isOptional,
+            transformation: getSuggestedTransformation(targetField.type),
+            defaultValue: "",
+            condition: "",
+        }));
+
+      setFieldMappings(newMappings);
+      updateDataMapping(selectedTable, newMappings);
+      toast.success("Campos re-mapeados exitosamente.");
+    } else {
+      toast.error("No hay datos o tabla de destino para realizar el mapeo.");
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -442,54 +291,20 @@ export function DataMapperForm({ webhook, data, onChange, testData }: DataMapper
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          {/* Mostrar datos de prueba si están disponibles Y NO son sintéticos */}
-          {testData?.requestPayload && !testData?.synthetic && (
+          {/* Información de tabla seleccionada desde el generador */}
+          {selectedTable && (
             <div className="p-4 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg">
               <h4 className="font-medium mb-2 text-blue-900 dark:text-blue-100">
-                Datos recibidos en la prueba:
+                <Table className="inline-block w-4 h-4 mr-2" />
+                Tabla seleccionada: {selectedTable}
               </h4>
-              <pre className="text-xs bg-white dark:bg-gray-900 p-3 rounded overflow-auto max-h-32">
-                {JSON.stringify(testData.requestPayload, null, 2)}
-              </pre>
-            </div>
-          )}
-          
-          {/* Mostrar información de datos sintéticos */}
-          {testData?.requestPayload && testData?.synthetic && (
-            <div className="p-4 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg">
-              <h4 className="font-medium mb-2 text-green-900 dark:text-green-100">
-                ✨ Estructura generada automáticamente desde tabla
-              </h4>
-              <p className="text-sm text-green-700 dark:text-green-300">
-                Se ha generado automáticamente una estructura de datos basada en los campos de la tabla seleccionada. 
-                El mapeo se ha configurado automáticamente.
+              <p className="text-sm text-blue-700 dark:text-blue-300">
+                Los campos de mapeo se configurarán automáticamente basándose en la tabla seleccionada en el generador cURL.
               </p>
             </div>
           )}
-          
-          {/* Selector de tabla */}
-          <div className="space-y-2">
-            <Label>Tabla destino *</Label>
-            <Select value={selectedTable} onValueChange={handleTableChange}>
-              <SelectTrigger>
-                <SelectValue placeholder="Selecciona una tabla..." />
-              </SelectTrigger>
-              <SelectContent>
-                {AVAILABLE_TABLES.map((table) => (
-                  <SelectItem key={table.name} value={table.name}>
-                    <div className="space-y-1">
-                      <div className="font-medium">{table.displayName}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {table.fields.length} campos disponibles
-                      </div>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
 
-          {/* Mapeo de campos */}
+          {/* Mapeo de campos - SIEMPRE VISIBLE cuando hay tabla seleccionada */}
           {selectedTable && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
@@ -498,14 +313,11 @@ export function DataMapperForm({ webhook, data, onChange, testData }: DataMapper
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => {
-                      autoMapFields()
-                      setHasAutoMapped(true)
-                    }}
-                    disabled={!testData?.requestPayload || !selectedTable}
+                    onClick={autoMapFields}
+                    disabled={!selectedTable}
                   >
                     <MapPin className="h-4 w-4 mr-1" />
-                    {hasAutoMapped ? "Re-mapear" : "Auto-mapear"}
+                    Auto-mapear
                   </Button>
                   <Button
                     variant="outline"
@@ -555,19 +367,22 @@ export function DataMapperForm({ webhook, data, onChange, testData }: DataMapper
                         <Select
                           value={mapping.targetField}
                           onValueChange={(value) => updateFieldMapping(index, { targetField: value })}
+                          disabled={targetTableFields.length === 0}
                         >
                           <SelectTrigger className="h-8">
                             <SelectValue placeholder="Seleccionar..." />
                           </SelectTrigger>
                           <SelectContent>
-                            {getTargetTable()?.fields.map((field) => (
+                            {targetTableFields.filter(f => !f.auto).map((field) => (
                               <SelectItem key={field.name} value={field.name}>
-                                <div className="flex items-center gap-2">
-                                  <code className="text-xs">{field.name}</code>
-                                  <Badge variant="outline" className="text-xs">
-                                    {field.type}
-                                  </Badge>
-                                  {field.required && (
+                                <div className="flex items-center justify-between w-full">
+                                  <div className="flex items-center gap-2">
+                                    <code className="text-xs">{field.name}</code>
+                                    <Badge variant="outline" className="text-xs">
+                                      {field.type}
+                                    </Badge>
+                                  </div>
+                                  {!field.isOptional && (
                                     <Badge variant="destructive" className="text-xs">
                                       Requerido
                                     </Badge>
@@ -583,19 +398,22 @@ export function DataMapperForm({ webhook, data, onChange, testData }: DataMapper
                       <div className="space-y-1">
                         <Label className="text-xs">Transformación</Label>
                         <Select
-                          value={mapping.transformation}
-                          onValueChange={(value) => updateFieldMapping(index, { transformation: value })}
+                          value={mapping.transformation || 'none'}
+                          onValueChange={(value) => updateFieldMapping(index, { transformation: value === 'none' ? '' : value })}
                         >
                           <SelectTrigger className="h-8">
                             <SelectValue placeholder="Ninguna" />
                           </SelectTrigger>
-                                                                                <SelectContent>
-                             {TRANSFORMATION_TYPES.map((transform) => (
-                               <SelectItem key={transform.value} value={transform.value}>
-                                 {transform.label}
-                               </SelectItem>
-                             ))}
-                           </SelectContent>
+                          <SelectContent>
+                            {TRANSFORMATION_TYPES.map((transform) => (
+                              <SelectItem key={transform.value} value={transform.value}>
+                                <div className="flex items-center gap-2">
+                                  {transform.value !== 'none' && <Wand2 className="w-3 h-3 text-muted-foreground" />}
+                                  <span>{transform.label}</span>
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
                         </Select>
                       </div>
 
@@ -616,7 +434,7 @@ export function DataMapperForm({ webhook, data, onChange, testData }: DataMapper
               </div>
 
               {/* Vista previa del mapeo */}
-              {fieldMappings.length > 0 && testData?.requestPayload && (
+              {fieldMappings.length > 0 && (parsedSample || testData?.requestPayload) && (
                 <Card>
                   <CardHeader>
                     <CardTitle className="text-sm">Vista Previa del Mapeo</CardTitle>
@@ -630,7 +448,7 @@ export function DataMapperForm({ webhook, data, onChange, testData }: DataMapper
                             if (mapping.sourceField && mapping.targetField) {
                               const value = mapping.sourceField.split('.').reduce(
                                 (obj, key) => obj?.[key], 
-                                testData.requestPayload
+                                parsedSample || testData.requestPayload
                               )
                               acc[mapping.targetField] = value
                             }
@@ -647,13 +465,13 @@ export function DataMapperForm({ webhook, data, onChange, testData }: DataMapper
             </div>
           )}
 
-          {/* Instrucciones si no hay datos de prueba */}
-          {!testData?.requestPayload && (
+          {/* Instrucciones si no hay tabla seleccionada */}
+          {!selectedTable && (
             <div className="text-center py-8 bg-muted/20 border-2 border-dashed rounded-lg">
               <Target className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
               <h4 className="font-medium mb-1">Sin datos para mapear</h4>
               <p className="text-sm text-muted-foreground">
-                Ve a la pestaña "Datos, Pruebas y Mapeo" y usa el botón "Generar Estructura" o ejecuta una prueba para configurar el mapeo automáticamente
+                Ve a la pestaña "Tester" para seleccionar una tabla y generar datos de prueba.
               </p>
             </div>
           )}

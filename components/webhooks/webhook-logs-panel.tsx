@@ -13,6 +13,13 @@ import { toast } from "sonner"
 import { AnimatePresence, motion } from "framer-motion"
 import { cn } from "@/lib/utils"
 import { PaginationControls } from "@/components/pagination-controls"
+import { Checkbox } from "@/components/ui/checkbox"
+import {
+    Accordion,
+    AccordionContent,
+    AccordionItem,
+    AccordionTrigger,
+} from "@/components/ui/accordion"
 
 interface WebhookLogsPanelProps {
   webhookId: string;
@@ -31,13 +38,15 @@ export interface WebhookLog {
   headers?: any;
   body?: any;
   responseBody?: any;
+  durationMs?: number;
 }
 
 export function WebhookLogsPanel({ webhookId, initialLogs, isLoading: initialIsLoading }: WebhookLogsPanelProps) {
   const [logs, setLogs] = useState<WebhookLog[]>(initialLogs || []);
   const [isLoading, setIsLoading] = useState(initialIsLoading ?? true);
   const [error, setError] = useState<string | null>(null);
-  const [expandedLogRowId, setExpandedLogRowId] = useState<string | null>(null);
+  const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
+  const [selectedLogIds, setSelectedLogIds] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState<"all" | "errors">("all");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -106,6 +115,47 @@ export function WebhookLogsPanel({ webhookId, initialLogs, isLoading: initialIsL
       }
   };
 
+  const handleDeleteSelected = async () => {
+    if (selectedLogIds.size === 0) return;
+    
+    try {
+      const response = await fetch(`/api/internal/webhook-logs`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selectedLogIds) }),
+      });
+
+      if (response.ok) {
+        toast.success(`${selectedLogIds.size} logs eliminados correctamente.`);
+        setSelectedLogIds(new Set());
+        fetchLogs(); // Recargar logs
+      } else {
+        toast.error("Error al eliminar los logs.");
+      }
+    } catch (error) {
+      toast.error("Error de red al eliminar los logs.");
+    }
+  };
+  
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      const allIds = new Set(logs.map(log => log.id));
+      setSelectedLogIds(allIds);
+    } else {
+      setSelectedLogIds(new Set());
+    }
+  };
+
+  const handleSelectLog = (logId: string, checked: boolean) => {
+    const newSelectedIds = new Set(selectedLogIds);
+    if (checked) {
+      newSelectedIds.add(logId);
+    } else {
+      newSelectedIds.delete(logId);
+    }
+    setSelectedLogIds(newSelectedIds);
+  };
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
@@ -132,6 +182,10 @@ export function WebhookLogsPanel({ webhookId, initialLogs, isLoading: initialIsL
           <Button variant="destructive" size="sm" onClick={handleDeleteAllLogs}>
             <Trash2 className="h-4 w-4" />
           </Button>
+          <Button variant="destructive" size="sm" onClick={handleDeleteSelected} disabled={selectedLogIds.size === 0}>
+            <Trash2 className="h-4 w-4 mr-2" />
+            Eliminar ({selectedLogIds.size})
+          </Button>
         </div>
       </CardHeader>
       <CardContent>
@@ -145,20 +199,35 @@ export function WebhookLogsPanel({ webhookId, initialLogs, isLoading: initialIsL
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[80px]">Estado</TableHead>
+                  <TableHead className="w-[50px]">
+                    <Checkbox
+                      checked={selectedLogIds.size > 0 && selectedLogIds.size === logs.length}
+                      onCheckedChange={handleSelectAll}
+                    />
+                  </TableHead>
+                  <TableHead>Estado</TableHead>
                   <TableHead>Método</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Fecha</TableHead>
-                  <TableHead className="text-right">Acciones</TableHead>
+                  <TableHead>Duración</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {logs.map((log) => (
                   <React.Fragment key={log.id}>
-                    <TableRow>
+                    <TableRow 
+                      className="cursor-pointer" 
+                      onClick={() => setExpandedLogId(expandedLogId === log.id ? null : log.id)}
+                    >
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <Checkbox
+                          checked={selectedLogIds.has(log.id)}
+                          onCheckedChange={(checked) => handleSelectLog(log.id, !!checked)}
+                        />
+                      </TableCell>
                       <TableCell>
                         <Badge variant={log.isSuccess ? "default" : "destructive"}>
-                          {log.isSuccess ? <CheckCircle className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
+                          {log.statusCode}
                         </Badge>
                       </TableCell>
                       <TableCell>{log.method}</TableCell>
@@ -168,53 +237,40 @@ export function WebhookLogsPanel({ webhookId, initialLogs, isLoading: initialIsL
                         </Badge>
                       </TableCell>
                       <TableCell>{format(new Date(log.createdAt), "dd/MM/yyyy HH:mm:ss", { locale: es })}</TableCell>
-                      <TableCell className="text-right">
-                        {!log.isSuccess && (
-                          <Button variant="ghost" size="sm" onClick={() => handleRerunLog(log.id)}>
-                            <Play className="h-4 w-4" />
-                          </Button>
-                        )}
-                        <Button variant="ghost" size="sm" onClick={() => setExpandedLogRowId(expandedLogRowId === log.id ? null : log.id)}>
-                          <ChevronRight className={cn("h-4 w-4 transition-transform", expandedLogRowId === log.id && "rotate-90")} />
-                        </Button>
+                      <TableCell>
+                        {log.durationMs ? `${log.durationMs}ms` : '-'}
                       </TableCell>
                     </TableRow>
-                    <AnimatePresence>
-                      {expandedLogRowId === log.id && (
-                        <motion.tr
-                          initial={{ opacity: 0, height: 0 }}
-                          animate={{ opacity: 1, height: "auto" }}
-                          exit={{ opacity: 0, height: 0 }}
-                        >
-                          <TableCell colSpan={5} className="p-0">
-                            <div className="bg-muted/50 p-4 space-y-4">
-                              <h4 className="font-semibold">Detalles del Log</h4>
-                              {log.processingError && (
-                                 <div className="p-2 bg-red-100 text-red-800 rounded"><strong>Error de Procesamiento:</strong> {log.processingError}</div>
-                              )}
-                              <div>
-                                  <h5 className="font-medium text-sm mb-1">Headers</h5>
-                                  <pre className="text-xs bg-background p-2 rounded max-h-40 overflow-auto">
-                                    {JSON.stringify(log.headers, null, 2)}
-                                  </pre>
-                              </div>
-                              <div>
-                                  <h5 className="font-medium text-sm mb-1">Body Recibido</h5>
-                                  <pre className="text-xs bg-background p-2 rounded max-h-40 overflow-auto">
-                                    {JSON.stringify(log.body, null, 2)}
-                                  </pre>
-                              </div>
-                               <div>
-                                  <h5 className="font-medium text-sm mb-1">Respuesta Enviada</h5>
-                                  <pre className="text-xs bg-background p-2 rounded max-h-40 overflow-auto">
-                                    {JSON.stringify(log.responseBody, null, 2)}
-                                  </pre>
-                              </div>
+                    {expandedLogId === log.id && (
+                      <TableRow>
+                        <TableCell colSpan={5}>
+                          <div className="p-4 bg-muted">
+                            <h4 className="font-semibold">Detalles del Log</h4>
+                            {log.processingError && (
+                               <div className="p-2 bg-red-100 text-red-800 rounded"><strong>Error de Procesamiento:</strong> {log.processingError}</div>
+                            )}
+                            <div>
+                                <h5 className="font-medium text-sm mb-1">Headers</h5>
+                                <pre className="text-xs bg-background p-2 rounded max-h-40 overflow-auto">
+                                  {JSON.stringify(log.headers, null, 2)}
+                                </pre>
                             </div>
-                          </TableCell>
-                        </motion.tr>
-                      )}
-                    </AnimatePresence>
+                            <div>
+                                <h5 className="font-medium text-sm mb-1">Body Recibido</h5>
+                                <pre className="text-xs bg-background p-2 rounded max-h-40 overflow-auto">
+                                  {JSON.stringify(log.body, null, 2)}
+                                </pre>
+                            </div>
+                             <div>
+                                <h5 className="font-medium text-sm mb-1">Respuesta Enviada</h5>
+                                <pre className="text-xs bg-background p-2 rounded max-h-40 overflow-auto">
+                                  {JSON.stringify(log.responseBody, null, 2)}
+                                </pre>
+                            </div>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )}
                   </React.Fragment>
                 ))}
               </TableBody>

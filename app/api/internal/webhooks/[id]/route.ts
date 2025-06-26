@@ -62,53 +62,43 @@ export async function PATCH(
     if (data.targetUrl !== undefined) updateData.targetUrl = data.targetUrl
     if (data.triggerEvents !== undefined) updateData.triggerEvents = data.triggerEvents || []
     if (data.expectedSchema !== undefined) updateData.expectedSchema = data.expectedSchema
+    if (data.samplePayload !== undefined) updateData.samplePayload = data.samplePayload
     if (data.dataMapping !== undefined) updateData.dataMapping = data.dataMapping
+    if (data.responseConfig !== undefined) updateData.responseConfig = data.responseConfig
     
-    // ===== LÓGICA DE SEGURIDAD MEJORADA =====
-    console.log("Processing security with authType:", data.authType)
-    
-    if (data.authType !== undefined) {
-      switch (data.authType) {
-        case "bearer":
-          // Bearer Token: guardar en 'token', NO tocar 'secretKey'
-          if (data.tokenAuth) {
-            updateData.token = data.tokenAuth
-            console.log("✅ Bearer token saved:", data.tokenAuth)
-          }
-          // NO establecer secretKey como null, simplemente no lo actualizamos
-          break
-          
-        case "hmac":
-          // HMAC: guardar en 'secretKey', NO tocar 'token'
-          if (data.hmacSecret) {
-            updateData.secretKey = data.hmacSecret
-            console.log("✅ HMAC secret saved:", data.hmacSecret)
-          }
-          // NO establecer token como null, simplemente no lo actualizamos
-          break
-          
-        case "apikey":
-          // API Key: tratarlo como Bearer token
-          if (data.apiKey || data.tokenAuth) {
-            updateData.token = data.apiKey || data.tokenAuth
-            console.log("✅ API Key saved:", data.apiKey || data.tokenAuth)
-          }
-          break
-          
-        case "none":
-          // Sin autenticación: solo limpiamos secretKey (token debe permanecer)
-          updateData.secretKey = null
-          console.log("✅ Security cleared (secretKey only)")
-          break
-      }
-    } else {
-      // Fallback a la lógica anterior si no se especifica authType
-      if (data.secretKey !== undefined || data.hmacSecret !== undefined) {
-        updateData.secretKey = data.secretKey || data.hmacSecret
-      }
-      if (data.tokenAuth !== undefined) {
-        updateData.token = data.tokenAuth
-      }
+    // ===== LÓGICA DE SEGURIDAD REFACTORIZADA Y CORREGIDA =====
+    console.log("Processing security with authType:", data.authType);
+
+    if (data.authType) {
+        updateData.requiresAuth = data.authType !== 'none';
+
+        switch (data.authType) {
+            case "bearer":
+                // Si es bearer, guardamos el token y nos aseguramos que la secretKey sea null
+                updateData.token = data.token;
+                updateData.secretKey = null;
+                console.log(`✅ Bearer token set. Secret key cleared.`);
+                break;
+
+            case "hmac":
+                // Si es HMAC, guardamos la secretKey y nos aseguramos que el token sea null
+                updateData.secretKey = data.secretKey;
+                updateData.token = null;
+                console.log(`✅ HMAC secret set. Token cleared.`);
+                break;
+            
+            case "none":
+                // Si no hay auth, limpiamos ambos campos para evitar conflictos
+                updateData.token = null;
+                updateData.secretKey = null;
+                console.log("✅ Security cleared. Token and secret key are null.");
+                break;
+            
+            default:
+                // Por si llega un authType no esperado, no hacemos cambios en la seguridad.
+                console.log(`⚠️ AuthType no reconocido: ${data.authType}. No se realizarán cambios de seguridad.`);
+                break;
+        }
     }
     
     updateData.updatedAt = new Date()
