@@ -44,6 +44,11 @@ import {
   Gift,
   ArrowRightLeft,
   Bell,
+  Webhook,
+  Zap,
+  Network,
+  Cpu,
+  Link2
 } from "lucide-react"
 
 export interface MenuItem {
@@ -454,6 +459,32 @@ export const menuItems: MenuItem[] = [
         label: "Terminales POS",
         href: "/configuracion/terminales-pos",
         icon: SquareTerminal,
+      },
+      {
+        id: "integraciones",
+        label: "Integraciones",
+        icon: Link2,
+        href: "/configuracion/integraciones",
+        submenu: [
+          {
+            id: "webhooks",
+            label: "Webhooks",
+            icon: Webhook,
+            href: "/configuracion/integraciones/webhooks",
+          },
+          {
+            id: "equipos-iot",
+            label: "Equipos IoT",
+            icon: Cpu,
+            href: "/configuracion/integraciones/equipos",
+          },
+          {
+            id: "apis-externas",
+            label: "APIs Externas",
+            icon: Network,
+            href: "/configuracion/integraciones/apis",
+          },
+        ],
       },
     ],
   },

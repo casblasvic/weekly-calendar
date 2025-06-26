@@ -82,6 +82,7 @@ model System {
   opportunities                Opportunity[]
   tags                         Tag[]
   appointmentDeviceUsage       AppointmentDeviceUsage[]
+  webhooks                     Webhook[]
 
   @@map("systems")
 }
@@ -134,6 +135,7 @@ model User {
   appointmentExtensions          AppointmentExtension[]
   servicesStarted                AppointmentService[]            @relation("ServiceStartedBy")
   deviceUsageStarted             AppointmentDeviceUsage[]        @relation("DeviceUsageStartedBy")
+  webhooksCreated                Webhook[]
 
   @@index([systemId])
   @@index([countryIsoCode])
@@ -2741,6 +2743,142 @@ model PersonClientData {
   @@map("person_client_data")
 }
 
+// === WEBHOOKS MODELS ===
+model Webhook {
+  id                  String              @id @default(cuid())
+  name               String              
+  description        String?             
+  slug               String              // Único por sistema
+  
+  // Configuración básica
+  systemId           String
+  isActive           Boolean             @default(true)
+  
+  // Configuración HTTP
+  allowedMethods     String[]            // ["POST", "GET"]
+  url                String              // Auto-generada
+  token              String              @unique // wh_systemId_randomString
+  secretKey          String?             // Para HMAC verification
+  
+  // Configuración avanzada
+  rateLimitPerMinute Int                 @default(60)
+  ipWhitelist        String[]            @default([])
+  customHeaders      Json?               
+  
+  // Configuración de datos
+  expectedSchema     Json?               // JSONSchema validation
+  dataMapping        Json?               // Mapping rules
+  
+  // Webhooks bidireccionales
+  direction          WebhookDirection    @default(INCOMING)
+  triggerEvents      String[]            @default([])
+  targetUrl          String?             // Para outgoing
+  
+  // Metadata y stats
+  totalCalls         Int                 @default(0)
+  successfulCalls    Int                 @default(0)
+  lastTriggered      DateTime?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  createdByUserId    String?
+  
+  // Relaciones
+  system             System              @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  createdBy          User?               @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+  logs               WebhookLog[]
+  executions         WebhookExecution[]
+  
+  @@unique([systemId, slug])
+  @@index([systemId])
+  @@index([isActive])
+  @@index([direction])
+  @@map("webhooks")
+}
+
+model WebhookLog {
+  id                 String              @id @default(cuid())
+  webhookId          String
+  
+  // Request info
+  method             String              
+  url                String              
+  headers            Json                
+  queryParams        Json?               
+  body               Json?               
+  sourceIp           String?             
+  userAgent          String?             
+  
+  // Response info
+  statusCode         Int?                
+  responseBody       Json?               
+  responseTime       Int?                // en milliseconds
+  
+  // Processing info
+  isValid            Boolean             @default(true)
+  validationErrors   String[]            @default([])
+  processingErrors   String[]            @default([])
+  wasProcessed       Boolean             @default(false)
+  
+  // Security
+  securityFlags      String[]            @default([])
+  
+  // Metadata
+  timestamp          DateTime            @default(now())
+  
+  // Relaciones
+  webhook            Webhook             @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+  execution          WebhookExecution?   
+  
+  @@index([webhookId])
+  @@index([timestamp])
+  @@index([statusCode])
+  @@index([wasProcessed])
+  @@map("webhook_logs")
+}
+
+model WebhookExecution {
+  id                 String              @id @default(cuid())
+  webhookId          String
+  webhookLogId       String              @unique
+  
+  // Data processing
+  rawData            Json                // Original payload
+  mappedData         Json                // After mapping
+  targetTable        String?             // "persons", "appointments"
+  targetRecordId     String?             // Created/updated record ID
+  operation          String?             // "CREATE", "UPDATE", "DELETE"
+  
+  // Execution status
+  status             ExecutionStatus     @default(PENDING)
+  errorMessage       String?
+  executedAt         DateTime?
+  
+  // Metadata
+  createdAt          DateTime            @default(now())
+  
+  // Relaciones
+  webhook            Webhook             @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+  log                WebhookLog          @relation(fields: [webhookLogId], references: [id], onDelete: Cascade)
+  
+  @@index([webhookId])
+  @@index([status])
+  @@index([targetTable])
+  @@map("webhook_executions")
+}
+
+enum WebhookDirection {
+  INCOMING     // Recibe datos
+  OUTGOING     // Envía datos
+  BIDIRECTIONAL // Ambos
+}
+
+enum ExecutionStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  SKIPPED
+}
+
 enum AppointmentServiceStatus {
   SCHEDULED
   IN_PROGRESS
@@ -2989,4 +3127,16 @@ enum ExpenseStatus {
   APPROVED
   PAID
   CANCELLED
+}
+
+enum HttpMethod {
+  GET
+  POST
+  PUT
+  PATCH
+  DELETE
+  HEAD
+  OPTIONS
+  TRACE
+  CONNECT
 }
