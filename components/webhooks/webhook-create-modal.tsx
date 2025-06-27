@@ -122,7 +122,7 @@ export function WebhookCreateModal({ open, onOpenChange, systemId: propSystemId,
     { label: "Confirmar" }
   ];
 
-  return (
+        return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
@@ -135,48 +135,48 @@ export function WebhookCreateModal({ open, onOpenChange, systemId: propSystemId,
               <Step key={index} label={step.label} />
             ))}
           </Stepper>
-        </div>
-        
+            </div>
+            
         <div className="space-y-6 py-4 min-h-[300px]">
           {currentStep === 0 && (
             <div className="space-y-4">
-               <div>
+                  <div>
                   <Label htmlFor="name">Nombre del webhook</Label>
                   <Input id="name" value={formData.name} onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))} />
-                </div>
-                <div>
+                  </div>
+                  <div>
                   <Label htmlFor="description">Descripción</Label>
                   <Textarea id="description" value={formData.description} onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))} />
-                </div>
-                 <div>
+                  </div>
+                  <div>
                   <Label htmlFor="slug">Slug</Label>
                   <div className="relative">
                     <Input id="slug" value={formData.slug} onChange={(e) => setFormData(prev => ({ ...prev, slug: e.target.value }))} className={cn(!slugValidation.isAvailable && "border-red-500")} />
                     <div className="absolute right-3 top-1/2 -translate-y-1/2">
                         {slugValidation.isChecking ? <Loader2 className="h-4 w-4 animate-spin" /> : 
                          slugValidation.isAvailable ? <CheckCircle className="h-4 w-4 text-green-500" /> : <XCircle className="h-4 w-4 text-red-500" />}
-                    </div>
+                  </div>
                   </div>
                 </div>
-            </div>
-          )}
+                  </div>
+                )}
           {currentStep === 1 && (
             <div className="space-y-4">
               <h4 className="font-medium">Configuración de Seguridad (Opcional)</h4>
-               <div>
+                  <div>
                   <Label>Bearer Token</Label>
                    <div className="flex gap-2">
                     <Input value={generatedToken} onChange={e => setGeneratedToken(e.target.value)} placeholder="Dejar en blanco o generar"/>
                     <Button variant="outline" size="sm" onClick={() => setGeneratedToken('wh_bearer_' + Math.random().toString(36).substring(2))}>Generar</Button>
                   </div>
-               </div>
-                <div>
+                  </div>
+                  <div>
                   <Label>HMAC Secret</Label>
                    <div className="flex gap-2">
                     <Input value={hmacSecret} onChange={e => setHmacSecret(e.target.value)} placeholder="Dejar en blanco o generar"/>
                     <Button variant="outline" size="sm" onClick={() => setHmacSecret('wh_hmac_' + Math.random().toString(36).substring(2))}>Generar</Button>
                   </div>
-               </div>
+              </div>
             </div>
           )}
            {currentStep === 2 && (
@@ -189,14 +189,14 @@ export function WebhookCreateModal({ open, onOpenChange, systemId: propSystemId,
                </p>
                {generatedToken && <p className="text-sm text-green-600">Se usará un Bearer Token.</p>}
                {hmacSecret && <p className="text-sm text-green-600">Se usará una clave HMAC.</p>}
-             </div>
-           )}
+                </div>
+                )}
         </div>
-
+        
         <DialogFooter>
           <div className="flex w-full justify-between">
             <Button variant="outline" onClick={() => setCurrentStep(prev => Math.max(0, prev - 1))} disabled={currentStep === 0}>
-              Anterior
+                Anterior
             </Button>
             {currentStep < steps.length - 1 ? (
               <Button onClick={() => setCurrentStep(prev => Math.min(steps.length - 1, prev + 1))} disabled={!formData.name || !formData.slug || !slugValidation.isAvailable}>

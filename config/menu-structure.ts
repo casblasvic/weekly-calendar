@@ -481,6 +481,12 @@ export const menuItems: MenuItem[] = [
             href: "/configuracion/integraciones/webhooks",
           },
           {
+            id: "websocket-manager",
+            label: "WebSocket Manager",
+            icon: Network,
+            href: "/configuracion/integraciones/websocket-manager",
+          },
+          {
             id: "dispositivos-iot",
             label: "Dispositivos IoT",
             icon: Cpu,

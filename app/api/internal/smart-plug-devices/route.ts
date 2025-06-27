@@ -14,13 +14,20 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get("page") || "1", 10);
     const pageSize = parseInt(searchParams.get("pageSize") || "10", 10);
+    const credentialId = searchParams.get("credentialId");
 
     try {
         const skip = (page - 1) * pageSize;
 
+        // Construir filtros dinámicamente
+        const whereClause: any = { systemId };
+        if (credentialId && credentialId !== 'all') {
+            whereClause.credentialId = credentialId;
+        }
+
         const [devices, totalCount] = await prisma.$transaction([
             prisma.smartPlugDevice.findMany({
-                where: { systemId },
+                where: whereClause,
                 skip,
                 take: pageSize,
                 include: {
@@ -35,12 +42,20 @@ export async function GET(request: NextRequest) {
                             }
                         },
                     },
+                    credential: {
+                        select: {
+                            id: true,
+                            name: true,
+                            email: true,
+                            status: true,
+                        }
+                    },
                 },
                 orderBy: {
                     name: 'asc',
                 },
             }),
-            prisma.smartPlugDevice.count({ where: { systemId } }),
+            prisma.smartPlugDevice.count({ where: whereClause }),
         ]);
 
         return NextResponse.json({

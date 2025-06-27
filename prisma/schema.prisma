@@ -86,6 +86,7 @@ model System {
   webhookLogs                  WebhookLog[]
   integrations                 SystemIntegration[]
   smartDevices                 SmartPlugDevice[]
+  shellyCredentials            ShellyCredential[]
 
   @@map("systems")
 }
@@ -285,6 +286,7 @@ model Clinic {
   opportunities                Opportunity[]
   personClientOrigin           PersonClientData[]            @relation("PersonClientOriginClinic")
   smartPlugDevices             SmartPlugDevice[]
+  shellyCredentials            ShellyCredential[]
 
   @@unique([name, systemId], name: "Clinic_name_systemId_key")
   @@index([systemId])
@@ -3130,13 +3132,98 @@ model SmartPlugDevice {
   name          String
   type          String   // "SHELLY", "KASA", etc.
   deviceId      String   // ID del fabricante
-  deviceIp      String
-  equipmentId   String   @unique 
-  equipment     Equipment @relation(fields: [equipmentId], references: [id])
+  deviceIp      String?  // IP actual del dispositivo
+  equipmentId   String?  @unique // Opcional - para asociar con equipamiento
+  equipment     Equipment? @relation(fields: [equipmentId], references: [id])
   integrationId String
   integration   SystemIntegration @relation(fields: [integrationId], references: [id])
   systemId      String
   system        System   @relation(fields: [systemId], references: [id])
-  clinicId      String
-  clinic        Clinic   @relation(fields: [clinicId], references: [id])
+  clinicId      String?  // Opcional
+  clinic        Clinic?  @relation(fields: [clinicId], references: [id])
+  
+  // Campos Shelly básicos
+  credentialId  String?
+  credential    ShellyCredential? @relation(fields: [credentialId], references: [id], onDelete: SetNull)
+  online        Boolean   @default(false)
+  lastSeenAt    DateTime?
+  
+  // Información del dispositivo
+  generation    String?   // "G1", "G2", "GBLE"
+  modelCode     String?   // "SHSW-1", "S3PL-00112EU", etc.
+  macAddress    String?   // MAC del dispositivo
+  firmwareVersion String? // Versión actual del firmware
+  hasUpdate     Boolean?  // Si hay actualizaciones disponibles
+  
+  // Estado del switch/relay principal
+  relayOn       Boolean?  // null si no se conoce el estado
+  relaySource   String?   // "button", "SHC", "timer", etc.
+  
+  // Datos energéticos
+  currentPower  Float?    // Potencia actual en watts
+  totalEnergy   Float?    // Energía total consumida en Wh
+  voltage       Float?    // Voltaje actual
+  current       Float?    // Corriente actual en amperios
+  
+  // Conectividad WiFi
+  wifiSsid      String?   // Red WiFi conectada
+  wifiRssi      Int?      // Señal WiFi (-dBm)
+  
+  // Temperatura del dispositivo
+  temperature   Float?    // Temperatura en Celsius
+  
+  // Metadatos adicionales
+  rawData       Json?     // Datos completos del dispositivo para debugging
+  excludeFromSync Boolean @default(false) // Si true, no se sincroniza en futuras sync
+  
+  // Timestamps
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt @default(now())
+  
+  @@index([credentialId])
+  @@index([systemId])
+  @@index([clinicId])
+  @@index([online])
+  @@index([modelCode])
+}
+
+model ShellyCredential {
+  id             String            @id @default(cuid())
+  name           String            // Alias visible para el usuario
+  email          String
+  accessToken    String            @db.Text // Cifrado
+  refreshToken   String            @db.Text // Cifrado
+  apiHost        String            // ej: https://shelly-47-eu.shelly.cloud
+  systemId       String
+  clinicId       String?           // Opcional - usuario puede no estar asignado a clínica
+  status         String            @default("connected") // connected | error | expired
+  lastSyncAt     DateTime?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  
+  // Relations
+  system         System            @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  clinic         Clinic?           @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  smartPlugs     SmartPlugDevice[]
+  
+  @@unique([email, systemId])  // Cambiar unique constraint para permitir null en clinicId
+  @@index([systemId])
+  @@index([clinicId])
+  @@index([status])
+  @@map("shelly_credentials")
+}
+
+model WebSocketConnection {
+  id            String   @id @default(cuid())
+  type          String   // "SHELLY", "OTHER_IOT"
+  referenceId   String   // credentialId para Shelly
+  status        String   // "connected", "disconnected", "error"
+  lastPingAt    DateTime?
+  errorMessage  String?
+  metadata      Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  @@index([type, referenceId])
+  @@index([status])
 }
