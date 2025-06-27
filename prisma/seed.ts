@@ -345,6 +345,8 @@ const initialMockData = {
 // Movido a seed-countries.ts
 // --- FIN DATOS DE PAÍSES ---
 
+import { seedIntegrations } from './seed-integrations.ts';
+
 const prisma = new PrismaClient();
 
 // Inicializar los IDs conocidos para mantener consistencia
@@ -427,454 +429,457 @@ async function calculateVAT(price: number, vatTypeId: string | null, defaultVatT
 }
 
 async function main() {
-  console.log(`Start seeding ...`);
+    console.log(`Start seeding ...`);
 
-  // --- 1. Asegurar/Crear System ---
-  let mainSystem = await prisma.system.findFirst({
-    // Podríamos buscar por un nombre específico si lo hubiera, o tomar el primero
-    // orderBy: { createdAt: 'asc' } // Opcional: tomar el más antiguo si hay varios
-  });
+    // Llamar al nuevo seeder de integraciones primero
+    await seedIntegrations(prisma);
 
-  if (!mainSystem) {
-    mainSystem = await prisma.system.create({
-      data: {
-        name: 'Sistema Principal (Default)', // Nombre para el sistema de ejemplo
-        isActive: true,
-      },
+    // --- 1. Asegurar/Crear System ---
+    let mainSystem = await prisma.system.findFirst({
+      // Podríamos buscar por un nombre específico si lo hubiera, o tomar el primero
+      // orderBy: { createdAt: 'asc' } // Opcional: tomar el más antiguo si hay varios
     });
-    console.log(`Created default system with id: ${mainSystem.id}`);
-  } else {
-    console.log(`Using existing system with id: ${mainSystem.id}`);
-  }
-  const systemId = mainSystem.id;
 
-  // --- Seed CountryInfo --- (Moved earlier)
-  console.log('Seeding countries...');
-  await seedCountries();
-  console.log('Countries seeded.');
+    if (!mainSystem) {
+      mainSystem = await prisma.system.create({
+        data: {
+          name: 'Sistema Principal (Default)', // Nombre para el sistema de ejemplo
+          isActive: true,
+        },
+      });
+      console.log(`Created default system with id: ${mainSystem.id}`);
+    } else {
+      console.log(`Using existing system with id: ${mainSystem.id}`);
+    }
+    const systemId = mainSystem.id;
 
-  // --- 2. Crear Legal Entities ---
-  const legalEntityData = [
-    {
-      name: 'Empresa Demo Contable S.L.',
-      taxIdentifierFields: { "ES_CIF": "B12345678" }, // Usar taxIdentifierFields
-      address: 'Calle Ficticia 123, Madrid',
-      systemId: systemId,
-    },
-    {
-      name: 'Servicios Avanzados Contables S.A.',
-      taxIdentifierFields: { "ES_CIF": "A87654321" }, // Usar taxIdentifierFields
-      address: 'Avenida Imaginaria 45, Barcelona',
-      systemId: systemId,
-    },
-  ];
+    // --- Seed CountryInfo --- (Moved earlier)
+    console.log('Seeding countries...');
+    await seedCountries();
+    console.log('Countries seeded.');
 
-  const createdLegalEntities = [];
-  for (const leData of legalEntityData) {
-    // Como no hay índice único name_systemId, primero buscamos si existe
-    const existingLegalEntity = await prisma.legalEntity.findFirst({
+    // --- 2. Crear Legal Entities ---
+    const legalEntityData = [
+      {
+        name: 'Empresa Demo Contable S.L.',
+        taxIdentifierFields: { "ES_CIF": "B12345678" }, // Usar taxIdentifierFields
+        address: 'Calle Ficticia 123, Madrid',
+        systemId: systemId,
+      },
+      {
+        name: 'Servicios Avanzados Contables S.A.',
+        taxIdentifierFields: { "ES_CIF": "A87654321" }, // Usar taxIdentifierFields
+        address: 'Avenida Imaginaria 45, Barcelona',
+        systemId: systemId,
+      },
+    ];
+
+    const createdLegalEntities = [];
+    for (const leData of legalEntityData) {
+      // Como no hay índice único name_systemId, primero buscamos si existe
+      const existingLegalEntity = await prisma.legalEntity.findFirst({
+        where: {
+          name: leData.name,
+          systemId: leData.systemId
+        }
+      });
+
+      let legalEntity;
+      if (existingLegalEntity) {
+        legalEntity = await prisma.legalEntity.update({
+          where: { id: existingLegalEntity.id },
+          data: {
+            taxIdentifierFields: leData.taxIdentifierFields,
+            fullAddress: leData.address,
+            country: {
+              connect: { isoCode: 'ES' },
+            }
+          }
+        });
+      } else {
+        legalEntity = await prisma.legalEntity.create({
+          data: {
+            name: leData.name,
+            taxIdentifierFields: leData.taxIdentifierFields,
+            fullAddress: leData.address,
+            system: { connect: { id: leData.systemId } },
+            country: { connect: { isoCode: 'ES' } },
+          }
+        });
+      }
+      
+      createdLegalEntities.push(legalEntity);
+      console.log(`Upserted Legal Entity: ${legalEntity.name} (ID: ${legalEntity.id})`);
+    }
+
+    // --- 3. Crear Chart of Account Entries para la primera Legal Entity de contabilidad ---
+    if (createdLegalEntities.length > 0) {
+      const firstLegalEntityForChart = createdLegalEntities[0];
+      const legalEntityIdForChart = firstLegalEntityForChart.id;
+      console.log(`Seeding Chart of Accounts for Legal Entity: ${firstLegalEntityForChart.name} (ID: ${legalEntityIdForChart})`);
+
+      const chartOfAccountsSeed = [
+        // Nivel 0
+        { accountNumber: '1', name: 'ACTIVO', type: 'ASSET', level: 0, allowsDirectEntry: false },
+        { accountNumber: '2', name: 'PASIVO', type: 'LIABILITY', level: 0, allowsDirectEntry: false },
+        { accountNumber: '3', name: 'PATRIMONIO NETO', type: 'EQUITY', level: 0, allowsDirectEntry: false },
+        { accountNumber: '4', name: 'INGRESOS', type: 'REVENUE', level: 0, allowsDirectEntry: false },
+        { accountNumber: '5', name: 'GASTOS', type: 'EXPENSE', level: 0, allowsDirectEntry: false },
+      ];
+
+      const parentAccountsMap = new Map<string, string>(); // Map 'accountNumber' -> 'id'
+
+      for (const accountData of chartOfAccountsSeed) {
+        if (accountData.level === 0) {
+          try {
+            const entry = await prisma.chartOfAccountEntry.upsert({
+              where: { legalEntityId_systemId_accountNumber: { legalEntityId: legalEntityIdForChart, systemId, accountNumber: accountData.accountNumber } },
+              update: { name: accountData.name, type: accountData.type as any, allowsDirectEntry: accountData.allowsDirectEntry },
+              create: {
+                accountNumber: accountData.accountNumber,
+                name: accountData.name,
+                type: accountData.type as any, 
+                level: accountData.level,
+                allowsDirectEntry: accountData.allowsDirectEntry,
+                legalEntityId: legalEntityIdForChart,
+                systemId: systemId,
+              },
+            });
+            parentAccountsMap.set(accountData.accountNumber, entry.id);
+            console.log(`  Upserted L0 Account: ${entry.accountNumber} - ${entry.name}`);
+          } catch (e) {
+            console.error(`Error upserting L0 account ${accountData.accountNumber} - ${accountData.name}:`, e);
+          }
+        }
+      }
+
+      const activoParentId = parentAccountsMap.get('1');
+      if (activoParentId) {
+        const activoSubAccounts = [
+          { accountNumber: '10', name: 'ACTIVO CORRIENTE', type: 'ASSET', level: 1, parentAccountId: activoParentId, allowsDirectEntry: false },
+          { accountNumber: '11', name: 'ACTIVO NO CORRIENTE', type: 'ASSET', level: 1, parentAccountId: activoParentId, allowsDirectEntry: false },
+        ];
+        for (const accountData of activoSubAccounts) {
+          try {
+            const entry = await prisma.chartOfAccountEntry.upsert({
+              where: { legalEntityId_systemId_accountNumber: { legalEntityId: legalEntityIdForChart, systemId, accountNumber: accountData.accountNumber } },
+              update: { name: accountData.name, type: accountData.type as any, parentAccountId: accountData.parentAccountId, allowsDirectEntry: accountData.allowsDirectEntry },
+              create: { ...accountData, type: accountData.type as any, legalEntityId: legalEntityIdForChart, systemId: systemId },
+            });
+            parentAccountsMap.set(accountData.accountNumber, entry.id);
+            console.log(`    Upserted L1 Account: ${entry.accountNumber} - ${entry.name} (Parent: 1)`);
+          } catch (e) {
+            console.error(`Error upserting L1 account ${accountData.accountNumber} - ${accountData.name}:`, e);
+          }
+        }
+      }
+
+      const activoCorrienteParentId = parentAccountsMap.get('10');
+      if (activoCorrienteParentId) {
+        const activoCorrienteSubAccounts = [
+          { accountNumber: '100', name: 'CAJA', type: 'ASSET', level: 2, parentAccountId: activoCorrienteParentId, allowsDirectEntry: true },
+          { accountNumber: '101', name: 'BANCOS', type: 'ASSET', level: 2, parentAccountId: activoCorrienteParentId, allowsDirectEntry: true },
+          { accountNumber: '102', name: 'CLIENTES', type: 'ASSET', level: 2, parentAccountId: activoCorrienteParentId, allowsDirectEntry: true },
+        ];
+        for (const accountData of activoCorrienteSubAccounts) {
+          try {
+            await prisma.chartOfAccountEntry.upsert({
+              where: { legalEntityId_systemId_accountNumber: { legalEntityId: legalEntityIdForChart, systemId, accountNumber: accountData.accountNumber } },
+              update: { name: accountData.name, type: accountData.type as any, parentAccountId: accountData.parentAccountId, allowsDirectEntry: accountData.allowsDirectEntry },
+              create: { ...accountData, type: accountData.type as any, legalEntityId: legalEntityIdForChart, systemId: systemId },
+            });
+            console.log(`      Upserted L2 Account: ${accountData.accountNumber} - ${accountData.name} (Parent: 10)`);
+          } catch (e) {
+            console.error(`Error upserting L2 account ${accountData.accountNumber} - ${accountData.name}:`, e);
+          }
+        }
+      }
+    } else {
+      console.log('No Legal Entities created or found, skipping Chart of Accounts seeding for them.');
+    }
+
+    // --- 4. Crear Legal Entity para las clínicas ---
+    const clinicLegalEntity = await prisma.legalEntity.findFirst({
       where: {
-        name: leData.name,
-        systemId: leData.systemId
+        name: 'Entidad Demo SaaS',
+        systemId: systemId
       }
     });
 
-    let legalEntity;
-    if (existingLegalEntity) {
-      legalEntity = await prisma.legalEntity.update({
-        where: { id: existingLegalEntity.id },
+    let legalEntityForClinics;
+    if (clinicLegalEntity) {
+      legalEntityForClinics = await prisma.legalEntity.update({
+        where: { id: clinicLegalEntity.id },
         data: {
-          taxIdentifierFields: leData.taxIdentifierFields,
-          fullAddress: leData.address,
-          country: {
-            connect: { isoCode: 'ES' },
-          }
+          taxIdentifierFields: { "ES_CIF": "B98765432" },
+          fullAddress: 'Calle Principal 456, Madrid',
+          country: { connect: { isoCode: 'ES' } }
         }
       });
     } else {
-      legalEntity = await prisma.legalEntity.create({
+      legalEntityForClinics = await prisma.legalEntity.create({
         data: {
-          name: leData.name,
-          taxIdentifierFields: leData.taxIdentifierFields,
-          fullAddress: leData.address,
-          system: { connect: { id: leData.systemId } },
-          country: { connect: { isoCode: 'ES' } },
+          name: 'Entidad Demo SaaS',
+          taxIdentifierFields: { "ES_CIF": "B98765432" },
+          fullAddress: 'Calle Principal 456, Madrid',
+          system: { connect: { id: systemId } },
+          country: { connect: { isoCode: 'ES' } }
         }
       });
     }
+    console.log(`Legal Entity for clinics: ${legalEntityForClinics.name} (ID: ${legalEntityForClinics.id})`);
+
+    // ... (El resto del código de seed.ts existente comenzaría aquí)
+    // Asegúrate de que el console.log(`Start seeding ...`); original no se duplique.
+    console.log(`[Diagnostic Seed] Start seeding ...`);
+
+    // --- DIAGNOSTIC STEP 1: Log available models ---
+    try {
+      console.log("[Diagnostic Seed] Attempting to check prisma instance keys:", Object.keys(prisma));
+    } catch (e) {
+      console.error("[Diagnostic Seed] Error logging prisma keys:", e);
+    }
+
+    console.log("[Diagnostic Seed] Diagnostic checks finished (removed clinicSchedule check).");
+
+    console.log(`Start seeding real data...`);
+
+    // --- MAPAS GLOBALES para IDs (Declaración temprana) ---
+    const createdClinicsMap = new Map<string, any>();
+    const createdTariffsMap = new Map<string, pkg.Tariff>();
+    const serviceMap = new Map<string, string>();
+    const productMap = new Map<string, string>();
+    const categoryMap = new Map<string, string>();
+    const bankMap = new Map<string, string>(); 
+    const createdVatTypesMap = new Map<string, any>();
+    const createdCategoriesMap = new Map<string, any>(); // Mapa intermedio para familias
+    let createdBonoDefsMap = new Map<string, string>();
+    let createdPackageDefsMap = new Map<string, string>();
+    const createdClientsMap = new Map<string, pkg.Person>(); // Cambiado de Client a Person
+    let createdBankAccountsMap = new Map<string, string>(); // iban -> id
+    // <<< AÑADIR DECLARACIÓN DEL MAPA DE USUARIOS >>>
+    const createdUsersMap = new Map<string, pkg.User>(); 
     
-    createdLegalEntities.push(legalEntity);
-    console.log(`Upserted Legal Entity: ${legalEntity.name} (ID: ${legalEntity.id})`);
-  }
+    // <<< Variables para IDs globales (CORREGIDO: Inicialización correcta) >>>
+    let system: pkg.System | null = mainSystem;
+    let adminRole: pkg.Role | null = null;
+    let staffRole: pkg.Role | null = null;
+    let vatGeneral: pkg.VATType | null = null;
+    let defaultVatTypeIdFromDB: string | undefined;
+    let tarifaGeneral: pkg.Tariff | null = null;
+    let tarifaVIP: pkg.Tariff | null = null;
+    let paymentMethodCash: pkg.PaymentMethodDefinition | null = null;
+    let paymentMethodCard: pkg.PaymentMethodDefinition | null = null;
+    let paymentMethodTransfer: pkg.PaymentMethodDefinition | null = null;
+    let paymentMethodBono: pkg.PaymentMethodDefinition | null = null;
+    let bonoMasajeInstanceId: string | undefined;
+    let packRelaxInstanceId: string | undefined;
 
-  // --- 3. Crear Chart of Account Entries para la primera Legal Entity de contabilidad ---
-  if (createdLegalEntities.length > 0) {
-    const firstLegalEntityForChart = createdLegalEntities[0];
-    const legalEntityIdForChart = firstLegalEntityForChart.id;
-    console.log(`Seeding Chart of Accounts for Legal Entity: ${firstLegalEntityForChart.name} (ID: ${legalEntityIdForChart})`);
+    // --- Crear Entidades Base (System, Permissions, Roles) --- 
+    console.log('Creating base entities...');
+    // No necesitamos crear otro sistema, ya tenemos mainSystem/systemId
+    // Usar el sistema que ya creamos al inicio
+    console.log(`Using existing system: ${mainSystem.name} (ID: ${systemId})`);
 
-    const chartOfAccountsSeed = [
-      // Nivel 0
-      { accountNumber: '1', name: 'ACTIVO', type: 'ASSET', level: 0, allowsDirectEntry: false },
-      { accountNumber: '2', name: 'PASIVO', type: 'LIABILITY', level: 0, allowsDirectEntry: false },
-      { accountNumber: '3', name: 'PATRIMONIO NETO', type: 'EQUITY', level: 0, allowsDirectEntry: false },
-      { accountNumber: '4', name: 'INGRESOS', type: 'REVENUE', level: 0, allowsDirectEntry: false },
-      { accountNumber: '5', name: 'GASTOS', type: 'EXPENSE', level: 0, allowsDirectEntry: false },
-    ];
+    // --- Crear Países (si no existen) --- 
+    console.log('Creating countries...');
+    await seedCountries();
+    console.log('Countries seeded.');
 
-    const parentAccountsMap = new Map<string, string>(); // Map 'accountNumber' -> 'id'
-
-    for (const accountData of chartOfAccountsSeed) {
-      if (accountData.level === 0) {
-        try {
-          const entry = await prisma.chartOfAccountEntry.upsert({
-            where: { legalEntityId_systemId_accountNumber: { legalEntityId: legalEntityIdForChart, systemId, accountNumber: accountData.accountNumber } },
-            update: { name: accountData.name, type: accountData.type as any, allowsDirectEntry: accountData.allowsDirectEntry },
-            create: {
-              accountNumber: accountData.accountNumber,
-              name: accountData.name,
-              type: accountData.type as any, 
-              level: accountData.level,
-              allowsDirectEntry: accountData.allowsDirectEntry,
-              legalEntityId: legalEntityIdForChart,
-              systemId: systemId,
-            },
-          });
-          parentAccountsMap.set(accountData.accountNumber, entry.id);
-          console.log(`  Upserted L0 Account: ${entry.accountNumber} - ${entry.name}`);
-        } catch (e) {
-          console.error(`Error upserting L0 account ${accountData.accountNumber} - ${accountData.name}:`, e);
-        }
-      }
+    // --- Crear Permisos --- 
+    console.log('Creating base permissions...');
+    const permissionsData = initialMockData.permissions || [];
+    const allPermissions: pkg.Permission[] = [];
+    for (const permData of permissionsData) {
+        const perm = await prisma.permission.upsert({
+            // <<< CORREGIDO: Usar action_module y asegurar que module exista >>>
+            // <<< CORREGIDO: Asegurar que el campo del modelo 'module' se usa correctamente >>>
+            where: { action_module: { action: permData.action, module: permData.subject /* <- Usar subject del mock aquí */ } }, 
+            update: { description: permData.description }, 
+            // <<< CORREGIDO: Usar 'module' y el valor correcto al crear >>>
+            create: { action: permData.action, module: permData.subject, description: permData.description /*, systemId: system!.id */ }, // SystemId se infiere
+        });
+        allPermissions.push(perm);
     }
+    console.log(`Ensured ${allPermissions.length} permissions.`);
 
-    const activoParentId = parentAccountsMap.get('1');
-    if (activoParentId) {
-      const activoSubAccounts = [
-        { accountNumber: '10', name: 'ACTIVO CORRIENTE', type: 'ASSET', level: 1, parentAccountId: activoParentId, allowsDirectEntry: false },
-        { accountNumber: '11', name: 'ACTIVO NO CORRIENTE', type: 'ASSET', level: 1, parentAccountId: activoParentId, allowsDirectEntry: false },
-      ];
-      for (const accountData of activoSubAccounts) {
-        try {
-          const entry = await prisma.chartOfAccountEntry.upsert({
-            where: { legalEntityId_systemId_accountNumber: { legalEntityId: legalEntityIdForChart, systemId, accountNumber: accountData.accountNumber } },
-            update: { name: accountData.name, type: accountData.type as any, parentAccountId: accountData.parentAccountId, allowsDirectEntry: accountData.allowsDirectEntry },
-            create: { ...accountData, type: accountData.type as any, legalEntityId: legalEntityIdForChart, systemId: systemId },
-          });
-          parentAccountsMap.set(accountData.accountNumber, entry.id);
-          console.log(`    Upserted L1 Account: ${entry.accountNumber} - ${entry.name} (Parent: 1)`);
-        } catch (e) {
-          console.error(`Error upserting L1 account ${accountData.accountNumber} - ${accountData.name}:`, e);
-        }
-      }
-    }
+    // --- Crear Roles y asignar todos los permisos al Admin ---
+    // <<< CORREGIDO: Asignación directa a variables globales y upsert completo >>>
+    adminRole = await prisma.role.upsert({ where: { name_systemId: { name: 'Administrador', systemId: system!.id } }, update: { description: 'Rol con acceso total al sistema' }, create: { name: 'Administrador', description: 'Rol con acceso total al sistema', systemId: system!.id, permissions: { create: allPermissions.map(p => ({ permissionId: p.id })) } } });
+    staffRole = await prisma.role.upsert({ where: { name_systemId: { name: 'Personal Clinica', systemId: system!.id } }, update: { description: 'Rol para el personal de la clínica con acceso limitado' }, create: { name: 'Personal Clinica', description: 'Rol para el personal de la clínica con acceso limitado', systemId: system!.id /* Añadir permisos específicos si es necesario */ } });
+    console.log('Base roles ensured.');
 
-    const activoCorrienteParentId = parentAccountsMap.get('10');
-    if (activoCorrienteParentId) {
-      const activoCorrienteSubAccounts = [
-        { accountNumber: '100', name: 'CAJA', type: 'ASSET', level: 2, parentAccountId: activoCorrienteParentId, allowsDirectEntry: true },
-        { accountNumber: '101', name: 'BANCOS', type: 'ASSET', level: 2, parentAccountId: activoCorrienteParentId, allowsDirectEntry: true },
-        { accountNumber: '102', name: 'CLIENTES', type: 'ASSET', level: 2, parentAccountId: activoCorrienteParentId, allowsDirectEntry: true },
-      ];
-      for (const accountData of activoCorrienteSubAccounts) {
-        try {
-          await prisma.chartOfAccountEntry.upsert({
-            where: { legalEntityId_systemId_accountNumber: { legalEntityId: legalEntityIdForChart, systemId, accountNumber: accountData.accountNumber } },
-            update: { name: accountData.name, type: accountData.type as any, parentAccountId: accountData.parentAccountId, allowsDirectEntry: accountData.allowsDirectEntry },
-            create: { ...accountData, type: accountData.type as any, legalEntityId: legalEntityIdForChart, systemId: systemId },
-          });
-          console.log(`      Upserted L2 Account: ${accountData.accountNumber} - ${accountData.name} (Parent: 10)`);
-        } catch (e) {
-          console.error(`Error upserting L2 account ${accountData.accountNumber} - ${accountData.name}:`, e);
-        }
-      }
-    }
-  } else {
-    console.log('No Legal Entities created or found, skipping Chart of Accounts seeding for them.');
-  }
-
-  // --- 4. Crear Legal Entity para las clínicas ---
-  const clinicLegalEntity = await prisma.legalEntity.findFirst({
-    where: {
-      name: 'Entidad Demo SaaS',
-      systemId: systemId
-    }
-  });
-
-  let legalEntityForClinics;
-  if (clinicLegalEntity) {
-    legalEntityForClinics = await prisma.legalEntity.update({
-      where: { id: clinicLegalEntity.id },
-      data: {
-        taxIdentifierFields: { "ES_CIF": "B98765432" },
-        fullAddress: 'Calle Principal 456, Madrid',
-        country: { connect: { isoCode: 'ES' } }
-      }
-    });
-  } else {
-    legalEntityForClinics = await prisma.legalEntity.create({
-      data: {
-        name: 'Entidad Demo SaaS',
-        taxIdentifierFields: { "ES_CIF": "B98765432" },
-        fullAddress: 'Calle Principal 456, Madrid',
-        system: { connect: { id: systemId } },
-        country: { connect: { isoCode: 'ES' } }
-      }
-    });
-  }
-  console.log(`Legal Entity for clinics: ${legalEntityForClinics.name} (ID: ${legalEntityForClinics.id})`);
-
-  // ... (El resto del código de seed.ts existente comenzaría aquí)
-  // Asegúrate de que el console.log(`Start seeding ...`); original no se duplique.
-  console.log(`[Diagnostic Seed] Start seeding ...`);
-
-  // --- DIAGNOSTIC STEP 1: Log available models ---
-  try {
-    console.log("[Diagnostic Seed] Attempting to check prisma instance keys:", Object.keys(prisma));
-  } catch (e) {
-    console.error("[Diagnostic Seed] Error logging prisma keys:", e);
-  }
-
-  console.log("[Diagnostic Seed] Diagnostic checks finished (removed clinicSchedule check).");
-
-  console.log(`Start seeding real data...`);
-
-  // --- MAPAS GLOBALES para IDs (Declaración temprana) ---
-  const createdClinicsMap = new Map<string, any>();
-  const createdTariffsMap = new Map<string, pkg.Tariff>();
-  const serviceMap = new Map<string, string>();
-  const productMap = new Map<string, string>();
-  const categoryMap = new Map<string, string>();
-  const bankMap = new Map<string, string>(); 
-  const createdVatTypesMap = new Map<string, any>();
-  const createdCategoriesMap = new Map<string, any>(); // Mapa intermedio para familias
-  let createdBonoDefsMap = new Map<string, string>();
-  let createdPackageDefsMap = new Map<string, string>();
-  const createdClientsMap = new Map<string, pkg.Person>(); // Cambiado de Client a Person
-  let createdBankAccountsMap = new Map<string, string>(); // iban -> id
-  // <<< AÑADIR DECLARACIÓN DEL MAPA DE USUARIOS >>>
-  const createdUsersMap = new Map<string, pkg.User>(); 
-  
-  // <<< Variables para IDs globales (CORREGIDO: Inicialización correcta) >>>
-  let system: pkg.System | null = mainSystem;
-  let adminRole: pkg.Role | null = null;
-  let staffRole: pkg.Role | null = null;
-  let vatGeneral: pkg.VATType | null = null;
-  let defaultVatTypeIdFromDB: string | undefined;
-  let tarifaGeneral: pkg.Tariff | null = null;
-  let tarifaVIP: pkg.Tariff | null = null;
-  let paymentMethodCash: pkg.PaymentMethodDefinition | null = null;
-  let paymentMethodCard: pkg.PaymentMethodDefinition | null = null;
-  let paymentMethodTransfer: pkg.PaymentMethodDefinition | null = null;
-  let paymentMethodBono: pkg.PaymentMethodDefinition | null = null;
-  let bonoMasajeInstanceId: string | undefined;
-  let packRelaxInstanceId: string | undefined;
-
-  // --- Crear Entidades Base (System, Permissions, Roles) --- 
-  console.log('Creating base entities...');
-  // No necesitamos crear otro sistema, ya tenemos mainSystem/systemId
-  // Usar el sistema que ya creamos al inicio
-  console.log(`Using existing system: ${mainSystem.name} (ID: ${systemId})`);
-
-  // --- Crear Países (si no existen) --- 
-  console.log('Creating countries...');
-  await seedCountries();
-  console.log('Countries seeded.');
-
-  // --- Crear Permisos --- 
-  console.log('Creating base permissions...');
-  const permissionsData = initialMockData.permissions || [];
-  const allPermissions: pkg.Permission[] = [];
-  for (const permData of permissionsData) {
-      const perm = await prisma.permission.upsert({
-          // <<< CORREGIDO: Usar action_module y asegurar que module exista >>>
-          // <<< CORREGIDO: Asegurar que el campo del modelo 'module' se usa correctamente >>>
-          where: { action_module: { action: permData.action, module: permData.subject /* <- Usar subject del mock aquí */ } }, 
-          update: { description: permData.description }, 
-          // <<< CORREGIDO: Usar 'module' y el valor correcto al crear >>>
-          create: { action: permData.action, module: permData.subject, description: permData.description /*, systemId: system!.id */ }, // SystemId se infiere
+    // --- Crear Plantillas de Horario y Bloques --- 
+    console.log('Creating schedule templates and blocks...');
+    let template1: (pkg.ScheduleTemplate & { blocks: pkg.ScheduleTemplateBlock[] }) | null = null;
+    let template2: (pkg.ScheduleTemplate & { blocks: pkg.ScheduleTemplateBlock[] }) | null = null;
+    try {
+      const template1Result = await prisma.scheduleTemplate.upsert({
+        where: { name_systemId: { name: 'Lunes a Viernes (9h-17h)', systemId: system.id } },
+        update: {},
+        create: {
+          name: 'Lunes a Viernes (9h-17h)', description: 'Horario estándar de oficina L-V de 9:00 a 17:00', systemId: system.id, openTime: '09:00', closeTime: '17:00',
+          blocks: { create: [
+              { dayOfWeek: 'MONDAY', startTime: '09:00', endTime: '17:00', isWorking: true }, { dayOfWeek: 'TUESDAY', startTime: '09:00', endTime: '17:00', isWorking: true },
+              { dayOfWeek: 'WEDNESDAY', startTime: '09:00', endTime: '17:00', isWorking: true }, { dayOfWeek: 'THURSDAY', startTime: '09:00', endTime: '17:00', isWorking: true },
+              { dayOfWeek: 'FRIDAY', startTime: '09:00', endTime: '17:00', isWorking: true },
+          ] },
+        }, include: { blocks: true }
       });
-      allPermissions.push(perm);
-  }
-  console.log(`Ensured ${allPermissions.length} permissions.`);
+      template1 = template1Result as (pkg.ScheduleTemplate & { blocks: pkg.ScheduleTemplateBlock[] });
+      console.log(`Ensured template "${template1.name}" with ${template1.blocks.length} blocks.`);
 
-  // --- Crear Roles y asignar todos los permisos al Admin ---
-  // <<< CORREGIDO: Asignación directa a variables globales y upsert completo >>>
-  adminRole = await prisma.role.upsert({ where: { name_systemId: { name: 'Administrador', systemId: system!.id } }, update: { description: 'Rol con acceso total al sistema' }, create: { name: 'Administrador', description: 'Rol con acceso total al sistema', systemId: system!.id, permissions: { create: allPermissions.map(p => ({ permissionId: p.id })) } } });
-  staffRole = await prisma.role.upsert({ where: { name_systemId: { name: 'Personal Clinica', systemId: system!.id } }, update: { description: 'Rol para el personal de la clínica con acceso limitado' }, create: { name: 'Personal Clinica', description: 'Rol para el personal de la clínica con acceso limitado', systemId: system!.id /* Añadir permisos específicos si es necesario */ } });
-  console.log('Base roles ensured.');
+      const template2Result = await prisma.scheduleTemplate.upsert({
+        where: { name_systemId: { name: 'Fines de Semana (Mañana)', systemId: system.id } },
+        update: {},
+        create: {
+          name: 'Fines de Semana (Mañana)', description: 'Horario solo mañanas de Sábado y Domingo (10h-14h)', systemId: system.id, openTime: '10:00', closeTime: '14:00',
+          blocks: { create: [ { dayOfWeek: 'SATURDAY', startTime: '10:00', endTime: '14:00', isWorking: true }, { dayOfWeek: 'SUNDAY', startTime: '10:00', endTime: '14:00', isWorking: true } ] },
+        }, include: { blocks: true }
+      });
+      template2 = template2Result as (pkg.ScheduleTemplate & { blocks: pkg.ScheduleTemplateBlock[] });
+      console.log(`Ensured template "${template2.name}" with ${template2.blocks.length} blocks.`);
+    } catch (error) {
+      console.error("Error creating schedule templates:", error); await prisma.$disconnect(); process.exit(1);
+    }
+    console.log('Schedule templates ensured.');
 
-  // --- Crear Plantillas de Horario y Bloques --- 
-  console.log('Creating schedule templates and blocks...');
-  let template1: (pkg.ScheduleTemplate & { blocks: pkg.ScheduleTemplateBlock[] }) | null = null;
-  let template2: (pkg.ScheduleTemplate & { blocks: pkg.ScheduleTemplateBlock[] }) | null = null;
-  try {
-    const template1Result = await prisma.scheduleTemplate.upsert({
-      where: { name_systemId: { name: 'Lunes a Viernes (9h-17h)', systemId: system.id } },
-      update: {},
-      create: {
-        name: 'Lunes a Viernes (9h-17h)', description: 'Horario estándar de oficina L-V de 9:00 a 17:00', systemId: system.id, openTime: '09:00', closeTime: '17:00',
-        blocks: { create: [
-            { dayOfWeek: 'MONDAY', startTime: '09:00', endTime: '17:00', isWorking: true }, { dayOfWeek: 'TUESDAY', startTime: '09:00', endTime: '17:00', isWorking: true },
-            { dayOfWeek: 'WEDNESDAY', startTime: '09:00', endTime: '17:00', isWorking: true }, { dayOfWeek: 'THURSDAY', startTime: '09:00', endTime: '17:00', isWorking: true },
-            { dayOfWeek: 'FRIDAY', startTime: '09:00', endTime: '17:00', isWorking: true },
-        ] },
-      }, include: { blocks: true }
-    });
-    template1 = template1Result as (pkg.ScheduleTemplate & { blocks: pkg.ScheduleTemplateBlock[] });
-    console.log(`Ensured template "${template1.name}" with ${template1.blocks.length} blocks.`);
+    const saltRounds = 10;
+    const defaultPassword = 'password123';
+    const hashedPassword = await hashPassword(defaultPassword);
+    console.log(`Hashed default password.`);
 
-    const template2Result = await prisma.scheduleTemplate.upsert({
-      where: { name_systemId: { name: 'Fines de Semana (Mañana)', systemId: system.id } },
-      update: {},
-      create: {
-        name: 'Fines de Semana (Mañana)', description: 'Horario solo mañanas de Sábado y Domingo (10h-14h)', systemId: system.id, openTime: '10:00', closeTime: '14:00',
-        blocks: { create: [ { dayOfWeek: 'SATURDAY', startTime: '10:00', endTime: '14:00', isWorking: true }, { dayOfWeek: 'SUNDAY', startTime: '10:00', endTime: '14:00', isWorking: true } ] },
-      }, include: { blocks: true }
-    });
-    template2 = template2Result as (pkg.ScheduleTemplate & { blocks: pkg.ScheduleTemplateBlock[] });
-    console.log(`Ensured template "${template2.name}" with ${template2.blocks.length} blocks.`);
-  } catch (error) {
-    console.error("Error creating schedule templates:", error); await prisma.$disconnect(); process.exit(1);
-  }
-  console.log('Schedule templates ensured.');
+    // --- Crear Usuarios ---
+    console.log('Creating users...');
+    const usersData = initialMockData.usuarios || [];
+    for (const userData of usersData) {
+      const roleName = userData.perfil === 'Personal Clinica' ? 'Personal Clinica' : 'Administrador';
+      const roleId = roleName === 'Administrador' ? adminRole!.id : staffRole!.id;
 
-  const saltRounds = 10;
-  const defaultPassword = 'password123';
-  const hashedPassword = await hashPassword(defaultPassword);
-  console.log(`Hashed default password.`);
+      const user = await prisma.user.upsert({
+        where: { email: userData.email },
+        update: {
+          firstName: userData.nombre,
+          lastName: userData.apellidos,
+          phone: userData.telefono,
+          passwordHash: hashedPassword,
+        },
+        create: {
+          email: userData.email,
+          firstName: userData.nombre,
+          lastName: userData.apellidos,
+          phone: userData.telefono,
+          passwordHash: hashedPassword,
+          systemId: system!.id,
+        },
+      });
 
-  // --- Crear Usuarios ---
-  console.log('Creating users...');
-  const usersData = initialMockData.usuarios || [];
-  for (const userData of usersData) {
-    const roleName = userData.perfil === 'Personal Clinica' ? 'Personal Clinica' : 'Administrador';
-    const roleId = roleName === 'Administrador' ? adminRole!.id : staffRole!.id;
+      createdUsersMap.set(userData.email, user);
 
-    const user = await prisma.user.upsert({
-      where: { email: userData.email },
-      update: {
-        firstName: userData.nombre,
-        lastName: userData.apellidos,
-        phone: userData.telefono,
-        passwordHash: hashedPassword,
-      },
-      create: {
-        email: userData.email,
-        firstName: userData.nombre,
-        lastName: userData.apellidos,
-        phone: userData.telefono,
-        passwordHash: hashedPassword,
-        systemId: system!.id,
-      },
-    });
+      // Asignar rol al usuario
+      await prisma.userRole.upsert({
+        where: { userId_roleId: { userId: user.id, roleId } },
+        update: {},
+        create: { userId: user.id, roleId },
+      });
 
-    createdUsersMap.set(userData.email, user);
-
-    // Asignar rol al usuario
-    await prisma.userRole.upsert({
-      where: { userId_roleId: { userId: user.id, roleId } },
-      update: {},
-      create: { userId: user.id, roleId },
-    });
-
-    // Asignar clínicas al usuario
-    if (Array.isArray(userData.clinicasIds)) {
-      for (const mockClinicId of userData.clinicasIds) {
-        const clinic = createdClinicsMap.get(mockClinicId);
-        if (clinic) {
-          await prisma.userClinicAssignment.upsert({
-            where: { userId_clinicId: { userId: user.id, clinicId: clinic.id } },
-            update: {},
-            create: { userId: user.id, clinicId: clinic.id, roleId },
-          });
+      // Asignar clínicas al usuario
+      if (Array.isArray(userData.clinicasIds)) {
+        for (const mockClinicId of userData.clinicasIds) {
+          const clinic = createdClinicsMap.get(mockClinicId);
+          if (clinic) {
+            await prisma.userClinicAssignment.upsert({
+              where: { userId_clinicId: { userId: user.id, clinicId: clinic.id } },
+              update: {},
+              create: { userId: user.id, clinicId: clinic.id, roleId },
+            });
+          }
         }
       }
     }
-  }
-  console.log(`Users ensured. Created ${createdUsersMap.size} users.`);
+    console.log(`Users ensured. Created ${createdUsersMap.size} users.`);
 
-  // --- Crear Tipos de IVA --- 
-  console.log('Creating VAT types...');
-  vatGeneral = await prisma.vATType.upsert({ 
-    where: { code_systemId: { code: 'VAT_STANDARD', systemId: system!.id } },
-    update: { name: 'IVA General (21%)', rate: 21.0, isDefault: true }, 
-    create: { code: 'VAT_STANDARD', name: 'IVA General (21%)', rate: 21.0, isDefault: true, systemId: system!.id },
-  });
-  defaultVatTypeIdFromDB = vatGeneral.id; 
-  const vatTypesData = initialMockData.tiposIVA || [];
-  for (const vatData of vatTypesData) {
-      const vatCode = `VAT_${vatData.descripcion.replace(/[^A-Z0-9]/gi, '_').toUpperCase()}`;
-      const vatType = await prisma.vATType.upsert({
-          where: { code_systemId: { code: vatCode, systemId: system!.id } },
-          update: { name: vatData.descripcion, rate: vatData.porcentaje }, 
-          create: { code: vatCode, name: vatData.descripcion, rate: vatData.porcentaje, systemId: system!.id },
-      });
-      if (typeof vatData.id === 'string') createdVatTypesMap.set(vatData.id, vatType);
-  }
-  console.log('VAT types ensured.');
+    // --- Crear Tipos de IVA --- 
+    console.log('Creating VAT types...');
+    vatGeneral = await prisma.vATType.upsert({ 
+      where: { code_systemId: { code: 'VAT_STANDARD', systemId: system!.id } },
+      update: { name: 'IVA General (21%)', rate: 21.0, isDefault: true }, 
+      create: { code: 'VAT_STANDARD', name: 'IVA General (21%)', rate: 21.0, isDefault: true, systemId: system!.id },
+    });
+    defaultVatTypeIdFromDB = vatGeneral.id; 
+    const vatTypesData = initialMockData.tiposIVA || [];
+    for (const vatData of vatTypesData) {
+        const vatCode = `VAT_${vatData.descripcion.replace(/[^A-Z0-9]/gi, '_').toUpperCase()}`;
+        const vatType = await prisma.vATType.upsert({
+            where: { code_systemId: { code: vatCode, systemId: system!.id } },
+            update: { name: vatData.descripcion, rate: vatData.porcentaje }, 
+            create: { code: vatCode, name: vatData.descripcion, rate: vatData.porcentaje, systemId: system!.id },
+        });
+        if (typeof vatData.id === 'string') createdVatTypesMap.set(vatData.id, vatType);
+    }
+    console.log('VAT types ensured.');
 
-  // --- Crear Categorías de Servicios/Productos ---
-  console.log('Creating Categories...');
-  const categoriesData = initialMockData.familias || [];
-  for (const categoryData of categoriesData) {
-      const category = await prisma.category.upsert({
-          where: { name_systemId: { name: categoryData.nombre, systemId: system!.id } },
-          update: { description: categoryData.descripcion }, 
-          create: { name: categoryData.nombre, description: categoryData.descripcion, systemId: system!.id },
-      });
-      if (typeof categoryData.id === 'string') createdCategoriesMap.set(categoryData.id, category);
-      categoryMap.set(category.name, category.id); 
-  }
-  console.log('Categories ensured.');
+    // --- Crear Categorías de Servicios/Productos ---
+    console.log('Creating Categories...');
+    const categoriesData = initialMockData.familias || [];
+    for (const categoryData of categoriesData) {
+        const category = await prisma.category.upsert({
+            where: { name_systemId: { name: categoryData.nombre, systemId: system!.id } },
+            update: { description: categoryData.descripcion }, 
+            create: { name: categoryData.nombre, description: categoryData.descripcion, systemId: system!.id },
+        });
+        if (typeof categoryData.id === 'string') createdCategoriesMap.set(categoryData.id, category);
+        categoryMap.set(category.name, category.id); 
+    }
+    console.log('Categories ensured.');
 
-  // --- Crear Tarifas y Mapa ---
-  console.log('Creating default tariffs...');
-  // <<< CORREGIDO: Upsert completo para tarifas >>>
-  tarifaGeneral = await prisma.tariff.upsert({ 
-      where: { name_systemId: { name: 'Tarifa General', systemId: system!.id } }, 
-      update: { vatTypeId: defaultVatTypeIdFromDB, currencyCode: 'EUR' }, 
-      create: { name: 'Tarifa General', description: 'Tarifa estándar para la mayoría de clínicas y servicios.', isDefault: true, isActive: true, systemId: system!.id, vatTypeId: defaultVatTypeIdFromDB!, currencyCode: 'EUR' },
-  });
-  tarifaVIP = await prisma.tariff.upsert({ 
-      where: { name_systemId: { name: 'Tarifa VIP', systemId: system!.id } }, 
-      update: { vatTypeId: defaultVatTypeIdFromDB, currencyCode: 'EUR' }, 
-      create: { name: 'Tarifa VIP', description: 'Tarifa especial para clientes VIP con posibles descuentos.', isDefault: false, isActive: true, systemId: system!.id, vatTypeId: defaultVatTypeIdFromDB!, currencyCode: 'EUR' },
-  });
-  if (tarifaGeneral) createdTariffsMap.set(tarifaGeneral.name, tarifaGeneral);
-  if (tarifaVIP) createdTariffsMap.set(tarifaVIP.name, tarifaVIP);
-  console.log(`Created tariffs map with keys: ${Array.from(createdTariffsMap.keys()).join(', ')}`);
-  console.log('Tariffs ensured.');
+    // --- Crear Tarifas y Mapa ---
+    console.log('Creating default tariffs...');
+    // <<< CORREGIDO: Upsert completo para tarifas >>>
+    tarifaGeneral = await prisma.tariff.upsert({ 
+        where: { name_systemId: { name: 'Tarifa General', systemId: system!.id } }, 
+        update: { vatTypeId: defaultVatTypeIdFromDB, currencyCode: 'EUR' }, 
+        create: { name: 'Tarifa General', description: 'Tarifa estándar para la mayoría de clínicas y servicios.', isDefault: true, isActive: true, systemId: system!.id, vatTypeId: defaultVatTypeIdFromDB!, currencyCode: 'EUR' },
+    });
+    tarifaVIP = await prisma.tariff.upsert({ 
+        where: { name_systemId: { name: 'Tarifa VIP', systemId: system!.id } }, 
+        update: { vatTypeId: defaultVatTypeIdFromDB, currencyCode: 'EUR' }, 
+        create: { name: 'Tarifa VIP', description: 'Tarifa especial para clientes VIP con posibles descuentos.', isDefault: false, isActive: true, systemId: system!.id, vatTypeId: defaultVatTypeIdFromDB!, currencyCode: 'EUR' },
+    });
+    if (tarifaGeneral) createdTariffsMap.set(tarifaGeneral.name, tarifaGeneral);
+    if (tarifaVIP) createdTariffsMap.set(tarifaVIP.name, tarifaVIP);
+    console.log(`Created tariffs map with keys: ${Array.from(createdTariffsMap.keys()).join(', ')}`);
+    console.log('Tariffs ensured.');
 
-  // --- Crear Bancos ---
-  console.log('Creating example banks...');
-  try {
-    await prisma.bank.upsert({ where: { name_systemId: { name: 'BBVA', systemId: system!.id } }, update: { code: '0182' }, create: { name: 'BBVA', code: '0182', systemId: system!.id } }); console.log(`Ensured bank: BBVA`);
-    await prisma.bank.upsert({ where: { name_systemId: { name: 'Santander', systemId: system!.id } }, update: { code: '0049' }, create: { name: 'Santander', code: '0049', systemId: system!.id } }); console.log(`Ensured bank: Santander`);
-    await prisma.bank.upsert({ where: { name_systemId: { name: 'CaixaBank', systemId: system!.id } }, update: { code: '2100' }, create: { name: 'CaixaBank', code: '2100', systemId: system!.id } }); console.log(`Ensured bank: CaixaBank`);
-    
-    const banksFromDB = await prisma.bank.findMany({ where: { systemId: system!.id } });
-    banksFromDB.forEach(b => bankMap.set(b.name, b.id)); 
-    console.log(`Mapped banks: ${Array.from(bankMap.keys()).join(', ')}`);
+    // --- Crear Bancos ---
+    console.log('Creating example banks...');
+    try {
+      await prisma.bank.upsert({ where: { name_systemId: { name: 'BBVA', systemId: system!.id } }, update: { code: '0182' }, create: { name: 'BBVA', code: '0182', systemId: system!.id } }); console.log(`Ensured bank: BBVA`);
+      await prisma.bank.upsert({ where: { name_systemId: { name: 'Santander', systemId: system!.id } }, update: { code: '0049' }, create: { name: 'Santander', code: '0049', systemId: system!.id } }); console.log(`Ensured bank: Santander`);
+      await prisma.bank.upsert({ where: { name_systemId: { name: 'CaixaBank', systemId: system!.id } }, update: { code: '2100' }, create: { name: 'CaixaBank', code: '2100', systemId: system!.id } }); console.log(`Ensured bank: CaixaBank`);
+      
+      const banksFromDB = await prisma.bank.findMany({ where: { systemId: system!.id } });
+      banksFromDB.forEach(b => bankMap.set(b.name, b.id)); 
+      console.log(`Mapped banks: ${Array.from(bankMap.keys()).join(', ')}`);
 
-  } catch (error) { console.error("Error creating/mapping example banks:", error); }
-  console.log('Example banks ensured and mapped.');
+    } catch (error) { console.error("Error creating/mapping example banks:", error); }
+    console.log('Example banks ensured and mapped.');
 
-  // --- Crear Definiciones de Métodos de Pago ---
-  console.log('Creating example payment method definitions...');
-  // <<< CORREGIDO: Upsert completo >>>
-  paymentMethodCash = await prisma.paymentMethodDefinition.upsert({ where: { name_systemId: { name: 'Efectivo', systemId: system!.id } }, update: { type: 'CASH', isActive: true }, create: { name: 'Efectivo', type: 'CASH', systemId: system!.id, isActive: true } });
-  paymentMethodCard = await prisma.paymentMethodDefinition.upsert({ where: { name_systemId: { name: 'Tarjeta Crédito/Débito', systemId: system!.id } }, update: { type: 'CARD', details: 'TPV Físico/Virtual', isActive: true }, create: { name: 'Tarjeta Crédito/Débito', type: 'CARD', details: 'TPV Físico/Virtual', systemId: system!.id, isActive: true } });
-  paymentMethodTransfer = await prisma.paymentMethodDefinition.upsert({ where: { name_systemId: { name: 'Transferencia Bancaria', systemId: system!.id } }, update: { type: 'BANK_TRANSFER', isActive: true }, create: { name: 'Transferencia Bancaria', type: 'BANK_TRANSFER', systemId: system!.id, isActive: true } });
-  paymentMethodBono = await prisma.paymentMethodDefinition.upsert({ where: { name_systemId: { name: 'Bono/Paquete', systemId: system!.id } }, update: { type: 'INTERNAL_CREDIT', details: 'Consumo de bono o paquete pre-pagado', isActive: true }, create: { name: 'Bono/Paquete', type: 'INTERNAL_CREDIT', details: 'Consumo de bono o paquete pre-pagado', systemId: system!.id, isActive: true } });
-  console.log('Example payment method definitions ensured.');
+    // --- Crear Definiciones de Métodos de Pago ---
+    console.log('Creating example payment method definitions...');
+    // <<< CORREGIDO: Upsert completo >>>
+    paymentMethodCash = await prisma.paymentMethodDefinition.upsert({ where: { name_systemId: { name: 'Efectivo', systemId: system!.id } }, update: { type: 'CASH', isActive: true }, create: { name: 'Efectivo', type: 'CASH', systemId: system!.id, isActive: true } });
+    paymentMethodCard = await prisma.paymentMethodDefinition.upsert({ where: { name_systemId: { name: 'Tarjeta Crédito/Débito', systemId: system!.id } }, update: { type: 'CARD', details: 'TPV Físico/Virtual', isActive: true }, create: { name: 'Tarjeta Crédito/Débito', type: 'CARD', details: 'TPV Físico/Virtual', systemId: system!.id, isActive: true } });
+    paymentMethodTransfer = await prisma.paymentMethodDefinition.upsert({ where: { name_systemId: { name: 'Transferencia Bancaria', systemId: system!.id } }, update: { type: 'BANK_TRANSFER', isActive: true }, create: { name: 'Transferencia Bancaria', type: 'BANK_TRANSFER', systemId: system!.id, isActive: true } });
+    paymentMethodBono = await prisma.paymentMethodDefinition.upsert({ where: { name_systemId: { name: 'Bono/Paquete', systemId: system!.id } }, update: { type: 'INTERNAL_CREDIT', details: 'Consumo de bono o paquete pre-pagado', isActive: true }, create: { name: 'Bono/Paquete', type: 'INTERNAL_CREDIT', details: 'Consumo de bono o paquete pre-pagado', systemId: system!.id, isActive: true } });
+    console.log('Example payment method definitions ensured.');
 
-  // --- Crear Clínicas ---
-  console.log('Creating clinics...');
-  const clinicsData = initialMockData.clinicas;
-  for (const clinicData of clinicsData) {
-      // <<< CORREGIDO: Lógica de upsert para clínicas (simplificada para ejemplo) >>>
-      const targetTariffId = tarifaGeneral!.id; 
+    // --- Crear Clínicas ---
+    console.log('Creating clinics...');
+    const clinicsData = initialMockData.clinicas;
+    for (const clinicData of clinicsData) {
+        // <<< CORREGIDO: Lógica de upsert para clínicas (simplificada para ejemplo) >>>
+        const targetTariffId = tarifaGeneral!.id; 
 
          const clinic = await prisma.clinic.upsert({
           where: { Clinic_name_systemId_key: { name: clinicData.name, systemId: system!.id } }, 

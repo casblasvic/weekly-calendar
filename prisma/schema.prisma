@@ -84,6 +84,8 @@ model System {
   appointmentDeviceUsage       AppointmentDeviceUsage[]
   webhooks                     Webhook[]
   webhookLogs                  WebhookLog[]
+  integrations                 SystemIntegration[]
+  smartDevices                 SmartPlugDevice[]
 
   @@map("systems")
 }
@@ -282,6 +284,7 @@ model Clinic {
   promotionAccountMappings     PromotionAccountMapping[]
   opportunities                Opportunity[]
   personClientOrigin           PersonClientData[]            @relation("PersonClientOriginClinic")
+  smartPlugDevices             SmartPlugDevice[]
 
   @@unique([name, systemId], name: "Clinic_name_systemId_key")
   @@index([systemId])
@@ -627,6 +630,7 @@ model Equipment {
   appointmentsUsing  Appointment[]
   requiredByServices ServiceEquipmentRequirement[]
   deviceUsage        AppointmentDeviceUsage[]
+  smartDevice         SmartPlugDevice?
 
   @@unique([name, systemId])
   @@index([systemId])
@@ -2774,7 +2778,7 @@ model Webhook {
   dataMapping       Json?
   responseConfig    Json?
   isSystemWebhook   Boolean  @default(false)
-  integrationId     String?
+  integrationId     String?  @unique
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
   createdByUserId   String?
@@ -3088,4 +3092,51 @@ enum HttpMethod {
   OPTIONS
   TRACE
   CONNECT
+}
+
+enum IntegrationCategory {
+  AUTOMATION
+  MARKETING
+  COMMUNICATION
+  PAYMENTS
+  ACCOUNTING
+  IOT_DEVICES
+}
+
+model IntegrationModule {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String
+  logoUrl     String?
+  category    IntegrationCategory
+  isPaid      Boolean  @default(false)
+  integrations SystemIntegration[]
+}
+
+model SystemIntegration {
+  id         String            @id @default(cuid())
+  systemId   String
+  system     System            @relation(fields: [systemId], references: [id])
+  moduleId   String
+  module     IntegrationModule @relation(fields: [moduleId], references: [id])
+  isActive   Boolean           @default(false)
+  settings   Json?
+  smartDevices SmartPlugDevice[]
+  @@unique([systemId, moduleId])
+}
+
+model SmartPlugDevice {
+  id            String   @id @default(cuid())
+  name          String
+  type          String   // "SHELLY", "KASA", etc.
+  deviceId      String   // ID del fabricante
+  deviceIp      String
+  equipmentId   String   @unique 
+  equipment     Equipment @relation(fields: [equipmentId], references: [id])
+  integrationId String
+  integration   SystemIntegration @relation(fields: [integrationId], references: [id])
+  systemId      String
+  system        System   @relation(fields: [systemId], references: [id])
+  clinicId      String
+  clinic        Clinic   @relation(fields: [clinicId], references: [id])
 }

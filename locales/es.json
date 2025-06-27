@@ -2035,17 +2035,6 @@
     "Cant.": "Cant.",
     "Notas de descuento...": "Notas de descuento..."
   },
-      "appointments": {
-        "durationModification": {
-            "extended": "Cita Extendida",
-            "reduced": "Cita Reducida",
-            "revertToServices": "Restablecer a duración de servicios",
-            "extendedBy": "+{{minutes}}min",
-            "reducedBy": "{{minutes}}min",
-            "extendedTooltip": "Restablecer a duración de servicios ({{duration}} min) - Extendida",
-            "reducedTooltip": "Restablecer a duración de servicios ({{duration}} min) - Reducida"
-        }
-    },
     "clients": {
         "title": "Clientes",
         "pageTitle": "Gestión de Clientes",
@@ -2149,6 +2138,66 @@
       "relatedEntity": "Entidad relacionada",
       "type": "Tipo",
       "date": "Fecha"
+    }
+  },
+  "webhooks": {
+    "title": "Webhooks",
+    "description": "Gestiona tus webhooks para conectar con servicios externos."
+  },
+  "integrations": {
+    "marketplace": {
+      "title": "Marketplace de Integraciones",
+      "subtitle": "Potencia tu clínica conectando tus herramientas favoritas.",
+      "all_button": "Todos",
+      "manage_button": "Gestionar",
+      "activate_button": "Activar"
+    },
+    "categories": {
+      "IOT_DEVICES": "Dispositivos IoT",
+      "AUTOMATION": "Automatización",
+      "MARKETING": "Marketing",
+      "PAYMENTS": "Pasarelas de Pago",
+      "COMMUNICATION": "Comunicación",
+      "ACCOUNTING": "Contabilidad"
+    },
+    "smart_plugs": {
+      "title": "Enchufes Inteligentes",
+      "description": "Gestiona los enchufes inteligentes conectados a los equipos",
+      "add_button": "Añadir Enchufe Inteligente",
+      "table": {
+        "name": "Nombre",
+        "equipment": "Equipo",
+        "device_id": "ID Dispositivo",
+        "ip": "Dirección IP",
+        "status": "Estado",
+        "clinic": "Clínica"
+      },
+      "status": {
+        "online": "Conectado",
+        "offline": "Desconectado",
+        "loading": "Verificando..."
+      },
+      "modal": {
+        "add_title": "Añadir Enchufe Inteligente",
+        "edit_title": "Editar Enchufe Inteligente",
+        "name_label": "Nombre de la Conexión",
+        "name_placeholder": "Ej: Enchufe Láser Sala 1",
+        "deviceId_label": "ID del Dispositivo Shelly",
+        "deviceIp_label": "Dirección IP",
+        "deviceIp_placeholder": "Ej: 192.168.1.50",
+        "clinic_label": "Clínica",
+        "clinic_placeholder": "Selecciona una clínica...",
+        "equipment_label": "Asociar a Equipo",
+        "equipment_placeholder": "Selecciona un equipo...",
+        "equipment_placeholder_loading": "Primero selecciona una clínica"
+      },
+      "form": {
+        "device_id": "ID Dispositivo",
+        "ip": "Dirección IP",
+        "ip_placeholder": "192.168.1.100",
+        "clinic": "Clínica",
+        "clinic_placeholder": "Selecciona una clínica..."
+      }
     }
   }
 }

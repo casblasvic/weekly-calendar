@@ -48,7 +48,9 @@ import {
   Zap,
   Network,
   Cpu,
-  Link2
+  Link2,
+  Store,
+  Plug
 } from "lucide-react"
 
 export interface MenuItem {
@@ -467,22 +469,29 @@ export const menuItems: MenuItem[] = [
         href: "/configuracion/integraciones",
         submenu: [
           {
+            id: "marketplace",
+            label: "Marketplace de Apps",
+            icon: Store,
+            href: "/configuracion/integraciones",
+          },
+          {
             id: "webhooks",
-            label: "Webhooks",
+            label: "Webhooks Manuales",
             icon: Webhook,
             href: "/configuracion/integraciones/webhooks",
           },
           {
-            id: "equipos-iot",
-            label: "Equipos IoT",
+            id: "dispositivos-iot",
+            label: "Dispositivos IoT",
             icon: Cpu,
-            href: "/configuracion/integraciones/equipos",
-          },
-          {
-            id: "apis-externas",
-            label: "APIs Externas",
-            icon: Network,
-            href: "/configuracion/integraciones/apis",
+            submenu: [
+              {
+                id: "enchufes-inteligentes",
+                label: "Enchufes Inteligentes",
+                icon: Plug,
+                href: "/configuracion/integraciones/EquiposIot/EnchufesInteligentes",
+              }
+            ]
           },
         ],
       },
