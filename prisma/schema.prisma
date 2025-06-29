@@ -3172,6 +3172,29 @@ model SmartPlugDevice {
   // Temperatura del dispositivo
   temperature   Float?    // Temperatura en Celsius
   
+  // Configuraciones adicionales del modal
+  // Pestaña Básico
+  timezone      String?   // Zona horaria del dispositivo
+  autoUpdate    Boolean   @default(true) // Actualizaciones automáticas
+  
+  // Pestaña Red
+  wifiBackupEnabled Boolean @default(false) // Si WiFi backup está habilitado
+  wifiBackupSsid    String? // SSID de respaldo
+  apModeEnabled     Boolean @default(false) // Modo Access Point
+  
+  // Pestaña Protección  
+  autoOffEnabled    Boolean @default(false) // Auto-apagado habilitado
+  autoOffDelay      Int?    // Segundos para auto-apagado
+  powerLimit        Float?  // Límite de potencia en watts
+  
+  // Pestaña LED (solo Gen3)
+  ledBrightness     Int?    // 0-100
+  ledColorMode      String? // "color" o "white"
+  ledColorR         Int?    // 0-255
+  ledColorG         Int?    // 0-255
+  ledColorB         Int?    // 0-255
+  ledNightMode      Boolean @default(false)
+  
   // Metadatos adicionales
   rawData       Json?     // Datos completos del dispositivo para debugging
   excludeFromSync Boolean @default(false) // Si true, no se sincroniza en futuras sync
@@ -3215,15 +3238,48 @@ model ShellyCredential {
 
 model WebSocketConnection {
   id            String   @id @default(cuid())
-  type          String   // "SHELLY", "OTHER_IOT"
-  referenceId   String   // credentialId para Shelly
-  status        String   // "connected", "disconnected", "error"
+  type          String   // "SHELLY", "OTHER_IOT", "SOCKET_IO"
+  referenceId   String   // credentialId para Shelly, systemId para Socket.io
+  status        String   // "connected", "disconnected", "error", "reconnecting"
   lastPingAt    DateTime?
   errorMessage  String?
   metadata      Json?
+  autoReconnect Boolean  @default(true) // Control de reconexión automática
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   
+  // Relación con logs
+  logs          WebSocketLog[]
+  
+  @@unique([type, referenceId], name: "unique_websocket_per_reference")
   @@index([type, referenceId])
   @@index([status])
+}
+
+model WebSocketLog {
+  id               String              @id @default(cuid())
+  connectionId     String
+  connection       WebSocketConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  
+  // Información del evento
+  eventType        String              // "connect", "disconnect", "error", "message", "ping"
+  message          String?             @db.Text
+  errorDetails     String?             @db.Text
+  metadata         Json?               // Datos adicionales del evento
+  
+  // Métricas de rendimiento
+  responseTime     Int?                // Tiempo de respuesta en ms
+  dataSize         Int?                // Tamaño de datos en bytes
+  
+  // Información del cliente
+  clientIp         String?
+  userAgent        String?
+  
+  // Timestamps
+  createdAt        DateTime            @default(now())
+  
+  @@index([connectionId])
+  @@index([eventType])
+  @@index([createdAt])
+  @@map("websocket_logs")
 }

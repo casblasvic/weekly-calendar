@@ -1,7 +1,55 @@
-import { PrismaClient } from '@prisma/client';
-import { decrypt } from './crypto';
+/**
+ * ========================================
+ * PLUGIN SHELLY - WEBSOCKET MANAGER
+ * ========================================
+ * 
+ * 🔌 INTEGRACIÓN SHELLY CLOUD
+ * Este módulo maneja las conexiones WebSocket con Shelly Cloud API.
+ * NO utiliza conexiones directas a las IPs locales de los dispositivos.
+ * 
+ * 📡 CONFIGURACIÓN DE CONEXIÓN:
+ * - Host API: Se obtiene del campo `apiHost` en la tabla `ShellyCredential`
+ * - URL WebSocket: wss://{apiHost}/device/relay (construida dinámicamente)
+ * - Autenticación: Bearer token desde `ShellyCredential.accessToken`
+ * 
+ * 🆔 MAPEO AUTOMÁTICO DE DISPOSITIVOS:
+ * - deviceId (BD): ID interno almacenado en `SmartPlugDevice.deviceId`
+ * - cloudId: ID numérico de Shelly Cloud (NO almacenado en BD)
+ * - El mapeo se construye automáticamente desde eventos WebSocket
+ * - Map interno: deviceIdMapping.set(deviceId, cloudId)
+ * - Ejemplo: "b0b21c12dd94" → "194279021665684"
+ * 
+ * 🏗️ FLUJO DE MAPEO AUTOMÁTICO:
+ * 1. WebSocket recibe evento StatusOnChange
+ * 2. Extrae deviceId y cloudId del evento
+ * 3. Construye mapeo automático en memoria
+ * 4. Usa cloudId para enviar comandos posteriores
+ * 
+ * 📊 TABLAS DE BASE DE DATOS:
+ * - `ShellyCredential`: Credenciales OAuth2 y apiHost
+ * - `SmartPlugDevice`: Dispositivos vinculados (deviceId, credentialId)
+ * - `WebSocketConnection`: Estado de conexiones WebSocket
+ * - `WebSocketLog`: Logs de eventos y comandos
+ * 
+ * ⚡ COMANDOS WEBSOCKET:
+ * - Formato: {"method": "Shelly:CommandRequest", "params": {...}}
+ * - Usa cloudId mapeado, NO deviceId de BD
+ * - Respuestas automáticas via eventos WebSocket
+ * 
+ * 🔄 GESTIÓN DE CONEXIONES:
+ * - Auto-reconexión en caso de desconexión
+ * - Heartbeat para mantener conexión activa
+ * - Logs detallados para debugging
+ * 
+ * 🎯 USO EN EL PLUGIN:
+ * 1. Conectar credencial: connectCredential(credentialId)
+ * 2. Enviar comando: controlDevice(credentialId, deviceId, action)
+ * 3. El manager resuelve automáticamente deviceId → cloudId
+ * 4. Envía comando usando cloudId correcto
+ */
 
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/db';
+import { decrypt } from './crypto';
 
 interface ShellyWebSocketMessage {
     id: number;
@@ -28,12 +76,23 @@ class ShellyWebSocketManager {
     private rateLimiters: Map<string, { count: number; resetTime: number }> = new Map();
     private readonly MAX_MESSAGES_PER_MINUTE = 60;
     private readonly MAX_MESSAGE_SIZE = 10 * 1024; // 10KB
+    
+    // 🎯 NUEVO: Mapeo automático de IDs (deviceId BD → deviceId Cloud)
+    private deviceIdMapping: Map<string, string> = new Map();
+    
+    // Callback para interceptar actualizaciones de dispositivos
+    public onDeviceUpdate?: (credentialId: string, deviceId: string, status: DeviceStatus) => Promise<void>;
 
     async connectCredential(credentialId: string): Promise<void> {
         try {
             // Obtener credenciales
             const credential = await prisma.shellyCredential.findUnique({
-                where: { id: credentialId }
+                where: { id: credentialId },
+                include: {
+                    smartPlugs: {
+                        where: { excludeFromSync: false }
+                    }
+                }
             });
 
             if (!credential) {
@@ -43,8 +102,12 @@ class ShellyWebSocketManager {
             // Descifrar token
             const accessToken = decrypt(credential.accessToken);
             
-            // Crear URL WebSocket segura (WSS)
-            const wsUrl = credential.apiHost.replace('https://', 'wss://') + '/ws';
+            // Crear URL WebSocket según documentación de Shelly Cloud
+            // wss://<servidor>.shelly.cloud:6113/shelly/wss/hk_sock?t=<ACCESS_TOKEN>
+            const baseUrl = credential.apiHost.replace('https://', '');
+            const wsUrl = `wss://${baseUrl}:6113/shelly/wss/hk_sock?t=${accessToken}`;
+            
+            console.log(`🔗 Conectando a WebSocket Shelly: ${wsUrl.replace(accessToken, 'TOKEN_HIDDEN')}`);
             
             // Validar URL
             if (!wsUrl.startsWith('wss://')) {
@@ -76,6 +139,8 @@ class ShellyWebSocketManager {
             // Actualizar estado en DB
             await this.updateConnectionStatus(credentialId, 'connected');
             
+            // WebSocket es suficiente para tiempo real - no necesitamos polling HTTP
+            
         } catch (error) {
             console.error(`Error conectando credential ${credentialId}:`, error);
             await this.updateConnectionStatus(credentialId, 'error', error instanceof Error ? error.message : 'Error desconocido');
@@ -83,7 +148,7 @@ class ShellyWebSocketManager {
     }
 
     private async handleOpen(credentialId: string): Promise<void> {
-        console.log(`WebSocket conectado para credential ${credentialId}`);
+        console.log(`✅ WebSocket Shelly conectado para credencial ${credentialId}`);
         
         // Limpiar timer de reconexión si existe
         const timer = this.reconnectTimers.get(credentialId);
@@ -92,25 +157,8 @@ class ShellyWebSocketManager {
             this.reconnectTimers.delete(credentialId);
         }
         
-        // Autenticar
-        const credential = await prisma.shellyCredential.findUnique({
-            where: { id: credentialId }
-        });
-        
-        if (credential) {
-            const accessToken = decrypt(credential.accessToken);
-            this.sendMessage(credentialId, {
-                id: this.messageIdCounter++,
-                src: 'user',
-                dst: 'ws',
-                method: 'Shelly.Authenticate',
-                params: {
-                    auth: {
-                        token: accessToken
-                    }
-                }
-            });
-        }
+        // No necesitamos autenticación manual - el token va en la URL
+        // Según documentación: wss://server.shelly.cloud:6113/shelly/wss/hk_sock?t=ACCESS_TOKEN
         
         // Procesar cola de mensajes pendientes
         const queue = this.messageQueues.get(credentialId);
@@ -118,6 +166,8 @@ class ShellyWebSocketManager {
             queue.forEach(msg => this.sendMessage(credentialId, msg));
             this.messageQueues.set(credentialId, []);
         }
+        
+        console.log(`🎯 WebSocket Shelly listo para recibir eventos en tiempo real`);
     }
 
     private async handleMessage(credentialId: string, event: MessageEvent): Promise<void> {
@@ -128,21 +178,100 @@ class ShellyWebSocketManager {
                 return;
             }
 
-            // Validar y parsear JSON
-            const data: ShellyWebSocketMessage = this.validateMessage(JSON.parse(event.data));
+            // Parsear mensaje JSON
+            const data = JSON.parse(event.data);
             
-            // Manejar notificaciones de estado
-            if (data.method === 'NotifyStatus' && data.params) {
-                await this.handleDeviceStatusUpdate(credentialId, data.src, data.params);
+            // 🔍 DEBUG: Mostrar TODOS los mensajes que llegan
+            console.log(`🔍 [WebSocket DEBUG] Mensaje recibido:`, {
+                credentialId,
+                method: data.method,
+                event: data.event,
+                deviceId: data.device?.id,
+                hasStatus: !!data.status,
+                hasSwitch: !!data.status?.['switch:0'],
+                fullMessage: data
+            });
+            
+            // 🎯 MANEJAR RESPUESTAS DE COMANDOS
+            if (data.event === 'Shelly:CommandResponse') {
+                const { trid, deviceId, data: responseData } = data;
+                console.log(`📝 [WebSocket CMD] Respuesta de comando para dispositivo ${deviceId}:`, {
+                    trid,
+                    success: responseData?.isok,
+                    error: responseData?.errors,
+                    response: responseData
+                });
+                
+                if (responseData?.isok) {
+                    console.log(`✅ [WebSocket CMD] Comando ejecutado exitosamente en ${deviceId}`);
+                } else {
+                    console.error(`❌ [WebSocket CMD] Error en comando para ${deviceId}:`, responseData?.errors);
+                }
+                return;
+            }
+            
+            // 🎯 FORMATO CORRECTO: Manejar eventos de Shelly Cloud
+            if (data.event === 'Shelly:StatusOnChange' && data.device && data.status) {
+                // El deviceId real está en data.status.id, no en data.device.id
+                const deviceId = data.status.id || data.device.id;
+                const cloudDeviceId = data.device.id; // ID numérico de Cloud
+                const deviceStatus = data.status;
+                
+                // 🎯 CONSTRUIR MAPEO AUTOMÁTICO
+                if (deviceId && cloudDeviceId && deviceId !== cloudDeviceId) {
+                    this.deviceIdMapping.set(deviceId, cloudDeviceId);
+                    console.log(`🔄 [AUTO-MAPPING] Mapeado automáticamente: ${deviceId} → ${cloudDeviceId}`);
+                }
+                
+                console.log(`📡 StatusOnChange recibido para dispositivo ${deviceId}:`, {
+                    deviceCode: data.device.code,
+                    generation: data.device.gen,
+                    cloudId: cloudDeviceId,
+                    online: true,
+                    switchOutput: deviceStatus['switch:0']?.output,
+                    apower: deviceStatus['switch:0']?.apower,
+                    voltage: deviceStatus['switch:0']?.voltage,
+                    temperature: deviceStatus.temperature || deviceStatus.sys?.temperature,
+                    rawSwitchData: deviceStatus['switch:0']
+                });
+                
+                // Extraer datos según generación del dispositivo
+                const status = {
+                    online: true, // Si recibimos el mensaje, está online
+                    'switch:0': {
+                        output: deviceStatus['switch:0']?.output || deviceStatus.relays?.[0]?.ison || false,
+                        apower: deviceStatus['switch:0']?.apower || deviceStatus.meters?.[0]?.power || 0,
+                        voltage: deviceStatus['switch:0']?.voltage || deviceStatus.voltage || null,
+                        aenergy: deviceStatus['switch:0']?.aenergy || deviceStatus.meters?.[0]?.total || null
+                    },
+                    temperature: deviceStatus.temperature || deviceStatus.sys?.temperature || null
+                };
+                
+                await this.handleDeviceStatusUpdate(credentialId, deviceId, status);
+            }
+            // 🔍 DEBUG: Detectar otros tipos de mensajes que podrían ser eventos
+            else if (data.method && data.method.includes('Status')) {
+                console.log(`🔍 [WebSocket DEBUG] Posible evento de estado no reconocido:`, {
+                    method: data.method,
+                    data: data.data,
+                    params: data.params
+                });
+            }
+            else if (data.params && (data.params.switch || data.params['switch:0'])) {
+                console.log(`🔍 [WebSocket DEBUG] Mensaje con datos de switch:`, {
+                    method: data.method,
+                    switchData: data.params.switch || data.params['switch:0'],
+                    fullParams: data.params
+                });
             }
             
             // Manejar respuestas a comandos
             if (data.result !== undefined || data.error !== undefined) {
-                console.log(`Respuesta comando:`, data);
+                console.log(`📝 Respuesta comando WebSocket:`, data);
             }
             
         } catch (error) {
-            console.error('Error procesando mensaje WebSocket:', error);
+            console.error('❌ Error procesando mensaje WebSocket:', error);
         }
     }
 
@@ -173,10 +302,11 @@ class ShellyWebSocketManager {
         };
     }
 
-    private async handleDeviceStatusUpdate(
+    // Hacer público el método para permitir interceptores
+    public async handleDeviceStatusUpdate(
         credentialId: string, 
         deviceId: string, 
-        status: DeviceStatus
+        status: any
     ): Promise<void> {
         // Actualizar estado del dispositivo en DB
         const device = await prisma.smartPlugDevice.findFirst({
@@ -189,7 +319,11 @@ class ShellyWebSocketManager {
         if (device) {
             const updatedData = {
                 online: status.online,
-                relayOn: status['switch:0']?.output,
+                relayOn: status['switch:0']?.output || false,
+                currentPower: status['switch:0']?.apower || 0,
+                voltage: status['switch:0']?.voltage || null,
+                totalEnergy: status['switch:0']?.aenergy?.total || null,
+                temperature: status.temperature || null,
                 lastSeenAt: new Date()
             };
 
@@ -198,7 +332,22 @@ class ShellyWebSocketManager {
                 data: updatedData
             });
             
-            console.log(`Dispositivo actualizado: ${device.deviceId}`, updatedData);
+            console.log(`🔄 Dispositivo actualizado vía WebSocket: ${device.name} (${device.deviceId})`, {
+                online: updatedData.online,
+                relayOn: updatedData.relayOn,
+                currentPower: updatedData.currentPower,
+                voltage: updatedData.voltage,
+                temperature: updatedData.temperature
+            });
+        }
+        
+        // Llamar callback si existe
+        if (this.onDeviceUpdate) {
+            try {
+                await this.onDeviceUpdate(credentialId, deviceId, status);
+            } catch (error) {
+                console.error('❌ Error en callback onDeviceUpdate:', error);
+            }
         }
     }
 
@@ -216,13 +365,35 @@ class ShellyWebSocketManager {
         // Limpiar conexión
         this.connections.delete(credentialId);
         
-        // Programar reconexión
-        const timer = setTimeout(() => {
-            console.log(`Intentando reconectar credential ${credentialId}...`);
-            this.connectCredential(credentialId);
-        }, 5000); // Reconectar después de 5 segundos
+        // 🔒 VERIFICAR CAMPO autoReconnect EN BD ANTES DE RECONECTAR
+        const webSocketConnection = await prisma.webSocketConnection.findFirst({
+            where: {
+                type: 'SHELLY',
+                referenceId: credentialId
+            }
+        });
         
-        this.reconnectTimers.set(credentialId, timer);
+        // Solo reconectar si autoReconnect está habilitado
+        if (webSocketConnection?.autoReconnect === true) {
+            console.log(`🔄 AutoReconnect habilitado para ${credentialId}, programando reconexión en 5 segundos...`);
+            
+            // Programar reconexión
+            const timer = setTimeout(() => {
+                console.log(`🔄 Intentando reconectar credential ${credentialId}...`);
+                this.connectCredential(credentialId);
+            }, 5000); // Reconectar después de 5 segundos
+            
+            this.reconnectTimers.set(credentialId, timer);
+        } else {
+            console.log(`⏸️ AutoReconnect deshabilitado para ${credentialId}, NO se reconectará automáticamente`);
+            
+            // Log del evento para auditoría
+            await this.logWebSocketEvent(
+                credentialId,
+                'reconnect_skipped',
+                'Reconexión automática omitida - autoReconnect deshabilitado'
+            );
+        }
     }
 
     private sendMessage(credentialId: string, message: ShellyWebSocketMessage): void {
@@ -296,6 +467,106 @@ class ShellyWebSocketManager {
         });
     }
 
+    // 🎯 NUEVO: Enviar comando de control usando WebSocket Cloud
+    async controlDevice(credentialId: string, deviceId: string, action: 'on' | 'off'): Promise<void> {
+        let ws = this.connections.get(credentialId);
+        
+        // Verificar si el WebSocket está conectado
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+            console.log(`🔄 [WebSocket CMD] WebSocket desconectado, reconectando para credencial ${credentialId}...`);
+            
+            // Intentar reconectar
+            await this.connectCredential(credentialId);
+            
+            // Esperar un momento para que se establezca la conexión
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            // Obtener la nueva conexión
+            ws = this.connections.get(credentialId);
+            
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                throw new Error('No se pudo reconectar el WebSocket');
+            }
+            
+            console.log(`✅ [WebSocket CMD] WebSocket reconectado exitosamente`);
+        }
+        
+        // 🎯 BUSCAR EL DISPOSITIVO EN LA BD POR EL deviceId ORIGINAL
+        // IMPORTANTE: Siempre buscar por el deviceId original, no por cloudId
+        const device = await prisma.smartPlugDevice.findFirst({
+            where: { deviceId: deviceId, credentialId: credentialId }
+        });
+        
+        if (!device) {
+            throw new Error(`Dispositivo ${deviceId} no encontrado en BD`);
+        }
+        
+        // 🎯 USAR MAPEO AUTOMÁTICO PARA EL COMANDO
+        let targetDeviceId = deviceId; // Por defecto usar el deviceId original
+        
+        // Primero intentar usar el mapeo automático construido desde eventos WebSocket
+        if (this.deviceIdMapping.has(deviceId)) {
+            targetDeviceId = this.deviceIdMapping.get(deviceId)!;
+            console.log(`🔄 [WebSocket CMD] Usando cloudId mapeado para comando: ${deviceId} → ${targetDeviceId}`);
+        } else {
+            console.log(`⚠️ [WebSocket CMD] No hay mapeo automático para ${deviceId}, usando deviceId original`);
+        }
+        
+        // Usar formato de comando Cloud según la documentación
+        const command = {
+            event: 'Shelly:CommandRequest',
+            trid: Date.now(), // ID único para tracking
+            deviceId: targetDeviceId, // Usar el cloudId para el comando
+            data: {
+                cmd: 'relay',
+                params: { 
+                    id: 0, 
+                    turn: action 
+                }
+            }
+        };
+        
+        console.log(`📡 [WebSocket CMD] Enviando comando ${action} a dispositivo ${deviceId} (cloudId: ${targetDeviceId}):`, command);
+        
+        ws.send(JSON.stringify(command));
+        
+        console.log(`✅ [WebSocket CMD] Comando enviado via WebSocket Cloud`);
+    }
+
+    /**
+     * Registrar evento en logs WebSocket
+     */
+    private async logWebSocketEvent(
+        credentialId: string,
+        eventType: string,
+        message: string,
+        metadata?: any
+    ): Promise<void> {
+        try {
+            // Buscar la conexión WebSocket para obtener su ID
+            const webSocketConnection = await prisma.webSocketConnection.findFirst({
+                where: {
+                    type: 'SHELLY',
+                    referenceId: credentialId
+                }
+            });
+
+            if (webSocketConnection) {
+                await prisma.webSocketLog.create({
+                    data: {
+                        connectionId: webSocketConnection.id,
+                        eventType,
+                        message,
+                        metadata: metadata ? JSON.parse(JSON.stringify(metadata)) : null,
+                        createdAt: new Date()
+                    }
+                });
+            }
+        } catch (error) {
+            console.error('Error logging WebSocket event:', error);
+        }
+    }
+
     private async updateConnectionStatus(
         credentialId: string, 
         status: string, 
@@ -331,6 +602,8 @@ class ShellyWebSocketManager {
         }
     }
 
+    // ELIMINADO: Verificación periódica HTTP - solo WebSocket tiempo real
+
     async disconnectCredential(credentialId: string): Promise<void> {
         const ws = this.connections.get(credentialId);
         if (ws) {
@@ -342,6 +615,8 @@ class ShellyWebSocketManager {
             clearTimeout(timer);
             this.reconnectTimers.delete(credentialId);
         }
+
+        // ELIMINADO: Limpieza de intervalos HTTP - solo WebSocket
         
         this.connections.delete(credentialId);
         this.messageQueues.delete(credentialId);
@@ -351,6 +626,49 @@ class ShellyWebSocketManager {
         for (const credentialId of this.connections.keys()) {
             await this.disconnectCredential(credentialId);
         }
+    }
+
+    // 🔍 NUEVO: Verificar estado de conexiones
+    getConnectionStatus(credentialId: string): { connected: boolean; readyState?: number } {
+        const ws = this.connections.get(credentialId);
+        
+        if (!ws) {
+            return { connected: false };
+        }
+        
+        return {
+            connected: ws.readyState === WebSocket.OPEN,
+            readyState: ws.readyState
+        };
+    }
+
+    // 🔄 NUEVO: Forzar reconexión de una credencial específica
+    async forceReconnect(credentialId: string): Promise<void> {
+        console.log(`🔄 Forzando reconexión para credencial ${credentialId}...`);
+        
+        // Cerrar conexión existente si existe
+        const existingWs = this.connections.get(credentialId);
+        if (existingWs) {
+            existingWs.close();
+            this.connections.delete(credentialId);
+        }
+        
+        // Crear nueva conexión
+        await this.connectCredential(credentialId);
+    }
+
+    // 🔍 NUEVO: Obtener mapeo automático para una credencial
+    getAutoMapping(credentialId: string): Record<string, string> | null {
+        const mapping: Record<string, string> = {};
+        let hasMapping = false;
+        
+        // Convertir Map a Object para la credencial específica
+        for (const [deviceId, cloudId] of this.deviceIdMapping.entries()) {
+            mapping[deviceId] = cloudId;
+            hasMapping = true;
+        }
+        
+        return hasMapping ? mapping : null;
     }
 }
 

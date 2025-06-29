@@ -6,7 +6,7 @@ const prisma = new PrismaClient();
 
 export async function PATCH(
     request: NextRequest,
-    { params }: { params: { deviceId: string } }
+    { params }: { params: Promise<{ deviceId: string }> }
 ) {
     const session = await auth();
     if (!session?.user?.systemId) {
@@ -15,9 +15,16 @@ export async function PATCH(
 
     try {
         const { deviceId } = await params;
-        const { excludeFromSync } = await request.json();
+        const body = await request.json();
+        const { excludeFromSync } = body;
 
-        // Buscar el dispositivo
+        if (typeof excludeFromSync !== 'boolean') {
+            return NextResponse.json({ 
+                error: "excludeFromSync debe ser un booleano" 
+            }, { status: 400 });
+        }
+
+        // Verificar que el dispositivo pertenece al sistema del usuario
         const device = await prisma.smartPlugDevice.findFirst({
             where: {
                 id: deviceId,
@@ -34,8 +41,8 @@ export async function PATCH(
         // Actualizar el estado de exclusión
         const updatedDevice = await prisma.smartPlugDevice.update({
             where: { id: deviceId },
-            data: { 
-                excludeFromSync: excludeFromSync,
+            data: {
+                excludeFromSync,
                 updatedAt: new Date()
             }
         });

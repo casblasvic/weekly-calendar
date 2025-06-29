@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -11,12 +11,15 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PaginationControls } from '@/components/pagination-controls';
 import { toast } from "sonner";
-import { PlusCircle, Edit, Trash2, Play, StopCircle, Wifi, WifiOff, ArrowLeft, ArrowUpDown, ChevronUp, ChevronDown, Power, Settings, Activity, Thermometer, Zap, AlertTriangle, RefreshCw, Smartphone, Search, Building2, X } from "lucide-react";
+import { PlusCircle, Edit, Trash2, Play, StopCircle, Wifi, WifiOff, ArrowLeft, ArrowUpDown, ChevronUp, ChevronDown, Power, Settings, Activity, Thermometer, Zap, Plug, AlertTriangle, RefreshCw, Smartphone, Search, Building2, X } from "lucide-react";
 import { Badge } from '@/components/ui/badge';
 import { ColumnDef, flexRender, getCoreRowModel, getSortedRowModel, SortingState, useReactTable } from "@tanstack/react-table";
 import { useRouter } from "next/navigation";
 import { useShellyRealtime } from "@/hooks/use-shelly-realtime";
 import { useSession } from "next-auth/react";
+import { DeviceEditModal } from '@/components/shelly/device-edit-modal';
+import { DeviceControlButton } from '@/components/ui/device-control-button';
+import useSocket from '@/hooks/useSocket';
 
 interface SmartPlug {
     id: string;
@@ -24,7 +27,7 @@ interface SmartPlug {
     type: string;
     deviceId: string;
     deviceIp: string;
-    equipment: { 
+    equipment?: { 
         name: string; 
         clinicId: string;
         clinic: {
@@ -43,6 +46,25 @@ interface SmartPlug {
         email: string;
         status: string;
     };
+    // Campos adicionales del dispositivo
+    generation?: string;
+    modelCode?: string;
+    macAddress?: string;
+    firmwareVersion?: string;
+    hasUpdate?: boolean;
+    relaySource?: string;
+    currentPower?: number;
+    totalEnergy?: number;
+    voltage?: number;
+    current?: number;
+    wifiSsid?: string;
+    wifiRssi?: number;
+    temperature?: number;
+    lastSeenAt?: Date | string;
+    systemId: string;
+    integrationId: string;
+    createdAt: Date | string;
+    updatedAt: Date | string;
 }
 
 interface Equipment {
@@ -59,17 +81,21 @@ const SmartPlugsPage = () => {
     const { t } = useTranslation();
     const router = useRouter();
     const { data: session } = useSession();
+    const { subscribe, isConnected, requestDeviceUpdate } = useSocket(session?.user?.systemId);
     
     // Estados existentes
-    const [plugs, setPlugs] = useState<SmartPlug[]>([]);
+    const [plugs, setPlugs] = useState<SmartPlug[]>([]); // Dispositivos de la vista actual (paginados/filtrados)
+    const [allPlugs, setAllPlugs] = useState<SmartPlug[]>([]); // TODOS los dispositivos para cálculo de consumo
     const [isLoading, setIsLoading] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [currentPlug, setCurrentPlug] = useState<Partial<SmartPlug> | null>(null);
+    const [selectedDevice, setSelectedDevice] = useState<SmartPlug | null>(null);
     const [activePlugs, setActivePlugs] = useState<Record<string, boolean>>({});
     const [sorting, setSorting] = useState<SortingState>([]);
     
     // Estados para paginación
-    const [pagination, setPagination] = useState({ page: 1, pageSize: 10, totalPages: 1, totalCount: 0 });
+    const [pagination, setPagination] = useState({ page: 1, pageSize: 50, totalPages: 1, totalCount: 0 });
     
     // Estados para el modal
     const [clinics, setClinics] = useState<Clinic[]>([]);
@@ -91,6 +117,8 @@ const SmartPlugsPage = () => {
         id: string; 
         name: string; 
         status: 'connected' | 'error' | 'expired';
+        totalPower?: number;
+        deviceCount?: number;
     }[]>([]);
     
     // Estados para equipos disponibles en filtros
@@ -98,9 +126,9 @@ const SmartPlugsPage = () => {
 
     // 🔄 TIEMPO REAL - Escuchar cambios en dispositivos Shelly
     const systemId = session?.user?.systemId || '';
-    const { updates, isConnected, lastUpdate, clearUpdates } = useShellyRealtime(systemId);
+    const { updates, isConnected: shellyIsConnected, lastUpdate, clearUpdates } = useShellyRealtime(systemId);
 
-    const fetchPlugs = useCallback(async (page = 1, pageSize = 10, credentialFilter = 'all') => {
+    const fetchPlugs = useCallback(async (page = 1, pageSize = 50, credentialFilter = 'all') => {
         setIsLoading(true);
         try {
             let url = `/api/internal/smart-plug-devices?page=${page}&pageSize=${pageSize}`;
@@ -112,11 +140,31 @@ const SmartPlugsPage = () => {
                 const { data, totalPages, totalCount } = await response.json();
                 setPlugs(data);
                 setPagination({ page, pageSize, totalPages, totalCount });
+                console.log(`📄 Página ${page} cargada con ${data.length} dispositivos (WebSocket se encargará de actualizaciones)`);
             }
         } finally {
             setIsLoading(false);
         }
     }, []);
+
+    // Función para cargar TODOS los dispositivos (para cálculo de consumo en tiempo real)
+    const fetchAllPlugs = useCallback(async () => {
+        try {
+            console.log('📥 Cargando TODOS los dispositivos para cálculo de consumo...');
+            const response = await fetch('/api/internal/smart-plug-devices?page=1&pageSize=1000'); // Sin paginación
+            if (response.ok) {
+                const { data } = await response.json();
+                console.log(`📊 Cargados ${data.length} dispositivos totales`);
+                setAllPlugs(data);
+                return data;
+            }
+        } catch (error) {
+            console.error('❌ Error cargando todos los dispositivos:', error);
+        }
+        return [];
+    }, []);
+
+
 
     useEffect(() => {
         const fetchInitialData = async () => {
@@ -145,32 +193,16 @@ const SmartPlugsPage = () => {
                 })));
             }
         };
+        
+        // Cargar datos iniciales solo una vez
         fetchPlugs();
+        fetchAllPlugs(); 
         fetchInitialData();
-    }, [fetchPlugs]);
+        
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []); // Sin dependencias para ejecutar solo una vez
 
-    // Polling para actualizar el estado de credenciales cada 30 segundos (tiempo real)
-    useEffect(() => {
-        const interval = setInterval(async () => {
-            try {
-                const response = await fetch('/api/shelly/credentials');
-                if (response.ok) {
-                    const credentials = await response.json();
-                    setCredentialsStatus(credentials.map((c: any) => ({
-                        id: c.id,
-                        name: c.name,
-                        status: c.status || 'error'
-                    })));
-                }
-            } catch (error) {
-                console.error('Error actualizando estado de credenciales:', error);
-            }
-        }, 30000);
-
-        return () => clearInterval(interval);
-    }, []);
-
-    // Filtrado local de datos
+    // Filtrado y ordenación local de datos
     const filteredPlugs = useMemo(() => {
         let filtered = plugs;
 
@@ -216,7 +248,27 @@ const SmartPlugsPage = () => {
             );
         }
 
-        return filtered;
+        // 🎯 ORDENACIÓN AUTOMÁTICA: Prioridad por estado y luego alfabético
+        return filtered.sort((a, b) => {
+            // Determinar estados de prioridad
+            const getDevicePriority = (device: SmartPlug) => {
+                if (device.online && device.relayOn) return 1; // Encendidos (online + ON)
+                if (device.online && !device.relayOn) return 2; // Online pero apagados
+                if (!device.online) return 3; // Offline
+                return 4; // Otros casos
+            };
+            
+            const aPriority = getDevicePriority(a);
+            const bPriority = getDevicePriority(b);
+            
+            // Ordenar por prioridad primero
+            if (aPriority !== bPriority) {
+                return aPriority - bPriority;
+            }
+            
+            // Si tienen la misma prioridad, ordenar alfabéticamente por nombre
+            return a.name.localeCompare(b.name);
+        });
     }, [plugs, selectedCredentialFilter, onlineFilter, relayStatusFilter, clinicFilter, equipmentFilter, searchText]);
 
     // Efecto para recargar cuando cambia el filtro de credencial (solo este necesita API)
@@ -240,61 +292,175 @@ const SmartPlugsPage = () => {
         fetchAvailableEquipment();
     }, [selectedClinic]);
 
-    // Procesar actualizaciones en tiempo real
+    // Inicializar Socket.io automáticamente
     useEffect(() => {
-        if (updates.length === 0) return;
+        const initializeSocket = async () => {
+            try {
+                console.log('🚀 Inicializando Socket.io server...');
+                const response = await fetch('/api/socket/init');
+                const result = await response.json();
+                console.log('📡 Socket.io init response:', result);
+            } catch (error) {
+                console.error('❌ Error inicializando Socket.io:', error);
+            }
+        };
 
-        console.log('🔄 Procesando actualizaciones en tiempo real:', updates);
+        if (session?.user?.systemId) {
+            initializeSocket();
+        }
+    }, [session?.user?.systemId]);
 
-        updates.forEach(update => {
-            if (update.eventType === 'UPDATE' && update.new) {
-                // Actualizar dispositivo existente
-                setPlugs(prevPlugs => 
-                    prevPlugs.map(plug => 
-                        plug.id === update.new!.id 
-                            ? { 
-                                ...plug, 
-                                online: update.new!.online,
-                                relayOn: update.new!.relayOn,
-                                currentPower: update.new!.currentPower,
-                                voltage: update.new!.voltage,
-                                temperature: update.new!.temperature,
-                                wifiRssi: update.new!.wifiRssi,
-                                lastSeenAt: update.new!.lastSeenAt,
-                                updatedAt: update.new!.updatedAt
-                            }
-                            : plug
-                    )
+    // Suscribirse a actualizaciones Socket.io en tiempo real (optimizado)
+    // Ref para evitar suscripciones duplicadas
+    const subscriptionRef = useRef<(() => void) | null>(null);
+
+    useEffect(() => {
+        // Solo suscribirse cuando está conectado
+        if (!isConnected) {
+            return;
+        }
+
+        // Evitar suscripciones duplicadas
+        if (subscriptionRef.current) {
+            return;
+        }
+
+        console.log('📝 Configurando WebSocket tiempo real...');
+        
+        const unsubscribe = subscribe((update) => {
+            
+            // Función helper para actualizar un dispositivo en lista completa (solo para consumo)
+            const updateDeviceInList = (prev: SmartPlug[], listName: string) => {
+                const deviceIndex = prev.findIndex(device => 
+                    device.id === update.deviceId || device.deviceId === update.deviceId
                 );
                 
-                // Mostrar notificación de cambio
-                const deviceName = update.new.name || update.new.deviceId;
-                if (update.old?.online !== update.new.online) {
-                    toast.info(
-                        `${deviceName} ${update.new.online ? 'conectado' : 'desconectado'}`,
-                        { duration: 3000 }
-                    );
+                if (deviceIndex === -1) {
+                    return prev;
                 }
-                if (update.old?.relayOn !== update.new.relayOn) {
-                    toast.info(
-                        `${deviceName} ${update.new.relayOn ? 'encendido' : 'apagado'}`,
-                        { duration: 3000 }
-                    );
-                }
-            } else if (update.eventType === 'INSERT' && update.new) {
-                // Recargar la lista si se agrega un nuevo dispositivo
-                fetchPlugs(pagination.page, pagination.pageSize, selectedCredentialFilter);
-            } else if (update.eventType === 'DELETE' && update.old) {
-                // Eliminar dispositivo de la lista
-                setPlugs(prevPlugs => 
-                    prevPlugs.filter(plug => plug.id !== update.old!.id)
+                
+                const oldDevice = prev[deviceIndex];
+                
+                // Verificar cambios reales
+                const hasChanges = (
+                    Boolean(oldDevice.online) !== Boolean(update.online) ||
+                    Boolean(oldDevice.relayOn) !== Boolean(update.relayOn) ||
+                    Number(oldDevice.currentPower || 0) !== Number(update.currentPower || 0) ||
+                    Number(oldDevice.voltage || 0) !== Number(update.voltage || 0) ||
+                    Number(oldDevice.temperature || 0) !== Number(update.temperature || 0)
                 );
-            }
+                
+                if (!hasChanges) {
+                    return prev;
+                }
+                
+                // Actualizar dispositivo
+                const updated = [...prev];
+                updated[deviceIndex] = { 
+                    ...oldDevice, 
+                    online: update.online,
+                    relayOn: update.relayOn,
+                    currentPower: update.currentPower,
+                    voltage: update.voltage,
+                    temperature: update.temperature,
+                    lastSeenAt: new Date(update.timestamp)
+                };
+                
+                return updated;
+            };
+
+            // Actualizar SOLO lista completa para cálculo de consumo
+            setAllPlugs(prev => updateDeviceInList(prev, 'lista completa'));
+            
+            // Actualizar vista actual SOLO si el dispositivo está visible
+            setPlugs(prev => {
+                const deviceIndex = prev.findIndex(device => 
+                    device.id === update.deviceId || device.deviceId === update.deviceId
+                );
+                
+                if (deviceIndex === -1) {
+                    // Dispositivo no está en página actual, no hacer nada
+                    return prev;
+                }
+                
+                const oldDevice = prev[deviceIndex];
+                
+                // Verificar si hay cambios reales
+                const hasChanges = (
+                    Boolean(oldDevice.online) !== Boolean(update.online) ||
+                    Boolean(oldDevice.relayOn) !== Boolean(update.relayOn) ||
+                    Number(oldDevice.currentPower || 0) !== Number(update.currentPower || 0) ||
+                    Number(oldDevice.voltage || 0) !== Number(update.voltage || 0) ||
+                    Number(oldDevice.temperature || 0) !== Number(update.temperature || 0)
+                );
+                
+                if (!hasChanges) {
+                    return prev;
+                }
+                
+                // Actualizar solo este dispositivo
+                const updated = [...prev];
+                updated[deviceIndex] = { 
+                    ...oldDevice, 
+                    online: update.online,
+                    relayOn: update.relayOn,
+                    currentPower: update.currentPower,
+                    voltage: update.voltage,
+                    temperature: update.temperature,
+                    lastSeenAt: new Date(update.timestamp)
+                };
+                
+                console.log(`🔄 ${oldDevice.name} actualizado en vista: ${oldDevice.relayOn ? 'ON' : 'OFF'} → ${update.relayOn ? 'ON' : 'OFF'} (${update.currentPower || 0}W)`);
+                return updated;
+            });
         });
 
-        // Limpiar actualizaciones procesadas
-        clearUpdates();
-    }, [updates, clearUpdates, pagination.page, pagination.pageSize]);
+        // Guardar referencia para evitar duplicados
+        subscriptionRef.current = unsubscribe;
+        console.log('✅ WebSocket tiempo real activo');
+        
+        return () => {
+            if (subscriptionRef.current) {
+                subscriptionRef.current();
+                subscriptionRef.current = null;
+            }
+        };
+    }, [subscribe, isConnected]); // Remover allPlugs.length de dependencias para evitar re-suscripciones
+
+    // Debug del estado de conexión (solo log, sin polling)
+    useEffect(() => {
+        console.log(`🔌 Estado de conexión Socket.io: ${isConnected ? 'CONECTADO' : 'DESCONECTADO'}`);
+    }, [isConnected]);
+
+    // Calcular consumo total por credencial basado en TODOS los dispositivos (tiempo real)
+    const credentialsWithPowerData = useMemo(() => {
+        if (allPlugs.length === 0 || credentialsStatus.length === 0) {
+            return credentialsStatus;
+        }
+        
+        return credentialsStatus.map(credential => {
+            // Usar TODOS los dispositivos para cálculo de consumo real
+            const credentialDevices = allPlugs.filter(plug => 
+                plug.credentialId === credential.id && 
+                plug.online && 
+                plug.relayOn && 
+                plug.currentPower !== null && 
+                plug.currentPower !== undefined
+            );
+            
+            const totalPower = credentialDevices.reduce((sum, device) => 
+                sum + (device.currentPower || 0), 0
+            );
+            
+            const deviceCount = credentialDevices.length;
+            
+            return {
+                ...credential,
+                totalPower,
+                deviceCount
+            };
+        });
+    }, [allPlugs, credentialsStatus]);
 
     const handleSave = async () => {
         if (!currentPlug || !currentPlug.equipmentId) {
@@ -330,6 +496,7 @@ const SmartPlugsPage = () => {
                 setCurrentPlug(null);
                 setSelectedClinic(null);
                 await fetchPlugs(pagination.page, pagination.pageSize, selectedCredentialFilter);
+                await fetchAllPlugs(); // También recargar lista completa
             } else {
                 const errorData = await response.json();
                 toast.error(`Error al guardar: ${errorData.error || 'Error desconocido'}`);
@@ -352,6 +519,7 @@ const SmartPlugsPage = () => {
             if (response.ok) {
                 toast.success("Enchufe eliminado correctamente.");
                 await fetchPlugs(pagination.page, pagination.pageSize, selectedCredentialFilter);
+                await fetchAllPlugs(); // También recargar lista completa
             } else {
                 const errorData = await response.json();
                 toast.error(`Error al eliminar: ${errorData.error || 'Error desconocido'}`);
@@ -362,7 +530,12 @@ const SmartPlugsPage = () => {
     };
     
     const handleEdit = useCallback(async (plug: SmartPlug) => {
-        // Primero establecer la clínica
+        // Para enchufes con credencial, usar el modal avanzado
+        if (plug.credential) {
+            setSelectedDevice(plug);
+            setIsEditModalOpen(true);
+        } else {
+            // Para enchufes sin credencial, usar el modal simple
         const clinicId = plug.equipment?.clinicId;
         setSelectedClinic(clinicId || null);
         
@@ -395,6 +568,7 @@ const SmartPlugsPage = () => {
                 clinicId: clinicId
             });
             setIsModalOpen(true);
+            }
         }
     }, []);
 
@@ -470,7 +644,116 @@ const SmartPlugsPage = () => {
         }
     };
 
-    const columns = useMemo<ColumnDef<SmartPlug>[]>(() => [
+    // Función para controlar dispositivo con actualización optimista y Socket.io
+    const handleDeviceToggle = async (deviceId: string, turnOn: boolean) => {
+        console.log(`🎛️ Controlando dispositivo ${deviceId}: ${turnOn ? 'ON' : 'OFF'}`);
+        
+        try {
+            // Actualización optimista usando deviceId
+            setPlugs(prev => prev.map(device => 
+                device.deviceId === deviceId 
+                    ? { ...device, relayOn: turnOn }
+                    : device
+            ));
+
+            const response = await fetch(`/api/shelly/device/${deviceId}/control`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: turnOn ? 'on' : 'off' })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Error al controlar dispositivo');
+            }
+
+            const result = await response.json();
+            console.log(`✅ Control exitoso para ${deviceId}:`, result);
+            
+            if (result.success) {
+                toast.success(`Dispositivo ${turnOn ? 'encendido' : 'apagado'} correctamente`);
+                
+                // Solicitar actualización inmediata via Socket.io usando el ID interno
+                const device = plugs.find(p => p.deviceId === deviceId);
+                if (device) {
+                    requestDeviceUpdate(device.id);
+                }
+            }
+        } catch (error) {
+            console.error(`❌ Error controlando dispositivo ${deviceId}:`, error);
+            
+            // Revertir cambio optimista en caso de error
+            setPlugs(prev => prev.map(device => 
+                device.deviceId === deviceId 
+                    ? { ...device, relayOn: !turnOn }
+                    : device
+            ));
+            
+            toast.error('Error al controlar el dispositivo');
+        }
+    };
+
+    // Función para test manual del monitoreo
+    const handleTestMonitoring = async () => {
+        try {
+            console.log('🧪 Iniciando test manual de monitoreo...');
+            const response = await fetch('/api/socket/start-monitoring', {
+                method: 'POST'
+            });
+            
+            const result = await response.json();
+            console.log('📡 Resultado del test:', result);
+            
+            if (result.success) {
+                toast.success('Monitoreo ejecutado correctamente');
+            } else {
+                toast.error('Error en el monitoreo: ' + (result.error || 'Error desconocido'));
+            }
+        } catch (error) {
+            console.error('❌ Error en test de monitoreo:', error);
+            toast.error('Error ejecutando el test de monitoreo');
+        }
+    };
+
+    // Función para test completo del sistema WebSocket
+    const handleTestCompleto = async () => {
+        console.log('🧪 Ejecutando test completo...');
+        try {
+            const response = await fetch('/api/test-websocket', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            const result = await response.json();
+            console.log('📊 Resultado del test completo:', result);
+            
+            if (result.success) {
+                const data = result.data;
+                alert(`Test completado exitosamente:\n\n` +
+                    `📊 Credenciales: ${data.credentials} (${data.connectedCredentials} conectadas)\n` +
+                    `🔗 Conexiones WebSocket: ${data.connections} (${data.shellyConnections} Shelly + ${data.socketIoConnections} Socket.io)\n` +
+                    `🔌 Dispositivos: ${data.devices} (${data.onlineDevices} online)\n` +
+                    `📝 Logs recientes: ${data.recentLogs}`);
+            } else {
+                alert(`Error en test: ${result.error}`);
+            }
+        } catch (error) {
+            console.error('❌ Error ejecutando test completo:', error);
+            alert('Error ejecutando test completo');
+        }
+    };
+
+    // Memoizar funciones para evitar re-renders
+    const memoizedHandleDelete = useCallback((id: string) => handleDelete(id), []);
+    const memoizedHandleEdit = useCallback((plug: SmartPlug) => handleEdit(plug), []);
+    const memoizedHandleControl = useCallback((plugId: string, plugIp: string, action: 'on' | 'off') => handleControl(plugId, plugIp, action), []);
+    const memoizedHandleToggleExclusion = useCallback((plugId: string, currentExcluded: boolean) => handleToggleExclusion(plugId, currentExcluded), []);
+
+    const columns = useMemo<ColumnDef<SmartPlug>[]>(() => {
+        // Solo log cuando realmente cambian las dependencias importantes
+        return [
         {
             id: 'credential',
             header: () => <div className="text-left">Credencial</div>,
@@ -564,6 +847,7 @@ const SmartPlugsPage = () => {
                 
                 return (
                     <div className="text-left">
+                        <div className="mb-2">
                         {actualRelayState ? (
                             <Badge className="text-white bg-green-500">
                                 <Power className="mr-1 w-3 h-3" />
@@ -574,6 +858,45 @@ const SmartPlugsPage = () => {
                                 <Power className="mr-1 w-3 h-3" />
                                 Apagado
                             </Badge>
+                            )}
+                        </div>
+                        
+                        {/* Métricas en tiempo real - Solo cuando está encendido */}
+                        {isOnline && actualRelayState && (
+                            <div className="flex flex-col gap-1 text-xs">
+                                {/* Potencia */}
+                                {plug.currentPower !== null && plug.currentPower !== undefined && (
+                                    <div className="flex gap-1 items-center">
+                                        <Zap className="flex-shrink-0 w-3 h-3 text-yellow-600" />
+                                        <span className="font-mono font-medium text-yellow-700">
+                                            {plug.currentPower === 0 ? '000.0 W' : 
+                                             plug.currentPower < 1 ? 
+                                             `${plug.currentPower.toFixed(1).padStart(5, '0')} W` :
+                                             `${plug.currentPower.toFixed(1).padStart(5, '0')} W`}
+                                        </span>
+                                    </div>
+                                )}
+                                
+                                {/* Voltaje */}
+                                {plug.voltage && (
+                                    <div className="flex gap-1 items-center">
+                                        <Plug className="flex-shrink-0 w-3 h-3 text-blue-600" />
+                                        <span className="font-medium text-blue-700">
+                                            {plug.voltage.toFixed(1)} V
+                                        </span>
+                                    </div>
+                                )}
+                                
+                                {/* Temperatura */}
+                                {plug.temperature && (
+                                    <div className="flex gap-1 items-center">
+                                        <Thermometer className="flex-shrink-0 w-3 h-3 text-red-600" />
+                                        <span className="font-medium text-red-700">
+                                            {plug.temperature.toFixed(1)}°C
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
                         )}
                     </div>
                 );
@@ -608,19 +931,19 @@ const SmartPlugsPage = () => {
                 
                 return (
                     <div className="flex gap-2 justify-end items-center">
-                        <Button 
-                            variant="ghost" 
-                            size="icon"
-                            onClick={() => handleControl(plug.id, plug.deviceIp, 'on')}
-                            className={`transition-all duration-300 ${
-                                isActive 
-                                    ? 'text-green-700 bg-green-100 shadow-lg animate-pulse' 
-                                    : 'text-green-600 hover:text-green-700 hover:bg-green-50'
-                            }`}
-                            title="Activar dispositivo"
-                        >
-                            <Play className="w-4 h-4" />
-                        </Button>
+                        <DeviceControlButton
+                            device={{
+                                id: plug.deviceId, // Usar deviceId de Shelly, no el id interno
+                                name: plug.name,
+                                online: plug.online,
+                                relayOn: plug.relayOn,
+                                currentPower: plug.currentPower,
+                                voltage: plug.voltage,
+                                temperature: plug.temperature
+                            }}
+                            onToggle={handleDeviceToggle}
+                            showMetrics={false}
+                        />
                         <Button 
                             variant="ghost" 
                             size="icon"
@@ -656,7 +979,8 @@ const SmartPlugsPage = () => {
                 );
             },
         }
-    ], [t, handleDelete, handleEdit, handleControl, activePlugs, handleToggleExclusion]);
+    ];
+    }, [t, memoizedHandleDelete, memoizedHandleEdit, memoizedHandleControl, activePlugs, memoizedHandleToggleExclusion]);
 
     const table = useReactTable({
         data: filteredPlugs,
@@ -666,6 +990,40 @@ const SmartPlugsPage = () => {
         getCoreRowModel: getCoreRowModel(),
         getSortedRowModel: getSortedRowModel(),
     });
+
+    // Agregar indicador de conexión Socket.io en la UI con botón de test
+    const connectionStatus = (
+        <div className="flex gap-3 items-center">
+            <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm ${
+                isConnected 
+                    ? 'text-green-700 bg-green-100' 
+                    : 'text-red-700 bg-red-100'
+            }`}>
+                <div className={`w-2 h-2 rounded-full ${
+                    isConnected ? 'bg-green-500' : 'bg-red-500'
+                }`}></div>
+                {isConnected ? 'Tiempo real conectado' : 'Desconectado'}
+            </div>
+            
+            <Button
+                onClick={handleTestMonitoring}
+                variant="outline"
+                size="sm"
+                className="text-blue-600 border-blue-600 hover:bg-blue-50"
+            >
+                🧪 Test Monitoreo
+            </Button>
+            
+            <Button
+                onClick={handleTestCompleto}
+                variant="outline"
+                size="sm"
+                className="text-purple-600 border-purple-600 hover:bg-purple-50"
+            >
+                🔍 Test Completo
+            </Button>
+        </div>
+    );
 
     return (
         <div className="space-y-6">
@@ -681,10 +1039,10 @@ const SmartPlugsPage = () => {
                         </div>
                         <div className="flex gap-2 items-center">
                             {/* Píldoras de estado de credenciales en tiempo real */}
-                            {credentialsStatus.map((credential) => (
+                            {credentialsWithPowerData.map((credential) => (
                                 <Badge 
                                     key={credential.id}
-                                    className={`flex gap-1 items-center px-3 py-1 ${
+                                    className={`flex flex-col gap-1 items-center px-3 py-2 ${
                                         credential.status === 'connected' 
                                             ? 'bg-green-500 text-white' 
                                             : credential.status === 'expired'
@@ -692,14 +1050,29 @@ const SmartPlugsPage = () => {
                                             : 'bg-red-500 text-white'
                                     }`}
                                 >
-                                    <div className={`w-2 h-2 rounded-full ${
-                                        credential.status === 'connected' ? 'bg-white animate-pulse' : 'bg-white opacity-70'
-                                    }`} />
-                                    Credencial {credential.name}
-                                </Badge>
+                                    <div className="flex gap-1 items-center">
+                                        <div className={`w-2 h-2 rounded-full ${
+                                            credential.status === 'connected' ? 'bg-white animate-pulse' : 'bg-white opacity-70'
+                                        }`} />
+                                        <span className="text-xs font-medium">{credential.name}</span>
+                                    </div>
+                                    
+                                    {/* Mostrar consumo total cuando hay dispositivos activos */}
+                                    {credential.totalPower && credential.totalPower > 0 && (
+                                        <div className="flex gap-1 items-center text-xs">
+                                            <Zap className="w-3 h-3" />
+                                            <span className="font-mono">
+                                                {credential.totalPower.toFixed(1)} W
+                                            </span>
+                                            <span className="opacity-75">
+                                                ({credential.deviceCount} dispositivos)
+                                            </span>
+                                        </div>
+                                    )}
+                            </Badge>
                             ))}
                             
-                            {credentialsStatus.length === 0 && (
+                            {credentialsWithPowerData.length === 0 && (
                                 <Badge variant="secondary" className="flex gap-1 items-center">
                                     <div className="w-2 h-2 bg-gray-400 rounded-full" />
                                     Sin credenciales
@@ -713,12 +1086,12 @@ const SmartPlugsPage = () => {
                             )}
                             
                             {/* Botón de sincronizar dispositivos igual al de credenciales */}
-                            <Button
+                            <Button 
                                 variant="outline"
-                                size="sm"
+                                size="sm" 
                                 onClick={async () => {
                                     // Sincronizar todos los dispositivos de todas las credenciales conectadas
-                                    const connectedCredentials = credentialsStatus.filter(c => c.status === 'connected');
+                                    const connectedCredentials = credentialsWithPowerData.filter(c => c.status === 'connected');
                                     if (connectedCredentials.length === 0) {
                                         toast.error("No hay credenciales conectadas para sincronizar");
                                         return;
@@ -740,6 +1113,7 @@ const SmartPlugsPage = () => {
                                     }
                                     // Recargar dispositivos después de sincronizar
                                     await fetchPlugs(pagination.page, pagination.pageSize, selectedCredentialFilter);
+                                    await fetchAllPlugs(); // También recargar lista completa
                                 }}
                                 className="px-3 py-1 text-blue-600 border-blue-200 hover:bg-blue-50"
                                 title="Sincronizar dispositivos"
@@ -875,9 +1249,9 @@ const SmartPlugsPage = () => {
                               relayStatusFilter !== 'all' || clinicFilter !== 'all' || 
                               equipmentFilter !== 'all' || searchText.trim()) && (
                                 <Button 
-                                    variant="outline" 
+                                variant="outline"
                                     size="sm"
-                                    onClick={() => {
+                                onClick={() => {
                                         setSelectedCredentialFilter('all');
                                         setOnlineFilter('all');
                                         setRelayStatusFilter('all');
@@ -890,13 +1264,16 @@ const SmartPlugsPage = () => {
                                 >
                                     <X className="mr-1 w-3 h-3" />
                                     Limpiar filtros
-                                </Button>
+                            </Button>
                             )}
                         </div>
 
-                        {/* Contador de resultados */}
-                        <div className="text-sm text-gray-500">
-                            {filteredPlugs.length} de {plugs.length} dispositivos
+                        {/* Contador de resultados y estado de sincronización */}
+                        <div className="flex justify-between items-center">
+                            <div className="text-sm text-gray-500">
+                                {filteredPlugs.length} de {plugs.length} dispositivos (Página {pagination.page} de {pagination.totalPages})
+                            </div>
+                            {connectionStatus}
                         </div>
                     </div>
                 </CardHeader>
@@ -1059,6 +1436,39 @@ const SmartPlugsPage = () => {
                         </DialogFooter>
                     </DialogContent>
                 </Dialog>
+            )}
+            
+            {selectedDevice && (
+                <DeviceEditModal
+                    device={selectedDevice as any}
+                    isOpen={isEditModalOpen}
+                    onClose={() => {
+                        setIsEditModalOpen(false);
+                        setSelectedDevice(null);
+                    }}
+                    onSave={async (updatedDevice) => {
+                        try {
+                            const response = await fetch(`/api/internal/smart-plug-devices/${selectedDevice.id}`, { 
+                                method: 'PUT', 
+                                headers: {'Content-Type': 'application/json'}, 
+                                body: JSON.stringify(updatedDevice) 
+                            });
+                            
+                            if (response.ok) {
+                                toast.success("Dispositivo actualizado correctamente.");
+                                setIsEditModalOpen(false);
+                                setSelectedDevice(null);
+                                await fetchPlugs(pagination.page, pagination.pageSize, selectedCredentialFilter);
+                                await fetchAllPlugs(); // También recargar lista completa
+                            } else {
+                                const errorData = await response.json();
+                                toast.error(`Error al actualizar: ${errorData.error || 'Error desconocido'}`);
+                            }
+                        } catch (error) {
+                            toast.error("Error de conexión al actualizar el dispositivo.");
+                        }
+                    }}
+                />
             )}
         </div>
     );

@@ -358,7 +358,32 @@ export default function EditBankPage() {
     staleTime: 1000 * 60 * 5, // Datos frescos por 5 minutos
     // Podríamos añadir retry: false si no queremos reintentos automáticos en 404
   });
-  // --- Fin Query ---
+
+  // --- NUEVO: Query para Cuentas Bancarias ---
+  const {
+      data: bankAccountsData = [],
+      isLoading: isLoadingAccounts,
+      isError: isAccountsError,
+      error: accountsError,
+  } = useQuery<BankAccountData[], Error>({
+      queryKey: ['bankAccounts', bankId], // Clave incluye bankId
+      queryFn: () => fetchBankAccountsByBankId(bankId!),
+      enabled: !!bankId, // Depende de que bankId exista
+      staleTime: 1000 * 60 * 2, // Datos frescos por 2 minutos
+  });
+
+  // --- NUEVO: Query para Terminales POS ---
+  const {
+    data: posTerminalsData = [],
+    isLoading: isLoadingPosTerminals,
+    isError: isPosTerminalsError,
+    error: posTerminalsError,
+  } = useQuery<PosTerminalData[], Error>({
+    queryKey: ['posTerminals', bankId], // Clave incluye bankId
+    queryFn: () => fetchPosTerminalsByBankId(bankId!),
+    enabled: !!bankId, // Depende de que bankId exista
+    staleTime: 1000 * 60 * 2, // Datos frescos por 2 minutos
+  });
 
   // --- Mutation para actualizar datos --- 
   const mutation = useMutation({
@@ -406,32 +431,6 @@ export default function EditBankPage() {
       <div className="container px-4 py-8 mx-auto">Error: ID de banco inválido.</div>
     );
   }
-
-  // --- NUEVO: Query para Cuentas Bancarias ---
-  const {
-      data: bankAccountsData = [],
-      isLoading: isLoadingAccounts,
-      isError: isAccountsError,
-      error: accountsError,
-  } = useQuery<BankAccountData[], Error>({
-      queryKey: ['bankAccounts', bankId], // Clave incluye bankId
-      queryFn: () => fetchBankAccountsByBankId(bankId!),
-      enabled: !!bankId, // Depende de que bankId exista
-      staleTime: 1000 * 60 * 2, // Datos frescos por 2 minutos
-  });
-
-  // --- NUEVO: Query para Terminales POS ---
-    const {
-      data: posTerminalsData = [],
-      isLoading: isLoadingPosTerminals,
-      isError: isPosTerminalsError,
-      error: posTerminalsError,
-  } = useQuery<PosTerminalData[], Error>({
-      queryKey: ['posTerminals', bankId], // Clave incluye bankId
-      queryFn: () => fetchPosTerminalsByBankId(bankId!),
-      enabled: !!bankId, // Depende de que bankId exista
-      staleTime: 1000 * 60 * 2, // Datos frescos por 2 minutos
-  });
 
   // --- Componentes Placeholder para DataTables ---
   const PosTerminalDataTablePlaceholder = ({ isLoading }: { isLoading: boolean }) => (

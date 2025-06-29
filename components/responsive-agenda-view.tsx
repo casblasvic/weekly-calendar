@@ -1,3 +1,93 @@
+/**
+ * ✅ COMPONENTE RESPONSIVO DE AGENDA - ORQUESTADOR PRINCIPAL DE VISTAS
+ * 
+ * ARQUITECTURA COMPLETA DEL SISTEMA:
+ * ==================================
+ * 
+ * 🎯 **PROPÓSITO**: Componente principal que maneja la lógica de vistas responsivas y navegación
+ * 
+ * 📱 **RESPONSIVIDAD INTELIGENTE**:
+ * - Móvil (< lg): MobileAgendaView con navegación táctil optimizada
+ * - Escritorio (>= lg): WeeklyAgenda o DayView según vista activa
+ * - Detección automática de viewport y adaptación
+ * 
+ * 🔧 **INTEGRACIÓN CON PRISMA**:
+ * - SIEMPRE usar: import { prisma } from '@/lib/db';
+ * - Datos de citas procesados desde hooks de cache
+ * - Cabinas activas filtradas automáticamente
+ * 
+ * 🚀 **SISTEMA DE NAVEGACIÓN**:
+ * - Sincronización bidireccional con URL (router)
+ * - Manejo de botones atrás/adelante del navegador
+ * - Actualización de estado desde props (navegación directa)
+ * - Prevención de bucles infinitos de navegación
+ * 
+ * 💾 **HOOKS UTILIZADOS**:
+ * - useClinic(): Clínica activa y estado de carga
+ * - useCabins(): Cabinas disponibles y filtrado
+ * - useRouter/usePathname(): Navegación y sincronización URL
+ * 
+ * 🔄 **FLUJO DE DATOS**:
+ * 1. Props recibidas desde páginas: date, initialView
+ * 2. Sincronización con estado interno: currentDate, view
+ * 3. Detección de cambios en URL (popstate)
+ * 4. Renderizado condicional por viewport
+ * 5. Paso de props procesadas a componentes hijos
+ * 
+ * 📊 **COMPONENTES HIJOS MANEJADOS**:
+ * - MobileAgendaView: Vista móvil completa con navegación
+ * - WeeklyAgenda: Vista semanal de escritorio con cache optimizado
+ * - DayView: Vista diaria de escritorio con datos filtrados
+ * 
+ * 🎛️ **ESTADO INTERNO**:
+ * - view: 'week' | 'day' - Vista actual activa
+ * - currentDate: Date - Fecha actual siendo mostrada
+ * - isUpdatingPath: Ref - Prevención de bucles de navegación
+ * - previousView/previousDateStr: Refs - Tracking de cambios
+ * 
+ * ⚡ **OPTIMIZACIONES**:
+ * - Importaciones dinámicas para code splitting
+ * - Memoización de cabinas activas
+ * - Loading states específicos por contexto
+ * - Prevención de re-renders innecesarios
+ * 
+ * 🔗 **SINCRONIZACIÓN URL**:
+ * - /agenda/semana/YYYY-MM-DD → view: 'week', date: YYYY-MM-DD
+ * - /agenda/dia/YYYY-MM-DD → view: 'day', date: YYYY-MM-DD
+ * - Cambios en props → actualización de estado interno
+ * - Eventos popstate → re-sincronización con URL actual
+ * 
+ * ⚠️ **REGLAS CRÍTICAS PARA MODIFICACIONES**:
+ * 1. MANTENER sincronización bidireccional con URL
+ * 2. NO romper la detección de viewport responsivo
+ * 3. PRESERVAR el sistema de prevención de bucles
+ * 4. MANTENER la memoización de cabinas activas
+ * 5. NO afectar el code splitting de componentes dinámicos
+ * 6. PRESERVAR el manejo de estados de carga
+ * 7. MANTENER compatibilidad con sistema de cache
+ * 
+ * 🏗️ **ESTRUCTURA DE PROPS**:
+ * ```typescript
+ * interface ResponsiveAgendaViewProps {
+ *   date: string;              // Fecha en formato YYYY-MM-DD
+ *   initialView: 'day' | 'week'; // Vista inicial a mostrar
+ * }
+ * ```
+ * 
+ * 📱 **FLUJO DE RESPONSIVIDAD**:
+ * 1. Detección de viewport en tiempo real
+ * 2. Móvil → MobileAgendaView (componente específico)
+ * 3. Escritorio → WeeklyAgenda | DayView según vista
+ * 4. Cambio de viewport → re-renderizado automático
+ * 
+ * 🎯 **CASOS DE USO PRINCIPALES**:
+ * - Usuario navega entre fechas → actualización fluida
+ * - Usuario cambia vista día/semana → transición inmediata
+ * - Usuario usa botones navegador → sincronización URL
+ * - Usuario cambia viewport → adaptación responsiva
+ * - Sistema prefetch → datos disponibles inmediatamente
+ */
+
 "use client"
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react"

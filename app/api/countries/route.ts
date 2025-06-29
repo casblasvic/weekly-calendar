@@ -2,33 +2,32 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getServerAuthSession } from "@/lib/auth";
 
-export async function GET(request: Request) {
-  const session = await getServerAuthSession();
-  if (!session) {
-    return NextResponse.json({ message: 'No autenticado' }, { status: 401 });
-  }
-
+export async function GET() {
   try {
+    const session = await getServerAuthSession();
+    if (!session?.user?.systemId) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    }
+
     const countries = await prisma.countryInfo.findMany({
       select: {
         isoCode: true,
         name: true,
+        timezone: true,
         phoneCode: true,
-        currencyCode: true,
-        currencyName: true,
-        currencySymbol: true,
-        // languageCode: true, // Podríamos incluirlo si se necesita para el selector de idioma
+        currencyCode: true
       },
       orderBy: {
-        name: 'asc', // Ordenar alfabéticamente por nombre
-      },
+        name: 'asc'
+      }
     });
 
     return NextResponse.json(countries);
-
   } catch (error) {
-    console.error("[API_COUNTRIES_GET] Error fetching countries:", error);
-    // Evitar exponer detalles del error en producción
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    console.error("Error obteniendo países:", error);
+    return NextResponse.json(
+      { error: "Error al obtener países" },
+      { status: 500 }
+    );
   }
 } 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, memo, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -21,10 +21,13 @@ import {
     Zap,
     Wifi,
     WifiOff,
-    Settings
+    Settings,
+    Download
 } from "lucide-react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
+import WebSocketLogs from '@/components/websocket/websocket-logs';
 
 interface WebSocketConnection {
     id: string;
@@ -45,139 +48,41 @@ interface WebSocketStats {
     activeConnections: number;
     totalMessages: number;
     totalErrors: number;
+    byType: Record<string, number>;
 }
 
-export default function WebSocketManagerPage() {
-    const router = useRouter();
-    const [isLoading, setIsLoading] = useState(true);
-    const [connections, setConnections] = useState<WebSocketConnection[]>([]);
-    const [stats, setStats] = useState<WebSocketStats>({
-        totalConnections: 0,
-        activeConnections: 0,
-        totalMessages: 0,
-        totalErrors: 0
-    });
-    const [logs, setLogs] = useState<any[]>([]);
+// Componente memoizado para tarjetas de estadísticas
+const StatsCard = memo(({ title, value, subtitle, icon: Icon, color = "text-gray-900" }: {
+    title: string;
+    value: string | number;
+    subtitle?: string;
+    icon: any;
+    color?: string;
+}) => (
+    <Card>
+        <CardHeader className="pb-2">
+            <CardTitle className="flex gap-2 items-center text-sm font-medium">
+                <Icon className="w-4 h-4" />
+                {title}
+            </CardTitle>
+        </CardHeader>
+        <CardContent>
+            <div className={`text-2xl font-bold ${color}`}>
+                {typeof value === 'number' ? value.toLocaleString() : value}
+            </div>
+            {subtitle && <p className="text-xs text-gray-500">{subtitle}</p>}
+        </CardContent>
+    </Card>
+));
 
-    const fetchConnections = useCallback(async () => {
-        setIsLoading(true);
-        try {
-            // Simular datos reales mientras implementamos las APIs
-            const mockConnections: WebSocketConnection[] = [
-                {
-                    id: 'shelly-realtime',
-                    name: 'Shelly Realtime',
-                    description: 'Conexión en tiempo real con dispositivos Shelly IoT',
-                    status: 'connected',
-                    connectedAt: new Date(Date.now() - 2 * 60 * 60 * 1000), // 2 horas atrás
-                    lastHeartbeat: new Date(Date.now() - 30 * 1000), // 30 segundos atrás
-                    messagesSent: 145,
-                    messagesReceived: 1288,
-                    errors: 3,
-                    url: 'wss://shelly-cloud.com/ws',
-                    type: 'IoT Devices'
-                },
-                {
-                    id: 'notification-system',
-                    name: 'Sistema de Notificaciones',
-                    description: 'WebSocket para notificaciones push en tiempo real',
-                    status: 'disconnected',
-                    connectedAt: null,
-                    lastHeartbeat: null,
-                    messagesSent: 0,
-                    messagesReceived: 0,
-                    errors: 12,
-                    url: 'wss://api.clinica.com/notifications',
-                    type: 'Notifications'
-                }
-            ];
+StatsCard.displayName = 'StatsCard';
 
-            setConnections(mockConnections);
-            
-            // Calcular estadísticas reales
-            const activeCount = mockConnections.filter(c => c.status === 'connected').length;
-            const totalMessages = mockConnections.reduce((acc, c) => acc + c.messagesSent + c.messagesReceived, 0);
-            const totalErrors = mockConnections.reduce((acc, c) => acc + c.errors, 0);
-            
-            setStats({
-                totalConnections: mockConnections.length,
-                activeConnections: activeCount,
-                totalMessages,
-                totalErrors
-            });
-
-        } catch (error) {
-            console.error('Error fetching WebSocket connections:', error);
-            toast.error('Error al cargar las conexiones WebSocket');
-        } finally {
-            setIsLoading(false);
-        }
-    }, []);
-
-    useEffect(() => {
-        fetchConnections();
-        
-        // Actualizar cada 30 segundos
-        const interval = setInterval(fetchConnections, 30000);
-        return () => clearInterval(interval);
-    }, [fetchConnections]);
-
-    const handleConnectionAction = async (connectionId: string, action: 'start' | 'stop' | 'restart') => {
-        try {
-            // TODO: Implementar llamadas reales a API
-            const response = await fetch(`/api/websocket/${connectionId}/${action}`, {
-                method: 'POST'
-            });
-
-            if (response.ok) {
-                toast.success(`Conexión ${action === 'start' ? 'iniciada' : action === 'stop' ? 'detenida' : 'reiniciada'} correctamente`);
-                await fetchConnections();
-            } else {
-                throw new Error('Failed to perform action');
-            }
-        } catch (error) {
-            // Por ahora simulamos la acción
-            setConnections(prev => prev.map(conn => {
-                if (conn.id === connectionId) {
-                    if (action === 'start') {
-                        return {
-                            ...conn,
-                            status: 'connected',
-                            connectedAt: new Date(),
-                            lastHeartbeat: new Date()
-                        };
-                    } else if (action === 'stop') {
-                        return {
-                            ...conn,
-                            status: 'disconnected',
-                            connectedAt: null,
-                            lastHeartbeat: null
-                        };
-                    } else if (action === 'restart') {
-                        return {
-                            ...conn,
-                            status: 'connecting'
-                        };
-                    }
-                }
-                return conn;
-            }));
-            
-            if (action === 'restart') {
-                setTimeout(() => {
-                    setConnections(prev => prev.map(conn => 
-                        conn.id === connectionId 
-                            ? { ...conn, status: 'connected', connectedAt: new Date(), lastHeartbeat: new Date() }
-                            : conn
-                    ));
-                }, 2000);
-            }
-            
-            toast.success(`Conexión ${action === 'start' ? 'iniciada' : action === 'stop' ? 'detenida' : 'reiniciada'} correctamente`);
-        }
-    };
-
-    const formatUptime = (connectedAt: Date | null) => {
+// Componente memoizado para filas de conexión
+const ConnectionRow = memo(({ connection, onAction }: {
+    connection: WebSocketConnection;
+    onAction: (id: string, action: 'start' | 'stop' | 'restart') => void;
+}) => {
+    const formatUptime = useCallback((connectedAt: Date | null) => {
         if (!connectedAt) return 'Desconectado';
         
         const now = new Date();
@@ -189,27 +94,469 @@ export default function WebSocketManagerPage() {
             return `${hours}h ${minutes}m`;
         }
         return `${minutes}m`;
-    };
+    }, []);
 
-    const getStatusBadge = (status: WebSocketConnection['status']) => {
+    const getStatusBadge = useCallback((status: WebSocketConnection['status']) => {
         switch (status) {
             case 'connected':
-                return <Badge className="bg-green-500 text-white"><CheckCircle className="w-3 h-3 mr-1" />Conectado</Badge>;
+                return <Badge className="text-white bg-green-500"><CheckCircle className="mr-1 w-3 h-3" />Conectado</Badge>;
             case 'disconnected':
-                return <Badge className="bg-red-500 text-white"><XCircle className="w-3 h-3 mr-1" />Desconectado</Badge>;
+                return <Badge className="text-white bg-red-500"><XCircle className="mr-1 w-3 h-3" />Desconectado</Badge>;
             case 'connecting':
-                return <Badge className="bg-yellow-500 text-white"><RefreshCw className="w-3 h-3 mr-1 animate-spin" />Conectando</Badge>;
+                return <Badge className="text-white bg-yellow-500"><RefreshCw className="mr-1 w-3 h-3 animate-spin" />Conectando</Badge>;
             case 'error':
-                return <Badge className="bg-red-600 text-white"><AlertTriangle className="w-3 h-3 mr-1" />Error</Badge>;
+                return <Badge className="text-white bg-red-600"><AlertTriangle className="mr-1 w-3 h-3" />Error</Badge>;
             default:
                 return <Badge variant="secondary">Desconocido</Badge>;
         }
-    };
+    }, []);
+
+    return (
+        <TableRow>
+            <TableCell>
+                <div>
+                    <div className="font-medium">{connection.name}</div>
+                    <div className="text-sm text-gray-500">{connection.description}</div>
+                </div>
+            </TableCell>
+            <TableCell>
+                {getStatusBadge(connection.status)}
+            </TableCell>
+            <TableCell>
+                <Badge variant="outline">{connection.type}</Badge>
+            </TableCell>
+            <TableCell>
+                {formatUptime(connection.connectedAt)}
+            </TableCell>
+            <TableCell>
+                <div className="text-sm">
+                    <div>↑ {connection.messagesSent}</div>
+                    <div>↓ {connection.messagesReceived}</div>
+                </div>
+            </TableCell>
+            <TableCell>
+                {connection.errors > 0 ? (
+                    <Badge variant="destructive">{connection.errors}</Badge>
+                ) : (
+                    <Badge variant="outline">0</Badge>
+                )}
+            </TableCell>
+            <TableCell>
+                {connection.lastHeartbeat ? (
+                    <span className="text-sm text-gray-600">
+                        {connection.lastHeartbeat.toLocaleTimeString()}
+                    </span>
+                ) : (
+                    <span className="text-sm text-gray-400">-</span>
+                )}
+            </TableCell>
+            <TableCell className="text-right">
+                <div className="flex gap-1 justify-end">
+                    {connection.status === 'connected' ? (
+                        <Button 
+                            variant="ghost" 
+                            size="icon"
+                            onClick={() => onAction(connection.id, 'stop')}
+                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                            title="Detener conexión"
+                        >
+                            <Square className="w-4 h-4" />
+                        </Button>
+                    ) : (
+                        <Button 
+                            variant="ghost" 
+                            size="icon"
+                            onClick={() => onAction(connection.id, 'start')}
+                            className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                            title="Iniciar conexión"
+                        >
+                            <Play className="w-4 h-4" />
+                        </Button>
+                    )}
+                    <Button 
+                        variant="ghost" 
+                        size="icon"
+                        onClick={() => onAction(connection.id, 'restart')}
+                        className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                        title="Reiniciar conexión"
+                    >
+                        <RotateCcw className="w-4 h-4" />
+                    </Button>
+                </div>
+            </TableCell>
+        </TableRow>
+    );
+});
+
+ConnectionRow.displayName = 'ConnectionRow';
+
+export default function WebSocketManagerPage() {
+    const router = useRouter();
+    const { data: session } = useSession();
+    const [isLoading, setIsLoading] = useState(true);
+    const [connections, setConnections] = useState<WebSocketConnection[]>([]);
+    const [stats, setStats] = useState<WebSocketStats>({
+        totalConnections: 0,
+        activeConnections: 0,
+        totalMessages: 0,
+        totalErrors: 0,
+        byType: {}
+    });
+    const [logs, setLogs] = useState<any[]>([]);
+    const [metrics, setMetrics] = useState<any>({});
+    const [activeTab, setActiveTab] = useState('connections');
+    const [socketVersionInfo, setSocketVersionInfo] = useState<{ current: string; latest: string; hasUpdate: boolean; releaseNotes: string } | null>(null);
+    const [checkingVersion, setCheckingVersion] = useState(false);
+    const [updating, setUpdating] = useState(false);
+
+    const fetchMetrics = useCallback(async () => {
+        try {
+            const response = await fetch('/api/shelly/metrics');
+            if (response.ok) {
+                const data = await response.json();
+                setMetrics(data);
+            } else {
+                console.error('Error al obtener métricas');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+        }
+    }, []);
+
+    const fetchConnections = useCallback(async () => {
+        setIsLoading(true);
+        try {
+            // Obtener conexiones reales de la base de datos
+            const response = await fetch('/api/internal/websocket-connections');
+            if (!response.ok) {
+                throw new Error('Error al obtener conexiones');
+            }
+            
+            const { connections: dbConnections, logs: dbLogs, messageStats } = await response.json();
+            
+            // Mapear conexiones de BD a formato de UI
+            const mappedConnections: WebSocketConnection[] = dbConnections.map((conn: any) => {
+                const connectionLogs = conn.logs || [];
+                
+                // Calcular mensajes enviados y recibidos desde logs de la conexión
+                let messagesSent = 0;
+                let messagesReceived = 0;
+                
+                connectionLogs.forEach((log: any) => {
+                    if (log.eventType === 'message') {
+                        if (log.message?.includes('sent') || log.message?.includes('enviado') || log.message?.includes('Sending')) {
+                            messagesSent++;
+                        } else if (log.message?.includes('received') || log.message?.includes('recibido') || log.message?.includes('Received')) {
+                            messagesReceived++;
+                        } else {
+                            // Si no está claro, contar como recibido por defecto
+                            messagesReceived++;
+                        }
+                    }
+                });
+                
+                return {
+                    id: conn.id,
+                    name: conn.metadata?.alias || `Conexión ${conn.type}`,
+                    description: conn.metadata?.description || `Conexión ${conn.type} para ${conn.referenceId}`,
+                    type: conn.type,
+                    status: conn.status === 'connected' ? 'connected' : 
+                           conn.status === 'error' ? 'error' : 'disconnected',
+                    connectedAt: conn.status === 'connected' ? new Date(conn.createdAt) : null,
+                    lastHeartbeat: conn.lastPingAt ? new Date(conn.lastPingAt) : null,
+                    messagesSent,
+                    messagesReceived,
+                    errors: connectionLogs.filter((log: any) => log.eventType === 'error').length,
+                    url: conn.type === 'SOCKET_IO' ? '/api/socket' : undefined
+                };
+            });
+            
+            setConnections(mappedConnections);
+            setLogs(dbLogs);
+            
+            // Ordenar conexiones: conectadas primero, luego por nombre
+            const sortedConnections = mappedConnections.sort((a, b) => {
+                // Prioridad por estado: connected > connecting > disconnected > error
+                const statusPriority = {
+                    'connected': 0,
+                    'connecting': 1, 
+                    'disconnected': 2,
+                    'error': 3
+                };
+                
+                const aPriority = statusPriority[a.status] ?? 4;
+                const bPriority = statusPriority[b.status] ?? 4;
+                
+                if (aPriority !== bPriority) {
+                    return aPriority - bPriority;
+                }
+                
+                // Si tienen el mismo estado, ordenar por nombre
+                return a.name.localeCompare(b.name);
+            });
+            
+            setConnections(sortedConnections);
+            
+            // Calcular estadísticas reales usando los datos del servidor
+            const activeCount = mappedConnections.filter(c => c.status === 'connected').length;
+            const totalMessages = messageStats ? messageStats.total : dbLogs.filter((log: any) => log.eventType === 'message').length;
+            const totalErrors = dbLogs.filter((log: any) => log.eventType === 'error').length;
+            
+            console.log('Stats calculated:', { 
+                totalConnections: mappedConnections.length, 
+                activeCount, 
+                totalMessages, 
+                totalErrors,
+                messageStats 
+            });
+            
+            setStats({
+                totalConnections: mappedConnections.length,
+                activeConnections: activeCount,
+                totalMessages,
+                totalErrors,
+                byType: {}
+            });
+
+        } catch (error) {
+            console.error('Error al obtener conexiones:', error);
+            toast.error('Error al cargar las conexiones WebSocket');
+        } finally {
+            setIsLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        fetchConnections();
+        
+        // Forzar inicialización del Socket.io
+        const initializeSocket = async () => {
+            try {
+                console.log('🔌 Inicializando Socket.io...');
+                await fetch('/api/socket', { method: 'GET' });
+                console.log('✅ Socket.io inicializado');
+            } catch (error) {
+                console.warn('⚠️ Error inicializando Socket.io:', error);
+            }
+        };
+        
+        initializeSocket();
+        
+        // Actualizar cada 120 segundos (reducido para mejor rendimiento)
+        const interval = setInterval(fetchConnections, 120000);
+        return () => clearInterval(interval);
+    }, [fetchConnections]);
+
+    const handleConnectionAction = useCallback(async (connectionId: string, action: 'start' | 'stop' | 'restart') => {
+        try {
+            // Actualización optimista inmediata
+            setConnections(prev => prev.map(conn => {
+                if (conn.id === connectionId) {
+                    if (action === 'start') {
+                        return {
+                            ...conn,
+                            status: 'connecting' as const
+                        };
+                    } else if (action === 'stop') {
+                        return {
+                            ...conn,
+                            status: 'disconnected' as const,
+                            connectedAt: null,
+                            lastHeartbeat: null
+                        };
+                    } else if (action === 'restart') {
+                        return {
+                            ...conn,
+                            status: 'connecting' as const
+                        };
+                    }
+                }
+                return conn;
+            }));
+
+            // Ejecutar acción real
+            const response = await fetch(`/api/websocket/${connectionId}/${action}`, {
+                method: 'POST'
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                // Actualización exitosa
+                setConnections(prev => prev.map(conn => {
+                    if (conn.id === connectionId) {
+                        if (action === 'start' || action === 'restart') {
+                            return {
+                                ...conn,
+                                status: 'connected' as const,
+                                connectedAt: new Date(),
+                                lastHeartbeat: new Date()
+                            };
+                        } else if (action === 'stop') {
+                            return {
+                                ...conn,
+                                status: 'disconnected' as const,
+                                connectedAt: null,
+                                lastHeartbeat: null
+                            };
+                        }
+                    }
+                    return conn;
+                }));
+
+                toast.success(result.message || `Conexión ${action === 'start' ? 'iniciada' : action === 'stop' ? 'detenida' : 'reiniciada'} correctamente`);
+            } else {
+                throw new Error(result.error || 'Error en la acción');
+            }
+
+        } catch (error) {
+            console.error('Error en acción:', error);
+            
+            // Revertir cambio optimista en caso de error
+            await fetchConnections();
+            
+            toast.error(
+                error instanceof Error 
+                    ? error.message 
+                    : `Error al ${action === 'start' ? 'iniciar' : action === 'stop' ? 'detener' : 'reiniciar'} la conexión`
+            );
+        }
+    }, [fetchConnections]);
+
+    // Funciones de versión de Socket.io
+    const checkSocketIOVersion = useCallback(async () => {
+        try {
+            setCheckingVersion(true);
+            const response = await fetch('/api/internal/socket-version');
+            const data = await response.json();
+            
+            if (data.success) {
+                setSocketVersionInfo(data.data);
+                if (data.data.hasUpdate) {
+                    toast.info(`Nueva versión disponible: ${data.data.latest}`);
+                } else {
+                    toast.success('Socket.io está actualizado');
+                }
+            }
+        } catch (error) {
+            console.error('Error checking Socket.io version:', error);
+            toast.error('Error al verificar la versión de Socket.io');
+        } finally {
+            setCheckingVersion(false);
+        }
+    }, []);
+
+    const updateSocketIO = useCallback(async () => {
+        if (!socketVersionInfo?.hasUpdate) return;
+        
+        try {
+            setUpdating(true);
+            const response = await fetch('/api/internal/socket-update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    targetVersion: socketVersionInfo.latest 
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                toast.success('Socket.io actualizado correctamente. Reinicia el servidor para aplicar los cambios.');
+                await checkSocketIOVersion(); // Verificar nueva versión
+            } else {
+                throw new Error(data.error || 'Error en la actualización');
+            }
+        } catch (error) {
+            console.error('Error updating Socket.io:', error);
+            toast.error(error instanceof Error ? error.message : 'Error al actualizar Socket.io');
+        } finally {
+            setUpdating(false);
+        }
+    }, [socketVersionInfo, checkSocketIOVersion]);
+
+    // Memoizar estadísticas para evitar recálculos innecesarios
+    const memoizedStats = useMemo(() => {
+        if (!stats) return null;
+        
+        return {
+            totalConnections: stats.totalConnections || 0,
+            activeConnections: stats.activeConnections || 0,
+            totalMessages: stats.totalMessages || 0,
+            totalErrors: stats.totalErrors || 0,
+            byType: stats.byType || {}
+        };
+    }, [stats]);
+
+    // Memoizar info del socket
+    const socketInfo = useMemo(() => (
+        <div className="p-4 mb-6 bg-blue-50 rounded-lg border border-blue-200">
+            <div className="flex items-center justify-between mb-2">
+                <h3 className="text-lg font-semibold text-blue-800">
+                    🔌 Sistema Socket.io Activo
+                </h3>
+                <div className="flex gap-2">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={checkSocketIOVersion}
+                        disabled={checkingVersion}
+                        className="text-blue-600 hover:text-blue-700"
+                    >
+                        <RefreshCw className={`h-4 w-4 mr-2 ${checkingVersion ? 'animate-spin' : ''}`} />
+                        Verificar Versión
+                    </Button>
+                    {socketVersionInfo && socketVersionInfo.hasUpdate && (
+                        <Button
+                            variant="default"
+                            size="sm"
+                            onClick={updateSocketIO}
+                            disabled={updating}
+                            className="bg-green-600 hover:bg-green-700"
+                        >
+                            <Download className={`h-4 w-4 mr-2 ${updating ? 'animate-spin' : ''}`} />
+                            Actualizar a {socketVersionInfo.latest}
+                        </Button>
+                    )}
+                </div>
+            </div>
+            <div className="grid grid-cols-1 gap-4 text-sm md:grid-cols-3">
+                <div>
+                    <span className="font-medium">Servidor:</span> Socket.io v{socketVersionInfo?.current || '4.x'}
+                </div>
+                <div>
+                    <span className="font-medium">Endpoint:</span> /api/socket
+                </div>
+                <div>
+                    <span className="font-medium">Rooms:</span> Por systemId
+                </div>
+            </div>
+            {socketVersionInfo && (
+                <div className="mt-3 text-xs">
+                    {socketVersionInfo.hasUpdate ? (
+                        <div className="text-orange-600">
+                            ⚠️ Nueva versión disponible: {socketVersionInfo.latest}<br/>
+                            📋 <a href={socketVersionInfo.releaseNotes} target="_blank" rel="noopener noreferrer" className="underline">Ver notas de la versión</a>
+                        </div>
+                    ) : (
+                        <div className="text-green-600">
+                            ✅ Socket.io está actualizado ({socketVersionInfo.current})
+                        </div>
+                    )}
+                </div>
+            )}
+            <div className="mt-3 text-xs text-blue-600">
+                ✅ Actualizaciones en tiempo real para dispositivos Shelly<br/>
+                ✅ Conexiones por sistema aisladas<br/>
+                ✅ Reconexión automática
+            </div>
+        </div>
+    ), [socketVersionInfo, checkingVersion, updating, checkSocketIOVersion, updateSocketIO]);
 
     if (isLoading) {
         return (
-            <div className="space-y-6 p-6">
-                <div className="flex items-center justify-between">
+            <div className="p-6 space-y-6">
+                <div className="flex justify-between items-center">
                     <div>
                         <h1 className="text-3xl font-bold">WebSocket Manager</h1>
                         <p className="text-gray-600">Cargando conexiones WebSocket...</p>
@@ -219,7 +566,7 @@ export default function WebSocketManagerPage() {
                         Volver
                     </Button>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
                     {[...Array(4)].map((_, i) => (
                         <Card key={i}>
                             <CardHeader className="pb-2">
@@ -236,8 +583,8 @@ export default function WebSocketManagerPage() {
     }
 
     return (
-        <div className="space-y-6 p-6">
-            <div className="flex items-center justify-between">
+        <div className="p-6 space-y-6">
+            <div className="flex justify-between items-center">
                 <div>
                     <h1 className="text-3xl font-bold">WebSocket Manager</h1>
                     <p className="text-gray-600">Administración y monitoreo de conexiones WebSocket en tiempo real</p>
@@ -254,63 +601,36 @@ export default function WebSocketManagerPage() {
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <Card>
-                    <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium flex items-center gap-2">
-                            <Wifi className="w-4 h-4" />
-                            Conexiones Totales
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">{stats.totalConnections}</div>
-                    </CardContent>
-                </Card>
-                <Card>
-                    <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium flex items-center gap-2">
-                            <CheckCircle className="w-4 h-4 text-green-500" />
-                            Conexiones Activas
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold text-green-600">{stats.activeConnections}</div>
-                        <p className="text-xs text-gray-500">de {stats.totalConnections} totales</p>
-                    </CardContent>
-                </Card>
-                <Card>
-                    <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium flex items-center gap-2">
-                            <Zap className="w-4 h-4" />
-                            Mensajes Totales
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">{stats.totalMessages.toLocaleString()}</div>
-                        <p className="text-xs text-gray-500">enviados y recibidos</p>
-                    </CardContent>
-                </Card>
-                <Card>
-                    <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium flex items-center gap-2">
-                            <AlertTriangle className="w-4 h-4 text-red-500" />
-                            Errores
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold text-red-600">{stats.totalErrors}</div>
-                        <p className="text-xs text-gray-500">errores acumulados</p>
-                    </CardContent>
-                </Card>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+                <StatsCard title="Conexiones Totales" value={memoizedStats.totalConnections} icon={Wifi} />
+                <StatsCard 
+                    title="Conexiones Activas" 
+                    value={memoizedStats.activeConnections} 
+                    icon={CheckCircle} 
+                    color="text-green-600" 
+                />
+                <StatsCard 
+                    title="Mensajes Totales" 
+                    value={memoizedStats.totalMessages} 
+                    icon={Zap} 
+                />
+                <StatsCard 
+                    title="Errores" 
+                    value={memoizedStats.totalErrors} 
+                    icon={AlertTriangle} 
+                    color="text-red-600" 
+                />
             </div>
 
-            <Tabs defaultValue="connections" className="w-full">
-                <TabsList className="grid w-full grid-cols-2">
-                    <TabsTrigger value="connections" className="flex items-center gap-2">
+            {socketInfo}
+
+            <Tabs defaultValue="connections" className="w-full" value={activeTab} onValueChange={setActiveTab}>
+                <TabsList className="grid grid-cols-2 w-full">
+                    <TabsTrigger value="connections" className="flex gap-2 items-center">
                         <Activity className="w-4 h-4" />
                         Conexiones Activas
                     </TabsTrigger>
-                    <TabsTrigger value="logs" className="flex items-center gap-2">
+                    <TabsTrigger value="logs" className="flex gap-2 items-center">
                         <Eye className="w-4 h-4" />
                         Logs en Tiempo Real
                     </TabsTrigger>
@@ -340,79 +660,7 @@ export default function WebSocketManagerPage() {
                                     <TableBody>
                                         {connections.length > 0 ? (
                                             connections.map((connection) => (
-                                                <TableRow key={connection.id}>
-                                                    <TableCell>
-                                                        <div>
-                                                            <div className="font-medium">{connection.name}</div>
-                                                            <div className="text-sm text-gray-500">{connection.description}</div>
-                                                        </div>
-                                                    </TableCell>
-                                                    <TableCell>
-                                                        {getStatusBadge(connection.status)}
-                                                    </TableCell>
-                                                    <TableCell>
-                                                        <Badge variant="outline">{connection.type}</Badge>
-                                                    </TableCell>
-                                                    <TableCell>
-                                                        {formatUptime(connection.connectedAt)}
-                                                    </TableCell>
-                                                    <TableCell>
-                                                        <div className="text-sm">
-                                                            <div>↑ {connection.messagesSent}</div>
-                                                            <div>↓ {connection.messagesReceived}</div>
-                                                        </div>
-                                                    </TableCell>
-                                                    <TableCell>
-                                                        {connection.errors > 0 ? (
-                                                            <Badge variant="destructive">{connection.errors}</Badge>
-                                                        ) : (
-                                                            <Badge variant="outline">0</Badge>
-                                                        )}
-                                                    </TableCell>
-                                                    <TableCell>
-                                                        {connection.lastHeartbeat ? (
-                                                            <span className="text-sm text-gray-600">
-                                                                {connection.lastHeartbeat.toLocaleTimeString()}
-                                                            </span>
-                                                        ) : (
-                                                            <span className="text-sm text-gray-400">-</span>
-                                                        )}
-                                                    </TableCell>
-                                                    <TableCell className="text-right">
-                                                        <div className="flex gap-1 justify-end">
-                                                            {connection.status === 'connected' ? (
-                                                                <Button 
-                                                                    variant="ghost" 
-                                                                    size="icon"
-                                                                    onClick={() => handleConnectionAction(connection.id, 'stop')}
-                                                                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                                                                    title="Detener conexión"
-                                                                >
-                                                                    <Square className="w-4 h-4" />
-                                                                </Button>
-                                                            ) : (
-                                                                <Button 
-                                                                    variant="ghost" 
-                                                                    size="icon"
-                                                                    onClick={() => handleConnectionAction(connection.id, 'start')}
-                                                                    className="text-green-600 hover:text-green-700 hover:bg-green-50"
-                                                                    title="Iniciar conexión"
-                                                                >
-                                                                    <Play className="w-4 h-4" />
-                                                                </Button>
-                                                            )}
-                                                            <Button 
-                                                                variant="ghost" 
-                                                                size="icon"
-                                                                onClick={() => handleConnectionAction(connection.id, 'restart')}
-                                                                className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                                                                title="Reiniciar conexión"
-                                                            >
-                                                                <RotateCcw className="w-4 h-4" />
-                                                            </Button>
-                                                        </div>
-                                                    </TableCell>
-                                                </TableRow>
+                                                <ConnectionRow key={connection.id} connection={connection} onAction={handleConnectionAction} />
                                             ))
                                         ) : (
                                             <TableRow>
@@ -435,14 +683,7 @@ export default function WebSocketManagerPage() {
                             <CardDescription>Historial de eventos y errores de las conexiones WebSocket</CardDescription>
                         </CardHeader>
                         <CardContent>
-                            <div className="text-center py-12">
-                                <Badge className="mb-4 text-lg px-4 py-2">🔧 Próximamente</Badge>
-                                <h3 className="text-xl font-semibold mb-2">Sistema de Logs en Tiempo Real</h3>
-                                <p className="text-gray-600 max-w-md mx-auto">
-                                    Los logs detallados en tiempo real estarán disponibles próximamente.
-                                    Incluirán filtrado por conexión, nivel de log y búsqueda por fecha.
-                                </p>
-                            </div>
+                            <WebSocketLogs />
                         </CardContent>
                     </Card>
                 </TabsContent>

@@ -54,13 +54,15 @@ export function LayoutWrapper({ children, user }: LayoutWrapperProps) {
         }
         
         // ✅ MÉTODO 2: Buscar fecha en QUERY PARAMS (fallback)
-        const urlParams = new URLSearchParams(window.location.search)
-        const dateParam = urlParams.get('date')
-        if (dateParam) {
-          const parsedDate = new Date(dateParam)
-          if (!isNaN(parsedDate.getTime())) {
-            console.log('[LayoutWrapper] ✅ Fecha extraída de query params:', format(parsedDate, 'yyyy-MM-dd'))
-            return parsedDate
+        if (typeof window !== 'undefined') {
+          const urlParams = new URLSearchParams(window.location.search)
+          const dateParam = urlParams.get('date')
+          if (dateParam) {
+            const parsedDate = new Date(dateParam)
+            if (!isNaN(parsedDate.getTime())) {
+              console.log('[LayoutWrapper] ✅ Fecha extraída de query params:', format(parsedDate, 'yyyy-MM-dd'))
+              return parsedDate
+            }
           }
         }
       } catch (error) {
@@ -73,7 +75,10 @@ export function LayoutWrapper({ children, user }: LayoutWrapperProps) {
     return new Date()
   }, [pathname])
   
-  const currentViewDate = getCurrentViewDate()
+  // ✅ CORREGIDO: Usar useMemo para evitar error de hooks
+  const currentViewDate = useMemo(() => {
+    return getCurrentViewDate()
+  }, [getCurrentViewDate])
   
   // ✅ DEBUGGING TEMPORAL: Ver qué fecha se está obteniendo
   console.log('[LayoutWrapper] 🔍 DEBUGGING currentViewDate:', {

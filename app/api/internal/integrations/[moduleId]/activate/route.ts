@@ -40,8 +40,8 @@ export async function POST(request: NextRequest, { params }: { params: { moduleI
     const { systemId } = session.user;
 
     try {
-        const module = await prisma.integrationModule.findUnique({ where: { id: moduleId } });
-        if (!module) {
+        const integrationModule = await prisma.integrationModule.findUnique({ where: { id: moduleId } });
+        if (!integrationModule) {
             return NextResponse.json({ error: "Módulo no encontrado" }, { status: 404 });
         }
 
@@ -62,7 +62,7 @@ export async function POST(request: NextRequest, { params }: { params: { moduleI
         }
 
         // Si la integración es Shelly, crear el webhook de sistema asociado
-        if (module.name.includes("Shelly")) {
+        if (integrationModule.name.includes("Shelly")) {
             const webhookUrlBase = process.env.NEXTAUTH_URL || 'http://localhost:3000';
             
             // Usamos upsert para evitar crear duplicados si ya existe por alguna razón

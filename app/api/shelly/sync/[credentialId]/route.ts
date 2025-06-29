@@ -27,7 +27,7 @@ interface DevicesResponse {
 
 export async function POST(
     request: NextRequest,
-    { params }: { params: { credentialId: string } }
+    { params }: { params: Promise<{ credentialId: string }> }
 ) {
     const session = await auth();
     if (!session?.user?.systemId) {
@@ -72,10 +72,12 @@ export async function POST(
         }
 
         // Obtener dispositivos de Shelly
-        console.log(`🔍 Obteniendo dispositivos de: ${credential.apiHost}/device/all_status?show_info=true`);
-        const devicesResponse = await fetch(`${credential.apiHost}/device/all_status?show_info=true`, {
+        console.log(`🔍 Obteniendo lista de dispositivos de: ${credential.apiHost}/interface/device/list`);
+        const devicesResponse = await fetch(`${credential.apiHost}/interface/device/list`, {
+            method: 'POST',
             headers: {
-                'Authorization': `Bearer ${accessToken}`
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json'
             }
         });
 
@@ -101,9 +103,11 @@ export async function POST(
                 
                 // Reintentar con el nuevo token
                 accessToken = newTokens.access_token;
-                const retryResponse = await fetch(`${credential.apiHost}/device/all_status?show_info=true`, {
+                const retryResponse = await fetch(`${credential.apiHost}/interface/device/list`, {
+                    method: 'POST',
                     headers: {
-                        'Authorization': `Bearer ${accessToken}`
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
                     }
                 });
                 
@@ -112,8 +116,7 @@ export async function POST(
                 }
                 
                 const retryData = await retryResponse.json();
-                await processDevices(retryData, credential);
-                await markMissingDevices(retryData, credential);
+                await processDeviceList(retryData, credential, accessToken);
                 
             } catch (refreshError) {
                 // Error al refrescar, marcar como expirado
@@ -133,10 +136,7 @@ export async function POST(
             console.log('📋 DATOS COMPLETOS RECIBIDOS DE SHELLY:');
             console.log(JSON.stringify(data, null, 2));
             
-            await processDevices(data, credential);
-            
-            // Marcar dispositivos que ya no están en Shelly como "missing"
-            await markMissingDevices(data, credential);
+            await processDeviceList(data, credential, accessToken);
         } else {
             throw new Error(`Error al obtener dispositivos: ${devicesResponse.status}`);
         }
@@ -161,6 +161,44 @@ export async function POST(
             error: "Error al sincronizar dispositivos" 
         }, { status: 500 });
     }
+}
+
+async function processDeviceList(data: any, credential: any, accessToken: string) {
+    console.log(`📱 Procesando lista de dispositivos de Shelly`);
+    
+    if (!data || !data.data || !data.data.devices) {
+        throw new Error('Respuesta inválida de Shelly - formato inesperado');
+    }
+
+    const devices = data.data.devices;
+    const deviceIds = Object.keys(devices);
+    console.log(`🔌 Encontrados ${deviceIds.length} dispositivos en total`);
+
+    // Procesar cada dispositivo con información básica disponible
+    for (const deviceId of deviceIds) {
+        const deviceInfo = devices[deviceId];
+        console.log(`🔍 Procesando: ${deviceInfo.name} (${deviceId}) - Tipo: ${deviceInfo.category}`);
+        
+        try {
+            // Crear datos simulados para compatibilidad con processIndividualDevice
+            const deviceData = {
+                _device_info: deviceInfo,
+                _dev_info: {
+                    code: deviceInfo.type,
+                    gen: deviceInfo.gen,
+                    online: deviceInfo.cloud_online !== false
+                }
+            };
+
+            await processIndividualDevice(deviceId, deviceData, credential);
+        } catch (error) {
+            console.error(`❌ Error procesando dispositivo ${deviceId}:`, error);
+            // Continuar con el siguiente dispositivo en lugar de fallar completamente
+        }
+    }
+
+    // Marcar dispositivos que ya no están en Shelly
+    await markMissingDevices(deviceIds, credential);
 }
 
 async function processDevices(data: any, credential: any) {
@@ -217,6 +255,7 @@ async function processDevices(data: any, credential: any) {
 
 async function processIndividualDevice(deviceId: string, deviceData: any, credential: any) {
     const devInfo = deviceData._dev_info;
+    const deviceInfo = deviceData._device_info;
     console.log(`🔍 Procesando: ${deviceId} (${devInfo.code}) - Gen: ${devInfo.gen}`);
 
     // Verificar si el dispositivo está excluido de sincronización
@@ -227,10 +266,19 @@ async function processIndividualDevice(deviceId: string, deviceData: any, creden
         }
     });
 
-    if (existingDevice?.excludeFromSync) {
-        console.log(`⏭️ Dispositivo excluido de sync: ${existingDevice.name} (${deviceId})`);
-        return; // Saltar este dispositivo
+    if (existingDevice) {
+        console.log(`📌 Dispositivo YA EXISTE: ${existingDevice.name} (${deviceId})`);
+        if (existingDevice.excludeFromSync) {
+            console.log(`⏭️ Dispositivo excluido de sync: ${existingDevice.name} (${deviceId})`);
+            return; // Saltar este dispositivo
+        }
+    } else {
+        console.log(`✨ Dispositivo NUEVO: ${deviceInfo?.name || deviceId}`);
     }
+
+    // Mostrar información del dispositivo
+    const deviceCategory = deviceInfo?.category || 'unknown';
+    console.log(`📦 Tipo de dispositivo: ${deviceCategory} - ${devInfo.code}`);
 
     // Extraer datos básicos
     const basicData = extractBasicDeviceData(deviceData);
@@ -248,7 +296,7 @@ async function processIndividualDevice(deviceId: string, deviceData: any, creden
         name: basicData.name || `Shelly ${devInfo.code}`,
         type: 'SHELLY',
         deviceIp: connectivityData.ip,
-        generation: devInfo.gen,
+        generation: String(devInfo.gen),
         modelCode: devInfo.code,
         macAddress: basicData.mac,
         firmwareVersion: basicData.firmware,
@@ -323,8 +371,11 @@ async function processIndividualDevice(deviceId: string, deviceData: any, creden
 
 // Funciones helper para extraer datos específicos
 function extractBasicDeviceData(data: any) {
+    // Priorizar el nombre desde _device_info si existe
+    const deviceName = data._device_info?.name || data.name || null;
+    
     return {
-        name: data.name || null,
+        name: deviceName,
         mac: data.mac || data.sys?.mac || null,
         firmware: data.sys?.fw_info?.fw || data.getinfo?.fw_info?.fw || null,
         hasUpdate: data.has_update || data.sys?.available_updates ? true : false,
@@ -357,6 +408,15 @@ function extractEnergyData(data: any) {
 }
 
 function extractConnectivityData(data: any) {
+    // Usar datos de _device_info si están disponibles
+    if (data._device_info) {
+        return {
+            ip: data._device_info.ip || null,
+            ssid: data._device_info.ssid || null,
+            rssi: null
+        };
+    }
+
     // G2 devices
     if (data.wifi) {
         return {
@@ -403,10 +463,11 @@ function extractRelayData(data: any) {
         };
     }
     
-    return { output: null, source: null };
+    // Si no hay datos de estado, usar false por defecto
+    return { output: false, source: null };
 }
 
-async function markMissingDevices(data: any, credential: any) {
+async function markMissingDevices(currentShellyDeviceIds: string[], credential: any) {
     console.log(`🔍 Verificando dispositivos desaparecidos...`);
     
     // Obtener todos los dispositivos existentes para esta credencial
@@ -415,20 +476,6 @@ async function markMissingDevices(data: any, credential: any) {
             credentialId: credential.id
         }
     });
-
-    // 🔍 Extraer IDs de dispositivos según el formato de respuesta
-    let currentShellyDeviceIds: string[];
-    
-    if (data.isok && data.data && data.data.devices_status) {
-        // Formato /device/all_status
-        currentShellyDeviceIds = Object.keys(data.data.devices_status);
-    } else if (typeof data === 'object' && !data.isok) {
-        // Formato /device/status
-        currentShellyDeviceIds = Object.keys(data);
-    } else {
-        console.error('❌ Formato de datos no reconocido para verificar dispositivos desaparecidos');
-        return;
-    }
     
     // Encontrar dispositivos que ya no están en Shelly
     const missingDevices = existingDevices.filter(device => 

@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, ReactNode, useEffect, useState } from 'react';
 import { DataService } from '@/services/data/data-service';
-import { getDataService } from '@/services/data';
+import { initializeDataService, getDataService, type SupabaseConnectionConfig } from '@/services/data';
 
 // Crear el contexto
 const DataServiceContext = createContext<DataService | null>(null);
@@ -25,26 +25,62 @@ interface DataServiceProviderProps {
 export const DataServiceProvider = ({ children }: DataServiceProviderProps) => {
   const [dataService, setDataService] = useState<DataService | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const initializeDataService = async () => {
+    const initializeService = async () => {
       try {
+        // Verificar variables de entorno
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+        const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+        if (!supabaseUrl || !supabaseAnonKey) {
+          throw new Error('Variables de entorno de Supabase no configuradas');
+        }
+
+        const config: SupabaseConnectionConfig = {
+          url: supabaseUrl,
+          apiKey: supabaseAnonKey,
+          schema: 'public'
+        };
+
+        // Inicializar el servicio
+        await initializeDataService(config);
         const service = getDataService();
-        await service.initialize();
+        
         setDataService(service);
         setIsInitialized(true);
       } catch (error) {
         console.error('Error al inicializar el servicio de datos:', error);
+        setError(error instanceof Error ? error.message : 'Error desconocido');
+        setIsInitialized(true); // Marcar como inicializado para evitar bucles
       }
     };
 
     if (!isInitialized) {
-      initializeDataService();
+      initializeService();
     }
   }, [isInitialized]);
 
-  if (!dataService) {
-    return <div>Cargando servicio de datos...</div>;
+  // Mostrar error si hay problemas de configuración
+  if (error) {
+    return (
+      <div className="p-4 bg-yellow-100 border border-yellow-400 text-yellow-700 rounded">
+        <h3>Advertencia: Servicio de datos no disponible</h3>
+        <p>{error}</p>
+        <p>La aplicación funcionará con funcionalidad limitada.</p>
+      </div>
+    );
+  }
+
+  // Mostrar loading mientras se inicializa
+  if (!dataService && !error) {
+    return (
+      <div className="flex items-center justify-center p-4">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <span className="ml-2">Inicializando servicio de datos...</span>
+      </div>
+    );
   }
 
   return (

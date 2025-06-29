@@ -1,0 +1,6 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+Recuerda que prisma siempre se importa con la linea import { prisma } from '@/lib/db';
