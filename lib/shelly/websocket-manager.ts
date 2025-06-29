@@ -707,6 +707,89 @@ class ShellyWebSocketManager {
         }
     }
 
+    // 🎯 NUEVO: Enviar comando de cambio de nombre usando WebSocket Cloud
+    async sendNameCommand(credentialId: string, deviceId: string, newName: string): Promise<void> {
+        let ws = this.connections.get(credentialId);
+        
+        // Verificar si el WebSocket está conectado
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+            console.log(`🔄 [WebSocket NAME] WebSocket desconectado, reconectando para credencial ${credentialId}...`);
+            
+            // Intentar reconectar
+            await this.connectCredential(credentialId);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            // Obtener la nueva conexión
+            ws = this.connections.get(credentialId);
+            
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                throw new Error('No se pudo reconectar el WebSocket para comando name');
+            }
+            
+            console.log(`✅ [WebSocket NAME] WebSocket reconectado exitosamente`);
+        }
+        
+        // Buscar dispositivo para obtener cloudId
+        const device = await prisma.smartPlugDevice.findFirst({
+            where: { deviceId: deviceId, credentialId: credentialId }
+        });
+        
+        if (!device) {
+            throw new Error(`Dispositivo ${deviceId} no encontrado para credencial ${credentialId}`);
+        }
+        
+        // Determinar el ID correcto para el comando
+        let targetCloudId = device.cloudId || device.deviceId;
+        
+        // Si no hay cloudId almacenado, intentar obtenerlo del mapeo en memoria
+        if (!device.cloudId) {
+            const mappedCloudId = this.deviceIdMapping.get(deviceId);
+            if (mappedCloudId && mappedCloudId !== deviceId) {
+                targetCloudId = mappedCloudId;
+                console.log(`🔄 [NAME] Usando cloudId desde mapeo en memoria: ${deviceId} → ${targetCloudId}`);
+            }
+        }
+        
+        // Usar formato específico de Shelly Cloud para comando name
+        const command = {
+            event: 'Shelly:CommandRequest',
+            trid: Date.now(),
+            deviceId: targetCloudId,
+            data: {
+                cmd: 'name',
+                name: newName
+            }
+        };
+        
+        console.log(`📡 [WebSocket NAME] Enviando comando name a dispositivo ${device.name} (cloudId: ${targetCloudId}):`, command);
+        
+        try {
+            ws.send(JSON.stringify(command));
+            console.log(`✅ [WebSocket NAME] Comando name enviado via WebSocket Cloud`);
+            
+            // Log del comando enviado
+            await this.logWebSocketEvent(
+                credentialId,
+                'name_command_sent',
+                `Comando name enviado a dispositivo ${device.name}`,
+                { deviceId: device.deviceId, cloudId: targetCloudId, newName, command }
+            );
+            
+        } catch (sendError) {
+            console.error(`❌ [WebSocket NAME] Error enviando comando name:`, sendError);
+            
+            // Log del error
+            await this.logWebSocketEvent(
+                credentialId,
+                'name_command_error',
+                `Error enviando comando name a dispositivo ${device.name}`,
+                { deviceId: device.deviceId, cloudId: targetCloudId, newName, error: sendError instanceof Error ? sendError.message : 'Error desconocido' }
+            );
+            
+            throw new Error(`Error enviando comando name: ${sendError instanceof Error ? sendError.message : 'Error desconocido'}`);
+        }
+    }
+
     /**
      * Registrar evento en logs WebSocket
      */

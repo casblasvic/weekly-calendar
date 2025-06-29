@@ -11,13 +11,13 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PaginationControls } from '@/components/pagination-controls';
 import { toast } from "sonner";
-import { PlusCircle, Edit, Trash2, Play, StopCircle, Wifi, WifiOff, ArrowLeft, ArrowUpDown, ChevronUp, ChevronDown, Power, Settings, Activity, Thermometer, Zap, Plug, AlertTriangle, RefreshCw, Smartphone, Search, Building2, X } from "lucide-react";
+import { PlusCircle, Edit, Trash2, Play, StopCircle, Wifi, WifiOff, ArrowLeft, ArrowUpDown, ChevronUp, ChevronDown, Power, Settings, Activity, Thermometer, Zap, Plug, AlertTriangle, RefreshCw, Smartphone, Search, Building2, X, Cpu } from "lucide-react";
 import { Badge } from '@/components/ui/badge';
 import { ColumnDef, flexRender, getCoreRowModel, getSortedRowModel, SortingState, useReactTable } from "@tanstack/react-table";
 import { useRouter } from "next/navigation";
 import { useShellyRealtime } from "@/hooks/use-shelly-realtime";
 import { useSession } from "next-auth/react";
-import { DeviceEditModal } from '@/components/shelly/device-edit-modal';
+import { DeviceConfigModalV2 } from '@/components/shelly/device-config-modal-v2';
 import { DeviceControlButton } from '@/components/ui/device-control-button';
 import useSocket from '@/hooks/useSocket';
 import {
@@ -26,6 +26,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
   DropdownMenuSeparator,
+  DropdownMenuCheckboxItem,
+  DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 
 interface SmartPlug {
@@ -118,6 +120,7 @@ const SmartPlugsPage = () => {
     const [searchText, setSearchText] = useState<string>('');
     const [equipmentFilter, setEquipmentFilter] = useState<string>('all');
     const [equipmentSearchText, setEquipmentSearchText] = useState<string>('');
+    const [generationFilter, setGenerationFilter] = useState<string[]>([]); // Filtro de selección múltiple por generación
     
     // Estados para credenciales en tiempo real
     const [credentialsStatus, setCredentialsStatus] = useState<{
@@ -291,6 +294,14 @@ const SmartPlugsPage = () => {
             filtered = filtered.filter(plug => plug.equipmentId === equipmentFilter);
         }
 
+        // 🆕 Filtro por generación (selección múltiple)
+        if (generationFilter.length > 0) {
+            filtered = filtered.filter(plug => {
+                const generation = plug.generation || 'Desconocida';
+                return generationFilter.includes(generation);
+            });
+        }
+
         // Búsqueda por texto (nombre)
         if (searchText.trim()) {
             const search = searchText.toLowerCase();
@@ -320,7 +331,17 @@ const SmartPlugsPage = () => {
             // Si tienen la misma prioridad, ordenar alfabéticamente por nombre
             return a.name.localeCompare(b.name);
         });
-    }, [plugs, selectedCredentialFilter, onlineFilter, relayStatusFilter, clinicFilter, equipmentFilter, searchText]);
+    }, [plugs, selectedCredentialFilter, onlineFilter, relayStatusFilter, clinicFilter, equipmentFilter, generationFilter, searchText]);
+
+    // 🆕 Memo para obtener generaciones disponibles
+    const availableGenerations = useMemo(() => {
+        const generations = new Set<string>();
+        plugs.forEach(plug => {
+            const generation = plug.generation || 'Desconocida';
+            generations.add(generation);
+        });
+        return Array.from(generations).sort();
+    }, [plugs]);
 
     // Efecto para recargar cuando cambia el filtro de credencial (solo este necesita API)
     useEffect(() => {
@@ -700,28 +721,15 @@ const SmartPlugsPage = () => {
     const handleDeviceToggle = async (deviceId: string, turnOn: boolean) => {
         console.log(`🎛️ Controlando dispositivo ${deviceId}: ${turnOn ? 'ON' : 'OFF'}`);
         
-        // 🔍 DEBUG: Verificar si el deviceId es válido
-        const device = plugs.find(p => p.deviceId === deviceId);
-        if (device) {
-            console.log(`🔍 [DEBUG] Dispositivo encontrado en lista:`, {
-                id: device.id,
-                deviceId: device.deviceId,
-                name: device.name,
-                credentialId: device.credentialId
-            });
-        } else {
-            console.error(`❌ [DEBUG] Dispositivo NO encontrado en lista para deviceId: ${deviceId}`);
-            console.log(`🔍 [DEBUG] Dispositivos disponibles:`, plugs.map(p => ({
-                id: p.id,
-                deviceId: p.deviceId,
-                name: p.name
-            })));
-            return; // No continuar si no se encuentra el dispositivo
-        }
-        
         try {
-            // Actualización optimista usando deviceId
+            // Actualización optimista en ambas listas
             setPlugs(prev => prev.map(device => 
+                device.deviceId === deviceId 
+                    ? { ...device, relayOn: turnOn }
+                    : device
+            ));
+            
+            setAllPlugs(prev => prev.map(device => 
                 device.deviceId === deviceId 
                     ? { ...device, relayOn: turnOn }
                     : device
@@ -745,7 +753,7 @@ const SmartPlugsPage = () => {
                 toast.success(`Dispositivo ${turnOn ? 'encendido' : 'apagado'} correctamente`);
                 
                 // Solicitar actualización inmediata via Socket.io usando el ID interno
-                const device = plugs.find(p => p.deviceId === deviceId);
+                const device = allPlugs.find(p => p.deviceId === deviceId);
                 if (device) {
                     requestDeviceUpdate(device.id);
                 }
@@ -753,8 +761,14 @@ const SmartPlugsPage = () => {
         } catch (error) {
             console.error(`❌ Error controlando dispositivo ${deviceId}:`, error);
             
-            // Revertir cambio optimista en caso de error
+            // Revertir cambio optimista en caso de error en ambas listas
             setPlugs(prev => prev.map(device => 
+                device.deviceId === deviceId 
+                    ? { ...device, relayOn: !turnOn }
+                    : device
+            ));
+            
+            setAllPlugs(prev => prev.map(device => 
                 device.deviceId === deviceId 
                     ? { ...device, relayOn: !turnOn }
                     : device
@@ -1519,10 +1533,64 @@ const SmartPlugsPage = () => {
                                 </Select>
                             </div>
 
+                            {/* 🆕 Filtro Generación (selección múltiple) */}
+                            {availableGenerations.length > 0 && (
+                                <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                        <Button variant="outline" className="w-48 justify-between">
+                                            <span className="flex items-center gap-2">
+                                                <Cpu className="w-4 h-4" />
+                                                {generationFilter.length === 0 
+                                                    ? "Todas las generaciones" 
+                                                    : generationFilter.length === 1 
+                                                        ? `Gen ${generationFilter[0]}`
+                                                        : `${generationFilter.length} generaciones`
+                                                }
+                                            </span>
+                                            <ChevronDown className="w-4 h-4" />
+                                        </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent className="w-48">
+                                        <DropdownMenuLabel>Filtrar por generación</DropdownMenuLabel>
+                                        <DropdownMenuSeparator />
+                                        {availableGenerations.map((generation) => (
+                                            <DropdownMenuCheckboxItem
+                                                key={generation}
+                                                checked={generationFilter.includes(generation)}
+                                                onCheckedChange={(checked) => {
+                                                    if (checked) {
+                                                        setGenerationFilter(prev => [...prev, generation]);
+                                                    } else {
+                                                        setGenerationFilter(prev => prev.filter(g => g !== generation));
+                                                    }
+                                                }}
+                                            >
+                                                <div className="flex items-center gap-2">
+                                                    <Cpu className="w-3 h-3" />
+                                                    {generation === 'Desconocida' ? 'Sin especificar' : `Generación ${generation}`}
+                                                </div>
+                                            </DropdownMenuCheckboxItem>
+                                        ))}
+                                        {generationFilter.length > 0 && (
+                                            <>
+                                                <DropdownMenuSeparator />
+                                                <DropdownMenuItem
+                                                    onClick={() => setGenerationFilter([])}
+                                                    className="text-sm text-muted-foreground"
+                                                >
+                                                    <X className="w-3 h-3 mr-2" />
+                                                    Limpiar selección
+                                                </DropdownMenuItem>
+                                            </>
+                                        )}
+                                    </DropdownMenuContent>
+                                </DropdownMenu>
+                            )}
+
                             {/* Botón limpiar filtros */}
                             {(selectedCredentialFilter !== 'all' || onlineFilter !== 'all' || 
                               relayStatusFilter !== 'all' || clinicFilter !== 'all' || 
-                              equipmentFilter !== 'all' || searchText.trim()) && (
+                              equipmentFilter !== 'all' || generationFilter.length > 0 || searchText.trim()) && (
                                 <Button 
                                 variant="outline"
                                     size="sm"
@@ -1532,6 +1600,7 @@ const SmartPlugsPage = () => {
                                         setRelayStatusFilter('all');
                                         setClinicFilter('all');
                                         setEquipmentFilter('all');
+                                        setGenerationFilter([]);
                                         setSearchText('');
                                         setEquipmentSearchText('');
                                     }}
@@ -1714,34 +1783,17 @@ const SmartPlugsPage = () => {
             )}
             
             {selectedDevice && (
-                <DeviceEditModal
+                <DeviceConfigModalV2
                     device={selectedDevice as any}
                     isOpen={isEditModalOpen}
                     onClose={() => {
                         setIsEditModalOpen(false);
                         setSelectedDevice(null);
                     }}
-                    onSave={async (updatedDevice) => {
-                        try {
-                            const response = await fetch(`/api/internal/smart-plug-devices/${selectedDevice.id}`, { 
-                                method: 'PUT', 
-                                headers: {'Content-Type': 'application/json'}, 
-                                body: JSON.stringify(updatedDevice) 
-                            });
-                            
-                            if (response.ok) {
-                                toast.success("Dispositivo actualizado correctamente.");
-                                setIsEditModalOpen(false);
-                                setSelectedDevice(null);
-                                await fetchPlugs(pagination.page, pagination.pageSize, selectedCredentialFilter);
-                                await fetchAllPlugs(); // También recargar lista completa
-                            } else {
-                                const errorData = await response.json();
-                                toast.error(`Error al actualizar: ${errorData.error || 'Error desconocido'}`);
-                            }
-                        } catch (error) {
-                            toast.error("Error de conexión al actualizar el dispositivo.");
-                        }
+                    onDeviceUpdate={async () => {
+                        // Refrescar los datos del dispositivo después de actualizar
+                        await fetchPlugs(pagination.page, pagination.pageSize, selectedCredentialFilter);
+                        await fetchAllPlugs(); // También recargar lista completa
                     }}
                 />
             )}

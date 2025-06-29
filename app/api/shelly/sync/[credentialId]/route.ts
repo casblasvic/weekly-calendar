@@ -161,7 +161,13 @@ export async function POST(
                 }
                 
                 const retryData = await retryResponse.json();
+                
+                // 🚀 FASE 1: Sincronización básica (retry)
                 await processDeviceList(retryData, credential, accessToken, activeIntegration);
+                
+                // 🚀 FASE 2: Completar datos detallados (retry)
+                console.log('🔄 Iniciando FASE 2: Completando datos detallados (retry)...');
+                await completeDeviceDetails(retryData, credential, accessToken);
                 
             } catch (refreshError) {
                 // Error al refrescar, marcar como expirado
@@ -181,7 +187,12 @@ export async function POST(
             console.log('📋 DATOS COMPLETOS RECIBIDOS DE SHELLY:');
             console.log(JSON.stringify(data, null, 2));
             
+            // 🚀 FASE 1: Sincronización básica (mantener actual)
             await processDeviceList(data, credential, accessToken, activeIntegration);
+            
+            // 🚀 FASE 2: Completar datos detallados
+            console.log('🔄 Iniciando FASE 2: Completando datos detallados...');
+            await completeDeviceDetails(data, credential, accessToken);
         } else {
             throw new Error(`Error al obtener dispositivos: ${devicesResponse.status}`);
         }
@@ -523,4 +534,222 @@ async function markMissingDevices(currentShellyDeviceIds: string[], credential: 
     } else {
         console.log(`✅ Todos los dispositivos están presentes en Shelly`);
     }
+}
+
+async function completeDeviceDetails(data: any, credential: any, accessToken: string) {
+    console.log('🔍 FASE 2: Obteniendo configuración detallada de dispositivos...');
+    
+    if (!data || !data.data || !data.data.devices) {
+        console.log('⚠️ No hay dispositivos para completar datos detallados');
+        return;
+    }
+
+    const devices = data.data.devices;
+    const deviceIds = Object.keys(devices);
+    
+    if (deviceIds.length === 0) {
+        console.log('⚠️ No hay dispositivos para procesar en FASE 2');
+        return;
+    }
+
+    console.log(`📱 Completando datos detallados para ${deviceIds.length} dispositivos...`);
+
+    try {
+        // 🚀 PROCESAR EN LOTES DE MÁXIMO 10 DISPOSITIVOS (límite de la API)
+        const BATCH_SIZE = 10;
+        const batches = [];
+        
+        for (let i = 0; i < deviceIds.length; i += BATCH_SIZE) {
+            batches.push(deviceIds.slice(i, i + BATCH_SIZE));
+        }
+        
+        console.log(`📦 Procesando ${batches.length} lotes de dispositivos (máx ${BATCH_SIZE} por lote)`);
+        
+        for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+            const batch = batches[batchIndex];
+            console.log(`🔄 Procesando lote ${batchIndex + 1}/${batches.length} con ${batch.length} dispositivos`);
+            
+            // 🚀 LLAMADA POR LOTES para obtener configuración detallada
+            const detailsResponse = await fetch(`${credential.apiHost}/v2/devices/api/get`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    ids: batch,
+                    select: ["settings", "status"]
+                })
+            });
+
+            if (!detailsResponse.ok) {
+                console.log(`⚠️ Error en lote ${batchIndex + 1} (${detailsResponse.status}): No se pudo obtener configuración detallada`);
+                // Continuar con el siguiente lote
+                continue;
+            }
+
+            const detailsData = await detailsResponse.json();
+            console.log(`📋 DATOS DETALLADOS RECIBIDOS para lote ${batchIndex + 1}:`);
+            console.log(JSON.stringify(detailsData, null, 2));
+
+            if (!detailsData || !Array.isArray(detailsData)) {
+                console.log(`⚠️ Respuesta de lote ${batchIndex + 1} sin datos válidos (esperaba array)`);
+                continue;
+            }
+
+            // 🔄 Procesar cada dispositivo del lote con datos detallados
+            for (const deviceDetails of detailsData) {
+                const deviceId = deviceDetails.id;
+                
+                if (!deviceDetails || !deviceId) {
+                    console.log(`⚠️ Sin datos detallados válidos para dispositivo`);
+                    continue;
+                }
+
+                try {
+                    await updateDeviceWithDetailedData(deviceId, deviceDetails, credential);
+                } catch (error) {
+                    console.error(`❌ Error actualizando datos detallados para ${deviceId}:`, error);
+                    // Continuar con el siguiente dispositivo
+                }
+            }
+        }
+
+        console.log('✅ FASE 2 completada exitosamente');
+
+    } catch (error) {
+        console.error('❌ Error en FASE 2:', error);
+        // No fallar la sincronización principal por error en FASE 2
+    }
+}
+
+async function updateDeviceWithDetailedData(deviceId: string, deviceDetails: any, credential: any) {
+    console.log(`🔍 Actualizando datos detallados para: ${deviceId}`);
+
+    // Buscar el dispositivo existente
+    const existingDevice = await prisma.smartPlugDevice.findFirst({
+        where: {
+            deviceId: deviceId,
+            credentialId: credential.id
+        }
+    });
+
+    if (!existingDevice) {
+        console.log(`⚠️ Dispositivo ${deviceId} no encontrado en BD para actualizar datos detallados`);
+        return;
+    }
+
+    // Extraer datos detallados
+    const detailedData = extractDetailedDeviceData(deviceDetails);
+    
+    // Actualizar solo los campos detallados
+    await prisma.smartPlugDevice.update({
+        where: { id: existingDevice.id },
+        data: {
+            // Configuración básica
+            timezone: detailedData.timezone,
+            autoUpdate: detailedData.autoUpdate,
+            
+            // Configuración de red
+            wifiBackupEnabled: detailedData.wifiBackupEnabled,
+            wifiBackupSsid: detailedData.wifiBackupSsid,
+            apModeEnabled: detailedData.apModeEnabled,
+            
+            // Configuración de protección
+            autoOffEnabled: detailedData.autoOffEnabled,
+            autoOffDelay: detailedData.autoOffDelay,
+            powerLimit: detailedData.powerLimit,
+            
+            // Configuración LED (Gen 3)
+            ledBrightness: detailedData.ledBrightness,
+            ledColorMode: detailedData.ledColorMode,
+            ledColorR: detailedData.ledColorR,
+            ledColorG: detailedData.ledColorG,
+            ledColorB: detailedData.ledColorB,
+            ledNightMode: detailedData.ledNightMode,
+            
+            // Datos energéticos detallados (si están disponibles)
+            currentPower: detailedData.currentPower ?? existingDevice.currentPower,
+            totalEnergy: detailedData.totalEnergy ?? existingDevice.totalEnergy,
+            voltage: detailedData.voltage ?? existingDevice.voltage,
+            current: detailedData.current ?? existingDevice.current,
+            temperature: detailedData.temperature ?? existingDevice.temperature,
+            
+            // Estado del relay detallado
+            relayOn: detailedData.relayOn ?? existingDevice.relayOn,
+            relaySource: detailedData.relaySource ?? existingDevice.relaySource,
+            
+            // Guardar datos completos detallados
+            rawData: {
+                ...((existingDevice.rawData as any) || {}),
+                _detailedData: deviceDetails,
+                _phase2UpdatedAt: new Date().toISOString()
+            },
+            
+            updatedAt: new Date()
+        }
+    });
+
+    console.log(`✅ Datos detallados actualizados para: ${existingDevice.name} (${deviceId})`);
+}
+
+function extractDetailedDeviceData(deviceDetails: any) {
+    const settings = deviceDetails.settings || {};
+    const status = deviceDetails.status || {};
+    
+    // Extraer configuración del sistema
+    const sys = settings.sys || {};
+    const device = sys.device || {};
+    const location = sys.location || {};
+    const sntp = sys.sntp || {};
+    
+    // Extraer configuración WiFi
+    const wifi = settings.wifi || {};
+    const ap = wifi.ap || {};
+    
+    // Extraer configuración del switch
+    const switch0 = settings['switch:0'] || {};
+    const switchStatus = status['switch:0'] || {};
+    
+    // Extraer configuración LED (Gen 3)
+    const plugsUi = settings['plugs_ui:0'] || {};
+    const leds = plugsUi.leds || {};
+    
+    // Extraer datos energéticos del status
+    const energyStatus = switchStatus.aenergy || {};
+    
+    return {
+        // Configuración básica
+        timezone: location.tz || null,
+        autoUpdate: sys.auto_update !== false, // Default true si no está definido
+        
+        // Configuración de red
+        wifiBackupEnabled: false, // Requiere análisis más profundo de la config WiFi
+        wifiBackupSsid: null,     // Requiere análisis de redes guardadas
+        apModeEnabled: ap.enable || false,
+        
+        // Configuración de protección
+        autoOffEnabled: switch0.auto_off_delay !== undefined,
+        autoOffDelay: switch0.auto_off_delay || null,
+        powerLimit: switch0.power_limit || null,
+        
+        // Configuración LED (Gen 3)
+        ledBrightness: leds.brightness !== undefined ? leds.brightness : null,
+        ledColorMode: leds.mode || null,
+                 ledColorR: leds.colors?.red !== undefined ? leds.colors.red : null,
+         ledColorG: leds.colors?.green !== undefined ? leds.colors.green : null,
+         ledColorB: leds.colors?.blue !== undefined ? leds.colors.blue : null,
+        ledNightMode: leds.night_mode?.enable || false,
+        
+        // Datos energéticos detallados del status
+        currentPower: switchStatus.apower || null,
+        totalEnergy: energyStatus.total || null,
+        voltage: switchStatus.voltage || null,
+        current: switchStatus.current || null,
+        temperature: status.temperature?.tC || switchStatus.temperature?.tC || null,
+        
+        // Estado del relay detallado
+        relayOn: switchStatus.output || false,
+        relaySource: switchStatus.source || null
+    };
 } 
