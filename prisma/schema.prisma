@@ -3132,6 +3132,7 @@ model SmartPlugDevice {
   name          String
   type          String   // "SHELLY", "KASA", etc.
   deviceId      String   // ID del fabricante
+  cloudId       String?  // 🆔 NUEVO: ID para comandos WebSocket (ej: b0b21c12dd94)
   deviceIp      String?  // IP actual del dispositivo
   equipmentId   String?  @unique // Opcional - para asociar con equipamiento
   equipment     Equipment? @relation(fields: [equipmentId], references: [id])

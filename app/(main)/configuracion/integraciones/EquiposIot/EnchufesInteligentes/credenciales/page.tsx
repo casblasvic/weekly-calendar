@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from '@/components/ui/badge';
-import { PlusCircle, RefreshCw, AlertCircle, Wifi, WifiOff, Edit, Trash2, Smartphone } from "lucide-react";
+import { PlusCircle, RefreshCw, AlertCircle, Wifi, WifiOff, Edit, Trash2, Smartphone, Power } from "lucide-react";
 import { toast } from "sonner";
 import { ShellyCredentialModal } from './components/ShellyCredentialModal';
 import { format } from 'date-fns';
@@ -19,6 +19,12 @@ interface ShellyCredential {
     status: 'connected' | 'error' | 'expired';
     lastSyncAt: string | null;
     createdAt: string;
+    webSocketStatus: 'connected' | 'disconnected' | 'error' | 'connecting';
+    webSocketAutoReconnect: boolean;
+    webSocketLastPing: string | null;
+    webSocketError: string | null;
+    connectionStatus: 'connected' | 'disconnected' | 'error' | 'expired';
+    canConnectWebSocket: boolean;
 }
 
 export default function ShellyCredentialsPage() {
@@ -34,6 +40,7 @@ export default function ShellyCredentialsPage() {
             reconnecting?: boolean;
             syncing?: boolean;
             deleting?: boolean;
+            connectingWebSocket?: boolean;
         }
     }>({});
 
@@ -188,13 +195,58 @@ export default function ShellyCredentialsPage() {
         }
     };
 
-    const getStatusBadge = (status: string, credentialId: string) => {
+    // 🔌 NUEVO: Conectar WebSocket para tiempo real (transparente para el usuario)
+    const handleConnectWebSocket = async (credentialId: string) => {
+        // Activar estado de loading
+        setLoadingStates(prev => ({
+            ...prev,
+            [credentialId]: { ...prev[credentialId], connectingWebSocket: true }
+        }));
+
+        try {
+            const response = await fetch(`/api/shelly/credentials/${credentialId}/connect-websocket`, {
+                method: 'POST'
+            });
+            
+            if (response.ok) {
+                const result = await response.json();
+                toast.success("Conexión en tiempo real activada exitosamente");
+                // Recargar credenciales para obtener el estado actualizado
+                await fetchCredentials();
+            } else {
+                const errorData = await response.json();
+                toast.error(errorData.error || "Error al activar conexión en tiempo real");
+            }
+        } catch (error) {
+            toast.error("Error de conexión");
+        } finally {
+            // Desactivar estado de loading con un pequeño delay para ver la animación
+            setTimeout(() => {
+                setLoadingStates(prev => ({
+                    ...prev,
+                    [credentialId]: { ...prev[credentialId], connectingWebSocket: false }
+                }));
+            }, 500);
+        }
+    };
+
+    const getStatusBadge = (credential: ShellyCredential, credentialId: string) => {
         const loading = loadingStates[credentialId];
+        
+        // 🔌 NUEVO: Estado de conectando WebSocket
+        if (loading?.connectingWebSocket) {
+            return (
+                <Badge className="flex gap-1 items-center px-2 py-1 text-white bg-blue-500">
+                    <Power className="w-3 h-3 animate-pulse" />
+                    Conectando...
+                </Badge>
+            );
+        }
         
         // Estado de reconectando
         if (loading?.reconnecting) {
             return (
-                <Badge className="text-white bg-orange-500 flex items-center gap-1 px-2 py-1">
+                <Badge className="flex gap-1 items-center px-2 py-1 text-white bg-orange-500">
                     <RefreshCw className="w-3 h-3 animate-spin" />
                     Reconectando...
                 </Badge>
@@ -204,7 +256,7 @@ export default function ShellyCredentialsPage() {
         // Estado de sincronizando
         if (loading?.syncing) {
             return (
-                <Badge className="text-white bg-blue-500 flex items-center gap-1 px-2 py-1">
+                <Badge className="flex gap-1 items-center px-2 py-1 text-white bg-blue-500">
                     <Smartphone className="w-3 h-3 animate-bounce" />
                     Sincronizando...
                 </Badge>
@@ -214,31 +266,39 @@ export default function ShellyCredentialsPage() {
         // Estado de eliminando
         if (loading?.deleting) {
             return (
-                <Badge className="text-white bg-red-600 flex items-center gap-1 px-2 py-1">
+                <Badge className="flex gap-1 items-center px-2 py-1 text-white bg-red-600">
                     <Trash2 className="w-3 h-3 animate-pulse" />
                     Eliminando...
                 </Badge>
             );
         }
 
-        switch (status) {
+        // 🔌 NUEVO: Usar estado combinado (credencial + WebSocket)
+        switch (credential.connectionStatus) {
             case 'connected':
                 return (
-                    <Badge className="text-white bg-green-500 flex items-center gap-1 px-2 py-1">
+                    <Badge className="flex gap-1 items-center px-2 py-1 text-white bg-green-500">
                         <Wifi className="w-3 h-3" />
                         Conectado
                     </Badge>
                 );
+            case 'disconnected':
+                return (
+                    <Badge className="flex gap-1 items-center px-2 py-1 text-white bg-red-500">
+                        <WifiOff className="w-3 h-3" />
+                        Desconectado
+                    </Badge>
+                );
             case 'expired':
                 return (
-                    <Badge className="text-white bg-amber-500 flex items-center gap-1 px-2 py-1">
+                    <Badge className="flex gap-1 items-center px-2 py-1 text-white bg-amber-500">
                         <WifiOff className="w-3 h-3" />
                         Expirado
                     </Badge>
                 );
             case 'error':
                 return (
-                    <Badge className="text-white bg-red-500 flex items-center gap-1 px-2 py-1">
+                    <Badge className="flex gap-1 items-center px-2 py-1 text-white bg-red-500">
                         <AlertCircle className="w-3 h-3" />
                         Error
                     </Badge>
@@ -271,7 +331,7 @@ export default function ShellyCredentialsPage() {
                                     <TableHead>Email</TableHead>
                                     <TableHead>Estado</TableHead>
                                     <TableHead>Última Sincronización</TableHead>
-                                    <TableHead className="text-right w-80">Acciones</TableHead>
+                                    <TableHead className="w-80 text-right">Acciones</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -286,7 +346,7 @@ export default function ShellyCredentialsPage() {
                                         <TableRow key={credential.id}>
                                             <TableCell className="font-medium">{credential.name}</TableCell>
                                             <TableCell>{credential.email}</TableCell>
-                                            <TableCell>{getStatusBadge(credential.status, credential.id)}</TableCell>
+                                            <TableCell>{getStatusBadge(credential, credential.id)}</TableCell>
                                             <TableCell>
                                                 {credential.lastSyncAt 
                                                     ? format(new Date(credential.lastSyncAt), "dd/MM/yyyy HH:mm", { locale: es })
@@ -295,6 +355,21 @@ export default function ShellyCredentialsPage() {
                                             </TableCell>
                                             <TableCell>
                                                 <div className="flex gap-1 justify-end items-center">
+                                                    {/* 🔌 NUEVO: Botón Conectar Tiempo Real (WebSocket) */}
+                                                    {credential.canConnectWebSocket && (
+                                                        <Button
+                                                            variant="outline"
+                                                            size="sm"
+                                                            onClick={() => handleConnectWebSocket(credential.id)}
+                                                            disabled={loadingStates[credential.id]?.connectingWebSocket}
+                                                            className="px-3 py-1 text-green-600 border-green-200 hover:bg-green-50"
+                                                            title="Activar conexión en tiempo real"
+                                                        >
+                                                            <Power className={`w-4 h-4 mr-1 ${loadingStates[credential.id]?.connectingWebSocket ? 'animate-pulse' : ''}`} />
+                                                            {loadingStates[credential.id]?.connectingWebSocket ? 'Conectando...' : 'Conectar'}
+                                                        </Button>
+                                                    )}
+
                                                     {/* Botón Reconectar (siempre disponible si no está conectado) */}
                                                     {credential.status !== 'connected' && (
                                                         <Button
@@ -302,7 +377,7 @@ export default function ShellyCredentialsPage() {
                                                             size="sm"
                                                             onClick={() => handleReconnect(credential.id)}
                                                             disabled={loadingStates[credential.id]?.reconnecting}
-                                                            className="text-amber-600 border-amber-200 hover:bg-amber-50 px-3 py-1"
+                                                            className="px-3 py-1 text-amber-600 border-amber-200 hover:bg-amber-50"
                                                             title="Reconectar con los mismos datos"
                                                         >
                                                             <Wifi className={`w-4 h-4 mr-1 ${loadingStates[credential.id]?.reconnecting ? 'animate-pulse' : ''}`} />
@@ -317,7 +392,7 @@ export default function ShellyCredentialsPage() {
                                                             size="sm"
                                                             onClick={() => handleSync(credential.id)}
                                                             disabled={loadingStates[credential.id]?.syncing}
-                                                            className="text-blue-600 border-blue-200 hover:bg-blue-50 px-3 py-1"
+                                                            className="px-3 py-1 text-blue-600 border-blue-200 hover:bg-blue-50"
                                                             title="Sincronizar dispositivos"
                                                         >
                                                             <Smartphone className={`w-4 h-4 mr-1 ${loadingStates[credential.id]?.syncing ? 'animate-bounce' : ''}`} />
@@ -332,7 +407,7 @@ export default function ShellyCredentialsPage() {
                                                             size="sm"
                                                             onClick={() => handleReconnect(credential.id)}
                                                             disabled={loadingStates[credential.id]?.reconnecting}
-                                                            className="text-gray-500 hover:text-gray-700 hover:bg-gray-50 px-2"
+                                                            className="px-2 text-gray-500 hover:text-gray-700 hover:bg-gray-50"
                                                             title="Reiniciar conexión"
                                                         >
                                                             <RefreshCw className={`w-4 h-4 ${loadingStates[credential.id]?.reconnecting ? 'animate-spin' : ''}`} />
@@ -345,7 +420,7 @@ export default function ShellyCredentialsPage() {
                                                         size="sm"
                                                         onClick={() => handleReauth(credential)}
                                                         disabled={Object.values(loadingStates[credential.id] || {}).some(Boolean)}
-                                                        className="text-gray-500 hover:text-blue-700 hover:bg-blue-50 px-2"
+                                                        className="px-2 text-gray-500 hover:text-blue-700 hover:bg-blue-50"
                                                         title="Editar credenciales"
                                                     >
                                                         <Edit className="w-4 h-4" />
@@ -357,7 +432,7 @@ export default function ShellyCredentialsPage() {
                                                         size="sm"
                                                         onClick={() => handleDelete(credential)}
                                                         disabled={loadingStates[credential.id]?.deleting}
-                                                        className="text-red-500 hover:text-red-700 hover:bg-red-50 px-2"
+                                                        className="px-2 text-red-500 hover:text-red-700 hover:bg-red-50"
                                                         title="Eliminar cuenta y dispositivos"
                                                     >
                                                         <Trash2 className={`w-4 h-4 ${loadingStates[credential.id]?.deleting ? 'animate-pulse' : ''}`} />

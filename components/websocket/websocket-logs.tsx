@@ -1,3 +1,114 @@
+/**
+ * ========================================
+ * WEBSOCKET LOGS COMPONENT - COMPONENTE DE VISUALIZACIÓN DE LOGS
+ * ========================================
+ * 
+ * 📋 COMPONENTE DE LOGS WEBSOCKET
+ * Este componente React proporciona una interfaz completa para visualizar,
+ * filtrar, seleccionar y eliminar logs de conexiones WebSocket. Incluye
+ * funcionalidades avanzadas de búsqueda, exportación y gestión masiva.
+ * 
+ * 📊 TABLAS DE BASE DE DATOS UTILIZADAS:
+ * - `WebSocketLog`: Logs de eventos, mensajes y errores
+ * - `WebSocketConnection`: Información de conexiones asociadas
+ * 
+ * 🔧 IMPORTACIÓN DE PRISMA:
+ * IMPORTANTE: Los endpoints usan: import { prisma } from '@/lib/db';
+ * 
+ * 🎯 FUNCIONALIDADES PRINCIPALES:
+ * 
+ * **Visualización de Logs:**
+ * - Lista en tiempo real de logs WebSocket
+ * - Iconos y colores por tipo de evento
+ * - Información detallada de cada log
+ * - Scroll infinito con paginación
+ * 
+ * **Filtrado Avanzado:**
+ * - Por tipo de conexión (SHELLY, SOCKET_IO, TEST, etc.)
+ * - Por tipo de evento (connect, disconnect, message, error)
+ * - Búsqueda de texto en mensajes y errores
+ * - Filtros por fecha (desde/hasta)
+ * 
+ * **Selección y Gestión:**
+ * - Checkboxes individuales por log
+ * - Selección masiva "Seleccionar todo"
+ * - Header fijo para controles de selección
+ * - Estados visuales para elementos seleccionados
+ * 
+ * **Eliminación de Logs:**
+ * - Eliminación de logs seleccionados
+ * - Eliminación masiva de todos los logs
+ * - Confirmaciones de seguridad
+ * - Feedback de resultados
+ * 
+ * **Exportación de Datos:**
+ * - Exportación a CSV de logs filtrados
+ * - Incluye toda la información relevante
+ * - Nombres de archivo con timestamp
+ * 
+ * 🏗️ ARQUITECTURA DEL COMPONENTE:
+ * 
+ * ┌─────────────────────────────────────────────────────────────┐
+ * │                  WebSocketLogs Component                   │
+ * ├─────────────────────────────────────────────────────────────┤
+ * │  🔍 Filter Section                                          │
+ * │  ├── Tipo de Conexión (Select)                             │
+ * │  ├── Tipo de Evento (Select)                               │
+ * │  ├── Búsqueda de Texto (Input)                             │
+ * │  └── Botón Actualizar                                      │
+ * │                                                             │
+ * │  📋 Logs List Section                                       │
+ * │  ├── Header con controles de eliminación                   │
+ * │  ├── Header fijo de selección masiva                       │
+ * │  ├── Lista scrolleable de logs                             │
+ * │  └── Estados de carga/vacío                                │
+ * │                                                             │
+ * │  🎛️ Action Controls                                         │
+ * │  ├── Contador de seleccionados                             │
+ * │  ├── Botón "Eliminar Seleccionados"                        │
+ * │  ├── Botón "Eliminar Todos"                                │
+ * │  └── Botón "Exportar CSV"                                  │
+ * └─────────────────────────────────────────────────────────────┘
+ * 
+ * 📡 ENDPOINTS UTILIZADOS:
+ * 
+ * **GET /api/websocket/logs:**
+ * - Obtiene logs con filtros y paginación
+ * - Parámetros: type, eventType, search, dateFrom, dateTo, limit
+ * - Respuesta: { success, data: { logs, total, hasMore } }
+ * 
+ * **POST /api/websocket/logs:**
+ * - Elimina logs (individual o masivo)
+ * - Actions: 'delete' (con ids), 'delete_all' (con confirm: true)
+ * - Respuesta: { success, data: { deletedCount } }
+ * 
+ * 🎨 TIPOS DE EVENTOS Y ESTILOS:
+ * 
+ * **connect:** 🟢 Verde - Conexión establecida
+ * **disconnect:** ⚪ Gris - Conexión cerrada
+ * **error:** 🔴 Rojo - Errores de conexión
+ * **message:** 🔵 Azul - Mensajes enviados/recibidos
+ * **ping:** 🟡 Amarillo - Ping/pong heartbeat
+ * **reconnect:** 🟠 Naranja - Reconexión en proceso
+ * **reconnect_skipped:** ⚪ Gris - Reconexión omitida
+ * **action:** 🔵 Azul - Acciones del sistema
+ * **action_success:** 🟢 Verde - Acciones exitosas
+ * **action_error:** 🔴 Rojo - Errores de acciones
+ * **config_change:** 🟣 Púrpura - Cambios de configuración
+ * 
+ * ⚠️ TROUBLESHOOTING:
+ * 
+ * **Logs no se cargan:**
+ * - Verificar permisos de usuario
+ * - Comprobar conexión a BD
+ * - Revisar filtros aplicados
+ * 
+ * **Eliminación falla:**
+ * - Verificar campo confirm: true en request body
+ * - Comprobar permisos de eliminación
+ * - Revisar IDs de logs seleccionados
+ */
+
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';

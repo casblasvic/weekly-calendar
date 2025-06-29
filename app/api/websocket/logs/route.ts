@@ -1,3 +1,239 @@
+/**
+ * ========================================
+ * WEBSOCKET LOGS API - ENDPOINT DE GESTIÓN DE LOGS
+ * ========================================
+ * 
+ * 📝 API DE LOGS WEBSOCKET
+ * Este endpoint maneja todas las operaciones relacionadas con logs de WebSocket:
+ * consulta con filtros avanzados, eliminación individual/masiva, y estadísticas.
+ * Es la interfaz principal entre el frontend y la base de datos de logs.
+ * 
+ * 📊 TABLAS DE BASE DE DATOS UTILIZADAS:
+ * - `WebSocketLog`: Registro principal de eventos y mensajes
+ * - `WebSocketConnection`: Información de conexiones asociadas
+ * 
+ * 🔧 IMPORTACIÓN DE PRISMA:
+ * CRÍTICO: Siempre usar: import { prisma } from '@/lib/db';
+ * Esta es la única importación válida para Prisma en el proyecto.
+ * 
+ * 🎯 OPERACIONES SOPORTADAS:
+ * 
+ * **GET - Consulta de Logs:**
+ * - Filtrado por tipo de conexión, evento, texto y fechas
+ * - Paginación con límite configurable
+ * - Ordenamiento por fecha descendente
+ * - Inclusión de datos de conexión relacionados
+ * 
+ * **POST - Gestión de Logs:**
+ * - Eliminación de logs específicos por IDs
+ * - Eliminación masiva de todos los logs
+ * - Limpieza automática por fecha/cantidad
+ * - Logs de auditoría de eliminaciones
+ * 
+ * 🔍 PARÁMETROS DE CONSULTA (GET):
+ * 
+ * **Filtros de Contenido:**
+ * - `type`: Tipo de conexión (SHELLY, SOCKET_IO, CUSTOM, TEST)
+ * - `eventType`: Tipo de evento (connect, disconnect, message, error, etc.)
+ * - `search`: Búsqueda de texto en mensaje y errorDetails
+ * 
+ * **Filtros de Fecha:**
+ * - `dateFrom`: Fecha inicio (ISO 8601)
+ * - `dateTo`: Fecha fin (ISO 8601)
+ * 
+ * **Paginación:**
+ * - `limit`: Número máximo de logs (default: 100, max: 1000)
+ * - `offset`: Número de logs a omitir (para paginación)
+ * 
+ * **Ejemplo de Request GET:**
+ * ```
+ * GET /api/websocket/logs?type=SHELLY&eventType=error&search=timeout&limit=50
+ * ```
+ * 
+ * 📤 ESTRUCTURA DE RESPUESTA (GET):
+ * ```typescript
+ * {
+ *   success: true,
+ *   data: {
+ *     logs: WebSocketLog[],     // Array de logs con conexión incluida
+ *     total: number,            // Total de logs que coinciden con filtros
+ *     hasMore: boolean,         // Si hay más logs disponibles
+ *     filters: object           // Filtros aplicados
+ *   }
+ * }
+ * ```
+ * 
+ * 🗑️ OPERACIONES DE ELIMINACIÓN (POST):
+ * 
+ * **Eliminación Específica:**
+ * ```typescript
+ * {
+ *   action: 'delete',
+ *   ids: string[]              // Array de IDs de logs a eliminar
+ * }
+ * ```
+ * 
+ * **Eliminación Masiva:**
+ * ```typescript
+ * {
+ *   action: 'delete_all',
+ *   confirm: true              // REQUERIDO para confirmar acción
+ * }
+ * ```
+ * 
+ * **Limpieza Automática:**
+ * ```typescript
+ * {
+ *   action: 'cleanup',
+ *   days?: number,             // Eliminar logs más antiguos que X días
+ *   maxCount?: number          // Mantener solo X logs más recientes
+ * }
+ * ```
+ * 
+ * 📤 ESTRUCTURA DE RESPUESTA (POST):
+ * ```typescript
+ * {
+ *   success: true,
+ *   data: {
+ *     deletedCount: number,    // Número de logs eliminados
+ *     action: string,          // Acción ejecutada
+ *     timestamp: string        // Timestamp de la operación
+ *   },
+ *   message: string            // Mensaje descriptivo del resultado
+ * }
+ * ```
+ * 
+ * 🚨 VALIDACIONES Y SEGURIDAD:
+ * 
+ * **Autenticación:**
+ * - Requiere sesión válida de usuario
+ * - Validación de systemId para tenant isolation
+ * - Rate limiting por IP para prevenir abuso
+ * 
+ * **Validación de Parámetros:**
+ * - Límite máximo de 1000 logs por request
+ * - Validación de formato de fechas
+ * - Sanitización de parámetros de búsqueda
+ * - Validación de IDs en eliminaciones
+ * 
+ * **Confirmaciones de Seguridad:**
+ * - Campo `confirm: true` requerido para delete_all
+ * - Logging de todas las eliminaciones masivas
+ * - IP y User-Agent en logs de auditoría
+ * 
+ * 🔄 FLUJO DE PROCESAMIENTO:
+ * 
+ * **GET Request:**
+ * 1. Validar sesión y permisos
+ * 2. Parsear y validar parámetros de query
+ * 3. Construir filtros de Prisma
+ * 4. Ejecutar query con includes
+ * 5. Formatear respuesta con metadatos
+ * 
+ * **POST Request:**
+ * 1. Validar sesión y permisos
+ * 2. Parsear y validar body
+ * 3. Ejecutar acción específica
+ * 4. Registrar en logs de auditoría
+ * 5. Retornar resultado con conteo
+ * 
+ * 📈 OPTIMIZACIONES DE PERFORMANCE:
+ * 
+ * **Queries Eficientes:**
+ * - Índices en campos de filtrado frecuente
+ * - Límites de paginación para evitar timeouts
+ * - Includes selectivos solo cuando necesario
+ * - Ordenamiento optimizado por índices
+ * 
+ * **Gestión de Memoria:**
+ * - Streaming para eliminaciones masivas
+ * - Batch processing para operaciones grandes
+ * - Cleanup automático de queries largas
+ * 
+ * 🎯 CASOS DE USO TÍPICOS:
+ * 
+ * **Monitoreo en Tiempo Real:**
+ * ```typescript
+ * // Obtener últimos logs de errores
+ * const response = await fetch('/api/websocket/logs?eventType=error&limit=20');
+ * ```
+ * 
+ * **Análisis de Problemas:**
+ * ```typescript
+ * // Buscar logs de una conexión específica con errores
+ * const response = await fetch('/api/websocket/logs?type=SHELLY&search=timeout');
+ * ```
+ * 
+ * **Limpieza de Datos:**
+ * ```typescript
+ * // Eliminar logs más antiguos que 30 días
+ * const response = await fetch('/api/websocket/logs', {
+ *   method: 'POST',
+ *   body: JSON.stringify({ action: 'cleanup', days: 30 })
+ * });
+ * ```
+ * 
+ * **Eliminación Masiva:**
+ * ```typescript
+ * // Eliminar todos los logs (requiere confirmación)
+ * const response = await fetch('/api/websocket/logs', {
+ *   method: 'POST',
+ *   body: JSON.stringify({ action: 'delete_all', confirm: true })
+ * });
+ * ```
+ * 
+ * ⚠️ CONSIDERACIONES CRÍTICAS:
+ * 
+ * **Tenant Isolation:**
+ * - Todos los queries filtran por systemId del usuario
+ * - Nunca mezclar logs entre diferentes sistemas
+ * - Validar permisos en cada operación
+ * 
+ * **Data Retention:**
+ * - Implementar políticas de retención automática
+ * - Archivar logs antiguos antes de eliminar
+ * - Mantener logs de auditoría por más tiempo
+ * 
+ * **Rate Limiting:**
+ * - Límite de requests por minuto por IP
+ * - Throttling para operaciones costosas
+ * - Alertas por uso anómalo
+ * 
+ * 🛠️ TROUBLESHOOTING:
+ * 
+ * **Queries Lentas:**
+ * - Verificar índices en campos de filtro
+ * - Reducir límite de paginación
+ * - Optimizar includes innecesarios
+ * 
+ * **Errores de Eliminación:**
+ * - Verificar campo confirm para delete_all
+ * - Validar IDs existen en BD
+ * - Comprobar permisos de usuario
+ * 
+ * **Timeouts:**
+ * - Reducir tamaño de batch
+ * - Implementar paginación
+ * - Usar cleanup incremental
+ * 
+ * 📊 MÉTRICAS Y MONITORING:
+ * 
+ * **Performance:**
+ * - Tiempo de respuesta por tipo de query
+ * - Número de logs procesados por segundo
+ * - Uso de memoria durante operaciones
+ * 
+ * **Uso:**
+ * - Filtros más utilizados
+ * - Frecuencia de eliminaciones
+ * - Volumen de datos por tenant
+ * 
+ * **Errores:**
+ * - Rate limiting activado
+ * - Queries que fallan
+ * - Timeouts de operaciones
+ */
+
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerAuthSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';

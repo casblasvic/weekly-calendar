@@ -20,6 +20,13 @@ import { useSession } from "next-auth/react";
 import { DeviceEditModal } from '@/components/shelly/device-edit-modal';
 import { DeviceControlButton } from '@/components/ui/device-control-button';
 import useSocket from '@/hooks/useSocket';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 
 interface SmartPlug {
     id: string;
@@ -117,12 +124,23 @@ const SmartPlugsPage = () => {
         id: string; 
         name: string; 
         status: 'connected' | 'error' | 'expired';
+        // 🔌 NUEVO: Campos de estado WebSocket
+        webSocketStatus: 'connected' | 'disconnected' | 'error' | 'connecting';
+        webSocketAutoReconnect: boolean;
+        webSocketLastPing: string | null;
+        webSocketError: string | null;
+        connectionStatus: 'connected' | 'disconnected' | 'error' | 'expired';
+        canConnectWebSocket: boolean;
         totalPower?: number;
         deviceCount?: number;
     }[]>([]);
     
     // Estados para equipos disponibles en filtros
     const [allEquipment, setAllEquipment] = useState<{id: string; name: string; clinicName: string}[]>([]);
+
+    // 🔌 NUEVO: Estados de loading para conectar WebSocket
+    const [connectingWebSocket, setConnectingWebSocket] = useState<{[credentialId: string]: boolean}>({});
+    const [syncingDevices, setSyncingDevices] = useState(false);
 
     // 🔄 TIEMPO REAL - Escuchar cambios en dispositivos Shelly
     const systemId = session?.user?.systemId || '';
@@ -136,12 +154,28 @@ const SmartPlugsPage = () => {
                 url += `&credentialId=${credentialFilter}`;
             }
             const response = await fetch(url);
+            
+            // ✅ MANEJO DE ERRORES DE AUTENTICACIÓN
+            if (response.status === 401 || response.status === 403) {
+                console.error('❌ Sesión expirada, redirigiendo al login...');
+                window.location.href = '/login';
+                return;
+            }
+            
             if (response.ok) {
                 const { data, totalPages, totalCount } = await response.json();
                 setPlugs(data);
                 setPagination({ page, pageSize, totalPages, totalCount });
                 console.log(`📄 Página ${page} cargada con ${data.length} dispositivos (WebSocket se encargará de actualizaciones)`);
+            } else {
+                // ✅ MANEJO DE OTROS ERRORES
+                const errorData = await response.json().catch(() => ({ error: 'Error desconocido' }));
+                console.error('❌ Error cargando dispositivos:', errorData.error);
+                toast.error(`Error cargando dispositivos: ${errorData.error}`);
             }
+        } catch (error) {
+            console.error('❌ Error de conexión cargando dispositivos:', error);
+            toast.error('Error de conexión al cargar dispositivos');
         } finally {
             setIsLoading(false);
         }
@@ -152,45 +186,62 @@ const SmartPlugsPage = () => {
         try {
             console.log('📥 Cargando TODOS los dispositivos para cálculo de consumo...');
             const response = await fetch('/api/internal/smart-plug-devices?page=1&pageSize=1000'); // Sin paginación
+            
+            // ✅ MANEJO DE ERRORES DE AUTENTICACIÓN
+            if (response.status === 401 || response.status === 403) {
+                console.error('❌ Sesión expirada, redirigiendo al login...');
+                window.location.href = '/login';
+                return [];
+            }
+            
             if (response.ok) {
                 const { data } = await response.json();
                 console.log(`📊 Cargados ${data.length} dispositivos totales`);
                 setAllPlugs(data);
                 return data;
+            } else {
+                // ✅ MANEJO DE OTROS ERRORES
+                const errorData = await response.json().catch(() => ({ error: 'Error desconocido' }));
+                console.error('❌ Error cargando todos los dispositivos:', errorData.error);
+                toast.error(`Error cargando dispositivos: ${errorData.error}`);
             }
         } catch (error) {
-            console.error('❌ Error cargando todos los dispositivos:', error);
+            console.error('❌ Error de conexión cargando todos los dispositivos:', error);
+            toast.error('Error de conexión al cargar dispositivos');
         }
         return [];
     }, []);
 
-
-
     useEffect(() => {
         const fetchInitialData = async () => {
-            const [clinicsResponse, credentialsResponse, equipmentResponse] = await Promise.all([
-                fetch('/api/internal/clinics/list'),
-                fetch('/api/shelly/credentials'),
-                fetch('/api/equipment') // API existente para obtener todos los equipos
-            ]);
-            if (clinicsResponse.ok) setClinics(await clinicsResponse.json());
-            if (credentialsResponse.ok) {
-                const credentials = await credentialsResponse.json();
-                setAvailableCredentials(credentials.map((c: any) => ({ id: c.id, name: c.name })));
-                // Actualizar estado de credenciales
-                setCredentialsStatus(credentials.map((c: any) => ({
-                    id: c.id,
-                    name: c.name,
-                    status: c.status || 'error'
-                })));
-            }
-            if (equipmentResponse.ok) {
-                const equipment = await equipmentResponse.json();
-                setAllEquipment(equipment.map((eq: any) => ({
-                    id: eq.id,
-                    name: eq.name,
-                    clinicName: eq.clinic?.name || 'Sin clínica'
-                })));
+            try {
+                const [clinicsResponse, equipmentResponse] = await Promise.all([
+                    fetch('/api/internal/clinics/list'),
+                    fetch('/api/equipment') // API existente para obtener todos los equipos
+                ]);
+                
+                // ✅ MANEJO DE ERRORES DE AUTENTICACIÓN
+                if (clinicsResponse.status === 401 || clinicsResponse.status === 403 ||
+                    equipmentResponse.status === 401 || equipmentResponse.status === 403) {
+                    console.error('❌ Sesión expirada, redirigiendo al login...');
+                    window.location.href = '/login';
+                    return;
+                }
+                
+                if (clinicsResponse.ok) setClinics(await clinicsResponse.json());
+                if (equipmentResponse.ok) {
+                    const equipment = await equipmentResponse.json();
+                    setAllEquipment(equipment.map((eq: any) => ({
+                        id: eq.id,
+                        name: eq.name,
+                        clinicName: eq.clinic?.name || 'Sin clínica'
+                    })));
+                }
+                // 🔌 NUEVO: Cargar credenciales con estado de WebSocket
+                await fetchCredentialsStatus();
+            } catch (error) {
+                console.error('❌ Error cargando datos iniciales:', error);
+                toast.error('Error de conexión al cargar datos iniciales');
             }
         };
         
@@ -439,13 +490,14 @@ const SmartPlugsPage = () => {
         }
         
         return credentialsStatus.map(credential => {
-            // Usar TODOS los dispositivos para cálculo de consumo real
+            // Usar TODOS los dispositivos para cálculo de consumo real (solo los que consumen energía)
             const credentialDevices = allPlugs.filter(plug => 
                 plug.credentialId === credential.id && 
                 plug.online && 
                 plug.relayOn && 
                 plug.currentPower !== null && 
-                plug.currentPower !== undefined
+                plug.currentPower !== undefined &&
+                plug.currentPower > 0  // ✅ Solo dispositivos con consumo real
             );
             
             const totalPower = credentialDevices.reduce((sum, device) => 
@@ -647,6 +699,25 @@ const SmartPlugsPage = () => {
     // Función para controlar dispositivo con actualización optimista y Socket.io
     const handleDeviceToggle = async (deviceId: string, turnOn: boolean) => {
         console.log(`🎛️ Controlando dispositivo ${deviceId}: ${turnOn ? 'ON' : 'OFF'}`);
+        
+        // 🔍 DEBUG: Verificar si el deviceId es válido
+        const device = plugs.find(p => p.deviceId === deviceId);
+        if (device) {
+            console.log(`🔍 [DEBUG] Dispositivo encontrado en lista:`, {
+                id: device.id,
+                deviceId: device.deviceId,
+                name: device.name,
+                credentialId: device.credentialId
+            });
+        } else {
+            console.error(`❌ [DEBUG] Dispositivo NO encontrado en lista para deviceId: ${deviceId}`);
+            console.log(`🔍 [DEBUG] Dispositivos disponibles:`, plugs.map(p => ({
+                id: p.id,
+                deviceId: p.deviceId,
+                name: p.name
+            })));
+            return; // No continuar si no se encuentra el dispositivo
+        }
         
         try {
             // Actualización optimista usando deviceId
@@ -933,7 +1004,7 @@ const SmartPlugsPage = () => {
                     <div className="flex gap-2 justify-end items-center">
                         <DeviceControlButton
                             device={{
-                                id: plug.deviceId, // Usar deviceId de Shelly, no el id interno
+                                id: plug.deviceId, // ✅ Usar deviceId de Shelly para comandos
                                 name: plug.name,
                                 online: plug.online,
                                 relayOn: plug.relayOn,
@@ -1025,6 +1096,61 @@ const SmartPlugsPage = () => {
         </div>
     );
 
+    // 🔌 NUEVO: Función para conectar WebSocket de una credencial
+    const handleConnectWebSocket = async (credentialId: string, credentialName: string) => {
+        setConnectingWebSocket(prev => ({ ...prev, [credentialId]: true }));
+
+        try {
+            const response = await fetch(`/api/shelly/credentials/${credentialId}/connect-websocket`, {
+                method: 'POST'
+            });
+            
+            if (response.ok) {
+                const result = await response.json();
+                toast.success("Conexión en tiempo real activada exitosamente");
+                // Recargar credenciales para obtener el estado actualizado
+                await fetchCredentialsStatus();
+            } else {
+                const errorData = await response.json();
+                toast.error(errorData.error || "Error al activar conexión en tiempo real");
+            }
+        } catch (error) {
+            toast.error("Error de conexión");
+        } finally {
+            setTimeout(() => {
+                setConnectingWebSocket(prev => ({ ...prev, [credentialId]: false }));
+            }, 500);
+        }
+    };
+
+    // 🔌 NUEVO: Función para cargar estado de credenciales
+    const fetchCredentialsStatus = useCallback(async () => {
+        try {
+            const response = await fetch('/api/shelly/credentials');
+            
+            // ✅ MANEJO DE ERRORES DE AUTENTICACIÓN
+            if (response.status === 401 || response.status === 403) {
+                console.error('❌ Sesión expirada, redirigiendo al login...');
+                window.location.href = '/login';
+                return;
+            }
+            
+            if (response.ok) {
+                const credentials = await response.json();
+                setAvailableCredentials(credentials.map((c: any) => ({ id: c.id, name: c.name })));
+                setCredentialsStatus(credentials);
+            } else {
+                // ✅ MANEJO DE OTROS ERRORES
+                const errorData = await response.json().catch(() => ({ error: 'Error desconocido' }));
+                console.error('❌ Error cargando credenciales:', errorData.error);
+                toast.error(`Error cargando credenciales: ${errorData.error}`);
+            }
+        } catch (error) {
+            console.error('❌ Error de conexión cargando credenciales:', error);
+            toast.error('Error de conexión al cargar credenciales');
+        }
+    }, []);
+
     return (
         <div className="space-y-6">
             
@@ -1038,45 +1164,62 @@ const SmartPlugsPage = () => {
                             </CardDescription>
                         </div>
                         <div className="flex gap-2 items-center">
-                            {/* Píldoras de estado de credenciales en tiempo real */}
+                            {/* Píldoras de estado de credenciales en tiempo real - DISEÑO MEJORADO */}
                             {credentialsWithPowerData.map((credential) => (
-                                <Badge 
-                                    key={credential.id}
-                                    className={`flex flex-col gap-1 items-center px-3 py-2 ${
-                                        credential.status === 'connected' 
-                                            ? 'bg-green-500 text-white' 
-                                            : credential.status === 'expired'
-                                            ? 'bg-amber-500 text-white'
-                                            : 'bg-red-500 text-white'
-                                    }`}
-                                >
-                                    <div className="flex gap-1 items-center">
+                                <div key={credential.id} className="flex items-center gap-2">
+                                    <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm ${
+                                        credential.connectionStatus === 'connected' 
+                                            ? 'text-green-700 bg-green-100' 
+                                            : credential.connectionStatus === 'expired'
+                                            ? 'text-amber-700 bg-amber-100'
+                                            : 'text-red-700 bg-red-100'
+                                    }`}>
                                         <div className={`w-2 h-2 rounded-full ${
-                                            credential.status === 'connected' ? 'bg-white animate-pulse' : 'bg-white opacity-70'
+                                            credential.connectionStatus === 'connected' 
+                                                ? 'bg-green-500 animate-pulse' 
+                                                : credential.connectionStatus === 'expired'
+                                                ? 'bg-amber-500'
+                                                : 'bg-red-500'
                                         }`} />
                                         <span className="text-xs font-medium">{credential.name}</span>
+                                        
+                                        {/* Mostrar consumo total solo cuando hay dispositivos activos y consumo real > 0.1W */}
+                                        {credential.connectionStatus === 'connected' && 
+                                         credential.totalPower > 0.1 && 
+                                         credential.deviceCount > 0 && (
+                                            <div className="flex gap-1 items-center">
+                                                <Zap className="w-3 h-3 text-yellow-600" />
+                                                <span className="font-mono text-xs font-medium">
+                                                    {credential.totalPower.toFixed(1)}W
+                                                </span>
+                                                <span className="opacity-75 text-xs">
+                                                    ({credential.deviceCount})
+                                                </span>
+                                            </div>
+                                        )}
                                     </div>
-                                    
-                                    {/* Mostrar consumo total cuando hay dispositivos activos */}
-                                    {credential.totalPower && credential.totalPower > 0 && (
-                                        <div className="flex gap-1 items-center text-xs">
-                                            <Zap className="w-3 h-3" />
-                                            <span className="font-mono">
-                                                {credential.totalPower.toFixed(1)} W
-                                            </span>
-                                            <span className="opacity-75">
-                                                ({credential.deviceCount} dispositivos)
-                                            </span>
-                                        </div>
+
+                                    {/* Botón de conectar cuando está desconectado */}
+                                    {credential.canConnectWebSocket && (
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => handleConnectWebSocket(credential.id, credential.name)}
+                                            disabled={connectingWebSocket[credential.id]}
+                                            className="text-green-600 border-green-200 hover:bg-green-50 px-2 py-1"
+                                            title="Activar conexión en tiempo real"
+                                        >
+                                            <Power className={`w-3 h-3 ${connectingWebSocket[credential.id] ? 'animate-pulse' : ''}`} />
+                                        </Button>
                                     )}
-                            </Badge>
+                                </div>
                             ))}
                             
                             {credentialsWithPowerData.length === 0 && (
-                                <Badge variant="secondary" className="flex gap-1 items-center">
+                                <div className="flex items-center gap-2 px-3 py-1 rounded-full text-sm text-gray-700 bg-gray-100">
                                     <div className="w-2 h-2 bg-gray-400 rounded-full" />
-                                    Sin credenciales
-                                </Badge>
+                                    <span className="text-xs">Sin credenciales</span>
+                                </div>
                             )}
 
                             {lastUpdate && (
@@ -1085,42 +1228,174 @@ const SmartPlugsPage = () => {
                                 </span>
                             )}
                             
-                            {/* Botón de sincronizar dispositivos igual al de credenciales */}
-                            <Button 
-                                variant="outline"
-                                size="sm" 
-                                onClick={async () => {
-                                    // Sincronizar todos los dispositivos de todas las credenciales conectadas
-                                    const connectedCredentials = credentialsWithPowerData.filter(c => c.status === 'connected');
-                                    if (connectedCredentials.length === 0) {
-                                        toast.error("No hay credenciales conectadas para sincronizar");
-                                        return;
-                                    }
-                                    
-                                    for (const credential of connectedCredentials) {
-                                        try {
-                                            const response = await fetch(`/api/shelly/sync/${credential.id}`, {
-                                                method: 'POST'
-                                            });
-                                            if (response.ok) {
-                                                toast.success(`Dispositivos sincronizados para ${credential.name}`);
-                                            } else {
-                                                toast.error(`Error sincronizando ${credential.name}`);
-                                            }
-                                        } catch (error) {
-                                            toast.error(`Error de conexión sincronizando ${credential.name}`);
-                                        }
-                                    }
-                                    // Recargar dispositivos después de sincronizar
-                                    await fetchPlugs(pagination.page, pagination.pageSize, selectedCredentialFilter);
-                                    await fetchAllPlugs(); // También recargar lista completa
-                                }}
-                                className="px-3 py-1 text-blue-600 border-blue-200 hover:bg-blue-50"
-                                title="Sincronizar dispositivos"
-                            >
-                                <Smartphone className="mr-1 w-4 h-4" />
-                                Dispositivos
-                            </Button>
+                            {/* Botón de sincronizar dispositivos INTELIGENTE */}
+                            {(() => {
+                                const connectedCredentials = credentialsWithPowerData.filter(c => c.connectionStatus === 'connected');
+                                
+                                if (connectedCredentials.length === 0) {
+                                    return (
+                                        <Button 
+                                            variant="outline"
+                                            size="sm" 
+                                            disabled
+                                            className="px-3 py-1 text-gray-400 border-gray-200"
+                                            title="No hay credenciales conectadas"
+                                        >
+                                            <Smartphone className="mr-1 w-4 h-4" />
+                                            Dispositivos
+                                        </Button>
+                                    );
+                                }
+                                
+                                if (connectedCredentials.length === 1) {
+                                    // Una sola cuenta: botón simple
+                                    return (
+                                        <Button 
+                                            variant="outline"
+                                            size="sm" 
+                                            onClick={async () => {
+                                                setSyncingDevices(true);
+                                                
+                                                try {
+                                                    const credential = connectedCredentials[0];
+                                                    const response = await fetch(`/api/shelly/sync/${credential.id}`, {
+                                                        method: 'POST'
+                                                    });
+                                                    
+                                                    if (response.ok) {
+                                                        toast.success(`Dispositivos sincronizados para ${credential.name}`);
+                                                    } else {
+                                                        const errorData = await response.json();
+                                                        toast.error(errorData.error || `Error sincronizando ${credential.name}`);
+                                                    }
+                                                    
+                                                    // Recargar dispositivos después de sincronizar
+                                                    await fetchPlugs(pagination.page, pagination.pageSize, selectedCredentialFilter);
+                                                    await fetchAllPlugs();
+                                                } catch (error) {
+                                                    toast.error(`Error de conexión sincronizando ${connectedCredentials[0].name}`);
+                                                } finally {
+                                                    setTimeout(() => {
+                                                        setSyncingDevices(false);
+                                                    }, 500);
+                                                }
+                                            }}
+                                            disabled={syncingDevices}
+                                            className="px-3 py-1 text-blue-600 border-blue-200 hover:bg-blue-50"
+                                            title={`Sincronizar dispositivos de ${connectedCredentials[0].name}`}
+                                        >
+                                            <Smartphone className={`mr-1 w-4 h-4 ${syncingDevices ? 'animate-bounce' : ''}`} />
+                                            {syncingDevices ? 'Sincronizando...' : 'Dispositivos'}
+                                        </Button>
+                                    );
+                                }
+                                
+                                // Múltiples cuentas: dropdown
+                                return (
+                                    <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                            <Button 
+                                                variant="outline"
+                                                size="sm" 
+                                                disabled={syncingDevices}
+                                                className="px-3 py-1 text-blue-600 border-blue-200 hover:bg-blue-50"
+                                                title="Sincronizar dispositivos"
+                                            >
+                                                <Smartphone className={`mr-1 w-4 h-4 ${syncingDevices ? 'animate-bounce' : ''}`} />
+                                                {syncingDevices ? 'Sincronizando...' : 'Dispositivos'}
+                                                <ChevronDown className="ml-1 w-3 h-3" />
+                                            </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end" className="w-56">
+                                            <DropdownMenuItem
+                                                onClick={async () => {
+                                                    setSyncingDevices(true);
+                                                    
+                                                    try {
+                                                        let successCount = 0;
+                                                        let errorCount = 0;
+                                                        
+                                                        for (const credential of connectedCredentials) {
+                                                            try {
+                                                                const response = await fetch(`/api/shelly/sync/${credential.id}`, {
+                                                                    method: 'POST'
+                                                                });
+                                                                
+                                                                if (response.ok) {
+                                                                    successCount++;
+                                                                } else {
+                                                                    errorCount++;
+                                                                    const errorData = await response.json();
+                                                                    console.error(`Error sincronizando ${credential.name}:`, errorData.error);
+                                                                }
+                                                            } catch (error) {
+                                                                errorCount++;
+                                                                console.error(`Error de conexión sincronizando ${credential.name}:`, error);
+                                                            }
+                                                        }
+                                                        
+                                                        if (successCount > 0) {
+                                                            toast.success(`${successCount} cuenta(s) sincronizada(s) exitosamente`);
+                                                        }
+                                                        if (errorCount > 0) {
+                                                            toast.error(`${errorCount} cuenta(s) con errores de sincronización`);
+                                                        }
+                                                        
+                                                        // Recargar dispositivos después de sincronizar
+                                                        await fetchPlugs(pagination.page, pagination.pageSize, selectedCredentialFilter);
+                                                        await fetchAllPlugs();
+                                                    } finally {
+                                                        setTimeout(() => {
+                                                            setSyncingDevices(false);
+                                                        }, 500);
+                                                    }
+                                                }}
+                                                className="font-medium"
+                                            >
+                                                <Smartphone className="mr-2 w-4 h-4" />
+                                                Sincronizar todas las cuentas ({connectedCredentials.length})
+                                            </DropdownMenuItem>
+                                            <DropdownMenuSeparator />
+                                            {connectedCredentials.map((credential) => (
+                                                <DropdownMenuItem
+                                                    key={credential.id}
+                                                    onClick={async () => {
+                                                        setSyncingDevices(true);
+                                                        
+                                                        try {
+                                                            const response = await fetch(`/api/shelly/sync/${credential.id}`, {
+                                                                method: 'POST'
+                                                            });
+                                                            
+                                                            if (response.ok) {
+                                                                toast.success(`Dispositivos sincronizados para ${credential.name}`);
+                                                            } else {
+                                                                const errorData = await response.json();
+                                                                toast.error(errorData.error || `Error sincronizando ${credential.name}`);
+                                                            }
+                                                            
+                                                            // Recargar dispositivos después de sincronizar
+                                                            await fetchPlugs(pagination.page, pagination.pageSize, selectedCredentialFilter);
+                                                            await fetchAllPlugs();
+                                                        } catch (error) {
+                                                            toast.error(`Error de conexión sincronizando ${credential.name}`);
+                                                        } finally {
+                                                            setTimeout(() => {
+                                                                setSyncingDevices(false);
+                                                            }, 500);
+                                                        }
+                                                    }}
+                                                >
+                                                    <div className={`w-2 h-2 rounded-full mr-2 ${
+                                                        credential.connectionStatus === 'connected' ? 'bg-green-500' : 'bg-red-500'
+                                                    }`} />
+                                                    {credential.name}
+                                                </DropdownMenuItem>
+                                            ))}
+                                        </DropdownMenuContent>
+                                    </DropdownMenu>
+                                );
+                            })()}
                         </div>
                     </div>
                     

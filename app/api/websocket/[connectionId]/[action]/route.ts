@@ -48,7 +48,7 @@ import { getServerAuthSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 
 // Acciones válidas
-const VALID_ACTIONS = ['start', 'stop', 'restart', 'toggle-reconnect'] as const;
+const VALID_ACTIONS = ['start', 'stop', 'restart', 'toggle-reconnect', 'refresh-token'] as const;
 type WebSocketAction = typeof VALID_ACTIONS[number];
 
 // Tipos de conexión soportados
@@ -136,6 +136,10 @@ export async function POST(
         
       case 'toggle-reconnect':
         result = await handleToggleReconnect(connection);
+        break;
+        
+      case 'refresh-token':
+        result = await handleRefreshToken(connection);
         break;
         
       default:
@@ -522,4 +526,89 @@ function getClientIP(request: NextRequest): string {
   }
   
   return 'unknown';
+}
+
+/**
+ * Refrescar token de Shelly manualmente
+ */
+async function handleRefreshToken(connection: any) {
+  console.log(`🔑 Refrescando token manualmente para ${connection.type} (${connection.id})`);
+
+  if (connection.type !== CONNECTION_TYPES.SHELLY) {
+    throw new Error('Refresh de token solo soportado para conexiones SHELLY');
+  }
+
+  try {
+    // Importar funciones necesarias
+    const { decrypt, encrypt } = await import('@/lib/shelly/crypto');
+    const { refreshShellyToken } = await import('@/lib/shelly/client');
+
+    // Obtener credencial de BD
+    const credential = await prisma.shellyCredential.findUnique({
+      where: { id: connection.referenceId }
+    });
+
+    if (!credential) {
+      throw new Error('Credencial Shelly no encontrada');
+    }
+
+    console.log(`🔑 [TOKEN] Refrescando token para credencial ${connection.referenceId}...`);
+
+    // Decrypt del refresh token
+    const refreshToken = decrypt(credential.refreshToken);
+    
+    // Llamar a la API de Shelly para refrescar
+    const newTokens = await refreshShellyToken(credential.apiHost, refreshToken);
+
+    // Actualizar tokens en BD
+    await prisma.shellyCredential.update({
+      where: { id: connection.referenceId },
+      data: {
+        accessToken: encrypt(newTokens.access_token),
+        refreshToken: encrypt(newTokens.refresh_token),
+        status: 'connected',
+        lastSyncAt: new Date()
+      }
+    });
+
+    console.log(`✅ [TOKEN] Token refrescado exitosamente para ${connection.referenceId}`);
+
+    // Log del evento exitoso
+    await logWebSocketEvent(
+      connection.id,
+      'token_refreshed',
+      'Token de acceso refrescado manualmente por usuario'
+    );
+
+    return {
+      connectionId: connection.id,
+      credentialId: connection.referenceId,
+      message: 'Token refrescado exitosamente',
+      tokenRefreshed: true,
+      timestamp: new Date().toISOString()
+    };
+
+  } catch (error) {
+    console.error(`❌ [TOKEN] Error refrescando token:`, error);
+    
+    // Actualizar estado de credencial como error
+    await prisma.shellyCredential.update({
+      where: { id: connection.referenceId },
+      data: {
+        status: 'expired'
+      }
+    }).catch(updateError => {
+      console.error('Error actualizando estado de credencial:', updateError);
+    });
+
+    // Log del error
+    await logWebSocketEvent(
+      connection.id,
+      'token_refresh_failed',
+      'Error refrescando token manualmente',
+      { error: error instanceof Error ? error.message : 'Error desconocido' }
+    );
+
+    throw error;
+  }
 } 

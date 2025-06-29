@@ -91,54 +91,12 @@ export async function POST(
             }, { status: 400 });
         }
 
-        // 🎯 OBTENER EL CLOUD ID CORRECTO
-        let targetDeviceId = deviceId; // Por defecto usar el deviceId original
-        
-        // 1. Intentar obtener cloudId desde eventos WebSocket recientes
-        const autoMapping = shellyWebSocketManager.getAutoMapping?.(device.credential.id);
-        if (autoMapping && autoMapping[deviceId]) {
-            targetDeviceId = autoMapping[deviceId];
-            console.log(`🔄 [CONTROL] Usando cloudId desde mapeo automático: ${deviceId} → ${targetDeviceId}`);
-        } 
-        // 2. Si no hay mapeo automático, buscar en la BD usando el deviceId como cloudId
-        else {
-            // Para dispositivos Shelly, el cloudId puede estar almacenado en un campo específico
-            // o podemos buscarlo desde los logs de WebSocket más recientes
-            const recentLog = await prisma.webSocketLog.findFirst({
-                where: {
-                    connection: {
-                        type: 'SHELLY'
-                    },
-                    message: {
-                        contains: deviceId
-                    },
-                    createdAt: {
-                        gte: new Date(Date.now() - 24 * 60 * 60 * 1000) // Últimas 24 horas
-                    }
-                },
-                orderBy: {
-                    createdAt: 'desc'
-                }
-            });
-            
-            if (recentLog && recentLog.message && recentLog.message.includes('→')) {
-                // Extraer cloudId del log de mapeo: "b0b21c12dd94 → 194279021665684"
-                const match = recentLog.message.match(/([a-f0-9]+)\s*→\s*(\d+)/);
-                if (match && match[1] === deviceId) {
-                    targetDeviceId = match[2];
-                    console.log(`🔄 [CONTROL] Usando cloudId desde logs de BD: ${deviceId} → ${targetDeviceId}`);
-                }
-            }
-            
-            if (targetDeviceId === deviceId) {
-                console.log(`⚠️ [CONTROL] No se encontró cloudId, usando deviceId original: ${deviceId}`);
-            }
-        }
+        console.log(`🎛️ [CONTROL] Controlando dispositivo ${device.name} (${deviceId}): ${action.toUpperCase()}`);
 
-        // 🎯 USAR WEBSOCKET COMMAND CON EL ID CORRECTO
+        // 🎯 USAR WEBSOCKET COMMAND CON EL DEVICE ID ORIGINAL
         await shellyWebSocketManager.controlDevice(
             device.credential.id,
-            targetDeviceId, // Usar el cloudId correcto
+            deviceId, // Usar el deviceId original, el WebSocket manager hará el mapeo interno
             action as 'on' | 'off'
         );
 

@@ -80,7 +80,7 @@ StatsCard.displayName = 'StatsCard';
 // Componente memoizado para filas de conexión
 const ConnectionRow = memo(({ connection, onAction }: {
     connection: WebSocketConnection;
-    onAction: (id: string, action: 'start' | 'stop' | 'restart') => void;
+    onAction: (id: string, action: 'start' | 'stop' | 'restart' | 'refresh-token') => void;
 }) => {
     const formatUptime = useCallback((connectedAt: Date | null) => {
         if (!connectedAt) return 'Desconectado';
@@ -182,6 +182,18 @@ const ConnectionRow = memo(({ connection, onAction }: {
                     >
                         <RotateCcw className="w-4 h-4" />
                     </Button>
+                    {/* Botón Refrescar Token (solo para SHELLY) */}
+                    {connection.type === 'SHELLY' && (
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => onAction(connection.id, 'refresh-token')}
+                            className="text-purple-600 hover:text-purple-700"
+                            title="Refrescar Token de Shelly"
+                        >
+                            🔑
+                        </Button>
+                    )}
                 </div>
             </TableCell>
         </TableRow>
@@ -347,7 +359,7 @@ export default function WebSocketManagerPage() {
         return () => clearInterval(interval);
     }, [fetchConnections]);
 
-    const handleConnectionAction = useCallback(async (connectionId: string, action: 'start' | 'stop' | 'restart') => {
+    const handleConnectionAction = useCallback(async (connectionId: string, action: 'start' | 'stop' | 'restart' | 'refresh-token') => {
         try {
             // Actualización optimista inmediata
             setConnections(prev => prev.map(conn => {
@@ -370,6 +382,7 @@ export default function WebSocketManagerPage() {
                             status: 'connecting' as const
                         };
                     }
+                    // No hay cambio optimista para refresh-token
                 }
                 return conn;
             }));
@@ -382,29 +395,35 @@ export default function WebSocketManagerPage() {
             const result = await response.json();
 
             if (result.success) {
-                // Actualización exitosa
-                setConnections(prev => prev.map(conn => {
-                    if (conn.id === connectionId) {
-                        if (action === 'start' || action === 'restart') {
-                            return {
-                                ...conn,
-                                status: 'connected' as const,
-                                connectedAt: new Date(),
-                                lastHeartbeat: new Date()
-                            };
-                        } else if (action === 'stop') {
-                            return {
-                                ...conn,
-                                status: 'disconnected' as const,
-                                connectedAt: null,
-                                lastHeartbeat: null
-                            };
+                if (action === 'refresh-token') {
+                    // Para refresh-token, mostrar mensaje de éxito y recargar conexiones
+                    toast.success('Token refrescado exitosamente');
+                    await fetchConnections(); // Recargar para mostrar estado actualizado
+                } else {
+                    // Actualización exitosa para otras acciones
+                    setConnections(prev => prev.map(conn => {
+                        if (conn.id === connectionId) {
+                            if (action === 'start' || action === 'restart') {
+                                return {
+                                    ...conn,
+                                    status: 'connected' as const,
+                                    connectedAt: new Date(),
+                                    lastHeartbeat: new Date()
+                                };
+                            } else if (action === 'stop') {
+                                return {
+                                    ...conn,
+                                    status: 'disconnected' as const,
+                                    connectedAt: null,
+                                    lastHeartbeat: null
+                                };
+                            }
                         }
-                    }
-                    return conn;
-                }));
+                        return conn;
+                    }));
 
-                toast.success(result.message || `Conexión ${action === 'start' ? 'iniciada' : action === 'stop' ? 'detenida' : 'reiniciada'} correctamente`);
+                    toast.success(result.message || `Conexión ${action === 'start' ? 'iniciada' : action === 'stop' ? 'detenida' : 'reiniciada'} correctamente`);
+                }
             } else {
                 throw new Error(result.error || 'Error en la acción');
             }
@@ -415,10 +434,15 @@ export default function WebSocketManagerPage() {
             // Revertir cambio optimista en caso de error
             await fetchConnections();
             
+            const actionText = action === 'start' ? 'iniciar' : 
+                             action === 'stop' ? 'detener' : 
+                             action === 'restart' ? 'reiniciar' : 
+                             'refrescar token de';
+            
             toast.error(
                 error instanceof Error 
                     ? error.message 
-                    : `Error al ${action === 'start' ? 'iniciar' : action === 'stop' ? 'detener' : 'reiniciar'} la conexión`
+                    : `Error al ${actionText} la conexión`
             );
         }
     }, [fetchConnections]);

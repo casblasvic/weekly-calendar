@@ -30,9 +30,9 @@ const SHELLY_WEBHOOK_CONFIG = {
 };
 
 
-export async function POST(request: NextRequest, { params }: { params: { moduleId: string } }) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ moduleId: string }> }) {
     const session = await auth();
-    const { moduleId } = params;
+    const { moduleId } = await params;
 
     if (!session?.user?.systemId) {
         return NextResponse.json({ error: "No autorizado" }, { status: 401 });
@@ -70,12 +70,18 @@ export async function POST(request: NextRequest, { params }: { params: { moduleI
                 where: { integrationId: systemIntegration.id },
                 update: { isActive: true },
                 create: {
-                    ...SHELLY_WEBHOOK_CONFIG,
+                    name: SHELLY_WEBHOOK_CONFIG.name,
+                    description: SHELLY_WEBHOOK_CONFIG.description,
+                    slug: SHELLY_WEBHOOK_CONFIG.slug,
+                    direction: SHELLY_WEBHOOK_CONFIG.direction,
+                    allowedMethods: SHELLY_WEBHOOK_CONFIG.allowedMethods,
+                    requiresAuth: SHELLY_WEBHOOK_CONFIG.requiresAuth,
+                    dataMapping: SHELLY_WEBHOOK_CONFIG.dataMapping,
+                    responseConfig: SHELLY_WEBHOOK_CONFIG.responseConfig,
                     systemId,
                     isSystemWebhook: true,
                     integrationId: systemIntegration.id,
                     token: `wh_sys_shelly_${systemId.slice(-6)}_${Math.random().toString(36).substring(2, 10)}`,
-                    // La URL se construye dinámicamente, pero la base se puede guardar
                     url: '' // Se reconstruirá
                 }
             });

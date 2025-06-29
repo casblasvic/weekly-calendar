@@ -1,3 +1,234 @@
+/**
+ * ========================================
+ * WEBSOCKET CONNECTION SERVICE - SERVICIO DE GESTIÓN DE CONEXIONES BD
+ * ========================================
+ * 
+ * 🗄️ SERVICIO DE PERSISTENCIA WEBSOCKET
+ * Este servicio maneja todas las operaciones de base de datos relacionadas
+ * con conexiones WebSocket, incluyendo CRUD, estadísticas, logging y métricas.
+ * Es la capa de abstracción entre el manager de conexiones y la base de datos.
+ * 
+ * 📊 TABLAS PRINCIPALES:
+ * - `WebSocketConnection`: Estado y configuración de conexiones activas
+ * - `WebSocketLog`: Registro exhaustivo de eventos y mensajes
+ * 
+ * 🔧 IMPORTACIÓN DE PRISMA:
+ * CRÍTICO: Siempre usar: import { prisma } from '@/lib/db';
+ * Esta es la única importación válida para Prisma en el proyecto.
+ * 
+ * 🏗️ ESTRUCTURA DE DATOS:
+ * 
+ * ┌─────────────────────────────────────────────────────────────┐
+ * │                  WebSocketConnection                        │
+ * ├─────────────────────────────────────────────────────────────┤
+ * │  id: string (UUID)                                          │
+ * │  type: 'SHELLY' | 'SOCKET_IO' | 'CUSTOM' | 'TEST'          │
+ * │  referenceId: string (credential, user, etc.)              │
+ * │  url: string (WebSocket URL)                                │
+ * │  status: 'connected' | 'disconnected' | 'error'            │
+ * │  autoReconnect: boolean (reconexión automática)            │
+ * │  metadata: JSON (configuración específica)                 │
+ * │  lastConnectedAt: DateTime                                  │
+ * │  lastDisconnectedAt: DateTime                               │
+ * │  systemId: string (tenant isolation)                       │
+ * │  createdAt: DateTime                                        │
+ * │  updatedAt: DateTime                                        │
+ * └─────────────────────────────────────────────────────────────┘
+ * 
+ * ┌─────────────────────────────────────────────────────────────┐
+ * │                    WebSocketLog                             │
+ * ├─────────────────────────────────────────────────────────────┤
+ * │  id: string (UUID)                                          │
+ * │  connectionId: string (FK → WebSocketConnection)           │
+ * │  eventType: 'connect' | 'disconnect' | 'message' | 'error' │
+ * │  message: string (contenido del evento)                    │
+ * │  errorDetails: string (detalles de errores)                │
+ * │  metadata: JSON (datos adicionales)                        │
+ * │  responseTime: number (latencia en ms)                     │
+ * │  dataSize: number (tamaño de datos en bytes)               │
+ * │  clientIp: string (IP del cliente)                         │
+ * │  userAgent: string (User-Agent del cliente)                │
+ * │  createdAt: DateTime                                        │
+ * └─────────────────────────────────────────────────────────────┘
+ * 
+ * 🔄 OPERACIONES PRINCIPALES:
+ * 
+ * **CRUD de Conexiones:**
+ * - findOrCreateConnection(): Buscar o crear conexión
+ * - updateConnectionStatus(): Actualizar estado de conexión
+ * - getConnectionsByType(): Obtener conexiones por tipo
+ * - deleteConnection(): Eliminar conexión y sus logs
+ * 
+ * **Logging de Eventos:**
+ * - logEvent(): Registrar evento en WebSocketLog
+ * - logConnectionEvent(): Log específico de conexión/desconexión
+ * - logMessageEvent(): Log de mensajes enviados/recibidos
+ * - logErrorEvent(): Log de errores con stack trace
+ * 
+ * **Estadísticas y Métricas:**
+ * - getConnectionStats(): Estadísticas generales
+ * - getMessageStats(): Métricas de mensajes
+ * - getErrorStats(): Análisis de errores
+ * - getPerformanceMetrics(): Métricas de rendimiento
+ * 
+ * **Limpieza y Mantenimiento:**
+ * - cleanupOldLogs(): Eliminar logs antiguos
+ * - cleanupInactiveConnections(): Limpiar conexiones muertas
+ * - optimizeDatabase(): Optimización de índices
+ * 
+ * 🎯 CASOS DE USO TÍPICOS:
+ * 
+ * **1. Inicialización de Conexión:**
+ * ```typescript
+ * const connection = await webSocketConnectionService.findOrCreateConnection({
+ *   type: 'SHELLY',
+ *   referenceId: 'credential_123',
+ *   url: 'wss://api.shelly.cloud/device/relay',
+ *   autoReconnect: true,
+ *   metadata: { credentialId: '123', apiHost: 'api.shelly.cloud' }
+ * });
+ * ```
+ * 
+ * **2. Logging de Eventos:**
+ * ```typescript
+ * await webSocketConnectionService.logEvent(connectionId, {
+ *   eventType: 'message',
+ *   message: 'Device control command sent',
+ *   metadata: { deviceId: 'device_456', action: 'on' },
+ *   responseTime: 150,
+ *   dataSize: 256
+ * });
+ * ```
+ * 
+ * **3. Obtener Estadísticas:**
+ * ```typescript
+ * const stats = await webSocketConnectionService.getConnectionStats();
+ * console.log(`Conexiones activas: ${stats.activeConnections}`);
+ * console.log(`Total mensajes: ${stats.totalMessages}`);
+ * console.log(`Tasa error: ${stats.errorRate}%`);
+ * ```
+ * 
+ * **4. Limpieza Automática:**
+ * ```typescript
+ * // Eliminar logs mayores a 30 días
+ * await webSocketConnectionService.cleanupOldLogs(30);
+ * 
+ * // Limpiar conexiones inactivas > 24h
+ * await webSocketConnectionService.cleanupInactiveConnections(24);
+ * ```
+ * 
+ * 🚨 CONSIDERACIONES CRÍTICAS:
+ * 
+ * **Tenant Isolation:**
+ * - Todas las operaciones filtran por systemId
+ * - Nunca mezclar datos entre sistemas
+ * - Validar permisos en cada operación
+ * 
+ * **Performance:**
+ * - Usar índices en queries frecuentes
+ * - Paginar resultados grandes
+ * - Cleanup periódico de logs antiguos
+ * - Optimizar queries con includes selectivos
+ * 
+ * **Reliability:**
+ * - Transacciones para operaciones críticas
+ * - Manejo robusto de errores
+ * - Retry automático para fallos temporales
+ * - Validación de datos antes de insertar
+ * 
+ * **Monitoring:**
+ * - Log de todas las operaciones críticas
+ * - Métricas de performance de queries
+ * - Alertas por volumen anómalo
+ * - Tracking de errores de BD
+ * 
+ * 📈 MÉTRICAS DISPONIBLES:
+ * 
+ * **Conexiones:**
+ * - Total de conexiones por tipo
+ * - Conexiones activas vs inactivas
+ * - Tiempo promedio de conexión
+ * - Frecuencia de reconexiones
+ * 
+ * **Mensajes:**
+ * - Mensajes por segundo
+ * - Distribución por tipo de evento
+ * - Tamaño promedio de mensajes
+ * - Latencia promedio
+ * 
+ * **Errores:**
+ * - Tasa de errores por conexión
+ * - Tipos de errores más frecuentes
+ * - Conexiones problemáticas
+ * - Tendencias de errores
+ * 
+ * **Performance:**
+ * - Tiempo de respuesta de queries
+ * - Uso de memoria de logs
+ * - Crecimiento de datos
+ * - Eficiencia de índices
+ * 
+ * 🔧 CONFIGURACIÓN Y OPTIMIZACIÓN:
+ * 
+ * **Retención de Logs:**
+ * - Logs de conexión: 90 días
+ * - Logs de mensajes: 30 días
+ * - Logs de errores: 180 días
+ * - Métricas agregadas: 1 año
+ * 
+ * **Índices Recomendados:**
+ * - WebSocketConnection: (systemId, type, status)
+ * - WebSocketConnection: (referenceId, systemId)
+ * - WebSocketLog: (connectionId, createdAt)
+ * - WebSocketLog: (eventType, createdAt)
+ * 
+ * **Limpieza Automática:**
+ * - Ejecutar cleanup diario en horario de bajo uso
+ * - Archivar logs antiguos antes de eliminar
+ * - Mantener métricas agregadas para histórico
+ * - Monitorizar crecimiento de datos
+ * 
+ * ⚠️ TROUBLESHOOTING:
+ * 
+ * **Queries Lentas:**
+ * - Verificar índices en filtros
+ * - Reducir tamaño de includes
+ * - Paginar resultados grandes
+ * - Usar agregaciones en lugar de conteos
+ * 
+ * **Crecimiento Excesivo:**
+ * - Revisar retención de logs
+ * - Verificar cleanup automático
+ * - Optimizar logging innecesario
+ * - Archivar datos históricos
+ * 
+ * **Errores de Conexión BD:**
+ * - Verificar pool de conexiones
+ * - Revisar timeouts de Prisma
+ * - Comprobar límites de BD
+ * - Validar permisos de usuario
+ * 
+ * 💡 MEJORES PRÁCTICAS:
+ * 
+ * **Logging Eficiente:**
+ * - Log solo eventos relevantes
+ * - Usar niveles de log apropiados
+ * - Incluir contexto suficiente
+ * - Evitar logging en loops
+ * 
+ * **Gestión de Memoria:**
+ * - Paginar queries grandes
+ * - Usar streams para exports
+ * - Liberar referencias no usadas
+ * - Monitorizar uso de memoria
+ * 
+ * **Seguridad:**
+ * - Sanitizar datos de entrada
+ * - No loggear información sensible
+ * - Validar permisos siempre
+ * - Usar prepared statements
+ */
+
 import { prisma } from '@/lib/db';
 
 export interface WebSocketConnectionData {

@@ -55,6 +55,51 @@ export async function POST(
 
         console.log(`✅ Credenciales encontradas: ${credential.name} (${credential.email})`);
 
+        // 🔐 VERIFICAR MÓDULO SHELLY ACTIVO ANTES DE PROCESAR
+        console.log(`🔍 Verificando si el módulo Shelly está activo...`);
+        const activeIntegration = await prisma.systemIntegration.findFirst({
+            where: {
+                systemId: session.user.systemId,
+                isActive: true,
+                module: {
+                    name: {
+                        contains: 'Shelly',
+                        mode: 'insensitive'
+                    }
+                }
+            }
+        });
+
+        if (!activeIntegration) {
+            // Verificar si existe pero está inactivo
+            const inactiveIntegration = await prisma.systemIntegration.findFirst({
+                where: {
+                    systemId: session.user.systemId,
+                    isActive: false,
+                    module: {
+                        name: {
+                            contains: 'Shelly',
+                            mode: 'insensitive'
+                        }
+                    }
+                }
+            });
+            
+            if (inactiveIntegration) {
+                console.error('❌ Módulo Shelly encontrado pero está DESACTIVADO. Actívalo desde el marketplace de integraciones.');
+                return NextResponse.json({ 
+                    error: "El módulo Shelly está desactivado. Actívalo desde el marketplace de integraciones para sincronizar dispositivos." 
+                }, { status: 400 });
+            } else {
+                console.error('❌ Módulo Shelly no encontrado.');
+                return NextResponse.json({ 
+                    error: "El módulo Shelly no está instalado. Instálalo desde el marketplace de integraciones." 
+                }, { status: 400 });
+            }
+        }
+
+        console.log(`✅ Módulo Shelly activo encontrado (ID: ${activeIntegration.id})`);
+
         // Descifrar el access token
         let accessToken: string;
         try {
@@ -116,7 +161,7 @@ export async function POST(
                 }
                 
                 const retryData = await retryResponse.json();
-                await processDeviceList(retryData, credential, accessToken);
+                await processDeviceList(retryData, credential, accessToken, activeIntegration);
                 
             } catch (refreshError) {
                 // Error al refrescar, marcar como expirado
@@ -136,7 +181,7 @@ export async function POST(
             console.log('📋 DATOS COMPLETOS RECIBIDOS DE SHELLY:');
             console.log(JSON.stringify(data, null, 2));
             
-            await processDeviceList(data, credential, accessToken);
+            await processDeviceList(data, credential, accessToken, activeIntegration);
         } else {
             throw new Error(`Error al obtener dispositivos: ${devicesResponse.status}`);
         }
@@ -163,7 +208,7 @@ export async function POST(
     }
 }
 
-async function processDeviceList(data: any, credential: any, accessToken: string) {
+async function processDeviceList(data: any, credential: any, accessToken: string, activeIntegration: any) {
     console.log(`📱 Procesando lista de dispositivos de Shelly`);
     
     if (!data || !data.data || !data.data.devices) {
@@ -190,7 +235,7 @@ async function processDeviceList(data: any, credential: any, accessToken: string
                 }
             };
 
-            await processIndividualDevice(deviceId, deviceData, credential);
+            await processIndividualDevice(deviceId, deviceData, credential, activeIntegration);
         } catch (error) {
             console.error(`❌ Error procesando dispositivo ${deviceId}:`, error);
             // Continuar con el siguiente dispositivo en lugar de fallar completamente
@@ -201,7 +246,7 @@ async function processDeviceList(data: any, credential: any, accessToken: string
     await markMissingDevices(deviceIds, credential);
 }
 
-async function processDevices(data: any, credential: any) {
+async function processDevices(data: any, credential: any, activeIntegration: any) {
     console.log(`📱 Procesando dispositivos de Shelly (formato real)`);
     
     if (!data || typeof data !== 'object') {
@@ -246,14 +291,14 @@ async function processDevices(data: any, credential: any) {
     // Procesar cada dispositivo
     for (const [deviceId, deviceData] of relevantDevices) {
         try {
-            await processIndividualDevice(deviceId, deviceData as any, credential);
+            await processIndividualDevice(deviceId, deviceData as any, credential, activeIntegration);
         } catch (error) {
             console.error(`❌ Error procesando dispositivo ${deviceId}:`, error);
         }
     }
 }
 
-async function processIndividualDevice(deviceId: string, deviceData: any, credential: any) {
+async function processIndividualDevice(deviceId: string, deviceData: any, credential: any, activeIntegration: any) {
     const devInfo = deviceData._dev_info;
     const deviceInfo = deviceData._device_info;
     console.log(`🔍 Procesando: ${deviceId} (${devInfo.code}) - Gen: ${devInfo.gen}`);
@@ -296,6 +341,7 @@ async function processIndividualDevice(deviceId: string, deviceData: any, creden
         name: basicData.name || `Shelly ${devInfo.code}`,
         type: 'SHELLY',
         deviceIp: connectivityData.ip,
+        cloudId: deviceId,
         generation: String(devInfo.gen),
         modelCode: devInfo.code,
         macAddress: basicData.mac,
@@ -329,40 +375,11 @@ async function processIndividualDevice(deviceId: string, deviceData: any, creden
     } else {
         console.log(`🆕 Creando nuevo dispositivo: ${basicData.name || deviceId}`);
         
-        // Buscar o crear integración de Shelly para este sistema
-        let integration = await prisma.systemIntegration.findFirst({
-            where: {
-                systemId: credential.systemId,
-                module: {
-                    name: 'Shelly'
-                }
-            }
-        });
-
-        if (!integration) {
-            // Crear integración si no existe
-            const shellyModule = await prisma.integrationModule.findFirst({
-                where: { name: 'Shelly' }
-            });
-
-            if (shellyModule) {
-                integration = await prisma.systemIntegration.create({
-                    data: {
-                        systemId: credential.systemId,
-                        moduleId: shellyModule.id,
-                        isActive: true
-                    }
-                });
-            } else {
-                console.error('❌ Módulo Shelly no encontrado');
-                return;
-            }
-        }
-
+        // Usar la integración ya verificada
         await prisma.smartPlugDevice.create({
             data: {
                 deviceId,
-                integrationId: integration.id,
+                integrationId: activeIntegration.id,
                 ...deviceUpdateData
             }
         });

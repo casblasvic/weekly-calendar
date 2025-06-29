@@ -221,6 +221,13 @@ select:focus {
   .slide-in-from-right {
     animation: slide-in-from-right 0.3s ease-in-out;
   }
+
+  .line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
 }
 
 @keyframes animate-in {
@@ -335,7 +342,7 @@ select:focus {
 
 /* Checkbox styles */
 input[type="checkbox"] {
-  @apply text-purple-600 border-purple-300 rounded focus:ring-purple-600;
+  @apply text-purple-600 rounded border-purple-300 focus:ring-purple-600;
 }
 
 /* Tab styles */

@@ -317,7 +317,7 @@ class ShellyWebSocketManager {
         });
         
         if (device) {
-            const updatedData = {
+            const updatedData: any = {
                 online: status.online,
                 relayOn: status['switch:0']?.output || false,
                 currentPower: status['switch:0']?.apower || 0,
@@ -326,6 +326,16 @@ class ShellyWebSocketManager {
                 temperature: status.temperature || null,
                 lastSeenAt: new Date()
             };
+
+            // 🎯 PERSISTIR CLOUD ID SI HAY AUTO-MAPPING
+            const mappedCloudId = this.deviceIdMapping.get(deviceId);
+            if (mappedCloudId && mappedCloudId !== deviceId) {
+                // Solo actualizar si no existe cloudId o es diferente
+                if (!device.cloudId || device.cloudId !== mappedCloudId) {
+                    console.log(`💾 [AUTO-MAPPING] Persistiendo cloudId en BD: ${deviceId} → ${mappedCloudId}`);
+                    updatedData.cloudId = mappedCloudId;
+                }
+            }
 
             await prisma.smartPlugDevice.update({
                 where: { id: device.id },
@@ -337,8 +347,11 @@ class ShellyWebSocketManager {
                 relayOn: updatedData.relayOn,
                 currentPower: updatedData.currentPower,
                 voltage: updatedData.voltage,
-                temperature: updatedData.temperature
+                temperature: updatedData.temperature,
+                cloudId: updatedData.cloudId || device.cloudId
             });
+        } else {
+            console.log(`⚠️ No se encontró dispositivo ${deviceId} para credencial ${credentialId}`);
         }
         
         // Llamar callback si existe
@@ -375,9 +388,30 @@ class ShellyWebSocketManager {
         
         // Solo reconectar si autoReconnect está habilitado
         if (webSocketConnection?.autoReconnect === true) {
-            console.log(`🔄 AutoReconnect habilitado para ${credentialId}, programando reconexión en 5 segundos...`);
+            console.log(`🔄 AutoReconnect habilitado para ${credentialId}, verificando token y programando reconexión...`);
             
-            // Programar reconexión
+            // 🔑 NUEVO: Intentar refrescar token antes de reconectar
+            try {
+                await this.refreshTokenIfNeeded(credentialId);
+                console.log(`✅ [TOKEN] Token verificado/refrescado para ${credentialId}`);
+            } catch (tokenError) {
+                console.error(`❌ [TOKEN] Error refrescando token para ${credentialId}:`, tokenError);
+                
+                // Si falla el refresh del token, marcar credencial como error
+                await this.updateConnectionStatus(credentialId, 'error', `Token expirado: ${tokenError instanceof Error ? tokenError.message : 'Error desconocido'}`);
+                
+                // Log del evento
+                await this.logWebSocketEvent(
+                    credentialId,
+                    'token_refresh_failed',
+                    'Error refrescando token - reconexión cancelada',
+                    { error: tokenError instanceof Error ? tokenError.message : 'Error desconocido' }
+                );
+                
+                return; // No reconectar si no se puede refrescar el token
+            }
+            
+            // Programar reconexión con delay
             const timer = setTimeout(() => {
                 console.log(`🔄 Intentando reconectar credential ${credentialId}...`);
                 this.connectCredential(credentialId);
@@ -393,6 +427,69 @@ class ShellyWebSocketManager {
                 'reconnect_skipped',
                 'Reconexión automática omitida - autoReconnect deshabilitado'
             );
+        }
+    }
+
+    /**
+     * 🔑 NUEVO: Refrescar token de Shelly si es necesario
+     */
+    private async refreshTokenIfNeeded(credentialId: string): Promise<void> {
+        try {
+            // Obtener credencial de BD
+            const credential = await prisma.shellyCredential.findUnique({
+                where: { id: credentialId }
+            });
+
+            if (!credential) {
+                throw new Error('Credencial no encontrada');
+            }
+
+            // Importar funciones de crypto y refresh
+            const { decrypt, encrypt } = await import('./crypto');
+            const { refreshShellyToken } = await import('./client');
+
+            console.log(`🔑 [TOKEN] Refrescando token para credencial ${credentialId}...`);
+
+            // Decrypt del refresh token
+            const refreshToken = decrypt(credential.refreshToken);
+            
+            // Llamar a la API de Shelly para refrescar
+            const newTokens = await refreshShellyToken(credential.apiHost, refreshToken);
+
+            // Actualizar tokens en BD
+            await prisma.shellyCredential.update({
+                where: { id: credentialId },
+                data: {
+                    accessToken: encrypt(newTokens.access_token),
+                    refreshToken: encrypt(newTokens.refresh_token),
+                    status: 'connected',
+                    lastSyncAt: new Date()
+                }
+            });
+
+            console.log(`✅ [TOKEN] Token refrescado exitosamente para ${credentialId}`);
+
+            // Log del evento exitoso
+            await this.logWebSocketEvent(
+                credentialId,
+                'token_refreshed',
+                'Token de acceso refrescado exitosamente'
+            );
+
+        } catch (error) {
+            console.error(`❌ [TOKEN] Error refrescando token para ${credentialId}:`, error);
+            
+            // Actualizar estado de credencial como error
+            await prisma.shellyCredential.update({
+                where: { id: credentialId },
+                data: {
+                    status: 'expired'
+                }
+            }).catch(updateError => {
+                console.error('Error actualizando estado de credencial:', updateError);
+            });
+
+            throw error;
         }
     }
 
@@ -473,50 +570,105 @@ class ShellyWebSocketManager {
         
         // Verificar si el WebSocket está conectado
         if (!ws || ws.readyState !== WebSocket.OPEN) {
-            console.log(`🔄 [WebSocket CMD] WebSocket desconectado, reconectando para credencial ${credentialId}...`);
+            console.log(`🔄 [WebSocket CMD] WebSocket desconectado, refrescando token y reconectando para credencial ${credentialId}...`);
             
-            // Intentar reconectar
+            // 🔑 NUEVO: Refrescar token antes de reconectar
+            try {
+                await this.refreshTokenIfNeeded(credentialId);
+                console.log(`✅ [TOKEN] Token refrescado antes de control de dispositivo`);
+            } catch (tokenError) {
+                console.error(`❌ [TOKEN] Error refrescando token para control:`, tokenError);
+                throw new Error(`Token expirado y no se pudo refrescar: ${tokenError instanceof Error ? tokenError.message : 'Error desconocido'}`);
+            }
+            
+            // Intentar reconectar con el token refrescado
             await this.connectCredential(credentialId);
             
             // Esperar un momento para que se establezca la conexión
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            await new Promise(resolve => setTimeout(resolve, 2000)); // Aumentado a 2 segundos
             
             // Obtener la nueva conexión
             ws = this.connections.get(credentialId);
             
             if (!ws || ws.readyState !== WebSocket.OPEN) {
-                throw new Error('No se pudo reconectar el WebSocket');
+                throw new Error('No se pudo reconectar el WebSocket después de refrescar token');
             }
             
-            console.log(`✅ [WebSocket CMD] WebSocket reconectado exitosamente`);
+            console.log(`✅ [WebSocket CMD] WebSocket reconectado exitosamente con token refrescado`);
         }
         
-        // 🎯 BUSCAR EL DISPOSITIVO EN LA BD POR EL deviceId ORIGINAL
-        // IMPORTANTE: Siempre buscar por el deviceId original, no por cloudId
+        // 🔍 NUEVO: Detectar si deviceId es un cloudId y hacer conversión inversa
+        let actualDeviceId = deviceId;
+        
+        // Si deviceId es numérico (cloudId), buscar el deviceId original
+        if (/^\d+$/.test(deviceId)) {
+            console.log(`🔍 [CONTROL] deviceId recibido parece ser cloudId: ${deviceId}`);
+            
+            // Buscar el deviceId original por cloudId
+            for (const [originalDeviceId, mappedCloudId] of this.deviceIdMapping.entries()) {
+                if (mappedCloudId === deviceId) {
+                    actualDeviceId = originalDeviceId;
+                    console.log(`🔄 [CONTROL] Conversión inversa: cloudId ${deviceId} → deviceId ${actualDeviceId}`);
+                    break;
+                }
+            }
+            
+            // Si no encontramos en memoria, buscar en BD
+            if (actualDeviceId === deviceId) {
+                const deviceByCloudId = await prisma.smartPlugDevice.findFirst({
+                    where: { cloudId: deviceId, credentialId: credentialId }
+                });
+                
+                if (deviceByCloudId) {
+                    actualDeviceId = deviceByCloudId.deviceId;
+                    console.log(`🔄 [CONTROL] Conversión inversa desde BD: cloudId ${deviceId} → deviceId ${actualDeviceId}`);
+                }
+            }
+        }
+        
+        // 🆔 BUSCAR DISPOSITIVO POR deviceId actualizado
+        console.log(`🔍 [CONTROL] Buscando dispositivo en BD: deviceId=${actualDeviceId}, credentialId=${credentialId}`);
+        
         const device = await prisma.smartPlugDevice.findFirst({
-            where: { deviceId: deviceId, credentialId: credentialId }
+            where: { deviceId: actualDeviceId, credentialId: credentialId }
         });
         
         if (!device) {
-            throw new Error(`Dispositivo ${deviceId} no encontrado en BD`);
+            console.log(`❌ [CONTROL] Dispositivo NO encontrado en BD: deviceId=${actualDeviceId}, credentialId=${credentialId}`);
+            
+            // Debug: Listar dispositivos existentes para esta credencial
+            const existingDevices = await prisma.smartPlugDevice.findMany({
+                where: { credentialId: credentialId },
+                select: { deviceId: true, name: true, cloudId: true }
+            });
+            console.log(`🔍 [DEBUG] Dispositivos existentes para credencial ${credentialId}:`, existingDevices);
+            
+            throw new Error(`Dispositivo ${actualDeviceId} no encontrado en BD para credencial ${credentialId}`);
         }
         
-        // 🎯 USAR MAPEO AUTOMÁTICO PARA EL COMANDO
-        let targetDeviceId = deviceId; // Por defecto usar el deviceId original
+        console.log(`✅ [CONTROL] Dispositivo encontrado: ${device.name} (cloudId: ${device.cloudId}, deviceId: ${device.deviceId})`);
         
-        // Primero intentar usar el mapeo automático construido desde eventos WebSocket
-        if (this.deviceIdMapping.has(deviceId)) {
-            targetDeviceId = this.deviceIdMapping.get(deviceId)!;
-            console.log(`🔄 [WebSocket CMD] Usando cloudId mapeado para comando: ${deviceId} → ${targetDeviceId}`);
+        // 🎯 DETERMINAR EL ID CORRECTO PARA EL COMANDO
+        let targetCloudId = device.cloudId || device.deviceId;
+        
+        // Si no hay cloudId almacenado, intentar obtenerlo del mapeo en memoria
+        if (!device.cloudId) {
+            const mappedCloudId = this.deviceIdMapping.get(deviceId);
+            if (mappedCloudId && mappedCloudId !== deviceId) {
+                targetCloudId = mappedCloudId;
+                console.log(`🔄 [CONTROL] Usando cloudId desde mapeo en memoria: ${deviceId} → ${targetCloudId}`);
+            } else {
+                console.log(`⚠️ [CONTROL] No se encontró cloudId, usando deviceId original: ${deviceId}`);
+            }
         } else {
-            console.log(`⚠️ [WebSocket CMD] No hay mapeo automático para ${deviceId}, usando deviceId original`);
+            console.log(`🔄 [CONTROL] Usando cloudId desde BD: ${device.deviceId} → ${targetCloudId}`);
         }
         
         // Usar formato de comando Cloud según la documentación
         const command = {
             event: 'Shelly:CommandRequest',
             trid: Date.now(), // ID único para tracking
-            deviceId: targetDeviceId, // Usar el cloudId para el comando
+            deviceId: targetCloudId, // Usar el cloudId correcto
             data: {
                 cmd: 'relay',
                 params: { 
@@ -526,11 +678,33 @@ class ShellyWebSocketManager {
             }
         };
         
-        console.log(`📡 [WebSocket CMD] Enviando comando ${action} a dispositivo ${deviceId} (cloudId: ${targetDeviceId}):`, command);
+        console.log(`📡 [WebSocket CMD] Enviando comando ${action} a dispositivo ${device.name} (cloudId: ${targetCloudId}):`, command);
         
-        ws.send(JSON.stringify(command));
-        
-        console.log(`✅ [WebSocket CMD] Comando enviado via WebSocket Cloud`);
+        try {
+            ws.send(JSON.stringify(command));
+            console.log(`✅ [WebSocket CMD] Comando enviado via WebSocket Cloud`);
+            
+            // Log del comando enviado
+            await this.logWebSocketEvent(
+                credentialId,
+                'command_sent',
+                `Comando ${action} enviado a dispositivo ${device.name}`,
+                { deviceId: device.deviceId, cloudId: targetCloudId, action, command }
+            );
+            
+        } catch (sendError) {
+            console.error(`❌ [WebSocket CMD] Error enviando comando:`, sendError);
+            
+            // Log del error
+            await this.logWebSocketEvent(
+                credentialId,
+                'command_error',
+                `Error enviando comando ${action} a dispositivo ${device.name}`,
+                { deviceId: device.deviceId, cloudId: targetCloudId, action, error: sendError instanceof Error ? sendError.message : 'Error desconocido' }
+            );
+            
+            throw new Error(`Error enviando comando: ${sendError instanceof Error ? sendError.message : 'Error desconocido'}`);
+        }
     }
 
     /**

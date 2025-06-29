@@ -1,11 +1,70 @@
+/**
+ * LayoutWrapper.tsx - COMPONENTE CRÍTICO DE SEGURIDAD Y LAYOUT
+ * 
+ * 🔐 FUNCIÓN PRINCIPAL:
+ * Este componente controla qué layout se muestra según el estado de autenticación.
+ * Es FUNDAMENTAL para la seguridad ya que previene que se rendericen componentes
+ * sensibles (como MainSidebar) antes de que la autenticación esté completa.
+ * 
+ * 🛡️ SEGURIDAD:
+ * - SOLO muestra layout simple en página de login (pathname === '/login')
+ * - SOLO muestra layout completo cuando la autenticación está verificada
+ * - Previene errores de "useClinic debe usarse dentro de un ClinicProvider"
+ * - Maneja transiciones de login → dashboard de manera segura
+ * 
+ * 🔄 FLUJO DE AUTENTICACIÓN:
+ * 1. Usuario en /login → Layout simple (solo children)
+ * 2. Login exitoso → NextAuth redirige a /
+ * 3. pathname cambia de '/login' → '/' 
+ * 4. isLoginPage = false → Layout completo con sidebar
+ * 5. Providers ya están cargados → Todo funciona
+ * 
+ * ⚠️ REGLAS CRÍTICAS PARA DESARROLLADORES:
+ * 
+ * 1. NUNCA modificar la lógica de isLoginPage sin entender las implicaciones
+ * 2. NUNCA agregar verificaciones adicionales que bloqueen el layout completo
+ * 3. SIEMPRE usar pathname de Next.js, NUNCA window.location.pathname
+ * 4. CUALQUIER componente que use contexts sensibles DEBE estar dentro del layout completo
+ * 
+ * 🧩 COMPONENTES QUE DEPENDEN DE ESTE CONTROL:
+ * - MainSidebar (usa useClinic, useUser, etc.)
+ * - FloatingMenu (usa contexts de clientes)
+ * - MobileClinicButton (usa contextos de clínica)
+ * - Todos los providers sensibles en AuthenticatedProviders
+ * 
+ * 📋 CÓMO AGREGAR NUEVAS FUNCIONALIDADES:
+ * 
+ * ✅ CORRECTO:
+ * - Agregar componentes DENTRO del return del layout completo
+ * - Usar hooks de contexto solo en componentes renderizados después de autenticación
+ * - Verificar autenticación en el componente específico si es necesario
+ * 
+ * ❌ INCORRECTO:
+ * - Agregar verificaciones que bloqueen shouldShowFullLayout
+ * - Usar contexts sensibles en componentes renderizados en layout simple
+ * - Modificar la detección de isLoginPage sin coordinación con AuthenticatedProviders
+ * 
+ * 🔧 DEBUGGING:
+ * Los logs muestran claramente el estado:
+ * - "🚫 En página de login - layout simple" → No se carga sidebar
+ * - "✅ Fuera de login - layout completo" → Se carga todo
+ * 
+ * 💡 COORDINACIÓN CON OTROS ARCHIVOS:
+ * - app/components/providers-wrapper.tsx: Controla qué providers se cargan
+ * - Ambos DEBEN usar la misma lógica de detección de login (pathname === '/login')
+ * - Ambos DEBEN estar sincronizados para evitar errores de contexto
+ */
+
 "use client"
 
 import type React from "react"
 import { useState, useEffect, useCallback, useRef, useMemo } from "react"
+import { useSession } from "next-auth/react"
+import { useRouter } from "next/navigation"
 import { MainSidebar } from "@/components/main-sidebar"
 import { Button } from "@/components/ui/button"
 import { Home, Calendar, Users, BarChart2, User, LogOut, Settings, FileText } from "lucide-react"
-import { useRouter, usePathname } from "next/navigation"
+import { usePathname } from "next/navigation"
 import Link from "next/link"
 import {
   DropdownMenu,
@@ -26,18 +85,135 @@ import { format } from "date-fns"
 
 interface LayoutWrapperProps {
   children: React.ReactNode
-  user: any
+  user?: any
 }
 
 export function LayoutWrapper({ children, user }: LayoutWrapperProps) {
+  const { data: session, status } = useSession()
+  const router = useRouter()
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [hasMounted, setHasMounted] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
   const [isSidebarVisible, setIsSidebarVisible] = useState(false)
   const pathname = usePathname()
-  const router = useRouter()
   const sidebarRef = useRef<HTMLDivElement>(null)
   const lastPathname = useRef<string>(pathname || "")
+  
+  // ✅ DETECCIÓN CORREGIDA: SOLO USAR PATHNAME DE NEXT.JS
+  const isLoginPage = useMemo(() => {
+    // ✅ SOLO usar pathname de Next.js (es más confiable)
+    const result = pathname === '/login'
+    
+    console.log('🔍 [LayoutWrapper] Verificación de login:', {
+      pathname,
+      windowPathname: typeof window !== 'undefined' ? window.location.pathname : 'N/A',
+      isLoginPage: result,
+      status,
+      sessionExists: !!session,
+      decision: result ? 'LAYOUT SIMPLE' : 'LAYOUT COMPLETO'
+    })
+    
+    return result
+  }, [pathname, status, session])
+
+  /**
+   * LÓGICA CRÍTICA DE SEGURIDAD - shouldShowFullLayout
+   * 
+   * 🔐 PROPÓSITO:
+   * Determina si debe mostrarse el layout completo (con sidebar, menús, etc.)
+   * o el layout simple (solo children).
+   * 
+   * 🛡️ SEGURIDAD:
+   * Esta lógica es FUNDAMENTAL para prevenir que componentes sensibles
+   * (como MainSidebar) se rendericen antes de que los providers estén disponibles.
+   * 
+   * 📋 REGLA SIMPLE PERO CRÍTICA:
+   * - Si pathname === '/login' → Layout simple (sin sidebar)
+   * - Si pathname !== '/login' → Layout completo (con sidebar)
+   * 
+   * ⚠️ POR QUÉ ES SIMPLE:
+   * Cualquier lógica adicional (verificar status, session, etc.) puede crear
+   * condiciones de carrera donde el layout completo se bloquea incorrectamente.
+   * 
+   * 🔄 COORDINACIÓN:
+   * Esta lógica DEBE estar sincronizada con AuthenticatedProviders:
+   * - Ambos usan pathname === '/login' para detectar login
+   * - Ambos cambian de estado al mismo tiempo
+   * - Esto evita errores de contexto durante transiciones
+   */
+  // ✅ LÓGICA SIMPLIFICADA: Solo bloquear en login
+  const shouldShowFullLayout = useMemo(() => {
+    // SOLO bloquear si estamos en página de login
+    if (isLoginPage) {
+      console.log('🚫 [LayoutWrapper] En página de login - layout simple')
+      return false
+    }
+    
+    // ✅ PARA TODO LO DEMÁS: Mostrar layout completo
+    console.log('✅ [LayoutWrapper] Fuera de login - layout completo', {
+      status,
+      sessionExists: !!session,
+      hasMounted
+    })
+    return true
+  }, [isLoginPage, status, session, hasMounted])
+
+  console.log('🔍 [LayoutWrapper] Decisión de layout:', {
+    isLoginPage,
+    status,
+    sessionExists: !!session,
+    shouldShowFullLayout
+  })
+
+  // ✅ VERIFICACIÓN DE SESIÓN EN TIEMPO REAL
+  useEffect(() => {
+    // ✅ EXCLUIR PÁGINA DE LOGIN para evitar bucles infinitos
+    if (pathname === '/login') {
+      console.log('🔍 [LayoutWrapper] En página de login - saltando verificación de sesión')
+      return
+    }
+    
+    // ✅ SOLO VERIFICAR SESIÓN EN PÁGINAS PROTEGIDAS
+    if (status === "loading") {
+      console.log('⏳ [LayoutWrapper] Sesión cargando...')
+      return // Aún cargando
+    }
+    
+    if (status === "unauthenticated" || !session) {
+      console.error('❌ Sesión no válida, redirigiendo al login...')
+      router.push('/login')
+      return
+    }
+    
+    // ✅ VERIFICAR EXPIRACIÓN DE SESIÓN con debugging detallado
+    if (session?.expires) {
+      const now = new Date()
+      const currentTime = now.getTime()
+      
+      // ✅ VALIDAR formato de fecha
+      let expirationDate: Date
+      try {
+        expirationDate = new Date(session.expires)
+        if (isNaN(expirationDate.getTime())) {
+          console.error('❌ Fecha de expiración inválida:', session.expires)
+          return
+        }
+      } catch (error) {
+        console.error('❌ Error al parsear fecha de expiración:', session.expires, error)
+        return
+      }
+      
+      const expirationTime = expirationDate.getTime()
+      const timeUntilExpiration = expirationTime - currentTime
+      
+      // Verificar si la sesión ha expirado
+      if (currentTime >= expirationTime) {
+        console.error('❌ Sesión expirada, redirigiendo al login...')
+        router.push('/login')
+        return
+      }
+    }
+  }, [session, status, router, pathname])
   
   // ✅ CORREGIDA: Obtener fecha actual de la vista desde la URL (ruta + query params)
   const getCurrentViewDate = useCallback((): Date => {
@@ -80,12 +256,7 @@ export function LayoutWrapper({ children, user }: LayoutWrapperProps) {
     return getCurrentViewDate()
   }, [getCurrentViewDate])
   
-  // ✅ DEBUGGING TEMPORAL: Ver qué fecha se está obteniendo
-  console.log('[LayoutWrapper] 🔍 DEBUGGING currentViewDate:', {
-    pathname,
-    currentViewDate: currentViewDate ? format(currentViewDate, 'yyyy-MM-dd') : 'undefined',
-    windowLocationHref: typeof window !== 'undefined' ? window.location.href : 'SSR'
-  })
+
   
   // Función para alternar la barra lateral
   const toggleSidebar = useCallback(() => {
@@ -306,19 +477,43 @@ export function LayoutWrapper({ children, user }: LayoutWrapperProps) {
     return <div className="min-h-screen">{children}</div>
   }
 
+  // ✅ SI NO DEBERÍAMOS MOSTRAR LAYOUT COMPLETO → LAYOUT SIMPLE
+  if (!shouldShowFullLayout) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        {children}
+      </div>
+    )
+  }
+
   return (
     <div className="flex min-h-screen bg-gray-50"> {/* Cambiado OTRA VEZ a min-h-screen */}
       {/* Sidebar */}
       <div 
         ref={sidebarRef}
-        className="transition-all duration-300 ease-in-out flex-shrink-0"
-        style={{ /* ... estilos sidebar ... */ zIndex: 45 }}
+        className="flex-shrink-0 transition-all duration-300 ease-in-out"
+        style={{ zIndex: 45 }}
       >
-        <MainSidebar
-          isCollapsed={isMobile ? !isSidebarVisible : isSidebarCollapsed}
-          onToggle={toggleSidebar}
-          forceMobileView={isMobile}
-        />
+        {/* ✅ RENDERIZAR SIDEBAR CON PROTECCIÓN CONTRA ERRORES */}
+        {(() => {
+          try {
+            return (
+              <MainSidebar
+                isCollapsed={isMobile ? !isSidebarVisible : isSidebarCollapsed}
+                onToggle={toggleSidebar}
+                forceMobileView={isMobile}
+              />
+            )
+          } catch (error) {
+            console.error('❌ [LayoutWrapper] Error al renderizar MainSidebar:', error)
+            // Fallback: mostrar un sidebar mínimo o nada
+            return (
+              <div className="flex justify-center items-center w-14 h-screen bg-gray-900">
+                <div className="text-xs text-white">Cargando...</div>
+              </div>
+            )
+          }
+        })()}
       </div>
 
       {/* Botón móvil para mostrar la barra lateral */}

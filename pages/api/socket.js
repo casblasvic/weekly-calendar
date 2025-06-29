@@ -267,7 +267,8 @@ function setupDeviceUpdateInterceptor(io) {
       if (device && device.credential) {
         // Crear update para Socket.io
         const update = {
-          deviceId: device.id,
+          deviceId: device.id,  // ID interno para identificar en frontend
+          shellyDeviceId: device.deviceId,  // deviceId de Shelly para comandos
           online: status.online,
           relayOn: status['switch:0']?.output !== undefined ? status['switch:0'].output : device.relayOn,
           currentPower: status['switch:0']?.apower !== undefined ? status['switch:0'].apower : device.currentPower,
