@@ -1,3 +1,104 @@
+/**
+ * ✅ COMPONENTE PRINCIPAL DE AGENDA SEMANAL CON RENDERIZACIÓN OPTIMISTA
+ * 
+ * ARQUITECTURA COMPLETA DEL SISTEMA:
+ * ==================================
+ * 
+ * 🎯 **PROPÓSITO**: Vista semanal de citas con navegación fluida y cambios instantáneos
+ * 
+ * 🔄 **RENDERIZACIÓN OPTIMISTA AVANZADA**:
+ * - Cambios visibles INMEDIATAMENTE sin esperar API
+ * - Cache de React Query actualizado con setQueryData()
+ * - Operaciones CRUD sin spinners ni delays
+ * - Reversión automática solo en caso de error API
+ * 
+ * 🚀 **PRE-FETCHING Y CACHE INTELIGENTE**:
+ * - Sliding window de 3 semanas (anterior, actual, siguiente)
+ * - Datos pre-cargados al cambiar clínica activa
+ * - Navegación entre fechas sin loading states
+ * - Cache persistente durante sesión del usuario
+ * 
+ * 🔧 **INTEGRACIÓN CON PRISMA**:
+ * - SIEMPRE usar: import { prisma } from '@/lib/db';
+ * - Datos de citas con includes optimizados:
+ *   * person (cliente), services, equipment (cabina)
+ *   * tags, payments, status, notes
+ * - Transformación automática de zona horaria
+ * 
+ * 💾 **HOOKS UTILIZADOS**:
+ * - useWeeklyAgendaData(): Cache inteligente + funciones optimistas
+ * - useWeeklyAgendaPrefetch(): Pre-carga de semanas adyacentes
+ * - useClinic(): Clínica activa + cabinas disponibles
+ * - useScheduleBlocks(): Horarios y bloques de la clínica
+ * 
+ * 🎨 **FUNCIONES OPTIMISTAS DISPONIBLES**:
+ * - addOptimisticAppointment(): Crear cita visible al instante
+ * - updateOptimisticAppointment(): Editar sin delay
+ * - updateOptimisticTags(): Cambiar etiquetas inmediatamente
+ * - deleteOptimisticAppointment(): Eliminar sin confirmación
+ * - replaceOptimisticAppointment(): Reemplazar temporal con real
+ * - removeAllOptimisticAppointments(): Limpiar temporales
+ * 
+ * 📊 **ESTADOS DE DATOS**:
+ * - appointmentsList: Citas procesadas listas para renderizado
+ * - loadingAppointments: Solo true en carga inicial
+ * - isDataStable: Datos válidos sin "flash" visual
+ * - hasData: Indica si hay datos disponibles
+ * - prefetchComplete: Sliding window completamente cargado
+ * 
+ * 🎛️ **OPERACIONES DE CITAS**:
+ * - Crear: handleSaveAppointment() → optimista + API
+ * - Editar: handleSaveAppointment() → optimista + API  
+ * - Eliminar: handleDeleteAppointment() → optimista + API
+ * - Cambiar etiquetas: handleTagsUpdate() → optimista + API
+ * - Bloquear horarios: handleBlockSchedule() → API directa
+ * 
+ * ⚠️ REGLAS CRÍTICAS PARA MODIFICACIONES:
+ * 1. NUNCA usar setState local para appointments (usar cache hooks)
+ * 2. APLICAR cambios optimistas ANTES de llamar API
+ * 3. SOLO invalidar cache en caso de error
+ * 4. MANTENER keys de cache consistentes
+ * 5. MEMOIZAR dependencias para evitar re-renders
+ * 6. NO romper el sliding window cache
+ * 7. PRESERVAR funcionalidad de navegación fluida
+ * 
+ * 🔗 **COMPONENTES RELACIONADOS**:
+ * - AppointmentDialog: Creación/edición con operaciones optimistas
+ * - AppointmentItem: Renderizado individual de citas
+ * - BlockScheduleModal: Bloqueo de horarios
+ * - ClinicConfigAlert: Alertas de configuración
+ * - CurrentTimeIndicator: Línea de tiempo actual
+ * 
+ * 📱 **FLUJO DE USUARIO COMPLETO**:
+ * 1. Usuario accede a agenda → ClinicGuard valida
+ * 2. useWeeklyAgendaData carga datos del cache
+ * 3. Si no hay cache → useWeeklyAgendaPrefetch carga
+ * 4. Usuario ve datos inmediatamente
+ * 5. Navegación entre fechas usa cache (instantáneo)
+ * 6. Operaciones CRUD aplican cambios optimistas
+ * 7. API sincroniza en background
+ * 8. Solo revierte en caso de error
+ * 
+ * 🏗️ **ESTRUCTURA DE DATOS DE CITA**:
+ * ```typescript
+ * interface Appointment {
+ *   id: string;                    // ID único (temp- para optimistas)
+ *   name: string;                  // Nombre del cliente
+ *   service: string;               // Servicios concatenados
+ *   date: Date;                    // Fecha/hora de inicio
+ *   startTime: string;             // Hora inicio (HH:mm)
+ *   endTime: string;               // Hora fin (HH:mm)
+ *   duration: number;              // Duración en minutos
+ *   roomId: string;                // ID de cabina/sala
+ *   personId: string;              // ID del cliente
+ *   services: ServiceRelation[];   // Servicios detallados
+ *   tags: string[];                // Etiquetas aplicadas
+ *   color: string;                 // Color para UI
+ *   phone?: string;                // Teléfono del cliente
+ * }
+ * ```
+ */
+
 "use client"
 
 import React, { useMemo, useEffect, useState, useCallback, useRef } from "react"
