@@ -140,21 +140,28 @@ export default function WebSocketLogs() {
     try {
       setDeleting(true);
       
+      const requestBody = logIds === 'all' 
+        ? {
+            action: 'delete_all',
+            confirm: true
+          }
+        : {
+            action: 'delete',
+            ids: logIds
+          };
+      
       const response = await fetch('/api/websocket/logs', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          action: logIds === 'all' ? 'delete_all' : 'delete',
-          ids: logIds === 'all' ? undefined : logIds
-        })
+        body: JSON.stringify(requestBody)
       });
 
       const result = await response.json();
       
       if (result.success) {
-        const deletedCount = logIds === 'all' ? logs.length : logIds.length;
+        const deletedCount = result.data?.deletedCount || (logIds === 'all' ? logs.length : logIds.length);
         toast.success(`${deletedCount} log(s) eliminado(s) correctamente`);
         
         // Recargar logs
@@ -180,25 +187,26 @@ export default function WebSocketLogs() {
   };
 
   const handleDeleteAll = () => {
-    if (confirm('¿Estás seguro de que quieres eliminar TODOS los logs? Esta acción no se puede deshacer.')) {
+    const totalLogs = logs.length; // Usar logs totales, no filtrados
+    if (confirm(`¿Estás seguro de que quieres eliminar TODOS los logs del sistema?\n\n• Se eliminarán ${totalLogs} logs en total\n• Esta acción no se puede deshacer\n• Se eliminarán TODOS los logs, no solo los mostrados actualmente\n\n¿Continuar?`)) {
       deleteLogs('all');
     }
   };
 
   const getEventIcon = (eventType: string) => {
     switch (eventType) {
-      case 'connect': return <Wifi className="h-4 w-4 text-green-600" />;
-      case 'disconnect': return <WifiOff className="h-4 w-4 text-gray-600" />;
-      case 'error': return <AlertCircle className="h-4 w-4 text-red-600" />;
-      case 'message': return <MessageSquare className="h-4 w-4 text-blue-600" />;
-      case 'ping': return <Zap className="h-4 w-4 text-yellow-600" />;
-      case 'reconnect': return <RefreshCw className="h-4 w-4 text-orange-600" />;
-      case 'reconnect_skipped': return <RefreshCw className="h-4 w-4 text-gray-600" />;
-      case 'action': return <CheckCircle className="h-4 w-4 text-blue-600" />;
-      case 'action_success': return <CheckCircle className="h-4 w-4 text-green-600" />;
-      case 'action_error': return <AlertCircle className="h-4 w-4 text-red-600" />;
-      case 'config_change': return <CheckCircle className="h-4 w-4 text-purple-600" />;
-      default: return <CheckCircle className="h-4 w-4 text-gray-400" />;
+      case 'connect': return <Wifi className="w-4 h-4 text-green-600" />;
+      case 'disconnect': return <WifiOff className="w-4 h-4 text-gray-600" />;
+      case 'error': return <AlertCircle className="w-4 h-4 text-red-600" />;
+      case 'message': return <MessageSquare className="w-4 h-4 text-blue-600" />;
+      case 'ping': return <Zap className="w-4 h-4 text-yellow-600" />;
+      case 'reconnect': return <RefreshCw className="w-4 h-4 text-orange-600" />;
+      case 'reconnect_skipped': return <RefreshCw className="w-4 h-4 text-gray-600" />;
+      case 'action': return <CheckCircle className="w-4 h-4 text-blue-600" />;
+      case 'action_success': return <CheckCircle className="w-4 h-4 text-green-600" />;
+      case 'action_error': return <AlertCircle className="w-4 h-4 text-red-600" />;
+      case 'config_change': return <CheckCircle className="w-4 h-4 text-purple-600" />;
+      default: return <CheckCircle className="w-4 h-4 text-gray-400" />;
     }
   };
 
@@ -258,30 +266,30 @@ export default function WebSocketLogs() {
       {/* Filtros */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex justify-between items-center">
             <div>
               <CardTitle>Logs de WebSocket en Tiempo Real</CardTitle>
               <CardDescription>
                 Historial de eventos y errores de las conexiones WebSocket
               </CardDescription>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex gap-2 items-center">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={exportLogs}
                 disabled={filteredLogs.length === 0}
               >
-                <Download className="h-4 w-4 mr-2" />
+                <Download className="mr-2 w-4 h-4" />
                 Exportar
               </Button>
             </div>
           </div>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
             <div>
-              <label className="text-sm font-medium mb-2 block">Tipo de Conexión</label>
+              <label className="block mb-2 text-sm font-medium">Tipo de Conexión</label>
               <Select
                 value={filters.connectionType}
                 onValueChange={(value) => setFilters(prev => ({ ...prev, connectionType: value }))}
@@ -299,7 +307,7 @@ export default function WebSocketLogs() {
             </div>
             
             <div>
-              <label className="text-sm font-medium mb-2 block">Tipo de Evento</label>
+              <label className="block mb-2 text-sm font-medium">Tipo de Evento</label>
               <Select
                 value={filters.eventType}
                 onValueChange={(value) => setFilters(prev => ({ ...prev, eventType: value }))}
@@ -325,9 +333,9 @@ export default function WebSocketLogs() {
             </div>
             
             <div>
-              <label className="text-sm font-medium mb-2 block">Buscar</label>
+              <label className="block mb-2 text-sm font-medium">Buscar</label>
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Search className="absolute left-3 top-1/2 w-4 h-4 text-gray-400 transform -translate-y-1/2" />
                 <Input
                   placeholder="Buscar en mensajes..."
                   value={filters.search}
@@ -351,7 +359,7 @@ export default function WebSocketLogs() {
           </div>
           
           {lastUpdate && (
-            <p className="text-sm text-muted-foreground mt-4">
+            <p className="mt-4 text-sm text-muted-foreground">
               Última actualización: {lastUpdate.toLocaleString()}
             </p>
           )}
@@ -361,14 +369,14 @@ export default function WebSocketLogs() {
       {/* Lista de Logs */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex justify-between items-center">
             <CardTitle>
               Eventos Recientes ({filteredLogs.length})
             </CardTitle>
             
             {/* Controles de eliminación */}
             {filteredLogs.length > 0 && (
-              <div className="flex items-center gap-2">
+              <div className="flex gap-2 items-center">
                 {selectedLogs.size > 0 && (
                   <>
                     <Badge variant="secondary">
@@ -380,7 +388,7 @@ export default function WebSocketLogs() {
                       onClick={handleDeleteSelected}
                       disabled={deleting}
                     >
-                      <Trash2 className="h-4 w-4 mr-2" />
+                      <Trash2 className="mr-2 w-4 h-4" />
                       Eliminar Seleccionados
                     </Button>
                   </>
@@ -392,7 +400,7 @@ export default function WebSocketLogs() {
                   disabled={deleting || filteredLogs.length === 0}
                   className="text-red-600 hover:text-red-700"
                 >
-                  <Trash2 className="h-4 w-4 mr-2" />
+                  <Trash2 className="mr-2 w-4 h-4" />
                   Eliminar Todos
                 </Button>
               </div>
@@ -402,20 +410,20 @@ export default function WebSocketLogs() {
         <CardContent>
           <ScrollArea className="h-[600px]">
             {loading && logs.length === 0 ? (
-              <div className="flex items-center justify-center py-8">
-                <RefreshCw className="h-8 w-8 animate-spin mr-2" />
+              <div className="flex justify-center items-center py-8">
+                <RefreshCw className="mr-2 w-8 h-8 animate-spin" />
                 <span>Cargando logs...</span>
               </div>
             ) : filteredLogs.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <Filter className="h-12 w-12 mx-auto mb-2 opacity-50" />
+              <div className="py-8 text-center text-muted-foreground">
+                <Filter className="mx-auto mb-2 w-12 h-12 opacity-50" />
                 <p>No hay logs que coincidan con los filtros</p>
               </div>
             ) : (
               <div className="relative">
                 {/* Header de selección FIJO */}
                 <div className="sticky top-0 z-10 bg-white border-b shadow-sm">
-                  <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-t-lg">
+                  <div className="flex gap-3 items-center p-3 bg-gray-50 rounded-t-lg">
                     <Checkbox
                       checked={isAllSelected}
                       onCheckedChange={toggleSelectAll}
@@ -432,7 +440,7 @@ export default function WebSocketLogs() {
                 </div>
 
                 {/* Lista de logs con padding superior para compensar header fijo */}
-                <div className="space-y-2 pt-2">
+                <div className="pt-2 space-y-2">
                   {filteredLogs.map((log) => (
                     <div
                       key={log.id}
@@ -453,7 +461,7 @@ export default function WebSocketLogs() {
                       </div>
                       
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
+                        <div className="flex gap-2 items-center mb-1">
                           <Badge className={`text-xs ${getEventColor(log.eventType)}`}>
                             {log.eventType}
                           </Badge>
@@ -466,18 +474,18 @@ export default function WebSocketLogs() {
                         </div>
                         
                         {log.message && (
-                          <p className="text-sm text-gray-900 mb-1">
+                          <p className="mb-1 text-sm text-gray-900">
                             {log.message}
                           </p>
                         )}
                         
                         {log.errorDetails && (
-                          <p className="text-sm text-red-600 mb-1">
+                          <p className="mb-1 text-sm text-red-600">
                             Error: {log.errorDetails}
                           </p>
                         )}
                         
-                        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                        <div className="flex gap-4 items-center text-xs text-muted-foreground">
                           <span>ID: {log.connectionId.slice(0, 8)}...</span>
                           {log.responseTime && (
                             <span>Tiempo: {log.responseTime}ms</span>
