@@ -1,5 +1,6 @@
 // ✅ HOOK PERSONALIZADO PARA FLOATING MENU DE ENCHUFES INTELIGENTES
 // 🎯 SIMPLIFICADO: Solo WebSocket, sin timeouts, muestra dispositivos offline
+// 🔒 VERIFICACIÓN: Solo funciona si el módulo Shelly está activo
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useSession } from 'next-auth/react';
@@ -73,12 +74,58 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
   const [allDevices, setAllDevices] = useState<SmartPlugDevice[]>([]);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [isShellyModuleActive, setIsShellyModuleActive] = useState<boolean | null>(null);
   
   // Refs para tracking updates
   const messagesReceivedRef = useRef<Set<string>>(new Set());
   
   // ✅ SOCKET - Igual que la página principal
   const { isConnected, subscribe } = useSocket(systemId);
+
+  // 🔒 VERIFICAR SI EL MÓDULO SHELLY ESTÁ ACTIVO
+  const checkShellyModuleStatus = useCallback(async () => {
+    if (!systemId) {
+      setIsShellyModuleActive(false);
+      return;
+    }
+    
+    try {
+      console.log('🔍 [FloatingMenu] Verificando estado del módulo Shelly...');
+      
+      const response = await fetch('/api/internal/integrations');
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const integrationsByCategory = await response.json();
+      
+      // Buscar en todas las categorías el módulo Shelly
+      let shellyModule = null;
+      for (const category in integrationsByCategory) {
+        const modules = integrationsByCategory[category];
+        shellyModule = modules.find((module: any) => 
+          module.name.includes('Shelly') || 
+          module.name.includes('Control Inteligente')
+        );
+        if (shellyModule) break;
+      }
+      
+      const isActive = shellyModule?.isActive || false;
+      
+      console.log('🔍 [FloatingMenu] Estado módulo Shelly:', {
+        found: !!shellyModule,
+        moduleName: shellyModule?.name,
+        isActive,
+        moduleId: shellyModule?.id
+      });
+      
+      setIsShellyModuleActive(isActive);
+      
+    } catch (error) {
+      console.error('❌ [FloatingMenu] Error verificando módulo Shelly:', error);
+      setIsShellyModuleActive(false);
+    }
+  }, [systemId]);
 
   // 🔥 FETCH INICIAL - Cargar todos los dispositivos asignados a clínicas
   const fetchAllDevices = useCallback(async () => {
@@ -112,14 +159,22 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
 
   // 🌐 INICIALIZACIÓN
   useEffect(() => {
-    if (systemId && !isInitialized) {
+    if (systemId) {
+      // Primero verificar si el módulo está activo
+      checkShellyModuleStatus();
+    }
+  }, [systemId, checkShellyModuleStatus]);
+
+  // 🔥 CARGAR DISPOSITIVOS solo si el módulo está activo
+  useEffect(() => {
+    if (systemId && isShellyModuleActive === true && !isInitialized) {
       fetchAllDevices();
     }
-  }, [systemId, fetchAllDevices, isInitialized]);
+  }, [systemId, isShellyModuleActive, fetchAllDevices, isInitialized]);
 
   // 📡 WEBSOCKET TIEMPO REAL - Procesar updates y marcar mensajes recibidos
   useEffect(() => {
-    if (!isConnected || !isInitialized) {
+    if (!isConnected || !isInitialized || isShellyModuleActive !== true) {
       return;
     }
 
@@ -186,7 +241,7 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
     return () => {
       unsubscribe();
     };
-  }, [subscribe, isConnected, isInitialized]);
+  }, [subscribe, isConnected, isInitialized, isShellyModuleActive]);
 
   // 🔴 LÓGICA SIMPLE: WebSocket desconectado = todos offline
   useEffect(() => {
@@ -293,7 +348,15 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
   }, []);
 
   // 🎯 DATOS FINALES
-  if (!systemId || !activeClinic) {
+  if (!systemId || !activeClinic || isShellyModuleActive !== true) {
+    console.log('🔒 [FloatingMenu] Módulo no disponible:', {
+      hasSystemId: !!systemId,
+      hasActiveClinic: !!activeClinic,
+      isShellyModuleActive,
+      reason: !systemId ? 'Sin systemId' : 
+              !activeClinic ? 'Sin clínica activa' : 
+              'Módulo Shelly no activo'
+    });
     return null;
   }
 

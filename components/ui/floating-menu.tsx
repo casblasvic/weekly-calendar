@@ -740,8 +740,8 @@ export function FloatingMenu({ className, smartPlugsData }: FloatingMenuProps) {
               <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full" />
             </Button>
 
-            {/* ✅ NUEVO: 5º Botón de enchufes inteligentes */}
-            {renderSmartPlugsButton()}
+            {/* ✅ NUEVO: 5º Botón de enchufes inteligentes - Solo si el módulo está activo */}
+            {smartPlugsData && renderSmartPlugsButton()}
           </div>
         )}
 
