@@ -190,6 +190,12 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
   // 🎯 FILTRADO POR CLÍNICA ACTIVA - SIEMPRE mostrar dispositivos asignados
   const clinicDevices = useMemo(() => {
     if (!activeClinic?.id || allDevices.length === 0) {
+      console.log('🏥 [FloatingMenu] Sin clínica activa o sin dispositivos:', {
+        hasActiveClinic: !!activeClinic?.id,
+        clinicId: activeClinic?.id,
+        clinicName: activeClinic?.name,
+        totalDevices: allDevices.length
+      });
       return [];
     }
     
@@ -199,18 +205,30 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
       totalDevices: allDevices.length
     });
     
-    // ✅ DEPURACIÓN: Mostrar estructura de dispositivos
-    console.log('🔍 [FloatingMenu] Estructura de dispositivos:', 
-      allDevices.slice(0, 3).map(device => ({
+    // ✅ DEPURACIÓN: Mostrar estructura de TODOS los dispositivos
+    console.log('🔍 [FloatingMenu] Estructura de TODOS los dispositivos:', 
+      allDevices.map((device, index) => ({
+        index,
         id: device.id,
         name: device.name,
         deviceId: device.deviceId,
+        online: device.online,
         // Estructura antigua
         equipmentId: device.equipmentId,
-        equipment: device.equipment,
+        equipment: device.equipment ? {
+          name: device.equipment.name,
+          clinicId: device.equipment.clinicId,
+          clinic: device.equipment.clinic
+        } : null,
         // Estructura nueva
         equipmentClinicAssignmentId: device.equipmentClinicAssignmentId,
-        equipmentClinicAssignment: device.equipmentClinicAssignment
+        equipmentClinicAssignment: device.equipmentClinicAssignment ? {
+          id: device.equipmentClinicAssignment.id,
+          clinicId: device.equipmentClinicAssignment.clinicId,
+          deviceName: device.equipmentClinicAssignment.deviceName,
+          equipment: device.equipmentClinicAssignment.equipment,
+          clinic: device.equipmentClinicAssignment.clinic
+        } : null
       }))
     );
     
@@ -218,14 +236,17 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
       // ✅ VERIFICAR AMBAS ESTRUCTURAS
       // Estructura nueva (preferida)
       if (device.equipmentClinicAssignment?.clinicId === activeClinic.id) {
+        console.log(`✅ [FloatingMenu] ${device.name} → Coincide por equipmentClinicAssignment.clinicId`);
         return true;
       }
       
       // Estructura antigua (fallback)
       if (device.equipment?.clinicId === activeClinic.id) {
+        console.log(`✅ [FloatingMenu] ${device.name} → Coincide por equipment.clinicId`);
         return true;
       }
       
+      console.log(`❌ [FloatingMenu] ${device.name} → NO coincide (equipmentClinicAssignment.clinicId: ${device.equipmentClinicAssignment?.clinicId}, equipment.clinicId: ${device.equipment?.clinicId})`);
       return false;
     });
     
