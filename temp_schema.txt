@@ -1,0 +1,8 @@
+const UpdateCategorySchema = z.object({
+  name: z.string().min(1, { message: "El nombre es obligatorio." }).optional(),
+  description: z.string().optional().nullable(),
+  parentId: z.string().cuid({ message: "ID de categoría padre inválido." }).optional().nullable(),
+  equipmentTypeId: z.string().cuid({ message: "ID de tipo de equipamiento inválido." }).optional().nullable(), // ✅ NUEVO
+  type: z.enum(['SERVICE', 'PRODUCT', 'MIXED']).optional(), // ✅ NUEVO: Permitir actualizar el tipo
+  // No permitir cambiar systemId
+}).strict(); // No permitir campos extra

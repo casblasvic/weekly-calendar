@@ -1,9 +1,9 @@
 "use client"
 
 import React, { useState, useEffect } from 'react'
-import { Input } from '@/app/components/ui/input'
-import { Label } from '@/app/components/ui/label'
-import { Popover, PopoverContent, PopoverTrigger } from '@/app/components/ui/popover'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 
 interface ColorPickerProps {
@@ -14,6 +14,7 @@ interface ColorPickerProps {
   disabled?: boolean
 }
 
+// ✅ Colores estándar del sistema
 const PRESET_COLORS = [
   '#7c3aed', // Purple-600 (primario por defecto)
   '#0ea5e9', // Sky-500

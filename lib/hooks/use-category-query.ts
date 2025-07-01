@@ -8,9 +8,10 @@ export function useCategoriesQuery(options?: Omit<UseQueryOptions<any, unknown, 
   return useQuery<any, unknown>({
     queryKey: ['categories'],
     queryFn: async () => {
-      return await api.cached.get('/api/categories');
+      return await api.get('/api/categories');
     },
-    staleTime: 1000 * 60 * 30, // 30 minutos
+    staleTime: 1000 * 60 * 5, // 5 minutos (reducido para mejor actualización)
+    refetchOnWindowFocus: false, // No refrescar al cambiar ventana
     ...options,
   });
 }
@@ -23,10 +24,10 @@ export function useCategoryDetailQuery(categoryId: string | null, options?: Omit
     queryKey: ['category', categoryId],
     queryFn: async () => {
       if (!categoryId) throw new Error('Category ID is required');
-      return await api.cached.get(`/api/categories/${categoryId}`);
+      return await api.get(`/api/categories/${categoryId}`);
     },
     enabled: !!categoryId,
-    staleTime: 1000 * 60 * 30, // 30 minutos
+    staleTime: 1000 * 60 * 2, // 2 minutos (reducido)
     ...options,
   });
 } 

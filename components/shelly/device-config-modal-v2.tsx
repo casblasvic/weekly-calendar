@@ -47,6 +47,7 @@ interface DeviceConfigModalV2Props {
             id: string;
             clinicId: string;
             deviceName?: string;
+            serialNumber?: string; // ✅ INCLUIR serialNumber para consistencia
             equipment: {
                 id: string;
                 name: string;
@@ -123,22 +124,49 @@ export function DeviceConfigModalV2({ device, isOpen, onClose, onDeviceUpdate }:
     }, [isOpen, device]);
     
     // Estados para datos de clínicas y equipos
-    const [clinics, setClinics] = useState<Clinic[]>([]);
-    const [availableEquipment, setAvailableEquipment] = useState<Equipment[]>([]);
+    const [clinics, setClinics] = useState<Clinic[]>(() => {
+        // ✅ RENDERIZACIÓN OPTIMISTA: Inicializar con la clínica actual si existe
+        if (device.equipmentClinicAssignment?.clinic) {
+            return [{
+                id: device.equipmentClinicAssignment.clinic.id,
+                name: device.equipmentClinicAssignment.clinic.name
+            }];
+        }
+        return [];
+    });
+    
+    const [availableEquipment, setAvailableEquipment] = useState<Equipment[]>(() => {
+        // ✅ RENDERIZACIÓN OPTIMISTA: Inicializar con el equipo actual si existe
+        if (device.equipmentClinicAssignment?.equipment) {
+            // ✅ FORMATO DROPDOWN: "Alias (Serial)" para dropdowns
+            const alias = device.equipmentClinicAssignment.deviceName || device.equipmentClinicAssignment.equipment.name;
+            const serial = device.equipmentClinicAssignment.serialNumber;
+            const displayName = serial ? `${alias} (${serial})` : alias;
+            
+            return [{
+                id: device.equipmentClinicAssignmentId!,
+                name: displayName
+            }];
+        }
+        return [];
+    });
 
-    // Cargar clínicas al abrir modal
+    // Cargar clínicas al abrir modal (en background, actualiza las opciones)
     useEffect(() => {
         if (isOpen) {
             fetchClinics();
         }
     }, [isOpen]);
 
-    // Cargar equipos cuando se selecciona una clínica
+    // Cargar equipos cuando se selecciona una clínica (en background, actualiza las opciones)
     useEffect(() => {
         if (selectedClinicId && selectedClinicId !== 'none') {
             fetchEquipment(selectedClinicId);
         } else {
-            setAvailableEquipment([]);
+            // Si no hay clínica seleccionada, limpiar pero mantener el actual si existe
+            if (!device.equipmentClinicAssignment?.equipment) {
+                setAvailableEquipment([]);
+            }
         }
     }, [selectedClinicId]);
 
@@ -154,10 +182,15 @@ export function DeviceConfigModalV2({ device, isOpen, onClose, onDeviceUpdate }:
             const response = await fetch('/api/internal/clinics/list');
             if (response.ok) {
                 const data = await response.json();
+                // ✅ RENDERIZACIÓN OPTIMISTA: Actualizar con todas las clínicas disponibles
                 setClinics(data);
             }
         } catch (error) {
             console.error('Error cargando clínicas:', error);
+            // En caso de error, mantener al menos la clínica actual si existe
+            if (!device.equipmentClinicAssignment?.clinic) {
+                setClinics([]);
+            }
         }
     };
 
@@ -183,14 +216,22 @@ export function DeviceConfigModalV2({ device, isOpen, onClose, onDeviceUpdate }:
                     name: `${assignment.deviceName || assignment.equipment.name} (${assignment.serialNumber})`,
                 }));
                 console.log('🔍 [DEBUG MODAL AVANZADO] Lista transformada:', equipmentList);
+                
+                // ✅ RENDERIZACIÓN OPTIMISTA: Actualizar con todas las opciones disponibles
                 setAvailableEquipment(equipmentList);
             } else {
                 console.error('Error en respuesta:', response.status);
-                setAvailableEquipment([]);
+                // En caso de error, mantener al menos la opción actual si existe
+                if (!device.equipmentClinicAssignment?.equipment) {
+                    setAvailableEquipment([]);
+                }
             }
         } catch (error) {
             console.error('Error cargando equipos:', error);
-            setAvailableEquipment([]);
+            // En caso de error, mantener al menos la opción actual si existe
+            if (!device.equipmentClinicAssignment?.equipment) {
+                setAvailableEquipment([]);
+            }
         }
     };
 
@@ -251,16 +292,16 @@ export function DeviceConfigModalV2({ device, isOpen, onClose, onDeviceUpdate }:
 
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
-            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-                <DialogHeader className="flex flex-row justify-between items-center">
+            <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0">
+                <DialogHeader className="flex flex-row justify-between items-center p-6 pb-4">
                     <DialogTitle className="flex gap-2 items-center">
                         <Settings className="w-5 h-5" />
                         Configuración del Dispositivo
                     </DialogTitle>
-                    <Button variant="ghost" size="sm" onClick={onClose}>
-                        <X className="w-4 h-4" />
-                    </Button>
                 </DialogHeader>
+                
+                {/* Contenido con scroll */}
+                <div className="flex-1 overflow-y-auto px-6">
 
                 <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
                     {/* Panel Izquierdo: Información del Dispositivo */}
@@ -423,7 +464,9 @@ export function DeviceConfigModalV2({ device, isOpen, onClose, onDeviceUpdate }:
                                             <SelectItem value="none">Sin asociar</SelectItem>
                                             {clinics.map(clinic => (
                                                 <SelectItem key={clinic.id} value={clinic.id}>
-                                                    {clinic.name}
+                                                    <div className="truncate max-w-[250px]" title={clinic.name}>
+                                                        {clinic.name}
+                                                    </div>
                                                 </SelectItem>
                                             ))}
                                         </SelectContent>
@@ -449,7 +492,9 @@ export function DeviceConfigModalV2({ device, isOpen, onClose, onDeviceUpdate }:
                                             <SelectItem value="none">Sin asociar</SelectItem>
                                             {availableEquipment.map(equipment => (
                                                 <SelectItem key={equipment.id} value={equipment.id}>
-                                                    {equipment.name}
+                                                    <div className="truncate max-w-[250px]" title={equipment.name}>
+                                                        {equipment.name}
+                                                    </div>
                                                 </SelectItem>
                                             ))}
                                         </SelectContent>
@@ -500,21 +545,23 @@ export function DeviceConfigModalV2({ device, isOpen, onClose, onDeviceUpdate }:
                             </Card>
                         )}
 
-                        {/* Botones de Acción */}
-                        <div className="flex gap-2 pt-4">
-                            <Button variant="outline" onClick={onClose} className="flex-1">
-                                Cancelar
-                            </Button>
-                            <Button 
-                                onClick={handleSave} 
-                                disabled={isLoading}
-                                className="flex-1"
-                            >
-                                <Save className="mr-2 w-4 h-4" />
-                                {isLoading ? 'Guardando...' : 'Guardar Cambios'}
-                            </Button>
-                        </div>
                     </div>
+                </div>
+                </div>
+                
+                {/* Botones fijos en la parte inferior */}
+                <div className="border-t bg-background p-6 flex gap-2">
+                    <Button variant="outline" onClick={onClose} className="flex-1">
+                        Cancelar
+                    </Button>
+                    <Button 
+                        onClick={handleSave} 
+                        disabled={isLoading}
+                        className="flex-1"
+                    >
+                        <Save className="mr-2 w-4 h-4" />
+                        {isLoading ? 'Guardando...' : 'Guardar Cambios'}
+                    </Button>
                 </div>
             </DialogContent>
         </Dialog>

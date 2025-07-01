@@ -3,15 +3,15 @@
 import React from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
+import { SaveButton } from '@/components/ui/save-button';
 import { 
-    Save, 
     HelpCircle, 
     ArrowLeft, 
     Briefcase, 
     Star, 
     Ticket, 
     Package as PackageIcon, 
-    Cpu 
+    Cpu
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -84,15 +84,13 @@ export const ServiceActionFooter: React.FC<ServiceActionFooterProps> = ({
                      <ArrowLeft className="w-4 h-4 mr-2" />
                      {t('common.back')}
                  </Button>
-                 <Button 
-                     type="submit" 
-                     form={formId} 
-                    // Deshabilitar si está guardando, cargando, o si (en modo edición) no se han cargado los datos iniciales aún
-                     disabled={isSaving || isLoading || (!serviceId && !hasInitialData && isLoading) || (!!serviceId && !hasInitialData) } 
-                 >
-                     <Save className="w-4 h-4 mr-2" />
-                     {isSaving ? t('common.saving') : (serviceId ? t('common.saveChanges') : t('common.save'))}
-                 </Button>
+                 <SaveButton
+                     form={formId}
+                     isSaving={isSaving}
+                     disabled={isLoading || (!serviceId && !hasInitialData && isLoading) || (!!serviceId && !hasInitialData)}
+                     saveText={serviceId ? t('common.saveChanges') : t('common.save')}
+                     savingText={t('common.saving')}
+                 />
                  <Button variant="outline" size="icon" onClick={onHelp} disabled={isSaving || isLoading} title={t('common.help') || 'Ayuda'}>
                      <HelpCircle className="w-4 h-4" />
                      <span className="sr-only">{t('common.help') || 'Ayuda'}</span>

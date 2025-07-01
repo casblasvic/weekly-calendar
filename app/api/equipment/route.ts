@@ -16,9 +16,11 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = request.nextUrl
     const clinicId = searchParams.get('clinicId')
+    const simplified = searchParams.get('simplified') === 'true' // ✅ NUEVO: Para el selector de categorías
 
     const whereClause: Prisma.EquipmentWhereInput = {
       systemId: systemId,
+      isActive: true, // ✅ NUEVO: Solo equipamiento activo
     }
 
     // Filtrar por clínica se hace ahora a través de las asignaciones
@@ -36,6 +38,22 @@ export async function GET(request: NextRequest) {
           isActive: true
         }
       }
+    }
+
+    // ✅ NUEVO: Versión simplificada para selectores
+    if (simplified) {
+      const equipment = await prisma.equipment.findMany({
+        where: whereClause,
+        select: {
+          id: true,
+          name: true,
+          description: true,
+        },
+        orderBy: {
+          name: 'asc',
+        },
+      })
+      return NextResponse.json(equipment)
     }
 
     const equipment = await prisma.equipment.findMany({

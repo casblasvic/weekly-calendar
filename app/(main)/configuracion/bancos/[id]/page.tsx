@@ -15,6 +15,7 @@ import { AlertCircle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"; // <<< Importar Card
 import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner'; // Importar toast
+import { SaveButton } from '@/components/ui/save-button';
 
 // Definir tipo esperado de la API GET [id]
 // Podríamos mover esto a un archivo de tipos si se reutiliza
@@ -610,20 +611,17 @@ export default function EditBankPage() {
           <ArrowLeft className="w-4 h-4 mr-2" />
           {t('common.cancel')}
         </Button>
-        <Button
+        <SaveButton
           type="button"
           // Deshabilitar si carga, guarda, no hay datos o es error not found
-          disabled={isLoadingData || isSaving || !bankData || isNotFoundError}
+          disabled={isLoadingData || !bankData || isNotFoundError}
+          isSaving={isSaving}
           onClick={() => {
             (document.getElementById('bank-form') as HTMLFormElement | null)?.requestSubmit();
           }}
-        >
-          {isSaving ? (
-            <>{t('common.saving')}...</>
-          ) : (
-            <><Save className="w-4 h-4 mr-2" />{t('common.saveChanges')}</>
-          )}
-        </Button>
+          saveText={t('common.saveChanges')}
+          savingText={t('common.saving')}
+        />
       </div>
     </div>
   );

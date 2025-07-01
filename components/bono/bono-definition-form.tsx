@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Controller, useForm } from 'react-hook-form';
 import { Button } from '@/components/ui/button';
+import { SaveButton } from '@/components/ui/save-button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -392,15 +393,15 @@ export function BonoDefinitionForm({ initialData, preselectedServiceId, preselec
         <Button variant="outline" onClick={handleBack} disabled={isLoading}>
             <ArrowLeft className="w-4 h-4 mr-2" /> Volver 
         </Button>
-        <Button 
+        <SaveButton 
             type="button" 
             onClick={() => {
               (document.getElementById('bono-definition-form') as HTMLFormElement | null)?.requestSubmit();
             }}
-            disabled={isLoading} 
-        >
-          {isLoading ? 'Guardando...' : (isEditing ? 'Guardar Cambios' : 'Crear Bono')} 
-        </Button>
+            isSaving={isLoading}
+            saveText={isEditing ? 'Guardar Cambios' : 'Crear Bono'}
+            savingText="Guardando..."
+        />
       </footer>
     </Card>
   );

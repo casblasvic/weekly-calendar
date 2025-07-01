@@ -9,6 +9,7 @@ const CategorySchema = z.object({
   name: z.string().min(1, { message: "El nombre es obligatorio." }),
   description: z.string().optional().nullable(),
   parentId: z.string().cuid({ message: "ID de categoría padre inválido." }).optional().nullable(),
+  equipmentTypeId: z.string().cuid({ message: "ID de tipo de equipamiento inválido." }).optional().nullable(), // ✅ NUEVO
 });
 
 /**
@@ -22,11 +23,46 @@ export async function GET(request: Request) {
   const systemId = session.user.systemId;
 
   try {
+    // ✅ NUEVO: Parámetros para incluir equipmentType y conteos
+    const url = new URL(request.url);
+    const includeEquipmentType = url.searchParams.get('includeEquipmentType') === 'true';
+    const includeCounts = url.searchParams.get('includeCounts') === 'true';
+
     // Obtener todas las categorías del sistema
     const categories = await prisma.category.findMany({
       where: { systemId: systemId },
+      include: {
+        ...(includeEquipmentType ? {
+          equipmentType: {
+            select: {
+              id: true,
+              name: true,
+              description: true
+            }
+          }
+        } : {}),
+        ...(includeCounts ? {
+          _count: {
+            select: {
+              services: true,
+              products: true
+            }
+          }
+        } : {}),
+      },
       orderBy: { name: 'asc' },
     });
+
+    // ✅ NUEVO: Transformar datos para incluir conteos más legibles
+    if (includeCounts) {
+      const categoriesWithCounts = categories.map(category => ({
+        ...category,
+        servicesCount: category._count?.services || 0,
+        productsCount: category._count?.products || 0,
+      }));
+      return NextResponse.json(categoriesWithCounts);
+    }
+
     return NextResponse.json(categories);
   } catch (error) {
     console.error("Error fetching categories:", error);
@@ -58,7 +94,7 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
-    const { name, description, parentId } = validation.data;
+    const { name, description, parentId, equipmentTypeId } = validation.data;
 
     // Crear la nueva categoría
     const newCategory = await prisma.category.create({
@@ -66,6 +102,7 @@ export async function POST(request: Request) {
         name,
         description,
         parentId,
+        equipmentTypeId, // ✅ NUEVO
         systemId: systemId,
       },
     });

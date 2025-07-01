@@ -3,7 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Save, HelpCircle, Loader2 } from 'lucide-react';
+import { SaveButton } from "@/components/ui/save-button";
+import { ArrowLeft, HelpCircle, Loader2 } from 'lucide-react';
 import { useRouter, useParams } from 'next/navigation'; // Importar useParams
 import { PackageDefinitionForm } from '@/components/package/package-definition-form';
 import { toast } from 'sonner';
@@ -260,21 +261,17 @@ export default function EditPackagePage() {
                 <Button variant="outline" onClick={() => toast.info(t('common.help_not_implemented'))} disabled={isSubmitting || isLoading}>
                     <HelpCircle className="w-4 h-4 mr-2" /> {t('common.help')}
                 </Button>
-                <Button 
+                <SaveButton
                     type="button"
                     onClick={() => {
                         (document.getElementById(FORM_ID) as HTMLFormElement | null)?.requestSubmit();
                     }}
-                    disabled={isSubmitting || isLoading}
+                    isSaving={isSubmitting}
+                    disabled={isLoading}
                     className="min-w-[100px]"
-                >
-                    {isSubmitting ? (
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    ) : (
-                        <Save className="w-4 h-4 mr-2" />
-                    )}
-                    {t('common.saveChanges')}
-                </Button>
+                    saveText={t('common.saveChanges')}
+                    savingText={t('common.saving')}
+                />
             </footer>
         </div>
     );

@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/table';
 import { Checkbox } from '@/components/ui/checkbox';
 import { PaginationControls } from '@/components/pagination-controls';
+import { PageSizeSelector } from '@/components/pagination-controls';
 import { Service, Category, VATType, Tariff, ServiceSetting } from '@prisma/client';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -35,7 +36,7 @@ import {
     type FilterFn,
     type Row
 } from '@tanstack/react-table';
-import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 import { Label } from "@/components/ui/label";
@@ -68,6 +69,7 @@ import { useServicesQuery, useDeleteServiceMutation, useAddServicesToTariffMutat
 import { useCategoriesQuery } from '@/lib/hooks/use-category-query';
 import { useVatTypesQuery } from '@/lib/hooks/use-vat-query';
 import { useTariffsQuery, useTariffServicesQuery } from '@/lib/hooks/use-tariff-query';
+import BulkCategoryChanger, { BulkItem } from '@/components/bulk-category-changer';
 
 interface ServiceRow extends Service { 
     categoryName?: string;
@@ -133,6 +135,9 @@ export default function GestionServiciosPage() {
     const [serviceToDelete, setServiceToDelete] = useState<ServiceRow | null>(null);
     const [isAssociateModalOpen, setIsAssociateModalOpen] = useState(false);
     const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
+
+    // ✅ NUEVO: Estados para selección masiva de categorías
+    const [showBulkCategoryChanger, setShowBulkCategoryChanger] = useState(false);
 
     // Consultas optimizadas con TanStack Query
     const { 
@@ -214,6 +219,8 @@ export default function GestionServiciosPage() {
       });
     }, [servicesData, categoriesData, vatTypesData, isLoadingServices, isLoadingCategories, isLoadingVatTypes]);
 
+
+
     // Calcular existingServiceIdsInTariff con useMemo
     const existingServiceIdsInTariff = useMemo(() => {
       if (!tariffServicesData || !Array.isArray(tariffServicesData) || !isSelectionMode) {
@@ -261,43 +268,20 @@ export default function GestionServiciosPage() {
     const columns = useMemo<ColumnDef<ServiceRow>[]>(() => [
         {
             id: 'select',
-            header: ({ table }) => {
-                const pageRows = table.getRowModel().rows;
-                const selectableRows = pageRows.filter(row => !existingServiceIdsInTariff.has(row.original.id));
-                const numSelectedSelectable = selectableRows.filter(row => row.getIsSelected()).length;
-
-                const isAllSelectableSelected = selectableRows.length > 0 && numSelectedSelectable === selectableRows.length;
-                const isSomeSelectableSelected = selectableRows.length > 0 && numSelectedSelectable > 0 && numSelectedSelectable < selectableRows.length;
-
-                return (
-                    <Checkbox
-                        checked={isAllSelectableSelected}
-                        data-state={isSomeSelectableSelected ? 'indeterminate' : (isAllSelectableSelected ? 'checked' : 'unchecked')}
-                        onCheckedChange={(value) => {
-                            if (value === true || value === 'indeterminate') {
-                                selectableRows.forEach(row => row.toggleSelected(true));
-                            } else {
-                                pageRows.forEach(row => row.toggleSelected(false));
-                            }
-                        }}
-                        aria-label="Seleccionar todas las filas habilitadas en esta página"
-                        className="translate-y-[2px]"
-                    />
-                );
-            },
-            cell: ({ row }) => {
-                const serviceId = row.original.id;
-                const isExisting = existingServiceIdsInTariff.has(serviceId);
-                return (
-                    <Checkbox
-                        checked={row.getIsSelected()}
-                        onCheckedChange={(value) => row.toggleSelected(!!value)}
-                        aria-label="Seleccionar fila"
-                        disabled={isExisting}
-                        className="translate-y-[2px]"
-                    />
-                );
-            },
+            header: ({ table }) => (
+                <Checkbox
+                    checked={table.getIsAllPageRowsSelected?.()}
+                    onCheckedChange={(value) => table.toggleAllPageRowsSelected?.(!!value)}
+                    aria-label="Select all"
+                />
+            ),
+            cell: ({ row }) => (
+                <Checkbox
+                    checked={row.getIsSelected?.()}
+                    onCheckedChange={(value) => row.toggleSelected?.(!!value)}
+                    aria-label="Select row"
+                />
+            ),
             enableSorting: false,
             enableHiding: false,
             size: 40,
@@ -606,11 +590,13 @@ export default function GestionServiciosPage() {
         if (selectedIds.length === 0) {
             toast.info("Selecciona al menos un servicio para asociar.");
             return;
-    }
+        }
         
         setSelectedServiceIds(selectedIds);
         setIsAssociateModalOpen(true);
     };
+
+
 
     // Determinar el número total de filas después del filtrado (antes de la paginación)
     const totalFilteredRows = table.getFilteredRowModel().rows.length;
@@ -618,28 +604,12 @@ export default function GestionServiciosPage() {
     // JSX para controles de tabla (Selector de Filas y Visibilidad de Columnas)
     const tableControlsJsx = (
         <div className="flex items-center justify-between mb-4">
-            {/* Selector de Filas por Página */}
-            <div className="flex items-center space-x-2">
-                <Select
-                    value={`${table.getState().pagination.pageSize}`}
-                    onValueChange={(value) => {
-                        table.setPageSize(Number(value));
-                    }}
-                >
-                    <SelectTrigger 
-                        className="h-8 w-[55px] text-xs ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                    >
-                        <SelectValue placeholder={table.getState().pagination.pageSize} />
-                    </SelectTrigger>
-                    <SelectContent side="bottom" className="w-auto min-w-[55px]">
-                        {[10, 15, 20, 30, 40, 50].map((pageSize) => (
-                            <SelectItem key={pageSize} value={`${pageSize}`} className="text-xs">
-                                {pageSize}
-                            </SelectItem>
-                        ))}
-                    </SelectContent>
-                </Select>
-            </div>
+            {/* ✅ NUEVO: Selector de filas por página movido a la izquierda */}
+            <PageSizeSelector
+                pageSize={table.getState().pagination.pageSize}
+                onPageSizeChange={(size) => table.setPageSize(size)}
+                itemType="servicios"
+            />
 
             {/* Dropdown de Visibilidad de Columnas */}
             <DropdownMenu>
@@ -648,7 +618,7 @@ export default function GestionServiciosPage() {
                         Columnas <ChevronDown className="w-4 h-4 ml-2" />
                     </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
+                <DropdownMenuContent align="end" className="z-[9999]">
                     {table.getAllColumns?.().filter(column => column.getCanHide()).map(column => ( 
                         <DropdownMenuCheckboxItem
                             key={column.id}
@@ -707,7 +677,7 @@ export default function GestionServiciosPage() {
                                 <CaretSortIcon className="w-4 h-4 ml-2 opacity-50 shrink-0" />
                             </Button>
                         </PopoverTrigger>
-                        <PopoverContent className="w-full p-0 md:w-[240px]" align="start">
+                        <PopoverContent className="w-full p-0 md:w-[240px] z-[9999]" align="start">
                             <Command>
                                 <CommandInput placeholder={t('services.filters.searchCategory')} />
                                 <CommandList>
@@ -789,68 +759,80 @@ export default function GestionServiciosPage() {
                 {tableControlsJsx}
 
                 {/* Contenedor de la tabla con scroll interno */}
-                <div className="overflow-x-auto overflow-y-auto relative border rounded-lg max-h-[60vh]">
-                    <Table className="min-w-full">
-                        <TableHeader className="sticky top-0 z-10 bg-card">
-                            {table.getHeaderGroups().map(headerGroup => (
-                                <TableRow key={headerGroup.id}>
-                                    {headerGroup.headers.map(header => (
-                                        <TableHead key={header.id} style={{ width: header.id === 'actions' ? '80px' : undefined}} className={cn(header.id === 'select' && 'text-center')}>
-                                            {header.isPlaceholder
-                                                ? null
-                                                : flexRender(
-                                                    header.column.columnDef.header,
-                                                    header.getContext()
-                                                )}
-                                        </TableHead>
-                                    ))}
-                                </TableRow>
-                            ))}
-                        </TableHeader>
-                        <TableBody>
-                            {table.getRowModel().rows?.length ? (
-                                table.getRowModel().rows.map(row => (
-                                    <TableRow
-                                        key={row.id}
-                                        data-state={row.getIsSelected() && "selected"}
-                                        className={cn(
-                                            isSelectionMode && existingServiceIdsInTariff.has(row.original.id) && !row.getIsSelected() && 'opacity-60 bg-gray-50 cursor-not-allowed',
-                                            isSelectionMode && !existingServiceIdsInTariff.has(row.original.id) && 'hover:bg-purple-50 cursor-pointer',
-                                            !isSelectionMode && 'hover:bg-gray-50',
-                                            row.getIsSelected() && isSelectionMode && 'bg-blue-100 hover:bg-blue-200',
-                                            row.getIsSelected() && !isSelectionMode && 'bg-blue-50'
-                                        )}
-                                        onClick={() => {
-                                            if (isSelectionMode && !existingServiceIdsInTariff.has(row.original.id)) {
-                                                row.toggleSelected();
-                                            } else if (!isSelectionMode && row.getCanSelect()) {
-                                                row.toggleSelected();
-                                            }
-                                        }}
-                                    >
-                                        {row.getVisibleCells().map(cell => (
-                                            <TableCell key={cell.id} className={cn(cell.column.id === 'select' && 'text-center')}>
-                                                {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                                            </TableCell>
+                <div className="overflow-x-auto overflow-y-auto relative border rounded-lg max-h-[60vh] min-w-full">
+                    {/* Scroll horizontal siempre visible */}
+                    <div className="overflow-x-auto">
+                        <Table className="min-w-full">
+                            <TableHeader className="sticky top-0 z-10 bg-card">
+                                {table.getHeaderGroups().map(headerGroup => (
+                                    <TableRow key={headerGroup.id}>
+                                        {headerGroup.headers.map(header => (
+                                            <TableHead key={header.id} style={{ width: header.id === 'actions' ? '80px' : undefined, minWidth: header.id === 'select' ? '50px' : '100px' }} className={cn(header.id === 'select' && 'text-center')}>
+                                                {header.isPlaceholder
+                                                    ? null
+                                                    : flexRender(
+                                                        header.column.columnDef.header,
+                                                        header.getContext()
+                                                    )}
+                                            </TableHead>
                                         ))}
                                     </TableRow>
-                                ))
-                            ) : (
-                                <TableRow>
-                                    <TableCell colSpan={columns.length} className="h-24 text-center">
-                                        {isLoading ? t('common.loading') : t('services.noServicesFound')}
-                                    </TableCell>
-                                </TableRow>
-                            )}
-                        </TableBody>
-                    </Table>
+                                ))}
+                            </TableHeader>
+                            <TableBody>
+                                {table.getRowModel().rows?.length ? (
+                                    table.getRowModel().rows.map(row => (
+                                        <TableRow
+                                            key={row.id}
+                                            data-state={row.getIsSelected() && "selected"}
+                                            className={cn(
+                                                isSelectionMode && existingServiceIdsInTariff.has(row.original.id) && !row.getIsSelected() && 'opacity-60 bg-gray-50 cursor-not-allowed',
+                                                isSelectionMode && !existingServiceIdsInTariff.has(row.original.id) && 'hover:bg-purple-50 cursor-pointer',
+                                                !isSelectionMode && 'hover:bg-gray-50',
+                                                row.getIsSelected() && isSelectionMode && 'bg-blue-100 hover:bg-blue-200',
+                                                row.getIsSelected() && !isSelectionMode && 'bg-blue-50'
+                                            )}
+                                            onClick={(e) => {
+                                                // Evitar activación si el click viene de las acciones
+                                                if ((e.target as HTMLElement).closest('button')) {
+                                                    return;
+                                                }
+                                                
+                                                if (isSelectionMode && !existingServiceIdsInTariff.has(row.original.id)) {
+                                                    row.toggleSelected();
+                                                } else if (!isSelectionMode && row.getCanSelect()) {
+                                                    row.toggleSelected();
+                                                }
+                                            }}
+                                        >
+                                            {row.getVisibleCells().map(cell => (
+                                                <TableCell key={cell.id} className={cn(cell.column.id === 'select' && 'text-center')}>
+                                                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                                                </TableCell>
+                                            ))}
+                                        </TableRow>
+                                    ))
+                                ) : (
+                                    <TableRow>
+                                        <TableCell colSpan={columns.length} className="h-24 text-center">
+                                            {isLoading ? t('common.loading') : t('services.noServicesFound')}
+                                        </TableCell>
+                                    </TableRow>
+                                )}
+                            </TableBody>
+                        </Table>
+                    </div>
                 </div>
 
                 {/* Paginación */}
                 {services.length > 0 && (
                     <div className="flex items-center justify-end mt-0.5">
                         <PaginationControls 
-                            table={table}
+                            currentPage={table.getState().pagination.pageIndex + 1}
+                            totalPages={table.getPageCount()}
+                            onPageChange={(page) => table.setPageIndex(page - 1)}
+                            totalCount={table.getFilteredRowModel().rows.length}
+                            itemType="servicios"
                         />
                     </div>
                 )}
@@ -885,6 +867,43 @@ export default function GestionServiciosPage() {
                 </Button>
 
                 <div className="flex order-4 gap-2">
+                    {/* ✅ NUEVO: Dropdown de acciones masivas */}
+                    {!isSelectionMode && (
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button 
+                                    disabled={table.getSelectedRowModel().rows.length === 0}
+                                    className={cn(
+                                        "text-white",
+                                        table.getSelectedRowModel().rows.length > 0 
+                                            ? "bg-orange-600 hover:bg-orange-700" 
+                                            : "bg-gray-400 cursor-not-allowed"
+                                    )}
+                                >
+                                    <Settings2 className="w-4 h-4 mr-2" />
+                                    Acciones ({table.getSelectedRowModel().rows.length})
+                                    <ChevronDown className="w-4 h-4 ml-2" />
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="z-[9999]">
+                                <DropdownMenuItem 
+                                    onClick={() => setShowBulkCategoryChanger(true)}
+                                    disabled={table.getSelectedRowModel().rows.length === 0}
+                                >
+                                    <Edit3 className="w-4 h-4 mr-2" />
+                                    Cambiar Categoría
+                                </DropdownMenuItem>
+                                <DropdownMenuItem 
+                                    onClick={handleOpenAssociateModal}
+                                    disabled={table.getSelectedRowModel().rows.length === 0}
+                                >
+                                    <PackageCheck className="w-4 h-4 mr-2" />
+                                    Asociar a Tarifa
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    )}
+                    
                     {isSelectionMode && (
                         <Button 
                             onClick={handleAddSelectedToTariff}
@@ -893,22 +912,6 @@ export default function GestionServiciosPage() {
                         >
                             {addServicesMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />}
                             {t('services.actions.addSelectedToTariff')} {table.getFilteredSelectedRowModel().rows.length > 0 ? `(${table.getFilteredSelectedRowModel().rows.length})` : ''}
-                        </Button>
-                    )}
-                    {!isSelectionMode && (
-                        <Button 
-                            onClick={handleOpenAssociateModal}
-                            disabled={table.getFilteredSelectedRowModel().rows.length === 0}
-                            className={cn(
-                                "text-white",
-                                table.getFilteredSelectedRowModel().rows.length > 0 
-                                    ? "bg-purple-600 hover:bg-purple-700" 
-                                    : "bg-purple-300 text-purple-100 cursor-not-allowed"
-                            )}
-                        >
-                            <PackageCheck className="w-4 h-4 mr-2" />
-                            {t('services.actions.associateToTariff')} 
-                            {table.getFilteredSelectedRowModel().rows.length > 0 ? `(${table.getFilteredSelectedRowModel().rows.length})` : ''}
                         </Button>
                     )}
                 </div>
@@ -947,6 +950,61 @@ export default function GestionServiciosPage() {
                     }}
                 />
             )}
+
+            {/* ✅ NUEVO: Modal para cambio masivo de categorías */}
+            <BulkCategoryChanger
+                isOpen={showBulkCategoryChanger}
+                onClose={() => setShowBulkCategoryChanger(false)}
+                selectedItems={table.getSelectedRowModel().rows.map(row => ({
+                    id: row.original.id,
+                    name: row.original.name,
+                    type: 'service' as const,
+                    categoryId: row.original.categoryId,
+                    categoryName: row.original.categoryName || 'Sin categoría'
+                }))}
+                onUpdate={async (itemIds: string[], newCategoryId: string | null) => {
+                    try {
+                        const response = await fetch('/api/bulk/change-category', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({
+                                itemIds: itemIds,
+                                itemType: 'service',
+                                newCategoryId,
+                            }),
+                        });
+
+                        if (!response.ok) {
+                            throw new Error('Error al cambiar categorías');
+                        }
+
+                        const result = await response.json();
+                        toast.success(result.message || 'Categorías cambiadas exitosamente');
+                        
+                        // Actualización inmediata y forzada de datos
+                        await Promise.all([
+                            queryClient.invalidateQueries({ queryKey: ['services'] }),
+                            queryClient.invalidateQueries({ queryKey: ['categories'] }),
+                        ]);
+                        
+                        // Forzar refetch inmediato para ver los cambios
+                        await Promise.all([
+                            queryClient.refetchQueries({ queryKey: ['services'] }),
+                            queryClient.refetchQueries({ queryKey: ['categories'] }),
+                        ]);
+                        
+                        table.resetRowSelection();
+                        setShowBulkCategoryChanger(false);
+                    } catch (error) {
+                        console.error('Error:', error);
+                        toast.error('Error al cambiar categorías');
+                    }
+                }}
+                categories={categoriesData}
+                itemType="service"
+            />
     </div>
     );
 }

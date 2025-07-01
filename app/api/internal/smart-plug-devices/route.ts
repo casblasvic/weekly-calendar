@@ -32,7 +32,11 @@ export async function GET(request: NextRequest) {
                 take: pageSize,
                 include: {
                     equipmentClinicAssignment: {
-                        include: {
+                        select: {
+                            id: true,
+                            clinicId: true,
+                            deviceName: true,
+                            serialNumber: true, // ✅ INCLUIR serialNumber para formato completo
                             equipment: {
                                 select: {
                                     id: true,

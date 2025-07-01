@@ -24,7 +24,16 @@ type ServiceWithDetails = Prisma.ServiceGetPayload<{
     include: {
         category: true;
         vatType: true;
-        settings: true;
+        settings: {
+            include: {
+                equipmentRequirements: { 
+                    include: { equipment: true } 
+                };
+                skillRequirements: { 
+                    include: { skill: true } 
+                };
+            }
+        };
     }
 }>
 // --- Fin definición tipo ---
@@ -97,6 +106,19 @@ export default function EditarServicioPage() {
 
             const serviceIsActive = serviceData.settings?.isActive ?? true;
 
+            // ✅ NUEVO: Extraer el primer equipamiento requerido (asumiendo uno por servicio)
+            const firstEquipmentRequirement = serviceData.settings?.equipmentRequirements?.[0];
+            const equipmentId = firstEquipmentRequirement?.equipmentId || null;
+
+            console.log("🔍 [Service Edit] Datos cargados:", {
+                serviceId: serviceData.id,
+                serviceName: serviceData.name,
+                settingsExists: !!serviceData.settings,
+                equipmentRequirementsCount: serviceData.settings?.equipmentRequirements?.length || 0,
+                firstEquipmentId: equipmentId,
+                equipmentName: firstEquipmentRequirement?.equipment?.name || 'Sin equipamiento'
+            });
+
             const formattedInitialData: ServiceFormData = {
                 id: serviceData.id,
                 name: serviceData.name,
@@ -107,13 +129,13 @@ export default function EditarServicioPage() {
                 color: serviceData.colorCode,
                 basePrice: serviceData.price,
                 
-                equipmentId: null,
-                commissionType: null,
-                commissionValue: null,
-                requiresParams: false,
-                isValuationVisit: false,
-                showInApp: true,
-                allowAutomaticDiscounts: true,
+                equipmentId: equipmentId, // ✅ CORREGIDO: Leer desde equipmentRequirements
+                commissionType: serviceData.settings?.commissionType || null,
+                commissionValue: serviceData.settings?.commissionValue || null,
+                requiresParams: serviceData.settings?.requiresParams || false,
+                isValuationVisit: false, // TODO: Añadir campo si es necesario
+                showInApp: serviceData.settings?.appearsInApp ?? true,
+                allowAutomaticDiscounts: true, // TODO: Añadir campos si son necesarios
                 allowManualDiscounts: true,
                 acceptsPromotions: true,
                 allowPvpEditing: false,
@@ -141,11 +163,49 @@ export default function EditarServicioPage() {
         if (!serviceId) return;
         setIsSaving(true);
         console.log("Datos a enviar para actualizar servicio:", data);
+        
+        // 🔧 TRANSFORMAR datos de ServiceFormData al formato API
+        const transformedData = {
+            // Campos básicos del servicio
+            name: data.name,
+            code: data.code || null,
+            description: null, // ServiceFormData no tiene description actualmente
+            durationMinutes: Number(data.duration) || 1, // ✅ duration → durationMinutes
+            price: data.basePrice !== null ? Number(data.basePrice) : null, // ✅ basePrice → price
+            colorCode: data.color || null, // ✅ color → colorCode
+            categoryId: data.categoryId || null,
+            vatTypeId: data.defaultVatId || null, // ✅ defaultVatId → vatTypeId
+            
+            // Equipamiento y habilidades (arrays para relaciones M-M)
+            equipmentIds: data.equipmentId ? [data.equipmentId] : [], // ✅ Convertir a array
+            skillIds: [], // Por ahora vacío
+            
+            // ✅ NUEVO: Settings object que falta
+            settings: {
+                requiresMedicalSignOff: !!data.requiresParams,
+                pointsAwarded: 0, // Por defecto
+                commissionType: data.commissionType || null,
+                commissionValue: data.commissionValue !== null ? Number(data.commissionValue) : null,
+                requiresParams: !!data.requiresParams,
+                appearsInApp: !!data.showInApp,
+                autoAddToInvoice: false, // Por defecto
+                onlineBookingEnabled: !!data.showInApp,
+                minTimeBeforeBooking: null,
+                maxTimeBeforeBooking: null,
+                cancellationPolicy: null,
+                preparationTimeMinutes: null,
+                cleanupTimeMinutes: null,
+                internalNotes: null,
+            } as any // ✅ Temporalmente usar any para evitar conflictos de tipo
+        };
+
+        console.log("Datos transformados para API:", transformedData);
+        
         try {
             const response = await fetch(`/api/services/${serviceId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data),
+                body: JSON.stringify(transformedData),
             });
 
             if (!response.ok) {
@@ -190,7 +250,7 @@ export default function EditarServicioPage() {
 
     const renderFormSkeleton = () => (
          <div className="space-y-6">
-             <Skeleton className="w-1/4 h-10 mb-4" />
+             <Skeleton className="mb-4 w-1/4 h-10" />
              <Card>
                  <CardContent className="grid grid-cols-1 gap-4 p-6 md:grid-cols-2">
                      <Skeleton className="w-full h-10" />
@@ -199,7 +259,7 @@ export default function EditarServicioPage() {
                      <Skeleton className="w-full h-10 md:col-span-2" />
                  </CardContent>
              </Card>
-             <Skeleton className="w-1/4 h-10 mb-4" />
+             <Skeleton className="mb-4 w-1/4 h-10" />
              <Card>
                  <CardContent className="grid grid-cols-1 gap-4 p-6 sm:grid-cols-3">
                      <Skeleton className="w-full h-10" />
@@ -210,13 +270,13 @@ export default function EditarServicioPage() {
                      <Skeleton className="w-full h-10 md:col-span-1" />
                  </CardContent>
              </Card>
-             <Skeleton className="w-1/4 h-10 mb-4" />
+             <Skeleton className="mb-4 w-1/4 h-10" />
          </div>
     );
 
     return (
         <>
-            <div className="max-w-4xl p-4 pb-20 mx-auto md:p-6">
+            <div className="p-4 pb-20 mx-auto max-w-4xl md:p-6">
                 <h1 className="mb-6 text-2xl font-semibold">
                     {isLoading ? t('common.loading') : (initialData ? t('services.edit.title', { serviceName: initialData.name }) : t('services.edit.loadError'))}
                 </h1>

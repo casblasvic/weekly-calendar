@@ -634,6 +634,7 @@ model Equipment {
   spareParts         EquipmentSparePart[]
   usageLog           EquipmentUsageLog?
   clinicAssignments  EquipmentClinicAssignment[]
+  categoriesUsing    Category[]                    @relation("CategoryEquipmentType") // ✅ NUEVO: Relación inversa
 
   @@unique([name, systemId])
   @@index([systemId])
@@ -962,6 +963,7 @@ model Service {
 model ServiceSetting {
   id                     String                        @id @default(cuid())
   serviceId              String                        @unique
+  isActive               Boolean                       @default(true)  // ✅ NUEVO: Campo para activar/desactivar servicios
   requiresMedicalSignOff Boolean                       @default(false)
   pointsAwarded          Int                           @default(0)
   commissionType         String?
@@ -1937,9 +1939,12 @@ model Category {
   createdAt               DateTime                 @default(now())
   updatedAt               DateTime                 @updatedAt
   parentId                String?
+  equipmentTypeId         String?                  // ✅ NUEVO: Referencia al tipo de equipamiento
+  type                    CategoryType             @default(MIXED) // ✅ NUEVO: Tipo de categoría
   system                  System                   @relation(fields: [systemId], references: [id], onDelete: Cascade)
   parent                  Category?                @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   children                Category[]               @relation("CategoryHierarchy")
+  equipmentType           Equipment?               @relation("CategoryEquipmentType", fields: [equipmentTypeId], references: [id], onDelete: SetNull)
   services                Service[]
   products                Product[]
   targetedPromotions      Promotion[]              @relation("TargetCategory")
@@ -1948,6 +1953,7 @@ model Category {
   @@unique([name, systemId])
   @@index([systemId])
   @@index([parentId])
+  @@index([equipmentTypeId])
   @@map("categories")
 }
 
@@ -3454,4 +3460,10 @@ model WebSocketLog {
   @@index([eventType])
   @@index([createdAt])
   @@map("websocket_logs")
+}
+
+enum CategoryType {
+  SERVICE
+  PRODUCT
+  MIXED
 }

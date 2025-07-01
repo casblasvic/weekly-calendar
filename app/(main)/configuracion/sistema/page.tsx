@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app
 import { Label } from '@/app/components/ui/label'
 import { Input } from '@/app/components/ui/input'
 import { toast } from '@/app/components/ui/use-toast'
-import { ColorPicker } from '@/app/components/ui/color-picker'
+import { ColorPicker } from '@/components/ui/color-picker'
 import { LogoUploader } from '@/app/components/ui/logo-uploader'
 import { ThemeTemplate } from '@/app/components/ui/theme-template'
 import { useTheme, ThemeConfig, ThemeProvider } from '@/app/contexts/theme-context'
@@ -27,11 +27,11 @@ export default function SistemaPage() {
   // Si no está montado, muestra un placeholder
   if (!mounted) {
     return (
-      <div className="container mx-auto py-8 px-4">
-        <h1 className="text-2xl font-semibold mb-2">Configuración del Sistema</h1>
-        <p className="text-gray-600 mb-6">Cargando opciones...</p>
-        <div className="h-96 flex items-center justify-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-600"></div>
+      <div className="container px-4 py-8 mx-auto">
+        <h1 className="mb-2 text-2xl font-semibold">Configuración del Sistema</h1>
+        <p className="mb-6 text-gray-600">Cargando opciones...</p>
+        <div className="flex justify-center items-center h-96">
+          <div className="w-12 h-12 rounded-full border-t-2 border-b-2 border-purple-600 animate-spin"></div>
         </div>
       </div>
     );
@@ -124,7 +124,7 @@ function SistemaPageContent() {
     <div className="space-y-4">
       <p>Esta sección te permite personalizar la apariencia visual del sistema:</p>
       
-      <ul className="list-disc pl-5 space-y-2">
+      <ul className="pl-5 space-y-2 list-disc">
         <li><strong>Logo del sistema:</strong> Cambia el logo que aparece en la barra superior y los informes.</li>
         <li><strong>Colores principales:</strong> Personaliza los colores primarios, secundarios y de acento del sistema.</li>
         <li><strong>Colores de texto y fondo:</strong> Ajusta los colores del texto y fondo de la aplicación.</li>
@@ -132,9 +132,9 @@ function SistemaPageContent() {
       
       <p>Los cambios se aplicarán inmediatamente al guardar y se mantendrán entre sesiones.</p>
       
-      <div className="bg-amber-50 border-l-4 border-amber-400 p-4 text-amber-700">
+      <div className="p-4 text-amber-700 bg-amber-50 border-l-4 border-amber-400">
         <h4 className="font-semibold">Recomendaciones:</h4>
-        <ul className="list-disc pl-5 mt-2">
+        <ul className="pl-5 mt-2 list-disc">
           <li>Usa colores con buen contraste para mejorar la legibilidad.</li>
           <li>El logo debe tener un formato PNG, JPEG, GIF o SVG y no superar los 2MB.</li>
           <li>Puedes ver una vista previa de tus cambios antes de guardarlos.</li>
@@ -144,10 +144,10 @@ function SistemaPageContent() {
   );
 
   return (
-    <div className="container mx-auto pb-24" style={{ marginLeft: 'var(--sidebar-width, 0px)' }}>
+    <div className="container pb-24 mx-auto" style={{ marginLeft: 'var(--sidebar-width, 0px)' }}>
       <div className="px-4 py-8">
-        <h1 className="text-2xl font-semibold mb-2">Configuración del Sistema</h1>
-        <p className="text-gray-600 mb-6">
+        <h1 className="mb-2 text-2xl font-semibold">Configuración del Sistema</h1>
+        <p className="mb-6 text-gray-600">
           Personaliza la apariencia y configuración general del sistema
         </p>
         
@@ -157,7 +157,7 @@ function SistemaPageContent() {
           onValueChange={setActiveTab}
           className="space-y-6"
         >
-          <TabsList className="grid w-full grid-cols-3 max-w-md">
+          <TabsList className="grid grid-cols-3 w-full max-w-md">
             <TabsTrigger value="apariencia">Apariencia</TabsTrigger>
             <TabsTrigger value="almacenamiento">Almacenamiento</TabsTrigger>
             <TabsTrigger value="general">General</TabsTrigger>
@@ -165,7 +165,7 @@ function SistemaPageContent() {
           
           {/* Pestaña de apariencia */}
           <TabsContent value="apariencia" className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
               {/* Columna de formulario */}
               <div className="space-y-6">
                 <Card>
@@ -347,30 +347,30 @@ function SistemaPageContent() {
                       </p>
                     </div>
                     
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      <div className="p-2 border rounded-md flex flex-col items-center space-y-2">
+                    <div className="flex flex-wrap gap-2 mt-4">
+                      <div className="flex flex-col items-center p-2 space-y-2 rounded-md border">
                         <span className="text-xs font-medium">Botón Primario</span>
                         <button 
-                          className="btn-primary h-8 px-3 rounded-md text-sm"
+                          className="px-3 h-8 text-sm rounded-md btn-primary"
                           style={{backgroundColor: tempTheme.buttonPrimaryColor}}
                         >
                           Guardar
                         </button>
                       </div>
                       
-                      <div className="p-2 border rounded-md flex flex-col items-center space-y-2">
+                      <div className="flex flex-col items-center p-2 space-y-2 rounded-md border">
                         <span className="text-xs font-medium">Botón Secundario</span>
                         <button 
-                          className="btn-secondary h-8 px-3 rounded-md text-sm"
+                          className="px-3 h-8 text-sm rounded-md btn-secondary"
                           style={{backgroundColor: tempTheme.buttonSecondaryColor}}
                         >
                           Cancelar
                         </button>
                       </div>
                       
-                      <div className="p-2 border rounded-md flex flex-col items-center space-y-2">
+                      <div className="flex flex-col items-center p-2 space-y-2 rounded-md border">
                         <span className="text-xs font-medium">Botón Volver</span>
-                        <button className="btn-back btn-secondary h-8 px-3 rounded-md text-sm flex items-center gap-1" style={{backgroundColor: tempTheme.buttonSecondaryColor}}>
+                        <button className="flex gap-1 items-center px-3 h-8 text-sm rounded-md btn-back btn-secondary" style={{backgroundColor: tempTheme.buttonSecondaryColor}}>
                           <span className="w-4 h-4">←</span>
                           <span>Volver</span>
                         </button>
@@ -459,12 +459,12 @@ function SistemaPageContent() {
               {/* Columna de vista previa */}
               <div className="space-y-4">
                 <div className="p-4 bg-gray-50 rounded-lg">
-                  <h3 className="text-sm font-medium mb-2">Vista previa</h3>
+                  <h3 className="mb-2 text-sm font-medium">Vista previa</h3>
                   <ThemeTemplate 
                     theme={tempTheme} 
                     className="w-full"
                   />
-                  <p className="text-xs text-gray-500 mt-2">
+                  <p className="mt-2 text-xs text-gray-500">
                     Esta es una simulación de cómo se verá el sistema con los colores seleccionados.
                   </p>
                 </div>
@@ -495,7 +495,7 @@ function SistemaPageContent() {
                         <div className="font-medium">Color principal:</div>
                         <div className="flex items-center">
                           <div 
-                            className="w-4 h-4 rounded-full mr-2 border" 
+                            className="mr-2 w-4 h-4 rounded-full border" 
                             style={{ backgroundColor: tempTheme.primaryColor }}
                           ></div>
                           <code className="text-xs bg-gray-100 px-1 py-0.5 rounded">
@@ -508,7 +508,7 @@ function SistemaPageContent() {
                         <div className="font-medium">Color secundario:</div>
                         <div className="flex items-center">
                           <div 
-                            className="w-4 h-4 rounded-full mr-2 border" 
+                            className="mr-2 w-4 h-4 rounded-full border" 
                             style={{ backgroundColor: tempTheme.secondaryColor }}
                           ></div>
                           <code className="text-xs bg-gray-100 px-1 py-0.5 rounded">
@@ -521,7 +521,7 @@ function SistemaPageContent() {
                         <div className="font-medium">Color de acento:</div>
                         <div className="flex items-center">
                           <div 
-                            className="w-4 h-4 rounded-full mr-2 border" 
+                            className="mr-2 w-4 h-4 rounded-full border" 
                             style={{ backgroundColor: tempTheme.accentColor }}
                           ></div>
                           <code className="text-xs bg-gray-100 px-1 py-0.5 rounded">
@@ -536,7 +536,7 @@ function SistemaPageContent() {
                         <div className="font-medium">Color de texto:</div>
                         <div className="flex items-center">
                           <div 
-                            className="w-4 h-4 rounded-full mr-2 border" 
+                            className="mr-2 w-4 h-4 rounded-full border" 
                             style={{ backgroundColor: tempTheme.textColor }}
                           ></div>
                           <code className="text-xs bg-gray-100 px-1 py-0.5 rounded">
@@ -549,7 +549,7 @@ function SistemaPageContent() {
                         <div className="font-medium">Color de fondo:</div>
                         <div className="flex items-center">
                           <div 
-                            className="w-4 h-4 rounded-full mr-2 border" 
+                            className="mr-2 w-4 h-4 rounded-full border" 
                             style={{ backgroundColor: tempTheme.backgroundColor }}
                           ></div>
                           <code className="text-xs bg-gray-100 px-1 py-0.5 rounded">
@@ -607,7 +607,7 @@ function SistemaPageContent() {
                   Esta sección permite configurar las opciones relacionadas con el almacenamiento de archivos
                   y la gestión de documentos del sistema.
                 </p>
-                <div className="mt-4 py-8 text-center text-gray-500 border border-dashed rounded-md">
+                <div className="py-8 mt-4 text-center text-gray-500 rounded-md border border-dashed">
                   Funcionalidad en desarrollo
                 </div>
               </CardContent>
@@ -627,7 +627,7 @@ function SistemaPageContent() {
                 <p className="text-sm text-gray-600">
                   Esta sección permite configurar opciones generales del sistema como idioma, zona horaria, etc.
                 </p>
-                <div className="mt-4 py-8 text-center text-gray-500 border border-dashed rounded-md">
+                <div className="py-8 mt-4 text-center text-gray-500 rounded-md border border-dashed">
                   Funcionalidad en desarrollo
                 </div>
               </CardContent>

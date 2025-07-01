@@ -10,11 +10,12 @@ export function useProductsQuery(options?: Omit<UseQueryOptions<ProductWithInclu
   return useQuery<ProductWithIncludes[], unknown, ProductWithIncludes[]>({
     queryKey: ['products'],
     queryFn: async (): Promise<ProductWithIncludes[]> => {
-      const data = await api.cached.get('/api/products');
+      const data = await api.get('/api/products');
       return data as ProductWithIncludes[];
     },
-    staleTime: CACHE_TIME.MEDIO,
-    refetchOnWindowFocus: false,
+    staleTime: 1000 * 60 * 2, // 2 minutos (reducido para mejor actualización)
+    refetchOnMount: false, // No refrescar automáticamente al montar
+    refetchOnWindowFocus: false, // No refrescar al cambiar ventana
     ...options,
   });
 }
@@ -27,10 +28,10 @@ export function useProductDetailQuery(productId: string | null, options?: Omit<U
     queryKey: ['product', productId],
     queryFn: async () => {
       if (!productId) throw new Error('Product ID is required');
-      return await api.cached.get(`/api/products/${productId}`);
+      return await api.get(`/api/products/${productId}`);
     },
     enabled: !!productId,
-    staleTime: 1000 * 60 * 5, // 5 minutos
+    staleTime: 1000 * 60 * 1, // 1 minuto (reducido para mejor actualización)
     retry: (failureCount, error: any) => {
       // No reintentar en caso de 404
       if (error?.response?.status === 404) return false;
@@ -69,10 +70,46 @@ export function useUpdateProductMutation(productId: string) {
       const response = await api.patch(`/api/products/${productId}`, data);
       return response as ProductWithIncludes;
     },
+    // Actualización optimista para respuesta inmediata
+    onMutate: async (data) => {
+      // Cancelar queries en curso
+      await queryClient.cancelQueries({ queryKey: ['products'] });
+      await queryClient.cancelQueries({ queryKey: ['product', productId] });
+
+      // Obtener datos previos
+      const previousProducts = queryClient.getQueryData(['products']);
+      const previousProduct = queryClient.getQueryData(['product', productId]);
+
+      // Actualizar optimísticamente la lista de productos
+      queryClient.setQueryData(['products'], (old: any[]) => {
+        if (!old || !Array.isArray(old)) return old;
+        return old.map(product => 
+          product.id === productId ? { ...product, ...data } : product
+        );
+      });
+
+      // Actualizar optimísticamente el producto individual
+      queryClient.setQueryData(['product', productId], (old: any) => {
+        if (!old) return old;
+        return { ...old, ...data };
+      });
+
+      return { previousProducts, previousProduct, productId };
+    },
+    onError: (err, variables, context: any) => {
+      // Revertir en caso de error
+      if (context?.previousProducts) {
+        queryClient.setQueryData(['products'], context.previousProducts);
+      }
+      if (context?.previousProduct) {
+        queryClient.setQueryData(['product', context.productId], context.previousProduct);
+      }
+    },
     onSuccess: (_, variables) => {
-      // Invalidar consultas relacionadas con este producto
+      // Invalidar para obtener datos actualizados del servidor
       queryClient.invalidateQueries({ queryKey: ['product', variables.id] });
       queryClient.invalidateQueries({ queryKey: ['products'] });
+      queryClient.invalidateQueries({ queryKey: ['categories'] }); // Por si cambió la categoría
     }
   });
 }
@@ -88,10 +125,35 @@ export function useDeleteProductMutation() {
       const response = await api.delete(`/api/products/${id}`);
       return response;
     },
+    // Actualización optimista para respuesta inmediata
+    onMutate: async (id) => {
+      // Cancelar queries en curso
+      await queryClient.cancelQueries({ queryKey: ['products'] });
+      await queryClient.cancelQueries({ queryKey: ['product', id] });
+
+      // Obtener datos previos
+      const previousProducts = queryClient.getQueryData(['products']);
+
+      // Remover optimísticamente de la lista
+      queryClient.setQueryData(['products'], (old: any[]) => {
+        if (!old || !Array.isArray(old)) return old;
+        return old.filter(product => product.id !== id);
+      });
+
+      return { previousProducts, id };
+    },
+    onError: (err, id, context: any) => {
+      // Revertir en caso de error
+      if (context?.previousProducts) {
+        queryClient.setQueryData(['products'], context.previousProducts);
+      }
+    },
     onSuccess: (_, id) => {
-      // Invalidar consultas relacionadas con productos
+      // Limpiar datos específicos del producto eliminado
+      queryClient.removeQueries({ queryKey: ['product', id] });
+      // Invalidar consultas relacionadas
       queryClient.invalidateQueries({ queryKey: ['products'] });
-      queryClient.invalidateQueries({ queryKey: ['product', id] });
+      queryClient.invalidateQueries({ queryKey: ['categories'] }); // Por si cambió el tipo de categoría
     }
   });
 }
@@ -105,7 +167,7 @@ export function useProductStockQuery(productId: string | null, options?: Omit<Us
     queryFn: async () => {
       if (!productId) throw new Error('Product ID is required');
       // Suponiendo que existe un endpoint para obtener el stock específico
-      return await api.cached.get(`/api/products/${productId}/stock`);
+      return await api.get(`/api/products/${productId}/stock`);
     },
     enabled: !!productId,
     staleTime: 1000 * 60, // 1 minuto (el stock cambia con más frecuencia)

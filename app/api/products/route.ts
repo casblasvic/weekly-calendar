@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { z } from 'zod'; // Añadir Zod
 import { getServerAuthSession } from "@/lib/auth"; // Importar helper de sesión
 import { ApiProductPayloadSchema, ProductFormValues } from '@/lib/schemas/product'; // <<< Importar nuevo schema
+import { updateCategoryTypeIfNeeded } from '@/utils/category-type-calculator';
 // import { getCurrentUserSystemId } from '@/lib/auth'; // TODO: Ajustar ruta de importación
 
 export async function GET(request: Request) {
@@ -18,6 +19,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const isActiveParam = searchParams.get('isActive');
     const categoryIdParam = searchParams.get('categoryId');
+    const simplified = searchParams.get('simplified') === 'true'; // ✅ NUEVO: Versión simplificada
 
     let whereClause: Prisma.ProductWhereInput = {
         systemId: systemId,
@@ -37,29 +39,53 @@ export async function GET(request: Request) {
     }
 
     try {
-        const products = await prisma.product.findMany({
-            where: whereClause, 
-            include: {
-                category: true,
-                vatType: true, 
-                settings: true, // <<< Incluir settings
-                productPrices: { // Corregido de tariffPrices a productPrices (según schema)
-                    where: { isActive: true }, // Solo mostrar tarifas donde el producto esté activo
-                    select: {
-                        tariff: {
-                            select: {
-                                id: true,
-                                name: true,
-                            },
-                        },
-                    },
-                },
+        if (simplified) {
+          // ✅ Consulta simplificada usando solo select
+          const products = await prisma.product.findMany({
+            where: whereClause,
+            select: {
+              id: true,
+              name: true,
+              price: true,
+              sku: true,
+              barcode: true,
+              settings: {
+                select: {
+                  isActive: true
+                }
+              },
             },
             orderBy: {
-                name: 'asc',
+              name: 'asc',
             },
-        });
-        return NextResponse.json(products);
+          });
+          return NextResponse.json(products);
+        } else {
+          // ✅ Consulta completa usando solo include
+          const products = await prisma.product.findMany({
+              where: whereClause, 
+              include: {
+                  category: true,
+                  vatType: true, 
+                  settings: true,
+                  productPrices: {
+                      where: { isActive: true },
+                      select: {
+                          tariff: {
+                              select: {
+                                  id: true,
+                                  name: true,
+                              },
+                          },
+                      },
+                  },
+              },
+              orderBy: {
+                  name: 'asc',
+              },
+          });
+          return NextResponse.json(products);
+        }
     } catch (error) {
         console.error("Error al obtener productos:", error);
         return NextResponse.json({ message: 'Error interno del servidor al obtener productos' }, { status: 500 });
@@ -136,6 +162,16 @@ export async function POST(request: Request) {
                 vatType: true 
             },
         });
+
+        // 🔄 NUEVO: Actualizar automáticamente el tipo de categoría
+        if (categoryId) {
+          try {
+            await updateCategoryTypeIfNeeded(categoryId, systemId);
+          } catch (error) {
+            console.error("❌ [AutoCategoryType] Error actualizando tipo de categoría:", error);
+            // No fallar la operación principal por este error
+          }
+        }
 
         return NextResponse.json(finalProductResponse, { status: 201 });
 

@@ -8,11 +8,14 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Check, ChevronsUpDown } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { toast as sonnerToast } from "sonner";
-import { HelpCircle } from 'lucide-react'; // Para el icono de ayuda
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+// ✅ ELIMINADO: Imports de tooltips para implementación global futura
 
 // Tipo ampliado para el producto que puede venir con relaciones
 type ProductWithRelations = Product & {
@@ -92,6 +95,9 @@ export function ProductForm({ initialData, isSaving, onSubmit }: ProductFormProp
     const [vatTypes, setVatTypes] = useState<VATType[]>([]);
     // TODO: Cargar otros datos necesarios (tipos de comisión, tarifas planas, tipos de consumo?)
     const [isLoadingDropdowns, setIsLoadingDropdowns] = useState(false);
+    const [openCategoryCombobox, setOpenCategoryCombobox] = useState(false);
+    const [openVatCombobox, setOpenVatCombobox] = useState(false);
+    const [openPurchaseVatCombobox, setOpenPurchaseVatCombobox] = useState(false);
 
     // Cargar datos para selects
     useEffect(() => {
@@ -198,15 +204,24 @@ export function ProductForm({ initialData, isSaving, onSubmit }: ProductFormProp
             return;
         }
         
-        // TODO: Transformar formData (ej: calcular precios base desde precios con IVA)
-        // antes de llamar a onSubmit. Esto es crucial.
+        // Transformar formData para que coincida con el schema de la API
         const dataToSubmit = {
-             ...formData, 
-             isActive: !formData.isDisabled, // Mapear isDisabled a isActive
-             price: parseFloat(formData.priceWithVat?.toString() || '0'), // ¡Cálculo incorrecto! Necesita lógica de IVA
-             costPrice: parseFloat(formData.costPriceWithVat?.toString() || '0'), // ¡Cálculo incorrecto!
-             barcode: formData.ean,
-             // ... asegurar que todos los campos coinciden con el API
+            name: formData.name,
+            description: null, // Por ahora no hay campo de descripción
+            sku: formData.sku,
+            barcode: formData.ean,
+            price: parseFloat(formData.priceWithVat?.toString() || '0'),
+            costPrice: parseFloat(formData.costPriceWithVat?.toString() || '0'),
+            categoryId: formData.categoryId,
+            vatTypeId: formData.vatTypeId,
+            settings: {
+                isActive: !formData.isDisabled,
+                isForSale: formData.isForSale,
+                isInternalUse: formData.isInternalUse,
+                currentStock: 0, // Valor por defecto
+                minStockThreshold: null, // Valor por defecto
+                pointsAwarded: 0, // Valor por defecto - NO puede ser null
+            }
         };
         
         onSubmit(dataToSubmit); // Llamar a la función onSubmit pasada por props
@@ -230,16 +245,64 @@ export function ProductForm({ initialData, isSaving, onSubmit }: ProductFormProp
                             {/* Familia */}
                             <div>
                                 <Label htmlFor="categoryId">Familia</Label>
-                                <Select 
-                                    name="categoryId" 
-                                    value={formData.categoryId || ''}
-                                    onValueChange={(v) => handleSelectChange(v, 'categoryId')}
-                                >
-                                    <SelectTrigger><SelectValue placeholder="(Ninguna)" /></SelectTrigger>
-                                    <SelectContent>
-                                        {categories.map(cat => <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>)}
-                                    </SelectContent>
-                                </Select>
+                                <Popover open={openCategoryCombobox} onOpenChange={setOpenCategoryCombobox}>
+                                    <PopoverTrigger asChild>
+                                        <Button
+                                            variant="outline"
+                                            role="combobox"
+                                            aria-expanded={openCategoryCombobox}
+                                            className="w-full justify-between"
+                                        >
+                                            {formData.categoryId
+                                                ? categories.find(cat => cat.id === formData.categoryId)?.name
+                                                : "(Ninguna)"}
+                                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                        </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-full p-0">
+                                        <Command>
+                                            <CommandInput placeholder="Buscar familia..." />
+                                            <CommandList>
+                                                <CommandEmpty>No se encontraron familias.</CommandEmpty>
+                                                <CommandGroup>
+                                                    <CommandItem
+                                                        value=""
+                                                        onSelect={() => {
+                                                            handleSelectChange("", 'categoryId');
+                                                            setOpenCategoryCombobox(false);
+                                                        }}
+                                                    >
+                                                        <Check
+                                                            className={cn(
+                                                                "mr-2 h-4 w-4",
+                                                                !formData.categoryId ? "opacity-100" : "opacity-0"
+                                                            )}
+                                                        />
+                                                        (Ninguna)
+                                                    </CommandItem>
+                                                    {categories.map((cat) => (
+                                                        <CommandItem
+                                                            key={cat.id}
+                                                            value={cat.name}
+                                                            onSelect={() => {
+                                                                handleSelectChange(cat.id, 'categoryId');
+                                                                setOpenCategoryCombobox(false);
+                                                            }}
+                                                        >
+                                                            <Check
+                                                                className={cn(
+                                                                    "mr-2 h-4 w-4",
+                                                                    formData.categoryId === cat.id ? "opacity-100" : "opacity-0"
+                                                                )}
+                                                            />
+                                                            {cat.name}
+                                                        </CommandItem>
+                                                    ))}
+                                                </CommandGroup>
+                                            </CommandList>
+                                        </Command>
+                                    </PopoverContent>
+                                </Popover>
                             </div>
                             {/* Precio con IVA */}
                              <div>
@@ -249,16 +312,58 @@ export function ProductForm({ initialData, isSaving, onSubmit }: ProductFormProp
                              {/* IVA */}
                             <div>
                                 <Label htmlFor="vatTypeId">IVA</Label>
-                                <Select 
-                                    name="vatTypeId" 
-                                    value={formData.vatTypeId || ''}
-                                    onValueChange={(v) => handleSelectChange(v, 'vatTypeId')}
-                                >
-                                    <SelectTrigger><SelectValue placeholder="(Ninguno)" /></SelectTrigger>
-                                    <SelectContent>
-                                        {vatTypes.map(vat => <SelectItem key={vat.id} value={vat.id}>{vat.name} ({vat.rate}%)</SelectItem>)}
-                                    </SelectContent>
-                                </Select>
+                                <Popover open={openVatCombobox} onOpenChange={setOpenVatCombobox}>
+                                    <PopoverTrigger asChild>
+                                        <Button
+                                            variant="outline"
+                                            role="combobox"
+                                            aria-expanded={openVatCombobox}
+                                            className={cn(
+                                                "w-full justify-between",
+                                                !formData.vatTypeId && "text-muted-foreground"
+                                            )}
+                                        >
+                                            {formData.vatTypeId
+                                                ? vatTypes.find(vat => vat.id === formData.vatTypeId)?.name + 
+                                                  " (" + vatTypes.find(vat => vat.id === formData.vatTypeId)?.rate.toFixed(2) + "%)"
+                                                : "Seleccionar tipo IVA..."}
+                                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                        </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-full p-0">
+                                        <Command>
+                                            <CommandInput placeholder="Buscar tipo IVA..." />
+                                            <CommandList>
+                                                <CommandEmpty>No se encontró ningún tipo de IVA.</CommandEmpty>
+                                                <CommandGroup>
+                                                    <CommandItem 
+                                                        value="Sin IVA" 
+                                                        onSelect={() => { 
+                                                            handleSelectChange("", 'vatTypeId'); 
+                                                            setOpenVatCombobox(false); 
+                                                        }}
+                                                    >
+                                                        <Check className={cn("mr-2 h-4 w-4", !formData.vatTypeId ? "opacity-100" : "opacity-0")} />
+                                                        Sin IVA
+                                                    </CommandItem>
+                                                    {vatTypes.map((vat) => (
+                                                        <CommandItem 
+                                                            key={vat.id} 
+                                                            value={vat.name} 
+                                                            onSelect={() => { 
+                                                                handleSelectChange(vat.id, 'vatTypeId'); 
+                                                                setOpenVatCombobox(false); 
+                                                            }}
+                                                        >
+                                                            <Check className={cn("mr-2 h-4 w-4", formData.vatTypeId === vat.id ? "opacity-100" : "opacity-0")} />
+                                                            {vat.name} ({vat.rate.toFixed(2)}%)
+                                                        </CommandItem>
+                                                    ))}
+                                                </CommandGroup>
+                                            </CommandList>
+                                        </Command>
+                                    </PopoverContent>
+                                </Popover>
                             </div>
                             {/* Tarifa Plana */}
                             <div>
@@ -308,12 +413,58 @@ export function ProductForm({ initialData, isSaving, onSubmit }: ProductFormProp
                             {/* IVA Compra */} 
                              <div>
                                 <Label htmlFor="purchaseVatTypeId">IVA Compra</Label>
-                                <Select name="purchaseVatTypeId" value={formData.purchaseVatTypeId || ''} onValueChange={(v) => handleSelectChange(v, 'purchaseVatTypeId')}>
-                                     <SelectTrigger><SelectValue placeholder="(Ninguno)" /></SelectTrigger>
-                                     <SelectContent>
-                                         {vatTypes.map(vat => <SelectItem key={vat.id} value={vat.id}>{vat.name} ({vat.rate}%)</SelectItem>)}
-                                     </SelectContent>
-                                 </Select>
+                                <Popover open={openPurchaseVatCombobox} onOpenChange={setOpenPurchaseVatCombobox}>
+                                    <PopoverTrigger asChild>
+                                        <Button
+                                            variant="outline"
+                                            role="combobox"
+                                            aria-expanded={openPurchaseVatCombobox}
+                                            className={cn(
+                                                "w-full justify-between",
+                                                !formData.purchaseVatTypeId && "text-muted-foreground"
+                                            )}
+                                        >
+                                            {formData.purchaseVatTypeId
+                                                ? vatTypes.find(vat => vat.id === formData.purchaseVatTypeId)?.name + 
+                                                  " (" + vatTypes.find(vat => vat.id === formData.purchaseVatTypeId)?.rate.toFixed(2) + "%)"
+                                                : "Seleccionar tipo IVA..."}
+                                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                        </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-full p-0">
+                                        <Command>
+                                            <CommandInput placeholder="Buscar tipo IVA..." />
+                                            <CommandList>
+                                                <CommandEmpty>No se encontró ningún tipo de IVA.</CommandEmpty>
+                                                <CommandGroup>
+                                                    <CommandItem 
+                                                        value="Sin IVA" 
+                                                        onSelect={() => { 
+                                                            handleSelectChange("", 'purchaseVatTypeId'); 
+                                                            setOpenPurchaseVatCombobox(false); 
+                                                        }}
+                                                    >
+                                                        <Check className={cn("mr-2 h-4 w-4", !formData.purchaseVatTypeId ? "opacity-100" : "opacity-0")} />
+                                                        Sin IVA
+                                                    </CommandItem>
+                                                    {vatTypes.map((vat) => (
+                                                        <CommandItem 
+                                                            key={vat.id} 
+                                                            value={vat.name} 
+                                                            onSelect={() => { 
+                                                                handleSelectChange(vat.id, 'purchaseVatTypeId'); 
+                                                                setOpenPurchaseVatCombobox(false); 
+                                                            }}
+                                                        >
+                                                            <Check className={cn("mr-2 h-4 w-4", formData.purchaseVatTypeId === vat.id ? "opacity-100" : "opacity-0")} />
+                                                            {vat.name} ({vat.rate.toFixed(2)}%)
+                                                        </CommandItem>
+                                                    ))}
+                                                </CommandGroup>
+                                            </CommandList>
+                                        </Command>
+                                    </PopoverContent>
+                                </Popover>
                             </div>
                             {/* EAN */} 
                              <div>
@@ -357,35 +508,11 @@ export function ProductForm({ initialData, isSaving, onSubmit }: ProductFormProp
                          <div className="space-y-2 pt-6"> {/* Añadir padding top para alinear mejor */} 
                             <div className="flex items-center space-x-2">
                                 <Checkbox id="isForSale" name="isForSale" checked={formData.isForSale} onCheckedChange={(c) => handleCheckboxChange(!!c, 'isForSale')} />
-                                <Label htmlFor="isForSale" className="flex items-center gap-1">
-                                    Está a la venta
-                                </Label>
-                                <TooltipProvider>
-                                    <Tooltip>
-                                        <TooltipTrigger>
-                                            <HelpCircle className="w-3 h-3 text-muted-foreground cursor-help" />
-                                        </TooltipTrigger>
-                                        <TooltipContent className="max-w-xs">
-                                            <p>Producto disponible para venta directa a clientes. Se mapeará a cuentas de ingresos (7xx)</p>
-                                        </TooltipContent>
-                                    </Tooltip>
-                                </TooltipProvider>
+                                <Label htmlFor="isForSale">Está a la venta</Label>
                             </div>
                              <div className="flex items-center space-x-2">
                                 <Checkbox id="isInternalUse" name="isInternalUse" checked={formData.isInternalUse} onCheckedChange={(c) => handleCheckboxChange(!!c, 'isInternalUse')} />
-                                <Label htmlFor="isInternalUse" className="flex items-center gap-1">
-                                    Uso interno
-                                </Label>
-                                <TooltipProvider>
-                                    <Tooltip>
-                                        <TooltipTrigger>
-                                            <HelpCircle className="w-3 h-3 text-muted-foreground cursor-help" />
-                                        </TooltipTrigger>
-                                        <TooltipContent className="max-w-xs">
-                                            <p>Producto para consumo interno en servicios. Se mapeará a cuentas de consumo (6xx)</p>
-                                        </TooltipContent>
-                                    </Tooltip>
-                                </TooltipProvider>
+                                <Label htmlFor="isInternalUse">Uso interno</Label>
                             </div>
                             <div className="flex items-center space-x-2">
                                 <Checkbox id="automaticDiscounts" name="automaticDiscounts" checked={formData.automaticDiscounts} onCheckedChange={(c) => handleCheckboxChange(!!c, 'automaticDiscounts')} />

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { ProductForm } from '@/components/product/product-form';
 import { Button } from "@/components/ui/button";
+import { SaveButton } from "@/components/ui/save-button";
 import { toast as sonnerToast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Product, Category, VATType } from '@prisma/client';
@@ -210,13 +211,12 @@ export default function EditarProductoPage() {
                     {/* --- FIN AÑADIR/REORDENAR --- */}
 
                     <Button variant="outline" type="button" onClick={() => router.push('/configuracion/productos')} disabled={isSaving}>{t('common.backToList') || 'Volver a Lista'}</Button>
-                     <Button 
-                        type="submit" 
-                        form="product-form" // Asegúrate que el ID del form es correcto
-                        disabled={isSaving}
-                     >
-                         {isSaving ? t('common.saving') : t('common.saveChanges')}
-                     </Button>
+                     <SaveButton
+                        form="product-form"
+                        isSaving={isSaving}
+                        saveText={t('common.saveChanges') || 'Guardar Cambios'}
+                        savingText={t('common.saving') || 'Guardando...'}
+                     />
                      <Button variant="secondary" type="button" onClick={handleAyuda} disabled={isSaving}>Ayuda</Button>
                  </div>
              </footer>

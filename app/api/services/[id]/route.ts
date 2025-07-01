@@ -4,6 +4,7 @@ import { Prisma, Service as PrismaService, ServiceSetting } from '@prisma/client
 import { z } from 'zod';
 import { getServerAuthSession } from "@/lib/auth";
 import { ApiServicePayloadSchema, ServiceFormValues } from '@/lib/schemas/service';
+import { updateCategoryTypeIfNeeded } from '@/utils/category-type-calculator';
 
 // Interfaz ajustada para incluir settings y sus relaciones
 interface ServiceWithDetails extends PrismaService {
@@ -46,7 +47,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
   }
   const systemId = session.user.systemId;
 
-  const { id } = params;
+  const { id } = await params;
   if (!id || typeof id !== 'string') {
       return NextResponse.json({ message: 'ID de servicio inválido' }, { status: 400 });
   }
@@ -94,7 +95,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
   }
   const systemId = session.user.systemId;
 
-  const { id } = params;
+  const { id } = await params;
   if (!id || typeof id !== 'string') {
       return NextResponse.json({ message: 'ID de servicio inválido' }, { status: 400 });
   }
@@ -111,14 +112,17 @@ export async function PUT(request: Request, { params }: { params: { id: string }
 
     // Usar transacción para asegurar atomicidad
     const updatedServiceId = await prisma.$transaction(async (tx) => {
-      // 1. Verificar que el servicio existe y pertenece al sistema
+      // 1. Verificar que el servicio existe y pertenece al sistema + obtener categoryId anterior
       const existingService = await tx.service.findUnique({
         where: { id: id, systemId: systemId },
-        select: { id: true } // Solo necesitamos saber si existe
+        select: { id: true, categoryId: true } // ✅ Incluir categoryId para actualización automática
       });
       if (!existingService) {
         throw new Error('Servicio no encontrado o no pertenece al sistema.'); // Lanzará error 404 abajo
-    }
+      }
+
+      // 🔍 NUEVO: Guardar categoryId anterior para actualización posterior
+      const previousCategoryId = existingService.categoryId;
 
       // 2. Actualizar el Servicio base
       const updatedService = await tx.service.update({
@@ -163,13 +167,13 @@ export async function PUT(request: Request, { params }: { params: { id: string }
         });
       }
 
-      // 6. Devolver ID para buscar fuera de la transacción
-      return id;
+      // 6. Devolver IDs para actualización posterior
+      return { serviceId: id, previousCategoryId, newCategoryId: categoryId };
     });
 
     // Recuperar datos completos actualizados fuera de la transacción
     const finalServiceResponse = await prisma.service.findUnique({
-      where: { id: updatedServiceId },
+      where: { id: updatedServiceId.serviceId },
       include: {
         settings: {
       include: { 
@@ -181,6 +185,23 @@ export async function PUT(request: Request, { params }: { params: { id: string }
         vatType: true,
       }
     });
+
+    // 🔄 Actualizar automáticamente los tipos de categorías
+    try {
+      // Actualizar categoría nueva (si se asignó una)
+      if (updatedServiceId.newCategoryId) {
+        await updateCategoryTypeIfNeeded(updatedServiceId.newCategoryId, systemId);
+      }
+      
+      // 🔄 NUEVO: Actualizar categoría anterior (si había una y es diferente a la nueva)
+      if (updatedServiceId.previousCategoryId && 
+          updatedServiceId.previousCategoryId !== updatedServiceId.newCategoryId) {
+        await updateCategoryTypeIfNeeded(updatedServiceId.previousCategoryId, systemId);
+      }
+    } catch (error) {
+      console.error("❌ [AutoCategoryType] Error actualizando tipos de categorías:", error);
+      // No fallar la operación principal por este error
+    }
 
     console.log(`API PUT /api/services/${id}: Servicio actualizado con éxito`);
     return NextResponse.json(finalServiceResponse as ServiceWithDetails);
@@ -222,7 +243,7 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
   }
   const systemId = session.user.systemId;
 
-  const { id } = params;
+  const { id } = await params;
   if (!id || typeof id !== 'string') {
       return NextResponse.json({ message: 'ID de servicio inválido' }, { status: 400 });
   }
@@ -232,7 +253,7 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
     // Verificar si el servicio existe y pertenece al sistema ANTES de borrar
     const existingService = await prisma.service.findUnique({
       where: { id: id, systemId: systemId },
-      select: { id: true }
+      select: { id: true, categoryId: true } // ✅ Incluir categoryId para actualización automática
     });
 
     if (!existingService) {
@@ -251,6 +272,16 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
       // Borrar el servicio (esto debería borrar settings por cascade)
       await tx.service.delete({ where: { id: id } });
     });
+
+    // 🔄 NUEVO: Actualizar automáticamente el tipo de categoría tras eliminar servicio
+    if (existingService.categoryId) {
+      try {
+        await updateCategoryTypeIfNeeded(existingService.categoryId, systemId);
+      } catch (error) {
+        console.error("❌ [AutoCategoryType] Error actualizando tipo de categoría tras eliminación:", error);
+        // No fallar la operación principal por este error
+      }
+    }
 
     console.log(`API DELETE /api/services/${id}: Servicio eliminado con éxito`);
     return NextResponse.json({ message: `Servicio ${id} eliminado con éxito` }, { status: 200 }); // O 204 No Content

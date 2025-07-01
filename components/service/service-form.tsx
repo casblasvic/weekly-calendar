@@ -6,12 +6,22 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ColorPicker } from "@/components/ui/color-picker";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea"; // Añadir Textarea si se usa
 import { Minus, Plus, AlertCircle, AlertTriangle, Save, XCircle, Check, ChevronsUpDown, FileText, Image as ImageIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Category, VATType, Equipment } from '@prisma/client'; // Asumiendo estos tipos
 import { toast } from "sonner"; // Usar sonner
+
+// ✅ NUEVO: Tipo extendido para categorías con equipmentType
+type CategoryWithEquipment = Category & {
+  equipmentType?: {
+    id: string;
+    name: string;
+    description?: string;
+  } | null;
+};
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   Command,
@@ -60,7 +70,7 @@ export interface ServiceFormData {
 
 interface ServiceFormProps {
     initialData?: ServiceFormData | null; // Datos iniciales para edición
-    categories: Category[];
+    categories: CategoryWithEquipment[]; // ✅ NUEVO: Usar tipo extendido
     vatTypes: VATType[];
     equipments: Equipment[]; // Equipos disponibles globalmente
     onSubmit: (data: ServiceFormData) => Promise<void>; // Función para guardar
@@ -68,15 +78,8 @@ interface ServiceFormProps {
     formId?: string; // Para vincular botón externo
 }
 
-// Colores de ejemplo (ajustar según tu sistema real)
-const coloresAgenda = [
-    { id: 'blue', nombre: 'Azul', clase: 'bg-blue-500' },
-    { id: 'green', nombre: 'Verde', clase: 'bg-green-500' },
-    { id: 'red', nombre: 'Rojo', clase: 'bg-red-500' },
-    { id: 'purple', nombre: 'Púrpura', clase: 'bg-purple-500' },
-    { id: 'yellow', nombre: 'Amarillo', clase: 'bg-yellow-500' },
-    { id: 'indigo', nombre: 'Índigo', clase: 'bg-indigo-500' },
-];
+// ✅ ELIMINADO: Código legacy de colores hardcodeados
+// Ahora usamos el componente ColorPicker reutilizable
 
 // Tipos de comisión de ejemplo
 const tiposComision = [
@@ -129,10 +132,51 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
     const [ivaPopoverOpen, setIvaPopoverOpen] = useState(false);
     const [equipoPopoverOpen, setEquipoPopoverOpen] = useState(false);
     const [comisionPopoverOpen, setComisionPopoverOpen] = useState(false);
-    const [colorPopoverOpen, setColorPopoverOpen] = useState(false);
+    // ✅ ELIMINADO: colorPopoverOpen (ya no se usa con ColorPicker)
+
+    // ✅ NUEVO: Estados para herencia de equipamiento
+    const [inheritedEquipmentId, setInheritedEquipmentId] = useState<string | null>(null);
+    const [isEquipmentInherited, setIsEquipmentInherited] = useState(false);
 
     const serviceId = initialData?.id;
     const isEditMode = !!serviceId;
+
+    // ✅ NUEVO: Función para calcular herencia de equipamiento
+    const calculateInheritedEquipment = (categoryId: string | null): string | null => {
+        if (!categoryId || !categories.length) return null;
+        
+        // Buscar categoría en la jerarquía
+        let currentCategory = categories.find(c => c.id === categoryId);
+        while (currentCategory) {
+            if (currentCategory.equipmentType?.id) {
+                return currentCategory.equipmentType.id;
+            }
+            // Buscar categoría padre
+            currentCategory = categories.find(c => c.id === currentCategory?.parentId);
+        }
+        return null;
+    };
+
+    // ✅ NUEVO: useEffect para herencia cuando cambia la categoría
+    useEffect(() => {
+        if (formData.categoryId) {
+            const inherited = calculateInheritedEquipment(formData.categoryId);
+            setInheritedEquipmentId(inherited);
+            
+            // Si no tiene equipamiento propio y hay herencia, auto-completar
+            if (!formData.equipmentId && inherited) {
+                setFormData(prev => ({ ...prev, equipmentId: inherited }));
+                setIsEquipmentInherited(true);
+            } else if (formData.equipmentId === inherited) {
+                setIsEquipmentInherited(true);
+            } else {
+                setIsEquipmentInherited(false);
+            }
+        } else {
+            setInheritedEquipmentId(null);
+            setIsEquipmentInherited(false);
+        }
+    }, [formData.categoryId, categories]);
 
     // Detectar cambios para habilitar el guardado
     useEffect(() => {
@@ -151,7 +195,13 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
     };
 
     const handleSelectChange = (name: keyof ServiceFormData, value: string | null) => {
+        console.log(`🔄 [ServiceForm] Cambiando ${name}:`, value); // ✅ DEBUG
         setFormData(prev => ({ ...prev, [name]: value }));
+        
+        // ✅ NUEVO: Si cambian el equipamiento manualmente, marcar como no heredado
+        if (name === 'equipmentId') {
+            setIsEquipmentInherited(value === inheritedEquipmentId);
+        }
     };
 
     const handleCheckboxChange = (name: keyof ServiceFormData, checked: boolean) => {
@@ -318,7 +368,14 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
                                                 <CommandEmpty>No se encontró ninguna familia.</CommandEmpty>
                                                 <CommandGroup>
                                                     {categories.map((cat) => (
-                                                        <CommandItem key={cat.id} value={cat.name} onSelect={(currentValue) => { const selectedCat = categories.find(c => c.name.toLowerCase() === currentValue); handleSelectChange("categoryId", selectedCat ? selectedCat.id : null); setFamiliaPopoverOpen(false); }}>
+                                                        <CommandItem 
+                                                            key={cat.id} 
+                                                            value={cat.name} 
+                                                            onSelect={() => { 
+                                                                handleSelectChange("categoryId", cat.id); 
+                                                                setFamiliaPopoverOpen(false); 
+                                                            }}
+                                                        >
                                                             <Check className={cn("mr-2 h-4 w-4", formData.categoryId === cat.id ? "opacity-100" : "opacity-0")} />
                                                             {cat.name}
                                                         </CommandItem>
@@ -362,7 +419,14 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
                                                             <Check className={cn("mr-2 h-4 w-4", formData.defaultVatId === null ? "opacity-100" : "opacity-0")} /> Sin IVA
                                                         </CommandItem>
                                                         {vatTypes.map((vat) => (
-                                                            <CommandItem key={vat.id} value={vat.name} onSelect={(currentValue) => { const selectedVat = vatTypes.find(v => v.name.toLowerCase() === currentValue); handleSelectChange("defaultVatId", selectedVat ? selectedVat.id : null); setIvaPopoverOpen(false); }}>
+                                                            <CommandItem 
+                                                                key={vat.id} 
+                                                                value={vat.name} 
+                                                                onSelect={() => { 
+                                                                    handleSelectChange("defaultVatId", vat.id); 
+                                                                    setIvaPopoverOpen(false); 
+                                                                }}
+                                                            >
                                                                 <Check className={cn("mr-2 h-4 w-4", formData.defaultVatId === vat.id ? "opacity-100" : "opacity-0")} />
                                                                 {vat.name} ({vat.rate.toFixed(2)}%)
                                                             </CommandItem>
@@ -388,26 +452,12 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
                                     </div>
                                 </div>
                                 <div className="space-y-1.5">
-                                    <Label>Color Agenda</Label>
-                                    <Popover open={colorPopoverOpen} onOpenChange={setColorPopoverOpen}>
-                                        <PopoverTrigger asChild>
-                                            <Button variant="outline" role="combobox" aria-expanded={colorPopoverOpen} className={cn("w-full justify-start", inputHoverClass)} disabled={isSaving}>
-                                                {formData.color ? (<div className="flex items-center gap-2"><div className={cn("w-4 h-4 rounded-full", coloresAgenda.find(c => c.id === formData.color)?.clase || 'bg-gray-300')}></div>{coloresAgenda.find(c => c.id === formData.color)?.nombre}</div>) : ("Seleccionar color...")}
-                                                <ChevronsUpDown className="ml-auto h-4 w-4 shrink-0 opacity-50" />
-                                            </Button>
-                                        </PopoverTrigger>
-                                        <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
-                                            <Command>
-                                                <CommandList>
-                                                    <CommandEmpty>No se encontró ningún color.</CommandEmpty>
-                                                    <CommandGroup>
-                                                        <CommandItem key="no-color" value="Sin Color" onSelect={() => { handleSelectChange("color", null); setColorPopoverOpen(false); }}><Check className={cn("mr-2 h-4 w-4", formData.color === null ? "opacity-100" : "opacity-0")} />Sin Color</CommandItem>
-                                                        {coloresAgenda.map((color) => (<CommandItem key={color.id} value={color.nombre} onSelect={() => { handleSelectChange("color", color.id); setColorPopoverOpen(false); }}><Check className={cn("mr-2 h-4 w-4", formData.color === color.id ? "opacity-100" : "opacity-0")} /><div className="flex items-center gap-2"><div className={cn("w-4 h-4 rounded-full", color.clase)}></div>{color.nombre}</div></CommandItem>))}
-                                                    </CommandGroup>
-                                                </CommandList>
-                                            </Command>
-                                        </PopoverContent>
-                                    </Popover>
+                                    <ColorPicker
+                                        label="Color Agenda"
+                                        color={formData.color || "#7c3aed"}
+                                        onChange={(color) => handleSelectChange("color", color)}
+                                        disabled={isSaving}
+                                    />
                                 </div>
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
@@ -415,8 +465,13 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
                                     <Label>Equipo Requerido</Label>
                                     <Popover open={equipoPopoverOpen} onOpenChange={setEquipoPopoverOpen}>
                                         <PopoverTrigger asChild>
-                                            <Button variant="outline" role="combobox" aria-expanded={equipoPopoverOpen} className={cn("w-full justify-between", inputHoverClass, !formData.equipmentId && "text-muted-foreground")} disabled={isSaving || equipments.length === 0}>
-                                                {formData.equipmentId ? equipments.find((eq) => eq.id === formData.equipmentId)?.name : equipments.length === 0 ? "No hay equipos disponibles" : "Seleccionar equipo..."}
+                                            <Button variant="outline" role="combobox" aria-expanded={equipoPopoverOpen} className={cn("w-full justify-between", inputHoverClass, !formData.equipmentId && "text-muted-foreground", isEquipmentInherited && "border-blue-300 bg-blue-50")} disabled={isSaving || equipments.length === 0}>
+                                                {formData.equipmentId ? (
+                                                    <div className="flex items-center gap-2">
+                                                        {equipments.find((eq) => eq.id === formData.equipmentId)?.name}
+                                                        {isEquipmentInherited && <span className="text-xs text-blue-600">📋</span>}
+                                                    </div>
+                                                ) : equipments.length === 0 ? "No hay equipos disponibles" : "Seleccionar equipo..."}
                                                 <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                                             </Button>
                                         </PopoverTrigger>
@@ -427,12 +482,32 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
                                                     <CommandEmpty>No se encontró ningún equipo.</CommandEmpty>
                                                     <CommandGroup>
                                                         <CommandItem key="no-equipment" value="Ninguno" onSelect={() => { handleSelectChange("equipmentId", null); setEquipoPopoverOpen(false); }}><Check className={cn("mr-2 h-4 w-4", formData.equipmentId === null ? "opacity-100" : "opacity-0")} />Ninguno</CommandItem>
-                                                        {equipments.map((eq) => (<CommandItem key={eq.id} value={eq.name} onSelect={(currentValue) => { const selectedEq = equipments.find(e => e.name.toLowerCase() === currentValue); handleSelectChange("equipmentId", selectedEq ? selectedEq.id : null); setEquipoPopoverOpen(false); }}><Check className={cn("mr-2 h-4 w-4", formData.equipmentId === eq.id ? "opacity-100" : "opacity-0")} />{eq.name}</CommandItem>))}
+                                                        {equipments.map((eq) => (
+                                                            <CommandItem 
+                                                                key={eq.id} 
+                                                                value={eq.name} 
+                                                                onSelect={() => { 
+                                                                    handleSelectChange("equipmentId", eq.id); 
+                                                                    setEquipoPopoverOpen(false); 
+                                                                }}
+                                                            >
+                                                                <Check className={cn("mr-2 h-4 w-4", formData.equipmentId === eq.id ? "opacity-100" : "opacity-0")} />
+                                                                {eq.name}
+                                                            </CommandItem>
+                                                        ))}
                                                     </CommandGroup>
                                                 </CommandList>
                                             </Command>
                                         </PopoverContent>
                                     </Popover>
+                                    
+                                    {/* ✅ NUEVO: Mostrar información de herencia */}
+                                    {isEquipmentInherited && inheritedEquipmentId && (
+                                        <div className="text-sm text-blue-600 flex items-center gap-1">
+                                            <span className="text-xs">📋</span>
+                                            <span>Heredado de familia</span>
+                                        </div>
+                                    )}
                                 </div>
                                 <div className="space-y-1.5">
                                     <Label>Comisión Base</Label>
@@ -542,14 +617,16 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
                             Campos Obligatorios Faltantes
                         </DialogTitle>
                     </DialogHeader>
-                     <DialogDescription className="py-4">
-                        Por favor, completa los siguientes campos antes de guardar:
+                     <div className="py-4">
+                        <p className="text-sm text-muted-foreground mb-2">
+                            Por favor, completa los siguientes campos antes de guardar:
+                        </p>
                         <ul className="list-disc list-inside mt-2 text-red-600">
                             {missingFields.map((field, index) => (
                                 <li key={index}>{field}</li>
                             ))}
                         </ul>
-                    </DialogDescription>
+                    </div>
                     <DialogFooter className="pt-4">
                          <Button variant="outline" onClick={() => setShowMandatoryFieldsModal(false)}>Cerrar</Button>
                     </DialogFooter>

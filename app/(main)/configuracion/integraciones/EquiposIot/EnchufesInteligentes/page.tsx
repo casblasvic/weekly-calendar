@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { PaginationControls } from '@/components/pagination-controls';
+import { PaginationControls, PageSizeSelector } from '@/components/pagination-controls';
 import { toast } from "sonner";
 import { PlusCircle, Edit, Trash2, Play, StopCircle, Wifi, WifiOff, ArrowLeft, ArrowUpDown, ChevronUp, ChevronDown, Power, Settings, Activity, Thermometer, Zap, Plug, AlertTriangle, RefreshCw, Smartphone, Search, Building2, X, Cpu } from "lucide-react";
 import { Badge } from '@/components/ui/badge';
@@ -44,6 +44,22 @@ interface SmartPlug {
         };
     };
     equipmentId: string;
+    // ✅ NUEVA ESTRUCTURA: equipmentClinicAssignment
+    equipmentClinicAssignmentId?: string;
+    equipmentClinicAssignment?: {
+        id: string;
+        clinicId: string;
+        deviceName?: string;
+        serialNumber?: string; // ✅ INCLUIR serialNumber para formato completo
+        equipment: {
+            id: string;
+            name: string;
+        };
+        clinic: {
+            id: string;
+            name: string;
+        };
+    };
     excludeFromSync: boolean;
     online: boolean;
     relayOn: boolean;
@@ -148,6 +164,10 @@ const SmartPlugsPage = () => {
 
     // 📡 Sistema basado puramente en WebSocket (sin timers)
 
+    // Ref para tracking de dispositivos que recibieron updates
+    const devicesUpdatedInBatch = useRef<Set<string>>(new Set());
+    const lastBatchProcessTime = useRef<number>(Date.now());
+
     // Función inteligente para verificar diferencias y actualizar BD solo si es necesario
     const syncDeviceStateWithDB = useCallback(async (devicesToCheck: { id: string; name: string; currentState: { online: boolean; relayOn: boolean; currentPower?: number; voltage?: number; temperature?: number } }[]) => {
         try {
@@ -184,6 +204,69 @@ const SmartPlugsPage = () => {
             console.error('❌ [BD SYNC] Error de conexión sincronizando estados:', error);
         }
     }, []);
+
+    // 🎯 NUEVA FUNCIÓN: Detectar dispositivos offline usando WebSocket como trigger
+    const checkOfflineDevices = useCallback(async () => {
+        if (allPlugs.length === 0) return;
+
+        const now = Date.now();
+        const timeSinceLastBatch = now - lastBatchProcessTime.current;
+
+        // Solo procesar si han pasado al menos 30 segundos desde el último batch
+        if (timeSinceLastBatch < 30000) return;
+
+        console.log(`🔍 [OFFLINE CHECK] Verificando dispositivos offline. Dispositivos que recibieron updates en este ciclo: ${devicesUpdatedInBatch.current.size}`);
+
+        // Encontrar dispositivos que NO recibieron updates en este ciclo
+        const devicesNotUpdated = allPlugs.filter(device => 
+            device.online && // Solo verificar dispositivos que están marcados como online
+            !devicesUpdatedInBatch.current.has(device.id) && 
+            !devicesUpdatedInBatch.current.has(device.deviceId)
+        );
+
+        if (devicesNotUpdated.length > 0) {
+            console.log(`⚠️ [OFFLINE CHECK] Encontrados ${devicesNotUpdated.length} dispositivos que no recibieron updates:`, 
+                devicesNotUpdated.map(d => d.name)
+            );
+
+            // Marcar como offline en el estado local
+            setAllPlugs(prev => prev.map(device => {
+                if (devicesNotUpdated.some(offline => offline.id === device.id)) {
+                    console.log(`📴 [OFFLINE] Marcando como offline: ${device.name}`);
+                    return { ...device, online: false };
+                }
+                return device;
+            }));
+
+            setPlugs(prev => prev.map(device => {
+                if (devicesNotUpdated.some(offline => offline.id === device.id)) {
+                    return { ...device, online: false };
+                }
+                return device;
+            }));
+
+            // Sincronizar cambios con BD
+            const devicesToSync = devicesNotUpdated.map(device => ({
+                id: device.id,
+                name: device.name,
+                currentState: {
+                    online: false,
+                    relayOn: device.relayOn,
+                    currentPower: device.currentPower,
+                    voltage: device.voltage,
+                    temperature: device.temperature
+                }
+            }));
+
+            await syncDeviceStateWithDB(devicesToSync);
+        } else {
+            console.log(`✅ [OFFLINE CHECK] Todos los dispositivos online recibieron updates`);
+        }
+
+        // Reset del tracking para el próximo ciclo
+        devicesUpdatedInBatch.current.clear();
+        lastBatchProcessTime.current = now;
+    }, [allPlugs, syncDeviceStateWithDB]);
 
     const fetchPlugs = useCallback(async (page = 1, pageSize = 50, credentialFilter = 'all') => {
         setIsLoading(true);
@@ -446,6 +529,14 @@ const SmartPlugsPage = () => {
                 timestamp: update.timestamp
             });
             
+            // 🎯 TRACKING: Marcar este dispositivo como que recibió update
+            devicesUpdatedInBatch.current.add(update.deviceId);
+            // También agregarlo por si se busca por ID interno
+            const foundDevice = allPlugs.find(d => d.deviceId === update.deviceId);
+            if (foundDevice) {
+                devicesUpdatedInBatch.current.add(foundDevice.id);
+            }
+            
             // 📡 Datos recibidos por WebSocket - dispositivo está activo
             
             // Función helper para actualizar un dispositivo en lista completa (solo para consumo)
@@ -582,6 +673,12 @@ const SmartPlugsPage = () => {
                 console.log(`🔄 ${oldDevice.name} actualizado en vista: ${oldDevice.relayOn ? 'ON' : 'OFF'} → ${update.relayOn ? 'ON' : 'OFF'} (${update.currentPower || 0}W)`);
                 return updated;
             });
+
+            // 🎯 TRIGGER: Después de procesar el update, verificar dispositivos offline
+            // Usar setTimeout para no bloquear la actualización de UI
+            setTimeout(() => {
+                checkOfflineDevices();
+            }, 100);
         });
 
         // Guardar referencia para evitar duplicados
@@ -594,7 +691,7 @@ const SmartPlugsPage = () => {
                 subscriptionRef.current = null;
             }
         };
-    }, [subscribe, isConnected]); // Remover allPlugs.length de dependencias para evitar re-suscripciones
+    }, [subscribe, isConnected, checkOfflineDevices, syncDeviceStateWithDB]); // Remover allPlugs.length de dependencias para evitar re-suscripciones
 
     // 📡 Sistema puro WebSocket - sin timers, sin complejidad innecesaria
 
@@ -851,6 +948,22 @@ const SmartPlugsPage = () => {
         }
     };
 
+    // 🧪 NUEVO: Función para test manual de detección de offline
+    const handleTestOfflineDetection = () => {
+        console.log('🧪 [TEST] Ejecutando test manual de detección de offline...');
+        console.log('📊 [TEST] Estado actual:', {
+            totalDevices: allPlugs.length,
+            onlineDevices: allPlugs.filter(d => d.online).length,
+            devicesInBatch: devicesUpdatedInBatch.current.size,
+            lastBatchTime: new Date(lastBatchProcessTime.current).toLocaleString()
+        });
+        
+        // Forzar verificación de offline (sin esperar el timeout de 30s)
+        lastBatchProcessTime.current = Date.now() - 35000; // Simular que pasaron 35 segundos
+        checkOfflineDevices();
+        toast.info('Test de detección de offline ejecutado. Revisa la consola para detalles.');
+    };
+
     // Memoizar funciones para evitar re-renders
     const memoizedHandleDelete = useCallback((id: string) => handleDelete(id), []);
     const memoizedHandleEdit = useCallback((plug: SmartPlug) => handleEdit(plug), []);
@@ -886,39 +999,82 @@ const SmartPlugsPage = () => {
         },
         {
             id: 'equipment',
-            header: () => <div className="text-left">{t('integrations.smart_plugs.table.equipment')}</div>,
+            header: () => <div className="text-xs font-medium text-left">{t('integrations.smart_plugs.table.equipment')}</div>,
             cell: ({ row }) => {
                 const plug = row.original;
-                return <div className="text-left">{plug.equipment?.name || 'N/A'}</div>;
+                // ✅ SOLO ALIAS SIN ICONOS ADICIONALES
+                if (plug.equipmentClinicAssignment) {
+                    const alias = plug.equipmentClinicAssignment.deviceName || plug.equipmentClinicAssignment.equipment.name;
+                    
+                    return (
+                        <div className="text-left">
+                            <div className="text-sm font-medium leading-tight max-w-[140px] truncate" title={alias}>
+                                {alias}
+                            </div>
+                        </div>
+                    );
+                }
+                
+                // Fallback para compatibilidad hacia atrás
+                const fallbackName = plug.equipment?.name || 'N/A';
+                return (
+                    <div className="text-left">
+                        <div className="text-sm max-w-[140px] truncate" title={fallbackName}>{fallbackName}</div>
+                    </div>
+                );
+            },
+        },
+        {
+            id: 'serial',
+            header: () => <div className="text-xs font-medium text-left">Serial</div>,
+            cell: ({ row }) => {
+                const plug = row.original;
+                const serial = plug.equipmentClinicAssignment?.serialNumber || 'N/A';
+                return (
+                    <div className="text-left">
+                        <div className="font-mono text-xs text-muted-foreground" title={serial}>
+                            {serial}
+                        </div>
+                    </div>
+                );
             },
         },
         {
             id: 'clinic',
-            header: () => <div className="text-left">{t('integrations.smart_plugs.table.clinic')}</div>,
+            header: () => <div className="text-xs font-medium text-left">{t('integrations.smart_plugs.table.clinic')}</div>,
             cell: ({ row }) => {
                 const plug = row.original;
-                return <div className="text-left">{plug.equipment?.clinic?.name || 'N/A'}</div>;
+                const clinicName = plug.equipmentClinicAssignment?.clinic?.name || 
+                                 plug.equipment?.clinic?.name || 
+                                 'N/A';
+                return (
+                    <div className="text-left text-sm max-w-[120px]">
+                        <div className="truncate" title={clinicName}>
+                            {clinicName}
+                        </div>
+                    </div>
+                );
             },
         },
         {
             id: 'deviceId',
-            header: () => <div className="text-left">{t('integrations.smart_plugs.table.device_id')}</div>,
+            header: () => <div className="text-xs font-medium text-left">{t('integrations.smart_plugs.table.device_id')}</div>,
             cell: ({ row }) => {
                 const plug = row.original;
-                return <div className="text-left">{plug.deviceId}</div>;
+                return <div className="text-left text-xs font-mono text-muted-foreground max-w-[100px] truncate" title={plug.deviceId}>{plug.deviceId}</div>;
             },
         },
         {
             id: 'deviceIp',
-            header: () => <div className="text-left">{t('integrations.smart_plugs.table.ip')}</div>,
+            header: () => <div className="text-xs font-medium text-left">{t('integrations.smart_plugs.table.ip')}</div>,
             cell: ({ row }) => {
                 const plug = row.original;
-                return <div className="text-left">{plug.deviceIp}</div>;
+                return <div className="font-mono text-xs text-left text-muted-foreground">{plug.deviceIp}</div>;
             },
         },
         {
             id: 'connectionStatus',
-            header: () => <div className="text-left">Online</div>,
+            header: () => <div className="text-xs font-medium text-left">Online</div>,
             cell: ({ row }) => {
                 const plug = row.original;
                 const isOnline = plug.online;
@@ -926,13 +1082,13 @@ const SmartPlugsPage = () => {
                 return (
                     <div className="text-left">
                         {isOnline ? (
-                            <Badge className="text-white bg-green-500">
-                                <Wifi className="mr-1 w-3 h-3" />
+                            <Badge className="text-white bg-green-500 text-xs px-2 py-0.5">
+                                <Wifi className="mr-1 w-2.5 h-2.5" />
                                 Online
                             </Badge>
                         ) : (
-                            <Badge className="text-white bg-red-500">
-                                <WifiOff className="mr-1 w-3 h-3" />
+                            <Badge className="text-white bg-red-500 text-xs px-2 py-0.5">
+                                <WifiOff className="mr-1 w-2.5 h-2.5" />
                                 Offline
                             </Badge>
                         )}
@@ -942,7 +1098,7 @@ const SmartPlugsPage = () => {
         },
         {
             id: 'relayStatus', 
-            header: () => <div className="text-left">Estado</div>,
+            header: () => <div className="text-xs font-medium text-left">Estado</div>,
             cell: ({ row }) => {
                 const plug = row.original;
                 const isOnline = plug.online;
@@ -951,46 +1107,51 @@ const SmartPlugsPage = () => {
                 // Si está offline, no puede estar encendido
                 const actualRelayState = isOnline ? relayOn : false;
                 
-                // Estado calculado basado en conectividad
+                // ✅ IGUAL QUE LAS CREDENCIALES: Solo mostrar consumo si > 0.1W
+                const hasRealPower = plug.currentPower !== null && 
+                                   plug.currentPower !== undefined && 
+                                   plug.currentPower > 0.1;
+                
+                // 🐞 DEBUG: Log temporal para ver valores exactos
+                if (actualRelayState && plug.name) {
+                    console.log(`🔍 [DEBUG] ${plug.name}: currentPower=${plug.currentPower}, hasRealPower=${hasRealPower}, type=${typeof plug.currentPower}`);
+                }
                 
                 return (
                     <div className="text-left">
-                        <div className="mb-2">
+                        <div className="mb-1">
                         {actualRelayState ? (
-                            <Badge className="text-white bg-green-500">
-                                <Power className="mr-1 w-3 h-3" />
-                                Encendido
+                            <Badge className="text-white bg-green-500 text-xs px-2 py-0.5 flex items-center gap-1 w-fit">
+                                <Power className="w-2.5 h-2.5" />
+                                <span>ON</span>
+                                
+                                {/* ⚡ ESTÉTICA IDÉNTICA A LAS CREDENCIALES */}
+                                {isOnline && hasRealPower && (
+                                    <>
+                                        <Zap className="w-3 h-3 text-yellow-600" />
+                                        <span className="font-mono text-xs font-medium">
+                                            {plug.currentPower.toFixed(1)}W
+                                        </span>
+                                    </>
+                                )}
                             </Badge>
                         ) : (
-                            <Badge className="text-white bg-gray-500">
-                                <Power className="mr-1 w-3 h-3" />
-                                Apagado
+                            <Badge className="text-white bg-gray-500 text-xs px-2 py-0.5 flex items-center gap-1 w-fit">
+                                <Power className="w-2.5 h-2.5" />
+                                <span>OFF</span>
                             </Badge>
                             )}
                         </div>
                         
-                        {/* Métricas en tiempo real - Solo cuando está encendido */}
+                        {/* Métricas adicionales debajo - Solo voltaje y temperatura cuando está encendido */}
                         {isOnline && actualRelayState && (
-                            <div className="flex flex-col gap-1 text-xs">
-                                {/* Potencia */}
-                                {plug.currentPower !== null && plug.currentPower !== undefined && (
-                                    <div className="flex gap-1 items-center">
-                                        <Zap className="flex-shrink-0 w-3 h-3 text-yellow-600" />
-                                        <span className="font-mono font-medium text-yellow-700">
-                                            {plug.currentPower === 0 ? '000.0 W' : 
-                                             plug.currentPower < 1 ? 
-                                             `${plug.currentPower.toFixed(1).padStart(5, '0')} W` :
-                                             `${plug.currentPower.toFixed(1).padStart(5, '0')} W`}
-                                        </span>
-                                    </div>
-                                )}
-                                
-                                {/* Voltaje */}
+                            <div className="flex flex-col gap-0.5 text-[10px] leading-none">
+                                {/* Voltaje con 1 decimal como especificas */}
                                 {plug.voltage && (
                                     <div className="flex gap-1 items-center">
-                                        <Plug className="flex-shrink-0 w-3 h-3 text-blue-600" />
+                                        <Plug className="flex-shrink-0 w-2 h-2 text-blue-600" />
                                         <span className="font-medium text-blue-700">
-                                            {plug.voltage.toFixed(1)} V
+                                            {plug.voltage.toFixed(1)}V
                                         </span>
                                     </div>
                                 )}
@@ -998,9 +1159,9 @@ const SmartPlugsPage = () => {
                                 {/* Temperatura */}
                                 {plug.temperature && (
                                     <div className="flex gap-1 items-center">
-                                        <Thermometer className="flex-shrink-0 w-3 h-3 text-red-600" />
+                                        <Thermometer className="flex-shrink-0 w-2 h-2 text-red-600" />
                                         <span className="font-medium text-red-700">
-                                            {plug.temperature.toFixed(1)}°C
+                                            {plug.temperature.toFixed(0)}°C
                                         </span>
                                     </div>
                                 )}
@@ -1009,26 +1170,6 @@ const SmartPlugsPage = () => {
                     </div>
                 );
             }
-        },
-        {
-            id: 'sync',
-            header: () => <div className="text-left">Sincronización</div>,
-            cell: ({ row }) => {
-                const plug = row.original;
-                return (
-                    <div className="text-left">
-                        {plug.excludeFromSync ? (
-                            <Badge variant="outline" className="text-orange-600 border-orange-300">
-                                Excluido
-                            </Badge>
-                        ) : (
-                            <Badge variant="outline" className="text-green-600 border-green-300">
-                                Incluido
-                            </Badge>
-                        )}
-                    </div>
-                );
-            },
         },
         {
             id: 'actions',
@@ -1058,8 +1199,8 @@ const SmartPlugsPage = () => {
                             onClick={() => handleToggleExclusion(plug.id, plug.excludeFromSync)}
                             className={`transition-all duration-300 ${
                                 plug.excludeFromSync
-                                    ? 'text-orange-600 hover:text-orange-700 hover:bg-orange-50' 
-                                    : 'text-blue-600 hover:text-blue-700 hover:bg-blue-50'
+                                    ? 'text-gray-500 hover:text-green-600 hover:bg-green-50' 
+                                    : 'text-green-600 hover:text-gray-500 hover:bg-gray-50'
                             }`}
                             title={plug.excludeFromSync ? "Incluir en sincronización" : "Excluir de sincronización"}
                         >
@@ -1203,7 +1344,7 @@ const SmartPlugsPage = () => {
                         <div className="flex gap-2 items-center">
                             {/* Píldoras de estado de credenciales en tiempo real - DISEÑO MEJORADO */}
                             {credentialsWithPowerData.map((credential) => (
-                                <div key={credential.id} className="flex items-center gap-2">
+                                <div key={credential.id} className="flex gap-2 items-center">
                                     <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm ${
                                         credential.connectionStatus === 'connected' 
                                             ? 'text-green-700 bg-green-100' 
@@ -1229,7 +1370,7 @@ const SmartPlugsPage = () => {
                                                 <span className="font-mono text-xs font-medium">
                                                     {credential.totalPower.toFixed(1)}W
                                                 </span>
-                                                <span className="opacity-75 text-xs">
+                                                <span className="text-xs opacity-75">
                                                     ({credential.deviceCount})
                                                 </span>
                                             </div>
@@ -1243,7 +1384,7 @@ const SmartPlugsPage = () => {
                                             size="sm"
                                             onClick={() => handleConnectWebSocket(credential.id, credential.name)}
                                             disabled={connectingWebSocket[credential.id]}
-                                            className="text-green-600 border-green-200 hover:bg-green-50 px-2 py-1"
+                                            className="px-2 py-1 text-green-600 border-green-200 hover:bg-green-50"
                                             title="Activar conexión en tiempo real"
                                         >
                                             <Power className={`w-3 h-3 ${connectingWebSocket[credential.id] ? 'animate-pulse' : ''}`} />
@@ -1253,7 +1394,7 @@ const SmartPlugsPage = () => {
                             ))}
                             
                             {credentialsWithPowerData.length === 0 && (
-                                <div className="flex items-center gap-2 px-3 py-1 rounded-full text-sm text-gray-700 bg-gray-100">
+                                <div className="flex gap-2 items-center px-3 py-1 text-sm text-gray-700 bg-gray-100 rounded-full">
                                     <div className="w-2 h-2 bg-gray-400 rounded-full" />
                                     <span className="text-xs">Sin credenciales</span>
                                 </div>
@@ -1560,8 +1701,8 @@ const SmartPlugsPage = () => {
                             {availableGenerations.length > 0 && (
                                 <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
-                                        <Button variant="outline" className="w-48 justify-between">
-                                            <span className="flex items-center gap-2">
+                                        <Button variant="outline" className="justify-between w-48">
+                                            <span className="flex gap-2 items-center">
                                                 <Cpu className="w-4 h-4" />
                                                 {generationFilter.length === 0 
                                                     ? "Todas las generaciones" 
@@ -1588,7 +1729,7 @@ const SmartPlugsPage = () => {
                                                     }
                                                 }}
                                             >
-                                                <div className="flex items-center gap-2">
+                                                <div className="flex gap-2 items-center">
                                                     <Cpu className="w-3 h-3" />
                                                     {generation === 'Desconocida' ? 'Sin especificar' : `Generación ${generation}`}
                                                 </div>
@@ -1601,7 +1742,7 @@ const SmartPlugsPage = () => {
                                                     onClick={() => setGenerationFilter([])}
                                                     className="text-sm text-muted-foreground"
                                                 >
-                                                    <X className="w-3 h-3 mr-2" />
+                                                    <X className="mr-2 w-3 h-3" />
                                                     Limpiar selección
                                                 </DropdownMenuItem>
                                             </>
@@ -1707,19 +1848,43 @@ const SmartPlugsPage = () => {
                             </TableBody>
                         </Table>
                     </div>
-                    <PaginationControls
-                        currentPage={pagination.page}
-                        totalPages={pagination.totalPages}
-                        onPageChange={(p) => fetchPlugs(p, pagination.pageSize, selectedCredentialFilter)}
-                        pageSize={pagination.pageSize}
-                        onPageSizeChange={(s) => fetchPlugs(1, s, selectedCredentialFilter)}
-                        totalCount={pagination.totalCount}
-                        itemType="enchufes"
-                    />
+                    {/* Controles de paginación reorganizados */}
+                    <div className="flex justify-between items-center mt-4">
+                        {/* ✅ NUEVO: Selector de filas por página movido a la izquierda */}
+                        <PageSizeSelector
+                            pageSize={pagination.pageSize}
+                            onPageSizeChange={(size) => fetchPlugs(1, size, selectedCredentialFilter)}
+                            itemType="enchufes"
+                        />
+
+                        {/* Paginación centrada */}
+                        <PaginationControls
+                            currentPage={pagination.page}
+                            totalPages={pagination.totalPages}
+                            onPageChange={(p) => fetchPlugs(p, pagination.pageSize, selectedCredentialFilter)}
+                            totalCount={pagination.totalCount}
+                            itemType="enchufes"
+                        />
+
+                        {/* Espacio para balancear el layout */}
+                        <div className="w-48"></div>
+                    </div>
                 </CardContent>
             </Card>
 
             <div className="flex fixed right-4 bottom-4 z-50 gap-2">
+                {/* 🧪 Botón de test para detección de offline */}
+                <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={handleTestOfflineDetection}
+                    className="text-purple-600 border-purple-200 hover:bg-purple-50"
+                    title="Test manual de detección de dispositivos offline"
+                >
+                    <Zap className="mr-2 w-4 h-4" />
+                    Test Offline
+                </Button>
+                
                 <Button variant="outline" onClick={() => router.back()}>
                     <ArrowLeft className="mr-2 w-4 h-4" />{t('common.back')}
                 </Button>

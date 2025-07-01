@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHeader, TableHead, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast as sonnerToast } from "sonner";
-import { Plus, Search, Pencil, Trash2, ArrowUpDown, ChevronUp, ChevronDown, CircleDollarSign, Package as PackageIcon, CheckCircle, XCircle, FilterX, ArrowLeft, HelpCircle } from "lucide-react"; // Renombrar Package para evitar conflicto
+import { Plus, Search, Pencil, Trash2, ArrowUpDown, ChevronUp, ChevronDown, CircleDollarSign, Package as PackageIcon, CheckCircle, XCircle, FilterX, ArrowLeft, HelpCircle, Settings2 } from "lucide-react"; // Renombrar Package para evitar conflicto
 import { ProductFormModal } from "@/components/product-form-modal"; // Importamos el modal aunque no lo usemos directamente aquí
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"; // <<< Añadir useQuery y useMutation
@@ -34,7 +34,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label"; // Para filtros
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PaginationControls } from "@/components/pagination-controls";
-import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { PageSizeSelector } from '@/components/pagination-controls';
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { AssociateToTariffModal } from "@/components/tariff/associate-to-tariff-modal";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
@@ -57,6 +58,7 @@ import { useProductsQuery, useDeleteProductMutation, useAddProductsToTariffMutat
 import { useCategoriesQuery } from '@/lib/hooks/use-category-query';
 import { useVatTypesQuery } from '@/lib/hooks/use-vat-query';
 import { useTariffsQuery, useTariffProductsQuery } from '@/lib/hooks/use-tariff-query';
+import BulkCategoryChanger, { BulkItem } from '@/components/bulk-category-changer';
 
 // Extender el tipo Product para incluir relaciones opcionales
 type ProductWithIncludes = PrismaProductWithIncludes & {
@@ -229,6 +231,9 @@ export default function GestionProductos() {
   const isLoading = isLoadingProductsOriginal || isLoadingCategories || isLoadingTariffs; 
   const error = productsErrorOriginal /* || errorExistingProducts || otros errores */; 
   
+  // ✅ NUEVO: Estados para selección masiva de categorías
+  const [showBulkCategoryChanger, setShowBulkCategoryChanger] = useState(false);
+  
   useEffect(() => {
     isMounted.current = true;
     return () => {
@@ -393,7 +398,7 @@ export default function GestionProductos() {
           const remainingCount = assignedTariffNames.length - MAX_PILLS;
 
           return (
-            <div className="flex flex-wrap items-center gap-1">
+            <div className="flex flex-wrap gap-1 items-center">
               {visibleTariffs.map((tariffName, index) => (
                 <Badge key={index} variant="outline" className="whitespace-nowrap">
                   {tariffName}
@@ -429,11 +434,11 @@ export default function GestionProductos() {
     },
     {
       id: 'actions',
-      header: () => <div className="text-right pr-4">Acciones</div>, 
+      header: () => <div className="pr-4 text-right">Acciones</div>, 
       cell: ({ row }) => {
         const product = row.original;
         return (
-          <div className="flex items-center justify-end gap-2 pr-2">
+          <div className="flex gap-2 justify-end items-center pr-2">
             <Button
               variant="ghost"
               size="icon"
@@ -560,40 +565,26 @@ export default function GestionProductos() {
     );
   };
 
+
+
   // <<< INICIO: Definición de tableControlsJsx >>>
   const tableControlsJsx = (
-    <div className="flex items-center justify-between mb-4">
-      {/* Selector de Filas por Página */}
-      <div className="flex items-center space-x-2">
-        <Select
-          value={`${table.getState().pagination.pageSize}`}
-          onValueChange={(value) => {
-            table.setPageSize(Number(value));
-          }}
-        >
-          <SelectTrigger 
-            className="h-8 w-[55px] text-xs ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2"
-          >
-            <SelectValue placeholder={table.getState().pagination.pageSize} />
-          </SelectTrigger>
-          <SelectContent side="bottom" className="w-auto min-w-[55px]">
-            {[10, 15, 20, 30, 40, 50].map((pageSize) => (
-              <SelectItem key={pageSize} value={`${pageSize}`} className="text-xs">
-                {pageSize}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+    <div className="flex justify-between items-center mb-4">
+      {/* ✅ NUEVO: Selector de filas por página movido a la izquierda */}
+      <PageSizeSelector
+        pageSize={table.getState().pagination.pageSize}
+        onPageSizeChange={(size) => table.setPageSize(size)}
+        itemType="productos"
+      />
 
       {/* Dropdown de Visibilidad de Columnas */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="outline" className="ml-auto text-xs">
-            Columnas <ChevronDown className="w-4 h-4 ml-2" />
+            Columnas <ChevronDown className="ml-2 w-4 h-4" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
+        <DropdownMenuContent align="end" className="z-[9999]">
           {table.getAllColumns?.().filter(column => column.getCanHide()).map(column => ( 
             <DropdownMenuCheckboxItem
               key={column.id}
@@ -624,14 +615,14 @@ export default function GestionProductos() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-wrap items-center gap-4 mb-4">
+          <div className="flex flex-wrap gap-4 items-center mb-4">
             <div className="relative flex-grow sm:flex-grow-0">
-              <Search className="absolute w-4 h-4 text-gray-400 transform -translate-y-1/2 left-3 top-1/2" />
+              <Search className="absolute left-3 top-1/2 w-4 h-4 text-gray-400 transform -translate-y-1/2" />
               <Input
                 placeholder="Buscar por nombre, SKU..."
                 value={globalFilter ?? ''}
                 onChange={(event) => { setGlobalFilter(event.target.value) }}
-                className="w-full py-2 pl-10 pr-4 border rounded-md sm:w-64"
+                className="py-2 pr-4 pl-10 w-full rounded-md border sm:w-64"
               />
             </div>
 
@@ -682,10 +673,10 @@ export default function GestionProductos() {
                     {categoryFilter === 'all'
                       ? "Todas las categorías"
                       : categories.find(cat => cat.id === categoryFilter)?.name ?? "Seleccionar categoría..."}
-                    <CaretSortIcon className="w-4 h-4 ml-2 opacity-50 shrink-0" />
+                    <CaretSortIcon className="ml-2 w-4 h-4 opacity-50 shrink-0" />
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-[200px] p-0">
+                <PopoverContent className="w-[200px] p-0 z-[9999]">
                   <Command>
                     <CommandInput placeholder="Buscar categoría..." className="h-9" />
                     <CommandList>
@@ -741,9 +732,9 @@ export default function GestionProductos() {
             </div>
           </div>
           
-          <div className="fixed z-50 flex gap-2 bottom-4 right-4">
+          <div className="flex fixed right-4 bottom-4 z-50 gap-2">
             <Button variant="outline" onClick={handleVolver}>
-              <ArrowLeft className="w-4 h-4 mr-2" /> Volver
+              <ArrowLeft className="mr-2 w-4 h-4" /> Volver
             </Button>
             {isSelectionMode ? (
               <>
@@ -756,24 +747,109 @@ export default function GestionProductos() {
                     : `Añadir Seleccionados (${table.getSelectedRowModel().rows.length})`}
                 </Button>
                 <Button onClick={handleNuevoProducto}> 
-                  <Plus className="w-4 h-4 mr-2" /> Nuevo Producto
+                  <Plus className="mr-2 w-4 h-4" /> Nuevo Producto
                 </Button>
               </>
             ) : (
               <>
+                {/* ✅ NUEVO: Dropdown de acciones masivas */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button 
+                      disabled={table.getSelectedRowModel().rows.length === 0}
+                      className={cn(
+                          "text-white",
+                          table.getSelectedRowModel().rows.length > 0 
+                              ? "bg-orange-600 hover:bg-orange-700" 
+                              : "bg-gray-400 cursor-not-allowed"
+                      )}
+                    >
+                      <Settings2 className="mr-2 w-4 h-4" />
+                      Acciones ({table.getSelectedRowModel().rows.length})
+                      <ChevronDown className="ml-2 w-4 h-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="z-[9999]">
+                    <DropdownMenuItem 
+                      onClick={() => setShowBulkCategoryChanger(true)}
+                      disabled={table.getSelectedRowModel().rows.length === 0}
+                    >
+                      <PackageIcon className="mr-2 w-4 h-4" />
+                      Cambiar Categoría
+                    </DropdownMenuItem>
+                    <DropdownMenuItem 
+                      onClick={handleOpenAssociateModal}
+                      disabled={table.getSelectedRowModel().rows.length === 0}
+                    >
+                      <CircleDollarSign className="mr-2 w-4 h-4" />
+                      Asociar a Tarifa
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                
                 <Button 
-                  onClick={handleOpenAssociateModal} 
-                  disabled={table.getSelectedRowModel().rows.length === 0 || isLoading || addProductsMutation.isPending}
-                  variant="outline"
+                  onClick={handleNuevoProducto}
                 >
-                   <PackageIcon className="w-4 h-4 mr-2" /> Asociar ({table.getSelectedRowModel().rows.length}) a Tarifa...
-                </Button>
-                <Button onClick={handleNuevoProducto}>
-                    <Plus className="w-4 h-4 mr-2" /> Nuevo Producto
+                    <Plus className="mr-2 w-4 h-4" /> Nuevo Producto
                 </Button>
               </>
             )}
           </div>
+          
+          {/* ✅ NUEVO: Modal para cambio masivo de categorías */}
+          <BulkCategoryChanger
+              isOpen={showBulkCategoryChanger}
+              onClose={() => setShowBulkCategoryChanger(false)}
+              selectedItems={table.getSelectedRowModel().rows.map(row => ({
+                  id: row.original.id,
+                  name: row.original.name,
+                  type: 'product' as const,
+                  categoryId: row.original.category?.id,
+                  categoryName: row.original.category?.name || 'Sin categoría'
+              }))}
+              onUpdate={async (itemIds: string[], newCategoryId: string | null) => {
+                  try {
+                      const response = await fetch('/api/bulk/change-category', {
+                          method: 'POST',
+                          headers: {
+                              'Content-Type': 'application/json',
+                          },
+                          body: JSON.stringify({
+                              itemIds: itemIds,
+                              itemType: 'product',
+                              newCategoryId,
+                          }),
+                      });
+
+                      if (!response.ok) {
+                          throw new Error('Error al cambiar categorías');
+                      }
+
+                      const result = await response.json();
+                      sonnerToast.success(result.message || 'Categorías cambiadas exitosamente');
+                      
+                      // Actualización inmediata y forzada de datos
+                      await Promise.all([
+                          queryClient.invalidateQueries({ queryKey: ['products'] }),
+                          queryClient.invalidateQueries({ queryKey: ['categories'] }),
+                      ]);
+                      
+                      // Forzar refetch inmediato para ver los cambios
+                      await Promise.all([
+                          queryClient.refetchQueries({ queryKey: ['products'] }),
+                          queryClient.refetchQueries({ queryKey: ['categories'] }),
+                      ]);
+                      
+                      table.resetRowSelection();
+                      setShowBulkCategoryChanger(false);
+                  } catch (error) {
+                      console.error('Error:', error);
+                      sonnerToast.error('Error al cambiar categorías');
+                  }
+              }}
+              categories={categoriesDataFound || []}
+              itemType="product"
+          />
           
           {/* Dialog de Confirmación de Borrado */}
           <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
@@ -819,63 +895,72 @@ export default function GestionProductos() {
           {/* Controles de la tabla y la tabla misma */}
           {tableControlsJsx}
 
-          <div className="overflow-x-auto overflow-y-auto relative border rounded-lg max-h-[60vh]">
-            <Table className="min-w-full">
-              <TableHeader className="sticky top-0 z-10 bg-card">
-                {table.getHeaderGroups().map((headerGroup) => (
-                  <TableRow key={headerGroup.id}>
-                    {headerGroup.headers.map(header => (
-                      <TableHead key={header.id} style={{ width: header.getSize() !== 150 ? header.getSize() : undefined }}>
-                        {header.isPlaceholder
-                          ? null
-                          : flexRender(
-                            header.column.columnDef.header,
-                            header.getContext()
+          <div className="overflow-x-auto overflow-y-auto relative border rounded-lg max-h-[60vh] min-w-full">
+            {/* Scroll horizontal siempre visible */}
+            <div className="overflow-x-auto">
+              <Table className="min-w-full">
+                <TableHeader className="sticky top-0 z-10 bg-card">
+                  {table.getHeaderGroups().map((headerGroup) => (
+                    <TableRow key={headerGroup.id}>
+                      {headerGroup.headers.map(header => (
+                        <TableHead key={header.id} style={{ width: header.getSize() !== 150 ? header.getSize() : undefined, minWidth: header.id === 'select' ? '50px' : '120px' }}>
+                          {header.isPlaceholder
+                            ? null
+                            : flexRender(
+                              header.column.columnDef.header,
+                              header.getContext()
+                            )}
+                          {header.column.getCanSort?.() && (
+                            <Button variant="ghost" size="sm" onClick={() => header.column.toggleSorting(header.column.getIsSorted() === 'asc')} className="ml-2">
+                              {header.column.getIsSorted() === 'desc' ? <ChevronDown className="h-3.5 w-3.5" /> : header.column.getIsSorted() === 'asc' ? <ChevronUp className="h-3.5 w-3.5" /> : <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground/70" />}
+                            </Button>
                           )}
-                        {header.column.getCanSort?.() && (
-                          <Button variant="ghost" size="sm" onClick={() => header.column.toggleSorting(header.column.getIsSorted() === 'asc')} className="ml-2">
-                            {header.column.getIsSorted() === 'desc' ? <ChevronDown className="h-3.5 w-3.5" /> : header.column.getIsSorted() === 'asc' ? <ChevronUp className="h-3.5 w-3.5" /> : <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground/70" />}
-                          </Button>
-                        )}
-                      </TableHead>
-                    ))}
-                  </TableRow>
-                ))}
-              </TableHeader>
-              <TableBody>
-                {table.getRowModel?.()?.rows?.length ? (
-                  table.getRowModel().rows.map(row => (
-                    <TableRow
-                      key={row.id}
-                      data-state={row.getIsSelected?.() && "selected"}
-                    >
-                      {row.getVisibleCells().map(cell => (
-                        <TableCell key={cell.id} style={{ width: cell.column.getSize() !== 150 ? cell.column.getSize() : undefined }} className={cn(
-                            // @ts-ignore
-                            cell.column.columnDef.meta?.align === 'center' && 'text-center',
-                            // @ts-ignore
-                            cell.column.columnDef.meta?.align === 'right' && 'text-right',
-                        )}>
-                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                        </TableCell>
+                        </TableHead>
                       ))}
                     </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={columns.length || 1} className="h-24 text-center">
-                      {isLoading ? "Cargando productos..." : "No se encontraron productos."}
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
+                  ))}
+                </TableHeader>
+                <TableBody>
+                  {table.getRowModel?.()?.rows?.length ? (
+                    table.getRowModel().rows.map(row => (
+                      <TableRow
+                        key={row.id}
+                        data-state={row.getIsSelected?.() && "selected"}
+                      >
+                        {row.getVisibleCells().map(cell => (
+                          <TableCell key={cell.id} style={{ width: cell.column.getSize() !== 150 ? cell.column.getSize() : undefined }} className={cn(
+                              // @ts-ignore
+                              cell.column.columnDef.meta?.align === 'center' && 'text-center',
+                              // @ts-ignore
+                              cell.column.columnDef.meta?.align === 'right' && 'text-right',
+                          )}>
+                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={columns.length || 1} className="h-24 text-center">
+                        {isLoading ? "Cargando productos..." : "No se encontraron productos."}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
           </div>
 
           {/* Paginación */}
           {processedProducts.length > 0 && !isLoading && (
              <div className="flex items-center justify-end mt-0.5 space-x-2">
-                <PaginationControls table={table} />
+                <PaginationControls 
+                    currentPage={table.getState().pagination.pageIndex + 1}
+                    totalPages={table.getPageCount()}
+                    onPageChange={(page) => table.setPageIndex(page - 1)}
+                    totalCount={table.getFilteredRowModel().rows.length}
+                    itemType="productos"
+                />
              </div>
           )}
 

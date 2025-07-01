@@ -5,6 +5,7 @@ import { Prisma } from '@prisma/client';
 import { getServerAuthSession } from '@/lib/auth'; 
 import { ApiProductPayloadSchema, ProductFormValues } from '@/lib/schemas/product'; // <<< Importar nuevo schema
 import { z } from 'zod'; // Importar z para usar ZodError
+import { updateCategoryTypeIfNeeded } from '@/utils/category-type-calculator';
 
 // Helper para extraer ID (mismo que en servicios)
 function extractIdFromUrl(url: string): string | null {
@@ -82,11 +83,15 @@ export async function PUT(request: Request) {
 
         // Verificar existencia y pertenencia ANTES de la transacción
         const existingProductCheck = await prisma.product.findUnique({ 
-            where: { id: productId, systemId: systemId } 
+            where: { id: productId, systemId: systemId },
+            select: { id: true, sku: true, categoryId: true } // ✅ Incluir categoryId para actualización automática
         });
         if (!existingProductCheck) {
             return NextResponse.json({ message: `Producto ${productId} no encontrado en este sistema` }, { status: 404 });
         }
+
+        // 🔍 NUEVO: Guardar categoryId anterior para actualización posterior
+        const previousCategoryId = existingProductCheck.categoryId;
 
         // Transacción para actualizar
         const updatedProductWithSettings = await prisma.$transaction(async (tx) => {
@@ -143,6 +148,22 @@ export async function PUT(request: Request) {
             });
         });
 
+        // 🔄 Actualizar automáticamente los tipos de categorías
+        try {
+          // Actualizar categoría nueva (si se asignó una)
+          if (categoryId) {
+            await updateCategoryTypeIfNeeded(categoryId, systemId!);
+          }
+          
+          // 🔄 NUEVO: Actualizar categoría anterior (si había una y es diferente a la nueva)
+          if (previousCategoryId && previousCategoryId !== categoryId) {
+            await updateCategoryTypeIfNeeded(previousCategoryId, systemId!);
+          }
+        } catch (error) {
+          console.error("❌ [AutoCategoryType] Error actualizando tipos de categorías:", error);
+          // No fallar la operación principal por este error
+        }
+
         return NextResponse.json(updatedProductWithSettings);
 
     } catch (error) {
@@ -189,20 +210,19 @@ export async function DELETE(request: Request) {
         }
         systemId = session.user.systemId;
         
+        // 🔍 Obtener datos del producto ANTES de la transacción para uso posterior
+        const existingProduct = await prisma.product.findUnique({
+            where: { id: productId, systemId: systemId },
+            select: { id: true, categoryId: true }
+        });
+        
+        if (!existingProduct) {
+            return NextResponse.json({ message: `Producto ${productId} no encontrado en este sistema` }, { status: 404 });
+        }
+        
         // Usar transacción para verificar dependencias y eliminar
         await prisma.$transaction(async (tx) => {
-            // 1. Verificar existencia y pertenencia
-            const existingProduct = await tx.product.findUnique({
-                where: { id: productId, systemId: systemId }
-            });
-            if (!existingProduct) {
-                 throw new Prisma.PrismaClientKnownRequestError(
-                    `Producto ${productId} no encontrado en este sistema`, 
-                    { code: 'P2025', clientVersion: 'tx' }
-                 );
-        }
-
-            // 2. Verificar dependencias (mover dentro de la tx)
+            // 1. Verificar dependencias
             const tariffAssociations = await tx.tariffProductPrice.count({ where: { productId: productId }});
         if (tariffAssociations > 0) {
                  throw new Error(`Conflicto: Asociado a ${tariffAssociations} tarifa(s).`); // Lanzar error para rollback
@@ -213,12 +233,22 @@ export async function DELETE(request: Request) {
             }
             // TODO: Añadir verificaciones para InvoiceItem, PackageItem, ServiceConsumption si es necesario
             
-            // 3. Eliminar (la cascada se encarga de ProductSetting)
+            // 2. Eliminar (la cascada se encarga de ProductSetting)
             await tx.product.delete({
                 where: { id: productId, systemId: systemId }, // Doble check
         });
         });
         
+        // 🔄 NUEVO: Actualizar automáticamente el tipo de categoría tras eliminar producto
+        if (existingProduct.categoryId) {
+          try {
+            await updateCategoryTypeIfNeeded(existingProduct.categoryId, systemId!);
+          } catch (error) {
+            console.error("❌ [AutoCategoryType] Error actualizando tipo de categoría tras eliminación:", error);
+            // No fallar la operación principal por este error
+          }
+        }
+
         return NextResponse.json({ message: `Producto ${productId} eliminado` }, { status: 200 });
 
     } catch (error: any) {

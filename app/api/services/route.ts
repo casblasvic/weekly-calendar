@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { getServerAuthSession } from "@/lib/auth";
 import { ApiServicePayloadSchema, ServiceFormValues } from '@/lib/schemas/service';
+import { updateCategoryTypeIfNeeded } from '@/utils/category-type-calculator';
 
 /**
  * Handler para obtener todos los servicios.
@@ -23,6 +24,8 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const clinicId = searchParams.get('clinicId');
   const isActiveParam = searchParams.get('isActive');
+  const categoryId = searchParams.get('categoryId');
+  const simplified = searchParams.get('simplified') === 'true';
 
   let whereClause: Prisma.ServiceWhereInput = {
       systemId: systemId,
@@ -33,7 +36,10 @@ export async function GET(request: Request) {
     // TODO: Lógica de filtrado por clínica (si es necesario)
   }
 
-  // --- Filtrar por isActive usando la tabla settings --- 
+  if (categoryId) {
+    whereClause.categoryId = categoryId;
+  }
+
   if (isActiveParam !== null) {
     const isActiveValue = isActiveParam === 'true';
     whereClause.settings = {
@@ -42,29 +48,52 @@ export async function GET(request: Request) {
   }
 
   try {
-    const services = await prisma.service.findMany({
-      where: whereClause,
-      include: {
-        category: true,
-        vatType: true,
-        settings: true,
-        tariffPrices: {
-          where: { isActive: true },
-          select: {
-            tariff: {
-              select: {
-                id: true,
-                name: true,
+    if (simplified) {
+      // ✅ Consulta simplificada usando solo select
+      const services = await prisma.service.findMany({
+        where: whereClause,
+        select: {
+          id: true,
+          name: true,
+          price: true,
+          durationMinutes: true,
+          settings: {
+            select: {
+              isActive: true
+            }
+          },
+        },
+        orderBy: {
+          name: 'asc',
+        },
+      });
+      return NextResponse.json(services);
+    } else {
+      // ✅ Consulta completa usando solo include
+      const services = await prisma.service.findMany({
+        where: whereClause,
+        include: {
+          category: true,
+          vatType: true,
+          settings: true,
+          tariffPrices: {
+            where: { isActive: true },
+            select: {
+              tariff: {
+                select: {
+                  id: true,
+                  name: true,
+                },
               },
             },
           },
         },
-      },
-      orderBy: {
-        name: 'asc',
-      },
-    });
-    return NextResponse.json(services);
+        orderBy: {
+          name: 'asc',
+        },
+      });
+      return NextResponse.json(services);
+    }
   } catch (error) {
     console.error("Error fetching services:", error);
     return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 });
@@ -164,6 +193,16 @@ export async function POST(request: Request) {
             // skillRequirements: { include: { skill: true } },
         }
     });
+
+    // 🔄 NUEVO: Actualizar automáticamente el tipo de categoría
+    if (categoryId) {
+      try {
+        await updateCategoryTypeIfNeeded(categoryId, sessionSystemId);
+      } catch (error) {
+        console.error("❌ [AutoCategoryType] Error actualizando tipo de categoría:", error);
+        // No fallar la operación principal por este error
+      }
+    }
 
     return NextResponse.json(finalServiceResponse, { status: 201 });
 

@@ -1,0 +1,35 @@
+    // ✅ NUEVO: Transformar updateData para Prisma
+    console.log('🔄 Transformando datos para Prisma...');
+    
+    // Separar campos directos de relaciones
+    const { parentId, equipmentTypeId, ...directFields } = updateData;
+    
+    // Construir objeto de datos para Prisma
+    const prismaUpdateData: any = {
+      ...directFields
+    };
+
+    // Manejar parentId como relación
+    if (parentId !== undefined) {
+      if (parentId === null) {
+        prismaUpdateData.parent = { disconnect: true };
+      } else {
+        prismaUpdateData.parent = { connect: { id: parentId } };
+      }
+    }
+
+    // Manejar equipmentTypeId como relación
+    if (equipmentTypeId !== undefined) {
+      if (equipmentTypeId === null) {
+        prismaUpdateData.equipmentType = { disconnect: true };
+      } else {
+        prismaUpdateData.equipmentType = { connect: { id: equipmentTypeId } };
+      }
+    }
+
+    console.log('📋 Datos transformados para Prisma:', prismaUpdateData);
+
+    const updatedCategory = await prisma.category.update({
+      where: { id: categoryId },
+      data: prismaUpdateData,
+    });

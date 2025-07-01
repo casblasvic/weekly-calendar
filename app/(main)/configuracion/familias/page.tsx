@@ -12,9 +12,11 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Category } from "@prisma/client"
 import CategoryFormModal from "@/components/category-form-modal"
 
-// Interfaz ampliada para incluir nombre del padre
+// Interfaz ampliada para incluir nombre del padre y conteos
 interface CategoryWithParentName extends Category {
   parentName?: string | null;
+  servicesCount?: number;
+  productsCount?: number;
 }
 
 export default function GestionFamilias() {
@@ -36,11 +38,11 @@ export default function GestionFamilias() {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetch("/api/categories");
+      const response = await fetch("/api/categories?includeEquipmentType=true&includeCounts=true"); // ✅ NUEVO: Incluir conteos
       if (!response.ok) {
         throw new Error(`Error ${response.status} al obtener categorías`);
       }
-      const data: Category[] = await response.json();
+      const data: CategoryWithParentName[] = await response.json();
 
       // Enriquecer con nombre del padre
       const categoriesWithParentNames = data.map(cat => {
@@ -156,7 +158,7 @@ export default function GestionFamilias() {
     }
   };
   
-  const renderSkeleton = (rows = 5, cols = 4) => (
+  const renderSkeleton = (rows = 5, cols = 5) => (
       Array.from({ length: rows }).map((_, index) => (
         <TableRow key={`skel-${index}`}>
           {Array.from({ length: cols }).map((_, i) => (
@@ -204,17 +206,21 @@ export default function GestionFamilias() {
                >
                  Familia Padre {getSortIcon('parentName')}
                </TableHead>
+               <TableHead className="text-center">Servicios</TableHead>
+               <TableHead className="text-center">Productos</TableHead>
               <TableHead className="text-right pr-4">Acciones</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              renderSkeleton(5, 3)
+              renderSkeleton(5, 5)
             ) : filteredAndSortedCategories.length > 0 ? (
               filteredAndSortedCategories.map((category) => (
                 <TableRow key={category.id}>
                   <TableCell className="font-medium py-2 px-4">{category.name}</TableCell>
                   <TableCell className="py-2 px-4">{category.parentName || '-'}</TableCell>
+                  <TableCell className="text-center py-2 px-4">{category.servicesCount || '-'}</TableCell>
+                  <TableCell className="text-center py-2 px-4">{category.productsCount || '-'}</TableCell>
                   <TableCell className="text-right py-2 pr-4">
                     <Button variant="ghost" size="icon" onClick={() => handleEditarFamilia(category)} className="mr-1 h-8 w-8">
                       <Pencil size={16} />
@@ -227,7 +233,7 @@ export default function GestionFamilias() {
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={3} className="h-24 text-center">
+                <TableCell colSpan={5} className="h-24 text-center">
                   No se encontraron familias.
                 </TableCell>
               </TableRow>

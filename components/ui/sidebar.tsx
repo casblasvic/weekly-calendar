@@ -227,7 +227,7 @@ const Sidebar = React.forwardRef<
         />
         <div
           className={cn(
-            "duration-200 fixed inset-y-0 z-10 hidden h-svh w-[--sidebar-width] transition-[left,right,width] ease-linear md:flex",
+            "duration-200 fixed inset-y-0 z-[9998] hidden h-svh w-[--sidebar-width] transition-[left,right,width] ease-linear md:flex",
             side === "left"
               ? "left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]"
               : "right-0 group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)]",
@@ -576,10 +576,9 @@ const SidebarMenuButton = React.forwardRef<
         <HoverCardContent
           side="right"
           sideOffset={10}
-          className="flex items-center gap-2 p-2 text-sm"
-        >
-          {tooltip}
-        </HoverCardContent>
+          className="flex items-center gap-2 p-2 text-sm z-[9999]"
+          {...tooltip}
+        />
       </HoverCard>
     )
   }
@@ -684,7 +683,7 @@ const SidebarMenuSub = React.forwardRef<
     ref={ref}
     data-sidebar="menu-sub"
     className={cn(
-      "mx-3.5 flex min-w-0 translate-x-px flex-col gap-1 border-l border-sidebar-border px-2.5 py-0.5",
+      "mx-3.5 flex min-w-0 translate-x-px flex-col gap-1 border-l border-sidebar-border px-2.5 py-0.5 z-[9999] relative",
       "group-data-[collapsible=icon]:hidden",
       className
     )}

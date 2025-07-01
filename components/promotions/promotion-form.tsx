@@ -63,6 +63,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useQuery } from '@tanstack/react-query';
 import { Label } from "@/components/ui/label";
 import { useSearchParams } from 'next/navigation';
+import { SaveButton } from "@/components/ui/save-button";
 
 // Definir el tipo para los datos del formulario basados en el schema Zod
 export type PromotionFormValues = z.infer<typeof PromotionSchema>;
@@ -1458,9 +1459,14 @@ export function PromotionForm({
             {t("common.buttons.cancel")} 
           </Button>
         )}
-        <Button form="promotion-form-id" type="submit" disabled={isLoading || isSubmitting}>
-          {isSubmitting ? t("common.saving") : t("common.buttons.save")} 
-        </Button>
+        <SaveButton 
+          form="promotion-form-id" 
+          type="submit" 
+          isSaving={isSubmitting}
+          disabled={isLoading}
+          saveText={t("common.buttons.save")}
+          savingText={t("common.saving")}
+        />
       </div>
     </Form>
   );

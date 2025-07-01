@@ -8,10 +8,11 @@ export function useServicesQuery(options?: Omit<UseQueryOptions<any, unknown, an
   return useQuery<any, unknown>({
     queryKey: ['services'],
     queryFn: async () => {
-      return await api.cached.get('/api/services');
+      return await api.get('/api/services');
     },
-    staleTime: 1000 * 60 * 10, // 10 minutos
-    refetchOnMount: true,
+    staleTime: 1000 * 60 * 2, // 2 minutos (reducido para mejor actualización)
+    refetchOnMount: false, // No refrescar automáticamente al montar
+    refetchOnWindowFocus: false, // No refrescar al cambiar ventana
     ...options,
   });
 }
@@ -24,10 +25,10 @@ export function useServiceDetailQuery(serviceId: string | null, options?: Omit<U
     queryKey: ['service', serviceId],
     queryFn: async () => {
       if (!serviceId) throw new Error('Service ID is required');
-      return await api.cached.get(`/api/services/${serviceId}`);
+      return await api.get(`/api/services/${serviceId}`);
     },
     enabled: !!serviceId,
-    staleTime: 1000 * 60 * 5, // 5 minutos
+    staleTime: 1000 * 60 * 1, // 1 minuto (reducido para mejor actualización)
     retry: (failureCount, error: any) => {
       // No reintentar en caso de 404
       if (error?.response?.status === 404) return false;
@@ -67,10 +68,46 @@ export function useUpdateServiceMutation() {
       const response = await api.put(`/api/services/${id}`, data);
       return response;
     },
+    // Actualización optimista para respuesta inmediata
+    onMutate: async ({ id, data }) => {
+      // Cancelar queries en curso
+      await queryClient.cancelQueries({ queryKey: ['services'] });
+      await queryClient.cancelQueries({ queryKey: ['service', id] });
+
+      // Obtener datos previos
+      const previousServices = queryClient.getQueryData(['services']);
+      const previousService = queryClient.getQueryData(['service', id]);
+
+      // Actualizar optimísticamente la lista de servicios
+      queryClient.setQueryData(['services'], (old: any[]) => {
+        if (!old || !Array.isArray(old)) return old;
+        return old.map(service => 
+          service.id === id ? { ...service, ...data } : service
+        );
+      });
+
+      // Actualizar optimísticamente el servicio individual
+      queryClient.setQueryData(['service', id], (old: any) => {
+        if (!old) return old;
+        return { ...old, ...data };
+      });
+
+      return { previousServices, previousService, id };
+    },
+    onError: (err, variables, context) => {
+      // Revertir en caso de error
+      if (context?.previousServices) {
+        queryClient.setQueryData(['services'], context.previousServices);
+      }
+      if (context?.previousService) {
+        queryClient.setQueryData(['service', context.id], context.previousService);
+      }
+    },
     onSuccess: (_, variables) => {
-      // Invalidar consultas relacionadas con este servicio
+      // Invalidar para obtener datos actualizados del servidor
       queryClient.invalidateQueries({ queryKey: ['service', variables.id] });
       queryClient.invalidateQueries({ queryKey: ['services'] });
+      queryClient.invalidateQueries({ queryKey: ['categories'] }); // Por si cambió la categoría
     }
   });
 }
@@ -86,10 +123,35 @@ export function useDeleteServiceMutation() {
       const response = await api.delete(`/api/services/${id}`);
       return response;
     },
+    // Actualización optimista para respuesta inmediata
+    onMutate: async (id) => {
+      // Cancelar queries en curso
+      await queryClient.cancelQueries({ queryKey: ['services'] });
+      await queryClient.cancelQueries({ queryKey: ['service', id] });
+
+      // Obtener datos previos
+      const previousServices = queryClient.getQueryData(['services']);
+
+      // Remover optimísticamente de la lista
+      queryClient.setQueryData(['services'], (old: any[]) => {
+        if (!old || !Array.isArray(old)) return old;
+        return old.filter(service => service.id !== id);
+      });
+
+      return { previousServices, id };
+    },
+    onError: (err, id, context) => {
+      // Revertir en caso de error
+      if (context?.previousServices) {
+        queryClient.setQueryData(['services'], context.previousServices);
+      }
+    },
     onSuccess: (_, id) => {
-      // Invalidar consultas relacionadas con servicios
+      // Limpiar datos específicos del servicio eliminado
+      queryClient.removeQueries({ queryKey: ['service', id] });
+      // Invalidar consultas relacionadas
       queryClient.invalidateQueries({ queryKey: ['services'] });
-      queryClient.invalidateQueries({ queryKey: ['service', id] });
+      queryClient.invalidateQueries({ queryKey: ['categories'] }); // Por si cambió el tipo de categoría
     }
   });
 }
@@ -102,10 +164,10 @@ export function useServiceConsumptionsQuery(serviceId: string | null, options?: 
     queryKey: ['service-consumptions', serviceId],
     queryFn: async () => {
       if (!serviceId) throw new Error('Service ID is required');
-      return await api.cached.get(`/api/services/${serviceId}/consumptions`);
+      return await api.get(`/api/services/${serviceId}/consumptions`);
     },
     enabled: !!serviceId,
-    staleTime: 1000 * 60 * 5, // 5 minutos
+    staleTime: 1000 * 60 * 1, // 1 minuto (reducido)
     ...options,
   });
 }
