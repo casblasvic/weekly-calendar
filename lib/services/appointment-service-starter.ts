@@ -122,7 +122,14 @@ export class AppointmentServiceStarter {
                       include: {
                         equipment: {
                           include: {
-                            device: true
+                            clinicAssignments: {
+                              include: {
+                                clinic: true
+                              },
+                              where: {
+                                isActive: true
+                              }
+                            }
                           }
                         }
                       }
@@ -166,7 +173,9 @@ export class AppointmentServiceStarter {
       .map(req => req.equipment)
       .filter(equipment => 
         equipment.isActive && 
-        equipment.clinicId === clinicId
+        equipment.clinicAssignments.some((assignment: any) => 
+          assignment.clinicId === clinicId && assignment.isActive
+        )
       );
   }
 
@@ -236,7 +245,16 @@ export class AppointmentServiceStarter {
       // 1. Obtener equipo con dispositivo
       const equipment = await tx.equipment.findFirst({
         where: { id: equipmentId },
-        include: { device: true, clinic: true }
+        include: { 
+          clinicAssignments: {
+            include: {
+              clinic: true
+            },
+            where: {
+              isActive: true
+            }
+          }
+        }
       });
 
       if (!equipment) {
@@ -268,12 +286,14 @@ export class AppointmentServiceStarter {
       });
 
       // 5. Crear registro de uso de dispositivo
+      const equipmentAssignment = equipment.clinicAssignments[0];
       const deviceUsage = await tx.appointmentDeviceUsage.create({
         data: {
           appointmentId: appointmentId,
           appointmentServiceId: `${appointmentId}-${serviceId}`,
           equipmentId: equipmentId,
-          deviceId: equipment.deviceId || equipment.id,
+          equipmentClinicAssignmentId: equipmentAssignment?.id || null,
+          deviceId: equipmentAssignment?.deviceId || equipment.id,
           startedAt: now,
           estimatedMinutes: service?.durationMinutes || 30,
           startedByUserId: userId,
@@ -290,14 +310,16 @@ export class AppointmentServiceStarter {
         }
       });
 
-      // 7. Activar dispositivo si existe
-      if (equipment.device?.apiEndpoint) {
+      // 7. Activar dispositivo si existe (TODO: adaptar al nuevo sistema de asignaciones)
+      // Nota: La activación de dispositivos necesita ser reestructurada para el nuevo sistema
+      // donde Equipment no tiene relación directa con Device
+      /* if (equipment.device?.apiEndpoint) {
         try {
           await DeviceController.activateDevice(equipment.device);
         } catch (deviceError) {
           console.warn('[AppointmentServiceStarter] No se pudo activar dispositivo:', deviceError);
         }
-      }
+      } */
 
       return {
         success: true,

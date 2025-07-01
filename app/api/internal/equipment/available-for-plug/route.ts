@@ -18,11 +18,18 @@ export async function GET(request: NextRequest) {
     }
 
     try {
+        // Buscar equipos que tienen asignaciones activas a la clínica especificada
+        // y que no están ya asociados a un SmartPlugDevice
         const availableEquipment = await prisma.equipment.findMany({
             where: {
                 systemId: session.user.systemId,
-                clinicId: clinicId,
-                smartDevice: null,
+                smartDevice: null, // No debe estar ya asociado a un enchufe
+                clinicAssignments: {
+                    some: {
+                        clinicId: clinicId,
+                        isActive: true
+                    }
+                }
             },
             select: {
                 id: true,
@@ -32,6 +39,7 @@ export async function GET(request: NextRequest) {
                 name: 'asc'
             }
         });
+
         return NextResponse.json(availableEquipment);
     } catch (error) {
         console.error("Error fetching available equipment:", error);

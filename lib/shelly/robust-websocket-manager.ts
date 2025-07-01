@@ -350,5 +350,23 @@ export class ShellyRobustWebSocketManager {
   }
 }
 
-// Singleton para uso global
-export const shellyRobustManager = new ShellyRobustWebSocketManager(); 
+// Singleton para uso global con inicialización lazy
+let _shellyRobustManager: ShellyRobustWebSocketManager | null = null;
+
+export function getShellyRobustManager(): ShellyRobustWebSocketManager {
+  if (!_shellyRobustManager) {
+    _shellyRobustManager = new ShellyRobustWebSocketManager();
+  }
+  return _shellyRobustManager;
+}
+
+// Para compatibilidad con código existente
+export const shellyRobustManager = {
+  connectCredential: (credentialId: string) => getShellyRobustManager().connectCredential(credentialId),
+  disconnectCredential: (credentialId: string) => getShellyRobustManager().disconnectCredential(credentialId),
+  sendCommand: (credentialId: string, deviceId: string, command: any) => getShellyRobustManager().sendCommand(credentialId, deviceId, command),
+  getMetrics: () => getShellyRobustManager().getMetrics(),
+  healthCheck: () => getShellyRobustManager().healthCheck(),
+  initializeAll: () => getShellyRobustManager().initializeAll(),
+  destroy: () => getShellyRobustManager().destroy()
+}; 

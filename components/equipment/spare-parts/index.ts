@@ -1,0 +1,1 @@
+export { default as SparePartsTab } from './spare-parts-tab' 

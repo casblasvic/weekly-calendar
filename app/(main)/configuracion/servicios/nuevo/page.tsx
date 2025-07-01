@@ -33,7 +33,7 @@ export default function NuevoServicioPage() {
             const [catRes, vatRes, equipRes] = await Promise.all([
                 fetch('/api/categories'),
                 fetch('/api/vat-types'),
-                fetch('/api/equipments') // Asumiendo endpoint para equipos
+                fetch('/api/equipment') // API moderna de equipamiento
             ]);
 
             if (!catRes.ok || !vatRes.ok || !equipRes.ok) {
@@ -131,7 +131,7 @@ export default function NuevoServicioPage() {
     };
 
     const fetchEquipments = async (): Promise<Equipment[]> => {
-        const res = await fetch('/api/equipments');
+        const res = await fetch('/api/equipment');
         if (!res.ok) throw new Error("Error fetching equipments");
         return res.json();
     };

@@ -31,16 +31,21 @@ export async function GET(request: NextRequest) {
                 skip,
                 take: pageSize,
                 include: {
-                    equipment: {
-                        select: {
-                            name: true,
-                            clinicId: true,
+                    equipmentClinicAssignment: {
+                        include: {
+                            equipment: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                }
+                            },
                             clinic: {
                                 select: {
+                                    id: true,
                                     name: true,
                                 }
                             }
-                        },
+                        }
                     },
                     credential: {
                         select: {
@@ -58,11 +63,33 @@ export async function GET(request: NextRequest) {
             prisma.smartPlugDevice.count({ where: whereClause }),
         ]);
 
-        return NextResponse.json({
-            data: devices,
+        // Transformar los datos para mantener compatibilidad con el frontend
+        const transformedDevices = devices.map(device => ({
+            ...device,
+            // Mantener compatibilidad hacia atrás con el campo equipment
+            equipment: device.equipmentClinicAssignment ? {
+                name: device.equipmentClinicAssignment.equipment.name,
+                clinicId: device.equipmentClinicAssignment.clinicId,
+                clinic: device.equipmentClinicAssignment.clinic
+            } : null,
+            // Asegurar que equipmentClinicAssignment esté disponible para el modal
+            equipmentClinicAssignment: device.equipmentClinicAssignment
+        }));
+
+        // Datos transformados listos para el frontend
+
+        const response = NextResponse.json({
+            data: transformedDevices,
             totalPages: Math.ceil(totalCount / pageSize),
             totalCount,
         });
+
+        // ← FORZAR SIN CACHE EN LA RESPUESTA
+        response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+        response.headers.set('Pragma', 'no-cache');
+        response.headers.set('Expires', '0');
+        
+        return response;
 
     } catch (error) {
         console.error("Error fetching smart plug devices:", error);
@@ -83,7 +110,7 @@ export async function POST(request: NextRequest) {
                 type: 'SHELLY', // Por ahora, harcodeado a Shelly
                 deviceId: body.deviceId,
                 deviceIp: body.deviceIp,
-                equipmentId: body.equipmentId,
+                equipmentClinicAssignmentId: body.equipmentClinicAssignmentId,
                 systemId: session.user.systemId,
                 // integrationId se deberá obtener del módulo activado
                 integrationId: body.integrationId, // Provisional

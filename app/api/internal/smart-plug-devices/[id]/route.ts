@@ -37,14 +37,17 @@ export async function PUT(
                 name: body.name,
                 deviceId: body.deviceId,
                 deviceIp: body.deviceIp,
-                equipmentId: body.equipmentId,
+                equipmentClinicAssignmentId: body.equipmentClinicAssignmentId,
                 clinicId: body.clinicId,
             },
             include: {
-                equipment: {
-                    select: {
-                        name: true,
-                        clinicId: true,
+                equipmentClinicAssignment: {
+                    include: {
+                        equipment: {
+                            select: {
+                                name: true,
+                            }
+                        },
                         clinic: {
                             select: {
                                 name: true,
@@ -99,7 +102,7 @@ export async function PATCH(
     // Campos básicos
     if (body.name !== undefined) updateData.name = body.name;
     if (body.clinicId !== undefined) updateData.clinicId = body.clinicId;
-    if (body.equipmentId !== undefined) updateData.equipmentId = body.equipmentId;
+    if (body.equipmentClinicAssignmentId !== undefined) updateData.equipmentClinicAssignmentId = body.equipmentClinicAssignmentId;
     
     // Campos de configuración
     if (body.timezone !== undefined) updateData.timezone = body.timezone;
@@ -123,7 +126,12 @@ export async function PATCH(
       data: updateData,
       include: {
         credential: true,
-        equipment: true,
+        equipmentClinicAssignment: {
+          include: {
+            equipment: true,
+            clinic: true
+          }
+        },
         clinic: true
       }
     });
@@ -165,12 +173,20 @@ export async function DELETE(
 
         // Eliminar registros de uso asociados al equipo del enchufe
         // Como AppointmentDeviceUsage se relaciona con Equipment, no directamente con SmartPlugDevice
-        await prisma.appointmentDeviceUsage.deleteMany({
-            where: {
-                equipmentId: smartPlug.equipmentId,
-                systemId: session.user.systemId
+        if (smartPlug.equipmentClinicAssignmentId) {
+            const assignment = await prisma.equipmentClinicAssignment.findUnique({
+                where: { id: smartPlug.equipmentClinicAssignmentId }
+            });
+            
+            if (assignment) {
+                await prisma.appointmentDeviceUsage.deleteMany({
+                    where: {
+                        equipmentId: assignment.equipmentId,
+                        systemId: session.user.systemId
+                    }
+                });
             }
-        });
+        }
 
         // Eliminar el enchufe inteligente
         await prisma.smartPlugDevice.delete({

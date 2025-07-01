@@ -90,7 +90,6 @@ model System {
   equipmentSpareParts          EquipmentSparePart[]
   sparePartInstallations       SparePartInstallation[]
   equipmentUsageLogs           EquipmentUsageLog[]
-  equipmentAssignments         EquipmentClinicAssignment[]
 
   @@map("systems")
 }
@@ -623,6 +622,8 @@ model Equipment {
   modelNumber        String?
   purchaseDate       DateTime?
   warrantyEndDate    DateTime?
+  location           String?
+  notes              String?
   isActive           Boolean                       @default(true)
   systemId           String
   createdAt          DateTime                      @default(now())
@@ -631,6 +632,7 @@ model Equipment {
   appointmentsUsing  Appointment[]
   requiredByServices ServiceEquipmentRequirement[]
   deviceUsage        AppointmentDeviceUsage[]
+  smartDevice        SmartPlugDevice?
   spareParts         EquipmentSparePart[]
   usageLog           EquipmentUsageLog?
   clinicAssignments  EquipmentClinicAssignment[]
@@ -644,8 +646,6 @@ model EquipmentClinicAssignment {
   id                String                  @id @default(cuid())
   equipmentId       String
   clinicId          String
-  cabinId           String?                 // Cabina donde se instala (opcional)
-  deviceName        String?                 // Alias/nombre descriptivo del dispositivo
   serialNumber      String                  @unique
   deviceId          String                  @unique
   isActive          Boolean                 @default(true)
@@ -659,17 +659,14 @@ model EquipmentClinicAssignment {
   // Relaciones
   equipment         Equipment               @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
   clinic            Clinic                  @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  cabin             Cabin?                  @relation(fields: [cabinId], references: [id], onDelete: SetNull)
   system            System                  @relation(fields: [systemId], references: [id], onDelete: Cascade)
   installations     SparePartInstallation[]
   deviceUsage       AppointmentDeviceUsage[]
   appointments      Appointment[]           @relation("EquipmentClinicAssignmentAppointments")
-  smartPlugDevice   SmartPlugDevice?        // Nueva relación con dispositivos IoT
   
   @@unique([equipmentId, clinicId, serialNumber])
   @@index([equipmentId])
   @@index([clinicId])
-  @@index([cabinId])
   @@index([serialNumber])
   @@index([deviceId])
   @@index([systemId])
@@ -688,6 +685,7 @@ model Device {
   createdAt           DateTime                 @default(now())
   updatedAt           DateTime                 @updatedAt
   system              System                   @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  equipmentControlled Equipment?
   usageRecords        AppointmentDeviceUsage[]
 
   @@index([systemId])
@@ -696,39 +694,37 @@ model Device {
 }
 
 model Appointment {
-  id                           String                     @id @default(cuid())
-  startTime                    DateTime                   @db.Timestamptz(6)
-  endTime                      DateTime                   @db.Timestamptz(6)
-  durationMinutes              Int
-  status                       AppointmentStatus          @default(SCHEDULED)
-  notes                        String?
-  clientNotes                  String?
-  professionalUserId           String
-  systemId                     String
-  clinicId                     String
-  equipmentId                  String?
-  equipmentClinicAssignmentId  String?                    // Referencia a la instancia específica
-  deviceActivationTimestamp    DateTime?                  @db.Timestamptz(6)
-  deviceDeactivationTimestamp  DateTime?                  @db.Timestamptz(6)
-  actualUsageMinutes           Int?
-  isUsageLocked                Boolean                    @default(false)
-  originalAppointmentId        String?
-  createdAt                    DateTime                   @default(now()) @db.Timestamptz(6)
-  updatedAt                    DateTime                   @updatedAt @db.Timestamptz(6)
-  estimatedDurationMinutes     Int?
-  personId                     String
-  roomId                       String?
-  person                       Person                     @relation(fields: [personId], references: [id])
-  professionalUser             User                       @relation("ProfessionalUserAppointments", fields: [professionalUserId], references: [id])
-  system                       System                     @relation(fields: [systemId], references: [id], onDelete: Cascade)
-  clinic                       Clinic                     @relation(fields: [clinicId], references: [id])
-  equipment                    Equipment?                 @relation(fields: [equipmentId], references: [id], onDelete: SetNull)
-  equipmentClinicAssignment    EquipmentClinicAssignment? @relation("EquipmentClinicAssignmentAppointments", fields: [equipmentClinicAssignmentId], references: [id], onDelete: SetNull)
-  relatedTicket                Ticket?
-  services                     AppointmentService[]
-  tags                         AppointmentTag[]
-  extensions                   AppointmentExtension[]
-  deviceUsage                  AppointmentDeviceUsage[]
+  id                          String                   @id @default(cuid())
+  startTime                   DateTime                 @db.Timestamptz(6)
+  endTime                     DateTime                 @db.Timestamptz(6)
+  durationMinutes             Int
+  status                      AppointmentStatus        @default(SCHEDULED)
+  notes                       String?
+  clientNotes                 String?
+  professionalUserId          String
+  systemId                    String
+  clinicId                    String
+  equipmentId                 String?
+  deviceActivationTimestamp   DateTime?                @db.Timestamptz(6)
+  deviceDeactivationTimestamp DateTime?                @db.Timestamptz(6)
+  actualUsageMinutes          Int?
+  isUsageLocked               Boolean                  @default(false)
+  originalAppointmentId       String?
+  createdAt                   DateTime                 @default(now()) @db.Timestamptz(6)
+  updatedAt                   DateTime                 @updatedAt @db.Timestamptz(6)
+  estimatedDurationMinutes    Int?
+  personId                    String
+  roomId                      String?
+  person                      Person                   @relation(fields: [personId], references: [id])
+  professionalUser            User                     @relation("ProfessionalUserAppointments", fields: [professionalUserId], references: [id])
+  system                      System                   @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  clinic                      Clinic                   @relation(fields: [clinicId], references: [id])
+  equipment                   Equipment?               @relation(fields: [equipmentId], references: [id], onDelete: SetNull)
+  relatedTicket               Ticket?
+  services                    AppointmentService[]
+  tags                        AppointmentTag[]
+  extensions                  AppointmentExtension[]
+  deviceUsage                 AppointmentDeviceUsage[]
 
   @@index([startTime])
   @@index([personId])
@@ -736,7 +732,6 @@ model Appointment {
   @@index([systemId])
   @@index([clinicId])
   @@index([equipmentId])
-  @@index([equipmentClinicAssignmentId])
   @@index([status])
   @@index([originalAppointmentId])
   @@index([roomId])
@@ -762,35 +757,32 @@ model AppointmentExtension {
 }
 
 model AppointmentDeviceUsage {
-  id                           String                     @id @default(cuid())
-  appointmentId                String
-  appointmentServiceId         String?
-  equipmentId                  String
-  equipmentClinicAssignmentId  String?                    // Referencia a la instancia específica utilizada
-  deviceId                     String
-  startedAt                    DateTime                   @db.Timestamptz(6)
-  endedAt                      DateTime?                  @db.Timestamptz(6)
-  estimatedMinutes             Float
-  actualMinutes                Float?
-  energyConsumption            Float?
-  deviceData                   Json?
-  startedByUserId              String
-  systemId                     String
-  createdAt                    DateTime                   @default(now()) @db.Timestamptz(6)
-  updatedAt                    DateTime                   @updatedAt @db.Timestamptz(6)
-  appointment                  Appointment                @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
-  appointmentService           AppointmentService?        @relation(fields: [appointmentServiceId], references: [id], onDelete: SetNull)
-  equipment                    Equipment                  @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
-  equipmentClinicAssignment    EquipmentClinicAssignment? @relation(fields: [equipmentClinicAssignmentId], references: [id], onDelete: SetNull)
-  device                       Device                     @relation(fields: [deviceId], references: [id], onDelete: Cascade)
-  startedByUser                User                       @relation("DeviceUsageStartedBy", fields: [startedByUserId], references: [id])
-  system                       System                     @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  id                   String              @id @default(cuid())
+  appointmentId        String
+  appointmentServiceId String?
+  equipmentId          String
+  deviceId             String
+  startedAt            DateTime            @db.Timestamptz(6)
+  endedAt              DateTime?           @db.Timestamptz(6)
+  estimatedMinutes     Float
+  actualMinutes        Float?
+  energyConsumption    Float?
+  deviceData           Json?
+  startedByUserId      String
+  systemId             String
+  createdAt            DateTime            @default(now()) @db.Timestamptz(6)
+  updatedAt            DateTime            @updatedAt @db.Timestamptz(6)
+  appointment          Appointment         @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  appointmentService   AppointmentService? @relation(fields: [appointmentServiceId], references: [id], onDelete: SetNull)
+  equipment            Equipment           @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+  device               Device              @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  startedByUser        User                @relation("DeviceUsageStartedBy", fields: [startedByUserId], references: [id])
+  system               System              @relation(fields: [systemId], references: [id], onDelete: Cascade)
 
   @@index([appointmentId])
   @@index([startedAt])
   @@index([deviceId])
   @@index([equipmentId])
-  @@index([equipmentClinicAssignmentId])
   @@index([systemId])
   @@index([appointmentServiceId])
   @@index([startedByUserId])
@@ -1952,19 +1944,18 @@ model Category {
 }
 
 model Cabin {
-  id                   String                      @id @default(cuid())
-  name                 String
-  code                 String?
-  color                String?
-  order                Int?
-  isActive             Boolean                     @default(true)
-  clinicId             String
-  systemId             String
-  createdAt            DateTime                    @default(now())
-  updatedAt            DateTime                    @updatedAt
-  clinic               Clinic                      @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  system               System                      @relation(fields: [systemId], references: [id], onDelete: Cascade)
-  equipmentAssignments EquipmentClinicAssignment[] // Equipamiento instalado en esta cabina
+  id        String   @id @default(cuid())
+  name      String
+  code      String?
+  color     String?
+  order     Int?
+  isActive  Boolean  @default(true)
+  clinicId  String
+  systemId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  clinic    Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  system    System   @relation(fields: [systemId], references: [id], onDelete: Cascade)
 
   @@unique([name, clinicId])
   @@unique([code, clinicId])
@@ -3298,20 +3289,20 @@ model SystemIntegration {
 }
 
 model SmartPlugDevice {
-  id                           String   @id @default(cuid())
-  name                         String
-  type                         String   // "SHELLY", "KASA", etc.
-  deviceId                     String   // ID del fabricante
-  cloudId                      String?  // 🆔 NUEVO: ID para comandos WebSocket (ej: b0b21c12dd94)
-  deviceIp                     String?  // IP actual del dispositivo
-  equipmentClinicAssignmentId  String?  @unique // Nueva relación con asignación específica
-  equipmentClinicAssignment    EquipmentClinicAssignment? @relation(fields: [equipmentClinicAssignmentId], references: [id])
-  integrationId                String
-  integration                  SystemIntegration @relation(fields: [integrationId], references: [id])
-  systemId                     String
-  system                       System   @relation(fields: [systemId], references: [id])
-  clinicId                     String?  // Opcional
-  clinic                       Clinic?  @relation(fields: [clinicId], references: [id])
+  id            String   @id @default(cuid())
+  name          String
+  type          String   // "SHELLY", "KASA", etc.
+  deviceId      String   // ID del fabricante
+  cloudId       String?  // 🆔 NUEVO: ID para comandos WebSocket (ej: b0b21c12dd94)
+  deviceIp      String?  // IP actual del dispositivo
+  equipmentId   String?  @unique // Opcional - para asociar con equipamiento
+  equipment     Equipment? @relation(fields: [equipmentId], references: [id])
+  integrationId String
+  integration   SystemIntegration @relation(fields: [integrationId], references: [id])
+  systemId      String
+  system        System   @relation(fields: [systemId], references: [id])
+  clinicId      String?  // Opcional
+  clinic        Clinic?  @relation(fields: [clinicId], references: [id])
   
   // Campos Shelly básicos
   credentialId  String?
@@ -3377,7 +3368,6 @@ model SmartPlugDevice {
   @@index([credentialId])
   @@index([systemId])
   @@index([clinicId])
-  @@index([equipmentClinicAssignmentId])
   @@index([online])
   @@index([modelCode])
 }

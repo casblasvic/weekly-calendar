@@ -58,11 +58,11 @@ export const ShellyDeviceConfigDemo: React.FC = () => {
 
   return (
     <div className="p-6 space-y-4">
-      <div className="border rounded-lg p-4">
-        <h3 className="text-lg font-semibold mb-2">
+      <div className="p-4 rounded-lg border">
+        <h3 className="mb-2 text-lg font-semibold">
           {exampleDevice.name}
         </h3>
-        <div className="flex items-center justify-between">
+        <div className="flex justify-between items-center">
           <div className="space-y-1">
             <p className="text-sm text-muted-foreground">
               Modelo: {exampleDevice.modelCode}
@@ -91,9 +91,9 @@ export const ShellyDeviceConfigDemo: React.FC = () => {
         onDeviceUpdate={handleDeviceUpdate}
       />
 
-      <div className="mt-8 p-4 bg-blue-50 rounded-lg">
-        <h4 className="font-semibold mb-2">✨ Características del nuevo modal:</h4>
-        <ul className="text-sm space-y-1 text-blue-800">
+      <div className="p-4 mt-8 bg-blue-50 rounded-lg">
+        <h4 className="mb-2 font-semibold">✨ Características del nuevo modal:</h4>
+        <ul className="space-y-1 text-sm text-blue-800">
           <li>• <strong>Tamaño fijo:</strong> Modal de 85vh altura, sin redimensionamiento molesto</li>
           <li>• <strong>Cambios granulares:</strong> Cada configuración se ejecuta inmediatamente</li>
           <li>• <strong>Feedback visual:</strong> Spinners y confirmaciones por control individual</li>
@@ -104,8 +104,8 @@ export const ShellyDeviceConfigDemo: React.FC = () => {
         </ul>
       </div>
 
-      <div className="mt-4 p-4 bg-green-50 rounded-lg">
-        <h4 className="font-semibold mb-2">🎯 Tipos de controles implementados:</h4>
+      <div className="p-4 mt-4 bg-green-50 rounded-lg">
+        <h4 className="mb-2 font-semibold">🎯 Tipos de controles implementados:</h4>
         <div className="grid grid-cols-2 gap-4 text-sm">
           <div>
             <h5 className="font-medium text-green-800">ConfigSwitch</h5>
@@ -126,9 +126,9 @@ export const ShellyDeviceConfigDemo: React.FC = () => {
         </div>
       </div>
 
-      <div className="mt-4 p-4 bg-amber-50 rounded-lg">
-        <h4 className="font-semibold mb-2">🔧 Endpoints específicos por configuración:</h4>
-        <ul className="text-sm space-y-1 text-amber-800">
+      <div className="p-4 mt-4 bg-amber-50 rounded-lg">
+        <h4 className="mb-2 font-semibold">🔧 Endpoints específicos por configuración:</h4>
+        <ul className="space-y-1 text-sm text-amber-800">
           <li>• <code>device/set/name</code> - Cambiar nombre del dispositivo</li>
           <li>• <code>Sys.SetConfig</code> - Zona horaria y configuraciones del sistema</li>
           <li>• <code>WiFi.SetConfig</code> - Configuraciones de red WiFi</li>

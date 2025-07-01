@@ -2,6 +2,27 @@ import { UseQueryOptions, useQuery, useQueryClient, useMutation } from '@tanstac
 import { api } from '@/utils/api-client';
 import { Equipment } from '@prisma/client';
 
+// Tipo para equipos con asignaciones de clínica
+export type EquipmentWithClinicAssignments = Equipment & {
+  clinicAssignments: Array<{
+    id: string;
+    clinicId: string;
+    cabinId?: string | null;
+    deviceName?: string | null;
+    serialNumber: string;
+    deviceId: string;
+    isActive: boolean;
+    clinic: {
+      id: string;
+      name: string;
+    };
+    cabin?: {
+      id: string;
+      name: string;
+    } | null;
+  }>;
+};
+
 /**
  * Hook para obtener todo el equipamiento
  */
@@ -11,7 +32,42 @@ export function useEquipmentQuery(options?: Omit<UseQueryOptions<Equipment[], un
     queryFn: async () => {
       return await api.cached.get('/api/equipment');
     },
-    staleTime: 1000 * 60 * 15, // 15 minutos (equipos cambian poco)
+    staleTime: 1000 * 60 * 15, // 15 minutos - equipos cambian poco
+    ...options,
+  });
+}
+
+/**
+ * Hook para obtener equipamiento CON asignaciones de clínica
+ */
+export function useEquipmentWithAssignmentsQuery(options?: Omit<UseQueryOptions<EquipmentWithClinicAssignments[], unknown, EquipmentWithClinicAssignments[]>, 'queryKey' | 'queryFn'>) {
+  return useQuery<EquipmentWithClinicAssignments[], unknown>({
+    queryKey: ['equipment-with-assignments'],
+    queryFn: async () => {
+      // Haciendo petición a la API;
+      
+      // FETCH DIRECTO SIN CACHÉ
+      const response = await fetch('/api/equipment', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        cache: 'no-store', // Forzar no caché
+      });
+      
+      if (!response.ok) {
+        console.error(`❌ [API] Error HTTP: ${response.status}`);
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      return data;
+    },
+    // ELIMINAR TODA CONFIGURACIÓN DE CACHÉ
+    staleTime: 0, // Siempre stale
+    gcTime: 0, // No guardar en cache (antes era cacheTime)
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
     ...options,
   });
 }
@@ -66,6 +122,7 @@ export function useCreateEquipmentMutation() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['equipment'] });
+      queryClient.invalidateQueries({ queryKey: ['equipment-with-assignments'] });
     },
   });
 }
@@ -83,6 +140,7 @@ export function useUpdateEquipmentMutation() {
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['equipment'] });
+      queryClient.invalidateQueries({ queryKey: ['equipment-with-assignments'] });
       queryClient.invalidateQueries({ queryKey: ['equipment', variables.id] });
       queryClient.invalidateQueries({ queryKey: ['clinic-equipment'] });
     },
@@ -102,6 +160,7 @@ export function useDeleteEquipmentMutation() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['equipment'] });
+      queryClient.invalidateQueries({ queryKey: ['equipment-with-assignments'] });
       queryClient.invalidateQueries({ queryKey: ['clinic-equipment'] });
     },
   });

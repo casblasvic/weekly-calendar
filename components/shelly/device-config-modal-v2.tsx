@@ -42,11 +42,24 @@ interface DeviceConfigModalV2Props {
         wifiSsid?: string;
         wifiRssi?: number;
         timezone?: string;
-        equipmentId?: string;
-        equipment?: {
+        equipmentClinicAssignmentId?: string;
+        equipmentClinicAssignment?: {
             id: string;
+            clinicId: string;
+            deviceName?: string;
+            equipment: {
+                id: string;
+                name: string;
+            };
+            clinic: {
+                id: string;
+                name: string;
+            };
+        };
+        equipment?: { // Para compatibilidad hacia atrás
             name: string;
-            clinic?: {
+            clinicId: string;
+            clinic: {
                 id: string;
                 name: string;
             };
@@ -72,11 +85,42 @@ interface Equipment {
 }
 
 export function DeviceConfigModalV2({ device, isOpen, onClose, onDeviceUpdate }: DeviceConfigModalV2Props) {
+    // Debug: Log de los datos recibidos
+    useEffect(() => {
+        if (isOpen) {
+            console.log('🔍 [DEBUG MODAL] Device data received:', {
+                id: device.id,
+                name: device.name,
+                equipmentClinicAssignmentId: device.equipmentClinicAssignmentId,
+                equipmentClinicAssignment: device.equipmentClinicAssignment,
+                equipment: device.equipment // Para compatibilidad
+            });
+            
+            // Log más detallado de la estructura de equipmentClinicAssignment
+            if (device.equipmentClinicAssignment) {
+                console.log('🔍 [DEBUG MODAL] Estructura detallada de equipmentClinicAssignment:', JSON.stringify(device.equipmentClinicAssignment, null, 2));
+            }
+        }
+    }, [isOpen, device]);
+
     // Estados para edición local
     const [deviceName, setDeviceName] = useState(device.name);
-    const [selectedClinicId, setSelectedClinicId] = useState(device.equipment?.clinic?.id || 'none');
-    const [selectedEquipmentId, setSelectedEquipmentId] = useState(device.equipmentId || 'none');
+    const [selectedClinicId, setSelectedClinicId] = useState(device.equipmentClinicAssignment?.clinicId || 'none');
+    const [selectedEquipmentId, setSelectedEquipmentId] = useState(device.equipmentClinicAssignmentId || 'none');
     const [isLoading, setIsLoading] = useState(false);
+
+    // Debug: Log de los estados iniciales
+    useEffect(() => {
+        if (isOpen) {
+            console.log('🔍 [DEBUG MODAL] Estados iniciales:', {
+                selectedClinicId: device.equipmentClinicAssignment?.clinicId || 'none',
+                selectedEquipmentId: device.equipmentClinicAssignmentId || 'none',
+                clinicName: device.equipmentClinicAssignment?.clinic?.name,
+                equipmentName: device.equipmentClinicAssignment?.equipment?.name,
+                deviceName: device.equipmentClinicAssignment?.deviceName
+            });
+        }
+    }, [isOpen, device]);
     
     // Estados para datos de clínicas y equipos
     const [clinics, setClinics] = useState<Clinic[]>([]);
@@ -101,8 +145,8 @@ export function DeviceConfigModalV2({ device, isOpen, onClose, onDeviceUpdate }:
     // Resetear estados cuando cambia el dispositivo
     useEffect(() => {
         setDeviceName(device.name);
-        setSelectedClinicId(device.equipment?.clinic?.id || 'none');
-        setSelectedEquipmentId(device.equipmentId || 'none');
+        setSelectedClinicId(device.equipmentClinicAssignment?.clinicId || 'none');
+        setSelectedEquipmentId(device.equipmentClinicAssignmentId || 'none');
     }, [device]);
 
     const fetchClinics = async () => {
@@ -119,13 +163,34 @@ export function DeviceConfigModalV2({ device, isOpen, onClose, onDeviceUpdate }:
 
     const fetchEquipment = async (clinicId: string) => {
         try {
-            const response = await fetch(`/api/internal/equipment/available-for-plug?clinicId=${clinicId}`);
+            console.log('🔍 [DEBUG MODAL AVANZADO] Cargando asignaciones para clínica:', clinicId);
+            
+            // Si estamos editando un dispositivo que ya tiene asignación, incluirla en los resultados
+            let url = `/api/equipment/clinic-assignments?clinicId=${clinicId}&available=true`;
+            if (device.equipmentClinicAssignmentId) {
+                url += `&includeAssignmentId=${device.equipmentClinicAssignmentId}`;
+                console.log('🔍 [DEBUG MODAL AVANZADO] Incluyendo asignación actual:', device.equipmentClinicAssignmentId);
+            }
+            
+            const response = await fetch(url);
             if (response.ok) {
-                const data = await response.json();
-                setAvailableEquipment(data);
+                const assignments = await response.json();
+                console.log('🔍 [DEBUG MODAL AVANZADO] Asignaciones recibidas:', assignments);
+                
+                // Transformar las asignaciones para mostrar: Alias (Serial)
+                const equipmentList = assignments.map((assignment: any) => ({
+                    id: assignment.id, // ID de la asignación, no del equipo
+                    name: `${assignment.deviceName || assignment.equipment.name} (${assignment.serialNumber})`,
+                }));
+                console.log('🔍 [DEBUG MODAL AVANZADO] Lista transformada:', equipmentList);
+                setAvailableEquipment(equipmentList);
+            } else {
+                console.error('Error en respuesta:', response.status);
+                setAvailableEquipment([]);
             }
         } catch (error) {
             console.error('Error cargando equipos:', error);
+            setAvailableEquipment([]);
         }
     };
 
@@ -139,7 +204,7 @@ export function DeviceConfigModalV2({ device, isOpen, onClose, onDeviceUpdate }:
                 },
                 body: JSON.stringify({
                     name: deviceName,
-                    equipmentId: selectedEquipmentId === 'none' ? null : selectedEquipmentId,
+                    equipmentClinicAssignmentId: selectedEquipmentId === 'none' ? null : selectedEquipmentId,
                 }),
             });
 

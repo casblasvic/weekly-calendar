@@ -251,9 +251,9 @@ const initialMockData = {
     { id: getOrCreateCuid('iva-red-mock'), descripcion: 'IVA Reducido (10%)', porcentaje: 10.00, tarifaId: getOrCreateCuid('tarifa-2') } // Se creará si no existe
   ],
   equipos: [ // Usado para crear Equipment
-    { id: getOrCreateCuid('eq-1'), clinicId: getOrCreateCuid('clinic-1'), clinicIds: [getOrCreateCuid('clinic-1')], code: 'LASER01', name: 'Láser Diodo LS-1000', description: 'Equipo para depilación', serialNumber: 'LS1000-SN123', modelNumber: 'LS-1000', purchaseDate: '2023-01-15', warrantyDate: '2025-01-15', location: 'Cabina Láser 1', supplier: 'LaserTech', status: 'active', config: {}, isActive: true, notes: 'Mantenimiento anual en Enero' },
-    { id: getOrCreateCuid('eq-2'), clinicId: getOrCreateCuid('clinic-1'), clinicIds: [getOrCreateCuid('clinic-1')], code: 'RF01', name: 'Radiofrecuencia RF-Pro', description: 'Equipo para tratamientos faciales', serialNumber: 'RFPRO-SN456', modelNumber: 'RF-PRO', purchaseDate: '2023-03-20', warrantyDate: '2025-03-20', location: 'Cabina Estética', supplier: 'BeautyCorp', status: 'active', config: {}, isActive: true, notes: '' },
-    { id: getOrCreateCuid('eq-3'), clinicId: getOrCreateCuid('clinic-2'), clinicIds: [getOrCreateCuid('clinic-2')], code: 'ULTRA01', name: 'Ultrasonido US-500', description: 'Equipo para tratamientos corporales', serialNumber: 'US500-SN789', modelNumber: 'US-500', purchaseDate: '2022-11-10', warrantyDate: '2024-11-10', location: 'Cabina Principal CAFC', supplier: 'MedEquip', status: 'active', config: {}, isActive: true, notes: 'Revisión pendiente' }
+    { id: getOrCreateCuid('eq-1'), clinicId: getOrCreateCuid('clinic-1'), clinicIds: [getOrCreateCuid('clinic-1')], code: 'LASER01', name: 'Láser Diodo LS-1000', description: 'Equipo para depilación', serialNumber: 'LS1000-SN123', modelNumber: 'LS-1000', purchaseDate: '2023-01-15', warrantyDate: '2025-01-15', location: 'Cabina Láser 1', supplier: 'LaserTech', status: 'active', config: {}, isActive: true, notes: 'Mantenimiento anual en Enero', deviceId: 'LASER-LS1000-001' },
+    { id: getOrCreateCuid('eq-2'), clinicId: getOrCreateCuid('clinic-1'), clinicIds: [getOrCreateCuid('clinic-1')], code: 'RF01', name: 'Radiofrecuencia RF-Pro', description: 'Equipo para tratamientos faciales', serialNumber: 'RFPRO-SN456', modelNumber: 'RF-PRO', purchaseDate: '2023-03-20', warrantyDate: '2025-03-20', location: 'Cabina Estética', supplier: 'BeautyCorp', status: 'active', config: {}, isActive: true, notes: '', deviceId: 'RADIO-RFPRO-002' },
+    { id: getOrCreateCuid('eq-3'), clinicId: getOrCreateCuid('clinic-2'), clinicIds: [getOrCreateCuid('clinic-2')], code: 'ULTRA01', name: 'Ultrasonido US-500', description: 'Equipo para tratamientos corporales', serialNumber: 'US500-SN789', modelNumber: 'US-500', purchaseDate: '2022-11-10', warrantyDate: '2024-11-10', location: 'Cabina Principal CAFC', supplier: 'MedEquip', status: 'active', config: {}, isActive: true, notes: 'Revisión pendiente', deviceId: 'ULTRA-US500-003' }
   ],
   usuarios: [ // Usado para crear Users, UserRoles, UserClinicAssignments
     {
@@ -1360,20 +1360,452 @@ async function main() {
 
   // --- Crear Promociones de Ejemplo ---
   console.log('Creating Example Promotions...');
-  // ... (Creación de Promotions con upsert completo usando mapas globales) ...
+  try {
+    // Buscar servicios y productos para las promociones
+    const serviceLimpiezaId = serviceMap.get('Limpieza Facial Profunda');
+    const serviceMasajeId = serviceMap.get('Masaje Relajante');
+    const productCremaId = productMap.get('Crema Hidratante Facial');
+    
+    if (serviceLimpiezaId && serviceMasajeId) {
+      // Promoción de descuento por porcentaje
+      const promoDescuento = await prisma.promotion.upsert({
+        where: { code: 'VERANO2024' },
+        update: { 
+          name: 'Promoción de Verano 2024',
+          description: '20% de descuento en tratamientos faciales',
+          type: 'PERCENTAGE_DISCOUNT',
+          value: 20.0,
+          startDate: new Date('2024-06-01'),
+          endDate: new Date('2024-08-31'),
+          isActive: true
+        },
+        create: {
+          code: 'VERANO2024',
+          name: 'Promoción de Verano 2024',
+          description: '20% de descuento en tratamientos faciales',
+          type: 'PERCENTAGE_DISCOUNT',
+          value: 20.0,
+          startDate: new Date('2024-06-01'),
+          endDate: new Date('2024-08-31'),
+          isActive: true,
+          targetScope: 'SPECIFIC_SERVICE',
+          targetServiceId: serviceLimpiezaId,
+          systemId: system!.id
+        }
+      });
+      console.log(`  -> Ensured promotion: ${promoDescuento.name}`);
+
+      // Promoción de cantidad fija
+      const promoFija = await prisma.promotion.upsert({
+        where: { code: 'RELAX10' },
+        update: {
+          name: 'Descuento Relax',
+          description: '10€ de descuento en masajes',
+          type: 'FIXED_AMOUNT_DISCOUNT',
+          value: 10.0,
+          isActive: true
+        },
+        create: {
+          code: 'RELAX10',
+          name: 'Descuento Relax',
+          description: '10€ de descuento en masajes',
+          type: 'FIXED_AMOUNT_DISCOUNT',
+          value: 10.0,
+          isActive: true,
+          targetScope: 'SPECIFIC_SERVICE',
+          targetServiceId: serviceMasajeId,
+          systemId: system!.id
+        }
+      });
+      console.log(`  -> Ensured promotion: ${promoFija.name}`);
+    }
+  } catch (error) {
+    console.error("Error creating promotions:", error);
+  }
+  console.log('Example Promotions ensured.');
 
   // --- Crear Equipos --- 
   console.log('Creating Equipment...');
-  // ... (Creación de Equipment con upsert completo usando createdClinicsMap y system!.id) ...
+  const equiposData = initialMockData.equipos || [];
+  for (const equipoData of equiposData) {
+    try {
+      // Buscar clínica basándose en el mockId correspondiente
+      let clinic;
+      if (equipoData.clinicId === getOrCreateCuid('clinic-1')) {
+        clinic = createdClinicsMap.get('clinic-1');
+      } else if (equipoData.clinicId === getOrCreateCuid('clinic-2')) {
+        clinic = createdClinicsMap.get('clinic-2');
+      } else if (equipoData.clinicId === getOrCreateCuid('clinic-3')) {
+        clinic = createdClinicsMap.get('clinic-3');
+      }
+      
+      if (!clinic) {
+        console.warn(`Clinic not found for equipment ${equipoData.name}, skipping...`);
+        continue;
+      }
+
+      const equipment = await prisma.equipment.upsert({
+        where: { name_systemId: { name: equipoData.name, systemId: system!.id } },
+        update: {
+          description: equipoData.description,
+          serialNumber: equipoData.serialNumber,
+          modelNumber: equipoData.modelNumber,
+          purchaseDate: equipoData.purchaseDate ? new Date(equipoData.purchaseDate) : null,
+          warrantyEndDate: equipoData.warrantyDate ? new Date(equipoData.warrantyDate) : null,
+          location: equipoData.location,
+          notes: equipoData.notes,
+          isActive: equipoData.isActive,
+          clinicId: clinic.id,
+          deviceId: equipoData.deviceId
+        },
+        create: {
+          name: equipoData.name,
+          description: equipoData.description,
+          serialNumber: equipoData.serialNumber,
+          modelNumber: equipoData.modelNumber,
+          purchaseDate: equipoData.purchaseDate ? new Date(equipoData.purchaseDate) : null,
+          warrantyEndDate: equipoData.warrantyDate ? new Date(equipoData.warrantyDate) : null,
+          location: equipoData.location,
+          notes: equipoData.notes,
+          isActive: equipoData.isActive,
+          clinicId: clinic.id,
+          systemId: system!.id,
+          deviceId: equipoData.deviceId
+        }
+      });
+      console.log(`  -> Ensured equipment: ${equipment.name} for clinic ${clinic.name}`);
+    } catch (error) {
+      console.error(`Error creating equipment ${equipoData.name}:`, error);
+    }
+  }
+  console.log('Equipment ensured.');
+
+  // --- Crear Configuraciones de Recambios ---
+  console.log('Creating Equipment Spare Parts configurations...');
+  try {
+    // Buscar equipamiento y productos
+    const laserEquipment = await prisma.equipment.findFirst({
+      where: { name: 'Láser Diodo LS-1000', systemId: system!.id }
+    });
+
+    if (laserEquipment) {
+      // Buscar productos de recambios por SKU
+      const lamparaProduct = await prisma.product.findFirst({
+        where: { sku: 'LD-200K', systemId: system!.id }
+      });
+      
+      const filtroProduct = await prisma.product.findFirst({
+        where: { sku: 'FH-01', systemId: system!.id }
+      });
+
+      const ventiladorProduct = await prisma.product.findFirst({
+        where: { sku: 'VR-50', systemId: system!.id }
+      });
+
+      // Crear configuraciones de recambios
+      if (lamparaProduct) {
+        await prisma.equipmentSparePart.upsert({
+          where: { 
+            equipmentId_productId: { 
+              equipmentId: laserEquipment.id, 
+              productId: lamparaProduct.id 
+            }
+          },
+          update: {},
+          create: {
+            equipmentId: laserEquipment.id,
+            productId: lamparaProduct.id,
+            partName: 'Lámpara Principal',
+            partNumber: 'LD-200K-MAIN',
+            recommendedLifespan: 200000, // 200k disparos
+            warningThreshold: 180000,    // 90% de vida
+            criticalThreshold: 195000,   // 97.5% de vida
+            installationNotes: 'Verificar calibración después del cambio. Usar guantes antiestáticos.',
+            isRequired: true,
+            category: 'Componente Principal',
+            systemId: system!.id
+          }
+        });
+        console.log(`  -> Configurado recambio: Lámpara Principal para ${laserEquipment.name}`);
+      }
+
+      if (filtroProduct) {
+        await prisma.equipmentSparePart.upsert({
+          where: { 
+            equipmentId_productId: { 
+              equipmentId: laserEquipment.id, 
+              productId: filtroProduct.id 
+            }
+          },
+          update: {},
+          create: {
+            equipmentId: laserEquipment.id,
+            productId: filtroProduct.id,
+            partName: 'Filtro de Aire HEPA',
+            partNumber: 'FH-01-STD',
+            recommendedLifespan: 4320, // 6 meses en horas (180 días * 24h)
+            warningThreshold: 3456,    // 80% de vida
+            criticalThreshold: 4104,   // 95% de vida
+            installationNotes: 'Cambiar cada 6 meses o cuando el indicador se active.',
+            isRequired: true,
+            category: 'Filtración',
+            systemId: system!.id
+          }
+        });
+        console.log(`  -> Configurado recambio: Filtro HEPA para ${laserEquipment.name}`);
+      }
+
+      if (ventiladorProduct) {
+        await prisma.equipmentSparePart.upsert({
+          where: { 
+            equipmentId_productId: { 
+              equipmentId: laserEquipment.id, 
+              productId: ventiladorProduct.id 
+            }
+          },
+          update: {},
+          create: {
+            equipmentId: laserEquipment.id,
+            productId: ventiladorProduct.id,
+            partName: 'Ventilador de Refrigeración',
+            partNumber: 'VR-50-COOL',
+            recommendedLifespan: 17520, // 2 años en horas
+            warningThreshold: 15768,    // 90% de vida
+            criticalThreshold: 17016,   // 97% de vida
+            installationNotes: 'Limpiar antes de instalar. Verificar dirección del flujo de aire.',
+            isRequired: false,
+            category: 'Refrigeración',
+            systemId: system!.id
+          }
+        });
+        console.log(`  -> Configurado recambio: Ventilador para ${laserEquipment.name}`);
+      }
+    }
+  } catch (error) {
+    console.error("Error creating equipment spare parts:", error);
+  }
+  console.log('Equipment Spare Parts configurations ensured.');
+
+  // --- Crear productos que pueden ser recambios ---
+  console.log('Creating spare parts products...');
+  const sparePartsProducts = [
+    { id: getOrCreateCuid('prod-spare-1'), name: 'Lámpara Depilación LD-200K', description: 'Lámpara de alta duración para equipos de depilación láser. Vida útil estimada: 200,000 disparos', sku: 'LD-200K', costPrice: 850.00, price: 1200.00, categoryName: 'Recambios', currentStock: 5, minStock: 1 },
+    { id: getOrCreateCuid('prod-spare-2'), name: 'Filtro HEPA FH-01', description: 'Filtro de aire HEPA para equipos de láser. Cambio recomendado cada 6 meses', sku: 'FH-01', costPrice: 45.00, price: 75.00, categoryName: 'Recambios', currentStock: 15, minStock: 3 },
+    { id: getOrCreateCuid('prod-spare-3'), name: 'Cabezal Radiofrecuencia RF-H3', description: 'Cabezal de reemplazo para equipos de radiofrecuencia. Compatible con modelos RF-Pro', sku: 'RF-H3', costPrice: 320.00, price: 480.00, categoryName: 'Recambios', currentStock: 3, minStock: 1 },
+    { id: getOrCreateCuid('prod-spare-4'), name: 'Sensor Temperatura ST-100', description: 'Sensor de temperatura de precisión para equipos de ultrasonido', sku: 'ST-100', costPrice: 95.00, price: 150.00, categoryName: 'Recambios', currentStock: 8, minStock: 2 },
+    { id: getOrCreateCuid('prod-spare-5'), name: 'Ventilador Refrigeración VR-50', description: 'Ventilador de refrigeración para equipos láser', sku: 'VR-50', costPrice: 125.00, price: 200.00, categoryName: 'Recambios', currentStock: 6, minStock: 2 },
+  ];
+
+  for (const spareProduct of sparePartsProducts) {
+    try {
+      const category = await prisma.category.upsert({
+        where: { name_systemId: { name: spareProduct.categoryName, systemId: system!.id } },
+        update: {},
+        create: { name: spareProduct.categoryName, systemId: system!.id }
+      });
+
+      const product = await prisma.product.upsert({
+        where: { name_systemId: { name: spareProduct.name, systemId: system!.id } },
+        update: {
+          description: spareProduct.description,
+          sku: spareProduct.sku,
+          costPrice: spareProduct.costPrice,
+          price: spareProduct.price,
+          categoryId: category.id,
+          vatTypeId: defaultVatTypeIdFromDB
+        },
+        create: {
+          name: spareProduct.name,
+          description: spareProduct.description,
+          sku: spareProduct.sku,
+          costPrice: spareProduct.costPrice,
+          price: spareProduct.price,
+          categoryId: category.id,
+          vatTypeId: defaultVatTypeIdFromDB,
+          systemId: system!.id
+        }
+      });
+
+      await prisma.productSetting.upsert({
+        where: { productId: product.id },
+        update: {
+          currentStock: spareProduct.currentStock,
+          minStockThreshold: spareProduct.minStock,
+          isForSale: true,
+          isInternalUse: false
+        },
+        create: {
+          productId: product.id,
+          currentStock: spareProduct.currentStock,
+          minStockThreshold: spareProduct.minStock,
+          isForSale: true,
+          isInternalUse: false
+        }
+      });
+
+      console.log(`  -> Ensured spare part product: ${product.name} (Stock: ${spareProduct.currentStock})`);
+    } catch (error) {
+      console.error(`Error creating spare part product ${spareProduct.name}:`, error);
+    }
+  }
+  console.log('Spare parts products ensured.');
+
+  // --- Crear TPVs --- 
+  console.log('Creating POS Terminals...');
+  try {
+    const bbvaAccountId = createdBankAccountsMap.get('ES9121000418450200051332');
+    const santanderAccountId = createdBankAccountsMap.get('ES8000490001591234567890');
+    
+    if (bbvaAccountId) {
+      const clinic1 = createdClinicsMap.get('clinic-1');
+      if (clinic1) {
+        const tpvBBVA = await prisma.posTerminal.upsert({
+          where: { name_systemId: { name: 'TPV BBVA Clinic 1', systemId: system!.id } },
+          update: {
+            terminalIdProvider: 'TPV-BBVA-001',
+            bankAccountId: bbvaAccountId,
+            provider: 'BBVA',
+            isActive: true
+          },
+          create: {
+            name: 'TPV BBVA Clinic 1',
+            terminalIdProvider: 'TPV-BBVA-001',
+            bankAccountId: bbvaAccountId,
+            provider: 'BBVA',
+            isActive: true,
+            systemId: system!.id
+          }
+        });
+        console.log(`  -> Ensured POS Terminal: ${tpvBBVA.name}`);
+      }
+    }
+
+    if (santanderAccountId) {
+      const clinic2 = createdClinicsMap.get('clinic-2');
+      if (clinic2) {
+        const tpvSantander = await prisma.posTerminal.upsert({
+          where: { name_systemId: { name: 'TPV Santander Clinic 2', systemId: system!.id } },
+          update: {
+            terminalIdProvider: 'TPV-SANT-002',
+            bankAccountId: santanderAccountId,
+            provider: 'Santander',
+            isActive: true
+          },
+          create: {
+            name: 'TPV Santander Clinic 2',
+            terminalIdProvider: 'TPV-SANT-002',
+            bankAccountId: santanderAccountId,
+            provider: 'Santander',
+            isActive: true,
+            systemId: system!.id
+          }
+        });
+        console.log(`  -> Ensured POS Terminal: ${tpvSantander.name}`);
+      }
+    }
+  } catch (error) {
+    console.error("Error creating POS Terminals:", error);
+  }
+  console.log('POS Terminals ensured.');
 
   // --- Crear Configuraciones de Pago por Clínica --- 
   console.log('Creating default clinic payment settings...');
-  // ... (Creación de Clinic Payment Settings con upsert completo usando mapas/variables globales) ...
+  try {
+    const clinicsArray = Array.from(createdClinicsMap.values());
+    
+    for (const clinic of clinicsArray) {
+      // Crear configuraciones para cada método de pago
+      const paymentMethods = [paymentMethodCash, paymentMethodCard, paymentMethodTransfer, paymentMethodBono];
+      
+      for (const paymentMethod of paymentMethods) {
+        if (paymentMethod) {
+          // Verificar si ya existe configuración de pago para esta clínica y método
+          const existingConfig = await prisma.clinicPaymentSetting.findUnique({
+            where: { 
+              systemId_clinicId_paymentMethodDefinitionId: { 
+                systemId: system!.id,
+                clinicId: clinic.id,
+                paymentMethodDefinitionId: paymentMethod.id
+              } 
+            }
+          });
+
+          if (!existingConfig) {
+            const paymentConfig = await prisma.clinicPaymentSetting.create({
+              data: {
+                systemId: system!.id,
+                clinicId: clinic.id,
+                paymentMethodDefinitionId: paymentMethod.id,
+                isActiveInClinic: true,
+                isDefaultPosTerminal: paymentMethod.type === 'CARD' ? false : undefined,
+                isDefaultReceivingBankAccount: false
+              }
+            });
+            console.log(`  -> Created payment setting for clinic ${clinic.name} - method ${paymentMethod.name}`);
+          } else {
+            console.log(`  -> Payment setting already exists for clinic ${clinic.name} - method ${paymentMethod.name}`);
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error("Error creating clinic payment settings:", error);
+  }
+  console.log('Clinic payment settings ensured.');
 
   // --- Crear Facturas de Ejemplo ---
   console.log('Creating example invoices...');
-  // ... (Creación de Invoices con upsert completo) 
- 
+  try {
+    const client1 = createdClientsMap.get('ana.garcia@test.com');
+    const clinic1 = createdClinicsMap.get('clinic-1');
+    const serviceLimpiezaFacialId = serviceMap.get('Limpieza Facial Profunda');
+    
+    if (client1 && clinic1 && serviceLimpiezaFacialId) {
+      // Crear una factura de ejemplo basada en un ticket
+      const exampleInvoice = await prisma.invoice.upsert({
+        where: { invoiceSeries_invoiceNumber_systemId: { invoiceSeries: 'INV', invoiceNumber: '2024-001', systemId: system!.id } },
+        update: {
+          totalAmount: 66.55, // 55 + 21% IVA
+          taxAmount: 11.55,
+          subtotalAmount: 55.00,
+          status: 'PAID',
+          dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 días
+        },
+        create: {
+          invoiceNumber: '2024-001',
+          invoiceSeries: 'INV',
+          type: 'SALE',
+          personId: client1.id,
+          subtotalAmount: 55.00,
+          taxAmount: 11.55,
+          totalAmount: 66.55,
+          discountAmount: 0,
+          currencyCode: 'EUR',
+          status: 'PAID',
+          issueDate: new Date(),
+          dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          systemId: system!.id,
+          items: {
+            create: [{
+              description: 'Limpieza Facial Profunda',
+              quantity: 1,
+              unitPrice: 55.00,
+              vatPercentage: 21.0,
+              vatAmount: 11.55,
+              finalPrice: 66.55,
+              discountAmount: 0,
+              serviceId: serviceLimpiezaFacialId
+            }]
+          }
+        }
+      });
+      console.log(`  -> Ensured invoice: ${exampleInvoice.invoiceNumber}`);
+    }
+  } catch (error) {
+    console.error("Error creating example invoices:", error);
+  }
+  console.log('Example invoices ensured.');
+
   await seedWebhooks(system!.id); // Llamar al seeder de webhooks
 
   // <<< --- NUEVO: Crear Clientes de Ejemplo --- >>>

@@ -80,6 +80,7 @@ interface Equipment {
     id: string;
     name: string;
     clinicId: string;
+    assignmentId?: string; // ID de la asignación para la nueva estructura
 }
 
 interface Clinic { id: string; name: string; }
@@ -96,9 +97,7 @@ const SmartPlugsPage = () => {
     const [plugs, setPlugs] = useState<SmartPlug[]>([]); // Dispositivos de la vista actual (paginados/filtrados)
     const [allPlugs, setAllPlugs] = useState<SmartPlug[]>([]); // TODOS los dispositivos para cálculo de consumo
     const [isLoading, setIsLoading] = useState(true);
-    const [isModalOpen, setIsModalOpen] = useState(false);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-    const [currentPlug, setCurrentPlug] = useState<Partial<SmartPlug> | null>(null);
     const [selectedDevice, setSelectedDevice] = useState<SmartPlug | null>(null);
     const [activePlugs, setActivePlugs] = useState<Record<string, boolean>>({});
     const [sorting, setSorting] = useState<SortingState>([]);
@@ -108,8 +107,6 @@ const SmartPlugsPage = () => {
     
     // Estados para el modal
     const [clinics, setClinics] = useState<Clinic[]>([]);
-    const [selectedClinic, setSelectedClinic] = useState<string | null>(null);
-    const [availableEquipment, setAvailableEquipment] = useState<Equipment[]>([]);
     
     // Estados para filtros
     const [availableCredentials, setAvailableCredentials] = useState<{id: string; name: string}[]>([]);
@@ -149,6 +146,45 @@ const SmartPlugsPage = () => {
     const systemId = session?.user?.systemId || '';
     const { updates, isConnected: shellyIsConnected, lastUpdate, clearUpdates } = useShellyRealtime(systemId);
 
+    // 📡 Sistema basado puramente en WebSocket (sin timers)
+
+    // Función inteligente para verificar diferencias y actualizar BD solo si es necesario
+    const syncDeviceStateWithDB = useCallback(async (devicesToCheck: { id: string; name: string; currentState: { online: boolean; relayOn: boolean; currentPower?: number; voltage?: number; temperature?: number } }[]) => {
+        try {
+            if (devicesToCheck.length === 0) return;
+            
+            console.log(`🔍 [BD SYNC] Verificando diferencias para ${devicesToCheck.length} dispositivos`);
+            
+            const response = await fetch('/api/internal/smart-plug-devices/sync-state', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ 
+                    devices: devicesToCheck.map(d => ({
+                        id: d.id,
+                        name: d.name,
+                        currentState: d.currentState
+                    }))
+                })
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                if (result.updatedCount > 0) {
+                    console.log(`✅ [BD SYNC] ${result.updatedCount} dispositivos actualizados en BD (${result.skippedCount} sin cambios)`);
+                } else {
+                    console.log(`ℹ️ [BD SYNC] Todos los dispositivos ya estaban sincronizados (${result.skippedCount} verificados)`);
+                }
+            } else {
+                const errorData = await response.json().catch(() => ({ error: 'Error desconocido' }));
+                console.error('❌ [BD SYNC] Error sincronizando estados:', errorData.error);
+            }
+        } catch (error) {
+            console.error('❌ [BD SYNC] Error de conexión sincronizando estados:', error);
+        }
+    }, []);
+
     const fetchPlugs = useCallback(async (page = 1, pageSize = 50, credentialFilter = 'all') => {
         setIsLoading(true);
         try {
@@ -156,7 +192,13 @@ const SmartPlugsPage = () => {
             if (credentialFilter !== 'all') {
                 url += `&credentialId=${credentialFilter}`;
             }
-            const response = await fetch(url);
+            const response = await fetch(url, {
+                cache: 'no-store', // ← FORZAR SIN CACHE
+                headers: {
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
+                }
+            });
             
             // ✅ MANEJO DE ERRORES DE AUTENTICACIÓN
             if (response.status === 401 || response.status === 403) {
@@ -167,6 +209,9 @@ const SmartPlugsPage = () => {
             
             if (response.ok) {
                 const { data, totalPages, totalCount } = await response.json();
+                
+                // Datos cargados desde la API
+                
                 setPlugs(data);
                 setPagination({ page, pageSize, totalPages, totalCount });
                 console.log(`📄 Página ${page} cargada con ${data.length} dispositivos (WebSocket se encargará de actualizaciones)`);
@@ -188,7 +233,13 @@ const SmartPlugsPage = () => {
     const fetchAllPlugs = useCallback(async () => {
         try {
             console.log('📥 Cargando TODOS los dispositivos para cálculo de consumo...');
-            const response = await fetch('/api/internal/smart-plug-devices?page=1&pageSize=1000'); // Sin paginación
+            const response = await fetch('/api/internal/smart-plug-devices?page=1&pageSize=1000', {
+                cache: 'no-store', // ← FORZAR SIN CACHE
+                headers: {
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
+                }
+            }); // Sin paginación
             
             // ✅ MANEJO DE ERRORES DE AUTENTICACIÓN
             if (response.status === 401 || response.status === 403) {
@@ -348,21 +399,7 @@ const SmartPlugsPage = () => {
         fetchPlugs(1, pagination.pageSize, selectedCredentialFilter);
     }, [selectedCredentialFilter, fetchPlugs, pagination.pageSize]);
 
-    // useEffect para cargar equipos cuando se selecciona una clínica o se edita un enchufe
-    useEffect(() => {
-        const fetchAvailableEquipment = async () => {
-            if (selectedClinic) {
-                const response = await fetch(`/api/internal/equipment/available-for-plug?clinicId=${selectedClinic}`);
-                if (response.ok) {
-                    const equipment = await response.json();
-                    setAvailableEquipment(equipment);
-                }
-            } else {
-                setAvailableEquipment([]);
-            }
-        };
-        fetchAvailableEquipment();
-    }, [selectedClinic]);
+
 
     // Inicializar Socket.io automáticamente
     useEffect(() => {
@@ -401,11 +438,39 @@ const SmartPlugsPage = () => {
         
         const unsubscribe = subscribe((update) => {
             
+            console.log('🔍 [DEBUG] WebSocket update recibido:', {
+                updateDeviceId: update.deviceId,
+                updateOnline: update.online,
+                updateRelayOn: update.relayOn,
+                updateCurrentPower: update.currentPower,
+                timestamp: update.timestamp
+            });
+            
+            // 📡 Datos recibidos por WebSocket - dispositivo está activo
+            
             // Función helper para actualizar un dispositivo en lista completa (solo para consumo)
             const updateDeviceInList = (prev: SmartPlug[], listName: string) => {
+                console.log(`🔍 [DEBUG] Buscando dispositivo en ${listName}:`, {
+                    updateDeviceId: update.deviceId,
+                    totalDevices: prev.length,
+                    deviceIds: prev.map(d => ({ id: d.id, deviceId: d.deviceId, name: d.name }))
+                });
+                
+                // Si la lista está vacía, simplemente no hacer nada
+                if (prev.length === 0) {
+                    console.log(`📦 [DEBUG] Lista ${listName} vacía, no se puede actualizar aún`);
+                    return prev;
+                }
+                
                 const deviceIndex = prev.findIndex(device => 
                     device.id === update.deviceId || device.deviceId === update.deviceId
                 );
+                
+                console.log(`🔍 [DEBUG] Resultado búsqueda en ${listName}:`, {
+                    deviceIndex,
+                    found: deviceIndex !== -1,
+                    deviceFound: deviceIndex !== -1 ? prev[deviceIndex].name : 'No encontrado'
+                });
                 
                 if (deviceIndex === -1) {
                     return prev;
@@ -422,13 +487,24 @@ const SmartPlugsPage = () => {
                     Number(oldDevice.temperature || 0) !== Number(update.temperature || 0)
                 );
                 
+                console.log(`🔍 [DEBUG] Comparando cambios en ${listName}:`, {
+                    deviceName: oldDevice.name,
+                    oldOnline: oldDevice.online,
+                    newOnline: update.online,
+                    oldRelayOn: oldDevice.relayOn,
+                    newRelayOn: update.relayOn,
+                    oldPower: oldDevice.currentPower,
+                    newPower: update.currentPower,
+                    hasChanges
+                });
+                
                 if (!hasChanges) {
                     return prev;
                 }
                 
                 // Actualizar dispositivo
                 const updated = [...prev];
-                updated[deviceIndex] = { 
+                const updatedDevice = { 
                     ...oldDevice, 
                     online: update.online,
                     relayOn: update.relayOn,
@@ -437,6 +513,26 @@ const SmartPlugsPage = () => {
                     temperature: update.temperature,
                     lastSeenAt: new Date(update.timestamp)
                 };
+                updated[deviceIndex] = updatedDevice;
+                
+                console.log(`✅ [DEBUG] Dispositivo actualizado en ${listName}:`, {
+                    deviceName: oldDevice.name,
+                    oldState: `${oldDevice.online ? 'ONLINE' : 'OFFLINE'} - ${oldDevice.relayOn ? 'ON' : 'OFF'} - ${oldDevice.currentPower || 0}W`,
+                    newState: `${update.online ? 'ONLINE' : 'OFFLINE'} - ${update.relayOn ? 'ON' : 'OFF'} - ${update.currentPower || 0}W`
+                });
+                
+                // ⚡ Sincronizar este dispositivo con BD (solo si hay cambios)
+                syncDeviceStateWithDB([{
+                    id: updatedDevice.id,
+                    name: updatedDevice.name,
+                    currentState: {
+                        online: updatedDevice.online,
+                        relayOn: updatedDevice.relayOn,
+                        currentPower: updatedDevice.currentPower,
+                        voltage: updatedDevice.voltage,
+                        temperature: updatedDevice.temperature
+                    }
+                }]);
                 
                 return updated;
             };
@@ -452,6 +548,7 @@ const SmartPlugsPage = () => {
                 
                 if (deviceIndex === -1) {
                     // Dispositivo no está en página actual, no hacer nada
+                    console.log('🔍 [DEBUG] Dispositivo no está en página actual');
                     return prev;
                 }
                 
@@ -499,6 +596,8 @@ const SmartPlugsPage = () => {
         };
     }, [subscribe, isConnected]); // Remover allPlugs.length de dependencias para evitar re-suscripciones
 
+    // 📡 Sistema puro WebSocket - sin timers, sin complejidad innecesaria
+
     // Debug del estado de conexión (solo log, sin polling)
     useEffect(() => {
         console.log(`🔌 Estado de conexión Socket.io: ${isConnected ? 'CONECTADO' : 'DESCONECTADO'}`);
@@ -535,49 +634,7 @@ const SmartPlugsPage = () => {
         });
     }, [allPlugs, credentialsStatus]);
 
-    const handleSave = async () => {
-        if (!currentPlug || !currentPlug.equipmentId) {
-            toast.error("Por favor, selecciona un equipo para asociar.");
-            return;
-        }
 
-        if (!selectedClinic) {
-            toast.error("Por favor, selecciona una clínica.");
-            return;
-        }
-
-        const method = currentPlug.id ? 'PUT' : 'POST';
-        const url = currentPlug.id ? `/api/internal/smart-plug-devices/${currentPlug.id}` : '/api/internal/smart-plug-devices';
-        
-        const body = { 
-            ...currentPlug, 
-            type: 'SHELLY',
-            integrationId: "provisional_integration_id",
-            clinicId: selectedClinic
-        };
-
-        try {
-            const response = await fetch(url, { 
-                method, 
-                headers: {'Content-Type': 'application/json'}, 
-                body: JSON.stringify(body) 
-            });
-            
-            if (response.ok) {
-                toast.success("Dispositivo guardado correctamente.");
-                setIsModalOpen(false);
-                setCurrentPlug(null);
-                setSelectedClinic(null);
-                await fetchPlugs(pagination.page, pagination.pageSize, selectedCredentialFilter);
-                await fetchAllPlugs(); // También recargar lista completa
-            } else {
-                const errorData = await response.json();
-                toast.error(`Error al guardar: ${errorData.error || 'Error desconocido'}`);
-            }
-        } catch (error) {
-            toast.error("Error de conexión al guardar el dispositivo.");
-        }
-    };
     
     const handleDelete = async (id: string) => {
         const confirmed = window.confirm("¿Estás seguro de que quieres eliminar este enchufe inteligente? Esta acción también eliminará todos los registros de uso asociados y no se puede deshacer.");
@@ -603,46 +660,10 @@ const SmartPlugsPage = () => {
     };
     
     const handleEdit = useCallback(async (plug: SmartPlug) => {
-        // Para enchufes con credencial, usar el modal avanzado
-        if (plug.credential) {
-            setSelectedDevice(plug);
-            setIsEditModalOpen(true);
-        } else {
-            // Para enchufes sin credencial, usar el modal simple
-        const clinicId = plug.equipment?.clinicId;
-        setSelectedClinic(clinicId || null);
-        
-        // Cargar los equipos de esa clínica si existe
-        if (clinicId) {
-            try {
-                const response = await fetch(`/api/internal/equipment/available-for-plug?clinicId=${clinicId}`);
-                if (response.ok) {
-                    const equipment = await response.json();
-                    setAvailableEquipment(equipment);
-                    
-                    // Establecer los datos del enchufe DESPUÉS de cargar los equipos
-                    setCurrentPlug({
-                        ...plug,
-                        clinicId: clinicId
-                    });
-                    
-                    setIsModalOpen(true);
-                } else {
-                    toast.error("Error al cargar los equipos de la clínica");
-                }
-            } catch (error) {
-                console.error('Error loading equipment for edit:', error);
-                toast.error("Error de conexión al cargar equipos");
-            }
-        } else {
-            // Si no hay clínica, establecer los datos del enchufe directamente
-            setCurrentPlug({
-                ...plug,
-                clinicId: clinicId
-            });
-            setIsModalOpen(true);
-            }
-        }
+        console.log('🔍 [DEBUG handleEdit] Editando plug:', plug.name);
+        // Usar siempre el modal avanzado que tiene toda la funcionalidad
+        setSelectedDevice(plug);
+        setIsEditModalOpen(true);
     }, []);
 
     const handleControl = async (plugId: string, plugIp: string, action: 'on' | 'off') => {
@@ -929,6 +950,8 @@ const SmartPlugsPage = () => {
                 
                 // Si está offline, no puede estar encendido
                 const actualRelayState = isOnline ? relayOn : false;
+                
+                // Estado calculado basado en conectividad
                 
                 return (
                     <div className="text-left">
@@ -1700,87 +1723,9 @@ const SmartPlugsPage = () => {
                 <Button variant="outline" onClick={() => router.back()}>
                     <ArrowLeft className="mr-2 w-4 h-4" />{t('common.back')}
                 </Button>
-                <Button onClick={() => { 
-                    setCurrentPlug({name: '', deviceId: '', deviceIp: ''}); 
-                    setSelectedClinic(null);
-                    setIsModalOpen(true); 
-                }}>
-                    <PlusCircle className="mr-2 w-4 h-4" />{t('integrations.smart_plugs.add_button')}
-                </Button>
             </div>
             
-            {isModalOpen && (
-                <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-                    <DialogContent className="sm:max-w-lg">
-                        <DialogHeader className="pb-4">
-                            <DialogTitle>{currentPlug?.id ? t('integrations.smart_plugs.modal.edit_title') : t('integrations.smart_plugs.modal.add_title')}</DialogTitle>
-                        </DialogHeader>
-                        <div className="grid gap-6 px-6 py-4">
-                            <div className="space-y-2">
-                                <Label htmlFor="name">{t('integrations.smart_plugs.modal.name_label')}</Label>
-                                <Input 
-                                    id="name" 
-                                    value={currentPlug?.name || ''} 
-                                    onChange={(e) => setCurrentPlug(p => ({ ...p, name: e.target.value }))} 
-                                    placeholder={t('integrations.smart_plugs.modal.name_placeholder')}
-                                    className="input-focus"
-                                />
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                    <Label htmlFor="deviceId">{t('integrations.smart_plugs.modal.deviceId_label')}</Label>
-                                    <Input 
-                                        id="deviceId" 
-                                        value={currentPlug?.deviceId || ''} 
-                                        onChange={(e) => setCurrentPlug(p => ({ ...p, deviceId: e.target.value }))}
-                                        className="input-focus"
-                                    />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="deviceIp">{t('integrations.smart_plugs.modal.deviceIp_label')}</Label>
-                                    <Input 
-                                        id="deviceIp" 
-                                        value={currentPlug?.deviceIp || ''} 
-                                        onChange={(e) => setCurrentPlug(p => ({ ...p, deviceIp: e.target.value }))} 
-                                        placeholder={t('integrations.smart_plugs.modal.deviceIp_placeholder')}
-                                        className="input-focus"
-                                    />
-                                </div>
-                            </div>
-                             <div className="space-y-2">
-                                <Label htmlFor="clinicId">{t('integrations.smart_plugs.modal.clinic_label')}</Label>
-                                <Select onValueChange={setSelectedClinic} value={selectedClinic || undefined}>
-                                    <SelectTrigger className="select-focus">
-                                        <SelectValue placeholder={t('integrations.smart_plugs.modal.clinic_placeholder')} />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {clinics.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="equipmentId">{t('integrations.smart_plugs.modal.equipment_label')}</Label>
-                                <Select
-                                    value={currentPlug?.equipmentId}
-                                    onValueChange={(value) => setCurrentPlug(p => ({ ...p, equipmentId: value }))}
-                                    disabled={!selectedClinic || availableEquipment.length === 0}
-                                >
-                                    <SelectTrigger className="select-focus">
-                                        <SelectValue placeholder={!selectedClinic ? t('integrations.smart_plugs.modal.equipment_placeholder_loading') : t('integrations.smart_plugs.modal.equipment_placeholder')} />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {availableEquipment.map(eq => <SelectItem key={eq.id} value={eq.id}>{eq.name}</SelectItem>)}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                        </div>
-                        <DialogFooter className="px-6 pt-4">
-                            <Button variant="outline" onClick={() => setIsModalOpen(false)}>{t('common.cancel')}</Button>
-                            <Button onClick={handleSave}>{t('common.save')}</Button>
-                        </DialogFooter>
-                    </DialogContent>
-                </Dialog>
-            )}
+
             
             {selectedDevice && (
                 <DeviceConfigModalV2

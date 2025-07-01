@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
       systemId: systemId,
     }
 
+    // Filtrar por clínica se hace ahora a través de las asignaciones
     if (clinicId) {
       const clinic = await prisma.clinic.findFirst({
         where: { id: clinicId, systemId: systemId },
@@ -29,16 +30,37 @@ export async function GET(request: NextRequest) {
       if (!clinic) {
         return NextResponse.json({ message: 'Clínica no encontrada o no pertenece a tu sistema.' }, { status: 404 })
       }
-      whereClause.clinicId = clinicId
+      whereClause.clinicAssignments = {
+        some: {
+          clinicId: clinicId,
+          isActive: true
+        }
+      }
     }
 
     const equipment = await prisma.equipment.findMany({
       where: whereClause,
       include: {
-        clinic: {
-          select: {
-            id: true,
-            name: true,
+        clinicAssignments: {
+          include: {
+            clinic: {
+              select: {
+                id: true,
+                name: true,
+                prefix: true,
+                city: true,
+              }
+            },
+            cabin: {
+              select: {
+                id: true,
+                name: true,
+                code: true,
+              }
+            }
+          },
+          orderBy: {
+            assignedAt: 'desc'
           }
         },
       },
@@ -46,6 +68,11 @@ export async function GET(request: NextRequest) {
         name: 'asc',
       },
     })
+
+    console.log(`[API_EQUIPMENT_GET] Devolviendo ${equipment.length} equipos`);
+    equipment.forEach((equipo) => {
+      console.log(`[API_EQUIPMENT_GET] ${equipo.name}: ${equipo.clinicAssignments.length} asignaciones`);
+    });
 
     return NextResponse.json(equipment)
 
@@ -55,11 +82,10 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// Esquema Zod para la creación de Equipment
+// Esquema Zod para la creación de Equipment (solo tipo/modelo)
 const createEquipmentSchema = z.object({
   name: z.string().min(1, "El nombre es obligatorio."),
   description: z.string().optional().nullable(),
-  serialNumber: z.string().optional().nullable(),
   modelNumber: z.string().optional().nullable(),
   purchaseDate: z.string().optional().nullable().refine(val => !val || !isNaN(Date.parse(val)), {
     message: "Formato de fecha de compra inválido.",
@@ -67,10 +93,6 @@ const createEquipmentSchema = z.object({
   warrantyEndDate: z.string().optional().nullable().refine(val => !val || !isNaN(Date.parse(val)), {
     message: "Formato de fecha de fin de garantía inválido.",
   }).transform(val => val ? new Date(val) : null),
-  location: z.string().optional().nullable(),
-  notes: z.string().optional().nullable(),
-  clinicId: z.string().cuid({ message: "ID de clínica inválido" }).optional().nullable(),
-  deviceId: z.string().cuid({ message: "ID de dispositivo inválido" }).optional().nullable(),
   isActive: z.boolean().optional().default(true),
 })
 
@@ -92,31 +114,14 @@ export async function POST(request: Request) {
     }
     const validatedData = validation.data
 
-    // Validar clinicId si se proporciona
-    if (validatedData.clinicId) {
-      const clinic = await prisma.clinic.findFirst({
-        where: { id: validatedData.clinicId, systemId: systemId },
-        select: { id: true }
-      })
-      if (!clinic) {
-        return NextResponse.json({ message: 'Clínica especificada no encontrada o no pertenece a tu sistema.' }, { status: 400 })
-      }
-    }
-    // TODO: Validar deviceId si se proporciona (¿pertenece al systemId?)
-
     const newEquipment = await prisma.equipment.create({
       data: {
         name: validatedData.name,
         description: validatedData.description,
-        serialNumber: validatedData.serialNumber,
         modelNumber: validatedData.modelNumber,
         purchaseDate: validatedData.purchaseDate,
         warrantyEndDate: validatedData.warrantyEndDate,
-        location: validatedData.location,
-        notes: validatedData.notes,
         isActive: validatedData.isActive,
-        clinicId: validatedData.clinicId,
-        deviceId: validatedData.deviceId,
         systemId: systemId,
       },
     })

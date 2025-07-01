@@ -337,10 +337,21 @@ class ShellyWebSocketManager {
                 }
             }
 
+            // ← LOG TEMPORAL ANTES DE ACTUALIZAR BD
+            console.log(`💾 [BD UPDATE] ANTES - Actualizando ${device.name} en BD:`, {
+                deviceId: device.id,
+                oldRelayOn: device.relayOn,
+                newRelayOn: updatedData.relayOn,
+                oldOnline: device.online,
+                newOnline: updatedData.online
+            });
+
             await prisma.smartPlugDevice.update({
                 where: { id: device.id },
                 data: updatedData
             });
+            
+            console.log(`✅ [BD UPDATE] DESPUÉS - ${device.name} actualizado en BD exitosamente`);
             
             console.log(`🔄 Dispositivo actualizado vía WebSocket: ${device.name} (${device.deviceId})`, {
                 online: updatedData.online,

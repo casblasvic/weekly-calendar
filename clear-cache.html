@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>🔥 LIMPIAR CACHE - WEEKLY CALENDAR</title>
+    <style>
+        body { 
+            font-family: Arial; 
+            padding: 50px; 
+            text-align: center;
+            background: #f0f0f0;
+        }
+        .btn { 
+            background: #ff0000; 
+            color: white; 
+            padding: 20px 40px; 
+            border: none; 
+            border-radius: 10px;
+            font-size: 18px;
+            margin: 10px;
+            cursor: pointer;
+        }
+        .warning {
+            background: #ffeb3b;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 10px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔥 CACHE HELL KILLER</h1>
+    <div class="warning">
+        ⚠️ SI LAS ASIGNACIONES NO SE ACTUALIZAN, HAZ ESTO:
+    </div>
+    
+    <button class="btn" onclick="clearAll()">
+        🧨 LIMPIAR TODO EL CACHE
+    </button>
+    
+    <button class="btn" onclick="hardRefresh()">
+        💀 HARD REFRESH
+    </button>
+    
+    <button class="btn" onclick="location.href='http://localhost:3000'">
+        🚀 IR A WEEKLY CALENDAR
+    </button>
+
+    <div id="status"></div>
+
+    <script>
+        function clearAll() {
+            // Limpiar localStorage
+            localStorage.clear();
+            
+            // Limpiar sessionStorage  
+            sessionStorage.clear();
+            
+            // Limpiar IndexedDB si existe
+            if ('indexedDB' in window) {
+                indexedDB.deleteDatabase('react-query-offline-cache');
+                indexedDB.deleteDatabase('TanStackQueryClientStorage');
+            }
+            
+            // Limpiar todas las cookies
+            document.cookie.split(";").forEach(function(c) { 
+                document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/"); 
+            });
+            
+            // Intentar limpiar cache del service worker
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.getRegistrations().then(registrations => {
+                    registrations.forEach(registration => registration.unregister());
+                });
+            }
+            
+            // Limpiar cache del navegador (si es posible)
+            if ('caches' in window) {
+                caches.keys().then(names => {
+                    names.forEach(name => {
+                        caches.delete(name);
+                    });
+                });
+            }
+            
+            document.getElementById('status').innerHTML = 
+                '<div style="color: green; font-size: 20px; margin: 20px;">✅ CACHE LIMPIADO</div>' +
+                '<div>Ahora presiona HARD REFRESH o ve directamente a la app</div>';
+        }
+        
+        function hardRefresh() {
+            // Forzar recarga sin cache
+            window.location.reload(true);
+        }
+    </script>
+</body>
+</html> 

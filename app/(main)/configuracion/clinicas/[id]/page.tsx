@@ -33,7 +33,6 @@ import { SearchInput } from "@/components/SearchInput"
 import { ScheduleConfig } from "@/components/schedule-config"
 import { DEFAULT_SCHEDULE } from "@/types/schedule"
 import { useTemplates } from "@/hooks/use-templates"
-import { toast } from "@/components/ui/use-toast"
 import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
 import {
@@ -42,7 +41,7 @@ import {
   ArrowLeft, HelpCircle, Save, MapPin, BarChart2, Search, Plus, 
   ChevronUp, ChevronDown, Trash2, Clock, Database, FolderOpen, Tag, 
   Settings2, LayoutGrid, Wrench, HardDrive, X, Calendar, AlertCircle, 
-  AlertTriangle, PlusCircle, Loader2
+  AlertTriangle, PlusCircle, Loader2, ArrowUpDown
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { convertBlocksToWeekSchedule, createDefaultSchedule } from "@/utils/scheduleUtils"
@@ -54,6 +53,9 @@ import { ActionButtons } from '@/app/components/ui/action-buttons';
 import { DataTable } from "@/components/ui/data-table"
 import type { ColumnDef } from "@tanstack/react-table"
 import { DataTableColumnHeader } from "@/components/ui/data-table-column-header";
+// Importaciones para equipamiento de clínica específica
+import { useEquipmentQuery, useEquipmentWithAssignmentsQuery, type EquipmentWithClinicAssignments } from "@/lib/hooks/use-equipment-query";
+import { EquipmentModal } from "@/components/equipment";
 import { useLegalEntitiesQuery } from "@/lib/hooks/use-legal-entity-query";
 // Card components are already imported earlier, removing duplicate.
 import type { ScheduleTemplateBlock as PrismaScheduleTemplateBlock, ClinicScheduleBlock as PrismaClinicScheduleBlock } from '@prisma/client';
@@ -80,6 +82,7 @@ import { ClinicPromotionsTabContent } from "@/app/(main)/configuracion/clinicas/
 // <<< AÑADIR import de DataTable genérico >>>
 //import { DataTable } from "@/components/ui/data-table";
 import type { ClinicPaymentSettingWithRelations } from "@/lib/api/clinicPaymentSettings";
+import { toast } from "sonner"
 // <<< AÑADIR import del diálogo de edición (si existe) >>>
 // import { ClinicPaymentSettingEditDialog } from "./components/clinic-payment-settings/edit-dialog"; 
 // --- FIN IMPORTACIONES FALTANTES ---
@@ -338,6 +341,440 @@ function ClinicPaymentsTabContent({ clinicId }: ClinicPaymentsTabContentProps) {
 }
 // --- FIN COMPONENTE PESTAÑA MÉTODOS DE PAGO ---
 
+// --- COMPONENTE TABLA DE EQUIPAMIENTO PARA CLÍNICA ESPECÍFICA ---
+interface EquipmentTableForClinicProps {
+  clinicId: string;
+}
+
+// Componente adaptado para mostrar solo asignaciones de la clínica actual
+function ClinicSpecificAssignmentsCell({ equipment, clinicId }: { equipment: EquipmentWithClinicAssignments, clinicId: string }) {
+  const queryClient = useQueryClient()
+  const [assignments, setAssignments] = useState<any[]>([])
+  
+  // 🔥 ESCUCHAR CAMBIOS DEL CACHE PRINCIPAL (igual que EquipmentAssignmentsCell)
+  React.useEffect(() => {
+    const updateFromCache = () => {
+      const mainCacheData = queryClient.getQueryData(['equipment-with-assignments']) as any[]
+      if (mainCacheData) {
+        const equipmentFromCache = mainCacheData.find(eq => eq.id === equipment.id)
+        if (equipmentFromCache && equipmentFromCache.clinicAssignments) {
+          setAssignments(equipmentFromCache.clinicAssignments)
+          return
+        }
+      }
+      // Fallback: usar datos de props si no hay cache
+      setAssignments(equipment.clinicAssignments || [])
+    }
+    
+    // Actualizar inmediatamente
+    updateFromCache()
+    
+    // Suscribirse a cambios del cache
+    const unsubscribe = queryClient.getQueryCache().subscribe(() => {
+      updateFromCache()
+    })
+    
+    return unsubscribe
+  }, [equipment.id, clinicId, queryClient, equipment.clinicAssignments])
+
+  const clinicAssignments = assignments.filter(
+    assignment => assignment.clinicId === clinicId && assignment.isActive
+  )
+  
+  // Los logs de depuración se han eliminado - el sistema funciona correctamente
+
+  if (clinicAssignments.length === 0) {
+    return (
+      <div className="text-xs text-gray-500">
+        Sin asignación
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-wrap gap-1">
+      {clinicAssignments.map((assignment) => (
+        <Badge key={assignment.id} variant="secondary" className="text-xs">
+          {assignment.deviceName || `Dispositivo ${assignment.serialNumber.slice(-3)}`}
+          {assignment.cabin && (
+            <span className="ml-1 text-gray-500">({assignment.cabin.name})</span>
+          )}
+        </Badge>
+      ))}
+      {clinicAssignments.length > 1 && (
+        <div className="mt-1 text-xs text-gray-500">
+          {clinicAssignments.length} dispositivos
+        </div>
+      )}
+    </div>
+  )
+}
+
+function EquipmentTableForClinic({ clinicId }: EquipmentTableForClinicProps) {
+  const [searchTerm, setSearchTerm] = useState("")
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [selectedEquipment, setSelectedEquipment] = useState<EquipmentWithClinicAssignments | null>(null)
+  
+  // Estados para modal de creación
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
+  
+  // Estados para selección múltiple y eliminación
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [isDeleting, setIsDeleting] = useState(false)
+  
+  const [sortColumn, setSortColumn] = useState<string>("name")
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc")
+
+  // Usar el hook que incluye asignaciones de clínica
+  const {
+    data: equipmentList = [],
+    isLoading: loadingEquipment,
+    refetch: refetchEquipment,
+  } = useEquipmentWithAssignmentsQuery()
+
+  // Limpiar caché al montar el componente (similar a la página principal)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const keys = Object.keys(sessionStorage);
+      keys.forEach(key => {
+        if (key.includes('equipment') || key.includes('api:/api/equipment')) {
+          sessionStorage.removeItem(key);
+        }
+      });
+    }
+  }, [clinicId]) // Limpiar cache cuando cambie la clínica
+
+  // Mostrar TODOS los equipos (tabla general), el filtrado se hace en la columna de asignaciones
+  const allEquipment = useMemo(() => {
+    return equipmentList
+  }, [equipmentList])
+
+  // Función para contar asignaciones de esta clínica
+  const getClinicAssignmentsCount = (equipment: EquipmentWithClinicAssignments) => {
+    return equipment.clinicAssignments?.filter(
+      assignment => assignment.clinicId === clinicId && assignment.isActive
+    ).length || 0
+  }
+
+  // Función para verificar si hay asignaciones en otras clínicas
+  const hasAssignmentsInOtherClinics = (equipment: EquipmentWithClinicAssignments) => {
+    return equipment.clinicAssignments?.some(
+      assignment => assignment.clinicId !== clinicId && assignment.isActive
+    ) || false
+  }
+
+  const handleSort = (column: string) => {
+    if (sortColumn === column) {
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc")
+    } else {
+      setSortColumn(column)
+      setSortDirection("asc")
+    }
+  }
+
+  const filteredEquipment = allEquipment.filter((item) => {
+    const searchLower = searchTerm.toLowerCase()
+    
+    // Buscar en campos del equipo
+    const matchesEquipment = 
+      item.name?.toLowerCase().includes(searchLower) ||
+      item.description?.toLowerCase().includes(searchLower) ||
+      (item.modelNumber?.toLowerCase() || "").includes(searchLower)
+    
+    // Buscar en asignaciones de esta clínica
+    const clinicAssignments = item.clinicAssignments?.filter(a => a.clinicId === clinicId) || []
+    const matchesAssignments = clinicAssignments.some(assignment =>
+      assignment.deviceName?.toLowerCase().includes(searchLower) ||
+      assignment.serialNumber?.toLowerCase().includes(searchLower)
+    )
+    
+    return matchesEquipment || matchesAssignments
+  }).sort((a, b) => {
+    let aValue: any
+    let bValue: any
+    
+    if (sortColumn === "assignments") {
+      aValue = getClinicAssignmentsCount(a)
+      bValue = getClinicAssignmentsCount(b)
+      const comparison = aValue - bValue
+      return sortDirection === "asc" ? comparison : -comparison
+    } else {
+      aValue = a[sortColumn as keyof typeof a]
+      bValue = b[sortColumn as keyof typeof b]
+      aValue = String(aValue ?? '').toLowerCase()
+      bValue = String(bValue ?? '').toLowerCase()
+      const comparison = aValue.localeCompare(bValue)
+      return sortDirection === "asc" ? comparison : -comparison
+    }
+  })
+
+  const openModal = (equipment: EquipmentWithClinicAssignments) => {
+    setSelectedEquipment(equipment)
+    setIsModalOpen(true)
+  }
+
+  const openCreateModal = () => {
+    setIsCreateModalOpen(true)
+  }
+
+  const handleCreateSuccess = () => {
+    // Invalidar cache para actualizar la tabla automáticamente
+    refetchEquipment()
+    setIsCreateModalOpen(false)
+  }
+
+  // Función para verificar si un equipamiento puede eliminarse (sin asignaciones)
+  const canBeDeleted = (equipment: EquipmentWithClinicAssignments) => {
+    return !equipment.clinicAssignments || equipment.clinicAssignments.length === 0
+  }
+
+  // Manejar selección individual
+  const handleSelectItem = (id: string, checked: boolean) => {
+    setSelectedIds(prev => {
+      const newSet = new Set(prev)
+      if (checked) {
+        newSet.add(id)
+      } else {
+        newSet.delete(id)
+      }
+      return newSet
+    })
+  }
+
+  // Manejar selección de todos los elementos eliminables
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      const deletableIds = filteredEquipment
+        .filter(item => canBeDeleted(item))
+        .map(item => item.id)
+      setSelectedIds(new Set(deletableIds))
+    } else {
+      setSelectedIds(new Set())
+    }
+  }
+
+  // Manejar eliminación múltiple
+  const handleDeleteSelected = async () => {
+    if (selectedIds.size === 0) return
+
+    const confirmMessage = `¿Estás seguro de que quieres eliminar ${selectedIds.size} equipamiento${selectedIds.size > 1 ? 's' : ''}?`
+    if (!confirm(confirmMessage)) return
+
+    setIsDeleting(true)
+    try {
+      const promises = Array.from(selectedIds).map(id =>
+        fetch(`/api/equipment/${id}`, { method: 'DELETE' })
+      )
+      
+      const results = await Promise.all(promises)
+      const failedDeletes = results.filter(result => !result.ok)
+      
+      if (failedDeletes.length > 0) {
+        throw new Error(`Error al eliminar ${failedDeletes.length} equipamiento(s)`)
+      }
+
+      // Éxito: actualizar tabla y limpiar selección
+      await refetchEquipment()
+      setSelectedIds(new Set())
+      
+      if (selectedIds.size === 1) {
+        toast("Equipamiento eliminado correctamente")
+      } else {
+        toast(`${selectedIds.size} equipamientos eliminados correctamente`)
+      }
+    } catch (error) {
+      console.error('Error deleting equipment:', error)
+      toast(`Error al eliminar: ${error instanceof Error ? error.message : 'Error desconocido'}`)
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  // Filtrar equipos eliminables y seleccionados
+  const deletableEquipment = filteredEquipment.filter(item => canBeDeleted(item))
+  const selectedDeletableCount = Array.from(selectedIds).filter(id => 
+    deletableEquipment.some(item => item.id === id)
+  ).length
+  const allDeletableSelected = deletableEquipment.length > 0 && 
+    deletableEquipment.every(item => selectedIds.has(item.id))
+
+  return (
+    <>
+      {/* Header con búsqueda y botones de acción */}
+      <div className="flex flex-col gap-4 justify-between items-start mb-6 sm:flex-row sm:items-center">
+        <div className="w-full sm:w-80">
+          <SearchInput
+            placeholder="Buscar equipamiento..."
+            value={searchTerm}
+            onChange={setSearchTerm}
+          />
+        </div>
+        
+        <div className="flex gap-2">
+          {/* Botón Eliminar con contador */}
+          <Button 
+            onClick={handleDeleteSelected}
+            disabled={selectedIds.size === 0 || isDeleting}
+            variant="destructive"
+            size="default"
+            className="flex gap-2 items-center"
+          >
+            {isDeleting ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Eliminando...
+              </>
+            ) : (
+              <>
+                <Trash2 className="w-4 h-4" />
+                Eliminar {selectedIds.size > 0 && `(${selectedIds.size})`}
+              </>
+            )}
+          </Button>
+
+          {/* Botón Nuevo Equipamiento */}
+          <Button 
+            onClick={openCreateModal}
+            className="flex gap-2 items-center text-white whitespace-nowrap bg-blue-600 hover:bg-blue-700"
+            size="default"
+          >
+            <Plus className="w-4 h-4" />
+            Nuevo Equipamiento
+          </Button>
+        </div>
+      </div>
+
+      <Card className="overflow-hidden p-0">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-12">
+                <Checkbox
+                  checked={allDeletableSelected}
+                  onCheckedChange={handleSelectAll}
+                  disabled={deletableEquipment.length === 0}
+                />
+              </TableHead>
+              <TableHead className="cursor-pointer" onClick={() => handleSort("name")}>
+                Equipamiento {sortColumn === "name" && <ArrowUpDown className={`ml-2 h-4 w-4 inline ${sortDirection === "asc" ? "" : "transform rotate-180"}`} />}
+              </TableHead>
+              <TableHead>Descripción</TableHead>
+              <TableHead className="cursor-pointer" onClick={() => handleSort("modelNumber")}>
+                Modelo {sortColumn === "modelNumber" && <ArrowUpDown className={`ml-2 h-4 w-4 inline ${sortDirection === "asc" ? "" : "transform rotate-180"}`} />}
+              </TableHead>
+              <TableHead className="cursor-pointer" onClick={() => handleSort("assignments")}>
+                Dispositivos en esta Clínica {sortColumn === "assignments" && (
+                  <ArrowUpDown className={`ml-2 h-4 w-4 inline ${sortDirection === "asc" ? "" : "transform rotate-180"}`} />
+                )}
+              </TableHead>
+              <TableHead className="text-right">Acciones</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {loadingEquipment ? (
+              // Estados de carga
+              [...Array(3)].map((_, i) => (
+                <TableRow key={i}>
+                  <TableCell><Skeleton className="w-4 h-4" /></TableCell>
+                  <TableCell><Skeleton className="w-40 h-4" /></TableCell>
+                  <TableCell><Skeleton className="w-60 h-4" /></TableCell>
+                  <TableCell><Skeleton className="w-20 h-4" /></TableCell>
+                  <TableCell><Skeleton className="w-32 h-4" /></TableCell>
+                  <TableCell className="text-right"><Skeleton className="inline-block w-8 h-8" /></TableCell>
+                </TableRow>
+              ))
+            ) : filteredEquipment.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={6} className="py-8 text-center">
+                  {allEquipment.length === 0 ? (
+                    <div className="space-y-2">
+                      <p className="text-gray-500">No hay equipamiento registrado en el sistema.</p>
+                      <p className="text-sm text-gray-400">
+                        Ve a la gestión global de equipamientos para crear tipos de equipos.
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-gray-500">No hay equipamiento que coincida con la búsqueda.</p>
+                  )}
+                </TableCell>
+              </TableRow>
+            ) : (
+              filteredEquipment.map((item) => {
+                const assignmentsCount = getClinicAssignmentsCount(item)
+                const hasOtherClinics = hasAssignmentsInOtherClinics(item)
+                const isDeletable = canBeDeleted(item)
+                const isSelected = selectedIds.has(item.id)
+                
+                return (
+                  <TableRow key={item.id}>
+                    <TableCell>
+                      <Checkbox
+                        checked={isSelected}
+                        onCheckedChange={(checked) => handleSelectItem(item.id, checked as boolean)}
+                        disabled={!isDeletable}
+                        className={!isDeletable ? "opacity-30" : ""}
+                      />
+                    </TableCell>
+                    <TableCell className="font-medium">{item.name}</TableCell>
+                    <TableCell className="max-w-xs truncate">{item.description || '-'}</TableCell>
+                    <TableCell>{item.modelNumber || '-'}</TableCell>
+                    <TableCell>
+                      <ClinicSpecificAssignmentsCell equipment={item} clinicId={clinicId} />
+                    </TableCell>
+                    <TableCell className="space-x-1 text-right">
+                      <Button 
+                        variant="ghost" 
+                        size="icon"
+                        onClick={() => openModal(item)}
+                        className="w-8 h-8"
+                        title={hasOtherClinics 
+                          ? "Ver dispositivos (solo lectura - equipamiento usado en otras clínicas)"
+                          : assignmentsCount > 0
+                            ? "Gestionar dispositivos de esta clínica"
+                            : "Ver equipamiento (sin asignaciones en esta clínica)"
+                        }
+                      >
+                        <Search className={`w-4 h-4 ${assignmentsCount > 0 ? 'text-blue-600' : 'text-gray-400'}`} />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                )
+              })
+            )}
+          </TableBody>
+        </Table>
+      </Card>
+
+      {isModalOpen && selectedEquipment && (
+        <EquipmentModal
+          isOpen={isModalOpen}
+          onClose={() => { 
+            setIsModalOpen(false); 
+            setSelectedEquipment(null);
+            // Refrescar datos cuando se cierre el modal
+            refetchEquipment();
+          }}
+          initialEquipment={selectedEquipment}
+          isEditMode={true}
+          clinicFilter={clinicId}
+          onRefreshData={refetchEquipment}
+        />
+      )}
+
+      {/* Modal de creación de equipamiento */}
+      {isCreateModalOpen && (
+        <EquipmentModal
+          isOpen={isCreateModalOpen}
+          onClose={handleCreateSuccess}
+          isEditMode={false}
+          // Sin clinicFilter para crear equipamiento global
+        />
+      )}
+    </>
+  )
+}
+// --- FIN COMPONENTE TABLA DE EQUIPAMIENTO ---
+
 const DEFAULT_GRANULARITIES: { [key: number]: number } = {
   15: 5,
   20: 5,
@@ -445,6 +882,10 @@ export default function ClinicaDetailPage() {
   })
   // Usar el tipo local ExcepcionHorariaLocal
   const [editingExcepcion, setEditingExcepcion] = useState<ExcepcionHorariaLocal | null>(null)
+  
+  // Estados para el modal de equipamiento
+  const [isEquipmentModalOpen, setIsEquipmentModalOpen] = useState(false)
+  const [selectedEquipment, setSelectedEquipment] = useState<Equipment | null>(null)
   const [editingFranja, setEditingFranja] = useState<{
     diaId: string;
     franjaId?: string;
@@ -497,6 +938,13 @@ export default function ClinicaDetailPage() {
   ]
 
   const clinicId = typeof params?.id === 'string' ? params.id : ''
+  
+  // Hook para obtener datos de equipamiento
+  const {
+    data: equipmentList = [],
+    isLoading: loadingEquipment,
+    refetch: refetchEquipment,
+  } = useEquipmentWithAssignmentsQuery()
   
   // <<< ELIMINAR LOG >>>
   // console.log("ClinicaDetailPage - Extracted clinicId from URL params:", clinicId, "(Type:", typeof clinicId, ")", "Raw params:", params);
@@ -1075,12 +1523,12 @@ export default function ClinicaDetailPage() {
   // --- NUEVO Handler para aplicar horario general --- 
   const handleApplyGeneralTimesToAllDays = () => {
       if (useTemplateSchedule) { 
-        toast({ title: "Acción no permitida", description: "No se pueden aplicar horarios generales cuando se usa una plantilla.", variant: "default" });
+        toast("No se pueden aplicar horarios generales cuando se usa una plantilla.");
           return;
       }
 
       if (!independentSchedule) {
-          toast({ title: "Error", description: "No hay un horario independiente para modificar.", variant: "destructive" });
+          toast("No hay un horario independiente para modificar.");
           return;
       }
 
@@ -1138,7 +1586,7 @@ export default function ClinicaDetailPage() {
           closeTime: latest
       } : null);
 
-      toast({ title: "Horario Actualizado", description: `Horario general ${earliest}-${latest} aplicado a días laborables.` });
+      toast(`Horario general ${earliest}-${latest} aplicado a días laborables.`);
   };
   // --- FIN Nuevo Handler ---
 
@@ -1207,17 +1655,13 @@ export default function ClinicaDetailPage() {
       }
       // -----------------------------------------------------------------
 
-      toast({ title: "Éxito", description: `Cabina "${savedCabin?.name}" guardada correctamente.` });
+      toast(`Cabina "${savedCabin?.name}" guardada correctamente.`);
       setIsCabinDialogOpen(false);
       setEditingCabin(null);
 
     } catch (error) {
       console.error("Error guardando cabina:", error);
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Error desconocido al guardar la cabina.",
-        variant: "destructive",
-      });
+      toast(`Error: ${error instanceof Error ? error.message : "Error desconocido al guardar la cabina."}`);
     } finally {
       setIsSaving(false);
     }
@@ -1271,7 +1715,7 @@ export default function ClinicaDetailPage() {
 
   const handleSaveClick = useCallback(async () => {
     if (!clinicData || !formData) { // <<< Añadir chequeo para formData
-      toast({ title: "Error", description: "Datos de la clínica o formulario no disponibles.", variant: "destructive" });
+      toast("Datos de la clínica o formulario no disponibles.");
       return;
     }
     setIsSaving(true);
@@ -1395,7 +1839,7 @@ export default function ClinicaDetailPage() {
 
       // 5. Procesar resultado (igual que antes, pero ajustando estados post-guardado)
       if (result) {
-        toast({ title: "Éxito", description: "Configuración de la clínica guardada." });
+        toast("Configuración de la clínica guardada.");
         
         // FORZAR RECARGA DE DATOS para asegurar consistencia total post-guardado
         // Esto es más seguro que intentar sincronizar todos los estados manualmente.
@@ -1424,12 +1868,12 @@ export default function ClinicaDetailPage() {
 
       } else { 
          // ... (manejo de error igual que antes) ...
-         toast({ title: "Error", description: "No se pudo guardar la configuración. Inténtalo de nuevo.", variant: "destructive" });
+         toast("No se pudo guardar la configuración. Inténtalo de nuevo.");
       }
     } catch (error) {
        // ... (manejo de error igual que antes) ...
        console.error("Error detallado en handleSaveClick:", error);
-       toast({ title: "Error", description: `Error al guardar: ${error instanceof Error ? error.message : 'Error desconocido'}`, variant: "destructive" });
+       toast(`Error al guardar: ${error instanceof Error ? error.message : 'Error desconocido'}`);
     } finally {
       setIsSaving(false);
     }
@@ -1484,19 +1928,11 @@ export default function ClinicaDetailPage() {
     setShowExcepcionModal(false)
     setEditingExcepcion(null)
 
-    toast({
-      title: "Excepción de horario guardada",
-      description: "La excepción ha sido guardada correctamente",
-    })
-  }
+    toast("La excepción ha sido guardada correctamente")  }
 
   const handleEliminarExcepcion = (excepcionId: string) => {
     console.warn("handleEliminarExcepcion needs refactoring for API calls.");
-    toast({
-      title: "Excepción eliminada",
-      description: "La excepción ha sido eliminada exitosamente.",
-    })
-  }
+    toast("La excepción ha sido eliminada exitosamente.")  }
 
   const handleToggleDiaExcepcion = (diaIndex: number, activo: boolean) => {
     if (!editingExcepcion) return
@@ -2610,27 +3046,40 @@ export default function ClinicaDetailPage() {
                 <Card className="p-6">
                   <div className="space-y-4">
                     <div className="flex flex-col gap-2">
-                      <h2 className="text-lg font-medium">Listado del equipamiento de la clínica: {clinicData.name}</h2>
+                      <h2 className="text-lg font-medium">Equipamiento de {clinicData?.name || 'la clínica'}</h2>
+                      <p className="mt-1 text-sm text-gray-600">
+                        Gestiona los equipamientos asignados a esta clínica específica.
+                      </p>
                     </div>
 
-                    {/* <<< ELIMINAR SearchInput manual >>> */}
-                    {/* 
-                    <SearchInput
-                      placeholder="Buscar equipamiento"
-                      value={equipmentFilterText}
-                      onChange={setEquipmentFilterText}
-                    /> 
-                    */}
-
-                    {/* <<< REEMPLAZAR Tabla Manual con DataTable >>> */}
-                    {/* <DataTable
-                       columns={equipmentColumns} // <<< COMENTADO HASTA QUE SE DEFINA equipmentColumns
-                       data={equipmentData} // Pasar los datos directamente
-                       searchKey="name" // Habilitar búsqueda integrada por nombre
-                    /> */}
-                    {/* <<< FIN REEMPLAZO >>> */}
-                    <p className="text-sm text-muted-foreground">Tabla de equipamiento pendiente de implementación con DataTable y definición de columnas.</p>
-
+                    {loadingEquipment ? (
+                      <Card className="overflow-hidden p-0">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead><Skeleton className="w-40 h-4" /></TableHead>
+                              <TableHead><Skeleton className="w-60 h-4" /></TableHead>
+                              <TableHead><Skeleton className="w-20 h-4" /></TableHead>
+                              <TableHead><Skeleton className="w-32 h-4" /></TableHead>
+                              <TableHead className="text-right"><Skeleton className="w-16 h-4" /></TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {[...Array(3)].map((_, i) => (
+                              <TableRow key={i}>
+                                <TableCell><Skeleton className="w-full h-4" /></TableCell>
+                                <TableCell><Skeleton className="w-full h-4" /></TableCell>
+                                <TableCell><Skeleton className="w-full h-4" /></TableCell>
+                                <TableCell><Skeleton className="w-full h-4" /></TableCell>
+                                <TableCell className="text-right"><Skeleton className="inline-block w-8 h-8" /></TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </Card>
+                    ) : (
+                      <EquipmentTableForClinic clinicId={clinicId} />
+                    )}
                   </div>
                 </Card>
               )}
@@ -2790,17 +3239,7 @@ export default function ClinicaDetailPage() {
             Nueva cabina
           </Button>
         )}
-        {activeTab === "equipamiento" && (
-          <Button
-            className="px-4 py-2 text-sm text-white bg-blue-600 rounded-md shadow-md hover:bg-blue-700"
-            onClick={() => {
-              router.push(`/configuracion/clinicas/${clinicId}/equipamiento/nuevo`)
-            }}
-          >
-            <Plus className="mr-2 w-4 h-4" />
-            Nuevo equipamiento
-          </Button>
-        )}
+{/* Botón "Nuevo equipamiento" eliminado - funcionalidad legacy */}
         {activeTab === "usuarios" && (
           <Button
             className="px-4 py-2 text-sm text-white bg-blue-600 rounded-md shadow-md hover:bg-blue-700"

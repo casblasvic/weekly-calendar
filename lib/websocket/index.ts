@@ -124,16 +124,35 @@ export { webSocketInitializer } from './initializer';
 import { RobustWebSocketManager } from './connection-manager';
 
 /**
- * 🎯 INSTANCIA SINGLETON GLOBAL
+ * 🎯 INSTANCIA SINGLETON GLOBAL CON INICIALIZACIÓN LAZY
  * 
  * Esta es la instancia principal del WebSocket Manager que debe usarse
  * en toda la aplicación para mantener consistencia y evitar múltiples
  * managers compitiendo por las mismas conexiones.
  * 
- * IMPORTANTE: Esta instancia se inicializa automáticamente y gestiona
- * todas las conexiones WebSocket del sistema.
+ * IMPORTANTE: Esta instancia se inicializa solo cuando es necesaria,
+ * evitando problemas durante el build de Next.js.
  */
-export const webSocketManager = new RobustWebSocketManager();
+let _webSocketManager: RobustWebSocketManager | null = null;
+
+export function getWebSocketManager(): RobustWebSocketManager {
+  if (!_webSocketManager) {
+    _webSocketManager = new RobustWebSocketManager();
+  }
+  return _webSocketManager;
+}
+
+// Para compatibilidad con código existente
+export const webSocketManager = {
+  connect: (config: any) => getWebSocketManager().connect(config),
+  disconnect: (connectionId: string) => getWebSocketManager().disconnect(connectionId),
+  send: (connectionId: string, message: any, priority?: any) => getWebSocketManager().send(connectionId, message, priority),
+  broadcast: (message: any, tags?: string[]) => getWebSocketManager().broadcast(message, tags),
+  getConnection: (connectionId: string) => getWebSocketManager().getConnection(connectionId),
+  getMetrics: () => getWebSocketManager().getMetrics(),
+  getEventBus: () => getWebSocketManager().getEventBus(),
+  healthCheck: (connectionId?: string) => getWebSocketManager().healthCheck(connectionId)
+};
 
 // Configuraciones predefinidas
 export const DEFAULT_CONFIG = {
