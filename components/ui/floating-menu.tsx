@@ -42,6 +42,12 @@ import {
   HoverCardTrigger,
 } from "@/components/ui/hover-card"
 import { Badge } from "@/components/ui/badge"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 // ✅ INTERFACES PARA ENCHUFES INTELIGENTES
 interface SmartPlug {
@@ -69,10 +75,26 @@ interface SmartPlug {
 }
 
 interface SmartPlugsData {
-  devices: SmartPlug[];
+  deviceStats: {
+    total: number;
+    online: number;
+    offline: number;
+    consuming: number;
+  };
+  activeDevices: Array<{
+    id: string;
+    name: string;
+    deviceId: string;
+    online: boolean;
+    relayOn: boolean;
+    currentPower?: number;
+    voltage?: number;
+    temperature?: number;
+  }>;
   totalPower: number;
   isConnected: boolean;
   onDeviceToggle: (deviceId: string, turnOn: boolean) => Promise<void>;
+  lastUpdate: Date | null;
 }
 
 interface FloatingMenuProps {
@@ -445,56 +467,70 @@ export function FloatingMenu({ className, smartPlugsData }: FloatingMenuProps) {
     );
   }
 
-  // ✅ LÓGICA PARA ENCHUFES INTELIGENTES
-  // Calcular estado dinámico del ícono de enchufes inteligentes
-  const smartPlugsIconState = useMemo(() => {
-    // ✅ CORREGIDO: Si no hay dispositivos asignados a la clínica
-    if (!smartPlugsData || smartPlugsData.devices.length === 0) {
-      return { 
-        color: 'gray', 
-        bgClass: 'bg-gray-500/90 hover:bg-gray-600', 
-        title: 'Sin dispositivos en esta clínica',
-        totalPower: 0,
-        deviceCount: 0
-      };
+  // 🔌 5º BOTÓN: ENCHUFES INTELIGENTES
+  const renderSmartPlugsButton = () => {
+    if (!smartPlugsData || smartPlugsData.deviceStats.total === 0) {
+      return (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-12 w-12 rounded-full bg-red-500/10 hover:bg-red-500/20 text-red-500"
+          disabled
+          title="Sin dispositivos asignados a esta clínica"
+        >
+          <Plug className="h-5 w-5" />
+        </Button>
+      );
     }
 
-    const totalDevices = smartPlugsData.devices.length;
-    const onlineDevices = smartPlugsData.devices.filter(d => d.online);
-    const activeDevices = onlineDevices.filter(d => d.relayOn && (d.currentPower || 0) > 0.1);
+    const { total, online, offline, consuming } = smartPlugsData.deviceStats;
     
-    // ✅ CORREGIDO: Mostrar información real
-    // Estado rojo: No hay dispositivos online (pero SÍ hay dispositivos asignados)
-    if (onlineDevices.length === 0) {
-      return { 
-        color: 'red', 
-        bgClass: 'bg-red-600/90 hover:bg-red-700', 
-        title: `${totalDevices} dispositivos offline`,
-        totalPower: smartPlugsData.totalPower,
-        deviceCount: totalDevices
-      };
+    // 🎯 ESTADOS DEL ÍCONO
+    let iconColor = "text-red-500";
+    let bgColor = "bg-red-500/10 hover:bg-red-500/20";
+    let statusText = `${total} dispositivos offline`;
+    
+    if (online > 0 && consuming === 0) {
+      iconColor = "text-orange-500";
+      bgColor = "bg-orange-500/10 hover:bg-orange-500/20";
+      statusText = `${online}/${total} online, no consumiendo`;
+    } else if (consuming > 0) {
+      iconColor = "text-green-500";
+      bgColor = "bg-green-500/10 hover:bg-green-500/20";
+      statusText = `${consuming}/${total} activos`;
     }
-    
-    // Estado naranja: Hay dispositivos online pero ninguno consumiendo
-    if (activeDevices.length === 0) {
-      return { 
-        color: 'orange', 
-        bgClass: 'bg-orange-600/90 hover:bg-orange-700', 
-        title: `${onlineDevices.length}/${totalDevices} online, no consumiendo`,
-        totalPower: smartPlugsData.totalPower,
-        deviceCount: onlineDevices.length
-      };
-    }
-    
-    // Estado verde: Hay dispositivos online y consumiendo
-    return { 
-      color: 'green', 
-      bgClass: 'bg-emerald-600/90 hover:bg-emerald-700', 
-      title: `${activeDevices.length}/${totalDevices} activos`,
-      totalPower: smartPlugsData.totalPower,
-      deviceCount: activeDevices.length
-    };
-  }, [smartPlugsData]);
+
+    return (
+      <Button
+        variant="ghost"
+        size="sm"
+        className={cn(
+          "h-12 w-12 rounded-full relative",
+          bgColor,
+          iconColor
+        )}
+        onClick={() => handleMenuSelect("smart-plugs")}
+        title={statusText}
+      >
+        <Plug className="h-5 w-5" />
+        
+        {/* Badge de consumo total en tiempo real */}
+        {smartPlugsData.totalPower > 0.1 && (
+          <span className="absolute -top-1 -right-1 bg-yellow-500 text-black text-[10px] px-1.5 py-0.5 rounded-full font-mono font-medium shadow-sm border border-yellow-400">
+            <Zap className="w-2.5 h-2.5 inline mr-0.5" />
+            {smartPlugsData.totalPower.toFixed(1)}W
+          </span>
+        )}
+        
+        {/* Indicador de dispositivos activos */}
+        {consuming > 0 && smartPlugsData.totalPower <= 0.1 && (
+          <span className="absolute -top-1 -right-1 bg-blue-500 text-white text-[9px] px-1 py-0.5 rounded-full font-medium">
+            {consuming}
+          </span>
+        )}
+      </Button>
+    );
+  };
 
   // Función para renderizar píldora de dispositivo individual (estética premium)
   const renderDevicePill = (device: SmartPlug) => {
@@ -705,39 +741,7 @@ export function FloatingMenu({ className, smartPlugsData }: FloatingMenuProps) {
             </Button>
 
             {/* ✅ NUEVO: 5º Botón de enchufes inteligentes */}
-            {smartPlugsData && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className={cn(
-                  "w-12 h-12 rounded-md relative group shadow-lg",
-                  activeMenu === "smart-plugs" ? "bg-emerald-700" : smartPlugsIconState.bgClass,
-                  "text-white transition-all duration-300"
-                )}
-                style={{
-                  boxShadow: `0 4px 14px rgba(0, 0, 0, 0.15)`
-                }}
-                onClick={() => handleMenuSelect("smart-plugs")}
-                title={smartPlugsIconState.title}
-              >
-                <Plug className="w-6 h-6" />
-                
-                {/* Badge de consumo total en tiempo real (estilo credenciales) */}
-                {smartPlugsIconState.totalPower > 0.1 && (
-                  <span className="absolute -top-1 -right-1 bg-yellow-500 text-black text-[10px] px-1.5 py-0.5 rounded-full font-mono font-medium shadow-sm border border-yellow-400">
-                    <Zap className="w-2.5 h-2.5 inline mr-0.5" />
-                    {smartPlugsIconState.totalPower.toFixed(1)}W
-                  </span>
-                )}
-                
-                {/* Indicador de dispositivos activos (pequeño contador) */}
-                {smartPlugsIconState.deviceCount > 0 && smartPlugsIconState.totalPower <= 0.1 && (
-                  <span className="absolute -top-1 -right-1 bg-blue-500 text-white text-[9px] px-1 py-0.5 rounded-full font-medium">
-                    {smartPlugsIconState.deviceCount}
-                  </span>
-                )}
-              </Button>
-            )}
+            {renderSmartPlugsButton()}
           </div>
         )}
 
@@ -897,17 +901,17 @@ export function FloatingMenu({ className, smartPlugsData }: FloatingMenuProps) {
                           </div>
                           <div className="text-[10px] text-gray-500 flex items-center">
                             <span className="inline-block w-1.5 h-1.5 bg-emerald-500 rounded-full mr-1"></span>
-                            {smartPlugsData.devices.length} dispositivo{smartPlugsData.devices.length !== 1 ? 's' : ''}
+                            {smartPlugsData.deviceStats.total} dispositivo{smartPlugsData.deviceStats.total !== 1 ? 's' : ''}
                           </div>
                         </div>
                       </div>
                       
                       {/* Badge de consumo total de la clínica */}
-                      {smartPlugsIconState.totalPower > 0.1 && (
+                      {smartPlugsData.totalPower > 0.1 && (
                         <div className="flex items-center gap-1 px-2 py-1 bg-yellow-100 rounded-full">
                           <Zap className="w-3 h-3 text-yellow-600" />
                           <span className="text-xs font-mono font-medium text-yellow-800">
-                            {smartPlugsIconState.totalPower.toFixed(1)}W
+                            {smartPlugsData.totalPower.toFixed(1)}W
                           </span>
                         </div>
                       )}
@@ -931,7 +935,7 @@ export function FloatingMenu({ className, smartPlugsData }: FloatingMenuProps) {
 
                   {/* Lista de dispositivos */}
                   <div className="max-h-[350px] overflow-y-auto">
-                    {smartPlugsData.devices.length === 0 ? (
+                    {smartPlugsData.activeDevices.length === 0 ? (
                       <div className="p-6 text-center">
                         <div className="flex flex-col items-center gap-2">
                           <Plug className="w-8 h-8 text-gray-400" />
@@ -943,13 +947,13 @@ export function FloatingMenu({ className, smartPlugsData }: FloatingMenuProps) {
                       </div>
                     ) : (
                       <div className="divide-y divide-gray-100">
-                        {smartPlugsData.devices.map(device => renderDevicePill(device))}
+                        {smartPlugsData.activeDevices.map(device => renderDevicePill(device))}
                       </div>
                     )}
                   </div>
 
                   {/* Footer con acción adicional */}
-                  {smartPlugsData.devices.length > 0 && (
+                  {smartPlugsData.activeDevices.length > 0 && (
                     <div className="p-2 text-center bg-gray-50 border-t">
                       <Button 
                         variant="ghost" 

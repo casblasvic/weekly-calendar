@@ -42,9 +42,24 @@ interface SmartPlugDevice {
 }
 
 interface SmartPlugsFloatingMenuData {
-  devices: SmartPlugDevice[];
+  // 📊 CONTADORES
+  deviceStats: {
+    total: number;      // Total dispositivos asignados
+    online: number;     // Dispositivos online
+    offline: number;    // Dispositivos offline
+    consuming: number;  // Dispositivos ON (online + relayOn)
+  };
+  
+  // 🔥 DISPOSITIVOS DINÁMICOS (solo los ON)
+  activeDevices: SmartPlugDevice[];  // Solo dispositivos online + relayOn
+  
+  // 📊 CONSUMO TOTAL
   totalPower: number;
+  
+  // 🔌 ESTADO CONEXIÓN
   isConnected: boolean;
+  
+  // 🎮 FUNCIONES
   onDeviceToggle: (deviceId: string, turnOn: boolean) => Promise<void>;
   lastUpdate: Date | null;
 }
@@ -187,7 +202,7 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
     }
   }, [isConnected, isInitialized]);
 
-  // 🎯 FILTRADO POR CLÍNICA ACTIVA - SIEMPRE mostrar dispositivos asignados
+  // 🎯 FILTRADO POR CLÍNICA ACTIVA - Solo equipmentClinicAssignment.clinicId
   const clinicDevices = useMemo(() => {
     if (!activeClinic?.id || allDevices.length === 0) {
       console.log('🏥 [FloatingMenu] Sin clínica activa o sin dispositivos:', {
@@ -205,68 +220,53 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
       totalDevices: allDevices.length
     });
     
-    // ✅ DEPURACIÓN: Mostrar estructura de TODOS los dispositivos
-    console.log('🔍 [FloatingMenu] Estructura de TODOS los dispositivos:', 
-      allDevices.map((device, index) => ({
-        index,
-        id: device.id,
-        name: device.name,
-        deviceId: device.deviceId,
-        online: device.online,
-        // Estructura antigua
-        equipmentId: device.equipmentId,
-        equipment: device.equipment ? {
-          name: device.equipment.name,
-          clinicId: device.equipment.clinicId,
-          clinic: device.equipment.clinic
-        } : null,
-        // Estructura nueva
-        equipmentClinicAssignmentId: device.equipmentClinicAssignmentId,
-        equipmentClinicAssignment: device.equipmentClinicAssignment ? {
-          id: device.equipmentClinicAssignment.id,
-          clinicId: device.equipmentClinicAssignment.clinicId,
-          deviceName: device.equipmentClinicAssignment.deviceName,
-          equipment: device.equipmentClinicAssignment.equipment,
-          clinic: device.equipmentClinicAssignment.clinic
-        } : null
-      }))
-    );
-    
+    // ✅ FILTRADO SIMPLE: Solo equipmentClinicAssignment.clinicId
     const filtered = allDevices.filter(device => {
-      // ✅ VERIFICAR AMBAS ESTRUCTURAS
-      // Estructura nueva (preferida)
-      if (device.equipmentClinicAssignment?.clinicId === activeClinic.id) {
-        console.log(`✅ [FloatingMenu] ${device.name} → Coincide por equipmentClinicAssignment.clinicId`);
-        return true;
+      // Solo verificar equipmentClinicAssignment.clinicId
+      const hasAssignment = device.equipmentClinicAssignmentId && device.equipmentClinicAssignment?.clinicId === activeClinic.id;
+      
+      if (hasAssignment) {
+        console.log(`✅ [FloatingMenu] ${device.name} → Asignado a clínica ${activeClinic.name}`);
+      } else {
+        console.log(`❌ [FloatingMenu] ${device.name} → NO asignado (equipmentClinicAssignmentId: ${device.equipmentClinicAssignmentId}, clinicId: ${device.equipmentClinicAssignment?.clinicId})`);
       }
       
-      // Estructura antigua (fallback)
-      if (device.equipment?.clinicId === activeClinic.id) {
-        console.log(`✅ [FloatingMenu] ${device.name} → Coincide por equipment.clinicId`);
-        return true;
-      }
-      
-      console.log(`❌ [FloatingMenu] ${device.name} → NO coincide (equipmentClinicAssignment.clinicId: ${device.equipmentClinicAssignment?.clinicId}, equipment.clinicId: ${device.equipment?.clinicId})`);
-      return false;
+      return hasAssignment;
     });
     
     console.log('🏥 [FloatingMenu] Resultado filtrado:', {
       clinicName: activeClinic.name,
-      totalDispositivos: filtered.length,
+      totalAsignados: filtered.length,
       online: filtered.filter(d => d.online).length,
-      consuming: filtered.filter(d => d.online && d.relayOn && (d.currentPower || 0) > 0.1).length,
+      offline: filtered.filter(d => !d.online).length,
+      ON: filtered.filter(d => d.online && d.relayOn).length,
       deviceNames: filtered.map(d => d.name)
     });
     
     return filtered;
   }, [allDevices, activeClinic?.id]);
 
-  // 📊 CÁLCULO DE CONSUMO TOTAL
-  const totalPower = useMemo(() => {
-    return clinicDevices
-      .filter(device => device.online && device.relayOn && (device.currentPower || 0) > 0.1)
-      .reduce((sum, device) => sum + (device.currentPower || 0), 0);
+  // 📊 CONTADORES PARA EL ÍCONO
+  const deviceStats = useMemo(() => {
+    const total = clinicDevices.length;
+    const online = clinicDevices.filter(d => d.online).length;
+    const offline = total - online;
+    const consuming = clinicDevices.filter(d => d.online && d.relayOn).length;
+    
+    return { total, online, offline, consuming };
   }, [clinicDevices]);
+
+  // 🔥 DISPOSITIVOS ON (para mostrar dinámicamente en el modal)
+  const activeDevices = useMemo(() => {
+    return clinicDevices.filter(device => device.online && device.relayOn);
+  }, [clinicDevices]);
+
+  // 📊 CÁLCULO DE CONSUMO TOTAL (solo dispositivos ON)
+  const totalPower = useMemo(() => {
+    return activeDevices
+      .filter(device => (device.currentPower || 0) > 0.1)
+      .reduce((sum, device) => sum + (device.currentPower || 0), 0);
+  }, [activeDevices]);
 
   // 🎮 FUNCIÓN DE CONTROL
   const handleDeviceToggle = useCallback(async (deviceId: string, turnOn: boolean) => {
@@ -298,7 +298,8 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
   }
 
   return {
-    devices: clinicDevices, // ✅ SIEMPRE mostrar dispositivos asignados (online/offline)
+    deviceStats,
+    activeDevices,
     totalPower,
     isConnected,
     onDeviceToggle: handleDeviceToggle,
