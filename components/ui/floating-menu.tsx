@@ -672,9 +672,9 @@ export function FloatingMenu({ className, smartPlugsData }: FloatingMenuProps) {
               variant="ghost"
               size="icon"
               className={cn(
-                "w-12 h-12 rounded-md relative group shadow-lg",
+                "w-12 h-12 rounded-full relative group shadow-lg",
                 activeMenu === "client" ? "bg-purple-700" : "bg-purple-600/90 hover:bg-purple-700",
-                "text-white"
+                "text-white transition-all duration-300"
               )}
               style={{
                 boxShadow: `0 4px 14px rgba(0, 0, 0, 0.15)`
@@ -690,9 +690,9 @@ export function FloatingMenu({ className, smartPlugsData }: FloatingMenuProps) {
               variant="ghost"
               size="icon"
               className={cn(
-                "w-12 h-12 rounded-md relative group shadow-lg",
+                "w-12 h-12 rounded-full relative group shadow-lg",
                 activeMenu === "staff" ? "bg-blue-700" : "bg-blue-600/90 hover:bg-blue-700",
-                "text-white"
+                "text-white transition-all duration-300"
               )}
               style={{
                 boxShadow: `0 4px 14px rgba(0, 0, 0, 0.15)`
@@ -708,9 +708,9 @@ export function FloatingMenu({ className, smartPlugsData }: FloatingMenuProps) {
               variant="ghost"
               size="icon"
               className={cn(
-                "w-12 h-12 rounded-md relative group shadow-lg",
+                "w-12 h-12 rounded-full relative group shadow-lg",
                 activeMenu === "favorites" ? "bg-amber-700" : "bg-amber-600/90 hover:bg-amber-700",
-                "text-white"
+                "text-white transition-all duration-300"
               )}
               style={{
                 boxShadow: `0 4px 14px rgba(0, 0, 0, 0.15)`
@@ -726,9 +726,9 @@ export function FloatingMenu({ className, smartPlugsData }: FloatingMenuProps) {
               variant="ghost"
               size="icon"
               className={cn(
-                "w-12 h-12 rounded-md relative group shadow-lg",
+                "w-12 h-12 rounded-full relative group shadow-lg",
                 activeMenu === "notifications" ? "bg-green-700" : "bg-green-600/90 hover:bg-green-700",
-                "text-white"
+                "text-white transition-all duration-300"
               )}
               style={{
                 boxShadow: `0 4px 14px rgba(0, 0, 0, 0.15)`
@@ -938,11 +938,15 @@ export function FloatingMenu({ className, smartPlugsData }: FloatingMenuProps) {
                     {smartPlugsData.activeDevices.length === 0 ? (
                       <div className="p-6 text-center">
                         <div className="flex flex-col items-center gap-2">
-                          <Plug className="w-8 h-8 text-gray-400" />
-                          <p className="text-sm text-gray-500">No hay dispositivos asignados</p>
-                          <p className="text-xs text-gray-400">
-                            a esta clínica
-                          </p>
+                          <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center">
+                            <Plug className="w-6 h-6 text-gray-400" />
+                          </div>
+                          <div className="text-sm font-medium text-gray-900">
+                            No hay dispositivos activos
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            {smartPlugsData.deviceStats.total} dispositivos asignados: {smartPlugsData.deviceStats.online} online, {smartPlugsData.deviceStats.offline} offline
+                          </div>
                         </div>
                       </div>
                     ) : (

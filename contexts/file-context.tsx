@@ -106,7 +106,7 @@ export const FileProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       // if (interfaz.initialized && !dataFetched) { // Remove interfaz dependency for now
       if (!dataFetched) { // Load once
         try {
-          console.warn("FileContext: loadFiles needs implementation (e.g., fetch from API/local storage)");
+          // console.warn("FileContext: loadFiles needs implementation (e.g., fetch from API/local storage)");
           const loadedFiles: EntityDocument[] = []; // Mock empty array
           const baseFiles: BaseFile[] = loadedFiles.map(convertToBaseFile);
           setFiles(baseFiles);

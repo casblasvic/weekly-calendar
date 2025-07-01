@@ -94,6 +94,11 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
       
       const response = await fetch('/api/internal/integrations');
       if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          console.error('❌ [FloatingMenu] Sesión expirada verificando módulo, redirigiendo al login...');
+          window.location.href = '/login';
+          return;
+        }
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
       
@@ -136,7 +141,13 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
       
       const response = await fetch(`/api/internal/smart-plug-devices?pageSize=1000&page=1`);
       
+      // ✅ MANEJO DE ERRORES DE CONEXIÓN
       if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          console.error('❌ [FloatingMenu] Sesión expirada, redirigiendo al login...');
+          window.location.href = '/login';
+          return;
+        }
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
       
@@ -153,6 +164,13 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
       
     } catch (error) {
       console.error('❌ [FloatingMenu] Error cargando dispositivos:', error);
+      
+      // ✅ DETECTAR ERRORES DE CONEXIÓN
+      if (error instanceof TypeError && error.message.includes('fetch')) {
+        console.error('❌ [FloatingMenu] Error de conexión - posible pérdida de red');
+        // Opcional: mostrar notificación de error de conexión
+      }
+      
       setAllDevices([]);
     }
   }, [systemId, activeClinic?.id]);
