@@ -82,6 +82,8 @@ import { GranularityProvider } from "@/lib/drag-drop/granularity-context"
 import { MoveAppointmentProvider } from "@/contexts/move-appointment-context"
 import { MoveAppointmentUI } from "@/components/move-appointment-ui"
 import { format } from "date-fns"
+// ✅ NUEVO: Hook para integración de enchufes inteligentes en floating menu
+import { useSmartPlugsFloatingMenu } from "@/hooks/use-smart-plugs-floating-menu"
 
 interface LayoutWrapperProps {
   children: React.ReactNode
@@ -98,6 +100,9 @@ export function LayoutWrapper({ children, user }: LayoutWrapperProps) {
   const pathname = usePathname()
   const sidebarRef = useRef<HTMLDivElement>(null)
   const lastPathname = useRef<string>(pathname || "")
+  
+  // ✅ NUEVO: Hook para enchufes inteligentes en floating menu
+  const smartPlugsData = useSmartPlugsFloatingMenu()
   
   // ✅ DETECCIÓN CORREGIDA: SOLO USAR PATHNAME DE NEXT.JS
   const isLoginPage = useMemo(() => {
@@ -524,7 +529,7 @@ export function LayoutWrapper({ children, user }: LayoutWrapperProps) {
 
       {/* Menús flotantes */}
       <div className="fixed right-0 top-0 z-[9999] space-y-1 p-3">
-        <FloatingMenu />
+        <FloatingMenu smartPlugsData={smartPlugsData} />
       </div>
 
       {/* Área principal CON overflow-auto y estilos calculados */}

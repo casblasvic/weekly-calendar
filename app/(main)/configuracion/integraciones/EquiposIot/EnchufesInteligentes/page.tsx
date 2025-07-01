@@ -162,18 +162,16 @@ const SmartPlugsPage = () => {
     const systemId = session?.user?.systemId || '';
     const { updates, isConnected: shellyIsConnected, lastUpdate, clearUpdates } = useShellyRealtime(systemId);
 
-    // 📡 Sistema basado puramente en WebSocket (sin timers)
+    // 🎯 LÓGICA SIMPLE: WebSocket + mensajes recibidos
+    const messagesReceivedRef = useRef<Set<string>>(new Set());
+    const lastMessageTimeRef = useRef<number>(Date.now());
 
-    // Ref para tracking de dispositivos que recibieron updates
-    const devicesUpdatedInBatch = useRef<Set<string>>(new Set());
-    const lastBatchProcessTime = useRef<number>(Date.now());
-
-    // Función inteligente para verificar diferencias y actualizar BD solo si es necesario
+    // ✅ RESTAURADA: Función para sincronizar estado con BD (necesaria para persistir cambios offline)
     const syncDeviceStateWithDB = useCallback(async (devicesToCheck: { id: string; name: string; currentState: { online: boolean; relayOn: boolean; currentPower?: number; voltage?: number; temperature?: number } }[]) => {
         try {
             if (devicesToCheck.length === 0) return;
             
-            console.log(`🔍 [BD SYNC] Verificando diferencias para ${devicesToCheck.length} dispositivos`);
+            console.log(`🔍 [BD SYNC] Sincronizando ${devicesToCheck.length} dispositivos offline con BD`);
             
             const response = await fetch('/api/internal/smart-plug-devices/sync-state', {
                 method: 'POST',
@@ -191,82 +189,57 @@ const SmartPlugsPage = () => {
 
             if (response.ok) {
                 const result = await response.json();
-                if (result.updatedCount > 0) {
-                    console.log(`✅ [BD SYNC] ${result.updatedCount} dispositivos actualizados en BD (${result.skippedCount} sin cambios)`);
-                } else {
-                    console.log(`ℹ️ [BD SYNC] Todos los dispositivos ya estaban sincronizados (${result.skippedCount} verificados)`);
-                }
+                console.log(`✅ [BD SYNC] ${result.updatedCount} dispositivos offline sincronizados en BD`);
             } else {
                 const errorData = await response.json().catch(() => ({ error: 'Error desconocido' }));
-                console.error('❌ [BD SYNC] Error sincronizando estados:', errorData.error);
+                console.error('❌ [BD SYNC] Error sincronizando estados offline:', errorData.error);
             }
         } catch (error) {
-            console.error('❌ [BD SYNC] Error de conexión sincronizando estados:', error);
+            console.error('❌ [BD SYNC] Error de conexión sincronizando estados offline:', error);
         }
     }, []);
 
-    // 🎯 NUEVA FUNCIÓN: Detectar dispositivos offline usando WebSocket como trigger
-    const checkOfflineDevices = useCallback(async () => {
-        if (allPlugs.length === 0) return;
+    // 🎯 NUEVA FUNCIÓN SIMPLE: Solo verifica si se reciben mensajes cuando WebSocket está conectado
+    const checkOfflineDevices = useCallback(() => {
+        if (!isConnected || allPlugs.length === 0) return;
 
         const now = Date.now();
-        const timeSinceLastBatch = now - lastBatchProcessTime.current;
-
-        // Solo procesar si han pasado al menos 30 segundos desde el último batch
-        if (timeSinceLastBatch < 30000) return;
-
-        console.log(`🔍 [OFFLINE CHECK] Verificando dispositivos offline. Dispositivos que recibieron updates en este ciclo: ${devicesUpdatedInBatch.current.size}`);
-
-        // Encontrar dispositivos que NO recibieron updates en este ciclo
-        const devicesNotUpdated = allPlugs.filter(device => 
-            device.online && // Solo verificar dispositivos que están marcados como online
-            !devicesUpdatedInBatch.current.has(device.id) && 
-            !devicesUpdatedInBatch.current.has(device.deviceId)
-        );
-
-        if (devicesNotUpdated.length > 0) {
-            console.log(`⚠️ [OFFLINE CHECK] Encontrados ${devicesNotUpdated.length} dispositivos que no recibieron updates:`, 
-                devicesNotUpdated.map(d => d.name)
-            );
-
-            // Marcar como offline en el estado local
-            setAllPlugs(prev => prev.map(device => {
-                if (devicesNotUpdated.some(offline => offline.id === device.id)) {
-                    console.log(`📴 [OFFLINE] Marcando como offline: ${device.name}`);
-                    return { ...device, online: false };
-                }
-                return device;
-            }));
-
-            setPlugs(prev => prev.map(device => {
-                if (devicesNotUpdated.some(offline => offline.id === device.id)) {
-                    return { ...device, online: false };
-                }
-                return device;
-            }));
-
-            // Sincronizar cambios con BD
-            const devicesToSync = devicesNotUpdated.map(device => ({
-                id: device.id,
-                name: device.name,
-                currentState: {
-                    online: false,
-                    relayOn: device.relayOn,
-                    currentPower: device.currentPower,
-                    voltage: device.voltage,
-                    temperature: device.temperature
-                }
-            }));
-
-            await syncDeviceStateWithDB(devicesToSync);
-        } else {
-            console.log(`✅ [OFFLINE CHECK] Todos los dispositivos online recibieron updates`);
+        const timeSinceLastMessage = now - lastMessageTimeRef.current;
+        
+        // Si han pasado más de 10 segundos sin mensajes Y el WebSocket está conectado
+        // significa que todos los dispositivos están offline
+        if (timeSinceLastMessage > 10000) {
+            console.log(`⚠️ WebSocket conectado pero sin mensajes por ${timeSinceLastMessage/1000}s - marcando todos offline`);
+            
+            // Preparar datos para sincronizar con BD
+            const devicesToSync = allPlugs
+                .filter(device => device.online) // Solo los que están online
+                .map(device => ({
+                    id: device.id,
+                    name: device.name,
+                    currentState: {
+                        online: false,
+                        relayOn: false,
+                        currentPower: 0,
+                        voltage: device.voltage,
+                        temperature: device.temperature
+                    }
+                }));
+            
+            setAllPlugs(prev => prev.map(device => 
+                device.online ? { ...device, online: false, relayOn: false, currentPower: 0 } : device
+            ));
+            
+            setPlugs(prev => prev.map(device => 
+                device.online ? { ...device, online: false, relayOn: false, currentPower: 0 } : device
+            ));
+            
+            // ✅ SINCRONIZAR con BD
+            if (devicesToSync.length > 0) {
+                syncDeviceStateWithDB(devicesToSync);
+            }
         }
-
-        // Reset del tracking para el próximo ciclo
-        devicesUpdatedInBatch.current.clear();
-        lastBatchProcessTime.current = now;
-    }, [allPlugs, syncDeviceStateWithDB]);
+    }, [isConnected, allPlugs.length, syncDeviceStateWithDB]); // ✅ Añadir dependencia
 
     const fetchPlugs = useCallback(async (page = 1, pageSize = 50, credentialFilter = 'all') => {
         setIsLoading(true);
@@ -529,12 +502,14 @@ const SmartPlugsPage = () => {
                 timestamp: update.timestamp
             });
             
-            // 🎯 TRACKING: Marcar este dispositivo como que recibió update
-            devicesUpdatedInBatch.current.add(update.deviceId);
+            // 🎯 TRACKING: Marcar mensaje recibido
+            messagesReceivedRef.current.add(update.deviceId);
+            lastMessageTimeRef.current = Date.now(); // ✅ Actualizar tiempo del último mensaje
+            
             // También agregarlo por si se busca por ID interno
             const foundDevice = allPlugs.find(d => d.deviceId === update.deviceId);
             if (foundDevice) {
-                devicesUpdatedInBatch.current.add(foundDevice.id);
+                messagesReceivedRef.current.add(foundDevice.id);
             }
             
             // 📡 Datos recibidos por WebSocket - dispositivo está activo
@@ -612,18 +587,7 @@ const SmartPlugsPage = () => {
                     newState: `${update.online ? 'ONLINE' : 'OFFLINE'} - ${update.relayOn ? 'ON' : 'OFF'} - ${update.currentPower || 0}W`
                 });
                 
-                // ⚡ Sincronizar este dispositivo con BD (solo si hay cambios)
-                syncDeviceStateWithDB([{
-                    id: updatedDevice.id,
-                    name: updatedDevice.name,
-                    currentState: {
-                        online: updatedDevice.online,
-                        relayOn: updatedDevice.relayOn,
-                        currentPower: updatedDevice.currentPower,
-                        voltage: updatedDevice.voltage,
-                        temperature: updatedDevice.temperature
-                    }
-                }]);
+                // ✅ SIMPLIFICADO: Solo actualizar estado local, no sincronizar BD
                 
                 return updated;
             };
@@ -691,7 +655,7 @@ const SmartPlugsPage = () => {
                 subscriptionRef.current = null;
             }
         };
-    }, [subscribe, isConnected, checkOfflineDevices, syncDeviceStateWithDB]); // Remover allPlugs.length de dependencias para evitar re-suscripciones
+    }, [subscribe, isConnected, checkOfflineDevices]); // Remover allPlugs.length de dependencias para evitar re-suscripciones
 
     // 📡 Sistema puro WebSocket - sin timers, sin complejidad innecesaria
 
@@ -699,6 +663,17 @@ const SmartPlugsPage = () => {
     useEffect(() => {
         console.log(`🔌 Estado de conexión Socket.io: ${isConnected ? 'CONECTADO' : 'DESCONECTADO'}`);
     }, [isConnected]);
+
+    // ✅ VERIFICACIÓN SIMPLE: Cada 15 segundos verificar si llegan mensajes
+    useEffect(() => {
+        if (!isConnected) return;
+        
+        const checkInterval = setInterval(() => {
+            checkOfflineDevices();
+        }, 15000); // Verificar cada 15 segundos
+        
+        return () => clearInterval(checkInterval);
+    }, [isConnected, checkOfflineDevices]);
 
     // Calcular consumo total por credencial basado en TODOS los dispositivos (tiempo real)
     const credentialsWithPowerData = useMemo(() => {
@@ -837,131 +812,35 @@ const SmartPlugsPage = () => {
 
     // Función para controlar dispositivo con actualización optimista y Socket.io
     const handleDeviceToggle = async (deviceId: string, turnOn: boolean) => {
-        console.log(`🎛️ Controlando dispositivo ${deviceId}: ${turnOn ? 'ON' : 'OFF'}`);
-        
-        try {
-            // Actualización optimista en ambas listas
-            setPlugs(prev => prev.map(device => 
-                device.deviceId === deviceId 
-                    ? { ...device, relayOn: turnOn }
-                    : device
-            ));
-            
-            setAllPlugs(prev => prev.map(device => 
-                device.deviceId === deviceId 
-                    ? { ...device, relayOn: turnOn }
-                    : device
-            ));
+        setActivePlugs(prev => ({ ...prev, [deviceId]: true }));
 
+        try {
             const response = await fetch(`/api/shelly/device/${deviceId}/control`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                },
                 body: JSON.stringify({ action: turnOn ? 'on' : 'off' })
             });
 
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || 'Error al controlar dispositivo');
-            }
-
-            const result = await response.json();
-            console.log(`✅ Control exitoso para ${deviceId}:`, result);
-            
-            if (result.success) {
+            if (response.ok) {
+                const result = await response.json();
+                console.log('✅ Control exitoso:', result);
                 toast.success(`Dispositivo ${turnOn ? 'encendido' : 'apagado'} correctamente`);
                 
-                // Solicitar actualización inmediata via Socket.io usando el ID interno
-                const device = allPlugs.find(p => p.deviceId === deviceId);
-                if (device) {
-                    requestDeviceUpdate(device.id);
-                }
-            }
-        } catch (error) {
-            console.error(`❌ Error controlando dispositivo ${deviceId}:`, error);
-            
-            // Revertir cambio optimista en caso de error en ambas listas
-            setPlugs(prev => prev.map(device => 
-                device.deviceId === deviceId 
-                    ? { ...device, relayOn: !turnOn }
-                    : device
-            ));
-            
-            setAllPlugs(prev => prev.map(device => 
-                device.deviceId === deviceId 
-                    ? { ...device, relayOn: !turnOn }
-                    : device
-            ));
-            
-            toast.error('Error al controlar el dispositivo');
-        }
-    };
-
-    // Función para test manual del monitoreo
-    const handleTestMonitoring = async () => {
-        try {
-            console.log('🧪 Iniciando test manual de monitoreo...');
-            const response = await fetch('/api/socket/start-monitoring', {
-                method: 'POST'
-            });
-            
-            const result = await response.json();
-            console.log('📡 Resultado del test:', result);
-            
-            if (result.success) {
-                toast.success('Monitoreo ejecutado correctamente');
+                // Los datos se actualizarán automáticamente por WebSocket
             } else {
-                toast.error('Error en el monitoreo: ' + (result.error || 'Error desconocido'));
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Error desconocido');
             }
         } catch (error) {
-            console.error('❌ Error en test de monitoreo:', error);
-            toast.error('Error ejecutando el test de monitoreo');
+            console.error('❌ Error controlando dispositivo:', error);
+            toast.error(`Error ${turnOn ? 'encendiendo' : 'apagando'} dispositivo: ${error instanceof Error ? error.message : 'Error desconocido'}`);
+        } finally {
+            setTimeout(() => {
+                setActivePlugs(prev => ({ ...prev, [deviceId]: false }));
+            }, 1000);
         }
-    };
-
-    // Función para test completo del sistema WebSocket
-    const handleTestCompleto = async () => {
-        console.log('🧪 Ejecutando test completo...');
-        try {
-            const response = await fetch('/api/test-websocket', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            });
-            
-            const result = await response.json();
-            console.log('📊 Resultado del test completo:', result);
-            
-            if (result.success) {
-                const data = result.data;
-                alert(`Test completado exitosamente:\n\n` +
-                    `📊 Credenciales: ${data.credentials} (${data.connectedCredentials} conectadas)\n` +
-                    `🔗 Conexiones WebSocket: ${data.connections} (${data.shellyConnections} Shelly + ${data.socketIoConnections} Socket.io)\n` +
-                    `🔌 Dispositivos: ${data.devices} (${data.onlineDevices} online)\n` +
-                    `📝 Logs recientes: ${data.recentLogs}`);
-            } else {
-                alert(`Error en test: ${result.error}`);
-            }
-        } catch (error) {
-            console.error('❌ Error ejecutando test completo:', error);
-            alert('Error ejecutando test completo');
-        }
-    };
-
-    // 🧪 NUEVO: Función para test manual de detección de offline
-    const handleTestOfflineDetection = () => {
-        console.log('🧪 [TEST] Ejecutando test manual de detección de offline...');
-        console.log('📊 [TEST] Estado actual:', {
-            totalDevices: allPlugs.length,
-            onlineDevices: allPlugs.filter(d => d.online).length,
-            devicesInBatch: devicesUpdatedInBatch.current.size,
-            lastBatchTime: new Date(lastBatchProcessTime.current).toLocaleString()
-        });
-        
-        // Forzar verificación de offline (sin esperar el timeout de 30s)
-        lastBatchProcessTime.current = Date.now() - 35000; // Simular que pasaron 35 segundos
-        checkOfflineDevices();
-        toast.info('Test de detección de offline ejecutado. Revisa la consola para detalles.');
     };
 
     // Memoizar funciones para evitar re-renders
@@ -1112,11 +991,6 @@ const SmartPlugsPage = () => {
                                    plug.currentPower !== undefined && 
                                    plug.currentPower > 0.1;
                 
-                // 🐞 DEBUG: Log temporal para ver valores exactos
-                if (actualRelayState && plug.name) {
-                    console.log(`🔍 [DEBUG] ${plug.name}: currentPower=${plug.currentPower}, hasRealPower=${hasRealPower}, type=${typeof plug.currentPower}`);
-                }
-                
                 return (
                     <div className="text-left">
                         <div className="mb-1">
@@ -1240,37 +1114,15 @@ const SmartPlugsPage = () => {
         getSortedRowModel: getSortedRowModel(),
     });
 
-    // Agregar indicador de conexión Socket.io en la UI con botón de test
+    // Indicador de conexión Socket.io limpio
     const connectionStatus = (
-        <div className="flex gap-3 items-center">
-            <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm ${
-                isConnected 
-                    ? 'text-green-700 bg-green-100' 
-                    : 'text-red-700 bg-red-100'
-            }`}>
-                <div className={`w-2 h-2 rounded-full ${
-                    isConnected ? 'bg-green-500' : 'bg-red-500'
-                }`}></div>
+        <div className="flex gap-2 items-center px-3 py-1 text-sm rounded-full">
+            <div className={`w-2 h-2 rounded-full ${
+                isConnected ? 'bg-green-500' : 'bg-red-500'
+            }`}></div>
+            <span className={isConnected ? 'text-green-700' : 'text-red-700'}>
                 {isConnected ? 'Tiempo real conectado' : 'Desconectado'}
-            </div>
-            
-            <Button
-                onClick={handleTestMonitoring}
-                variant="outline"
-                size="sm"
-                className="text-blue-600 border-blue-600 hover:bg-blue-50"
-            >
-                🧪 Test Monitoreo
-            </Button>
-            
-            <Button
-                onClick={handleTestCompleto}
-                variant="outline"
-                size="sm"
-                className="text-purple-600 border-purple-600 hover:bg-purple-50"
-            >
-                🔍 Test Completo
-            </Button>
+            </span>
         </div>
     );
 
@@ -1873,18 +1725,6 @@ const SmartPlugsPage = () => {
             </Card>
 
             <div className="flex fixed right-4 bottom-4 z-50 gap-2">
-                {/* 🧪 Botón de test para detección de offline */}
-                <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={handleTestOfflineDetection}
-                    className="text-purple-600 border-purple-200 hover:bg-purple-50"
-                    title="Test manual de detección de dispositivos offline"
-                >
-                    <Zap className="mr-2 w-4 h-4" />
-                    Test Offline
-                </Button>
-                
                 <Button variant="outline" onClick={() => router.back()}>
                     <ArrowLeft className="mr-2 w-4 h-4" />{t('common.back')}
                 </Button>
