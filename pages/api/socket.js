@@ -1103,21 +1103,25 @@ async function processDeviceTurnedOff(activeUsage, data, device) {
   const { timestamp } = data;
 
   try {
-    // 🛡️ PERÍODO DE GRACIA: No finalizar usos recién creados
-    const usageAge = timestamp.getTime() - activeUsage.startedAt.getTime();
-    const usageAgeSeconds = Math.round(usageAge / 1000);
-    const GRACE_PERIOD_SECONDS = 15; // ✅ VUELTO A ORIGINAL: 15 segundos es suficiente
-    
-    if (usageAgeSeconds < GRACE_PERIOD_SECONDS) {
-      console.log(`⏱️ [GRACE_PERIOD] ${device.name} - Uso recién creado (${usageAgeSeconds}s), aplicando período de gracia`);
-      console.log(`🔄 [GRACE_PERIOD] Esperando estabilización del dispositivo antes de finalizar automáticamente`);
-      return; // No finalizar automáticamente
-    }
-    
-    console.log(`🔴 [DEVICE_OFF] ${device.name} apagado después de ${usageAgeSeconds}s - finalizando uso`);
+    console.log(`🔴 [DEVICE_OFF] ${device.name} apagado - finalizando uso`);
 
     // Calcular tiempo total si no está calculado
     const currentActiveMinutes = activeUsage.actualMinutes || 0;
+    
+    // Agregar evento a la traza JSON
+    const currentDeviceData = activeUsage.deviceData || {};
+    const events = currentDeviceData.events || [];
+    
+    events.push({
+      timestamp: timestamp.toISOString(),
+      event: 'device_turned_off',
+      details: 'Dispositivo apagado - finalizando uso',
+      data: {
+        actualMinutes: currentActiveMinutes,
+        estimatedMinutes: activeUsage.estimatedMinutes,
+        reason: 'manual_or_external'
+      }
+    });
     
     await prisma.appointmentDeviceUsage.update({
       where: { id: activeUsage.id },
@@ -1126,7 +1130,8 @@ async function processDeviceTurnedOff(activeUsage, data, device) {
         endedAt: timestamp,
         actualMinutes: currentActiveMinutes,
         deviceData: {
-          ...(activeUsage.deviceData || {}),
+          ...currentDeviceData,
+          events,
           manuallyTurnedOff: true,
           turnedOffAt: timestamp.toISOString()
         },
@@ -1149,13 +1154,28 @@ async function handleDeviceOffline(activeUsage, timestamp) {
   try {
     console.log(`📴 [OFFLINE] Pausando uso por desconexión: ${activeUsage.id}`);
 
+    // Agregar evento a la traza JSON
+    const currentDeviceData = activeUsage.deviceData || {};
+    const events = currentDeviceData.events || [];
+    
+    events.push({
+      timestamp: timestamp.toISOString(),
+      event: 'device_offline',
+      details: 'Dispositivo desconectado - pausando uso',
+      data: {
+        reason: 'connection_lost',
+        status: 'paused'
+      }
+    });
+
     await prisma.appointmentDeviceUsage.update({
       where: { id: activeUsage.id },
       data: {
         currentStatus: 'PAUSED',
         pausedAt: timestamp,
         deviceData: {
-          ...(activeUsage.deviceData || {}),
+          ...currentDeviceData,
+          events,
           pausedReason: 'device_offline',
           pausedAt: timestamp.toISOString()
         },
@@ -1183,105 +1203,82 @@ async function checkAutoShutdown(activeUsage, actualMinutes, device) {
         estimatedMinutes: activeUsage.estimatedMinutes
       });
 
-      await executeAutoShutdown(activeUsage, actualMinutes, device);
+      const now = new Date();
+      let shutdownSuccessful = false;
+      let errorMessage = null;
+
+      // Intentar apagar dispositivo
+      try {
+        const controlResponse = await fetch(`${process.env.NEXTAUTH_URL}/api/shelly/device/${device.deviceId}/control`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'off',
+            appointmentId: activeUsage.appointmentId,
+            reason: 'auto_shutdown_time_reached'
+          })
+        });
+
+        if (controlResponse.ok) {
+          shutdownSuccessful = true;
+          console.log(`✅ [AUTO_SHUTDOWN] Dispositivo apagado: ${device.name}`);
+        } else {
+          const errorData = await controlResponse.json();
+          errorMessage = errorData.error || 'Error desconocido';
+          console.error(`❌ [AUTO_SHUTDOWN] Error controlando:`, errorMessage);
+        }
+      } catch (controlError) {
+        errorMessage = controlError.message;
+        console.error(`❌ [AUTO_SHUTDOWN] Error de conexión:`, controlError);
+      }
+
+      // Actualizar con la traza en JSON
+      const currentDeviceData = activeUsage.deviceData || {};
+      const events = currentDeviceData.events || [];
+      
+      events.push({
+        timestamp: now.toISOString(),
+        event: 'auto_shutdown_executed',
+        details: `Apagado automático ${shutdownSuccessful ? 'exitoso' : 'fallido'}`,
+        data: {
+          actualMinutes: Math.round(actualMinutes),
+          estimatedMinutes: activeUsage.estimatedMinutes,
+          shutdownSuccessful,
+          errorMessage
+        }
+      });
+
+      await prisma.appointmentDeviceUsage.update({
+        where: { id: activeUsage.id },
+        data: {
+          currentStatus: 'AUTO_SHUTDOWN',
+          endedAt: now,
+          actualMinutes: Math.round(actualMinutes),
+          deviceData: {
+            ...currentDeviceData,
+            events,
+            autoShutdownExecuted: true,
+            autoShutdownAt: now.toISOString()
+          }
+        }
+      });
+
+      // Emitir WebSocket de notificación
+      if (global.broadcastDeviceUpdate) {
+        global.broadcastDeviceUpdate(device.credential.systemId, {
+          type: 'auto-shutdown-executed',
+          appointmentId: activeUsage.appointmentId,
+          deviceId: device.id,
+          equipmentName: activeUsage.equipmentClinicAssignment?.equipment?.name,
+          shutdownSuccessful,
+          actualMinutes: Math.round(actualMinutes),
+          errorMessage
+        });
+      }
     }
 
   } catch (error) {
     console.error(`❌ [AUTO_SHUTDOWN] Error verificando:`, error);
-  }
-}
-
-// 🤖 Ejecutar apagado automático
-async function executeAutoShutdown(activeUsage, actualMinutes, device) {
-  try {
-    console.log(`🤖 [AUTO_SHUTDOWN] Ejecutando para ${device.name}`);
-
-    const now = new Date();
-    let shutdownSuccessful = false;
-    let errorMessage = null;
-
-    // 1. Actualizar estado del uso
-    await prisma.appointmentDeviceUsage.update({
-      where: { id: activeUsage.id },
-      data: {
-        currentStatus: 'AUTO_SHUTDOWN',
-        endedAt: now,
-        actualMinutes: Math.round(actualMinutes),
-        deviceData: {
-          ...(activeUsage.deviceData || {}),
-          autoShutdownExecuted: true,
-          autoShutdownAt: now.toISOString()
-        }
-      }
-    });
-
-    // 2. Intentar apagar dispositivo
-    try {
-      const controlResponse = await fetch(`${process.env.NEXTAUTH_URL}/api/shelly/device/${device.deviceId}/control`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'off',
-          appointmentId: activeUsage.appointmentId,
-          reason: 'auto_shutdown_time_reached'
-        })
-      });
-
-      if (controlResponse.ok) {
-        shutdownSuccessful = true;
-        console.log(`✅ [AUTO_SHUTDOWN] Dispositivo apagado: ${device.name}`);
-      } else {
-        const errorData = await controlResponse.json();
-        errorMessage = errorData.error || 'Error desconocido';
-        console.error(`❌ [AUTO_SHUTDOWN] Error controlando:`, errorMessage);
-      }
-    } catch (controlError) {
-      errorMessage = controlError.message;
-      console.error(`❌ [AUTO_SHUTDOWN] Error de conexión:`, controlError);
-    }
-
-    // 3. Crear log del apagado automático
-    await prisma.autoShutdownLog.create({
-      data: {
-        appointmentDeviceUsageId: activeUsage.id,
-        appointmentId: activeUsage.appointmentId,
-        deviceId: device.deviceId,
-        equipmentClinicAssignmentId: activeUsage.equipmentClinicAssignmentId,
-        estimatedMinutes: activeUsage.estimatedMinutes,
-        actualMinutes: Math.round(actualMinutes),
-        shutdownSuccessful,
-        errorMessage,
-        autoShutdownEnabled: true,
-        deviceData: {
-          equipmentName: activeUsage.equipmentClinicAssignment?.equipment?.name,
-          deviceName: device.name,
-          triggeredAt: now.toISOString(),
-          actualMinutes: Math.round(actualMinutes)
-        },
-        systemId: device.credential.systemId
-      }
-    });
-
-    // 4. Emitir WebSocket de notificación
-    if (global.broadcastDeviceUpdate) {
-      global.broadcastDeviceUpdate(device.credential.systemId, {
-        type: 'auto-shutdown-executed',
-        appointmentId: activeUsage.appointmentId,
-        deviceId: device.id,
-        equipmentName: activeUsage.equipmentClinicAssignment?.equipment?.name,
-        shutdownSuccessful,
-        actualMinutes: Math.round(actualMinutes),
-        errorMessage
-      });
-    }
-
-    console.log(`🎯 [AUTO_SHUTDOWN] Completado para ${device.name}:`, {
-      shutdownSuccessful,
-      actualMinutes: Math.round(actualMinutes)
-    });
-
-  } catch (error) {
-    console.error(`❌ [AUTO_SHUTDOWN] Error crítico:`, error);
   }
 }
 

@@ -91,7 +91,6 @@ model System {
   sparePartInstallations       SparePartInstallation[]
   equipmentUsageLogs           EquipmentUsageLog[]
   equipmentAssignments         EquipmentClinicAssignment[]
-  autoShutdownLogs             AutoShutdownLog[]
 
   @@map("systems")
 }
@@ -668,7 +667,6 @@ model EquipmentClinicAssignment {
   deviceUsage       AppointmentDeviceUsage[]
   appointments      Appointment[]           @relation("EquipmentClinicAssignmentAppointments")
   smartPlugDevice   SmartPlugDevice?        // Nueva relación con dispositivos IoT
-  autoShutdownLogs  AutoShutdownLog[]
   
   @@unique([equipmentId, clinicId, serialNumber])
   @@index([equipmentId])
@@ -733,7 +731,6 @@ model Appointment {
   tags                         AppointmentTag[]
   extensions                   AppointmentExtension[]
   deviceUsage                  AppointmentDeviceUsage[]
-  autoShutdownLogs             AutoShutdownLog[]
 
   @@index([startTime])
   @@index([personId])
@@ -796,7 +793,6 @@ model AppointmentDeviceUsage {
   device                       Device?                    @relation(fields: [deviceId], references: [id], onDelete: SetNull)
   startedByUser                User                       @relation("DeviceUsageStartedBy", fields: [startedByUserId], references: [id])
   system                       System                     @relation(fields: [systemId], references: [id], onDelete: Cascade)
-  autoShutdownLogs             AutoShutdownLog[]
 
   @@index([appointmentId])
   @@index([startedAt])
@@ -3490,42 +3486,4 @@ enum DeviceUsageStatus {
   PAUSED
   COMPLETED
   AUTO_SHUTDOWN
-}
-
-model AutoShutdownLog {
-  id                           String                     @id @default(cuid())
-  appointmentDeviceUsageId     String
-  appointmentId                String
-  deviceId                     String
-  equipmentClinicAssignmentId  String?
-  
-  // Datos del apagado automático
-  triggeredAt                  DateTime                   @default(now())
-  estimatedMinutes             Float
-  actualMinutes                Float
-  powerThreshold               Float?
-  
-  // Resultado del comando
-  shutdownSuccessful           Boolean                    @default(false)
-  errorMessage                 String?
-  
-  // Metadatos
-  autoShutdownEnabled          Boolean                    // Estado del flag cuando se ejecutó
-  deviceData                   Json?                      // Estado del dispositivo al momento
-  
-  systemId                     String
-  createdAt                    DateTime                   @default(now())
-  
-  // Relaciones
-  appointmentDeviceUsage       AppointmentDeviceUsage     @relation(fields: [appointmentDeviceUsageId], references: [id], onDelete: Cascade)
-  appointment                  Appointment                @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
-  equipmentClinicAssignment    EquipmentClinicAssignment? @relation(fields: [equipmentClinicAssignmentId], references: [id], onDelete: SetNull)
-  system                       System                     @relation(fields: [systemId], references: [id], onDelete: Cascade)
-  
-  @@index([appointmentDeviceUsageId])
-  @@index([appointmentId])
-  @@index([deviceId])
-  @@index([triggeredAt])
-  @@index([systemId])
-  @@map("auto_shutdown_logs")
 }
