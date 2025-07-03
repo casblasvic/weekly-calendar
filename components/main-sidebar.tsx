@@ -237,7 +237,7 @@ const MenuItemComponent = ({
         // Aplicar estilos
         submenuElement.style.display = "block";
         submenuElement.style.position = "fixed";
-        submenuElement.style.left = `${parentRect.right + 4}px`; // Añadir pequeño espacio
+        submenuElement.style.left = `${parentRect.right + 2}px`; // 🔧 Reducido gap de 4px a 2px
         submenuElement.style.top = `${topPosition}px`;
         submenuElement.style.maxHeight = `${maxHeight}px`;
         submenuElement.style.overflowY = "auto";
@@ -249,6 +249,8 @@ const MenuItemComponent = ({
         submenuElement.style.minWidth = "16rem";
         submenuElement.style.visibility = "visible";
         submenuElement.style.opacity = "1";
+        // 🔧 Añadir un pequeño padding invisible para mejor área de hover
+        submenuElement.style.paddingLeft = "2px";
 
       } catch (error) {
         console.error("Error al actualizar el estilo del submenú:", error);
@@ -269,6 +271,7 @@ const MenuItemComponent = ({
           clearTimeout(hoverTimeoutRef.current);
           hoverTimeoutRef.current = null;
         }
+        // 🔧 Activación inmediata para mejor responsividad
         setIsHovered(true);
         if (onMenuHover) {
           onMenuHover(hasSubmenu);
@@ -282,7 +285,7 @@ const MenuItemComponent = ({
         if (!isOpen) { 
           hoverTimeoutRef.current = setTimeout(() => {
             setIsHovered(false);
-          }, 200); // Retraso de 200ms, ajustable
+          }, 500); // 🔧 Aumentado a 500ms para mejor UX en menús anidados
         } else {
           setIsHovered(false); // Si está fijado por clic, el hover puede irse sin cerrar
         }
@@ -354,7 +357,7 @@ const MenuItemComponent = ({
           className="submenu"
           style={{ 
             position: "fixed",
-            left: (menuButtonRef.current?.getBoundingClientRect().right || 0) + "px",
+            left: (menuButtonRef.current?.getBoundingClientRect().right || 0) + 2 + "px", // 🔧 Gap reducido a 2px
             top: item.id === "configuracion" 
               ? "calc(100vh - 450px)"
               : (menuButtonRef.current?.getBoundingClientRect().top || 0) + "px",
@@ -375,12 +378,17 @@ const MenuItemComponent = ({
               clearTimeout(hoverTimeoutRef.current); // Cancelar el timer de cierre del padre
               hoverTimeoutRef.current = null;
             }
+            // 🔧 Asegurar que el hover permanece activo al entrar al submenu
+            setIsHovered(true);
           }}
           onMouseLeave={() => { // Cuando el ratón sale del submenú
             // Si el menú padre (este MenuItemComponent) no estaba abierto por un clic (isOpen es false),
             // y ahora el ratón sale del submenú, el padre debería perder su estado de hover.
+            // 🔧 Añadir delay también aquí para mejor UX
             if (!isOpen) { 
-              setIsHovered(false); 
+              hoverTimeoutRef.current = setTimeout(() => {
+                setIsHovered(false);
+              }, 300); // 🔧 Delay de 300ms al salir del submenu
             }
           }}
         >
@@ -627,10 +635,10 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
         const spaceRight = viewportWidth - buttonRect.right - buffer;
         const spaceLeft = buttonRect.left - buffer;
         if (spaceRight >= menuWidth) {
-          menuElement.style.left = `${buttonRect.right + 4}px`;
+          menuElement.style.left = `${buttonRect.right + 2}px`; // 🔧 Gap reducido
           menuElement.style.right = "auto";
         } else if (spaceLeft >= menuWidth) {
-          menuElement.style.left = `${buttonRect.left - menuWidth - 4}px`;
+                      menuElement.style.left = `${buttonRect.left - menuWidth - 2}px`; // 🔧 Gap reducido
           menuElement.style.right = "auto";
         } else {
           menuElement.style.left = `${viewportWidth - menuWidth - buffer}px`;
@@ -707,7 +715,7 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
         setIsClinicHovered(false);
         // No cerrar si está abierto por clic
         // setIsClinicSelectorOpen(false); 
-      }, 300); 
+      }, 500); // 🔧 Aumentado a 500ms para consistencia
     }
   }, [forceMobileView]);
 
@@ -746,7 +754,7 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
       const menuWidth = 320;
       let leftPosition;
       if (spaceRight >= menuWidth || isCollapsed) {
-        leftPosition = `${sidebarRight + 4}px`;
+        leftPosition = `${sidebarRight + 2}px`; // 🔧 Gap reducido para mejor UX
       } else {
         leftPosition = `${viewportWidth - menuWidth - buffer}px`; 
       }
@@ -779,7 +787,7 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
       // Aplicar estilos
       clinicMenu.style.position = "fixed";
       clinicMenu.style.zIndex = "99999";
-      clinicMenu.style.left = leftPosition;
+      clinicMenu.style.left = leftPosition; // Usa el leftPosition ya optimizado
       clinicMenu.style.top = `${topPosition}px`; // <<< USAR NUEVO topPosition
       clinicMenu.style.width = `${menuWidth}px`;
       clinicMenu.style.maxHeight = `${maxHeight}px`; // <<< USAR NUEVO maxHeight
@@ -838,7 +846,7 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
     if (!forceMobileView) { 
       userMenuHoverTimeout.current = setTimeout(() => {
         setIsUserMenuOpen(false);
-      }, 300); // Retraso de 300ms
+      }, 500); // 🔧 Retraso aumentado a 500ms para consistencia
     }
   }, [forceMobileView]);
   // --- Fin Funciones Hover Menú Usuario ---
