@@ -7,6 +7,7 @@ export interface Appointment {
   service: string
   date: Date
   roomId: string
+  clinicId: string // 🆕 ID de la clínica donde se realiza la cita
   startTime: string
   endTime?: string // Hora de fin real de la cita
   duration: number
@@ -85,4 +86,55 @@ export interface AppointmentService {
   createAppointment: (appointment: NewAppointment) => Promise<Appointment>
   updateAppointment: (id: string, appointment: Partial<Appointment>) => Promise<Appointment>
   deleteAppointment: (id: string) => Promise<boolean>
+}
+
+// 🆕 TIPOS PARA SISTEMA DE CRONÓMETRO Y PAUSAS
+export interface PauseInterval {
+  pausedAt: string;           // ISO timestamp
+  resumedAt?: string;         // ISO timestamp (undefined si está pausado actualmente)
+  reason?: string;            // Motivo opcional de la pausa
+  durationMinutes?: number;   // Calculado automáticamente
+}
+
+export type PauseIntervals = PauseInterval[];
+
+export enum AppointmentUsageStatus {
+  ACTIVE = 'ACTIVE',         // Cronómetro corriendo
+  PAUSED = 'PAUSED',         // Pausado actualmente
+  COMPLETED = 'COMPLETED'    // Finalizado
+}
+
+export interface EquipmentAvailability {
+  id: string;
+  name: string;
+  location?: string;
+  status: 'available' | 'occupied' | 'offline';
+  currentUsage?: {
+    appointmentId: string;
+    clientName: string;
+    estimatedEndTime: Date;
+  };
+  hasSmartPlug: boolean;
+  smartPlugOnline?: boolean;
+  deviceId?: string;
+}
+
+export interface AppointmentTimerData {
+  id: string;
+  appointmentId: string;
+  startedAt: Date;
+  endedAt?: Date;
+  estimatedMinutes: number;
+  actualMinutes?: number;
+  currentStatus: AppointmentUsageStatus;
+  pausedAt?: Date;
+  pauseIntervals?: PauseIntervals;
+  equipmentId?: string;
+  deviceId?: string;
+}
+
+export interface EquipmentStartOptions {
+  equipmentId: string;
+  deviceId?: string;
+  smartPlugRequired: boolean;
 }

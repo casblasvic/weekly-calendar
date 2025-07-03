@@ -3,6 +3,8 @@ import { prisma } from '../../lib/db';
 import { decrypt, encrypt } from '../../lib/shelly/crypto.ts';
 import { refreshShellyToken } from '../../lib/shelly/client.ts';
 import { shellyWebSocketManager } from '../../lib/shelly/websocket-manager.ts';
+import { wsLogger } from '../../lib/utils/websocket-logger.js';
+import { deviceOfflineManager } from '../../lib/shelly/device-offline-manager.ts';
 
 // Almacenar conexiones por systemId
 const systemConnections = new Map();
@@ -251,7 +253,7 @@ function setupDeviceUpdateInterceptor(io) {
   // Configurar callback para actualizaciones de dispositivos
   shellyWebSocketManager.onDeviceUpdate = async (credentialId, deviceId, status) => {
     try {
-      console.log(`📡 Recibido update de dispositivo ${deviceId}:`, status);
+      wsLogger.verbose(`📡 Recibido update de dispositivo ${deviceId}:`, status);
       
       // Obtener información del dispositivo y sistema
       const device = await prisma.smartPlugDevice.findFirst({
@@ -279,7 +281,7 @@ function setupDeviceUpdateInterceptor(io) {
         
         // Broadcast a clientes conectados
         const connectionsCount = systemConnections.get(device.credential.systemId)?.size || 0;
-        console.log(`📤 Enviando WebSocket update para ${device.name}:`, {
+        wsLogger.verbose(`📤 Enviando WebSocket update para ${device.name}:`, {
           deviceId: update.deviceId,
           online: update.online,
           relayOn: update.relayOn,
@@ -291,7 +293,7 @@ function setupDeviceUpdateInterceptor(io) {
         });
         
         io.to(device.credential.systemId).emit('device-update', update);
-        console.log(`📤 Update enviado a ${connectionsCount} clientes del sistema ${device.credential.systemId}`);
+        wsLogger.verbose(`📤 Update enviado a ${connectionsCount} clientes del sistema ${device.credential.systemId}`);
         
         // Crear log del evento (MEJORADO)
         const shellyConnection = await prisma.webSocketConnection.findFirst({
@@ -314,7 +316,7 @@ function setupDeviceUpdateInterceptor(io) {
               messageType: 'device_status_update'
             }
           );
-          console.log(`📝 Log creado para update de ${device.name}`);
+          wsLogger.verbose(`📝 Log creado para update de ${device.name}`);
         } else {
           console.warn(`⚠️ No se encontró conexión Shelly para credencial ${credentialId}`);
         }
@@ -328,6 +330,148 @@ function setupDeviceUpdateInterceptor(io) {
   };
   
   console.log('🎯 Interceptor de updates configurado correctamente');
+  
+  // 🆕 CONFIGURAR OFFLINE MANAGER PARA SOCKET.IO
+  setupOfflineManagerIntegration(io);
+}
+
+// 🆕 Función para integrar Offline Manager con Socket.io
+function setupOfflineManagerIntegration(io) {
+  console.log('🎯 Configurando integración con Device Offline Manager...');
+  
+  // Suscribirse a cambios offline/online del manager centralizado
+  deviceOfflineManager.subscribe(async (updates) => {
+    try {
+      wsLogger.verbose(`📡 [OfflineManager] Recibidos ${updates.length} cambios offline:`, updates);
+      
+      for (const update of updates) {
+        if (update.deviceId === 'ALL') {
+          // Cambio masivo - afecta a todos los dispositivos
+          wsLogger.verbose(`🌐 [OfflineManager] Cambio masivo: todos ${update.online ? 'ONLINE' : 'OFFLINE'} (${update.reason})`);
+          
+          // Obtener todos los dispositivos para enviar updates masivos
+          const allDevices = await prisma.smartPlugDevice.findMany({
+            include: { credential: true }
+          });
+          
+          // Si necesita actualizar BD (solo timeouts específicos)
+          if (update.updateBD) {
+            wsLogger.verbose(`💾 [OfflineManager] Actualizando BD masivamente: ${allDevices.length} dispositivos`);
+            
+            await prisma.smartPlugDevice.updateMany({
+              data: {
+                online: update.online,
+                relayOn: update.online ? undefined : false, // Solo tocar relayOn si va offline
+                currentPower: update.online ? undefined : 0,
+                lastSeenAt: new Date()
+              }
+            });
+          }
+          
+          // Enviar updates a clientes por systemId
+          const systemGroups = new Map();
+          allDevices.forEach(device => {
+            if (device.credential?.systemId) {
+              if (!systemGroups.has(device.credential.systemId)) {
+                systemGroups.set(device.credential.systemId, []);
+              }
+              systemGroups.get(device.credential.systemId).push(device);
+            }
+          });
+          
+          systemGroups.forEach((devices, systemId) => {
+            devices.forEach(device => {
+              const socketUpdate = {
+                deviceId: device.id,
+                shellyDeviceId: device.deviceId,
+                online: update.online,
+                relayOn: update.online ? device.relayOn : false,
+                currentPower: update.online ? device.currentPower : 0,
+                voltage: update.online ? device.voltage : null,
+                temperature: update.online ? device.temperature : null,
+                timestamp: update.timestamp,
+                reason: update.reason
+              };
+              
+              io.to(systemId).emit('device-offline-status', socketUpdate);
+            });
+            
+            wsLogger.verbose(`📤 [OfflineManager] Enviado update masivo a ${devices.length} dispositivos del sistema ${systemId}`);
+          });
+          
+        } else {
+          // Cambio específico de dispositivo
+          const device = await prisma.smartPlugDevice.findUnique({
+            where: { id: update.deviceId },
+            include: { credential: true }
+          });
+          
+          if (device && device.credential) {
+            wsLogger.verbose(`📱 [OfflineManager] Dispositivo específico ${update.online ? 'ONLINE' : 'OFFLINE'}: ${update.deviceName || device.name} (${update.reason})`);
+            
+            // Actualizar BD si es necesario
+            if (update.updateBD) {
+              wsLogger.verbose(`💾 [OfflineManager] Actualizando BD: ${device.name} → ${update.online ? 'online' : 'offline'}`);
+              
+              // Preparar datos para actualizar
+              const updateData = {
+                online: update.online,
+                lastSeenAt: new Date()
+              };
+              
+              // Si hay datos adicionales del dispositivo (desde WebSocket), usarlos
+              if (update.deviceData && update.online) {
+                if (update.deviceData.relayOn !== undefined) updateData.relayOn = update.deviceData.relayOn;
+                if (update.deviceData.currentPower !== undefined) updateData.currentPower = update.deviceData.currentPower;
+                if (update.deviceData.voltage !== undefined) updateData.voltage = update.deviceData.voltage;
+                if (update.deviceData.temperature !== undefined) updateData.temperature = update.deviceData.temperature;
+                if (update.deviceData.totalEnergy !== undefined) updateData.totalEnergy = update.deviceData.totalEnergy;
+                if (update.deviceData.cloudId !== undefined) updateData.cloudId = update.deviceData.cloudId;
+              } else if (!update.online) {
+                // Si va offline, resetear valores
+                updateData.relayOn = false;
+                updateData.currentPower = 0;
+              }
+              
+              await prisma.smartPlugDevice.update({
+                where: { id: device.id },
+                data: updateData
+              });
+            }
+            
+            // Enviar update específico con datos actualizados
+            const socketUpdate = {
+              deviceId: device.id,
+              shellyDeviceId: device.deviceId,
+              online: update.online,
+              relayOn: update.online && update.deviceData?.relayOn !== undefined ? update.deviceData.relayOn : (update.online ? device.relayOn : false),
+              currentPower: update.online && update.deviceData?.currentPower !== undefined ? update.deviceData.currentPower : (update.online ? device.currentPower : 0),
+              voltage: update.online && update.deviceData?.voltage !== undefined ? update.deviceData.voltage : (update.online ? device.voltage : null),
+              temperature: update.online && update.deviceData?.temperature !== undefined ? update.deviceData.temperature : (update.online ? device.temperature : null),
+              timestamp: update.timestamp,
+              reason: update.reason
+            };
+            
+            // 🚨 DEBUG TEMPORAL: Ver exactamente qué se envía
+            console.log('🚨 [DEBUG SOCKET.IO] Enviando device-offline-status:', {
+              evento: 'device-offline-status',
+              room: device.credential.systemId,
+              deviceName: device.name,
+              socketUpdate
+            });
+            
+            io.to(device.credential.systemId).emit('device-offline-status', socketUpdate);
+            wsLogger.verbose(`📤 [OfflineManager] Update específico enviado para ${device.name}`);
+          }
+        }
+      }
+      
+    } catch (error) {
+      console.error('❌ [OfflineManager] Error procesando cambios offline:', error);
+    }
+  });
+  
+  console.log('✅ Device Offline Manager integrado con Socket.io');
 }
 
 // Función para registrar conexión WebSocket
@@ -451,7 +595,7 @@ async function createWebSocketLog(connectionId, eventType, message, errorDetails
       }
     });
     
-    console.log(`📝 Log creado: ${eventType} - ${message}`);
+    wsLogger.verbose(`📝 Log creado: ${eventType} - ${message}`);
   } catch (error) {
     console.error('Error creando log WebSocket:', error);
     // No lanzar error para no romper el flujo principal

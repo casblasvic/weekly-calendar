@@ -535,7 +535,8 @@ export function FloatingMenu({ className, smartPlugsData }: FloatingMenuProps) {
   // Función para renderizar píldora de dispositivo individual (estética premium)
   const renderDevicePill = (device: SmartPlug) => {
     const isActive = device.online && device.relayOn;
-    const hasRealPower = device.currentPower && device.currentPower > 0.1;
+    const hasValidConsumption = device.currentPower !== null && device.currentPower !== undefined;
+    const hasRealPower = hasValidConsumption && device.currentPower > 0.1;
     
     return (
       <div 
@@ -571,14 +572,20 @@ export function FloatingMenu({ className, smartPlugsData }: FloatingMenuProps) {
                 <Power className="w-2.5 h-2.5" />
                 <span>{isActive ? 'ON' : 'OFF'}</span>
                 
-                {/* Consumo en tiempo real dentro del badge (igual que credenciales) */}
-                {device.online && isActive && hasRealPower && (
+                {/* Consumo en tiempo real - ESTRATEGIA DOS NIVELES */}
+                {device.online && isActive && hasValidConsumption && hasRealPower && (
                   <>
                     <Zap className="w-3 h-3 text-yellow-300" />
                     <span className="font-mono text-xs font-medium">
                       {device.currentPower!.toFixed(1)}W
                     </span>
                   </>
+                )}
+                {/* Indicador visual si está ON pero sin dato válido */}
+                {device.online && isActive && !hasValidConsumption && (
+                  <span className="text-xs opacity-60 ml-1">
+                    (...)
+                  </span>
                 )}
               </Badge>
               

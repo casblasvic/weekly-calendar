@@ -50,6 +50,8 @@
 
 import { prisma } from '@/lib/db';
 import { decrypt } from './crypto';
+import { wsLogger } from '../utils/websocket-logger';
+import { deviceOfflineManager } from './device-offline-manager';
 
 interface ShellyWebSocketMessage {
     id: number;
@@ -150,6 +152,9 @@ class ShellyWebSocketManager {
     private async handleOpen(credentialId: string): Promise<void> {
         console.log(`✅ WebSocket Shelly conectado para credencial ${credentialId}`);
         
+        // 🎯 NOTIFICAR AL OFFLINE MANAGER
+        deviceOfflineManager.setWebSocketConnected(true);
+        
         // Limpiar timer de reconexión si existe
         const timer = this.reconnectTimers.get(credentialId);
         if (timer) {
@@ -178,11 +183,17 @@ class ShellyWebSocketManager {
                 return;
             }
 
+            // 🔍 LOG: Mensaje Shelly recibido (limpio)
+            wsLogger.debug(`📡 [Shelly] Mensaje recibido de ${credentialId}:`, {
+                timestamp: new Date().toISOString(),
+                dataLength: event.data.length
+            });
+
             // Parsear mensaje JSON
             const data = JSON.parse(event.data);
             
             // 🔍 DEBUG: Mostrar TODOS los mensajes que llegan
-            console.log(`🔍 [WebSocket DEBUG] Mensaje recibido:`, {
+            wsLogger.debug(`🔍 [WebSocket DEBUG] Mensaje recibido:`, {
                 credentialId,
                 method: data.method,
                 event: data.event,
@@ -195,7 +206,7 @@ class ShellyWebSocketManager {
             // 🎯 MANEJAR RESPUESTAS DE COMANDOS
             if (data.event === 'Shelly:CommandResponse') {
                 const { trid, deviceId, data: responseData } = data;
-                console.log(`📝 [WebSocket CMD] Respuesta de comando para dispositivo ${deviceId}:`, {
+                wsLogger.verbose(`📝 [WebSocket CMD] Respuesta de comando para dispositivo ${deviceId}:`, {
                     trid,
                     success: responseData?.isok,
                     error: responseData?.errors,
@@ -220,10 +231,10 @@ class ShellyWebSocketManager {
                 // 🎯 CONSTRUIR MAPEO AUTOMÁTICO
                 if (deviceId && cloudDeviceId && deviceId !== cloudDeviceId) {
                     this.deviceIdMapping.set(deviceId, cloudDeviceId);
-                    console.log(`🔄 [AUTO-MAPPING] Mapeado automáticamente: ${deviceId} → ${cloudDeviceId}`);
+                    wsLogger.verbose(`🔄 [AUTO-MAPPING] Mapeado automáticamente: ${deviceId} → ${cloudDeviceId}`);
                 }
                 
-                console.log(`📡 StatusOnChange recibido para dispositivo ${deviceId}:`, {
+                wsLogger.verbose(`📡 StatusOnChange recibido para dispositivo ${deviceId}:`, {
                     deviceCode: data.device.code,
                     generation: data.device.gen,
                     cloudId: cloudDeviceId,
@@ -251,14 +262,14 @@ class ShellyWebSocketManager {
             }
             // 🔍 DEBUG: Detectar otros tipos de mensajes que podrían ser eventos
             else if (data.method && data.method.includes('Status')) {
-                console.log(`🔍 [WebSocket DEBUG] Posible evento de estado no reconocido:`, {
+                wsLogger.debug(`🔍 [WebSocket DEBUG] Posible evento de estado no reconocido:`, {
                     method: data.method,
                     data: data.data,
                     params: data.params
                 });
             }
             else if (data.params && (data.params.switch || data.params['switch:0'])) {
-                console.log(`🔍 [WebSocket DEBUG] Mensaje con datos de switch:`, {
+                wsLogger.debug(`🔍 [WebSocket DEBUG] Mensaje con datos de switch:`, {
                     method: data.method,
                     switchData: data.params.switch || data.params['switch:0'],
                     fullParams: data.params
@@ -267,7 +278,7 @@ class ShellyWebSocketManager {
             
             // Manejar respuestas a comandos
             if (data.result !== undefined || data.error !== undefined) {
-                console.log(`📝 Respuesta comando WebSocket:`, data);
+                wsLogger.verbose(`📝 Respuesta comando WebSocket:`, data);
             }
             
         } catch (error) {
@@ -308,8 +319,19 @@ class ShellyWebSocketManager {
         deviceId: string, 
         status: any
     ): Promise<void> {
-        // Actualizar estado del dispositivo en DB
-        const device = await prisma.smartPlugDevice.findFirst({
+        // 🎯 TIEMPO REAL PURO: SIEMPRE notificar actividad WebSocket, independientemente de si encontramos el dispositivo específico
+        const updatedData: any = {
+            online: status.online,
+            relayOn: status['switch:0']?.output || false,
+            currentPower: status['switch:0']?.apower || 0,
+            voltage: status['switch:0']?.voltage || null,
+            totalEnergy: status['switch:0']?.aenergy?.total || null,
+            temperature: status.temperature || null,
+            lastSeenAt: new Date()
+        };
+
+        // Buscar dispositivo en BD
+        let device = await prisma.smartPlugDevice.findFirst({
             where: {
                 deviceId,
                 credentialId
@@ -317,53 +339,168 @@ class ShellyWebSocketManager {
         });
         
         if (device) {
-            const updatedData: any = {
-                online: status.online,
-                relayOn: status['switch:0']?.output || false,
-                currentPower: status['switch:0']?.apower || 0,
-                voltage: status['switch:0']?.voltage || null,
-                totalEnergy: status['switch:0']?.aenergy?.total || null,
-                temperature: status.temperature || null,
-                lastSeenAt: new Date()
-            };
-
             // 🎯 PERSISTIR CLOUD ID SI HAY AUTO-MAPPING
             const mappedCloudId = this.deviceIdMapping.get(deviceId);
             if (mappedCloudId && mappedCloudId !== deviceId) {
                 // Solo actualizar si no existe cloudId o es diferente
                 if (!device.cloudId || device.cloudId !== mappedCloudId) {
-                    console.log(`💾 [AUTO-MAPPING] Persistiendo cloudId en BD: ${deviceId} → ${mappedCloudId}`);
+                    wsLogger.verbose(`💾 [AUTO-MAPPING] Persistiendo cloudId en BD: ${deviceId} → ${mappedCloudId}`);
                     updatedData.cloudId = mappedCloudId;
                 }
             }
 
-            // ← LOG TEMPORAL ANTES DE ACTUALIZAR BD
-            console.log(`💾 [BD UPDATE] ANTES - Actualizando ${device.name} en BD:`, {
-                deviceId: device.id,
-                oldRelayOn: device.relayOn,
-                newRelayOn: updatedData.relayOn,
-                oldOnline: device.online,
-                newOnline: updatedData.online
-            });
+            // 🎯 REGISTRAR ACTIVIDAD CON DATOS ESPECÍFICOS DEL DISPOSITIVO
+            deviceOfflineManager.trackActivity(device.id, device.name, updatedData);
 
-            await prisma.smartPlugDevice.update({
-                where: { id: device.id },
-                data: updatedData
-            });
-            
-            console.log(`✅ [BD UPDATE] DESPUÉS - ${device.name} actualizado en BD exitosamente`);
-            
-            console.log(`🔄 Dispositivo actualizado vía WebSocket: ${device.name} (${device.deviceId})`, {
+            wsLogger.verbose(`📡 [TIEMPO REAL] Dispositivo encontrado - ${device.name}:`, {
+                deviceId: device.id,
                 online: updatedData.online,
                 relayOn: updatedData.relayOn,
-                currentPower: updatedData.currentPower,
-                voltage: updatedData.voltage,
-                temperature: updatedData.temperature,
-                cloudId: updatedData.cloudId || device.cloudId
+                currentPower: updatedData.currentPower
             });
+            
         } else {
-            console.log(`⚠️ No se encontró dispositivo ${deviceId} para credencial ${credentialId}`);
+            // 🚨 BUSCAR POR CLOUDID PRIMERO (más común)
+            console.log(`⚠️ Dispositivo ${deviceId} no encontrado por deviceId, buscando alternativas...`);
+            
+            // Buscar por cloudId directamente
+            device = await prisma.smartPlugDevice.findFirst({
+                where: {
+                    credentialId,
+                    cloudId: deviceId
+                }
+            });
+            
+            if (device) {
+                wsLogger.verbose(`🎯 [MAPEO EXITOSO] Encontrado por cloudId: ${device.name} (${device.deviceId})`);
+                deviceOfflineManager.trackActivity(device.id, device.name, updatedData);
+                return;
+            }
+            
+            // 🔍 BUSCAR POR MAC ADDRESS - Mejorar estrategia de mapeo
+            let deviceByMac = null;
+            
+            // Obtener MAC del status si está disponible
+            const macFromStatus = status.mac;
+            const macPattern = /^[a-fA-F0-9]{12}$/; // MAC sin separadores
+            
+            // Buscar por MAC del status (MEJORADO con búsqueda case-insensitive real)
+            if (macFromStatus) {
+                // Normalizar MAC quitando separadores si los hay
+                const normalizedMac = macFromStatus.replace(/[:-]/g, '').toLowerCase();
+                
+                deviceByMac = await prisma.smartPlugDevice.findFirst({
+                    where: {
+                        credentialId,
+                        OR: [
+                            { deviceId: { equals: normalizedMac, mode: 'insensitive' } },
+                            { cloudId: { equals: normalizedMac, mode: 'insensitive' } },
+                            { deviceId: { equals: macFromStatus, mode: 'insensitive' } },
+                            { cloudId: { equals: macFromStatus, mode: 'insensitive' } }
+                        ]
+                    }
+                });
+                
+                if (deviceByMac) {
+                    wsLogger.verbose(`🎯 [AUTO-FIX] Dispositivo encontrado por MAC del status: ${deviceByMac.name} (${macFromStatus})`);
+                    
+                    deviceOfflineManager.trackActivity(deviceByMac.id, deviceByMac.name, updatedData);
+                    
+                    wsLogger.verbose(`📡 [TIEMPO REAL] Dispositivo encontrado por MAC status - ${deviceByMac.name}:`, {
+                        deviceId: deviceByMac.id,
+                        online: updatedData.online,
+                        relayOn: updatedData.relayOn,
+                        currentPower: updatedData.currentPower
+                    });
+                    
+                    return;
+                }
+            }
+            
+            // Si no se encuentra por MAC del status, intentar con deviceId si parece MAC
+            if (macPattern.test(deviceId)) {
+                deviceByMac = await prisma.smartPlugDevice.findFirst({
+                    where: {
+                        credentialId,
+                        OR: [
+                            { deviceId: deviceId.toLowerCase() },
+                            { cloudId: deviceId.toLowerCase() },
+                            { deviceId: deviceId.toUpperCase() },
+                            { cloudId: deviceId.toUpperCase() }
+                        ]
+                    }
+                });
+                
+                if (deviceByMac) {
+                    wsLogger.verbose(`🎯 [AUTO-FIX] Dispositivo encontrado por deviceId como MAC: ${deviceByMac.name} (${deviceId})`);
+                    
+                    deviceOfflineManager.trackActivity(deviceByMac.id, deviceByMac.name, updatedData);
+                    
+                    wsLogger.verbose(`📡 [TIEMPO REAL] Dispositivo encontrado por deviceId MAC - ${deviceByMac.name}:`, {
+                        deviceId: deviceByMac.id,
+                        online: updatedData.online,
+                        relayOn: updatedData.relayOn,
+                        currentPower: updatedData.currentPower
+                    });
+                    
+                    return;
+                }
+            }
+            
+            // 🔍 Si no se encuentra por MAC, buscar por cloudId numérico
+            const allDevicesForCredential = await prisma.smartPlugDevice.findMany({
+                where: { credentialId },
+                select: { id: true, deviceId: true, name: true, cloudId: true }
+            });
+            
+            // Buscar si alguno tiene este deviceId como cloudId
+            const deviceByCloudId = allDevicesForCredential.find(d => d.cloudId === deviceId);
+            
+            if (deviceByCloudId) {
+                wsLogger.verbose(`🎯 [AUTO-FIX] Dispositivo encontrado por cloudId: ${deviceByCloudId.name} (${deviceByCloudId.deviceId})`);
+                
+                deviceOfflineManager.trackActivity(deviceByCloudId.id, deviceByCloudId.name, updatedData);
+                
+                wsLogger.verbose(`📡 [TIEMPO REAL] Dispositivo encontrado por cloudId - ${deviceByCloudId.name}:`, {
+                    deviceId: deviceByCloudId.id,
+                    online: updatedData.online,
+                    relayOn: updatedData.relayOn,
+                    currentPower: updatedData.currentPower
+                });
+                
+                return;
+            }
+            
+            // 🚨 ÚLTIMO RECURSO: Mantener sistema funcionando aunque no mapee este dispositivo
+            console.log(`⚠️ Dispositivo ${deviceId} no mapeado correctamente tras múltiples intentos.`);
+            
+            // 🔍 DEBUG: Ayudar a diagnosticar el problema de mapeo
+            wsLogger.verbose(`🔍 [DEBUG] Buscando posibles coincidencias para ${deviceId}:`, {
+                credentialId,
+                receivedDeviceId: deviceId,
+                statusData: updatedData
+            });
+            
+            // Listar dispositivos existentes para esta credencial (solo en debug)
+            if (process.env.NODE_ENV === 'development') {
+                console.log(`🔍 [DEBUG] Dispositivos en BD para credencial ${credentialId}:`, allDevicesForCredential);
+            }
+            
+            // 🎯 SIMPLE: Si no encuentra dispositivo, IGNORAR y seguir
+            // NO crear IDs falsos, NO complicar el sistema
+            wsLogger.warn(`⚠️ [SKIP] Dispositivo ${deviceId} no encontrado - ignorando update`);
+            // NO llamar trackActivity con IDs falsos que rompen la BD
         }
+
+        // 🎯 SIEMPRE logear la actividad WebSocket recibida
+        wsLogger.verbose(`📡 [TIEMPO REAL] Actividad WebSocket procesada para ${deviceId}:`, {
+            found: !!device,
+            online: updatedData.online,
+            relayOn: updatedData.relayOn,
+            currentPower: updatedData.currentPower,
+            voltage: updatedData.voltage,
+            temperature: updatedData.temperature
+        });
         
         // Llamar callback si existe
         if (this.onDeviceUpdate) {
@@ -382,6 +519,9 @@ class ShellyWebSocketManager {
 
     private async handleClose(credentialId: string): Promise<void> {
         console.log(`WebSocket cerrado para credential ${credentialId}`);
+        
+        // 🎯 NOTIFICAR AL OFFLINE MANAGER
+        deviceOfflineManager.setWebSocketConnected(false);
         
         // Actualizar estado
         await this.updateConnectionStatus(credentialId, 'disconnected');

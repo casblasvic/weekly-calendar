@@ -86,6 +86,8 @@ interface SmartPlug {
     wifiRssi?: number;
     temperature?: number;
     lastSeenAt?: Date | string;
+    appointmentOnlyMode?: boolean;
+    autoShutdownEnabled?: boolean;
     systemId: string;
     integrationId: string;
     createdAt: Date | string;
@@ -166,80 +168,13 @@ const SmartPlugsPage = () => {
     const messagesReceivedRef = useRef<Set<string>>(new Set());
     const lastMessageTimeRef = useRef<number>(Date.now());
 
-    // ✅ RESTAURADA: Función para sincronizar estado con BD (necesaria para persistir cambios offline)
-    const syncDeviceStateWithDB = useCallback(async (devicesToCheck: { id: string; name: string; currentState: { online: boolean; relayOn: boolean; currentPower?: number; voltage?: number; temperature?: number } }[]) => {
-        try {
-            if (devicesToCheck.length === 0) return;
-            
-            console.log(`🔍 [BD SYNC] Sincronizando ${devicesToCheck.length} dispositivos offline con BD`);
-            
-            const response = await fetch('/api/internal/smart-plug-devices/sync-state', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ 
-                    devices: devicesToCheck.map(d => ({
-                        id: d.id,
-                        name: d.name,
-                        currentState: d.currentState
-                    }))
-                })
-            });
-
-            if (response.ok) {
-                const result = await response.json();
-                console.log(`✅ [BD SYNC] ${result.updatedCount} dispositivos offline sincronizados en BD`);
-            } else {
-                const errorData = await response.json().catch(() => ({ error: 'Error desconocido' }));
-                console.error('❌ [BD SYNC] Error sincronizando estados offline:', errorData.error);
-            }
-        } catch (error) {
-            console.error('❌ [BD SYNC] Error de conexión sincronizando estados offline:', error);
-        }
-    }, []);
-
-    // 🎯 NUEVA FUNCIÓN SIMPLE: Solo verifica si se reciben mensajes cuando WebSocket está conectado
+    // 🔄 FUNCIÓN SIMPLIFICADA - El sistema centralizado maneja toda la lógica offline
+    // Esta función ya no es necesaria pero se mantiene para compatibilidad
     const checkOfflineDevices = useCallback(() => {
-        if (!isConnected || allPlugs.length === 0) return;
-
-        const now = Date.now();
-        const timeSinceLastMessage = now - lastMessageTimeRef.current;
-        
-        // Si han pasado más de 10 segundos sin mensajes Y el WebSocket está conectado
-        // significa que todos los dispositivos están offline
-        if (timeSinceLastMessage > 10000) {
-            console.log(`⚠️ WebSocket conectado pero sin mensajes por ${timeSinceLastMessage/1000}s - marcando todos offline`);
-            
-            // Preparar datos para sincronizar con BD
-            const devicesToSync = allPlugs
-                .filter(device => device.online) // Solo los que están online
-                .map(device => ({
-                    id: device.id,
-                    name: device.name,
-                    currentState: {
-                        online: false,
-                        relayOn: false,
-                        currentPower: 0,
-                        voltage: device.voltage,
-                        temperature: device.temperature
-                    }
-                }));
-            
-            setAllPlugs(prev => prev.map(device => 
-                device.online ? { ...device, online: false, relayOn: false, currentPower: 0 } : device
-            ));
-            
-            setPlugs(prev => prev.map(device => 
-                device.online ? { ...device, online: false, relayOn: false, currentPower: 0 } : device
-            ));
-            
-            // ✅ SINCRONIZAR con BD
-            if (devicesToSync.length > 0) {
-                syncDeviceStateWithDB(devicesToSync);
-            }
-        }
-    }, [isConnected, allPlugs.length, syncDeviceStateWithDB]); // ✅ Añadir dependencia
+        // El Device Offline Manager centralizado maneja toda esta lógica ahora
+        // Esta función está deprecated pero se mantiene por compatibilidad
+        console.log('ℹ️ [EnchufesInteligentes] checkOfflineDevices es manejado por el sistema centralizado');
+    }, []); // ✅ Añadir dependencia
 
     const fetchPlugs = useCallback(async (page = 1, pageSize = 50, credentialFilter = 'all') => {
         setIsLoading(true);
@@ -502,9 +437,9 @@ const SmartPlugsPage = () => {
                 timestamp: update.timestamp
             });
             
-            // 🎯 TRACKING: Marcar mensaje recibido
+            // 🎯 TRACKING: Marcar mensaje recibido (para compatibilidad con código existente)
             messagesReceivedRef.current.add(update.deviceId);
-            lastMessageTimeRef.current = Date.now(); // ✅ Actualizar tiempo del último mensaje
+            lastMessageTimeRef.current = Date.now();
             
             // También agregarlo por si se busca por ID interno
             const foundDevice = allPlugs.find(d => d.deviceId === update.deviceId);
@@ -544,11 +479,12 @@ const SmartPlugsPage = () => {
                 
                 const oldDevice = prev[deviceIndex];
                 
-                // Verificar cambios reales
+                // Verificar cambios reales (incluyendo validez de datos)
                 const hasChanges = (
                     Boolean(oldDevice.online) !== Boolean(update.online) ||
                     Boolean(oldDevice.relayOn) !== Boolean(update.relayOn) ||
-                    Number(oldDevice.currentPower || 0) !== Number(update.currentPower || 0) ||
+                    // Para currentPower, considerar null como un cambio válido
+                    (oldDevice.currentPower !== update.currentPower) ||
                     Number(oldDevice.voltage || 0) !== Number(update.voltage || 0) ||
                     Number(oldDevice.temperature || 0) !== Number(update.temperature || 0)
                 );
@@ -587,8 +523,6 @@ const SmartPlugsPage = () => {
                     newState: `${update.online ? 'ONLINE' : 'OFFLINE'} - ${update.relayOn ? 'ON' : 'OFF'} - ${update.currentPower || 0}W`
                 });
                 
-                // ✅ SIMPLIFICADO: Solo actualizar estado local, no sincronizar BD
-                
                 return updated;
             };
 
@@ -609,11 +543,12 @@ const SmartPlugsPage = () => {
                 
                 const oldDevice = prev[deviceIndex];
                 
-                // Verificar si hay cambios reales
+                // Verificar si hay cambios reales (incluyendo validez de datos)
                 const hasChanges = (
                     Boolean(oldDevice.online) !== Boolean(update.online) ||
                     Boolean(oldDevice.relayOn) !== Boolean(update.relayOn) ||
-                    Number(oldDevice.currentPower || 0) !== Number(update.currentPower || 0) ||
+                    // Para currentPower, considerar null como un cambio válido
+                    (oldDevice.currentPower !== update.currentPower) ||
                     Number(oldDevice.voltage || 0) !== Number(update.voltage || 0) ||
                     Number(oldDevice.temperature || 0) !== Number(update.temperature || 0)
                 );
@@ -637,12 +572,6 @@ const SmartPlugsPage = () => {
                 console.log(`🔄 ${oldDevice.name} actualizado en vista: ${oldDevice.relayOn ? 'ON' : 'OFF'} → ${update.relayOn ? 'ON' : 'OFF'} (${update.currentPower || 0}W)`);
                 return updated;
             });
-
-            // 🎯 TRIGGER: Después de procesar el update, verificar dispositivos offline
-            // Usar setTimeout para no bloquear la actualización de UI
-            setTimeout(() => {
-                checkOfflineDevices();
-            }, 100);
         });
 
         // Guardar referencia para evitar duplicados
@@ -655,7 +584,7 @@ const SmartPlugsPage = () => {
                 subscriptionRef.current = null;
             }
         };
-    }, [subscribe, isConnected, checkOfflineDevices]); // Remover allPlugs.length de dependencias para evitar re-suscripciones
+    }, [subscribe, isConnected]);
 
     // 📡 Sistema puro WebSocket - sin timers, sin complejidad innecesaria
 
@@ -664,16 +593,12 @@ const SmartPlugsPage = () => {
         console.log(`🔌 Estado de conexión Socket.io: ${isConnected ? 'CONECTADO' : 'DESCONECTADO'}`);
     }, [isConnected]);
 
-    // ✅ VERIFICACIÓN SIMPLE: Cada 15 segundos verificar si llegan mensajes
+    // 🎯 LÓGICA OFFLINE CENTRALIZADA - Ya no necesitamos verificaciones locales
+    // El Device Offline Manager maneja todo esto de forma consistente
     useEffect(() => {
-        if (!isConnected) return;
-        
-        const checkInterval = setInterval(() => {
-            checkOfflineDevices();
-        }, 15000); // Verificar cada 15 segundos
-        
-        return () => clearInterval(checkInterval);
-    }, [isConnected, checkOfflineDevices]);
+        // Esta lógica está deprecated - el sistema centralizado la maneja
+        console.log('ℹ️ [EnchufesInteligentes] Lógica offline manejada por sistema centralizado');
+    }, [isConnected]);
 
     // Calcular consumo total por credencial basado en TODOS los dispositivos (tiempo real)
     const credentialsWithPowerData = useMemo(() => {
@@ -682,14 +607,14 @@ const SmartPlugsPage = () => {
         }
         
         return credentialsStatus.map(credential => {
-            // Usar TODOS los dispositivos para cálculo de consumo real (solo los que consumen energía)
+            // Usar TODOS los dispositivos para cálculo de consumo real (solo los que tienen datos válidos)
             const credentialDevices = allPlugs.filter(plug => 
                 plug.credentialId === credential.id && 
                 plug.online && 
                 plug.relayOn && 
                 plug.currentPower !== null && 
                 plug.currentPower !== undefined &&
-                plug.currentPower > 0  // ✅ Solo dispositivos con consumo real
+                plug.currentPower > 0.1  // ✅ Solo dispositivos con consumo real y dato válido
             );
             
             const totalPower = credentialDevices.reduce((sum, device) => 
@@ -853,30 +778,6 @@ const SmartPlugsPage = () => {
         // Solo log cuando realmente cambian las dependencias importantes
         return [
         {
-            id: 'credential',
-            header: () => <div className="text-left">Credencial</div>,
-            cell: ({ row }) => {
-                const plug = row.original;
-                return (
-                    <div className="text-left">
-                        {plug.credential ? (
-                            <div className="font-medium">{plug.credential.name}</div>
-                        ) : (
-                            <span className="text-gray-400">Sin credencial</span>
-                        )}
-                    </div>
-                );
-            },
-        },
-        {
-            id: 'name',
-            header: () => <div className="text-left">{t('integrations.smart_plugs.table.name')}</div>,
-            cell: ({ row }) => {
-                const plug = row.original;
-                return <div className="text-left">{plug.name}</div>;
-            },
-        },
-        {
             id: 'equipment',
             header: () => <div className="text-xs font-medium text-left">{t('integrations.smart_plugs.table.equipment')}</div>,
             cell: ({ row }) => {
@@ -900,22 +801,7 @@ const SmartPlugsPage = () => {
                     <div className="text-left">
                         <div className="text-sm max-w-[140px] truncate" title={fallbackName}>{fallbackName}</div>
                     </div>
-                );
-            },
-        },
-        {
-            id: 'serial',
-            header: () => <div className="text-xs font-medium text-left">Serial</div>,
-            cell: ({ row }) => {
-                const plug = row.original;
-                const serial = plug.equipmentClinicAssignment?.serialNumber || 'N/A';
-                return (
-                    <div className="text-left">
-                        <div className="font-mono text-xs text-muted-foreground" title={serial}>
-                            {serial}
-                        </div>
-                    </div>
-                );
+                                );
             },
         },
         {
@@ -932,23 +818,7 @@ const SmartPlugsPage = () => {
                             {clinicName}
                         </div>
                     </div>
-                );
-            },
-        },
-        {
-            id: 'deviceId',
-            header: () => <div className="text-xs font-medium text-left">{t('integrations.smart_plugs.table.device_id')}</div>,
-            cell: ({ row }) => {
-                const plug = row.original;
-                return <div className="text-left text-xs font-mono text-muted-foreground max-w-[100px] truncate" title={plug.deviceId}>{plug.deviceId}</div>;
-            },
-        },
-        {
-            id: 'deviceIp',
-            header: () => <div className="text-xs font-medium text-left">{t('integrations.smart_plugs.table.ip')}</div>,
-            cell: ({ row }) => {
-                const plug = row.original;
-                return <div className="font-mono text-xs text-left text-muted-foreground">{plug.deviceIp}</div>;
+                                );
             },
         },
         {
@@ -986,10 +856,10 @@ const SmartPlugsPage = () => {
                 // Si está offline, no puede estar encendido
                 const actualRelayState = isOnline ? relayOn : false;
                 
-                // ✅ IGUAL QUE LAS CREDENCIALES: Solo mostrar consumo si > 0.1W
-                const hasRealPower = plug.currentPower !== null && 
-                                   plug.currentPower !== undefined && 
-                                   plug.currentPower > 0.1;
+                // ✅ ESTRATEGIA DOS NIVELES: Solo mostrar consumo si hay dato válido
+                const hasValidConsumption = plug.currentPower !== null && 
+                                          plug.currentPower !== undefined;
+                const hasRealPower = hasValidConsumption && plug.currentPower > 0.1;
                 
                 return (
                     <div className="text-left">
@@ -999,14 +869,20 @@ const SmartPlugsPage = () => {
                                 <Power className="w-2.5 h-2.5" />
                                 <span>ON</span>
                                 
-                                {/* ⚡ ESTÉTICA IDÉNTICA A LAS CREDENCIALES */}
-                                {isOnline && hasRealPower && (
+                                {/* ⚡ ESTRATEGIA DOS NIVELES: Solo mostrar si hay dato válido */}
+                                {isOnline && hasValidConsumption && hasRealPower && (
                                     <>
                                         <Zap className="w-3 h-3 text-yellow-600" />
                                         <span className="font-mono text-xs font-medium">
-                                            {plug.currentPower.toFixed(1)}W
+                                            {plug.currentPower!.toFixed(1)}W
                                         </span>
                                     </>
+                                )}
+                                {/* Indicador visual si está ON pero sin dato de consumo válido */}
+                                {isOnline && !hasValidConsumption && (
+                                    <span className="text-xs opacity-60 ml-1">
+                                        (...)
+                                    </span>
                                 )}
                             </Badge>
                         ) : (
@@ -1044,6 +920,114 @@ const SmartPlugsPage = () => {
                     </div>
                 );
             }
+        },
+        {
+            id: 'appointmentOnlyMode',
+            header: () => <div className="text-xs font-medium text-center">Solo desde citas</div>,
+            cell: ({ row }) => {
+                const plug = row.original;
+                const isEnabled = plug.appointmentOnlyMode ?? true; // Default true
+                
+                return (
+                    <div className="flex justify-center">
+                        <button
+                            onClick={async () => {
+                                try {
+                                    const response = await fetch(`/api/internal/smart-plug-devices/${plug.id}/toggle-appointment-only`, {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ appointmentOnlyMode: !isEnabled })
+                                    });
+                                    
+                                    if (response.ok) {
+                                        // Update local state
+                                        setPlugs(prev => prev.map(p => 
+                                            p.id === plug.id 
+                                                ? { ...p, appointmentOnlyMode: !isEnabled }
+                                                : p
+                                        ));
+                                        setAllPlugs(prev => prev.map(p => 
+                                            p.id === plug.id 
+                                                ? { ...p, appointmentOnlyMode: !isEnabled }
+                                                : p
+                                        ));
+                                        toast.success(`Control de citas ${!isEnabled ? 'activado' : 'desactivado'}`);
+                                    } else {
+                                        const errorData = await response.json();
+                                        toast.error(errorData.error || 'Error al actualizar configuración');
+                                    }
+                                } catch (error) {
+                                    toast.error('Error de conexión');
+                                }
+                            }}
+                            className={`relative inline-flex h-4 w-8 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 ${
+                                isEnabled 
+                                    ? 'bg-green-500 focus:ring-green-500' 
+                                    : 'bg-gray-300 focus:ring-gray-300'
+                            }`}
+                            title={isEnabled ? 'Encendido solo desde citas (activado)' : 'Encendido libre (desactivado)'}
+                        >
+                            <span className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                                isEnabled ? 'translate-x-4' : 'translate-x-0'
+                            }`} />
+                        </button>
+                    </div>
+                );
+            },
+        },
+        {
+            id: 'autoShutdownEnabled',
+            header: () => <div className="text-xs font-medium text-center">Apagado automático</div>,
+            cell: ({ row }) => {
+                const plug = row.original;
+                const isEnabled = plug.autoShutdownEnabled ?? true; // Default true
+                
+                return (
+                    <div className="flex justify-center">
+                        <button
+                            onClick={async () => {
+                                try {
+                                    const response = await fetch(`/api/internal/smart-plug-devices/${plug.id}/toggle-auto-shutdown`, {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ autoShutdownEnabled: !isEnabled })
+                                    });
+                                    
+                                    if (response.ok) {
+                                        // Update local state
+                                        setPlugs(prev => prev.map(p => 
+                                            p.id === plug.id 
+                                                ? { ...p, autoShutdownEnabled: !isEnabled }
+                                                : p
+                                        ));
+                                        setAllPlugs(prev => prev.map(p => 
+                                            p.id === plug.id 
+                                                ? { ...p, autoShutdownEnabled: !isEnabled }
+                                                : p
+                                        ));
+                                        toast.success(`Apagado automático ${!isEnabled ? 'activado' : 'desactivado'}`);
+                                    } else {
+                                        const errorData = await response.json();
+                                        toast.error(errorData.error || 'Error al actualizar configuración');
+                                    }
+                                } catch (error) {
+                                    toast.error('Error de conexión');
+                                }
+                            }}
+                            className={`relative inline-flex h-4 w-8 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 ${
+                                isEnabled 
+                                    ? 'bg-blue-500 focus:ring-blue-500' 
+                                    : 'bg-gray-300 focus:ring-gray-300'
+                            }`}
+                            title={isEnabled ? 'Apagado automático activado' : 'Apagado automático desactivado'}
+                        >
+                            <span className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                                isEnabled ? 'translate-x-4' : 'translate-x-0'
+                            }`} />
+                        </button>
+                    </div>
+                );
+            },
         },
         {
             id: 'actions',

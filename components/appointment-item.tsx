@@ -1,5 +1,5 @@
 "use client"
-import { Calendar, Clock, MoreVertical, Tag, Plus, Trash2, CheckCircle, XCircle, MessageSquare, RefreshCw, Check, ChevronRight, Move, ChevronUp, ChevronDown, ExternalLink, Copy, Info, MoveHorizontal, X, RotateCcw } from "lucide-react"
+import { Calendar, Clock, MoreVertical, Tag, Plus, Trash2, CheckCircle, XCircle, MessageSquare, RefreshCw, Check, ChevronRight, Move, ChevronUp, ChevronDown, ExternalLink, Copy, Info, MoveHorizontal, X, RotateCcw, Play, Zap, Power, Loader2, AlertTriangle } from "lucide-react"
 import { AGENDA_CONFIG } from "@/config/agenda-config"
 import { Appointment } from "@/types/appointments"
 import { useAppointmentTags } from "@/contexts/appointment-tags-context"
@@ -21,6 +21,7 @@ import {
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
+  DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu"
 import { useGranularity } from '@/lib/drag-drop/granularity-context'
 import { useMoveAppointment } from '@/contexts/move-appointment-context'
@@ -28,6 +29,10 @@ import { validateGranularityMove } from '@/utils/appointment-validation'
 import { validateAppointmentResize } from '@/utils/appointment-validation'
 import { useWeeklyAgendaData } from '@/lib/hooks/use-weekly-agenda-data'
 import { useScrollHoverClearance } from '@/lib/hooks/use-global-hover-state'
+import { Button } from "@/components/ui/button"
+import { DeviceControlButton } from "@/components/ui/device-control-button"
+import { useServiceEquipmentRequirements } from '@/hooks/use-service-equipment-requirements'
+import { toast } from 'sonner'
 
 // Función para ajustar el brillo del color
 function adjustColorBrightness(color: string, amount: number) {
@@ -76,12 +81,15 @@ export function AppointmentItem({
   onMoveAppointment,
   onDeleteAppointment,
   onTimeAdjust,
+  onStartAppointment,
   viewType,
   visibleDuration,
   onClientNameClick,
   appointments = [],
   minuteGranularity = 15,
   dragState,
+  // 🆕 DATOS DEL MENÚ FLOTANTE para tiempo real en dropdown
+  smartPlugsData,
 }: {
   appointment: Appointment & { 
     visibleDuration?: number; 
@@ -102,12 +110,29 @@ export function AppointmentItem({
   onMoveAppointment?: (appointmentId: string) => void
   onDeleteAppointment?: (appointmentId: string, showConfirm?: boolean) => void
   onTimeAdjust?: (appointmentId: string, direction: 'up' | 'down') => void
+  onStartAppointment?: (appointmentId: string) => void
   viewType?: 'day' | 'week'
   visibleDuration?: number
   onClientNameClick?: (appointment: Appointment) => void
   appointments?: any[]
   minuteGranularity?: number
   dragState?: any
+  // 🆕 DATOS DEL MENÚ FLOTANTE para tiempo real en dropdown
+  smartPlugsData?: {
+    deviceStats: { total: number; online: number; offline: number; consuming: number }
+    activeDevices: Array<{
+      id: string; name: string; deviceId: string; online: boolean; relayOn: boolean;
+      currentPower?: number; voltage?: number; temperature?: number;
+      equipmentClinicAssignment?: {
+        id: string; clinicId: string; deviceName?: string;
+        equipment: { id: string; name: string; }; clinic: { id: string; name: string; };
+      };
+    }>
+    totalPower: number
+    isConnected: boolean
+    onDeviceToggle: (deviceId: string, turnOn: boolean) => Promise<void>
+    lastUpdate: Date | null
+  }
 }) {
   // Obtener información de la clínica para validaciones de horario
   const { activeClinic } = useClinic()
@@ -159,6 +184,12 @@ export function AppointmentItem({
   const resizeDurationRef = useRef(appointment.duration)
   const [hasResizeConflict, setHasResizeConflict] = useState(false)
   const [showOptimisticSpinner, setShowOptimisticSpinner] = useState(false)
+  
+  // 🆕 ESTADO PARA ASIGNACIONES DINÁMICAS
+  // const [availableAssignments, setAvailableAssignments] = useState<any[]>([])
+  // const [loadingAssignments, setLoadingAssignments] = useState(false)
+  
+  // 🆕 ESTADO PARA DROPDOWN DE EQUIPAMIENTO
 
   // ✅ SINCRONIZAR previewDuration cuando appointment.duration cambie (renderizado optimista)
   useEffect(() => {
@@ -573,6 +604,147 @@ export function AppointmentItem({
           document.addEventListener('keydown', handleKeyDown);
   }, [appointment.id, appointment.duration, appointment.startTime, appointment.roomId, minuteGranularity, height, onDurationChange, onDraggingDurationChange, cacheAppointments, appointments]);
 
+  // 🆕 HANDLER PARA INICIAR CRONÓMETRO CON DROPDOWN INTELIGENTE
+  const handleStartTimer = useCallback(async () => {
+    console.log('[AppointmentItem] 🚀 Iniciando cronómetro para cita:', appointment.id)
+    
+    try {
+      const response = await fetch(`/api/appointments/${appointment.id}/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      })
+
+      if (!response.ok) {
+        throw new Error(`Error ${response.status}: ${response.statusText}`)
+      }
+
+      const result = await response.json()
+      console.log('[AppointmentItem] ✅ Respuesta API cronómetro:', result)
+
+      // ✅ VERIFICAR: Si requiere selección de equipamiento
+      if (result.requiresEquipmentSelection && result.availableAssignments) {
+        console.log('[AppointmentItem] 🔧 Múltiples asignaciones disponibles:', result.availableAssignments.length)
+        // En este caso, el DropdownMenuSub ya está visible y mostrará las opciones
+        // TODO: Aquí podrías actualizar un estado local para renderizar las asignaciones reales
+      } else if (result.success) {
+        console.log('[AppointmentItem] ✅ Cronómetro iniciado exitosamente')
+      } else if (result.error) {
+        console.error('[AppointmentItem] ❌ Error del servidor:', result.error)
+      }
+      
+    } catch (error) {
+      console.error('[AppointmentItem] ❌ Error iniciando cronómetro:', error)
+    }
+  }, [appointment.id])
+
+  // 🆕 HANDLERS PARA SELECCIÓN DE EQUIPAMIENTO
+  const handleSelectAssignment = useCallback(async (assignmentId: string, deviceName?: string) => {
+    try {
+      console.log('🎯 Iniciando cita con asignación:', assignmentId, deviceName)
+      
+      const response = await fetch(`/api/appointments/${appointment.id}/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          equipmentClinicAssignmentId: assignmentId 
+        })
+      })
+
+      if (!response.ok) {
+        throw new Error(`Error ${response.status}: ${response.statusText}`)
+      }
+
+      const result = await response.json()
+      console.log('✅ Cita iniciada con equipamiento:', result)
+      
+    } catch (error) {
+      console.error('❌ Error iniciando cita con equipamiento:', error)
+    }
+  }, [appointment.id])
+
+  // 🆕 NUEVO: ENCENDER DISPOSITIVO + INICIAR CITA
+  const handleDeviceToggle = useCallback(async (deviceId: string, turnOn: boolean, assignmentId: string, deviceName?: string) => {
+    try {
+      if (!turnOn) {
+        // Si se apaga, solo apagar el dispositivo (no hacer nada con la cita)
+        console.log('🔌 Apagando dispositivo:', deviceId)
+        
+        const response = await fetch(`/api/shelly/device/${deviceId}/control`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'off' })
+        })
+
+        if (!response.ok) {
+          throw new Error(`Error apagando dispositivo: ${response.status}`)
+        }
+
+        console.log('✅ Dispositivo apagado')
+        return
+      }
+
+      // Si se enciende: 1️⃣ Encender dispositivo + 2️⃣ Iniciar cita
+      console.log('🔌 Encendiendo dispositivo y iniciando cita:', deviceId, assignmentId)
+      
+      // 1️⃣ ENCENDER DISPOSITIVO FÍSICAMENTE
+      const deviceResponse = await fetch(`/api/shelly/device/${deviceId}/control`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'on' })
+      })
+
+      if (!deviceResponse.ok) {
+        throw new Error(`Error encendiendo dispositivo: ${deviceResponse.status}`)
+      }
+
+      console.log('✅ Dispositivo encendido')
+
+      // 2️⃣ INICIAR CITA CON EQUIPAMIENTO
+      const appointmentResponse = await fetch(`/api/appointments/${appointment.id}/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          equipmentClinicAssignmentId: assignmentId 
+        })
+      })
+
+      if (!appointmentResponse.ok) {
+        throw new Error(`Error iniciando cita: ${appointmentResponse.status}`)
+      }
+
+      const result = await appointmentResponse.json()
+      console.log('✅ Cita iniciada con equipamiento encendido:', result)
+      
+    } catch (error) {
+      console.error('❌ Error en handleDeviceToggle:', error)
+      // TODO: Mostrar toast de error
+    }
+  }, [appointment.id])
+
+  const handleStartWithoutEquipment = useCallback(async () => {
+    try {
+      console.log('[AppointmentItem] 🎯 Iniciando cita sin equipamiento')
+      
+      const response = await fetch(`/api/appointments/${appointment.id}/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          withoutEquipment: true 
+        })
+      })
+
+      if (!response.ok) {
+        throw new Error(`Error ${response.status}: ${response.statusText}`)
+      }
+
+      const result = await response.json()
+      console.log('[AppointmentItem] ✅ Cita iniciada sin equipamiento:', result)
+      
+    } catch (error) {
+      console.error('[AppointmentItem] ❌ Error iniciando cita sin equipamiento:', error)
+    }
+  }, [appointment.id])
+
   useEffect(() => {
     if (isDragging) {
       setShowTooltip(false);
@@ -591,6 +763,35 @@ export function AppointmentItem({
       });
     }
   }, [currentPreviewDuration, isResizing, getHeight, appointment.id]);
+
+  // 🔥 HOOK ESPECÍFICO PARA EQUIPAMIENTO DE SERVICIOS DE CITA
+  const [dropdownOpen, setDropdownOpen] = useState(false)
+  
+  // ✅ USAR HOOK CORRECTO QUE FILTRA POR SERVICIOS DE LA CITA
+  const serviceEquipmentData = useServiceEquipmentRequirements({
+    appointmentId: appointment.id,
+    enabled: dropdownOpen // Solo cargar cuando el dropdown está abierto
+  });
+
+
+
+  // ✅ DATOS FINALES: Solo dispositivos que pueden hacer los servicios de esta cita
+  const equipmentData = serviceEquipmentData ? {
+    availableDevices: serviceEquipmentData.availableDevices.map(device => ({
+      id: device.id,
+      deviceId: device.deviceId,
+      name: device.name,
+      online: device.online,
+      relayOn: device.relayOn,
+      currentPower: device.currentPower,
+      voltage: device.voltage,
+      temperature: device.temperature,
+      cabinName: device.cabinName || 'Sin cabina',
+      status: device.status
+    })),
+    isConnected: serviceEquipmentData.isConnected,
+    onDeviceToggle: serviceEquipmentData.onDeviceToggle
+  } : null
 
   return (
     <>
@@ -877,7 +1078,7 @@ export function AppointmentItem({
             onClick={(e) => e.stopPropagation()}
             onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
           >
-            <DropdownMenu modal={false}>
+            <DropdownMenu modal={false} onOpenChange={(open) => setDropdownOpen(open)}>
               <DropdownMenuTrigger asChild>
                 <button 
                   className={cn(
@@ -907,91 +1108,209 @@ export function AppointmentItem({
                 className="w-48"
                 onCloseAutoFocus={(e) => e.preventDefault()}
               >
+                {/* 🎯 INICIAR SERVICIO - OPTIMIZADO CON CACHE */}
                 <DropdownMenuSub>
-                  <DropdownMenuSubTrigger className="cursor-pointer">
+                  <DropdownMenuSubTrigger className="cursor-pointer hover:bg-green-50 text-green-700 font-medium">
+                    <Play className="mr-2 w-4 h-4" />
+                    Iniciar Servicio
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="w-80">
+                    {/* 🔌 ENCHUFES DISPONIBLES - DIRECTO DEL CACHE */}
+                    {equipmentData && equipmentData.availableDevices.length > 0 && (
+                      <>
+                        {equipmentData.availableDevices.map((device) => (
+                          <DropdownMenuItem 
+                            key={device.id}
+                            className="cursor-pointer p-3 hover:bg-gray-50"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <div className="flex items-center justify-between w-full gap-3">
+                              {/* 📝 INFO DEL DISPOSITIVO */}
+                              <div className="flex flex-col flex-1 min-w-0">
+                                <span className="text-sm font-medium truncate">{device.name}</span>
+                                <div className="flex items-center gap-1 text-xs text-gray-600">
+                                  {device.currentPower && device.currentPower > 0.1 && (
+                                    <span className="text-blue-600">{device.currentPower.toFixed(1)}W</span>
+                                  )}
+                                  {device.cabinName && (
+                                    <>
+                                      {device.currentPower && device.currentPower > 0.1 && (
+                                        <span className="text-gray-400">•</span>
+                                      )}
+                                      <span>{device.cabinName}</span>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                              
+                              {/* 🔌 BOTÓN POWER CIRCULAR */}
+                              <DeviceControlButton
+                                device={{
+                                  id: device.deviceId,
+                                  name: device.name,
+                                  online: device.online,
+                                  relayOn: device.relayOn,
+                                  currentPower: device.currentPower,
+                                  voltage: device.voltage,
+                                  temperature: device.temperature
+                                }}
+                                onToggle={async (deviceId: string, turnOn: boolean) => {
+                                  try {
+                                    await equipmentData.onDeviceToggle(deviceId, turnOn);
+                                    toast.success(`Enchufe ${turnOn ? 'encendido' : 'apagado'}`, {
+                                      description: device.name,
+                                      duration: 2000
+                                    });
+                                  } catch (error) {
+                                    toast.error('Error controlando enchufe', {
+                                      description: error instanceof Error ? error.message : 'Error desconocido',
+                                      duration: 4000
+                                    });
+                                  }
+                                }}
+                                disabled={false}
+                                size="sm"
+                                showMetrics={false}
+                              />
+                            </div>
+                          </DropdownMenuItem>
+                        ))}
+                        <DropdownMenuSeparator />
+                      </>
+                    )}
+                    
+                    {/* 📭 ESTADO LOADING */}
+                    {!equipmentData && dropdownOpen && (
+                      <DropdownMenuItem disabled>
+                        <Loader2 className="mr-2 w-4 h-4 text-gray-400 animate-spin" />
+                        <span className="text-gray-500 text-sm">Cargando...</span>
+                      </DropdownMenuItem>
+                    )}
+                    
+                    {/* 📭 SIN EQUIPOS */}
+                    {equipmentData && equipmentData.availableDevices.length === 0 && (
+                      <DropdownMenuItem disabled>
+                        <AlertTriangle className="mr-2 w-4 h-4 text-gray-400" />
+                        <span className="text-gray-500 text-sm">Sin equipos necesarios</span>
+                      </DropdownMenuItem>
+                    )}
+                    
+                    {/* 🎯 SIN EQUIPAMIENTO - SOLO SI ES NECESARIO */}
+                    <DropdownMenuItem 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleStartWithoutEquipment();
+                      }}
+                      className="cursor-pointer hover:bg-blue-50"
+                    >
+                      <Play className="mr-2 w-4 h-4 text-blue-600" />
+                      <span className="text-blue-700 font-medium">Iniciar sin equipamiento</span>
+                    </DropdownMenuItem>
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+                
+                <DropdownMenuSeparator />
+                
+                <DropdownMenuItem onClick={(e) => {
+                  e.stopPropagation();
+                  if (onMoveAppointment) {
+                    onMoveAppointment(appointment.id);
+                  }
+                }} className="cursor-pointer hover:bg-gray-100">
+                  <Move className="mr-2 w-4 h-4" />
+                  Mover
+                </DropdownMenuItem>
+                
+                {/* 🆕 SELECTOR DE ETIQUETAS RESTAURADO */}
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger className="cursor-pointer hover:bg-gray-50">
                     <Tag className="mr-2 w-4 h-4" />
                     Etiquetas
                   </DropdownMenuSubTrigger>
-                <DropdownMenuSubContent className="w-56">
-                  {getTags().map((tag) => {
-                    const isSelected = appointment.tags?.includes(tag.id);
-                    return (
-                      <DropdownMenuItem
-                        key={tag.id}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (onTagsUpdate) {
-                            const newTags = isSelected
-                              ? appointment.tags?.filter(id => id !== tag.id) || []
-                              : [...(appointment.tags || []), tag.id];
-                            onTagsUpdate(appointment.id, newTags);
-                          }
-                        }}
-                        className="flex justify-between items-center cursor-pointer hover:bg-gray-100"
-                      >
-                        <div className="flex gap-2 items-center">
-                          <div
-                            className="w-3 h-3 rounded-full"
-                            style={{ backgroundColor: tag.color }}
-                          />
-                          <span>{tag.name}</span>
-                        </div>
-                        {isSelected && <Check className="w-4 h-4" />}
+                  <DropdownMenuSubContent>
+                    <DropdownMenuLabel className="text-xs text-gray-500">
+                      Gestionar Etiquetas
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    
+                    {getTags()?.map((tag) => {
+                      const isAssigned = appointment.tags?.includes(tag.id) || false
+                      
+                      return (
+                        <DropdownMenuItem 
+                          key={tag.id}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (onTagsUpdate) {
+                              const newTags = isAssigned 
+                                ? (appointment.tags || []).filter(tagId => tagId !== tag.id)
+                                : [...(appointment.tags || []), tag.id]
+                              onTagsUpdate(appointment.id, newTags);
+                            }
+                          }}
+                          className="cursor-pointer justify-between"
+                        >
+                          <div className="flex items-center gap-2">
+                            <div 
+                              className="w-3 h-3 rounded-full border border-gray-300"
+                              style={{ backgroundColor: tag.color }}
+                            />
+                            <span className="text-sm">{tag.name}</span>
+                          </div>
+                          {isAssigned && (
+                            <Check className="w-4 h-4 text-green-500" />
+                          )}
+                        </DropdownMenuItem>
+                      )
+                    })}
+                    
+                    {(!getTags() || getTags().length === 0) && (
+                      <DropdownMenuItem disabled>
+                        <span className="text-gray-500 text-sm">Sin etiquetas disponibles</span>
                       </DropdownMenuItem>
-                    );
-                  })}
-                </DropdownMenuSubContent>
-              </DropdownMenuSub>
-              
-              <DropdownMenuItem onClick={(e) => {
-                e.stopPropagation();
-                if (onMoveAppointment) {
-                  onMoveAppointment(appointment.id);
-                }
-              }} className="cursor-pointer hover:bg-gray-100">
-                <Move className="mr-2 w-4 h-4" />
-                Mover
-              </DropdownMenuItem>
-              
-              <DropdownMenuItem onClick={(e) => {
-                e.stopPropagation();
-                console.log("No asistido");
-              }} className="cursor-pointer hover:bg-gray-100">
-                <XCircle className="mr-2 w-4 h-4" />
-                No asistido
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={(e) => {
-                e.stopPropagation();
-                console.log("Información");
-              }} className="cursor-pointer hover:bg-gray-100">
-                <MessageSquare className="mr-2 w-4 h-4" />
-                Información
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={(e) => {
-                e.stopPropagation();
-                console.log("Duplicar");
-              }} className="cursor-pointer hover:bg-gray-100">
-                <Copy className="mr-2 w-4 h-4" />
-                Duplicar
-              </DropdownMenuItem>
-              
-              <DropdownMenuItem 
-                onClick={(e) => {
+                    )}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+                
+                <DropdownMenuItem onClick={(e) => {
                   e.stopPropagation();
-                  if (onDeleteAppointment) {
-                    onDeleteAppointment(appointment.id, true); // showConfirm = true
-                  } else {
-                    console.log("onDeleteAppointment no disponible");
-                  }
-                }} 
-                className="text-red-600 cursor-pointer hover:bg-red-50"
-              >
-                <Trash2 className="mr-2 w-4 h-4" />
-                Eliminar
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+                  console.log("No asistido");
+                }} className="cursor-pointer hover:bg-gray-100">
+                  <XCircle className="mr-2 w-4 h-4" />
+                  No asistido
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={(e) => {
+                  e.stopPropagation();
+                  console.log("Información");
+                }} className="cursor-pointer hover:bg-gray-100">
+                  <MessageSquare className="mr-2 w-4 h-4" />
+                  Información
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={(e) => {
+                  e.stopPropagation();
+                  console.log("Duplicar");
+                }} className="cursor-pointer hover:bg-gray-100">
+                  <Copy className="mr-2 w-4 h-4" />
+                  Duplicar
+                </DropdownMenuItem>
+                
+                <DropdownMenuItem 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (onDeleteAppointment) {
+                      onDeleteAppointment(appointment.id, true); // showConfirm = true
+                    } else {
+                      console.log("onDeleteAppointment no disponible");
+                    }
+                  }} 
+                  className="text-red-600 cursor-pointer hover:bg-red-50"
+                >
+                  <Trash2 className="mr-2 w-4 h-4" />
+                  Eliminar
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         )}
 
         {/* Zona de estiramiento profesional integrada en la cita */}

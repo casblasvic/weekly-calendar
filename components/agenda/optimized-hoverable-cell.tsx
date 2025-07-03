@@ -59,8 +59,24 @@ interface OptimizedHoverableCellProps {
   onMoveAppointment?: (appointmentId: string) => void
   onDeleteAppointment?: (appointmentId: string, showConfirm?: boolean) => void
   onTimeAdjust?: (appointmentId: string, direction: 'up' | 'down') => void
+  onStartAppointment?: (appointmentId: string) => void
   onClientNameClick?: (appointment: any) => void
   updateDragDirection?: (direction: 'up' | 'down' | 'neutral') => void
+  smartPlugsData?: {
+    deviceStats: { total: number; online: number; offline: number; consuming: number }
+    activeDevices: Array<{
+      id: string; name: string; deviceId: string; online: boolean; relayOn: boolean;
+      currentPower?: number; voltage?: number; temperature?: number;
+      equipmentClinicAssignment?: {
+        id: string; clinicId: string; deviceName?: string;
+        equipment: { id: string; name: string; }; clinic: { id: string; name: string; };
+      };
+    }>
+    totalPower: number
+    isConnected: boolean
+    onDeviceToggle: (deviceId: string, turnOn: boolean) => Promise<void>
+    lastUpdate: Date | null
+  }
 }
 
 const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
@@ -103,8 +119,10 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
   onMoveAppointment,
   onDeleteAppointment,
   onTimeAdjust,
+  onStartAppointment,
   onClientNameClick,
-  updateDragDirection
+  updateDragDirection,
+  smartPlugsData
 }) => {
   const cellRef = useRef<HTMLDivElement>(null)
   
@@ -1288,6 +1306,7 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
               onMoveAppointment={onMoveAppointment}
               onDeleteAppointment={onDeleteAppointment}
               onTimeAdjust={onTimeAdjust}
+              onStartAppointment={onStartAppointment}
               onClientNameClick={(apt) => {
                 if (onClientNameClick) {
                   onClientNameClick(apt);
@@ -1297,6 +1316,7 @@ const OptimizedHoverableCell: React.FC<OptimizedHoverableCellProps> = memo(({
               visibleDuration={appointment.visibleDuration}
               appointments={appointments}
               minuteGranularity={minuteGranularity}
+              smartPlugsData={smartPlugsData}
             />
           </div>
         )

@@ -17,6 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Save, Building2, Wrench, Info } from "lucide-react"
 import { useCreateEquipmentMutation, useUpdateEquipmentMutation } from "@/lib/hooks/use-equipment-query"
 import type { Equipment } from "@prisma/client";
+import { Decimal } from "@prisma/client/runtime/library";
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { SparePartsTab } from "@/components/equipment/spare-parts"
@@ -84,6 +85,7 @@ interface EquipmentFormData {
   name: string;
   description: string | null;
   modelNumber: string | null;
+  powerThreshold: number;
   purchaseDate: Date | null;
   warrantyEndDate: Date | null;
   isActive: boolean;
@@ -93,6 +95,7 @@ const defaultEquipmentState = (): EquipmentFormData => ({
   name: "",
   description: null,
   modelNumber: null,
+  powerThreshold: 10.0,
   purchaseDate: null,
   warrantyEndDate: null,
   isActive: true,
@@ -190,6 +193,7 @@ export default function AddEquipmentModal({
           name: initialEquipment.name ?? "",
           description: initialEquipment.description ?? null,
           modelNumber: initialEquipment.modelNumber ?? null,
+          powerThreshold: Number(initialEquipment.powerThreshold) ?? 10.0,
           purchaseDate: initialEquipment.purchaseDate ? new Date(initialEquipment.purchaseDate) : null,
           warrantyEndDate: initialEquipment.warrantyEndDate ? new Date(initialEquipment.warrantyEndDate) : null,
           isActive: initialEquipment.isActive ?? true,
@@ -231,6 +235,7 @@ export default function AddEquipmentModal({
         initialData.name !== equipmentData.name ||
         initialData.description !== equipmentData.description ||
         initialData.modelNumber !== equipmentData.modelNumber ||
+        initialData.powerThreshold !== equipmentData.powerThreshold ||
         (initialData.purchaseDate?.toISOString() ?? null) !== (equipmentData.purchaseDate?.toISOString() ?? null) ||
         (initialData.warrantyEndDate?.toISOString() ?? null) !== (equipmentData.warrantyEndDate?.toISOString() ?? null) ||
         initialData.isActive !== equipmentData.isActive;
@@ -269,6 +274,7 @@ export default function AddEquipmentModal({
           name: equipmentData.name,
           description: equipmentData.description,
           modelNumber: equipmentData.modelNumber,
+          powerThreshold: equipmentData.powerThreshold.toString(),
           purchaseDate: equipmentData.purchaseDate,
           warrantyEndDate: equipmentData.warrantyEndDate,
           isActive: equipmentData.isActive,
@@ -380,6 +386,22 @@ export default function AddEquipmentModal({
             <div className="space-y-1.5">
               <Label htmlFor="modelNumber">Modelo</Label>
               <Input id="modelNumber" name="modelNumber" value={equipmentData.modelNumber || ''} onChange={handleInputChange} className="w-full" />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="powerThreshold">Umbral de trabajo (Watts)</Label>
+              <Input 
+                id="powerThreshold" 
+                name="powerThreshold" 
+                type="number" 
+                step="0.1"
+                min="0"
+                value={equipmentData.powerThreshold} 
+                onChange={(e) => setEquipmentData(prev => ({ ...prev, powerThreshold: parseFloat(e.target.value) || 10.0 }))} 
+                className="w-full" 
+                placeholder="10.0"
+              />
+              <p className="text-xs text-gray-500">Potencia mínima en Watts para detectar que el equipamiento está en uso activo</p>
             </div>
 
             <div className="space-y-1.5">

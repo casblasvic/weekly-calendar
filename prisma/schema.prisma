@@ -624,6 +624,7 @@ model Equipment {
   purchaseDate       DateTime?
   warrantyEndDate    DateTime?
   isActive           Boolean                       @default(true)
+  powerThreshold     Decimal                       @default(10.0) @db.Decimal(5,2)
   systemId           String
   createdAt          DateTime                      @default(now())
   updatedAt          DateTime                      @updatedAt
@@ -766,13 +767,19 @@ model AppointmentDeviceUsage {
   id                           String                     @id @default(cuid())
   appointmentId                String
   appointmentServiceId         String?
-  equipmentId                  String
+  equipmentId                  String?                    // Null si es sin equipamiento
   equipmentClinicAssignmentId  String?                    // Referencia a la instancia específica utilizada
-  deviceId                     String
+  deviceId                     String?                    // Null si es sin equipamiento
   startedAt                    DateTime                   @db.Timestamptz(6)
   endedAt                      DateTime?                  @db.Timestamptz(6)
   estimatedMinutes             Float
   actualMinutes                Float?
+  
+  // 🆕 CAMPOS DE PAUSAS MEJORADOS
+  pauseIntervals               Json?                      // Array de {pausedAt, resumedAt, reason?, durationMinutes?}
+  currentStatus                String                     @default("ACTIVE") // ACTIVE, PAUSED, COMPLETED
+  pausedAt                     DateTime?                  @db.Timestamptz(6) // Para estado actual de pausa
+  
   energyConsumption            Float?
   deviceData                   Json?
   startedByUserId              String
@@ -781,9 +788,9 @@ model AppointmentDeviceUsage {
   updatedAt                    DateTime                   @updatedAt @db.Timestamptz(6)
   appointment                  Appointment                @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
   appointmentService           AppointmentService?        @relation(fields: [appointmentServiceId], references: [id], onDelete: SetNull)
-  equipment                    Equipment                  @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+  equipment                    Equipment?                 @relation(fields: [equipmentId], references: [id], onDelete: SetNull)
   equipmentClinicAssignment    EquipmentClinicAssignment? @relation(fields: [equipmentClinicAssignmentId], references: [id], onDelete: SetNull)
-  device                       Device                     @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  device                       Device?                    @relation(fields: [deviceId], references: [id], onDelete: SetNull)
   startedByUser                User                       @relation("DeviceUsageStartedBy", fields: [startedByUserId], references: [id])
   system                       System                     @relation(fields: [systemId], references: [id], onDelete: Cascade)
 
@@ -795,6 +802,7 @@ model AppointmentDeviceUsage {
   @@index([systemId])
   @@index([appointmentServiceId])
   @@index([startedByUserId])
+  @@index([currentStatus])
   @@map("appointment_device_usage")
 }
 
@@ -3371,6 +3379,10 @@ model SmartPlugDevice {
   ledColorG         Int?    // 0-255
   ledColorB         Int?    // 0-255
   ledNightMode      Boolean @default(false)
+  
+  // Control de encendido y apagado automático
+  appointmentOnlyMode Boolean @default(true)  // Control de encendido solo desde citas
+  autoShutdownEnabled Boolean @default(true)  // Control de apagado automático
   
   // Metadatos adicionales
   rawData       Json?     // Datos completos del dispositivo para debugging

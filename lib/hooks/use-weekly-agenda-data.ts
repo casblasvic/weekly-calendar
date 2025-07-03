@@ -14,6 +14,7 @@ export interface WeeklyAgendaAppointment {
   date: Date;
   duration: number;
   roomId: string;
+  clinicId: string; // 🆕 ID de la clínica donde se realiza la cita
   personId: string;
   phone?: string;
   services: any[];
@@ -278,7 +279,8 @@ export function useWeeklyAgendaData(currentDate: Date) {
         date: processDate(apt.date, apt.startTime),
         duration: finalDuration,
         color: appointmentColor,
-        tags: apt.tags?.map((tagRelation: any) => {
+        clinicId: apt.clinicId || activeClinicId || '', // 🆕 ID de la clínica
+        tags: Array.isArray(apt.tags) ? apt.tags.map((tagRelation: any) => {
           // ✅ VALIDAR que tagRelation existe antes de procesarlo
           if (!tagRelation) return null;
           
@@ -287,7 +289,7 @@ export function useWeeklyAgendaData(currentDate: Date) {
             return tagRelation; // Formato GET: ["id1", "id2"]
           }
           return tagRelation.tagId || tagRelation.id || tagRelation; // Formato PUT: [{ tagId: "..." }]
-        }).filter(Boolean) || [], // ✅ FILTRAR elementos null/undefined
+        }).filter(Boolean) : [], // ✅ FILTRAR elementos null/undefined O array vacío si no es array
         services: apt.services || [],
         roomId: apt.roomId || '',
         personId: apt.personId || apt.person?.id || '',
@@ -305,7 +307,7 @@ export function useWeeklyAgendaData(currentDate: Date) {
 
     
     return processedAppointments;
-  }, [appointmentsData, activeClinic]); // ✅ DEPENDENCIAS ESTABLES para evitar re-renders infinitos
+  }, [appointmentsData, activeClinic, activeClinicId]); // ✅ DEPENDENCIAS ESTABLES para evitar re-renders infinitos
   
   // ✅ NUEVO: Estado de estabilización visual para evitar "flash" de citas incorrectas
   const isDataStable = useMemo(() => {

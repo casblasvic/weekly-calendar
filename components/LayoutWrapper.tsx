@@ -84,6 +84,7 @@ import { MoveAppointmentUI } from "@/components/move-appointment-ui"
 import { format } from "date-fns"
 // ✅ NUEVO: Hook para integración de enchufes inteligentes en floating menu
 import { useSmartPlugsFloatingMenu } from "@/hooks/use-smart-plugs-floating-menu"
+import { clientLogger } from "@/lib/utils/client-logger"
 
 interface LayoutWrapperProps {
   children: React.ReactNode
@@ -163,7 +164,7 @@ export function LayoutWrapper({ children, user }: LayoutWrapperProps) {
     return true
   }, [isLoginPage, status, session, hasMounted])
 
-  console.log('🔍 [LayoutWrapper] Decisión de layout:', {
+  clientLogger.debug('🔍 [LayoutWrapper] Decisión de layout:', {
     isLoginPage,
     status,
     sessionExists: !!session,

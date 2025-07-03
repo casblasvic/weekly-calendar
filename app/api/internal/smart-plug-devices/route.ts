@@ -41,6 +41,7 @@ export async function GET(request: NextRequest) {
                                 select: {
                                     id: true,
                                     name: true,
+                                    powerThreshold: true,
                                 }
                             },
                             clinic: {
@@ -74,6 +75,7 @@ export async function GET(request: NextRequest) {
             equipment: device.equipmentClinicAssignment ? {
                 name: device.equipmentClinicAssignment.equipment.name,
                 clinicId: device.equipmentClinicAssignment.clinicId,
+                powerThreshold: device.equipmentClinicAssignment.equipment.powerThreshold,
                 clinic: device.equipmentClinicAssignment.clinic
             } : null,
             // Asegurar que equipmentClinicAssignment esté disponible para el modal

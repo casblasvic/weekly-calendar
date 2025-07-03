@@ -117,6 +117,8 @@
 import { useEffect, useState } from "react"
 import { SessionProvider, useSession } from "next-auth/react"
 import { usePathname } from "next/navigation"
+// Importar client-logger para cargar funciones globales de logs en el navegador
+import '@/lib/utils/client-logger'
 import { LastClientProvider } from "@/contexts/last-client-context"
 import { ClientCardProvider } from "@/contexts/client-card-context"
 import { CabinProvider } from "@/contexts/CabinContext"

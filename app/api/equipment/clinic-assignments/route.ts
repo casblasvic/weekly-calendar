@@ -60,7 +60,8 @@ export async function GET(request: NextRequest) {
             id: true,
             name: true,
             description: true,
-            modelNumber: true
+            modelNumber: true,
+            powerThreshold: true
           }
         },
         clinic: {
@@ -75,6 +76,20 @@ export async function GET(request: NextRequest) {
             id: true,
             name: true,
             code: true
+          }
+        },
+        smartPlugDevice: {
+          select: {
+            id: true,
+            name: true,
+            deviceId: true,
+            online: true,
+            relayOn: true,
+            currentPower: true,
+            voltage: true,
+            temperature: true,
+            appointmentOnlyMode: true,
+            autoShutdownEnabled: true
           }
         }
       },

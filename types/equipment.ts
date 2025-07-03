@@ -1,7 +1,15 @@
 export interface Equipment {
-  id: number;
+  id: string;
   name: string;
-  // ... otros campos ...
+  description?: string | null;
+  modelNumber?: string | null;
+  powerThreshold: number;
+  purchaseDate?: Date | null;
+  warrantyEndDate?: Date | null;
+  isActive: boolean;
+  systemId: string;
+  createdAt: Date;
+  updatedAt: Date;
   images?: EquipmentImage[];  // Array de imágenes asociadas
 }
 

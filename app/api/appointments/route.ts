@@ -669,16 +669,6 @@ export async function PUT(request: NextRequest) {
     } = body;
 
     console.log('🔄 [API PUT] Actualizando cita:', id);
-    console.log('📋 [API PUT] Datos recibidos:', {
-      personId,
-      professionalId,
-      services: services?.length,
-      tags: tags?.length,
-      roomId,
-      startTime,
-      endTime,
-      date
-    });
 
     // Verificar que la cita existe y pertenece al sistema del usuario
     const existingAppointment = await prisma.appointment.findFirst({
@@ -699,12 +689,7 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    console.log('📅 [API PUT] Cita existente:', {
-      id: existingAppointment.id,
-      startTime: existingAppointment.startTime.toISOString(),
-      endTime: existingAppointment.endTime.toISOString(),
-      roomId: existingAppointment.roomId
-    });
+
 
     // Verificar si la cita está validada
     const hasValidatedServices = existingAppointment.services.some(
@@ -742,19 +727,11 @@ export async function PUT(request: NextRequest) {
         // startTime es timestamp completo ISO (ej: "2025-06-17T11:33:00.000Z")
         appointmentStartTime = new Date(startTime);
         appointmentEndTime = new Date(endTime);
-        console.log('🕐 [API PUT] Usando timestamps ISO directamente:', {
-          startTime: appointmentStartTime.toISOString(),
-          endTime: appointmentEndTime.toISOString()
-        });
+
       } else {
         // startTime es solo tiempo (ej: "11:33:00"), necesita combinarse con date
         appointmentStartTime = new Date(`${date}T${startTime}`);
         appointmentEndTime = new Date(`${date}T${endTime}`);
-        console.log('🕐 [API PUT] Construyendo timestamps desde date+time:', {
-          date,
-          startTime: appointmentStartTime.toISOString(),
-          endTime: appointmentEndTime.toISOString()
-        });
       }
     }
 
@@ -766,13 +743,7 @@ export async function PUT(request: NextRequest) {
         newDurationMinutes = Math.ceil((appointmentEndTime.getTime() - appointmentStartTime.getTime()) / (1000 * 60));
       }
 
-      console.log('📊 [API PUT] Valores a actualizar:', {
-        startTime: appointmentStartTime?.toISOString(),
-        endTime: appointmentEndTime?.toISOString(),
-        durationMinutes: newDurationMinutes,
-        roomId,
-        clinicId
-      });
+
 
       // ✅ CORREGIDO: Solo crear extensión para cambios MANUALES de duración
       // NO para cambios naturales por añadir/quitar servicios
@@ -805,16 +776,6 @@ export async function PUT(request: NextRequest) {
 
       // ✅ SOLO crear registro de extensión si es cambio MANUAL
       if (shouldCreateExtension) {
-        console.log('📈 [API PUT] Detectada extensión MANUAL de cita:', {
-          citaId: id,
-          duracionAnterior: actualPreviousDuration,
-          duracionNueva: actualNewDuration,
-          minutosExtendidos: actualExtendedMinutes,
-          origen: extensionReason,
-          isManualDurationChange: body.isManualDurationChange,
-          userModifiedServices: body.userModifiedServices
-        });
-
         // Crear registro de extensión
         await tx.appointmentExtension.create({
           data: {
@@ -826,11 +787,7 @@ export async function PUT(request: NextRequest) {
             reason: extensionReason
           }
         });
-
-        console.log('✅ [API PUT] Registro de extensión creado');
-      } else {
-        console.log('✅ [API PUT] NO se crea extensión - cambio natural por servicios o sin cambio manual');
-      }
+              }
 
       // Actualizar datos básicos de la cita
       const updated = await tx.appointment.update({
@@ -850,19 +807,12 @@ export async function PUT(request: NextRequest) {
         },
       });
 
-      console.log('✅ [API PUT] Cita actualizada en BD:', {
-        id: updated.id,
-        startTime: updated.startTime.toISOString(),
-        endTime: updated.endTime.toISOString(),
-        roomId: updated.roomId,
-        updatedAt: updated.updatedAt.toISOString()
-      });
+
 
       // Si se proporcionan servicios, actualizar la relación
       if (services && Array.isArray(services)) {
-        console.log('🔧 [API PUT] Actualizando servicios:', services);
         
-        // Eliminar servicios existentes que no estén validados
+        // ✅ LÓGICA ORIGINAL SIMPLE: Eliminar servicios no validados y recrear
         await tx.appointmentService.deleteMany({
           where: {
             appointmentId: id,
@@ -872,17 +822,15 @@ export async function PUT(request: NextRequest) {
 
         // Crear nuevos servicios
         if (services.length > 0) {
-          console.log('➕ [API PUT] Creando nuevos servicios para cita:', id);
           await tx.appointmentService.createMany({
             data: services.map((serviceId: string) => ({
               appointmentId: id,
               serviceId: serviceId,
-              status: 'SCHEDULED'
+              status: 'SCHEDULED' as const
             }))
           });
           
           // ✅ CRÍTICO: Recalcular estimatedDurationMinutes cuando cambian los servicios
-          console.log('🔄 [API PUT] Recalculando estimatedDurationMinutes...');
           const servicesFromDb = await tx.service.findMany({
             where: { id: { in: services } }
           });
@@ -891,12 +839,6 @@ export async function PUT(request: NextRequest) {
             sum + (service.durationMinutes || 0), 0
           );
           
-          console.log('📊 [API PUT] Nueva duración estimada calculada:', {
-            servicios: servicesFromDb.map(s => ({ name: s.name, duration: s.durationMinutes })),
-            duracionEstimadaAnterior: existingAppointment.estimatedDurationMinutes,
-            duracionEstimadaNueva: newEstimatedDuration
-          });
-          
           // Actualizar estimatedDurationMinutes en la cita
           await tx.appointment.update({
             where: { id: id },
@@ -904,39 +846,24 @@ export async function PUT(request: NextRequest) {
               estimatedDurationMinutes: newEstimatedDuration
             }
           });
-          
-          console.log('✅ [API PUT] estimatedDurationMinutes actualizado a:', newEstimatedDuration);
         }
       }
 
       // Si se proporcionan etiquetas, actualizar la relación
       if (tags !== undefined && Array.isArray(tags)) {
-        console.log('🏷️ [API PUT] Actualizando etiquetas:', tags);
-        
-        try {
-          // Eliminar todas las etiquetas existentes
-          await tx.appointmentTag.deleteMany({
-            where: { appointmentId: id }
-          });
+        // Eliminar todas las etiquetas existentes
+        await tx.appointmentTag.deleteMany({
+          where: { appointmentId: id }
+        });
 
-          // Crear nuevas relaciones de etiquetas
-          if (tags.length > 0) {
-            console.log('➕ [API PUT] Creando nuevas etiquetas para cita:', id);
-            console.log('📝 [API PUT] Datos de etiquetas a crear:', tags.map((tagId: string) => ({
+        // Crear nuevas relaciones de etiquetas
+        if (tags.length > 0) {
+          await tx.appointmentTag.createMany({
+            data: tags.map((tagId: string) => ({
               appointmentId: id,
               tagId: tagId
-            })));
-            
-            await tx.appointmentTag.createMany({
-              data: tags.map((tagId: string) => ({
-                appointmentId: id,
-                tagId: tagId
-              }))
-            });
-          }
-        } catch (tagError) {
-          console.error('❌ [API PUT] Error al actualizar etiquetas:', tagError);
-          throw tagError;
+            }))
+          });
         }
       }
 
@@ -984,7 +911,6 @@ export async function PUT(request: NextRequest) {
       tags: completeAppointment?.tags?.map(t => t.tagId) || [],
     };
 
-    console.log('🔍 [API PUT] Final response tags:', responseData.tags);
     return NextResponse.json(responseData, { status: 200 });
   } catch (error) {
     console.error('Error updating appointment:', error);

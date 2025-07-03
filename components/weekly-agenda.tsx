@@ -148,6 +148,7 @@ import { useGranularity } from "@/lib/drag-drop/granularity-context"
 import { DragTimeProvider, useDragTime } from "@/lib/drag-drop/drag-time-context"
 import { useMoveAppointment } from "@/contexts/move-appointment-context"
 import { MoveAppointmentProvider } from "@/contexts/move-appointment-context"
+import { useSmartPlugsFloatingMenu } from "@/hooks/use-smart-plugs-floating-menu"
 
 // Función para generar slots de tiempo
 function getTimeSlots(startTime: string, endTime: string, interval = 15): string[] {
@@ -218,6 +219,9 @@ function WeeklyAgendaContent({
   const { t } = useTranslation()
   const { activeClinic, activeClinicCabins, isLoading: isLoadingClinic, isLoadingCabinsContext, isInitialized } = useClinic()
   const { cabinOverrides, loadingOverrides, fetchOverridesByDateRange } = useScheduleBlocks()
+  
+  // 🔌 DATOS EN TIEMPO REAL DE ENCHUFES INTELIGENTES
+  const smartPlugsData = useSmartPlugsFloatingMenu()
   
   // Precarga de datos para el modal de citas - ejecutar siempre para tenerlos en caché
   const { data: allServicesData = [] } = useServicesQuery({ enabled: true })
@@ -1107,6 +1111,7 @@ function WeeklyAgendaContent({
             service: savedAppointment.services.map((s: any) => s.service.name).join(", "),
             date: startTime, // Date object
             roomId: savedAppointment.roomId, // SIEMPRE usar roomId para cabinas
+            clinicId: savedAppointment.clinicId || activeClinic?.id || '', // 🆕 AÑADIR clinicId
             startTime: format(startTime, 'HH:mm'), // Formato HH:mm esperado por la agenda
             duration: Math.ceil((endTime.getTime() - startTime.getTime()) / (1000 * 60)), // Convertir string ISO a Date antes de calcular
             color: appointmentColor,
@@ -1141,7 +1146,8 @@ function WeeklyAgendaContent({
               date: newAppointment.date,
               duration: newAppointment.duration,
               roomId: newAppointment.roomId,
-              color: newAppointment.color || '#8B5CF6',
+              clinicId: newAppointment.clinicId || activeClinic?.id || '', // 🆕 AÑADIR clinicId
+              color: newAppointment.color || (activeCabins.find(c => c.id === newAppointment.roomId)?.color) || '#8B5CF6',
               phone: newAppointment.phone || '',
               services: newAppointment.services || [],
               tags: newAppointment.tags || [],
@@ -2311,8 +2317,13 @@ function WeeklyAgendaContent({
                               onMoveAppointment={handleMoveAppointment}
                               onDeleteAppointment={handleDeleteAppointment}
                               onTimeAdjust={handleTimeAdjust}
+                              onStartAppointment={(appointmentId: string) => {
+                                console.log('[WeeklyAgenda] 🚀 onStartAppointment llamado:', appointmentId);
+                                // TODO: Implementar lógica de inicio de cita si es necesario
+                              }}
                               onClientNameClick={handleClientNameClick}
                               updateDragDirection={updateDragDirection}
+                              smartPlugsData={smartPlugsData}
                             />
                           );
                           // ***** FIN INTEGRACIÓN EN REND *****
@@ -2968,6 +2979,7 @@ function WeeklyAgendaContent({
                     service: optimisticServices.map((s: any) => s.service?.name).filter(Boolean).join(", ") || realServicesData.map((s: any) => s.name).join(", ") || 'Servicios seleccionados',
                     date: startDateTime,
                     roomId: data.roomId,
+                    clinicId: activeClinic?.id || '', // 🆕 AÑADIR clinicId
                     startTime: format(startDateTime, 'HH:mm'),
                     endTime: format(endDateTime, 'HH:mm'), // ✅ OBLIGATORIA para WeeklyAgendaAppointment
                     duration: data.durationMinutes || Math.ceil((endDateTime.getTime() - startDateTime.getTime()) / (1000 * 60)), // ✅ USAR DURACIÓN DEL MODAL DIRECTAMENTE
@@ -3286,6 +3298,7 @@ function WeeklyAgendaContent({
                     service: savedAppointment.services?.map((s: any) => s.service?.name).filter(Boolean).join(", ") || 'Sin servicio',
                     date: startTime,
                     roomId: savedAppointment.roomId,
+                    clinicId: savedAppointment.clinicId || activeClinic?.id || '', // 🆕 AÑADIR clinicId
                     startTime: format(startTime, 'HH:mm'),
                     endTime: format(endTime, 'HH:mm'), // ✅ OBLIGATORIA para WeeklyAgendaAppointment
                     duration: savedAppointment.durationMinutes || Math.ceil((endTime.getTime() - startTime.getTime()) / (1000 * 60)), // ✅ USAR DIRECTAMENTE LA DURACIÓN DE LA API
@@ -3416,3 +3429,4 @@ const convertBlocksToWeekSchedule = (
     return weekSchedule;
 };
 // -------------------------------------
+

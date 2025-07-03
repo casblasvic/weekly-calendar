@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import io, { Socket } from 'socket.io-client';
+import { clientLogger } from '@/lib/utils/client-logger';
 
 interface DeviceUpdate {
   deviceId: string;
@@ -83,6 +84,11 @@ const useSocket = (systemId?: string): SocketHook => {
       socket.emit('join-system', systemId);
     });
 
+    // 🚨 DEBUG TEMPORAL: Escuchar TODOS los eventos
+    socket.onAny((eventName, ...args) => {
+      console.log('🚨 [DEBUG] Evento recibido:', eventName, args);
+    });
+
     socket.on('disconnect', (reason) => {
       console.log('🔌 Socket.io desconectado. Razón:', reason);
       setIsConnected(false);
@@ -98,16 +104,39 @@ const useSocket = (systemId?: string): SocketHook => {
     });
 
     socket.on('device-update', (update: DeviceUpdate) => {
-      console.log('📱 Actualización de dispositivo recibida:', update);
+      console.log('🚨 [DEBUG] device-update recibido:', update);
+      clientLogger.verbose('📱 Actualización de dispositivo recibida:', update);
       setLastUpdate(update);
       
       // Notificar a todos los suscriptores
-      console.log(`📢 Notificando a ${subscribersRef.current.size} suscriptores`);
+      clientLogger.verbose(`📢 Notificando a ${subscribersRef.current.size} suscriptores`);
       subscribersRef.current.forEach(callback => {
         try {
           callback(update);
         } catch (error) {
           console.error('Error en callback de suscriptor:', error);
+        }
+      });
+    });
+
+    // 🆕 ESCUCHAR CAMBIOS OFFLINE/ONLINE DEL SISTEMA CENTRALIZADO
+    socket.on('device-offline-status', (update: DeviceUpdate) => {
+      console.log('🚨 [DEBUG] Estado offline recibido en useSocket:', {
+        deviceId: update.deviceId,
+        online: update.online,
+        relayOn: update.relayOn,
+        timestamp: update.timestamp,
+        subscribersCount: subscribersRef.current.size
+      });
+      clientLogger.verbose('📡 Estado offline recibido:', update);
+      setLastUpdate(update);
+      
+      // Notificar a suscriptores (mismo callback, diferentes datos)
+      subscribersRef.current.forEach(callback => {
+        try {
+          callback(update);
+        } catch (error) {
+          console.error('Error en callback offline de suscriptor:', error);
         }
       });
     });

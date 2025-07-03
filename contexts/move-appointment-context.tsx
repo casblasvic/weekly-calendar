@@ -18,6 +18,7 @@ interface Appointment {
   date: Date
   duration: number
   roomId: string
+  clinicId: string
   color: string
   phone?: string
   services?: any[]
