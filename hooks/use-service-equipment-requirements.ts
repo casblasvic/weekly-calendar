@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import { useClinic } from '@/contexts/clinic-context'
-import useSocket from '@/hooks/useSocket'
 import { clientLogger } from '@/lib/utils/client-logger'
+import { deviceOfflineManager } from '@/lib/shelly/device-offline-manager'
 
 // 🎯 CACHE GLOBAL - Una sola carga por clínica
 const serviceEquipmentCache = new Map<string, Record<string, string[]>>()
@@ -53,6 +53,9 @@ interface ServiceEquipmentRequirementsData {
   // 🎮 FUNCIÓN DE CONTROL
   onDeviceToggle: (deviceId: string, turnOn: boolean) => Promise<void>
   lastUpdate: Date | null
+  
+  // 🔄 FUNCIÓN DE REFETCH
+  refetch: () => Promise<void>
 }
 
 interface UseServiceEquipmentRequirementsProps {
@@ -75,8 +78,8 @@ export function useServiceEquipmentRequirements({
   const [requiredEquipmentIds, setRequiredEquipmentIds] = useState<string[]>([])
   const [currentAppointmentUsages, setCurrentAppointmentUsages] = useState<string[]>([])
   
-  // ✅ SOCKET - Exactamente igual que el menú flotante
-  const { isConnected, subscribe } = useSocket(systemId)
+  // ✅ ESTADO CONEXIÓN desde DeviceOfflineManager
+  const [isConnected, setIsConnected] = useState(false)
 
   // 🔍 OBTENER EQUIPOS REQUERIDOS PARA LOS SERVICIOS DE LA CITA
   const fetchRequiredEquipment = useCallback(async () => {
@@ -128,102 +131,193 @@ export function useServiceEquipmentRequirements({
     }
   }, [systemId, appointmentId, enabled, activeClinic?.id, fetchRequiredEquipment])
 
-  // 📡 WEBSOCKET TIEMPO REAL - EXACTAMENTE IGUAL que el menú flotante
+  // 📡 WEBSOCKET TIEMPO REAL - Conectar al DeviceOfflineManager
   useEffect(() => {
-    if (!isConnected || !enabled || allDevices.length === 0) {
+    if (!enabled || allDevices.length === 0) {
       return
     }
 
-    clientLogger.verbose('📡 [ServiceEquipment] WebSocket activo - configurando listener')
+    clientLogger.verbose('📡 [ServiceEquipment] Conectando al DeviceOfflineManager...')
     
-    const unsubscribe = subscribe((update) => {
+    // 🔄 CALLBACK PARA UPDATES EN TIEMPO REAL
+    const handleDeviceUpdates = (updates: any[]) => {
+      clientLogger.debug('🔍 [ServiceEquipment] Updates recibidos:', updates.length)
       
-      clientLogger.debug('🔍 [ServiceEquipment] Mensaje WebSocket recibido:', {
-        deviceId: update.deviceId,
-        online: update.online,
-        relayOn: update.relayOn,
-        currentPower: update.currentPower
-      })
-      
-      // Actualizar dispositivo en la lista
-      setAllDevices(prev => {
-        const deviceIndex = prev.findIndex(device => 
-          device.id === update.deviceId || device.deviceId === update.deviceId
-        )
+      updates.forEach(update => {
+        const { deviceId, online, deviceData, reason, type } = update
         
-        if (deviceIndex === -1) {
-          clientLogger.verbose('⚠️ [ServiceEquipment] Dispositivo no encontrado:', update.deviceId)
-          return prev
+        // 🎯 MANEJAR EVENTOS ESPECÍFICOS DE ASIGNACIÓN
+        if (type === 'device-assigned' && update.appointmentId === appointmentId) {
+          clientLogger.verbose('🎯 [ServiceEquipment] Dispositivo asignado a esta cita:', {
+            deviceId: update.deviceId,
+            appointmentId: update.appointmentId,
+            usageId: update.usageId
+          })
+          
+          // Actualizar currentAppointmentUsages
+          setCurrentAppointmentUsages(prev => {
+            if (!prev.includes(update.deviceId)) {
+              return [...prev, update.deviceId]
+            }
+            return prev
+          })
+          
+          // Actualizar estado del dispositivo inmediatamente
+          setAllDevices(prev => prev.map(device => {
+            if (device.deviceId === update.deviceId) {
+              return {
+                ...device,
+                status: 'in_use_this_appointment' as const
+              }
+            }
+            return device
+          }))
+          
+          setLastUpdate(new Date())
+          return
         }
         
-        const oldDevice = prev[deviceIndex]
-        
-        // Verificar cambios reales
-        const hasChanges = (
-          Boolean(oldDevice.online) !== Boolean(update.online) ||
-          Boolean(oldDevice.relayOn) !== Boolean(update.relayOn) ||
-          Number(oldDevice.currentPower || 0) !== Number(update.currentPower || 0)
-        )
-        
-        if (!hasChanges) {
-          return prev
+        // 🎯 MANEJAR CONTROL COMPLETADO
+        if (type === 'device-control-completed' && update.appointmentId === appointmentId) {
+          clientLogger.verbose('🎯 [ServiceEquipment] Control completado para esta cita:', {
+            deviceId: update.deviceId,
+            deviceTurnedOn: update.deviceTurnedOn
+          })
+          
+          // Actualizar estado del dispositivo con el nuevo estado del relay
+          setAllDevices(prev => prev.map(device => {
+            if (device.deviceId === update.deviceId) {
+              return {
+                ...device,
+                relayOn: update.deviceTurnedOn,
+                status: 'in_use_this_appointment' as const
+              }
+            }
+            return device
+          }))
+          
+          setLastUpdate(new Date())
+          return
         }
         
-        // 🎯 CALCULAR NUEVO STATUS BASADO EN ESTADO ACTUAL
-        let newStatus: ServiceEquipmentDevice['status'] = 'offline'
+        if (deviceId === 'ALL') {
+          // Update masivo para todos los dispositivos
+          setAllDevices(prev => prev.map(device => ({
+            ...device,
+            online,
+            relayOn: online ? device.relayOn : false,
+            currentPower: online ? device.currentPower : null,
+            status: online ? device.status : 'offline'
+          })))
+          return
+        }
         
-        if (update.online) {
-          if (currentAppointmentUsages.includes(update.deviceId)) {
-            newStatus = 'in_use_this_appointment'
-          } else if (update.relayOn) {
-            newStatus = 'occupied'
-          } else {
-            newStatus = 'available'
+        // Update individual por dispositivo
+        setAllDevices(prev => {
+          const deviceIndex = prev.findIndex(device => 
+            device.id === deviceId || device.deviceId === deviceId
+          )
+          
+          if (deviceIndex === -1) {
+            clientLogger.verbose('⚠️ [ServiceEquipment] Dispositivo no encontrado:', deviceId)
+            return prev
           }
-        }
-        
-        // Actualizar dispositivo
-        const updated = [...prev]
-        updated[deviceIndex] = { 
-          ...oldDevice, 
-          online: update.online,
-          relayOn: update.relayOn,
-          currentPower: update.currentPower,
-          voltage: update.voltage,
-          temperature: update.temperature,
-          status: newStatus,
-          lastSeenAt: new Date(update.timestamp)
-        }
-        
-        clientLogger.verbose(`✅ [ServiceEquipment] Dispositivo actualizado: ${oldDevice.name} → ${newStatus.toUpperCase()}`)
-        
-        return updated
+          
+          const oldDevice = prev[deviceIndex]
+          
+          // 🎯 APLICAR LÓGICA DE VALIDACIÓN igual que otros componentes
+          const hasValidConsumption = deviceData?.hasValidConsumption ?? false
+          const currentPower = deviceData?.currentPower ?? null
+          
+          // 🎯 CALCULAR NUEVO STATUS con lógica de dos niveles
+          let newStatus: ServiceEquipmentDevice['status'] = 'offline'
+          
+          if (online) {
+            if (currentAppointmentUsages.includes(deviceId)) {
+              newStatus = 'in_use_this_appointment'
+            } else if (deviceData?.relayOn && hasValidConsumption && currentPower && currentPower > 0.1) {
+              newStatus = 'occupied'
+            } else {
+              newStatus = 'available'
+            }
+          }
+          
+          // Verificar cambios reales
+          const hasChanges = (
+            Boolean(oldDevice.online) !== Boolean(online) ||
+            Boolean(oldDevice.relayOn) !== Boolean(deviceData?.relayOn) ||
+            Number(oldDevice.currentPower || 0) !== Number(currentPower || 0) ||
+            oldDevice.status !== newStatus
+          )
+          
+          if (!hasChanges) {
+            return prev
+          }
+          
+          // Actualizar dispositivo
+          const updated = [...prev]
+          updated[deviceIndex] = { 
+            ...oldDevice, 
+            online,
+            relayOn: deviceData?.relayOn ?? false,
+            currentPower,
+            voltage: deviceData?.voltage ?? oldDevice.voltage,
+            temperature: deviceData?.temperature ?? oldDevice.temperature,
+            status: newStatus,
+            lastSeenAt: new Date()
+          }
+          
+          clientLogger.verbose(`✅ [ServiceEquipment] Dispositivo actualizado: ${oldDevice.name} → ${newStatus.toUpperCase()}`)
+          
+          return updated
+        })
       })
       
       setLastUpdate(new Date())
-    })
+    }
+
+    // 🔄 CALLBACK PARA ESTADO DE CONEXIÓN
+    const handleConnectionChange = (connected: boolean) => {
+      clientLogger.verbose(`🔌 [ServiceEquipment] Estado conexión: ${connected ? 'CONECTADO' : 'DESCONECTADO'}`)
+      setIsConnected(connected)
+      
+      // Si se desconecta, marcar todos como offline
+      if (!connected) {
+        setAllDevices(prev => prev.map(device => ({ 
+          ...device, 
+          online: false, 
+          relayOn: false, 
+          currentPower: null,
+          status: 'offline' as const
+        })))
+      }
+    }
+
+    // 🎯 SUSCRIBIRSE AL DEVICEOFFLINEMANAGER
+    const unsubscribe = deviceOfflineManager.subscribe(handleDeviceUpdates)
     
-    clientLogger.verbose('✅ [ServiceEquipment] Listener WebSocket configurado')
+    // Estado inicial de conexión
+    setIsConnected(deviceOfflineManager.getStats().isWebSocketConnected)
+    
+    // Monitorear cambios de conexión
+    const connectionCheckInterval = setInterval(() => {
+      const currentConnection = deviceOfflineManager.getStats().isWebSocketConnected
+      setIsConnected(prev => {
+        if (prev !== currentConnection) {
+          clientLogger.verbose(`🔌 [ServiceEquipment] Estado conexión cambió: ${currentConnection ? 'CONECTADO' : 'DESCONECTADO'}`)
+        }
+        return currentConnection
+      })
+    }, 1000) // Verificar cada segundo
+    
+    clientLogger.verbose('✅ [ServiceEquipment] Suscrito al DeviceOfflineManager')
     
     return () => {
       unsubscribe()
+      clearInterval(connectionCheckInterval)
+      clientLogger.verbose('🔄 [ServiceEquipment] Desuscrito del DeviceOfflineManager')
     }
-  }, [subscribe, isConnected, enabled, allDevices.length, currentAppointmentUsages])
-
-  // 🔴 LÓGICA SIMPLE: WebSocket desconectado = todos offline
-  useEffect(() => {
-    if (!isConnected && allDevices.length > 0) {
-      clientLogger.verbose('🔴 [ServiceEquipment] WebSocket desconectado - marcando todos como offline')
-      
-      setAllDevices(prev => prev.map(device => ({ 
-        ...device, 
-        online: false, 
-        relayOn: false, 
-        currentPower: 0,
-        status: 'offline' as const
-      })))
-    }
-  }, [isConnected, allDevices.length])
+  }, [enabled, allDevices.length, currentAppointmentUsages])
 
   // 🎯 DISPOSITIVOS DISPONIBLES (ya filtrados por servicios de la cita)
   const availableDevices = useMemo(() => {
@@ -251,7 +345,7 @@ export function useServiceEquipmentRequirements({
     return { total, available, occupied, offline, inUseThisAppointment }
   }, [availableDevices])
 
-  // 🎮 FUNCIÓN DE CONTROL - EXACTAMENTE IGUAL que el menú flotante
+  // 🎮 FUNCIÓN DE CONTROL - EXACTAMENTE IGUAL que otros componentes
   const handleDeviceToggle = useCallback(async (deviceId: string, turnOn: boolean) => {
     try {
       clientLogger.verbose(`🎮 [ServiceEquipment] Controlando dispositivo: ${deviceId} → ${turnOn ? 'ON' : 'OFF'}`)
@@ -294,6 +388,7 @@ export function useServiceEquipmentRequirements({
     isConnected,
     isLoading,
     onDeviceToggle: handleDeviceToggle,
-    lastUpdate
+    lastUpdate,
+    refetch: fetchRequiredEquipment
   }
 } 

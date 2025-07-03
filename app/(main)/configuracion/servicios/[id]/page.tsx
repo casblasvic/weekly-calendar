@@ -125,7 +125,8 @@ export default function EditarServicioPage() {
                 code: serviceData.code || '',
                 categoryId: serviceData.categoryId || '',
                 defaultVatId: serviceData.vatTypeId,
-                duration: serviceData.durationMinutes,
+                duration: (serviceData as any).durationMinutes, // Usar el campo existente
+                treatmentDuration: (serviceData as any).treatmentDurationMinutes || 0,
                 color: serviceData.colorCode,
                 basePrice: serviceData.price,
                 
@@ -170,7 +171,8 @@ export default function EditarServicioPage() {
             name: data.name,
             code: data.code || null,
             description: null, // ServiceFormData no tiene description actualmente
-            durationMinutes: Number(data.duration) || 1, // ✅ duration → durationMinutes
+            durationMinutes: Number(data.duration) || 1, // ✅ duration → durationMinutes  
+            treatmentDurationMinutes: Number(data.treatmentDuration) || 0, // ✅ NUEVO: treatmentDuration → treatmentDurationMinutes
             price: data.basePrice !== null ? Number(data.basePrice) : null, // ✅ basePrice → price
             colorCode: data.color || null, // ✅ color → colorCode
             categoryId: data.categoryId || null,

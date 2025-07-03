@@ -17,6 +17,7 @@ interface DeviceControlButtonProps {
   disabled?: boolean;
   size?: 'sm' | 'default' | 'lg';
   showMetrics?: boolean;
+  deviceStatus?: 'available' | 'occupied' | 'offline' | 'in_use_this_appointment';
 }
 
 export function DeviceControlButton({ 
@@ -24,7 +25,8 @@ export function DeviceControlButton({
   onToggle, 
   disabled = false,
   size = 'sm',
-  showMetrics = true
+  showMetrics = true,
+  deviceStatus = 'available'
 }: DeviceControlButtonProps) {
   const [isLoading, setIsLoading] = useState(false);
 
@@ -61,7 +63,7 @@ export function DeviceControlButton({
     return `${temp.toFixed(1)}°C`;
   };
 
-  // Determinar color y estado del botón
+  // 🎨 NUEVA LÓGICA DE COLORES CORREGIDA
   const getButtonState = () => {
     if (!device.online) {
       return {
@@ -74,24 +76,62 @@ export function DeviceControlButton({
       };
     }
     
-    if (device.relayOn) {
+    // 🔴 ROJO: Ocupado por OTRA CITA (no disponible para esta cita)
+    if (deviceStatus === 'occupied') {
+      return {
+        bgColor: 'bg-red-500',
+        borderColor: 'border-red-400',
+        iconColor: 'text-white',
+        hoverColor: 'hover:bg-red-500',
+        disabled: true,
+        title: 'En uso por otra cita'
+      };
+    }
+    
+    // 🟢 VERDE: En uso en ESTA CITA + consumo real
+    if (deviceStatus === 'in_use_this_appointment' && device.relayOn && device.currentPower && device.currentPower > 0.1) {
       return {
         bgColor: 'bg-green-500',
         borderColor: 'border-green-400',
         iconColor: 'text-white',
         hoverColor: 'hover:bg-green-600',
         disabled: false,
-        title: 'Apagar dispositivo'
+        title: 'En uso - apagar dispositivo'
       };
     }
     
+    // 🟠 NARANJA: Asignado a ESTA CITA pero sin consumo real
+    if (deviceStatus === 'in_use_this_appointment' && device.relayOn) {
+      return {
+        bgColor: 'bg-orange-500',
+        borderColor: 'border-orange-400',
+        iconColor: 'text-white',
+        hoverColor: 'hover:bg-orange-600',
+        disabled: false,
+        title: 'Asignado sin consumo - apagar dispositivo'
+      };
+    }
+    
+    // 🔵 AZUL: Disponible para asignar
+    if (deviceStatus === 'available') {
+      return {
+        bgColor: device.relayOn ? 'bg-blue-600' : 'bg-blue-500',
+        borderColor: device.relayOn ? 'border-blue-500' : 'border-blue-400',
+        iconColor: 'text-white',
+        hoverColor: device.relayOn ? 'hover:bg-blue-700' : 'hover:bg-blue-600',
+        disabled: false,
+        title: device.relayOn ? 'Disponible (encendido) - apagar' : 'Disponible - encender'
+      };
+    }
+    
+    // ⚫ GRIS: Estado por defecto (offline)
     return {
-      bgColor: 'bg-blue-500',
-      borderColor: 'border-blue-400',
+      bgColor: 'bg-gray-500',
+      borderColor: 'border-gray-400',
       iconColor: 'text-white',
-      hoverColor: 'hover:bg-blue-600',
+      hoverColor: 'hover:bg-gray-600',
       disabled: false,
-      title: 'Encender dispositivo'
+      title: device.relayOn ? 'Apagar dispositivo' : 'Encender dispositivo'
     };
   };
 

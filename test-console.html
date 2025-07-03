@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Console</title>
+</head>
+<body>
+    <h1>Test de Consola</h1>
+    <button onclick="testConsole()">Hacer clic para probar consola</button>
+    
+    <script>
+        console.log('🔍 [TEST] Página cargada - la consola funciona');
+        
+        function testConsole() {
+            console.log('🔍 [TEST] Botón clickeado - la consola funciona');
+            alert('Check the console for logs');
+        }
+        
+        // Test automático cada 3 segundos
+        setInterval(() => {
+            console.log('🔍 [TEST] Log automático cada 3s - la consola funciona');
+        }, 3000);
+    </script>
+</body>
+</html> 

@@ -42,6 +42,9 @@ export function AppointmentTimerIntegration({
   width = 'medium',
   className
 }: AppointmentTimerIntegrationProps) {
+  
+  // 🔍 LOG BÁSICO: Verificar si este componente se ejecuta
+  console.log('🔍 [APPOINTMENT TIMER INTEGRATION] Componente montado/actualizado');
   const [showEquipmentSelector, setShowEquipmentSelector] = useState(false);
   const [availableEquipment, setAvailableEquipment] = useState<EquipmentAvailability[]>([]);
   const [isStarting, setIsStarting] = useState(false);

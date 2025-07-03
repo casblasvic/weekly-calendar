@@ -36,6 +36,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
+import { useIsShellyActive } from "@/hooks/use-shelly-integration";
 
 // Definir la estructura de datos esperada para el servicio
 export interface ServiceFormData {
@@ -44,7 +45,8 @@ export interface ServiceFormData {
     code: string;
     categoryId: string;
     defaultVatId: string | null; // IVA por defecto GLOBAL
-    duration: number;
+    duration: number; // Duración total de cita (appointmentDurationMinutes)
+    treatmentDuration?: number; // Duración real de tratamiento (treatmentDurationMinutes) - Solo si Shelly activo
     color?: string | null; // Color en agenda (podría ser string directo o ID)
     basePrice: number | null; // Precio base GLOBAL (IVA excluido?)
     equipmentId: string | null;
@@ -99,6 +101,8 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
     isSaving = false,
     formId = "service-form",
 }) => {
+    const isShellyActive = useIsShellyActive();
+    
     const [formData, setFormData] = useState<ServiceFormData>(() => {
         // Inicializar con datos o valores por defecto
         return initialData || {
@@ -107,6 +111,7 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
             categoryId: '',
             defaultVatId: null,
             duration: 30,
+            treatmentDuration: 0, // Por defecto 0
             color: null,
             basePrice: null,
             equipmentId: null,
@@ -232,14 +237,29 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
         }));
     };
 
+    const handleTreatmentDurationChange = (increment: number) => {
+        setFormData(prev => ({
+            ...prev,
+            treatmentDuration: Math.max(1, (prev.treatmentDuration || 0) + increment)
+        }));
+    };
+
     // --- Validación --- 
     const validateForm = (): string[] => {
         const missing: string[] = [];
         if (!formData.name?.trim()) missing.push("Nombre del Servicio");
         if (!formData.code?.trim()) missing.push("Código");
         if (!formData.categoryId) missing.push("Familia");
-        if (formData.duration === undefined || formData.duration === null || formData.duration <= 0) missing.push("Duración (minutos)");
+        if (formData.duration === undefined || formData.duration === null || formData.duration <= 0) missing.push("Duración Total Cita (minutos)");
         if (formData.defaultVatId === undefined) missing.push("Tipo de IVA"); // Puede ser null, pero debe estar definido
+        
+        // Validar duración de tratamiento si Shelly está activo y hay equipos requeridos
+        if (isShellyActive && formData.equipmentId) {
+            if (formData.treatmentDuration === undefined || formData.treatmentDuration === null || formData.treatmentDuration <= 0) {
+                missing.push("Duración Tratamiento (minutos)");
+            }
+        }
+        
         // Quitar validación de precio aquí, se hace antes de guardar
         // if (formData.basePrice === undefined) missing.push("Precio Venta"); // Puede ser null
         
@@ -286,6 +306,7 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
         const dataToSend: ServiceFormData = {
             ...formData,
             duration: Number(formData.duration) || 1,
+            treatmentDuration: formData.treatmentDuration ? Number(formData.treatmentDuration) : 0,
             basePrice: formData.basePrice !== null ? Number(formData.basePrice) : null,
             commissionValue: formData.commissionValue !== null ? Number(formData.commissionValue) : null,
             // Asegurar booleanos
@@ -440,7 +461,7 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
                                 <div className="space-y-1.5">
-                                    <Label htmlFor="duration">Duración (minutos) <span className="text-red-500">*</span></Label>
+                                    <Label htmlFor="duration">Duración Total Cita (minutos) <span className="text-red-500">*</span></Label>
                                     <div className="flex items-center gap-2">
                                         <Button type="button" variant="outline" size="icon" className="h-9 w-9" onClick={() => handleDurationChange(-5)} disabled={isSaving || (formData.duration ?? 0) <= 1} aria-label="Disminuir duración">
                                             <Minus className="h-4 w-4" />
@@ -460,6 +481,63 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
                                     />
                                 </div>
                             </div>
+                            
+                            {/* Campo de Duración de Tratamiento - Solo visible si Shelly activo y hay equipos */}
+                            {isShellyActive && formData.equipmentId && (
+                                <div className="border-t pt-4">
+                                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                        <div className="flex items-center gap-2 mb-3">
+                                            <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                                            <Label className="text-sm font-medium text-blue-800">Control Inteligente de Equipos</Label>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label htmlFor="treatmentDuration" className="text-sm text-blue-700">
+                                                Duración Real de Tratamiento (minutos) <span className="text-red-500">*</span>
+                                            </Label>
+                                            <div className="flex items-center gap-2">
+                                                <Button 
+                                                    type="button" 
+                                                    variant="outline" 
+                                                    size="icon" 
+                                                    className="h-9 w-9 border-blue-300 hover:border-blue-400" 
+                                                    onClick={() => handleTreatmentDurationChange(-1)} 
+                                                    disabled={isSaving || (formData.treatmentDuration ?? 0) <= 1} 
+                                                    aria-label="Disminuir duración tratamiento"
+                                                >
+                                                    <Minus className="h-4 w-4" />
+                                                </Button>
+                                                <Input 
+                                                    id="treatmentDuration" 
+                                                    name="treatmentDuration" 
+                                                    type="text" 
+                                                    inputMode="numeric" 
+                                                    value={formData.treatmentDuration ?? ''} 
+                                                    onChange={handleNumericInputChange} 
+                                                    onBlur={handleNumericInputBlur} 
+                                                    className={cn("text-center w-16 border-blue-300 focus:border-blue-500 focus:ring-blue-500")} 
+                                                    disabled={isSaving} 
+                                                    min={1} 
+                                                    step={1} 
+                                                />
+                                                <Button 
+                                                    type="button" 
+                                                    variant="outline" 
+                                                    size="icon" 
+                                                    className="h-9 w-9 border-blue-300 hover:border-blue-400" 
+                                                    onClick={() => handleTreatmentDurationChange(1)} 
+                                                    disabled={isSaving} 
+                                                    aria-label="Aumentar duración tratamiento"
+                                                >
+                                                    <Plus className="h-4 w-4" />
+                                                </Button>
+                                            </div>
+                                            <p className="text-xs text-blue-600 mt-2">
+                                                Tiempo real de uso del equipo (sin incluir preparación del paciente)
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
                                 <div className="space-y-1.5">
                                     <Label>Equipo Requerido</Label>

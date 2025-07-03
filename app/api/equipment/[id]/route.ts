@@ -9,6 +9,9 @@ const updateEquipmentSchema = z.object({
   name: z.string().min(1, "El nombre es obligatorio.").optional(),
   description: z.string().optional().nullable(),
   modelNumber: z.string().optional().nullable(),
+  powerThreshold: z.string().optional().refine(val => !val || !isNaN(parseFloat(val)), {
+    message: "El umbral de potencia debe ser un número válido.",
+  }),
   purchaseDate: z.string().optional().nullable().refine(val => !val || !isNaN(Date.parse(val)), {
     message: "Formato de fecha de compra inválido.",
   }).transform(val => val ? new Date(val) : null),

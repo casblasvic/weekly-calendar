@@ -100,81 +100,10 @@ export async function POST(
             action as 'on' | 'off'
         );
 
-        // Actualizar estado en la base de datos
-        await prisma.smartPlugDevice.update({
-            where: { id: device.id },
-            data: {
-                relayOn: action === 'on',
-                updatedAt: new Date()
-            }
-        });
+        console.log(`📡 [CONTROL] Comando enviado via WebSocket - esperando confirmación real del dispositivo`);
 
-        // Registrar el uso del dispositivo si está asociado a una cita
-        if (body.appointmentId && device.equipmentId) {
-            // Buscar el Equipment con su Device asociado
-            const equipment = await prisma.equipment.findUnique({
-                where: { id: device.equipmentId },
-                include: { device: true }
-            });
-
-            if (equipment && equipment.device) {
-                if (action === 'on') {
-                    // Iniciar uso del dispositivo
-                    await prisma.appointmentDeviceUsage.create({
-                        data: {
-                            appointmentId: body.appointmentId,
-                            equipmentId: device.equipmentId,
-                            deviceId: equipment.device.id,
-                            systemId: session.user.systemId,
-                            startedByUserId: session.user.id,
-                            startedAt: new Date(),
-                            estimatedMinutes: body.estimatedMinutes || 60,
-                            deviceData: {
-                                action,
-                                smartPlugDeviceId: device.id,
-                                initialPower: device.currentPower || 0,
-                                initialEnergy: device.totalEnergy || 0
-                            }
-                        }
-                    });
-                } else {
-                    // Finalizar uso del dispositivo
-                    const usage = await prisma.appointmentDeviceUsage.findFirst({
-                        where: {
-                            appointmentId: body.appointmentId,
-                            equipmentId: device.equipmentId,
-                            endedAt: null
-                        },
-                        orderBy: {
-                            startedAt: 'desc'
-                        }
-                    });
-
-                    if (usage) {
-                        const actualMinutes = Math.round(
-                            (new Date().getTime() - usage.startedAt.getTime()) / 60000
-                        );
-                        
-                        await prisma.appointmentDeviceUsage.update({
-                            where: { id: usage.id },
-                            data: {
-                                endedAt: new Date(),
-                                actualMinutes,
-                                energyConsumption: device.currentPower 
-                                    ? (device.currentPower * actualMinutes) / 60000 // kWh
-                                    : null,
-                                deviceData: {
-                                    ...(usage.deviceData as any || {}),
-                                    finalPower: device.currentPower || 0,
-                                    finalEnergy: device.totalEnergy || 0,
-                                    action: 'off'
-                                }
-                            }
-                        });
-                    }
-                }
-            }
-        }
+        // ℹ️ NOTA: El registro de uso de dispositivos se maneja desde el endpoint de asignación
+        // (/api/appointments/[id]/assign-device) - este endpoint solo controla el dispositivo directamente
 
         return NextResponse.json({ 
             success: true,

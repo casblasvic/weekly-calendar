@@ -60,6 +60,9 @@ export function AppointmentEquipmentDropdown({
   appointmentId,
   smartPlugsData
 }: AppointmentEquipmentDropdownProps) {
+  
+  // 🔍 LOG BÁSICO: Verificar si este componente se ejecuta
+  console.log('🔍 [APPOINTMENT EQUIPMENT DROPDOWN] Componente montado/actualizado', { isVisible });
   const dropdownRef = useRef<HTMLDivElement>(null)
   const [isControlling, setIsControlling] = useState<string | null>(null)
   const [position, setPosition] = useState<{
@@ -181,9 +184,10 @@ export function AppointmentEquipmentDropdown({
     }
   }, [isControlling, smartPlugsData])
 
-  // ✅ HANDLER PARA SELECCIONAR EQUIPAMIENTO
+  // ✅ HANDLER PARA SELECCIONAR EQUIPAMIENTO  
   const handleSelectEquipment = useCallback((equipment: EquipmentItem) => {
     console.log('[EquipmentDropdown] 🎯 Equipamiento seleccionado:', equipment.name)
+    console.log('[EquipmentDropdown] 🔍 DEBUG - Equipment data:', equipment)
     onSelectEquipment(equipment.id)
     onClose()
   }, [onSelectEquipment, onClose])
@@ -196,6 +200,24 @@ export function AppointmentEquipmentDropdown({
   }, [onStartWithoutEquipment, onClose])
 
   if (!isVisible) return null
+
+  // 🔍 DEBUG: Verificar qué datos llegan al dropdown
+  console.log('🔍 [DROPDOWN DEBUG] Renderizando dropdown:', {
+    appointmentId,
+    availableEquipmentCount: availableEquipment?.length || 0,
+    smartPlugsConnected: smartPlugsData?.isConnected || false,
+    availableEquipment: availableEquipment?.map(eq => ({
+      id: eq.id,
+      name: eq.name,
+      isAvailable: eq.isAvailable,
+      smartPlugDevice: eq.smartPlugDevice ? {
+        id: eq.smartPlugDevice.id,
+        name: eq.smartPlugDevice.name,
+        online: eq.smartPlugDevice.online,
+        relayOn: eq.smartPlugDevice.relayOn
+      } : null
+    }))
+  });
 
   return createPortal(
     <div
@@ -270,7 +292,12 @@ export function AppointmentEquipmentDropdown({
                   ? "hover:bg-gray-50 cursor-pointer" 
                   : "bg-gray-50 cursor-not-allowed opacity-60"
               )}
-              onClick={() => isAvailableForNewAppointment && handleSelectEquipment(equipment)}
+              onClick={() => {
+                console.log('🔍 [DROPDOWN CLICK] Equipment clicked:', equipment.name, { isAvailableForNewAppointment });
+                if (isAvailableForNewAppointment) {
+                  handleSelectEquipment(equipment);
+                }
+              }}
               title={
                 !isAvailableForNewAppointment 
                   ? isOn 

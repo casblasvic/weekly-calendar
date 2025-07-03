@@ -787,7 +787,7 @@ export async function PUT(request: NextRequest) {
             reason: extensionReason
           }
         });
-              }
+      }
 
       // Actualizar datos básicos de la cita
       const updated = await tx.appointment.update({
@@ -851,19 +851,19 @@ export async function PUT(request: NextRequest) {
 
       // Si se proporcionan etiquetas, actualizar la relación
       if (tags !== undefined && Array.isArray(tags)) {
-        // Eliminar todas las etiquetas existentes
-        await tx.appointmentTag.deleteMany({
-          where: { appointmentId: id }
-        });
-
-        // Crear nuevas relaciones de etiquetas
-        if (tags.length > 0) {
-          await tx.appointmentTag.createMany({
-            data: tags.map((tagId: string) => ({
-              appointmentId: id,
-              tagId: tagId
-            }))
+          // Eliminar todas las etiquetas existentes
+          await tx.appointmentTag.deleteMany({
+            where: { appointmentId: id }
           });
+
+          // Crear nuevas relaciones de etiquetas
+          if (tags.length > 0) {
+            await tx.appointmentTag.createMany({
+              data: tags.map((tagId: string) => ({
+                appointmentId: id,
+                tagId: tagId
+              }))
+            });
         }
       }
 

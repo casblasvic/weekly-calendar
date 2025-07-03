@@ -277,13 +277,13 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
         if (update.deviceId === 'ALL') {
           // Cambio masivo - todos los dispositivos
           clientLogger.verbose(`🌐 [FloatingMenu] Cambio masivo: todos ${update.online ? 'ONLINE' : 'OFFLINE'} (${update.reason})`);
-          
-          setAllDevices(prev => prev.map(device => ({
-            ...device,
+      
+      setAllDevices(prev => prev.map(device => ({ 
+        ...device, 
             online: update.online,
             relayOn: update.online ? device.relayOn : false,
             currentPower: update.online ? device.currentPower : 0
-          })));
+      })));
           
         } else {
           // Cambio específico de dispositivo
@@ -375,8 +375,8 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
       const hasValidConsumption = d.currentPower !== null && d.currentPower !== undefined;
       if (!hasValidConsumption) return false;
       
-      // Usar powerThreshold específico del equipment o default 10.0W
-      const threshold = d.equipmentClinicAssignment?.equipment?.powerThreshold ?? 10.0;
+      // ✅ Usar powerThreshold del equipment (schema default: 1.0W)
+      const threshold = d.equipmentClinicAssignment?.equipment?.powerThreshold;
       return d.currentPower > threshold;
     }).length;
     
@@ -392,8 +392,8 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
       const hasValidConsumption = device.currentPower !== null && device.currentPower !== undefined;
       if (!hasValidConsumption) return false;
       
-      // Usar powerThreshold específico del equipment o default 10.0W
-      const threshold = device.equipmentClinicAssignment?.equipment?.powerThreshold ?? 10.0;
+      // ✅ Usar powerThreshold del equipment (schema default: 1.0W)
+      const threshold = device.equipmentClinicAssignment?.equipment?.powerThreshold;
       const isConsuming = device.currentPower > threshold;
       
       return isConsuming;

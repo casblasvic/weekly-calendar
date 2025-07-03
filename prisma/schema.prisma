@@ -91,6 +91,7 @@ model System {
   sparePartInstallations       SparePartInstallation[]
   equipmentUsageLogs           EquipmentUsageLog[]
   equipmentAssignments         EquipmentClinicAssignment[]
+  autoShutdownLogs             AutoShutdownLog[]
 
   @@map("systems")
 }
@@ -624,7 +625,7 @@ model Equipment {
   purchaseDate       DateTime?
   warrantyEndDate    DateTime?
   isActive           Boolean                       @default(true)
-  powerThreshold     Decimal                       @default(10.0) @db.Decimal(5,2)
+  powerThreshold     Decimal                       @default(1.0) @db.Decimal(5,2)
   systemId           String
   createdAt          DateTime                      @default(now())
   updatedAt          DateTime                      @updatedAt
@@ -667,6 +668,7 @@ model EquipmentClinicAssignment {
   deviceUsage       AppointmentDeviceUsage[]
   appointments      Appointment[]           @relation("EquipmentClinicAssignmentAppointments")
   smartPlugDevice   SmartPlugDevice?        // Nueva relación con dispositivos IoT
+  autoShutdownLogs  AutoShutdownLog[]
   
   @@unique([equipmentId, clinicId, serialNumber])
   @@index([equipmentId])
@@ -731,6 +733,7 @@ model Appointment {
   tags                         AppointmentTag[]
   extensions                   AppointmentExtension[]
   deviceUsage                  AppointmentDeviceUsage[]
+  autoShutdownLogs             AutoShutdownLog[]
 
   @@index([startTime])
   @@index([personId])
@@ -777,7 +780,7 @@ model AppointmentDeviceUsage {
   
   // 🆕 CAMPOS DE PAUSAS MEJORADOS
   pauseIntervals               Json?                      // Array de {pausedAt, resumedAt, reason?, durationMinutes?}
-  currentStatus                String                     @default("ACTIVE") // ACTIVE, PAUSED, COMPLETED
+  currentStatus                DeviceUsageStatus          @default(ACTIVE) // ACTIVE, PAUSED, COMPLETED, AUTO_SHUTDOWN
   pausedAt                     DateTime?                  @db.Timestamptz(6) // Para estado actual de pausa
   
   energyConsumption            Float?
@@ -793,6 +796,7 @@ model AppointmentDeviceUsage {
   device                       Device?                    @relation(fields: [deviceId], references: [id], onDelete: SetNull)
   startedByUser                User                       @relation("DeviceUsageStartedBy", fields: [startedByUserId], references: [id])
   system                       System                     @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  autoShutdownLogs             AutoShutdownLog[]
 
   @@index([appointmentId])
   @@index([startedAt])
@@ -934,32 +938,33 @@ model ClinicScheduleBlock {
 }
 
 model Service {
-  id                     String                  @id @default(cuid())
-  name                   String
-  description            String?
-  durationMinutes        Int
-  price                  Float?
-  colorCode              String?
-  systemId               String
-  createdAt              DateTime                @default(now())
-  updatedAt              DateTime                @updatedAt
-  categoryId             String?
-  code                   String?
-  vatTypeId              String?
-  system                 System                  @relation(fields: [systemId], references: [id], onDelete: Cascade)
-  ticketItems            TicketItem[]
-  invoiceItems           InvoiceItem[]
-  bonoDefinitions        BonoDefinition[]
-  includedInPackages     PackageItem[]
-  category               Category?               @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  vatType                VATType?                @relation(fields: [vatTypeId], references: [id], onDelete: SetNull)
-  tariffPrices           TariffServicePrice[]
-  consumptions           ServiceConsumption[]
-  settings               ServiceSetting?
-  targetedPromotions     Promotion[]             @relation("TargetService")
-  bogoGiftPromotions     Promotion[]             @relation("BogoService")
-  serviceAccountMappings ServiceAccountMapping[]
-  appointmentServices    AppointmentService[]
+  id                          String                  @id @default(cuid())
+  name                        String
+  description                 String?
+  durationMinutes             Int                     // Duración total de cita (mantenemos compatibilidad)
+  treatmentDurationMinutes    Int                     @default(0) // Nuevo: duración real de tratamiento (para IoT)
+  price                       Float?
+  colorCode                   String?
+  systemId                    String
+  createdAt                   DateTime                @default(now())
+  updatedAt                   DateTime                @updatedAt
+  categoryId                  String?
+  code                        String?
+  vatTypeId                   String?
+  system                      System                  @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  ticketItems                 TicketItem[]
+  invoiceItems                InvoiceItem[]
+  bonoDefinitions             BonoDefinition[]
+  includedInPackages          PackageItem[]
+  category                    Category?               @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  vatType                     VATType?                @relation(fields: [vatTypeId], references: [id], onDelete: SetNull)
+  tariffPrices                TariffServicePrice[]
+  consumptions                ServiceConsumption[]
+  settings                    ServiceSetting?
+  targetedPromotions          Promotion[]             @relation("TargetService")
+  bogoGiftPromotions          Promotion[]             @relation("BogoService")
+  serviceAccountMappings      ServiceAccountMapping[]
+  appointmentServices         AppointmentService[]
 
   @@unique([name, systemId])
   @@index([systemId])
@@ -3478,4 +3483,49 @@ enum CategoryType {
   SERVICE
   PRODUCT
   MIXED
+}
+
+enum DeviceUsageStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+  AUTO_SHUTDOWN
+}
+
+model AutoShutdownLog {
+  id                           String                     @id @default(cuid())
+  appointmentDeviceUsageId     String
+  appointmentId                String
+  deviceId                     String
+  equipmentClinicAssignmentId  String?
+  
+  // Datos del apagado automático
+  triggeredAt                  DateTime                   @default(now())
+  estimatedMinutes             Float
+  actualMinutes                Float
+  powerThreshold               Float?
+  
+  // Resultado del comando
+  shutdownSuccessful           Boolean                    @default(false)
+  errorMessage                 String?
+  
+  // Metadatos
+  autoShutdownEnabled          Boolean                    // Estado del flag cuando se ejecutó
+  deviceData                   Json?                      // Estado del dispositivo al momento
+  
+  systemId                     String
+  createdAt                    DateTime                   @default(now())
+  
+  // Relaciones
+  appointmentDeviceUsage       AppointmentDeviceUsage     @relation(fields: [appointmentDeviceUsageId], references: [id], onDelete: Cascade)
+  appointment                  Appointment                @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  equipmentClinicAssignment    EquipmentClinicAssignment? @relation(fields: [equipmentClinicAssignmentId], references: [id], onDelete: SetNull)
+  system                       System                     @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  
+  @@index([appointmentDeviceUsageId])
+  @@index([appointmentId])
+  @@index([deviceId])
+  @@index([triggeredAt])
+  @@index([systemId])
+  @@map("auto_shutdown_logs")
 }

@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
       include: {
         services: {
           include: {
-            service: {
+        service: {
               include: {
                 settings: {
                   include: {
@@ -77,11 +77,11 @@ export async function GET(request: NextRequest) {
                               }
                             }
                           }
-                        }
-                      }
-                    }
-                  }
                 }
+              }
+            }
+          }
+        }
               }
             }
           }
@@ -107,7 +107,55 @@ export async function GET(request: NextRequest) {
       svc => svc.service.settings?.equipmentRequirements || []
     )
 
-    // 3. Crear lista de dispositivos disponibles (igual que en start endpoint)
+    // 3. ✅ CONSULTAR USOS ACTIVOS - Para esta cita Y otras citas (ANTES del bucle)
+    const [currentAppointmentUsages, otherAppointmentUsages] = await Promise.all([
+      // Usos de ESTA cita específica
+      prisma.appointmentDeviceUsage.findMany({
+        where: {
+          appointmentId: appointmentId,
+          currentStatus: { in: ['ACTIVE', 'PAUSED'] },
+          endedAt: null
+        },
+        select: {
+          deviceId: true,
+          equipmentId: true,
+          equipmentClinicAssignmentId: true
+        }
+      }),
+      
+      // Usos de OTRAS citas (para detectar ocupados)
+      prisma.appointmentDeviceUsage.findMany({
+        where: {
+          appointmentId: { not: appointmentId },
+          currentStatus: { in: ['ACTIVE', 'PAUSED'] },
+          endedAt: null,
+          systemId: systemId
+        },
+        select: {
+          deviceId: true,
+          equipmentId: true,
+          equipmentClinicAssignmentId: true,
+          appointmentId: true
+        }
+      })
+    ])
+
+    // Crear maps para lookups rápidos
+    const thisAppointmentDeviceIds = new Set(
+      currentAppointmentUsages.map(usage => usage.deviceId).filter(Boolean)
+    )
+    const thisAppointmentAssignmentIds = new Set(
+      currentAppointmentUsages.map(usage => usage.equipmentClinicAssignmentId).filter(Boolean)
+    )
+    
+    const otherAppointmentDeviceIds = new Set(
+      otherAppointmentUsages.map(usage => usage.deviceId).filter(Boolean)
+    )
+    const otherAppointmentAssignmentIds = new Set(
+      otherAppointmentUsages.map(usage => usage.equipmentClinicAssignmentId).filter(Boolean)
+    )
+
+    // 4. Crear lista de dispositivos disponibles (igual que en start endpoint)
     const availableDevices: any[] = []
     const requiredEquipmentIds = [...new Set(equipmentRequirements.map(req => req.equipmentId))]
 
@@ -128,16 +176,23 @@ export async function GET(request: NextRequest) {
         for (const assignment of clinicAssignments) {
           // 🔌 VERIFICAR: Estado del enchufe inteligente si existe
           const smartPlugDevice = assignment.smartPlugDevice
-          let deviceStatus: 'available' | 'occupied' | 'offline' = 'offline'
+          let deviceStatus: 'available' | 'occupied' | 'offline' | 'in_use_this_appointment' = 'offline'
           
-          if (smartPlugDevice) {
-            if (smartPlugDevice.online) {
-              deviceStatus = smartPlugDevice.relayOn ? 'occupied' : 'available'
-            } else {
-              deviceStatus = 'offline'
-            }
+          // ✅ LÓGICA CORRECTA DE STATUS basada en appointment_device_usage
+          const assignmentId = assignment.id
+          const deviceId = smartPlugDevice?.deviceId || assignment.deviceId
+          
+          if (smartPlugDevice && !smartPlugDevice.online) {
+            // Dispositivo offline
+            deviceStatus = 'offline'
+          } else if (thisAppointmentAssignmentIds.has(assignmentId) || (deviceId && thisAppointmentDeviceIds.has(deviceId))) {
+            // ✅ EN USO POR ESTA CITA
+            deviceStatus = 'in_use_this_appointment'
+          } else if (otherAppointmentAssignmentIds.has(assignmentId) || (deviceId && otherAppointmentDeviceIds.has(deviceId))) {
+            // ⚠️ OCUPADO POR OTRA CITA
+            deviceStatus = 'occupied'
           } else {
-            // Sin enchufe inteligente = siempre disponible
+            // ✅ DISPONIBLE
             deviceStatus = 'available'
           }
 
@@ -145,7 +200,7 @@ export async function GET(request: NextRequest) {
           availableDevices.push({
             id: smartPlugDevice?.id || assignment.id,
             name: assignment.deviceName || `${equipment.name} #${assignment.serialNumber?.slice(-3) || '...'}`,
-            deviceId: assignment.deviceId || '',
+            deviceId: smartPlugDevice?.deviceId || assignment.deviceId || '', // ✅ CORREGIDO: Usar deviceId de Shelly
             online: smartPlugDevice?.online || false,
             relayOn: smartPlugDevice?.relayOn || false,
             currentPower: smartPlugDevice?.currentPower || 0,
@@ -156,6 +211,7 @@ export async function GET(request: NextRequest) {
             equipmentId: equipment.id,
             equipmentName: equipment.name,
             equipmentClinicAssignmentId: assignment.id,
+            equipmentPowerThreshold: equipment.powerThreshold, // ✅ Usar valor del schema (default 1.0)
             
             // Info de la asignación
             deviceName: assignment.deviceName,
@@ -171,21 +227,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 4. Verificar qué equipos están siendo usados por ESTA cita específicamente
-    const currentAppointmentUsages = await prisma.appointmentDeviceUsage.findMany({
-      where: {
-        appointmentId: appointmentId,
-        currentStatus: { in: ['ACTIVE', 'PAUSED'] }
-      },
-      select: {
-        deviceId: true,
-        equipmentId: true
-      }
-    })
 
-    const currentAppointmentDeviceIds = currentAppointmentUsages
-      .map(usage => usage.deviceId)
-      .filter(Boolean) as string[]
 
 
 
@@ -196,12 +238,13 @@ export async function GET(request: NextRequest) {
       clinicName: appointment.clinic?.name,
       requiredEquipmentIds,
       availableDevices,
-      currentAppointmentUsages: currentAppointmentDeviceIds,
+      currentAppointmentUsages: Array.from(thisAppointmentDeviceIds),
       stats: {
         totalDevices: availableDevices.length,
         available: availableDevices.filter(d => d.status === 'available').length,
         occupied: availableDevices.filter(d => d.status === 'occupied').length,
-        offline: availableDevices.filter(d => d.status === 'offline').length
+        offline: availableDevices.filter(d => d.status === 'offline').length,
+        inUseThisAppointment: availableDevices.filter(d => d.status === 'in_use_this_appointment').length
       }
     })
 

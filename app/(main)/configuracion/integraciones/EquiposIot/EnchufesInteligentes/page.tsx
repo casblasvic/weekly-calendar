@@ -429,13 +429,7 @@ const SmartPlugsPage = () => {
         
         const unsubscribe = subscribe((update) => {
             
-            console.log('🔍 [DEBUG] WebSocket update recibido:', {
-                updateDeviceId: update.deviceId,
-                updateOnline: update.online,
-                updateRelayOn: update.relayOn,
-                updateCurrentPower: update.currentPower,
-                timestamp: update.timestamp
-            });
+            // ✅ ELIMINADO: Log de debug que causaba spam
             
             // 🎯 TRACKING: Marcar mensaje recibido (para compatibilidad con código existente)
             messagesReceivedRef.current.add(update.deviceId);
@@ -451,11 +445,7 @@ const SmartPlugsPage = () => {
             
             // Función helper para actualizar un dispositivo en lista completa (solo para consumo)
             const updateDeviceInList = (prev: SmartPlug[], listName: string) => {
-                console.log(`🔍 [DEBUG] Buscando dispositivo en ${listName}:`, {
-                    updateDeviceId: update.deviceId,
-                    totalDevices: prev.length,
-                    deviceIds: prev.map(d => ({ id: d.id, deviceId: d.deviceId, name: d.name }))
-                });
+                // ✅ ELIMINADO: Log de debug búsqueda
                 
                 // Si la lista está vacía, simplemente no hacer nada
                 if (prev.length === 0) {
@@ -467,11 +457,7 @@ const SmartPlugsPage = () => {
                     device.id === update.deviceId || device.deviceId === update.deviceId
                 );
                 
-                console.log(`🔍 [DEBUG] Resultado búsqueda en ${listName}:`, {
-                    deviceIndex,
-                    found: deviceIndex !== -1,
-                    deviceFound: deviceIndex !== -1 ? prev[deviceIndex].name : 'No encontrado'
-                });
+                // ✅ ELIMINADO: Log de debug resultado
                 
                 if (deviceIndex === -1) {
                     return prev;
@@ -489,16 +475,7 @@ const SmartPlugsPage = () => {
                     Number(oldDevice.temperature || 0) !== Number(update.temperature || 0)
                 );
                 
-                console.log(`🔍 [DEBUG] Comparando cambios en ${listName}:`, {
-                    deviceName: oldDevice.name,
-                    oldOnline: oldDevice.online,
-                    newOnline: update.online,
-                    oldRelayOn: oldDevice.relayOn,
-                    newRelayOn: update.relayOn,
-                    oldPower: oldDevice.currentPower,
-                    newPower: update.currentPower,
-                    hasChanges
-                });
+                // ✅ ELIMINADO: Log de debug comparación
                 
                 if (!hasChanges) {
                     return prev;
@@ -517,11 +494,7 @@ const SmartPlugsPage = () => {
                 };
                 updated[deviceIndex] = updatedDevice;
                 
-                console.log(`✅ [DEBUG] Dispositivo actualizado en ${listName}:`, {
-                    deviceName: oldDevice.name,
-                    oldState: `${oldDevice.online ? 'ONLINE' : 'OFFLINE'} - ${oldDevice.relayOn ? 'ON' : 'OFF'} - ${oldDevice.currentPower || 0}W`,
-                    newState: `${update.online ? 'ONLINE' : 'OFFLINE'} - ${update.relayOn ? 'ON' : 'OFF'} - ${update.currentPower || 0}W`
-                });
+                // ✅ ELIMINADO: Log de debug actualización
                 
                 return updated;
             };

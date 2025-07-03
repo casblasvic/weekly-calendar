@@ -131,6 +131,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
           // Campos base actualizables
           name: serviceBaseData.name, 
           durationMinutes: serviceBaseData.durationMinutes,
+          treatmentDurationMinutes: serviceBaseData.treatmentDurationMinutes,
           code: serviceBaseData.code,
           description: serviceBaseData.description,
           price: serviceBaseData.price,
@@ -138,7 +139,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
           // Conexiones actualizables (conectar si hay ID, desconectar si no)
           ...(categoryId ? { category: { connect: { id: categoryId } } } : { category: { disconnect: true } }),
           ...(vatTypeId ? { vatType: { connect: { id: vatTypeId } } } : { vatType: { disconnect: true } }),
-        },
+        } as any, // TODO: Regenerar tipos de Prisma después de migrar el schema
       });
 
       // 3. Actualizar o Crear los Settings asociados

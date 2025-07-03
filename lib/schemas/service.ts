@@ -25,7 +25,8 @@ export const ServiceFormSchema = z.object({
   name: z.string().min(1, { message: "El nombre es obligatorio." }),
   code: z.string().optional().nullable(),
   description: z.string().optional().nullable(),
-  durationMinutes: z.coerce.number().int().min(1, { message: "La duración debe ser al menos 1 minuto." }),
+  durationMinutes: z.coerce.number().int().min(1, { message: "La duración de cita debe ser al menos 1 minuto." }),
+  treatmentDurationMinutes: z.coerce.number().int().min(0, { message: "La duración de tratamiento no puede ser negativa." }).default(0),
   price: z.coerce.number().min(0, { message: "El precio no puede ser negativo." }).nullable(), // Permitir null si el precio no es obligatorio inicialmente
   colorCode: z.string().regex(/^#[0-9a-fA-F]{6}$/, { message: "Debe ser un código de color hexadecimal válido (ej: #FF0000)." }).optional().nullable(),
   categoryId: z.string().optional().nullable(),

@@ -36,6 +36,9 @@ export function AppointmentEquipmentSelector({
   appointmentClientName,
   onStartWithoutEquipment
 }: AppointmentEquipmentSelectorProps) {
+  
+  // 🔍 LOG BÁSICO: Verificar si este componente se ejecuta
+  console.log('🔍 [APPOINTMENT EQUIPMENT SELECTOR] Componente montado/actualizado');
   const [controllingDevices, setControllingDevices] = useState<Set<string>>(new Set());
 
   // 🔥 USAR HOOK EN TIEMPO REAL - igual que el menú flotante
@@ -119,8 +122,8 @@ export function AppointmentEquipmentSelector({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
         <DialogHeader className="pb-4">
-          <DialogTitle className="flex items-center gap-2 text-xl">
-            <Power className="h-5 w-5 text-blue-600" />
+          <DialogTitle className="flex gap-2 items-center text-xl">
+            <Power className="w-5 h-5 text-blue-600" />
             Control de Equipamiento
             {appointmentClientName && (
               <span className="text-base font-normal text-muted-foreground">
@@ -130,7 +133,7 @@ export function AppointmentEquipmentSelector({
           </DialogTitle>
           
           {/* Estado de conexión */}
-          <div className="flex items-center gap-2 text-sm">
+          <div className="flex gap-2 items-center text-sm">
             {isConnected ? (
               <>
                 <div className="w-2 h-2 bg-green-500 rounded-full"></div>
@@ -145,7 +148,7 @@ export function AppointmentEquipmentSelector({
           </div>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto space-y-6">
+        <div className="overflow-y-auto flex-1 space-y-6">
           {/* Resumen de Estado */}
           <div className="grid grid-cols-4 gap-4">
             <div className="text-center">
@@ -178,23 +181,23 @@ export function AppointmentEquipmentSelector({
                   return (
                     <div
                       key={device.id}
-                      className="p-4 border rounded-lg transition-all hover:shadow-md bg-white"
+                      className="p-4 bg-white rounded-lg border transition-all hover:shadow-md"
                     >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="flex items-center gap-2">
+                      <div className="flex justify-between items-center">
+                        <div className="flex gap-3 items-center">
+                          <div className="flex gap-2 items-center">
                             {device.online ? (
-                                <Wifi className="h-4 w-4 text-green-600" />
+                                <Wifi className="w-4 h-4 text-green-600" />
                             ) : (
-                              <WifiOff className="h-4 w-4 text-gray-400" />
+                              <WifiOff className="w-4 h-4 text-gray-400" />
                             )}
                             <span className="font-medium">{device.name}</span>
                           </div>
                           
-                          <div className="flex items-center gap-2">
+                          <div className="flex gap-2 items-center">
                             {device.cabinName && (
                             <Badge variant="outline" className="text-xs">
-                              <MapPin className="h-3 w-3 mr-1" />
+                              <MapPin className="mr-1 w-3 h-3" />
                                 {device.cabinName}
                             </Badge>
                           )}
@@ -205,7 +208,7 @@ export function AppointmentEquipmentSelector({
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-3">
+                        <div className="flex gap-3 items-center">
                           {/* Información de consumo */}
                           {device.online && device.relayOn && device.currentPower && device.currentPower > 0.1 && (
                             <div className="text-sm text-gray-600">
@@ -221,13 +224,13 @@ export function AppointmentEquipmentSelector({
                             className={cn(powerButtonStyle.className, "min-w-[120px]")}
                           >
                             {isControlling ? (
-                              <div className="flex items-center gap-2">
-                                <Loader2 className="h-3 w-3 animate-spin" />
+                              <div className="flex gap-2 items-center">
+                                <Loader2 className="w-3 h-3 animate-spin" />
                                 Procesando
                               </div>
                             ) : (
-                              <div className="flex items-center gap-2">
-                                <Power className="h-3 w-3" />
+                              <div className="flex gap-2 items-center">
+                                <Power className="w-3 h-3" />
                                 {device.relayOn ? 'Apagar' : 'Encender'}
                         </div>
                             )}
@@ -253,12 +256,12 @@ export function AppointmentEquipmentSelector({
               </div>
             </div>
           ) : (
-            <div className="text-center py-12">
-              <AlertTriangle className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-700 mb-2">
+            <div className="py-12 text-center">
+              <AlertTriangle className="mx-auto mb-4 w-16 h-16 text-gray-400" />
+              <h3 className="mb-2 text-lg font-medium text-gray-700">
                 No hay equipos para esta cita
               </h3>
-              <p className="text-sm text-gray-500 mb-4">
+              <p className="mb-4 text-sm text-gray-500">
                 Los servicios de esta cita no requieren equipamiento específico o no hay equipos configurados.
               </p>
             </div>

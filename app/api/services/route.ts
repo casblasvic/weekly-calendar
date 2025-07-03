@@ -130,7 +130,8 @@ export async function POST(request: Request) {
         data: {
           // Campos obligatorios explícitos
         name: validatedData.name, 
-        durationMinutes: validatedData.durationMinutes, 
+        durationMinutes: validatedData.durationMinutes,
+        treatmentDurationMinutes: validatedData.treatmentDurationMinutes || 0,
           // Resto de campos base (opcionales)
           code: validatedData.code,
           description: validatedData.description,
@@ -142,7 +143,7 @@ export async function POST(request: Request) {
         },
         ...(categoryId && { category: { connect: { id: categoryId } } }),
         ...(vatTypeId && { vatType: { connect: { id: vatTypeId } } }),
-        },
+        } as any, // TODO: Regenerar tipos de Prisma después de migrar el schema
       });
 
       // 2. Crear los Settings asociados

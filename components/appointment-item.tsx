@@ -766,14 +766,16 @@ export function AppointmentItem({
 
   // 🔥 HOOK ESPECÍFICO PARA EQUIPAMIENTO DE SERVICIOS DE CITA
   const [dropdownOpen, setDropdownOpen] = useState(false)
+  const [isHovering, setIsHovering] = useState(false)
+  const [processingDevices, setProcessingDevices] = useState<Set<string>>(new Set()) // ✅ NUEVO: Estado para evitar dobles clics
   
   // ✅ USAR HOOK CORRECTO QUE FILTRA POR SERVICIOS DE LA CITA
   const serviceEquipmentData = useServiceEquipmentRequirements({
     appointmentId: appointment.id,
-    enabled: dropdownOpen // Solo cargar cuando el dropdown está abierto
+    enabled: dropdownOpen || isHovering // ✅ CARGAR también en hover
   });
 
-
+  // Logs eliminados para evitar verbosidad - solo logs en clics reales
 
   // ✅ DATOS FINALES: Solo dispositivos que pueden hacer los servicios de esta cita
   const equipmentData = serviceEquipmentData ? {
@@ -787,10 +789,12 @@ export function AppointmentItem({
       voltage: device.voltage,
       temperature: device.temperature,
       cabinName: device.cabinName || 'Sin cabina',
-      status: device.status
+      status: device.status,
+      equipmentClinicAssignmentId: device.equipmentClinicAssignmentId // ✅ AGREGADO: El campo que faltaba
     })),
     isConnected: serviceEquipmentData.isConnected,
-    onDeviceToggle: serviceEquipmentData.onDeviceToggle
+    onDeviceToggle: serviceEquipmentData.onDeviceToggle,
+    refetch: serviceEquipmentData.refetch
   } : null
 
   return (
@@ -1094,6 +1098,8 @@ export function AppointmentItem({
                     e.preventDefault();
                     e.stopPropagation();
                   }}
+                  onMouseEnter={() => setIsHovering(true)}
+                  onMouseLeave={() => setIsHovering(false)}
                 >
                   <Plus className={cn(
                     "text-gray-700 transition-transform duration-200 group-data-[state=open]:rotate-45",
@@ -1110,7 +1116,7 @@ export function AppointmentItem({
               >
                 {/* 🎯 INICIAR SERVICIO - OPTIMIZADO CON CACHE */}
                 <DropdownMenuSub>
-                  <DropdownMenuSubTrigger className="cursor-pointer hover:bg-green-50 text-green-700 font-medium">
+                  <DropdownMenuSubTrigger className="font-medium text-green-700 cursor-pointer hover:bg-green-50">
                     <Play className="mr-2 w-4 h-4" />
                     Iniciar Servicio
                   </DropdownMenuSubTrigger>
@@ -1118,17 +1124,152 @@ export function AppointmentItem({
                     {/* 🔌 ENCHUFES DISPONIBLES - DIRECTO DEL CACHE */}
                     {equipmentData && equipmentData.availableDevices.length > 0 && (
                       <>
-                        {equipmentData.availableDevices.map((device) => (
+                        {equipmentData.availableDevices.map((device) => {
+                          return (
                           <DropdownMenuItem 
                             key={device.id}
-                            className="cursor-pointer p-3 hover:bg-gray-50"
-                            onClick={(e) => e.stopPropagation()}
+                            className={`p-3 cursor-pointer hover:bg-gray-50 ${processingDevices.has(device.deviceId) ? 'opacity-50 pointer-events-none' : ''}`}
+                            onSelect={(e) => {
+                              // Prevenir que el dropdown se cierre automáticamente
+                              e.preventDefault();
+                            }}
+                            onClick={async (e) => {
+                              // Prevenir propagación del evento
+                              e.preventDefault();
+                              e.stopPropagation();
+                              
+                              // 🚫 PREVENIR DOBLES CLICS - PROTECCIÓN PRINCIPAL
+                              if (processingDevices.has(device.deviceId)) {
+                                console.log('🔍 [DROPDOWN DEVICE CLICK] Dispositivo ya procesando, ignorando clic');
+                                return;
+                              }
+
+                              // 🔍 LOG ESPECÍFICO: Capturar clic en dropdown device
+                              console.log('🔍 [DROPDOWN DEVICE CLICK]:', device.name);
+                              console.log('🔍 [DEVICE STATUS DEBUG]:', {
+                                deviceName: device.name,
+                                deviceId: device.deviceId,
+                                status: device.status,
+                                online: device.online,
+                                relayOn: device.relayOn,
+                                appointmentId: appointment.id,
+                                correctEquipmentClinicAssignmentId: device.equipmentClinicAssignmentId,
+                                wrongDeviceId: device.id,
+                                payloadToSend: {
+                                  equipmentClinicAssignmentId: device.equipmentClinicAssignmentId,
+                                  deviceId: device.deviceId,
+                                  turnOn: true
+                                }
+                              });
+                              console.log('🔍 [FULL DEVICE OBJECT]:', device);
+                              
+                              // 🎯 MANEJAR LÓGICA DIRECTAMENTE AQUÍ
+                              if (!device.online) {
+                                toast.error('Dispositivo offline', { description: device.name });
+                                return;
+                              }
+                              
+                              const turnOn = !device.relayOn;
+                              
+                              try {
+                                // ✅ MARCAR COMO PROCESANDO
+                                setProcessingDevices(prev => new Set(prev).add(device.deviceId));
+                                
+                                // 🎯 LÓGICA INTELIGENTE: Decidir entre asignar o controlar
+                                if (device.status === 'available' && turnOn) {
+                                  // 💡 ASIGNAR PRIMERO: Dispositivo disponible y quiere encender
+                                  console.log('🔍 [DROPDOWN CONTROL] Dispositivo disponible - ejecutando ASIGNACIÓN + ENCENDIDO');
+                                  
+                                  const assignResponse = await fetch(`/api/appointments/${appointment.id}/assign-device`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                      equipmentClinicAssignmentId: device.equipmentClinicAssignmentId,
+                                      deviceId: device.deviceId,
+                                      turnOn: true
+                                    })
+                                  });
+                                  
+                                  if (!assignResponse.ok) {
+                                    const errorData = await assignResponse.json();
+                                    throw new Error(errorData.error || 'Error asignando dispositivo');
+                                  }
+                                  
+                                  const assignResult = await assignResponse.json();
+                                  console.log('🔍 [DROPDOWN CONTROL] Asignación exitosa:', assignResult);
+                                  
+                                  // ⚡ ACTUALIZAR ESTADO VISUAL INMEDIATAMENTE
+                                  console.log('🎨 [DROPDOWN CONTROL] Actualizando estado visual...');
+                                  
+                                  // 🎯 ACTUALIZACIÓN OPTIMISTA: cambiar estado del dispositivo inmediatamente
+                                  const updatedEquipmentData = {
+                                    ...equipmentData,
+                                    availableDevices: equipmentData.availableDevices.map(d => {
+                                      if (d.deviceId === device.deviceId) {
+                                        return {
+                                          ...d,
+                                          status: 'in_use_this_appointment' as const,
+                                          relayOn: true // Asumimos que se encendió
+                                        }
+                                      }
+                                      return d
+                                    })
+                                  }
+                                  
+                                  console.log('�� [DROPDOWN CONTROL] Estado actualizado optimistamente');
+                                  
+                                  // ⚡ INVALIDAR CACHE INMEDIATAMENTE
+                                  if (equipmentData?.refetch) {
+                                    console.log('🔄 [DROPDOWN CONTROL] Invalidando cache...');
+                                    await equipmentData.refetch();
+                                  }
+                                  
+                                  toast.success(`Dispositivo asignado y encendido`, {
+                                    description: device.name,
+                                    duration: 3000
+                                  });
+                                } else {
+                                  // 🎛️ CONTROL DIRECTO: Dispositivo ya asignado o solo cambio de estado
+                                  console.log('🔍 [DROPDOWN CONTROL] Control directo - llamando equipmentData.onDeviceToggle...');
+                                  await equipmentData.onDeviceToggle(device.deviceId, turnOn);
+                                  console.log('🔍 [DROPDOWN CONTROL] Control directo completado exitosamente');
+                                  
+                                  toast.success(`Enchufe ${turnOn ? 'encendido' : 'apagado'}`, {
+                                    description: device.name,
+                                    duration: 3000
+                                  });
+                                }
+                              } catch (error) {
+                                console.error('🔍 [DROPDOWN CONTROL] Error en control:', error);
+                                toast.error('Error controlando enchufe', {
+                                  description: error instanceof Error ? error.message : 'Error desconocido',
+                                  duration: 4000
+                                });
+                              } finally {
+                                // ✅ DESMARCAR COMO PROCESANDO
+                                setProcessingDevices(prev => {
+                                  const newSet = new Set(prev);
+                                  newSet.delete(device.deviceId);
+                                  return newSet;
+                                });
+                              }
+                              
+                              e.stopPropagation();
+                            }}
                           >
-                            <div className="flex items-center justify-between w-full gap-3">
+                            <div className="flex gap-3 justify-between items-center w-full">
                               {/* 📝 INFO DEL DISPOSITIVO */}
                               <div className="flex flex-col flex-1 min-w-0">
-                                <span className="text-sm font-medium truncate">{device.name}</span>
-                                <div className="flex items-center gap-1 text-xs text-gray-600">
+                                <div className="flex gap-2 items-center">
+                                  <span className="text-sm font-medium truncate">{device.name}</span>
+                                  {processingDevices.has(device.deviceId) && (
+                                    <div className="flex gap-1 items-center text-xs text-blue-600">
+                                      <div className="w-3 h-3 rounded-full border border-blue-600 animate-spin border-t-transparent"></div>
+                                      <span>Iniciando...</span>
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="flex gap-1 items-center text-xs text-gray-600">
                                   {device.currentPower && device.currentPower > 0.1 && (
                                     <span className="text-blue-600">{device.currentPower.toFixed(1)}W</span>
                                   )}
@@ -1143,7 +1284,7 @@ export function AppointmentItem({
                                 </div>
                               </div>
                               
-                              {/* 🔌 BOTÓN POWER CIRCULAR */}
+                              {/* 🔌 BOTÓN POWER CIRCULAR - SOLO VISUAL EN DROPDOWN */}
                               <DeviceControlButton
                                 device={{
                                   id: device.deviceId,
@@ -1154,27 +1295,19 @@ export function AppointmentItem({
                                   voltage: device.voltage,
                                   temperature: device.temperature
                                 }}
+                                deviceStatus={device.status}
                                 onToggle={async (deviceId: string, turnOn: boolean) => {
-                                  try {
-                                    await equipmentData.onDeviceToggle(deviceId, turnOn);
-                                    toast.success(`Enchufe ${turnOn ? 'encendido' : 'apagado'}`, {
-                                      description: device.name,
-                                      duration: 2000
-                                    });
-                                  } catch (error) {
-                                    toast.error('Error controlando enchufe', {
-                                      description: error instanceof Error ? error.message : 'Error desconocido',
-                                      duration: 4000
-                                    });
-                                  }
+                                  // 🚫 NO HACER NADA: La lógica está en DropdownMenuItem.onClick
+                                  console.log('🔍 [DEVICE CONTROL BUTTON] Deshabilitado - usar DropdownMenuItem');
                                 }}
-                                disabled={false}
+                                disabled={processingDevices.has(device.deviceId)} // ✅ Deshabilitar si está procesando
                                 size="sm"
                                 showMetrics={false}
                               />
                             </div>
                           </DropdownMenuItem>
-                        ))}
+                          );
+                        })}
                         <DropdownMenuSeparator />
                       </>
                     )}
@@ -1183,7 +1316,7 @@ export function AppointmentItem({
                     {!equipmentData && dropdownOpen && (
                       <DropdownMenuItem disabled>
                         <Loader2 className="mr-2 w-4 h-4 text-gray-400 animate-spin" />
-                        <span className="text-gray-500 text-sm">Cargando...</span>
+                        <span className="text-sm text-gray-500">Cargando...</span>
                       </DropdownMenuItem>
                     )}
                     
@@ -1191,7 +1324,7 @@ export function AppointmentItem({
                     {equipmentData && equipmentData.availableDevices.length === 0 && (
                       <DropdownMenuItem disabled>
                         <AlertTriangle className="mr-2 w-4 h-4 text-gray-400" />
-                        <span className="text-gray-500 text-sm">Sin equipos necesarios</span>
+                        <span className="text-sm text-gray-500">Sin equipos necesarios</span>
                       </DropdownMenuItem>
                     )}
                     
@@ -1204,7 +1337,7 @@ export function AppointmentItem({
                       className="cursor-pointer hover:bg-blue-50"
                     >
                       <Play className="mr-2 w-4 h-4 text-blue-600" />
-                      <span className="text-blue-700 font-medium">Iniciar sin equipamiento</span>
+                      <span className="font-medium text-blue-700">Iniciar sin equipamiento</span>
                     </DropdownMenuItem>
                   </DropdownMenuSubContent>
                 </DropdownMenuSub>
@@ -1248,9 +1381,9 @@ export function AppointmentItem({
                               onTagsUpdate(appointment.id, newTags);
                             }
                           }}
-                          className="cursor-pointer justify-between"
+                          className="justify-between cursor-pointer"
                         >
-                          <div className="flex items-center gap-2">
+                          <div className="flex gap-2 items-center">
                             <div 
                               className="w-3 h-3 rounded-full border border-gray-300"
                               style={{ backgroundColor: tag.color }}
@@ -1266,7 +1399,7 @@ export function AppointmentItem({
                     
                     {(!getTags() || getTags().length === 0) && (
                       <DropdownMenuItem disabled>
-                        <span className="text-gray-500 text-sm">Sin etiquetas disponibles</span>
+                        <span className="text-sm text-gray-500">Sin etiquetas disponibles</span>
                       </DropdownMenuItem>
                     )}
                   </DropdownMenuSubContent>

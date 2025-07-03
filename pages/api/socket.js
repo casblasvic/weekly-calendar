@@ -262,20 +262,42 @@ function setupDeviceUpdateInterceptor(io) {
           credentialId
         },
         include: {
-          credential: true
+          credential: true,
+          equipmentClinicAssignment: {
+            include: {
+              equipment: true
+            }
+          }
         }
       });
       
       if (device && device.credential) {
+        // Extraer datos del status
+        const currentPower = status['switch:0']?.apower !== undefined ? status['switch:0'].apower : device.currentPower;
+        const relayOn = status['switch:0']?.output !== undefined ? status['switch:0'].output : device.relayOn;
+        const voltage = status['switch:0']?.voltage !== undefined ? status['switch:0'].voltage : device.voltage;
+        const temperature = status.temperature !== undefined ? status.temperature : device.temperature;
+        const isOnline = status.online;
+        
+        // 🎯 PROCESAR ACTUALIZACIONES DE APPOINTMENT_DEVICE_USAGE EN TIEMPO REAL
+        await processAppointmentDeviceUsageUpdate(device, {
+          currentPower,
+          relayOn,
+          voltage,
+          temperature,
+          isOnline,
+          timestamp: new Date()
+        });
+        
         // Crear update para Socket.io
         const update = {
           deviceId: device.id,  // ID interno para identificar en frontend
           shellyDeviceId: device.deviceId,  // deviceId de Shelly para comandos
-          online: status.online,
-          relayOn: status['switch:0']?.output !== undefined ? status['switch:0'].output : device.relayOn,
-          currentPower: status['switch:0']?.apower !== undefined ? status['switch:0'].apower : device.currentPower,
-          voltage: status['switch:0']?.voltage !== undefined ? status['switch:0'].voltage : device.voltage,
-          temperature: status.temperature !== undefined ? status.temperature : device.temperature,
+          online: isOnline,
+          relayOn: relayOn,
+          currentPower: currentPower,
+          voltage: voltage,
+          temperature: temperature,
           timestamp: Date.now()
         };
         
@@ -452,13 +474,13 @@ function setupOfflineManagerIntegration(io) {
               reason: update.reason
             };
             
-            // 🚨 DEBUG TEMPORAL: Ver exactamente qué se envía
-            console.log('🚨 [DEBUG SOCKET.IO] Enviando device-offline-status:', {
-              evento: 'device-offline-status',
-              room: device.credential.systemId,
-              deviceName: device.name,
-              socketUpdate
-            });
+            // 🚨 DEBUG TEMPORAL: Ver exactamente qué se envía (SILENCIADO)
+            // console.log('🚨 [DEBUG SOCKET.IO] Enviando device-offline-status:', {
+            //   evento: 'device-offline-status',
+            //   room: device.credential.systemId,
+            //   deviceName: device.name,
+            //   socketUpdate
+            // });
             
             io.to(device.credential.systemId).emit('device-offline-status', socketUpdate);
             wsLogger.verbose(`📤 [OfflineManager] Update específico enviado para ${device.name}`);
@@ -889,5 +911,395 @@ async function executeMonitoringCycle(io) {
     console.log('✅ Ciclo de monitoreo completado');
   } catch (error) {
     console.error('❌ Error en monitoreo automático:', error);
+  }
+}
+
+// 🎯 FUNCIÓN PRINCIPAL: Procesar actualizaciones de AppointmentDeviceUsage en tiempo real
+async function processAppointmentDeviceUsageUpdate(device, data) {
+  try {
+    const { currentPower, relayOn, voltage, temperature, isOnline, timestamp } = data;
+    
+    // Buscar registros activos para este dispositivo
+    const activeUsage = await prisma.appointmentDeviceUsage.findFirst({
+      where: {
+        deviceId: device.deviceId, // Usar deviceId de Shelly
+        currentStatus: { in: ['ACTIVE', 'PAUSED'] },
+        endedAt: null
+      },
+      include: {
+        appointment: {
+          include: {
+            services: {
+              include: {
+                service: true
+              }
+            }
+          }
+        },
+        equipmentClinicAssignment: {
+          include: {
+            equipment: true,
+            smartPlugDevice: true
+          }
+        }
+      }
+    });
+
+    if (!activeUsage) {
+      // No hay uso activo, solo actualizar dispositivo en BD
+      await updateDeviceInDatabase(device, data);
+      return;
+    }
+
+    console.log(`🔄 [REAL_TIME_UPDATE] Procesando ${device.name}:`, {
+      usageId: activeUsage.id,
+      currentPower,
+      relayOn,
+      isOnline,
+      appointmentId: activeUsage.appointmentId
+    });
+
+    // 🔍 VERIFICAR ESTADO OFFLINE
+    if (!isOnline) {
+      console.log(`📴 [REAL_TIME_UPDATE] Dispositivo offline: ${device.name}`);
+      await handleDeviceOffline(activeUsage, timestamp);
+      await updateDeviceInDatabase(device, data);
+      return;
+    }
+
+    // 🔍 VERIFICAR CONSUMO REAL
+    const hasRealConsumption = currentPower && currentPower > 0.1;
+
+    if (hasRealConsumption && relayOn) {
+      // ✅ HAY CONSUMO REAL - Procesar tiempo de uso
+      await processActiveConsumption(activeUsage, data, device);
+    } else if (relayOn) {
+      // 🟡 ENCENDIDO PERO SIN CONSUMO - Standby
+      await processStandbyState(activeUsage, data, device);
+    } else {
+      // 🔴 APAGADO - Verificar si fue manual o automático
+      await processDeviceTurnedOff(activeUsage, data, device);
+    }
+
+    // Actualizar siempre el dispositivo en BD
+    await updateDeviceInDatabase(device, data);
+
+  } catch (error) {
+    console.error(`❌ [REAL_TIME_UPDATE] Error procesando ${device.name}:`, error);
+  }
+}
+
+// 🟢 Procesar consumo activo real
+async function processActiveConsumption(activeUsage, data, device) {
+  const { currentPower, voltage, temperature, timestamp } = data;
+
+  try {
+    // Obtener datos actuales del uso
+    const currentDeviceData = activeUsage.deviceData || {};
+    const previousPower = currentDeviceData.lastPower || 0;
+    const lastConsumptionTimestamp = currentDeviceData.lastConsumptionAt ? 
+      new Date(currentDeviceData.lastConsumptionAt) : activeUsage.startedAt;
+
+    // 📅 CALCULAR TIEMPO REAL DE CONSUMO
+    let realStartTime = activeUsage.startedAt;
+    
+    // Si es la primera vez que hay consumo real, actualizar startedAt
+    if (!currentDeviceData.realConsumptionStarted) {
+      console.log(`🎯 [ACTIVE_CONSUMPTION] Primera vez con consumo real: ${device.name}`);
+      realStartTime = timestamp;
+      
+      await prisma.appointmentDeviceUsage.update({
+        where: { id: activeUsage.id },
+        data: {
+          startedAt: timestamp, // ✅ ACTUALIZAR startedAt al momento real de consumo
+          deviceData: {
+            ...currentDeviceData,
+            realConsumptionStarted: true,
+            realStartedAt: timestamp.toISOString(),
+            firstConsumptionPower: currentPower
+          }
+        }
+      });
+    }
+
+    // ⚡ ACUMULAR ENERGÍA
+    const timeDiffSeconds = (timestamp.getTime() - lastConsumptionTimestamp.getTime()) / 1000;
+    const energyIncrement = (currentPower * timeDiffSeconds) / 3600; // Wh
+    const currentEnergyConsumption = (activeUsage.energyConsumption || 0) + energyIncrement;
+
+    // ⏱️ CALCULAR TIEMPO REAL DE USO (solo tiempo con consumo)
+    const totalActiveMinutes = currentDeviceData.totalActiveMinutes || 0;
+    const newActiveMinutes = timeDiffSeconds / 60;
+    const updatedActiveMinutes = totalActiveMinutes + newActiveMinutes;
+
+    // 📊 ACTUALIZAR REGISTRO
+    const updatedDeviceData = {
+      ...currentDeviceData,
+      lastPower: currentPower,
+      lastVoltage: voltage,
+      lastTemperature: temperature,
+      lastConsumptionAt: timestamp.toISOString(),
+      totalActiveMinutes: updatedActiveMinutes,
+      energyAccumulated: currentEnergyConsumption,
+      powerHistory: [
+        ...(currentDeviceData.powerHistory || []).slice(-10), // Mantener últimos 10
+        { timestamp: timestamp.toISOString(), power: currentPower }
+      ]
+    };
+
+    await prisma.appointmentDeviceUsage.update({
+      where: { id: activeUsage.id },
+      data: {
+        actualMinutes: Math.round(updatedActiveMinutes),
+        energyConsumption: currentEnergyConsumption,
+        deviceData: updatedDeviceData,
+        updatedAt: timestamp
+      }
+    });
+
+    console.log(`✅ [ACTIVE_CONSUMPTION] Actualizado ${device.name}:`, {
+      actualMinutes: Math.round(updatedActiveMinutes),
+      estimatedMinutes: activeUsage.estimatedMinutes,
+      energyWh: Math.round(currentEnergyConsumption * 100) / 100,
+      currentPower
+    });
+
+    // 🚨 VERIFICAR APAGADO AUTOMÁTICO
+    await checkAutoShutdown(activeUsage, updatedActiveMinutes, device);
+
+  } catch (error) {
+    console.error(`❌ [ACTIVE_CONSUMPTION] Error en ${device.name}:`, error);
+  }
+}
+
+// 🟡 Procesar estado standby (encendido sin consumo)
+async function processStandbyState(activeUsage, data, device) {
+  const { timestamp } = data;
+
+  try {
+    const currentDeviceData = activeUsage.deviceData || {};
+    
+    console.log(`🟡 [STANDBY] ${device.name} encendido sin consumo`);
+
+    await prisma.appointmentDeviceUsage.update({
+      where: { id: activeUsage.id },
+      data: {
+        deviceData: {
+          ...currentDeviceData,
+          lastStandbyAt: timestamp.toISOString(),
+          inStandbyMode: true
+        },
+        updatedAt: timestamp
+      }
+    });
+
+  } catch (error) {
+    console.error(`❌ [STANDBY] Error en ${device.name}:`, error);
+  }
+}
+
+// 🔴 Procesar dispositivo apagado
+async function processDeviceTurnedOff(activeUsage, data, device) {
+  const { timestamp } = data;
+
+  try {
+    // 🛡️ PERÍODO DE GRACIA: No finalizar usos recién creados
+    const usageAge = timestamp.getTime() - activeUsage.startedAt.getTime();
+    const usageAgeSeconds = Math.round(usageAge / 1000);
+    const GRACE_PERIOD_SECONDS = 120; // ✅ EXTENDIDO: 2 minutos para reconexión WebSocket
+    
+    if (usageAgeSeconds < GRACE_PERIOD_SECONDS) {
+      console.log(`⏱️ [GRACE_PERIOD] ${device.name} - Uso recién creado (${usageAgeSeconds}s), aplicando período de gracia`);
+      console.log(`🔄 [GRACE_PERIOD] Esperando estabilización del dispositivo antes de finalizar automáticamente`);
+      return; // No finalizar automáticamente
+    }
+    
+    console.log(`🔴 [DEVICE_OFF] ${device.name} apagado después de ${usageAgeSeconds}s - finalizando uso`);
+
+    // Calcular tiempo total si no está calculado
+    const currentActiveMinutes = activeUsage.actualMinutes || 0;
+    
+    await prisma.appointmentDeviceUsage.update({
+      where: { id: activeUsage.id },
+      data: {
+        currentStatus: 'COMPLETED',
+        endedAt: timestamp,
+        actualMinutes: currentActiveMinutes,
+        deviceData: {
+          ...(activeUsage.deviceData || {}),
+          manuallyTurnedOff: true,
+          turnedOffAt: timestamp.toISOString()
+        },
+        updatedAt: timestamp
+      }
+    });
+
+    console.log(`✅ [DEVICE_OFF] ${device.name} uso finalizado:`, {
+      actualMinutes: currentActiveMinutes,
+      estimatedMinutes: activeUsage.estimatedMinutes
+    });
+
+  } catch (error) {
+    console.error(`❌ [DEVICE_OFF] Error en ${device.name}:`, error);
+  }
+}
+
+// 📴 Manejar dispositivo offline
+async function handleDeviceOffline(activeUsage, timestamp) {
+  try {
+    console.log(`📴 [OFFLINE] Pausando uso por desconexión: ${activeUsage.id}`);
+
+    await prisma.appointmentDeviceUsage.update({
+      where: { id: activeUsage.id },
+      data: {
+        currentStatus: 'PAUSED',
+        pausedAt: timestamp,
+        deviceData: {
+          ...(activeUsage.deviceData || {}),
+          pausedReason: 'device_offline',
+          pausedAt: timestamp.toISOString()
+        },
+        updatedAt: timestamp
+      }
+    });
+
+  } catch (error) {
+    console.error(`❌ [OFFLINE] Error pausando uso:`, error);
+  }
+}
+
+// 🚨 Verificar y ejecutar apagado automático
+async function checkAutoShutdown(activeUsage, actualMinutes, device) {
+  try {
+    const autoShutdownEnabled = activeUsage.equipmentClinicAssignment?.smartPlugDevice?.autoShutdownEnabled;
+    
+    if (!autoShutdownEnabled) {
+      return; // Apagado automático deshabilitado
+    }
+
+    if (actualMinutes >= activeUsage.estimatedMinutes) {
+      console.log(`⏰ [AUTO_SHUTDOWN] Tiempo cumplido para ${device.name}:`, {
+        actualMinutes: Math.round(actualMinutes),
+        estimatedMinutes: activeUsage.estimatedMinutes
+      });
+
+      await executeAutoShutdown(activeUsage, actualMinutes, device);
+    }
+
+  } catch (error) {
+    console.error(`❌ [AUTO_SHUTDOWN] Error verificando:`, error);
+  }
+}
+
+// 🤖 Ejecutar apagado automático
+async function executeAutoShutdown(activeUsage, actualMinutes, device) {
+  try {
+    console.log(`🤖 [AUTO_SHUTDOWN] Ejecutando para ${device.name}`);
+
+    const now = new Date();
+    let shutdownSuccessful = false;
+    let errorMessage = null;
+
+    // 1. Actualizar estado del uso
+    await prisma.appointmentDeviceUsage.update({
+      where: { id: activeUsage.id },
+      data: {
+        currentStatus: 'AUTO_SHUTDOWN',
+        endedAt: now,
+        actualMinutes: Math.round(actualMinutes),
+        deviceData: {
+          ...(activeUsage.deviceData || {}),
+          autoShutdownExecuted: true,
+          autoShutdownAt: now.toISOString()
+        }
+      }
+    });
+
+    // 2. Intentar apagar dispositivo
+    try {
+      const controlResponse = await fetch(`${process.env.NEXTAUTH_URL}/api/shelly/device/${device.deviceId}/control`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'off',
+          appointmentId: activeUsage.appointmentId,
+          reason: 'auto_shutdown_time_reached'
+        })
+      });
+
+      if (controlResponse.ok) {
+        shutdownSuccessful = true;
+        console.log(`✅ [AUTO_SHUTDOWN] Dispositivo apagado: ${device.name}`);
+      } else {
+        const errorData = await controlResponse.json();
+        errorMessage = errorData.error || 'Error desconocido';
+        console.error(`❌ [AUTO_SHUTDOWN] Error controlando:`, errorMessage);
+      }
+    } catch (controlError) {
+      errorMessage = controlError.message;
+      console.error(`❌ [AUTO_SHUTDOWN] Error de conexión:`, controlError);
+    }
+
+    // 3. Crear log del apagado automático
+    await prisma.autoShutdownLog.create({
+      data: {
+        appointmentDeviceUsageId: activeUsage.id,
+        appointmentId: activeUsage.appointmentId,
+        deviceId: device.deviceId,
+        equipmentClinicAssignmentId: activeUsage.equipmentClinicAssignmentId,
+        estimatedMinutes: activeUsage.estimatedMinutes,
+        actualMinutes: Math.round(actualMinutes),
+        shutdownSuccessful,
+        errorMessage,
+        autoShutdownEnabled: true,
+        deviceData: {
+          equipmentName: activeUsage.equipmentClinicAssignment?.equipment?.name,
+          deviceName: device.name,
+          triggeredAt: now.toISOString(),
+          actualMinutes: Math.round(actualMinutes)
+        },
+        systemId: device.credential.systemId
+      }
+    });
+
+    // 4. Emitir WebSocket de notificación
+    if (global.broadcastDeviceUpdate) {
+      global.broadcastDeviceUpdate(device.credential.systemId, {
+        type: 'auto-shutdown-executed',
+        appointmentId: activeUsage.appointmentId,
+        deviceId: device.id,
+        equipmentName: activeUsage.equipmentClinicAssignment?.equipment?.name,
+        shutdownSuccessful,
+        actualMinutes: Math.round(actualMinutes),
+        errorMessage
+      });
+    }
+
+    console.log(`🎯 [AUTO_SHUTDOWN] Completado para ${device.name}:`, {
+      shutdownSuccessful,
+      actualMinutes: Math.round(actualMinutes)
+    });
+
+  } catch (error) {
+    console.error(`❌ [AUTO_SHUTDOWN] Error crítico:`, error);
+  }
+}
+
+// 💾 Actualizar dispositivo en base de datos
+async function updateDeviceInDatabase(device, data) {
+  try {
+    await prisma.smartPlugDevice.update({
+      where: { id: device.id },
+      data: {
+        online: data.isOnline,
+        relayOn: data.relayOn,
+        currentPower: data.currentPower,
+        voltage: data.voltage,
+        temperature: data.temperature,
+        lastSeenAt: data.timestamp
+      }
+    });
+  } catch (error) {
+    console.error(`❌ Error actualizando dispositivo ${device.name}:`, error);
   }
 } 

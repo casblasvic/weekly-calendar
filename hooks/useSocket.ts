@@ -107,12 +107,7 @@ const useSocket = (systemId?: string): SocketHook => {
       socket.emit('join-system', systemId);
     });
 
-    // 🚨 DEBUG TEMPORAL: Escuchar TODOS los eventos (solo en desarrollo)
-    if (process.env.NODE_ENV === 'development') {
-      socket.onAny((eventName, ...args) => {
-        console.log('🚨 [DEBUG] Evento recibido:', eventName, args);
-      });
-    }
+    // ✅ ELIMINADO: Debug temporal que causaba spam en consola
 
     socket.on('disconnect', (reason) => {
       console.log('🔌 Socket.io desconectado. Razón:', reason);
@@ -131,7 +126,6 @@ const useSocket = (systemId?: string): SocketHook => {
     });
 
     socket.on('device-update', (update: DeviceUpdate) => {
-      console.log('🚨 [DEBUG] device-update recibido:', update);
       clientLogger.verbose('📱 Actualización de dispositivo recibida:', update);
       setLastUpdate(update);
       
@@ -146,27 +140,8 @@ const useSocket = (systemId?: string): SocketHook => {
       });
     });
 
-    // 🆕 ESCUCHAR CAMBIOS OFFLINE/ONLINE DEL SISTEMA CENTRALIZADO
-    socket.on('device-offline-status', (update: DeviceUpdate) => {
-      console.log('🚨 [DEBUG] Estado offline recibido en useSocket:', {
-        deviceId: update.deviceId,
-        online: update.online,
-        relayOn: update.relayOn,
-        timestamp: update.timestamp,
-        subscribersCount: subscribersRef.current.size
-      });
-      clientLogger.verbose('📡 Estado offline recibido:', update);
-      setLastUpdate(update);
-      
-      // Notificar a suscriptores (mismo callback, diferentes datos)
-      subscribersRef.current.forEach(callback => {
-        try {
-          callback(update);
-        } catch (error) {
-          console.error('Error en callback offline de suscriptor:', error);
-        }
-      });
-    });
+    // ✅ ELIMINADO: device-offline-status para evitar duplicación
+    // El DeviceOfflineManager maneja estos eventos directamente
 
     socket.on('device-error', (error) => {
       console.error('❌ Error de dispositivo recibido:', error);
