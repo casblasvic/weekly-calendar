@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerAuthSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { z } from 'zod'
+import { shellyWebSocketManager } from '@/lib/shelly/websocket-manager'
 
 // Schema de validación
 const assignDeviceSchema = z.object({
@@ -468,88 +469,52 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (assignment.smartPlugDevice && turnOnDevice) {
       // Ejecutar en el siguiente tick para no bloquear la respuesta
       process.nextTick(async () => {
-        let retryCount = 0;
-        const maxRetries = 3;
-        const retryDelay = 2000; // 2 segundos entre reintentos
-        
-        while (retryCount < maxRetries) {
-          try {
-            console.log(`🔌 [ASSIGN_DEVICE] Intento ${retryCount + 1}/${maxRetries} - Control asíncrono del dispositivo...`)
-            
-            const controlResponse = await fetch(`${process.env.NEXTAUTH_URL}/api/shelly/device/${deviceId}/control`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Cookie': request.headers.get('Cookie') || ''
-              },
-              body: JSON.stringify({
-                action: 'on',
-                appointmentId: appointmentId,
-                reason: 'device_assigned'
-              }),
-              signal: AbortSignal.timeout(10000) // 10 segundos timeout
+        try {
+          console.log('🔌 [ASSIGN_DEVICE] Control asíncrono del dispositivo usando WebSocket Manager...')
+          
+          // ✅ BUSCAR EL DISPOSITIVO COMPLETO PARA OBTENER CREDENTIAL ID
+          const fullDevice = await prisma.smartPlugDevice.findUnique({
+            where: { id: assignment.smartPlugDevice.id },
+            include: { credential: true }
+          })
+          
+          if (!fullDevice?.credential) {
+            throw new Error('Credencial del dispositivo no encontrada')
+          }
+          
+          // ✅ USAR DIRECTAMENTE EL WEBSOCKET MANAGER (ya maneja reconexiones automáticas)
+          await shellyWebSocketManager.controlDevice(
+            fullDevice.credential.id,
+            deviceId, 
+            'on'
+          )
+          
+          console.log('✅ [ASSIGN_DEVICE] Control de dispositivo completado exitosamente')
+          
+          // Emitir WebSocket con actualización de estado
+          if (global.broadcastDeviceUpdate) {
+            global.broadcastDeviceUpdate(systemId, {
+              type: 'device-control-completed',
+              appointmentId: appointmentId,
+              deviceId: deviceId,
+              equipmentClinicAssignmentId: equipmentClinicAssignmentId,
+              deviceTurnedOn: true
             })
-
-            if (controlResponse.ok) {
-              const deviceControlResult = await controlResponse.json()
-              console.log('✅ [ASSIGN_DEVICE] Control de dispositivo completado exitosamente:', deviceControlResult)
-              
-              // Emitir WebSocket con actualización de estado
-              if (global.broadcastDeviceUpdate) {
-                global.broadcastDeviceUpdate(systemId, {
-                  type: 'device-control-completed',
-                  appointmentId: appointmentId,
-                  deviceId: deviceId,
-                  equipmentClinicAssignmentId: equipmentClinicAssignmentId,
-                  deviceTurnedOn: true,
-                  controlResult: deviceControlResult,
-                  retryAttempt: retryCount + 1
-                })
-              }
-              return; // Éxito, salir del loop
-              
-            } else {
-              const errorData = await controlResponse.text()
-              console.error(`❌ [ASSIGN_DEVICE] Control falló con HTTP ${controlResponse.status}:`, errorData)
-              
-              if (controlResponse.status >= 500 && retryCount < maxRetries - 1) {
-                // Error del servidor, reintentar
-                retryCount++
-                console.log(`🔄 [ASSIGN_DEVICE] Reintentando en ${retryDelay}ms...`)
-                await new Promise(resolve => setTimeout(resolve, retryDelay))
-                continue
-              } else {
-                // Error del cliente o último intento, fallar
-                throw new Error(`HTTP ${controlResponse.status}: ${errorData}`)
-              }
-            }
-            
-          } catch (error) {
-            console.error(`❌ [ASSIGN_DEVICE] Error en intento ${retryCount + 1}:`, error instanceof Error ? error.message : error)
-            
-            if (retryCount < maxRetries - 1) {
-              retryCount++
-              console.log(`🔄 [ASSIGN_DEVICE] Reintentando en ${retryDelay}ms...`)
-              await new Promise(resolve => setTimeout(resolve, retryDelay))
-            } else {
-              // Último intento falló, notificar error
-              console.error('🚨 [ASSIGN_DEVICE] Control de dispositivo falló definitivamente después de todos los reintentos')
-              
-              // Emitir WebSocket con error
-              if (global.broadcastDeviceUpdate) {
-                global.broadcastDeviceUpdate(systemId, {
-                  type: 'device-control-failed',
-                  appointmentId: appointmentId,
-                  deviceId: deviceId,
-                  equipmentClinicAssignmentId: equipmentClinicAssignmentId,
-                  deviceTurnedOn: false,
-                  error: error instanceof Error ? error.message : String(error),
-                  retryAttempts: maxRetries
-                })
-              }
-              
-              break // Salir del loop
-            }
+          }
+          
+        } catch (error) {
+          console.error('❌ [ASSIGN_DEVICE] Error en control de dispositivo:', error instanceof Error ? error.message : error)
+          
+          // Emitir WebSocket con error
+          if (global.broadcastDeviceUpdate) {
+            global.broadcastDeviceUpdate(systemId, {
+              type: 'device-control-failed',
+              appointmentId: appointmentId,
+              deviceId: deviceId,
+              equipmentClinicAssignmentId: equipmentClinicAssignmentId,
+              deviceTurnedOn: false,
+              error: error instanceof Error ? error.message : String(error)
+            })
           }
         }
       })

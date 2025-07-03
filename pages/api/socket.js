@@ -1106,7 +1106,7 @@ async function processDeviceTurnedOff(activeUsage, data, device) {
     // 🛡️ PERÍODO DE GRACIA: No finalizar usos recién creados
     const usageAge = timestamp.getTime() - activeUsage.startedAt.getTime();
     const usageAgeSeconds = Math.round(usageAge / 1000);
-    const GRACE_PERIOD_SECONDS = 120; // ✅ EXTENDIDO: 2 minutos para reconexión WebSocket
+    const GRACE_PERIOD_SECONDS = 15; // ✅ VUELTO A ORIGINAL: 15 segundos es suficiente
     
     if (usageAgeSeconds < GRACE_PERIOD_SECONDS) {
       console.log(`⏱️ [GRACE_PERIOD] ${device.name} - Uso recién creado (${usageAgeSeconds}s), aplicando período de gracia`);
