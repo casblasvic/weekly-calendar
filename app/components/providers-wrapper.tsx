@@ -114,7 +114,7 @@
 
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useMemo, memo, useRef } from "react"
 import { SessionProvider, useSession } from "next-auth/react"
 import { usePathname } from "next/navigation"
 // Importar client-logger para cargar funciones globales de logs en el navegador
@@ -203,23 +203,54 @@ interface ProvidersWrapperProps {
  * 🔧 DEBUGGING:
  * Los logs muestran exactamente qué decisión se toma y por qué.
  */
-// ✅ COMPONENTE QUE SOLO RENDERIZA PROVIDERS SENSIBLES CUANDO HAY AUTENTICACIÓN
-function AuthenticatedProviders({ children }: { children: React.ReactNode }) {
+// ✅ MEMOIZAR COMPONENTE PARA EVITAR RE-RENDERIZADOS INNECESARIOS
+const AuthenticatedProviders = memo(function AuthenticatedProviders({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession()
   const pathname = usePathname()
+  const lastStatusRef = useRef<string>('')
+  const lastPathnameRef = useRef<string>('')
   
-  // ✅ VERIFICAR SI ESTAMOS EN PÁGINA DE LOGIN USANDO PATHNAME DE NEXT.JS
-  const isLoginPage = pathname === '/login'
+  // ✅ MEMOIZAR VERIFICACIÓN DE LOGIN PAGE
+  const isLoginPage = useMemo(() => pathname === '/login', [pathname])
+  
+  // ✅ MEMOIZAR ESTADO DE AUTENTICACIÓN
+  const authState = useMemo(() => ({
+    isLoginPage,
+    isLoading: status === "loading",
+    isUnauthenticated: status === "unauthenticated" || !session,
+    isAuthenticated: status === "authenticated" && !!session
+  }), [isLoginPage, status, session])
+
+  // ✅ REDUCIR LOGS - Solo mostrar cuando el estado realmente cambie
+  useEffect(() => {
+    const currentState = `${status}-${pathname}`;
+    const lastState = `${lastStatusRef.current}-${lastPathnameRef.current}`;
+    
+    if (currentState !== lastState) {
+      lastStatusRef.current = status;
+      lastPathnameRef.current = pathname;
+      
+      if (process.env.NODE_ENV === 'development') {
+        if (authState.isLoginPage) {
+          console.log('🚫 [AuthenticatedProviders] En página de LOGIN - NO cargando providers sensibles')
+        } else if (authState.isLoading) {
+          console.log('⏳ [AuthenticatedProviders] Cargando autenticación...')
+        } else if (authState.isUnauthenticated) {
+          console.log('🚫 [AuthenticatedProviders] NO autenticado - renderizando solo children')
+        } else if (authState.isAuthenticated) {
+          console.log('✅ [AuthenticatedProviders] AUTENTICADO y NO en login - cargando todos los providers')
+        }
+      }
+    }
+  }, [authState, status, pathname])
   
   // ✅ SI ESTAMOS EN LOGIN, NUNCA CARGAR PROVIDERS SENSIBLES
-  if (isLoginPage) {
-    console.log('🚫 [AuthenticatedProviders] En página de LOGIN - NO cargando providers sensibles')
+  if (authState.isLoginPage) {
     return <>{children}</>
   }
   
   // ✅ SOLO RENDERIZAR PROVIDERS SENSIBLES SI ESTÁ COMPLETAMENTE AUTENTICADO
-  if (status === "loading") {
-    console.log('⏳ [AuthenticatedProviders] Cargando autenticación...')
+  if (authState.isLoading) {
     return (
       <div className="flex justify-center items-center min-h-screen">
         <div className="text-center">
@@ -230,14 +261,12 @@ function AuthenticatedProviders({ children }: { children: React.ReactNode }) {
     )
   }
   
-  if (status === "unauthenticated" || !session) {
+  if (authState.isUnauthenticated) {
     // ✅ SI NO ESTÁ AUTENTICADO, SOLO RENDERIZAR CHILDREN SIN PROVIDERS SENSIBLES
-    console.log('🚫 [AuthenticatedProviders] NO autenticado - renderizando solo children')
     return <>{children}</>
   }
   
   // ✅ SI ESTÁ AUTENTICADO Y NO EN LOGIN, RENDERIZAR TODOS LOS PROVIDERS SENSIBLES
-  console.log('✅ [AuthenticatedProviders] AUTENTICADO y NO en login - cargando todos los providers')
   return (
     <DataServiceProvider>
       <InterfazProvider>
@@ -283,7 +312,7 @@ function AuthenticatedProviders({ children }: { children: React.ReactNode }) {
       </InterfazProvider>
     </DataServiceProvider>
   )
-}
+})
 
 export function ProvidersWrapper({ children, session }: ProvidersWrapperProps) {
   return (

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import io, { Socket } from 'socket.io-client';
 import { clientLogger } from '@/lib/utils/client-logger';
 
@@ -26,7 +26,10 @@ const useSocket = (systemId?: string): SocketHook => {
   const [lastUpdate, setLastUpdate] = useState<DeviceUpdate | null>(null);
   const subscribersRef = useRef<Set<(update: DeviceUpdate) => void>>(new Set());
   const initializingRef = useRef(false);
+  const lastSystemIdRef = useRef<string | undefined>(undefined);
+  const isInitializedRef = useRef(false);
 
+  // ✅ MEMOIZAR requestDeviceUpdate
   const requestDeviceUpdate = useCallback((deviceId: string) => {
     if (socketRef.current?.connected) {
       console.log('📞 Solicitando actualización de dispositivo:', deviceId);
@@ -36,6 +39,7 @@ const useSocket = (systemId?: string): SocketHook => {
     }
   }, []);
 
+  // ✅ MEMOIZAR subscribe
   const subscribe = useCallback((callback: (update: DeviceUpdate) => void) => {
     console.log('📝 Nuevo suscriptor agregado. Total:', subscribersRef.current.size + 1);
     subscribersRef.current.add(callback);
@@ -48,14 +52,32 @@ const useSocket = (systemId?: string): SocketHook => {
   }, []);
 
   useEffect(() => {
-    if (!systemId || initializingRef.current) {
-      if (!systemId) {
+    // ✅ GUARD: Si no hay systemId, no hacer nada
+    if (!systemId) {
+      if (process.env.NODE_ENV === 'development') {
         console.log('❌ useSocket: No systemId provided');
       }
       return;
     }
 
+    // ✅ GUARD: Si ya se inicializó para el mismo systemId, no reinicializar
+    if (isInitializedRef.current && lastSystemIdRef.current === systemId && socketRef.current?.connected) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('✅ useSocket: Ya conectado para systemId:', systemId, '- reutilizando conexión');
+      }
+      return;
+    }
+
+    // ✅ GUARD: Si ya está inicializando, no inicializar otra vez
+    if (initializingRef.current) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('⏳ useSocket: Ya inicializando para systemId:', systemId, '- esperando...');
+      }
+      return;
+    }
+
     initializingRef.current = true;
+    lastSystemIdRef.current = systemId;
     console.log('🔌 useSocket: Inicializando conexión Socket.io para systemId:', systemId);
 
     // Inicializar el servidor Socket.io primero
@@ -68,7 +90,7 @@ const useSocket = (systemId?: string): SocketHook => {
     // Inicializar conexión Socket.io
     socketRef.current = io({
       path: '/api/socket',
-      forceNew: false, // Cambiar a false para reutilizar conexiones
+      forceNew: false, // Reutilizar conexiones existentes
       reconnection: true,
       timeout: 20000,
     });
@@ -78,25 +100,30 @@ const useSocket = (systemId?: string): SocketHook => {
     socket.on('connect', () => {
       console.log('🔗 Socket.io conectado con ID:', socket.id);
       setIsConnected(true);
+      isInitializedRef.current = true;
       
       // Unirse al room del sistema
       console.log('📡 Uniéndose al room del sistema:', systemId);
       socket.emit('join-system', systemId);
     });
 
-    // 🚨 DEBUG TEMPORAL: Escuchar TODOS los eventos
-    socket.onAny((eventName, ...args) => {
-      console.log('🚨 [DEBUG] Evento recibido:', eventName, args);
-    });
+    // 🚨 DEBUG TEMPORAL: Escuchar TODOS los eventos (solo en desarrollo)
+    if (process.env.NODE_ENV === 'development') {
+      socket.onAny((eventName, ...args) => {
+        console.log('🚨 [DEBUG] Evento recibido:', eventName, args);
+      });
+    }
 
     socket.on('disconnect', (reason) => {
       console.log('🔌 Socket.io desconectado. Razón:', reason);
       setIsConnected(false);
+      isInitializedRef.current = false;
     });
 
     socket.on('connect_error', (error) => {
       console.error('❌ Error de conexión Socket.io:', error);
       setIsConnected(false);
+      isInitializedRef.current = false;
     });
 
     socket.on('connection-status', (status) => {
@@ -167,16 +194,21 @@ const useSocket = (systemId?: string): SocketHook => {
       socketRef.current = null;
       setIsConnected(false);
       initializingRef.current = false;
+      isInitializedRef.current = false;
+      lastSystemIdRef.current = undefined;
     };
   }, [systemId]); // Solo depende de systemId
 
-  return {
+  // ✅ MEMOIZAR el resultado del hook
+  const result = useMemo(() => ({
     socket: socketRef.current,
     isConnected,
     lastUpdate,
     requestDeviceUpdate,
     subscribe
-  };
+  }), [isConnected, lastUpdate, requestDeviceUpdate, subscribe]);
+
+  return result;
 };
 
 export default useSocket; 

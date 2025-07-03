@@ -101,6 +101,7 @@ export function LayoutWrapper({ children, user }: LayoutWrapperProps) {
   const pathname = usePathname()
   const sidebarRef = useRef<HTMLDivElement>(null)
   const lastPathname = useRef<string>(pathname || "")
+  const lastLayoutState = useRef<string>('')
   
   // ✅ NUEVO: Hook para enchufes inteligentes en floating menu
   const smartPlugsData = useSmartPlugsFloatingMenu()
@@ -109,18 +110,8 @@ export function LayoutWrapper({ children, user }: LayoutWrapperProps) {
   const isLoginPage = useMemo(() => {
     // ✅ SOLO usar pathname de Next.js (es más confiable)
     const result = pathname === '/login'
-    
-    console.log('🔍 [LayoutWrapper] Verificación de login:', {
-      pathname,
-      windowPathname: typeof window !== 'undefined' ? window.location.pathname : 'N/A',
-      isLoginPage: result,
-      status,
-      sessionExists: !!session,
-      decision: result ? 'LAYOUT SIMPLE' : 'LAYOUT COMPLETO'
-    })
-    
     return result
-  }, [pathname, status, session])
+  }, [pathname])
 
   /**
    * LÓGICA CRÍTICA DE SEGURIDAD - shouldShowFullLayout
@@ -151,18 +142,39 @@ export function LayoutWrapper({ children, user }: LayoutWrapperProps) {
   const shouldShowFullLayout = useMemo(() => {
     // SOLO bloquear si estamos en página de login
     if (isLoginPage) {
-      console.log('🚫 [LayoutWrapper] En página de login - layout simple')
       return false
     }
     
     // ✅ PARA TODO LO DEMÁS: Mostrar layout completo
-    console.log('✅ [LayoutWrapper] Fuera de login - layout completo', {
-      status,
-      sessionExists: !!session,
-      hasMounted
-    })
     return true
-  }, [isLoginPage, status, session, hasMounted])
+  }, [isLoginPage])
+
+  // ✅ LOGS OPTIMIZADOS: Solo mostrar cuando hay cambio real
+  useEffect(() => {
+    const currentState = `${pathname}-${status}-${!!session}-${hasMounted}`;
+    
+    if (currentState !== lastLayoutState.current && process.env.NODE_ENV === 'development') {
+      lastLayoutState.current = currentState;
+      
+      console.log('🔍 [LayoutWrapper] Verificación de login:', {
+        pathname,
+        isLoginPage,
+        status,
+        sessionExists: !!session,
+        decision: isLoginPage ? 'LAYOUT SIMPLE' : 'LAYOUT COMPLETO'
+      })
+      
+      if (isLoginPage) {
+        console.log('🚫 [LayoutWrapper] En página de login - layout simple')
+      } else {
+        console.log('✅ [LayoutWrapper] Fuera de login - layout completo', {
+          status,
+          sessionExists: !!session,
+          hasMounted
+        })
+      }
+    }
+  }, [pathname, status, session, hasMounted, isLoginPage])
 
   clientLogger.debug('🔍 [LayoutWrapper] Decisión de layout:', {
     isLoginPage,
@@ -175,13 +187,17 @@ export function LayoutWrapper({ children, user }: LayoutWrapperProps) {
   useEffect(() => {
     // ✅ EXCLUIR PÁGINA DE LOGIN para evitar bucles infinitos
     if (pathname === '/login') {
-      console.log('🔍 [LayoutWrapper] En página de login - saltando verificación de sesión')
+      if (process.env.NODE_ENV === 'development') {
+        console.log('🔍 [LayoutWrapper] En página de login - saltando verificación de sesión')
+      }
       return
     }
     
     // ✅ SOLO VERIFICAR SESIÓN EN PÁGINAS PROTEGIDAS
     if (status === "loading") {
-      console.log('⏳ [LayoutWrapper] Sesión cargando...')
+      if (process.env.NODE_ENV === 'development') {
+        console.log('⏳ [LayoutWrapper] Sesión cargando...')
+      }
       return // Aún cargando
     }
     
@@ -230,7 +246,9 @@ export function LayoutWrapper({ children, user }: LayoutWrapperProps) {
         if (routeMatch && routeMatch[1]) {
           const parsedDate = new Date(routeMatch[1])
           if (!isNaN(parsedDate.getTime())) {
-            console.log('[LayoutWrapper] ✅ Fecha extraída de ruta:', format(parsedDate, 'yyyy-MM-dd'))
+            if (process.env.NODE_ENV === 'development') {
+              console.log('[LayoutWrapper] ✅ Fecha extraída de ruta:', format(parsedDate, 'yyyy-MM-dd'))
+            }
             return parsedDate
           }
         }
@@ -242,18 +260,24 @@ export function LayoutWrapper({ children, user }: LayoutWrapperProps) {
           if (dateParam) {
             const parsedDate = new Date(dateParam)
             if (!isNaN(parsedDate.getTime())) {
-              console.log('[LayoutWrapper] ✅ Fecha extraída de query params:', format(parsedDate, 'yyyy-MM-dd'))
+              if (process.env.NODE_ENV === 'development') {
+                console.log('[LayoutWrapper] ✅ Fecha extraída de query params:', format(parsedDate, 'yyyy-MM-dd'))
+              }
               return parsedDate
             }
           }
         }
       } catch (error) {
-        console.log('[LayoutWrapper] ⚠️ Error al extraer fecha de URL:', error)
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[LayoutWrapper] ⚠️ Error al extraer fecha de URL:', error)
+        }
       }
     }
     
     // ✅ FALLBACK: Solo usar fecha actual si NO hay nada más
-    console.log('[LayoutWrapper] ⚠️ No se pudo obtener fecha de vista - usando fecha actual')
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[LayoutWrapper] ⚠️ No se pudo obtener fecha de vista - usando fecha actual')
+    }
     return new Date()
   }, [pathname])
   
