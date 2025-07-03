@@ -42,7 +42,7 @@
 
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { parse, format } from 'date-fns';
+import { parse, format, isSameWeek } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { AgendaLayout } from "@/components/agenda/agenda-layout"; 
 import ResponsiveAgendaView from "@/components/responsive-agenda-view";
@@ -59,31 +59,54 @@ export default function WeeklyAgendaPage({ params: paramsProp }: WeeklyAgendaPag
   const router = useRouter();
   const { activeClinic } = useClinic();
   
-  // Estados para manejar la carga y la fecha
-  const [isLoadingParams, setIsLoadingParams] = useState(true);
-  const [dateParam, setDateParam] = useState<string | null>(null);
-  const [currentDate, setCurrentDate] = useState<Date | null>(null);
-
-  // Efecto para manejar los params (ya sean Promise o no)
-  useEffect(() => {
-    const loadParams = async () => {
+  // ✅ RESOLUCIÓN OPTIMIZADA: Intentar resolver params sincrónicamente primero
+  const [dateParam, setDateParam] = useState<string | null>(() => {
+    // Si params no es una Promise, resolverlo inmediatamente
+    if (paramsProp && typeof paramsProp === 'object' && !('then' in paramsProp)) {
+      return paramsProp.date;
+    }
+    return null;
+  });
+  
+  const [currentDate, setCurrentDate] = useState<Date | null>(() => {
+    // Si tenemos dateParam inmediatamente, parsear la fecha
+    if (paramsProp && typeof paramsProp === 'object' && !('then' in paramsProp)) {
       try {
-        // Si paramsProp es una promesa, la resolvemos
-        const resolvedParams = 'then' in paramsProp ? await paramsProp : paramsProp;
-        setDateParam(resolvedParams.date);
-        
-        // Parsear la fecha
-        const parsedDate = parse(resolvedParams.date, "yyyy-MM-dd", new Date());
-        setCurrentDate(parsedDate);
+        return parse(paramsProp.date, "yyyy-MM-dd", new Date());
       } catch (error) {
-        console.error("Error loading params in WeeklyAgendaPage:", error);
-      } finally {
-        setIsLoadingParams(false);
+        console.error("Error parsing date in WeeklyAgendaPage:", error);
+        return null;
       }
-    };
+    }
+    return null;
+  });
+  
+  // ✅ LOADING STATE OPTIMIZADO: Solo true si realmente necesitamos resolver una Promise
+  const [isLoadingParams, setIsLoadingParams] = useState(() => {
+    return !!(paramsProp && typeof paramsProp === 'object' && 'then' in paramsProp);
+  });
 
-    loadParams();
-  }, [paramsProp]);
+  // ✅ useEffect SOLO para casos asincrónicos (Promise params)
+  useEffect(() => {
+    // Solo ejecutar si params es una Promise Y aún no tenemos datos
+    if (paramsProp && typeof paramsProp === 'object' && 'then' in paramsProp && !dateParam) {
+      const loadParams = async () => {
+        try {
+          const resolvedParams = await paramsProp;
+          setDateParam(resolvedParams.date);
+          
+          const parsedDate = parse(resolvedParams.date, "yyyy-MM-dd", new Date());
+          setCurrentDate(parsedDate);
+        } catch (error) {
+          console.error("Error loading async params in WeeklyAgendaPage:", error);
+        } finally {
+          setIsLoadingParams(false);
+        }
+      };
+
+      loadParams();
+    }
+  }, [paramsProp, dateParam]);
 
   // ✅ USAR CACHE HOOK PARA DETECTAR SI HAY DATOS DISPONIBLES
   const { 
@@ -91,9 +114,9 @@ export default function WeeklyAgendaPage({ params: paramsProp }: WeeklyAgendaPag
     appointments: cachedAppointments 
   } = useWeeklyAgendaData(currentDate || new Date());
 
-  // ✅ LÓGICA OPTIMIZADA: Solo mostrar loading si realmente no hay datos
+  // ✅ LÓGICA OPTIMIZADA: Solo mostrar loading si realmente no hay datos útiles para la semana actual
   const shouldShowLoading = useMemo(() => {
-    // 1. Si aún estamos cargando los params de la URL
+    // 1. Si aún estamos resolviendo params asincrónicos
     if (isLoadingParams || !currentDate || !dateParam) {
       return true;
     }
@@ -103,12 +126,24 @@ export default function WeeklyAgendaPage({ params: paramsProp }: WeeklyAgendaPag
       return true;
     }
     
-    // 3. Solo mostrar loading si el cache está cargando Y no hay datos previos
-    if (isCacheLoading && (!cachedAppointments || cachedAppointments.length === 0)) {
+    // 3. ✅ NUEVA LÓGICA: Verificar si hay datos específicos para la semana actual
+    const hasDataForCurrentWeek = cachedAppointments && cachedAppointments.some(apt => {
+      return apt.date && isSameWeek(apt.date, currentDate, { weekStartsOn: 1 });
+    });
+    
+    // Solo mostrar loading si está cargando Y no hay datos específicos para la semana actual
+    if (isCacheLoading && !hasDataForCurrentWeek) {
+      console.log('[WeeklyAgendaPage] 🔄 Mostrando loading: cache cargando y sin datos para semana actual');
       return true;
     }
     
-    // ✅ En todos los demás casos, mostrar la vista (puede tener datos en cache)
+    // ✅ Si hay datos para la semana actual, NO mostrar loading aunque el cache esté refrescando
+    if (hasDataForCurrentWeek) {
+      console.log('[WeeklyAgendaPage] ✅ Datos disponibles para semana actual - NO mostrar loading');
+      return false;
+    }
+    
+    // ✅ En todos los demás casos, mostrar la vista (puede tener datos en cache o vista vacía)
     return false;
   }, [isLoadingParams, currentDate, dateParam, activeClinic, isCacheLoading, cachedAppointments]);
 
@@ -145,7 +180,7 @@ export default function WeeklyAgendaPage({ params: paramsProp }: WeeklyAgendaPag
           <span>
             {isLoadingParams ? 'Cargando parámetros...' :
              !activeClinic ? 'Cargando clínica...' :
-             'Cargando agenda...'}
+             'Cargando agenda semanal...'}
           </span>
         </div>
       </div>

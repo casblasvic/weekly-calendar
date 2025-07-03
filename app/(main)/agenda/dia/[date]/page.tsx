@@ -57,31 +57,54 @@ export default function DailyAgendaPage({ params: paramsProp }: DailyAgendaPageP
   const router = useRouter();
   const { activeClinic } = useClinic();
   
-  // Estados para manejar la carga y la fecha
-  const [isLoadingParams, setIsLoadingParams] = useState(true);
-  const [dateParam, setDateParam] = useState<string | null>(null);
-  const [currentDate, setCurrentDate] = useState<Date | null>(null);
-
-  // Efecto para manejar los params (ya sean Promise o no)
-  useEffect(() => {
-    const loadParams = async () => {
+  // ✅ RESOLUCIÓN OPTIMIZADA: Intentar resolver params sincrónicamente primero
+  const [dateParam, setDateParam] = useState<string | null>(() => {
+    // Si params no es una Promise, resolverlo inmediatamente
+    if (paramsProp && typeof paramsProp === 'object' && !('then' in paramsProp)) {
+      return paramsProp.date;
+    }
+    return null;
+  });
+  
+  const [currentDate, setCurrentDate] = useState<Date | null>(() => {
+    // Si tenemos dateParam inmediatamente, parsear la fecha
+    if (paramsProp && typeof paramsProp === 'object' && !('then' in paramsProp)) {
       try {
-        // Si paramsProp es una promesa, la resolvemos
-        const resolvedParams = 'then' in paramsProp ? await paramsProp : paramsProp;
-        setDateParam(resolvedParams.date);
-        
-        // Parsear la fecha
-        const parsedDate = parse(resolvedParams.date, "yyyy-MM-dd", new Date());
-        setCurrentDate(parsedDate);
+        return parse(paramsProp.date, "yyyy-MM-dd", new Date());
       } catch (error) {
-        console.error("Error loading params in DailyAgendaPage:", error);
-      } finally {
-        setIsLoadingParams(false);
+        console.error("Error parsing date in DailyAgendaPage:", error);
+        return null;
       }
-    };
+    }
+    return null;
+  });
+  
+  // ✅ LOADING STATE OPTIMIZADO: Solo true si realmente necesitamos resolver una Promise
+  const [isLoadingParams, setIsLoadingParams] = useState(() => {
+    return !!(paramsProp && typeof paramsProp === 'object' && 'then' in paramsProp);
+  });
 
-    loadParams();
-  }, [paramsProp]);
+  // ✅ useEffect SOLO para casos asincrónicos (Promise params)
+  useEffect(() => {
+    // Solo ejecutar si params es una Promise Y aún no tenemos datos
+    if (paramsProp && typeof paramsProp === 'object' && 'then' in paramsProp && !dateParam) {
+      const loadParams = async () => {
+        try {
+          const resolvedParams = await paramsProp;
+          setDateParam(resolvedParams.date);
+          
+          const parsedDate = parse(resolvedParams.date, "yyyy-MM-dd", new Date());
+          setCurrentDate(parsedDate);
+        } catch (error) {
+          console.error("Error loading async params in DailyAgendaPage:", error);
+        } finally {
+          setIsLoadingParams(false);
+        }
+      };
+
+      loadParams();
+    }
+  }, [paramsProp, dateParam]);
 
   // ✅ USAR CACHE HOOK SEMANAL PARA OBTENER DATOS DEL DÍA (más eficiente)
   const { 
@@ -98,9 +121,9 @@ export default function DailyAgendaPage({ params: paramsProp }: DailyAgendaPageP
     );
   }, [weeklyAppointments, currentDate]);
 
-  // ✅ LÓGICA OPTIMIZADA: Solo mostrar loading si realmente no hay datos
+  // ✅ LÓGICA OPTIMIZADA: Solo mostrar loading si realmente no hay datos útiles para el día actual
   const shouldShowLoading = useMemo(() => {
-    // 1. Si aún estamos cargando los params de la URL
+    // 1. Si aún estamos resolviendo params asincrónicos
     if (isLoadingParams || !currentDate || !dateParam) {
       return true;
     }
@@ -110,12 +133,24 @@ export default function DailyAgendaPage({ params: paramsProp }: DailyAgendaPageP
       return true;
     }
     
-    // 3. Solo mostrar loading si el cache está cargando Y no hay datos previos
-    if (isCacheLoading && (!weeklyAppointments || weeklyAppointments.length === 0)) {
+    // 3. ✅ NUEVA LÓGICA: Verificar si hay datos específicos para el día actual
+    const hasDataForCurrentDay = weeklyAppointments && weeklyAppointments.some(apt => {
+      return apt.date && isSameDay(apt.date, currentDate);
+    });
+    
+    // Solo mostrar loading si está cargando Y no hay datos específicos para el día actual
+    if (isCacheLoading && !hasDataForCurrentDay) {
+      console.log('[DailyAgendaPage] 🔄 Mostrando loading: cache cargando y sin datos para día actual');
       return true;
     }
     
-    // ✅ En todos los demás casos, mostrar la vista (puede tener datos en cache)
+    // ✅ Si hay datos para el día actual, NO mostrar loading aunque el cache esté refrescando
+    if (hasDataForCurrentDay) {
+      console.log('[DailyAgendaPage] ✅ Datos disponibles para día actual - NO mostrar loading');
+      return false;
+    }
+    
+    // ✅ En todos los demás casos, mostrar la vista (puede tener datos en cache o vista vacía)
     return false;
   }, [isLoadingParams, currentDate, dateParam, activeClinic, isCacheLoading, weeklyAppointments]);
 
@@ -152,7 +187,7 @@ export default function DailyAgendaPage({ params: paramsProp }: DailyAgendaPageP
           <span>
             {isLoadingParams ? 'Cargando parámetros...' :
              !activeClinic ? 'Cargando clínica...' :
-             'Cargando agenda...'}
+             'Cargando agenda diaria...'}
           </span>
         </div>
       </div>
