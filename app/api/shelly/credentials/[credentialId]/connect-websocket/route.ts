@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerAuthSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { isShellyModuleActive } from '@/lib/services/shelly-module-service';
 
 /**
  * ========================================
@@ -42,6 +43,16 @@ export async function POST(
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
     }
 
+    // 🛡️ PASO 3B: Verificar módulo Shelly activo
+    const isModuleActive = await isShellyModuleActive(session.user.systemId);
+    if (!isModuleActive) {
+      console.log(`🔒 [CONNECT-WS] Módulo Shelly INACTIVO para sistema ${session.user.systemId} - Conexión WebSocket bloqueada`);
+      return NextResponse.json({ 
+        error: "Módulo de control de enchufes inteligentes inactivo",
+        details: "El módulo de control de enchufes inteligentes Shelly está desactivado. Active el módulo desde el marketplace para usar esta funcionalidad."
+      }, { status: 403 });
+    }
+
     const { credentialId } = await params;
 
     // Verificar que la credencial existe y pertenece al usuario
@@ -67,11 +78,12 @@ export async function POST(
       );
     }
 
-    // Buscar o crear conexión WebSocket
+    // Buscar o crear conexión WebSocket (con filtro multi-tenant)
     const existingConnection = await prisma.webSocketConnection.findFirst({
       where: {
         type: 'SHELLY',
-        referenceId: credentialId
+        referenceId: credentialId,
+        systemId: session.user.systemId // 🛡️ FILTRO MULTI-TENANT
       }
     });
 
@@ -95,6 +107,7 @@ export async function POST(
         data: {
           type: 'SHELLY',
           referenceId: credentialId,
+          systemId: session.user.systemId, // 🆔 AÑADIR systemId obligatorio
           status: 'connecting',
           autoReconnect: true,
           metadata: {
@@ -125,6 +138,7 @@ export async function POST(
       await prisma.webSocketLog.create({
         data: {
           connectionId,
+          systemId: session.user.systemId, // 🆔 AÑADIR systemId obligatorio
           eventType: 'manual_reconnect',
           message: `Manual reconnect by user ${session.user.email} (${session.user.id})`,
           metadata: {

@@ -83,7 +83,22 @@ class ShellyWebSocketWorker {
 
     private async initializeConnections(): Promise<void> {
         try {
-            // Obtener todas las credenciales activas
+            // 🛡️ VERIFICAR MÓDULO SHELLY ACTIVO ANTES DE CARGAR CREDENCIALES
+            const firstSystemWithCredentials = await prisma.shellyCredential.findFirst({
+                select: { systemId: true }
+            });
+            
+            if (firstSystemWithCredentials) {
+                const { isShellyModuleActive } = await import('@/lib/services/shelly-module-service');
+                const isModuleActive = await isShellyModuleActive(firstSystemWithCredentials.systemId);
+                
+                if (!isModuleActive) {
+                    this.log('warn', '🔒 Módulo Shelly INACTIVO - Omitiendo inicialización de credenciales');
+                    return;
+                }
+            }
+            
+            // Obtener todas las credenciales activas solo si módulo está activo
             const credentials = await prisma.shellyCredential.findMany({
                 where: {
                     status: 'connected'
@@ -120,9 +135,10 @@ class ShellyWebSocketWorker {
         this.log('debug', 'Ejecutando health check...');
         
         try {
-            // Obtener estado de todas las conexiones
+            // Obtener estado de todas las conexiones Shelly (sin filtrar por systemId ya que el worker maneja todos los sistemas)
             const connections = await prisma.webSocketConnection.findMany({
-                where: { type: 'SHELLY' }
+                where: { type: 'SHELLY' },
+                include: { system: { select: { id: true, name: true } } }
             });
 
             const activeCount = connections.filter(c => c.status === 'connected').length;
@@ -158,12 +174,28 @@ class ShellyWebSocketWorker {
 
     private async checkAndReconnect(): Promise<void> {
         try {
-            // Buscar conexiones desconectadas o con error
+            // 🛡️ VERIFICAR MÓDULO SHELLY ACTIVO ANTES DE RECONECTAR
+            const firstCredential = await prisma.shellyCredential.findFirst({
+                select: { systemId: true }
+            });
+            
+            if (firstCredential) {
+                const { isShellyModuleActive } = await import('@/lib/services/shelly-module-service');
+                const isModuleActive = await isShellyModuleActive(firstCredential.systemId);
+                
+                if (!isModuleActive) {
+                    this.log('warn', '🔒 Módulo Shelly INACTIVO - Omitiendo verificación de reconexiones');
+                    return;
+                }
+            }
+            
+            // Buscar conexiones desconectadas o con error solo si módulo está activo
             const problemConnections = await prisma.webSocketConnection.findMany({
                 where: {
                     type: 'SHELLY',
                     status: { in: ['disconnected', 'error'] }
-                }
+                },
+                include: { system: { select: { id: true, name: true } } }
             });
 
             for (const connection of problemConnections) {

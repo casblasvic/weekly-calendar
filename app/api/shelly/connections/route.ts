@@ -23,10 +23,11 @@ export async function GET(request: NextRequest) {
             }
         });
 
-        // Obtener estado de conexiones WebSocket
+        // Obtener estado de conexiones WebSocket (con filtro multi-tenant)
         const wsConnections = await prisma.webSocketConnection.findMany({
             where: {
                 type: 'SHELLY',
+                systemId: session.user.systemId, // 🛡️ FILTRO MULTI-TENANT
                 referenceId: {
                     in: credentials.map(c => c.id)
                 }

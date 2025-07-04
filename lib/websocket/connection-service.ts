@@ -234,6 +234,7 @@ import { prisma } from '@/lib/db';
 export interface WebSocketConnectionData {
   type: string;
   referenceId: string;
+  systemId: string; // 🆔 AÑADIR systemId obligatorio para multi-tenancy
   status: 'connected' | 'disconnected' | 'error' | 'reconnecting' | 'connecting';
   errorMessage?: string;
   metadata?: Record<string, any>;
@@ -241,6 +242,7 @@ export interface WebSocketConnectionData {
 
 export interface WebSocketLogData {
   connectionId: string;
+  systemId: string; // 🆔 AÑADIR systemId obligatorio para multi-tenancy
   eventType: 'connect' | 'disconnect' | 'error' | 'message' | 'ping' | 'reconnect';
   message?: string;
   errorDetails?: string;
@@ -261,9 +263,10 @@ export class WebSocketConnectionService {
       // Intentar encontrar conexión existente
       const existing = await prisma.webSocketConnection.findUnique({
         where: {
-          unique_websocket_per_reference: {
+          unique_websocket_per_reference_system: {
             type: data.type,
-            referenceId: data.referenceId
+            referenceId: data.referenceId,
+            systemId: data.systemId
           }
         }
       });
@@ -285,19 +288,44 @@ export class WebSocketConnectionService {
         return { id: existing.id, isNew: false };
       }
 
+      // 🛡️ CONFIGURAR autoReconnect SEGÚN ESTADO DEL MÓDULO (para conexiones Shelly)
+      let autoReconnectValue = true; // Valor por defecto para tipos no-Shelly
+      
+      if (data.type === 'SHELLY') {
+        try {
+          // Obtener systemId de la credencial para verificar módulo
+          const credential = await prisma.shellyCredential.findUnique({
+            where: { id: data.referenceId },
+            select: { systemId: true }
+          });
+          
+          if (credential) {
+            const { isShellyModuleActive } = await import('@/lib/services/shelly-module-service');
+            const isModuleActive = await isShellyModuleActive(credential.systemId);
+            autoReconnectValue = isModuleActive;
+            
+            console.log(`🛡️ [CONNECTION-SERVICE] Nueva conexión Shelly con autoReconnect=${autoReconnectValue} (módulo ${isModuleActive ? 'activo' : 'inactivo'})`);
+          }
+        } catch (error) {
+          console.warn('⚠️ [CONNECTION-SERVICE] Error verificando módulo Shelly, usando autoReconnect=true por defecto:', error);
+        }
+      }
+
       // Crear nueva conexión
       const newConnection = await prisma.webSocketConnection.create({
         data: {
           type: data.type,
           referenceId: data.referenceId,
+          systemId: data.systemId, // 🆔 AÑADIR systemId obligatorio
           status: data.status,
           errorMessage: data.errorMessage,
           metadata: data.metadata,
+          autoReconnect: autoReconnectValue, // 🛡️ CONFIGURAR SEGÚN ESTADO DEL MÓDULO
           lastPingAt: data.status === 'connected' ? new Date() : undefined
         }
       });
 
-      console.log(`✨ Nuevo WebSocket creado: ${data.type}/${data.referenceId} (${newConnection.id})`);
+      console.log(`✨ Nuevo WebSocket creado: ${data.type}/${data.referenceId} (${newConnection.id}) autoReconnect=${autoReconnectValue}`);
       return { id: newConnection.id, isNew: true };
 
     } catch (error) {
@@ -346,6 +374,7 @@ export class WebSocketConnectionService {
       await prisma.webSocketLog.create({
         data: {
           connectionId: data.connectionId,
+          systemId: data.systemId, // 🆔 AÑADIR systemId obligatorio
           eventType: data.eventType,
           message: data.message,
           errorDetails: data.errorDetails,
@@ -368,15 +397,16 @@ export class WebSocketConnectionService {
   }
 
   /**
-   * Obtiene una conexión por tipo y referenceId
+   * Obtiene una conexión por tipo, referenceId y systemId
    */
-  async getConnection(type: string, referenceId: string) {
+  async getConnection(type: string, referenceId: string, systemId: string) {
     try {
       return await prisma.webSocketConnection.findUnique({
         where: {
-          unique_websocket_per_reference: {
+          unique_websocket_per_reference_system: {
             type,
-            referenceId
+            referenceId,
+            systemId
           }
         },
         include: {

@@ -15,11 +15,14 @@ import { PlusCircle, Edit, Trash2, Play, StopCircle, Wifi, WifiOff, ArrowLeft, A
 import { Badge } from '@/components/ui/badge';
 import { ColumnDef, flexRender, getCoreRowModel, getSortedRowModel, SortingState, useReactTable } from "@tanstack/react-table";
 import { useRouter } from "next/navigation";
-import { useShellyRealtime } from "@/hooks/use-shelly-realtime";
+import { Checkbox } from "@/components/ui/checkbox";
+
 import { useSession } from "next-auth/react";
 import { DeviceConfigModalV2 } from '@/components/shelly/device-config-modal-v2';
-import { DeviceControlButton } from '@/components/ui/device-control-button';
+import { SimplePowerButton } from '@/components/ui/simple-power-button';
 import useSocket from '@/hooks/useSocket';
+import { useIntegrationModules } from '@/hooks/use-integration-modules';
+import { isSmartPlug, getSmartPlugInfo } from '@/utils/shelly-device-utils';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -111,13 +114,16 @@ const SmartPlugsPage = () => {
     const { data: session } = useSession();
     const { subscribe, isConnected, requestDeviceUpdate } = useSocket(session?.user?.systemId);
     
+    // 🛡️ VERIFICACIÓN DE MÓDULO - Control total de acceso a funcionalidad Shelly
+    const { isShellyActive, isLoading: isLoadingModules } = useIntegrationModules();
+    
     // Estados existentes
     const [plugs, setPlugs] = useState<SmartPlug[]>([]); // Dispositivos de la vista actual (paginados/filtrados)
     const [allPlugs, setAllPlugs] = useState<SmartPlug[]>([]); // TODOS los dispositivos para cálculo de consumo
     const [isLoading, setIsLoading] = useState(true);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [selectedDevice, setSelectedDevice] = useState<SmartPlug | null>(null);
-    const [activePlugs, setActivePlugs] = useState<Record<string, boolean>>({});
+
     const [sorting, setSorting] = useState<SortingState>([]);
     
     // Estados para paginación
@@ -136,6 +142,7 @@ const SmartPlugsPage = () => {
     const [equipmentFilter, setEquipmentFilter] = useState<string>('all');
     const [equipmentSearchText, setEquipmentSearchText] = useState<string>('');
     const [generationFilter, setGenerationFilter] = useState<string[]>([]); // Filtro de selección múltiple por generación
+    const [showOnlySmartPlugs, setShowOnlySmartPlugs] = useState<boolean>(true); // 🔌 NUEVO: Filtro para mostrar solo enchufes inteligentes (activo por defecto)
     
     // Estados para credenciales en tiempo real
     const [credentialsStatus, setCredentialsStatus] = useState<{
@@ -162,19 +169,12 @@ const SmartPlugsPage = () => {
 
     // 🔄 TIEMPO REAL - Escuchar cambios en dispositivos Shelly
     const systemId = session?.user?.systemId || '';
-    const { updates, isConnected: shellyIsConnected, lastUpdate, clearUpdates } = useShellyRealtime(systemId);
 
     // 🎯 LÓGICA SIMPLE: WebSocket + mensajes recibidos
     const messagesReceivedRef = useRef<Set<string>>(new Set());
     const lastMessageTimeRef = useRef<number>(Date.now());
 
-    // 🔄 FUNCIÓN SIMPLIFICADA - El sistema centralizado maneja toda la lógica offline
-    // Esta función ya no es necesaria pero se mantiene para compatibilidad
-    const checkOfflineDevices = useCallback(() => {
-        // El Device Offline Manager centralizado maneja toda esta lógica ahora
-        // Esta función está deprecated pero se mantiene por compatibilidad
-        console.log('ℹ️ [EnchufesInteligentes] checkOfflineDevices es manejado por el sistema centralizado');
-    }, []); // ✅ Añadir dependencia
+
 
     const fetchPlugs = useCallback(async (page = 1, pageSize = 50, credentialFilter = 'all') => {
         setIsLoading(true);
@@ -302,6 +302,11 @@ const SmartPlugsPage = () => {
     const filteredPlugs = useMemo(() => {
         let filtered = plugs;
 
+        // 🔌 NUEVO: Filtro por tipo de dispositivo (solo enchufes inteligentes)
+        if (showOnlySmartPlugs) {
+            filtered = filtered.filter(plug => isSmartPlug(plug.modelCode));
+        }
+
         // Filtro por credencial
         if (selectedCredentialFilter !== 'all') {
             filtered = filtered.filter(plug => plug.credentialId === selectedCredentialFilter);
@@ -373,7 +378,7 @@ const SmartPlugsPage = () => {
             // Si tienen la misma prioridad, ordenar alfabéticamente por nombre
             return a.name.localeCompare(b.name);
         });
-    }, [plugs, selectedCredentialFilter, onlineFilter, relayStatusFilter, clinicFilter, equipmentFilter, generationFilter, searchText]);
+    }, [plugs, selectedCredentialFilter, onlineFilter, relayStatusFilter, clinicFilter, equipmentFilter, generationFilter, searchText, showOnlySmartPlugs]);
 
     // 🆕 Memo para obtener generaciones disponibles
     const availableGenerations = useMemo(() => {
@@ -429,7 +434,7 @@ const SmartPlugsPage = () => {
         
         const unsubscribe = subscribe((update) => {
             
-            // ✅ ELIMINADO: Log de debug que causaba spam
+
             
             // 🎯 TRACKING: Marcar mensaje recibido (para compatibilidad con código existente)
             messagesReceivedRef.current.add(update.deviceId);
@@ -445,7 +450,6 @@ const SmartPlugsPage = () => {
             
             // Función helper para actualizar un dispositivo en lista completa (solo para consumo)
             const updateDeviceInList = (prev: SmartPlug[], listName: string) => {
-                // ✅ ELIMINADO: Log de debug búsqueda
                 
                 // Si la lista está vacía, simplemente no hacer nada
                 if (prev.length === 0) {
@@ -456,8 +460,6 @@ const SmartPlugsPage = () => {
                 const deviceIndex = prev.findIndex(device => 
                     device.id === update.deviceId || device.deviceId === update.deviceId
                 );
-                
-                // ✅ ELIMINADO: Log de debug resultado
                 
                 if (deviceIndex === -1) {
                     return prev;
@@ -475,8 +477,6 @@ const SmartPlugsPage = () => {
                     Number(oldDevice.temperature || 0) !== Number(update.temperature || 0)
                 );
                 
-                // ✅ ELIMINADO: Log de debug comparación
-                
                 if (!hasChanges) {
                     return prev;
                 }
@@ -493,8 +493,6 @@ const SmartPlugsPage = () => {
                     lastSeenAt: new Date(update.timestamp)
                 };
                 updated[deviceIndex] = updatedDevice;
-                
-                // ✅ ELIMINADO: Log de debug actualización
                 
                 return updated;
             };
@@ -559,19 +557,12 @@ const SmartPlugsPage = () => {
         };
     }, [subscribe, isConnected]);
 
-    // 📡 Sistema puro WebSocket - sin timers, sin complejidad innecesaria
-
     // Debug del estado de conexión (solo log, sin polling)
     useEffect(() => {
         console.log(`🔌 Estado de conexión Socket.io: ${isConnected ? 'CONECTADO' : 'DESCONECTADO'}`);
     }, [isConnected]);
 
-    // 🎯 LÓGICA OFFLINE CENTRALIZADA - Ya no necesitamos verificaciones locales
-    // El Device Offline Manager maneja todo esto de forma consistente
-    useEffect(() => {
-        // Esta lógica está deprecated - el sistema centralizado la maneja
-        console.log('ℹ️ [EnchufesInteligentes] Lógica offline manejada por sistema centralizado');
-    }, [isConnected]);
+
 
     // Calcular consumo total por credencial basado en TODOS los dispositivos (tiempo real)
     const credentialsWithPowerData = useMemo(() => {
@@ -636,36 +627,7 @@ const SmartPlugsPage = () => {
         setIsEditModalOpen(true);
     }, []);
 
-    const handleControl = async (plugId: string, plugIp: string, action: 'on' | 'off') => {
-        // Marcar como activo visualmente
-        setActivePlugs(prev => ({ ...prev, [plugId]: true }));
-        
-        try {
-            const response = await fetch(`/api/shelly/device/${plugId}/control`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ action })
-            });
 
-            if (response.ok) {
-                toast.success(`Dispositivo ${action === 'on' ? 'activado' : 'desactivado'} correctamente`);
-                
-                // Después de 3 segundos, quitar el estado activo
-                setTimeout(() => {
-                    setActivePlugs(prev => ({ ...prev, [plugId]: false }));
-                }, 3000);
-            } else {
-                const error = await response.json();
-                toast.error(error.error || "Error al controlar el dispositivo");
-                setActivePlugs(prev => ({ ...prev, [plugId]: false }));
-            }
-        } catch (error) {
-            toast.error("Error de conexión al controlar el dispositivo");
-            setActivePlugs(prev => ({ ...prev, [plugId]: false }));
-        }
-    };
 
     const handleToggleExclusion = async (plugId: string, currentExcluded: boolean) => {
         const action = currentExcluded ? 'incluir en' : 'excluir de';
@@ -708,51 +670,101 @@ const SmartPlugsPage = () => {
         }
     };
 
-    // Función para controlar dispositivo con actualización optimista y Socket.io
+    // Función para controlar dispositivo - SIMPLE y DIRECTO
     const handleDeviceToggle = async (deviceId: string, turnOn: boolean) => {
-        setActivePlugs(prev => ({ ...prev, [deviceId]: true }));
+        console.log(`🎯 [TOGGLE] Iniciando control ${turnOn ? 'ON' : 'OFF'} para ${deviceId}`);
+        
+        const response = await fetch(`/api/shelly/device/${deviceId}/control`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ action: turnOn ? 'on' : 'off' })
+        });
 
-        try {
-            const response = await fetch(`/api/shelly/device/${deviceId}/control`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ action: turnOn ? 'on' : 'off' })
-            });
-
-            if (response.ok) {
-                const result = await response.json();
-                console.log('✅ Control exitoso:', result);
-                toast.success(`Dispositivo ${turnOn ? 'encendido' : 'apagado'} correctamente`);
-                
-                // Los datos se actualizarán automáticamente por WebSocket
-            } else {
-                const errorData = await response.json();
-                throw new Error(errorData.error || 'Error desconocido');
-            }
-        } catch (error) {
-            console.error('❌ Error controlando dispositivo:', error);
-            toast.error(`Error ${turnOn ? 'encendiendo' : 'apagando'} dispositivo: ${error instanceof Error ? error.message : 'Error desconocido'}`);
-        } finally {
-            setTimeout(() => {
-                setActivePlugs(prev => ({ ...prev, [deviceId]: false }));
-            }, 1000);
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Error desconocido');
         }
+
+        const result = await response.json();
+        console.log('✅ [TOGGLE] Control exitoso:', result);
+        toast.success(`Dispositivo ${turnOn ? 'encendido' : 'apagado'} correctamente`);
+        
+        // ¡YA ESTÁ! Sin timers, sin esperas artificiales
+        // WebSocket actualizará el estado automáticamente
     };
 
     // Memoizar funciones para evitar re-renders
     const memoizedHandleDelete = useCallback((id: string) => handleDelete(id), []);
     const memoizedHandleEdit = useCallback((plug: SmartPlug) => handleEdit(plug), []);
-    const memoizedHandleControl = useCallback((plugId: string, plugIp: string, action: 'on' | 'off') => handleControl(plugId, plugIp, action), []);
     const memoizedHandleToggleExclusion = useCallback((plugId: string, currentExcluded: boolean) => handleToggleExclusion(plugId, currentExcluded), []);
 
     const columns = useMemo<ColumnDef<SmartPlug>[]>(() => {
-        // Solo log cuando realmente cambian las dependencias importantes
         return [
+        // 🆕 NUEVA COLUMNA: Nombre del dispositivo (PRIMERA POSICIÓN)
         {
-            id: 'equipment',
-            header: () => <div className="text-xs font-medium text-left">{t('integrations.smart_plugs.table.equipment')}</div>,
+            accessorKey: 'name',
+            enableSorting: true,
+            header: ({ column }) => (
+                <Button
+                    variant="ghost"
+                    onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+                    className="h-8 p-0 text-xs font-medium text-left hover:bg-transparent"
+                >
+                    Nombre del Dispositivo
+                    <ArrowUpDown className="ml-1 h-3 w-3" />
+                    {column.getIsSorted() === "asc" && <ChevronUp className="ml-1 h-3 w-3" />}
+                    {column.getIsSorted() === "desc" && <ChevronDown className="ml-1 h-3 w-3" />}
+                </Button>
+            ),
+            cell: ({ row }) => {
+                const plug = row.original;
+                const isPlugDevice = isSmartPlug(plug.modelCode);
+                const plugInfo = getSmartPlugInfo(plug.modelCode);
+                
+                return (
+                    <div className="text-left">
+                        <div className="flex items-center gap-2">
+                            {/* 🔌 ICONO DE ENCHUFE: Solo para enchufes inteligentes */}
+                            {isPlugDevice ? (
+                                <div className="flex-shrink-0 p-1 bg-blue-50 rounded-md" title={plugInfo?.name || 'Enchufe Inteligente'}>
+                                    <Plug className="w-4 h-4 text-blue-600" />
+                                </div>
+                            ) : (
+                                <div className="flex-shrink-0 p-1 bg-gray-50 rounded-md" title="Otro dispositivo Shelly">
+                                    <Cpu className="w-4 h-4 text-gray-600" />
+                                </div>
+                            )}
+                            <div className="text-sm font-medium max-w-[140px] truncate" title={plug.name}>
+                                {plug.name}
+                            </div>
+                        </div>
+                        {/* Información adicional del modelo */}
+                        {isPlugDevice && plugInfo && (
+                            <div className="text-xs text-gray-500 mt-0.5 ml-6">
+                                {plugInfo.name} • Gen {plugInfo.generation}
+                            </div>
+                        )}
+                    </div>
+                );
+            },
+        },
+        {
+            accessorKey: 'equipmentClinicAssignment.equipment.name',
+            enableSorting: true,
+            header: ({ column }) => (
+                <Button
+                    variant="ghost"
+                    onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+                    className="h-8 p-0 text-xs font-medium text-left hover:bg-transparent"
+                >
+                    {t('integrations.smart_plugs.table.equipment')}
+                    <ArrowUpDown className="ml-1 h-3 w-3" />
+                    {column.getIsSorted() === "asc" && <ChevronUp className="ml-1 h-3 w-3" />}
+                    {column.getIsSorted() === "desc" && <ChevronDown className="ml-1 h-3 w-3" />}
+                </Button>
+            ),
             cell: ({ row }) => {
                 const plug = row.original;
                 // ✅ SOLO ALIAS SIN ICONOS ADICIONALES
@@ -778,8 +790,20 @@ const SmartPlugsPage = () => {
             },
         },
         {
-            id: 'clinic',
-            header: () => <div className="text-xs font-medium text-left">{t('integrations.smart_plugs.table.clinic')}</div>,
+            accessorKey: 'equipmentClinicAssignment.clinic.name',
+            enableSorting: true,
+            header: ({ column }) => (
+                <Button
+                    variant="ghost"
+                    onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+                    className="h-8 p-0 text-xs font-medium text-left hover:bg-transparent"
+                >
+                    {t('integrations.smart_plugs.table.clinic')}
+                    <ArrowUpDown className="ml-1 h-3 w-3" />
+                    {column.getIsSorted() === "asc" && <ChevronUp className="ml-1 h-3 w-3" />}
+                    {column.getIsSorted() === "desc" && <ChevronDown className="ml-1 h-3 w-3" />}
+                </Button>
+            ),
             cell: ({ row }) => {
                 const plug = row.original;
                 const clinicName = plug.equipmentClinicAssignment?.clinic?.name || 
@@ -795,8 +819,20 @@ const SmartPlugsPage = () => {
             },
         },
         {
-            id: 'connectionStatus',
-            header: () => <div className="text-xs font-medium text-left">Online</div>,
+            accessorKey: 'online',
+            enableSorting: true,
+            header: ({ column }) => (
+                <Button
+                    variant="ghost"
+                    onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+                    className="h-8 p-0 text-xs font-medium text-left hover:bg-transparent"
+                >
+                    Online
+                    <ArrowUpDown className="ml-1 h-3 w-3" />
+                    {column.getIsSorted() === "asc" && <ChevronUp className="ml-1 h-3 w-3" />}
+                    {column.getIsSorted() === "desc" && <ChevronDown className="ml-1 h-3 w-3" />}
+                </Button>
+            ),
             cell: ({ row }) => {
                 const plug = row.original;
                 const isOnline = plug.online;
@@ -819,8 +855,20 @@ const SmartPlugsPage = () => {
             }
         },
         {
-            id: 'relayStatus', 
-            header: () => <div className="text-xs font-medium text-left">Estado</div>,
+            accessorKey: 'relayOn',
+            enableSorting: true,
+            header: ({ column }) => (
+                <Button
+                    variant="ghost"
+                    onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+                    className="h-8 p-0 text-xs font-medium text-left hover:bg-transparent"
+                >
+                    Estado
+                    <ArrowUpDown className="ml-1 h-3 w-3" />
+                    {column.getIsSorted() === "asc" && <ChevronUp className="ml-1 h-3 w-3" />}
+                    {column.getIsSorted() === "desc" && <ChevronDown className="ml-1 h-3 w-3" />}
+                </Button>
+            ),
             cell: ({ row }) => {
                 const plug = row.original;
                 const isOnline = plug.online;
@@ -895,8 +943,9 @@ const SmartPlugsPage = () => {
             }
         },
         {
-            id: 'appointmentOnlyMode',
-            header: () => <div className="text-xs font-medium text-center">Solo desde citas</div>,
+            accessorKey: 'appointmentOnlyMode',
+            enableSorting: false,
+            header: () => <div className="text-xs font-medium text-center">Auto On</div>,
             cell: ({ row }) => {
                 const plug = row.original;
                 const isEnabled = plug.appointmentOnlyMode ?? true; // Default true
@@ -905,31 +954,58 @@ const SmartPlugsPage = () => {
                     <div className="flex justify-center">
                         <button
                             onClick={async () => {
+                                // 🚀 RENDERIZADO OPTIMISTA: Cambio inmediato
+                                const newValue = !isEnabled;
+                                
+                                setPlugs(prev => prev.map(p => 
+                                    p.id === plug.id 
+                                        ? { ...p, appointmentOnlyMode: newValue }
+                                        : p
+                                ));
+                                setAllPlugs(prev => prev.map(p => 
+                                    p.id === plug.id 
+                                        ? { ...p, appointmentOnlyMode: newValue }
+                                        : p
+                                ));
+
                                 try {
                                     const response = await fetch(`/api/internal/smart-plug-devices/${plug.id}/toggle-appointment-only`, {
                                         method: 'POST',
                                         headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ appointmentOnlyMode: !isEnabled })
+                                        body: JSON.stringify({ appointmentOnlyMode: newValue })
                                     });
                                     
                                     if (response.ok) {
-                                        // Update local state
+                                        toast.success(`Auto On ${newValue ? 'activado' : 'desactivado'}`);
+                                    } else {
+                                        // ❌ ROLLBACK: Revertir al estado original
                                         setPlugs(prev => prev.map(p => 
                                             p.id === plug.id 
-                                                ? { ...p, appointmentOnlyMode: !isEnabled }
+                                                ? { ...p, appointmentOnlyMode: isEnabled }
                                                 : p
                                         ));
                                         setAllPlugs(prev => prev.map(p => 
                                             p.id === plug.id 
-                                                ? { ...p, appointmentOnlyMode: !isEnabled }
+                                                ? { ...p, appointmentOnlyMode: isEnabled }
                                                 : p
                                         ));
-                                        toast.success(`Control de citas ${!isEnabled ? 'activado' : 'desactivado'}`);
-                                    } else {
+                                        
                                         const errorData = await response.json();
                                         toast.error(errorData.error || 'Error al actualizar configuración');
                                     }
                                 } catch (error) {
+                                    // ❌ ROLLBACK: Revertir al estado original (error de red)
+                                    setPlugs(prev => prev.map(p => 
+                                        p.id === plug.id 
+                                            ? { ...p, appointmentOnlyMode: isEnabled }
+                                            : p
+                                    ));
+                                    setAllPlugs(prev => prev.map(p => 
+                                        p.id === plug.id 
+                                            ? { ...p, appointmentOnlyMode: isEnabled }
+                                            : p
+                                    ));
+                                    
                                     toast.error('Error de conexión');
                                 }
                             }}
@@ -938,7 +1014,7 @@ const SmartPlugsPage = () => {
                                     ? 'bg-green-500 focus:ring-green-500' 
                                     : 'bg-gray-300 focus:ring-gray-300'
                             }`}
-                            title={isEnabled ? 'Encendido solo desde citas (activado)' : 'Encendido libre (desactivado)'}
+                            title={isEnabled ? 'Auto On activado - solo se enciende desde citas' : 'Auto On desactivado - encendido libre'}
                         >
                             <span className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
                                 isEnabled ? 'translate-x-4' : 'translate-x-0'
@@ -949,8 +1025,9 @@ const SmartPlugsPage = () => {
             },
         },
         {
-            id: 'autoShutdownEnabled',
-            header: () => <div className="text-xs font-medium text-center">Apagado automático</div>,
+            accessorKey: 'autoShutdownEnabled',
+            enableSorting: false,
+            header: () => <div className="text-xs font-medium text-center">Auto Off</div>,
             cell: ({ row }) => {
                 const plug = row.original;
                 const isEnabled = plug.autoShutdownEnabled ?? true; // Default true
@@ -959,31 +1036,58 @@ const SmartPlugsPage = () => {
                     <div className="flex justify-center">
                         <button
                             onClick={async () => {
+                                // 🚀 RENDERIZADO OPTIMISTA: Cambio inmediato
+                                const newValue = !isEnabled;
+                                
+                                setPlugs(prev => prev.map(p => 
+                                    p.id === plug.id 
+                                        ? { ...p, autoShutdownEnabled: newValue }
+                                        : p
+                                ));
+                                setAllPlugs(prev => prev.map(p => 
+                                    p.id === plug.id 
+                                        ? { ...p, autoShutdownEnabled: newValue }
+                                        : p
+                                ));
+
                                 try {
                                     const response = await fetch(`/api/internal/smart-plug-devices/${plug.id}/toggle-auto-shutdown`, {
                                         method: 'POST',
                                         headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ autoShutdownEnabled: !isEnabled })
+                                        body: JSON.stringify({ autoShutdownEnabled: newValue })
                                     });
                                     
                                     if (response.ok) {
-                                        // Update local state
+                                        toast.success(`Auto Off ${newValue ? 'activado' : 'desactivado'}`);
+                                    } else {
+                                        // ❌ ROLLBACK: Revertir al estado original
                                         setPlugs(prev => prev.map(p => 
                                             p.id === plug.id 
-                                                ? { ...p, autoShutdownEnabled: !isEnabled }
+                                                ? { ...p, autoShutdownEnabled: isEnabled }
                                                 : p
                                         ));
                                         setAllPlugs(prev => prev.map(p => 
                                             p.id === plug.id 
-                                                ? { ...p, autoShutdownEnabled: !isEnabled }
+                                                ? { ...p, autoShutdownEnabled: isEnabled }
                                                 : p
                                         ));
-                                        toast.success(`Apagado automático ${!isEnabled ? 'activado' : 'desactivado'}`);
-                                    } else {
+                                        
                                         const errorData = await response.json();
                                         toast.error(errorData.error || 'Error al actualizar configuración');
                                     }
                                 } catch (error) {
+                                    // ❌ ROLLBACK: Revertir al estado original (error de red)
+                                    setPlugs(prev => prev.map(p => 
+                                        p.id === plug.id 
+                                            ? { ...p, autoShutdownEnabled: isEnabled }
+                                            : p
+                                    ));
+                                    setAllPlugs(prev => prev.map(p => 
+                                        p.id === plug.id 
+                                            ? { ...p, autoShutdownEnabled: isEnabled }
+                                            : p
+                                    ));
+                                    
                                     toast.error('Error de conexión');
                                 }
                             }}
@@ -992,7 +1096,7 @@ const SmartPlugsPage = () => {
                                     ? 'bg-blue-500 focus:ring-blue-500' 
                                     : 'bg-gray-300 focus:ring-gray-300'
                             }`}
-                            title={isEnabled ? 'Apagado automático activado' : 'Apagado automático desactivado'}
+                            title={isEnabled ? 'Auto Off activado - apagado automático' : 'Auto Off desactivado'}
                         >
                             <span className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
                                 isEnabled ? 'translate-x-4' : 'translate-x-0'
@@ -1004,25 +1108,21 @@ const SmartPlugsPage = () => {
         },
         {
             id: 'actions',
+            enableSorting: false,
             header: () => <div className="w-full text-right">{t('common.actions')}</div>,
             cell: ({ row }) => {
                 const plug = row.original;
-                const isActive = activePlugs[plug.id] || false;
                 
                 return (
                     <div className="flex gap-2 justify-end items-center">
-                        <DeviceControlButton
+                        <SimplePowerButton
                             device={{
                                 id: plug.deviceId, // ✅ Usar deviceId de Shelly para comandos
                                 name: plug.name,
                                 online: plug.online,
-                                relayOn: plug.relayOn,
-                                currentPower: plug.currentPower,
-                                voltage: plug.voltage,
-                                temperature: plug.temperature
+                                relayOn: plug.relayOn
                             }}
                             onToggle={handleDeviceToggle}
-                            showMetrics={false}
                         />
                         <Button 
                             variant="ghost" 
@@ -1060,7 +1160,7 @@ const SmartPlugsPage = () => {
             },
         }
     ];
-    }, [t, memoizedHandleDelete, memoizedHandleEdit, memoizedHandleControl, activePlugs, memoizedHandleToggleExclusion]);
+    }, [t, memoizedHandleDelete, memoizedHandleEdit, memoizedHandleToggleExclusion]);
 
     const table = useReactTable({
         data: filteredPlugs,
@@ -1138,6 +1238,62 @@ const SmartPlugsPage = () => {
         }
     }, []);
 
+    // 🛡️ MOSTRAR MENSAJE SI EL MÓDULO ESTÁ INACTIVO
+    if (isLoadingModules) {
+        return (
+            <div className="flex justify-center items-center min-h-[400px]">
+                <div className="flex flex-col gap-3 items-center">
+                    <RefreshCw className="w-8 h-8 animate-spin text-gray-400" />
+                    <p className="text-gray-500">Verificando módulos de integración...</p>
+                </div>
+            </div>
+        );
+    }
+
+    if (!isShellyActive) {
+        return (
+            <div className="space-y-6">
+                <Card className="mx-4">
+                    <CardContent className="p-8">
+                        <div className="flex flex-col gap-6 items-center text-center">
+                            <div className="flex flex-col gap-3 items-center">
+                                <div className="p-4 bg-amber-100 rounded-full">
+                                    <AlertTriangle className="w-8 h-8 text-amber-600" />
+                                </div>
+                                <h2 className="text-xl font-semibold text-gray-900">
+                                    Módulo de Enchufes Inteligentes No Activo
+                                </h2>
+                                <p className="text-gray-600 max-w-md">
+                                    El módulo de enchufes inteligentes Shelly no está activo en el marketplace. 
+                                    Actívalo para acceder a la gestión de dispositivos inteligentes.
+                                </p>
+                            </div>
+                            
+                            <div className="flex gap-3">
+                                <Button 
+                                    variant="outline" 
+                                    onClick={() => router.push('/configuracion/integraciones')}
+                                    className="gap-2"
+                                >
+                                    <Settings className="w-4 h-4" />
+                                    Ir al Marketplace
+                                </Button>
+                                <Button 
+                                    variant="outline" 
+                                    onClick={() => router.back()}
+                                    className="gap-2"
+                                >
+                                    <ArrowLeft className="w-4 h-4" />
+                                    {t('common.back')}
+                                </Button>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+            </div>
+        );
+    }
+
     return (
         <div className="space-y-6">
             
@@ -1209,11 +1365,7 @@ const SmartPlugsPage = () => {
                                 </div>
                             )}
 
-                            {lastUpdate && (
-                                <span className="text-xs text-gray-500">
-                                    Última actualización: {lastUpdate.toLocaleTimeString()}
-                                </span>
-                            )}
+
                             
                             {/* Botón de sincronizar dispositivos INTELIGENTE */}
                             {(() => {
@@ -1411,6 +1563,23 @@ const SmartPlugsPage = () => {
                                 )}
                             </div>
 
+                            {/* 🔌 NUEVO: Filtro Solo Enchufes Inteligentes */}
+                            <div className="flex gap-2 items-center p-2 bg-blue-50 rounded-lg border border-blue-200">
+                                <Checkbox
+                                    id="smart-plugs-only"
+                                    checked={showOnlySmartPlugs}
+                                    onCheckedChange={(checked) => setShowOnlySmartPlugs(checked === true)}
+                                    className="border-blue-400 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
+                                />
+                                <label 
+                                    htmlFor="smart-plugs-only" 
+                                    className="text-sm font-medium text-blue-700 cursor-pointer flex gap-1 items-center"
+                                >
+                                    <Plug className="w-3 h-3" />
+                                    Solo enchufes inteligentes
+                                </label>
+                            </div>
+
                             {/* Filtro Credencial */}
                             {availableCredentials.length > 0 && (
                                 <Select value={selectedCredentialFilter} onValueChange={setSelectedCredentialFilter}>
@@ -1563,7 +1732,7 @@ const SmartPlugsPage = () => {
                             {/* Botón limpiar filtros */}
                             {(selectedCredentialFilter !== 'all' || onlineFilter !== 'all' || 
                               relayStatusFilter !== 'all' || clinicFilter !== 'all' || 
-                              equipmentFilter !== 'all' || generationFilter.length > 0 || searchText.trim()) && (
+                              equipmentFilter !== 'all' || generationFilter.length > 0 || searchText.trim() || !showOnlySmartPlugs) && (
                                 <Button 
                                 variant="outline"
                                     size="sm"
@@ -1576,6 +1745,7 @@ const SmartPlugsPage = () => {
                                         setGenerationFilter([]);
                                         setSearchText('');
                                         setEquipmentSearchText('');
+                                        setShowOnlySmartPlugs(true); // Reset a solo enchufes por defecto
                                     }}
                                     className="text-xs"
                                 >
@@ -1603,11 +1773,6 @@ const SmartPlugsPage = () => {
                                         {headerGroup.headers.map(header => (
                                             <TableHead key={header.id}>
                                                 {flexRender(header.column.columnDef.header, header.getContext())}
-                                                {header.column.getCanSort() && (
-                                                    <Button variant="ghost" size="sm" onClick={() => header.column.toggleSorting(header.column.getIsSorted() === 'asc')}>
-                                                        {/* Icono de ordenación */}
-                                                    </Button>
-                                                )}
                                             </TableHead>
                                         ))}
                                     </TableRow>
@@ -1623,8 +1788,6 @@ const SmartPlugsPage = () => {
                                             <TableCell><div className="h-4 bg-gray-200 rounded animate-pulse"></div></TableCell>
                                             <TableCell><div className="h-4 bg-gray-200 rounded animate-pulse"></div></TableCell>
                                             <TableCell><div className="h-4 bg-gray-200 rounded animate-pulse"></div></TableCell>
-                                            <TableCell><div className="h-4 bg-gray-200 rounded animate-pulse"></div></TableCell>
-                                            <TableCell><div className="h-6 bg-gray-200 rounded-full animate-pulse"></div></TableCell>
                                             <TableCell><div className="h-6 bg-gray-200 rounded-full animate-pulse"></div></TableCell>
                                             <TableCell><div className="h-6 bg-gray-200 rounded-full animate-pulse"></div></TableCell>
                                             <TableCell>
@@ -1649,7 +1812,7 @@ const SmartPlugsPage = () => {
                                     ))
                                 ) : (
                                     <TableRow>
-                                        <TableCell colSpan={columns.length} className="h-24 text-center">
+                                        <TableCell colSpan={8} className="h-24 text-center">
                                             No hay enchufes configurados.
                                         </TableCell>
                                     </TableRow>

@@ -101,6 +101,15 @@ class ShellyWebSocketManager {
                 throw new Error('Credenciales no encontradas');
             }
 
+            // 🛡️ VERIFICAR MÓDULO SHELLY ACTIVO ANTES DE CONECTAR
+            const { isShellyModuleActive } = await import('@/lib/services/shelly-module-service');
+            const isModuleActive = await isShellyModuleActive(credential.systemId);
+            
+            if (!isModuleActive) {
+                console.warn(`🔒 [CONNECT] Módulo Shelly INACTIVO para sistema ${credential.systemId} - Conexión bloqueada`);
+                throw new Error('Módulo de control de enchufes inteligentes Shelly está desactivado');
+            }
+
             // Descifrar token
             const accessToken = decrypt(credential.accessToken);
             
@@ -951,7 +960,7 @@ class ShellyWebSocketManager {
         metadata?: any
     ): Promise<void> {
         try {
-            // Buscar la conexión WebSocket para obtener su ID
+            // Buscar la conexión WebSocket para obtener su ID y systemId
             const webSocketConnection = await prisma.webSocketConnection.findFirst({
                 where: {
                     type: 'SHELLY',
@@ -963,6 +972,7 @@ class ShellyWebSocketManager {
                 await prisma.webSocketLog.create({
                     data: {
                         connectionId: webSocketConnection.id,
+                        systemId: webSocketConnection.systemId, // ✅ FIX: Campo requerido
                         eventType,
                         message,
                         metadata: metadata ? JSON.parse(JSON.stringify(metadata)) : null,
@@ -999,12 +1009,41 @@ class ShellyWebSocketManager {
                 }
             });
         } else {
+            // 🛡️ AL CREAR NUEVA CONEXIÓN: Verificar estado del módulo para configurar autoReconnect
+            let autoReconnectValue = true; // Valor por defecto
+            let systemIdValue = ''; // Valor requerido
+            
+            try {
+                // Obtener systemId de la credencial
+                const credential = await prisma.shellyCredential.findUnique({
+                    where: { id: credentialId },
+                    select: { systemId: true }
+                });
+                
+                if (credential) {
+                    systemIdValue = credential.systemId; // ✅ FIX: Obtener systemId
+                    
+                    const { isShellyModuleActive } = await import('@/lib/services/shelly-module-service');
+                    const isModuleActive = await isShellyModuleActive(credential.systemId);
+                    autoReconnectValue = isModuleActive;
+                    
+                    console.log(`🛡️ [CREATE-CONNECTION] Conexión WebSocket creada con autoReconnect=${autoReconnectValue} (módulo ${isModuleActive ? 'activo' : 'inactivo'})`);
+                } else {
+                    throw new Error(`Credencial ${credentialId} no encontrada`);
+                }
+            } catch (error) {
+                console.warn('⚠️ [CREATE-CONNECTION] Error verificando módulo:', error);
+                throw error; // No crear conexión si no podemos obtener systemId
+            }
+
             await prisma.webSocketConnection.create({
                 data: {
                     type: 'SHELLY',
                     referenceId: credentialId,
+                    systemId: systemIdValue, // ✅ FIX: Campo requerido
                     status,
-                    errorMessage
+                    errorMessage,
+                    autoReconnect: autoReconnectValue // 🛡️ CONFIGURAR SEGÚN ESTADO DEL MÓDULO
                 }
             });
         }

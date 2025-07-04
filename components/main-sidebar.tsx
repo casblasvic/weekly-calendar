@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button"
 import { ChevronRight, Search, User, LogOut, Settings, CreditCard, Receipt, Menu, Bell, Calendar, MoreVertical, ClipboardList, LogIn } from "lucide-react"
 import { useState, useCallback, useEffect, useRef, useMemo } from "react"
 import { useRouter, usePathname } from "next/navigation"
-import { menuItems, type MenuItem } from "@/config/menu-structure"
+import { menuItems, type MenuItem, processMenuItemsWithIntegrations } from "@/config/menu-structure"
+import { useIntegrationModules } from "@/hooks/use-integration-modules"
 import { Input } from "@/components/ui/input"
 import { useClinic } from "@/contexts/clinic-context"
 import Link from "next/link"
@@ -173,6 +174,11 @@ const MenuItemComponent = ({
     e.stopPropagation();
     e.preventDefault();
     
+    // Si el item está deshabilitado, no hacer nada
+    if (item.isDisabled) {
+      return;
+    }
+    
     if (hasSubmenu) {
       toggleMenu(item.id, depth);
       return;
@@ -296,15 +302,21 @@ const MenuItemComponent = ({
         className={cn(
           "w-full justify-start",
           isOpen && "bg-purple-50 text-purple-600",
-          "hover:bg-purple-50 hover:text-purple-600 transition-colors duration-200",
+          item.isDisabled 
+            ? "opacity-50 cursor-not-allowed text-gray-400" 
+            : "hover:bg-purple-50 hover:text-purple-600 transition-colors duration-200",
           depth > 0 && "pl-4",
           isCollapsed && "px-2",
         )}
         onClick={handleClick}
+        disabled={item.isDisabled}
+        title={item.isDisabled ? item.disabledReason : undefined}
       >
         <div className="relative">
           {item.icon && <item.icon className={cn(
-            "text-purple-600 transition-all duration-200", 
+            item.isDisabled 
+              ? "text-gray-400" 
+              : "text-purple-600 transition-all duration-200", 
             isCollapsed 
               ? "h-5 w-5 mx-auto" 
               : "h-4 w-4 mr-2"
@@ -459,6 +471,15 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
   const [isScrolling, setIsScrolling] = useState(false);
   const [showScrollIndicator, setShowScrollIndicator] = useState(false);
   const userMenuHoverTimeout = useRef<NodeJS.Timeout | null>(null); // Timer para el hover del menú de usuario
+  
+  // Hook para verificar módulos de integración
+  const {
+    isShellyActive,
+    hasActiveIoTModules,
+    isModuleActive,
+    hasActiveCategoryModules,
+    isLoading: isLoadingIntegrations,
+  } = useIntegrationModules();
   
   // <<< INICIO: Query para el conteo de tickets abiertos >>>
   const clinicIdForQuery = activeClinic?.id ? String(activeClinic.id) : null; // Asegurar que es string o null
@@ -851,7 +872,7 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
   }, [forceMobileView]);
   // --- Fin Funciones Hover Menú Usuario ---
 
-  // Procesar menuItems para badges dinámicos
+  // Procesar menuItems para badges dinámicos y estados de integración
   const processedMenuItems = useMemo(() => {
     let facturacionHasAlert = false;
 
@@ -900,8 +921,33 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
       });
     };
 
-    return updateBadges(menuItems); // menuItems originales importados de config/menu-structure
-  }, [menuItems, openTicketsCount, isLoadingTicketsCount, activeClinic?.id, openCashCount, isLoadingCashCount]);
+    // Aplicar badges dinámicos primero
+    const itemsWithBadges = updateBadges(menuItems);
+    
+    // Luego aplicar lógica de integración si no estamos cargando
+    if (!isLoadingIntegrations) {
+      return processMenuItemsWithIntegrations(itemsWithBadges, {
+        isShellyActive,
+        hasActiveIoTModules,
+        isModuleActive,
+        hasActiveCategoryModules,
+      });
+    }
+
+    return itemsWithBadges;
+  }, [
+    menuItems, 
+    openTicketsCount, 
+    isLoadingTicketsCount, 
+    activeClinic?.id, 
+    openCashCount, 
+    isLoadingCashCount,
+    isLoadingIntegrations,
+    isShellyActive,
+    hasActiveIoTModules,
+    isModuleActive,
+    hasActiveCategoryModules,
+  ]);
 
   return (
     <div

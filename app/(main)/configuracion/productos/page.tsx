@@ -510,7 +510,7 @@ export default function GestionProductos() {
     enableRowSelection: true,
     // manualPagination: true, // <<< COMENTADO para paginación del lado del cliente
     // rowCount: processedProducts.length, // <<< COMENTADO 
-    debugTable: true,
+            debugTable: false,
   });
   // const table: any = {}; // Eliminar el mock
 

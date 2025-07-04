@@ -17,12 +17,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Save, Building2, Wrench, Info } from "lucide-react"
 import { useCreateEquipmentMutation, useUpdateEquipmentMutation } from "@/lib/hooks/use-equipment-query"
 import type { Equipment } from "@prisma/client";
-import { Decimal } from "@prisma/client/runtime/library";
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { SparePartsTab } from "@/components/equipment/spare-parts"
 import { ClinicAssignmentsManager } from "./clinic-assignments-manager"
 import { useQueryClient } from "@tanstack/react-query"
+import { useIsShellyActive } from "@/hooks/use-shelly-integration"
 
 // Interfaces para el cache de datos
 interface Product {
@@ -112,6 +112,9 @@ export default function AddEquipmentModal({
   const createEquipmentMutation = useCreateEquipmentMutation()
   const updateEquipmentMutation = useUpdateEquipmentMutation()
   const queryClient = useQueryClient()
+  
+  // ✅ VERIFICAR SI EL MÓDULO SHELLY ESTÁ ACTIVO
+  const isShellyActive = useIsShellyActive()
   
   const [equipmentData, setEquipmentData] = useState<EquipmentFormData>(defaultEquipmentState());
   
@@ -270,11 +273,12 @@ export default function AddEquipmentModal({
           return
         }
         
-        const dataToSave: Partial<Equipment> = {
+        const dataToSave: any = {
           name: equipmentData.name,
           description: equipmentData.description,
           modelNumber: equipmentData.modelNumber,
-          powerThreshold: equipmentData.powerThreshold.toString(),
+          // Solo usar powerThreshold si Shelly está activo, sino usar valor por defecto del schema (1.0)
+          powerThreshold: String(isShellyActive ? equipmentData.powerThreshold : 1.0),
           purchaseDate: equipmentData.purchaseDate,
           warrantyEndDate: equipmentData.warrantyEndDate,
           isActive: equipmentData.isActive,
@@ -288,7 +292,7 @@ export default function AddEquipmentModal({
           if (!result) throw new Error("Fallo al actualizar");
           toast.success("Equipamiento actualizado correctamente");
         } else {
-          const newEquipment = await createEquipmentMutation.mutateAsync(dataToSave as Omit<Equipment, 'id' | 'createdAt' | 'updatedAt' | 'systemId'>) as Equipment;
+          const newEquipment = await createEquipmentMutation.mutateAsync(dataToSave) as Equipment;
           if (!newEquipment?.id) throw new Error("Fallo al crear");
           toast.success("Equipamiento añadido correctamente");
         }
@@ -388,21 +392,36 @@ export default function AddEquipmentModal({
               <Input id="modelNumber" name="modelNumber" value={equipmentData.modelNumber || ''} onChange={handleInputChange} className="w-full" />
             </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="powerThreshold">Umbral de trabajo (Watts)</Label>
-              <Input 
-                id="powerThreshold" 
-                name="powerThreshold" 
-                type="number" 
-                step="0.1"
-                min="0"
-                value={equipmentData.powerThreshold} 
-                onChange={(e) => setEquipmentData(prev => ({ ...prev, powerThreshold: parseFloat(e.target.value) || 10.0 }))} 
-                className="w-full" 
-                placeholder="10.0"
-              />
-              <p className="text-xs text-gray-500">Potencia mínima en Watts para detectar que el equipamiento está en uso activo</p>
-            </div>
+            {/* Campo de Umbral de Potencia - Solo visible si módulo Shelly activo */}
+            {isShellyActive && (
+              <div className="border-t pt-4">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                    <Label className="text-sm font-medium text-blue-800">Control Inteligente de Equipos</Label>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="powerThreshold" className="text-sm text-blue-700">
+                      Umbral de trabajo (Watts)
+                    </Label>
+                    <Input 
+                      id="powerThreshold" 
+                      name="powerThreshold" 
+                      type="number" 
+                      step="0.1"
+                      min="0"
+                      value={equipmentData.powerThreshold} 
+                      onChange={(e) => setEquipmentData(prev => ({ ...prev, powerThreshold: parseFloat(e.target.value) || 10.0 }))} 
+                      className="w-full" 
+                      placeholder="10.0"
+                    />
+                    <p className="text-xs text-blue-600">
+                      Potencia mínima en Watts para detectar que el equipamiento está en uso activo mediante enchufes inteligentes
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="space-y-1.5">
               <Label htmlFor="description">Descripción</Label>

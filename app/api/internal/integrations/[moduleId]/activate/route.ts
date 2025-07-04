@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
 import { auth } from "@/lib/auth";
+import { shellyModuleService, reactivateAllShellyWebSockets } from "@/lib/services/shelly-module-service";
 
 const prisma = new PrismaClient();
 
@@ -61,6 +62,22 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
             });
         }
 
+        // 🔄 INVALIDAR CACHE: Invalidar cache del servicio para este sistema
+        if (integrationModule.name.toLowerCase().includes('shelly') && integrationModule.category === 'IOT_DEVICES') {
+            shellyModuleService.invalidateCache(systemId);
+            console.log(`🗑️ [ACTIVATE] Cache de módulo Shelly invalidado para sistema ${systemId}`);
+            
+            // 🔄 REACTIVAR CREDENCIALES: Restaurar credenciales suspendidas
+            try {
+                reactivateAllShellyWebSockets(systemId).catch(error => {
+                    console.error('❌ [ACTIVATE] Error en reactivación automática:', error);
+                });
+                console.log('✅ [ACTIVATE] Reactivación automática de credenciales Shelly iniciada');
+            } catch (error) {
+                console.error('❌ [ACTIVATE] Error iniciando reactivación automática:', error);
+            }
+        }
+
         // Si la integración es Shelly, crear el webhook de sistema asociado
         if (integrationModule.name.includes("Shelly")) {
             const webhookUrlBase = process.env.NEXTAUTH_URL || 'http://localhost:3000';
@@ -99,7 +116,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
             });
         }
 
-        return NextResponse.json({ success: true, integration: systemIntegration });
+        return NextResponse.json({ 
+            success: true, 
+            integration: systemIntegration,
+            // 🔄 Señal para invalidar cache en el frontend
+            invalidateCache: true,
+            cacheKeys: ['integrations']
+        });
 
     } catch (error) {
         console.error(`Error al activar el módulo ${moduleId}:`, error);

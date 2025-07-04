@@ -151,6 +151,20 @@ const useSocket = (systemId?: string): SocketHook => {
       console.log('🧪 Test response recibido:', data);
     });
 
+    // 🆕 Escuchar cambios de asignación de smart plugs
+    socket.on('smart-plug-assignment-updated', (data) => {
+      console.log('🔄 [Socket.IO] Cambio de asignación recibido:', data);
+      
+      // Notificar a todos los suscriptores directamente
+      subscribersRef.current.forEach(callback => {
+        try {
+          callback(data);  // Pasar los datos directamente
+        } catch (error) {
+          console.error('Error en callback de suscriptor (assignment):', error);
+        }
+      });
+    });
+
     // Test de conexión después de 5 segundos (más tiempo para apps complejas)
     const testTimeout = setTimeout(() => {
       if (socket.connected) {

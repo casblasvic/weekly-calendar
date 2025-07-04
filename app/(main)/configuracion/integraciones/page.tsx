@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface Module {
     id: string;
@@ -21,6 +22,7 @@ interface Module {
 
 export default function IntegrationsMarketplacePage() {
     const { t } = useTranslation();
+    const queryClient = useQueryClient();
     const [integrations, setIntegrations] = useState<Record<string, Module[]>>({});
     const [isLoading, setIsLoading] = useState(true);
     const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -101,8 +103,17 @@ export default function IntegrationsMarketplacePage() {
                 });
 
                 if (response.ok) {
+                    const result = await response.json();
                     toast.success('Módulo desactivado exitosamente');
                     updateModuleStatus(moduleId, false);
+                    
+                    // 🔄 INVALIDAR CACHE: Actualizar todos los hooks useIntegrationModules
+                    if (result.invalidateCache && result.cacheKeys) {
+                        result.cacheKeys.forEach((key: string) => {
+                            queryClient.invalidateQueries({ queryKey: [key] });
+                        });
+                        console.log(`🗑️ [MARKETPLACE] Cache invalidado para ${result.cacheKeys.join(', ')}`);
+                    }
                 } else {
                     const error = await response.json();
                     toast.error(error.error || 'Error al desactivar el módulo');
@@ -114,8 +125,17 @@ export default function IntegrationsMarketplacePage() {
                 });
 
                 if (response.ok) {
+                    const result = await response.json();
                     toast.success('Módulo activado exitosamente');
                     updateModuleStatus(moduleId, true);
+                    
+                    // 🔄 INVALIDAR CACHE: Actualizar todos los hooks useIntegrationModules
+                    if (result.invalidateCache && result.cacheKeys) {
+                        result.cacheKeys.forEach((key: string) => {
+                            queryClient.invalidateQueries({ queryKey: [key] });
+                        });
+                        console.log(`🗑️ [MARKETPLACE] Cache invalidado para ${result.cacheKeys.join(', ')}`);
+                    }
                 } else {
                     const error = await response.json();
                     toast.error(error.error || 'Error al activar el módulo');

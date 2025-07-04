@@ -58,6 +58,7 @@ import { gen2Commands, gen2Utils, Gen2DeviceInfo } from "@/lib/shelly/api/endpoi
 import { gen3Commands, gen3Utils, Gen3DeviceInfo } from "@/lib/shelly/api/endpoints/gen3";
 import { gen2Methods } from "@/lib/shelly/api/endpoints/gen2";
 import { gen3Methods } from "@/lib/shelly/api/endpoints/gen3";
+import { isShellyModuleActive } from "@/lib/services/shelly-module-service";
 
 export async function POST(
     request: NextRequest,
@@ -66,6 +67,16 @@ export async function POST(
     const session = await auth();
     if (!session?.user?.systemId) {
         return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    }
+
+    // 🛡️ PASO 3B: Verificar módulo Shelly activo
+    const isModuleActive = await isShellyModuleActive(session.user.systemId);
+    if (!isModuleActive) {
+        console.log(`🔒 [SYNC] Módulo Shelly INACTIVO para sistema ${session.user.systemId} - Sincronización bloqueada`);
+        return NextResponse.json({ 
+            error: "Módulo de control de enchufes inteligentes inactivo",
+            details: "El módulo de control de enchufes inteligentes Shelly está desactivado. Active el módulo desde el marketplace para usar esta funcionalidad."
+        }, { status: 403 });
     }
 
     try {

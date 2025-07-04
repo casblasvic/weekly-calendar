@@ -91,6 +91,8 @@ model System {
   sparePartInstallations       SparePartInstallation[]
   equipmentUsageLogs           EquipmentUsageLog[]
   equipmentAssignments         EquipmentClinicAssignment[]
+  webSocketConnections         WebSocketConnection[]
+  webSocketLogs                WebSocketLog[]
 
   @@map("systems")
 }
@@ -3431,6 +3433,7 @@ model WebSocketConnection {
   id            String   @id @default(cuid())
   type          String   // "SHELLY", "OTHER_IOT", "SOCKET_IO"
   referenceId   String   // credentialId para Shelly, systemId para Socket.io
+  systemId      String   // 🆔 NUEVO: Campo requerido para multi-tenancy
   status        String   // "connected", "disconnected", "error", "reconnecting"
   lastPingAt    DateTime?
   errorMessage  String?
@@ -3439,11 +3442,13 @@ model WebSocketConnection {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   
-  // Relación con logs
+  // Relaciones
+  system        System   @relation(fields: [systemId], references: [id], onDelete: Cascade)
   logs          WebSocketLog[]
   
-  @@unique([type, referenceId], name: "unique_websocket_per_reference")
+  @@unique([type, referenceId, systemId], name: "unique_websocket_per_reference_system")
   @@index([type, referenceId])
+  @@index([systemId])
   @@index([status])
 }
 
@@ -3451,6 +3456,7 @@ model WebSocketLog {
   id               String              @id @default(cuid())
   connectionId     String
   connection       WebSocketConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  systemId         String              // 🆔 NUEVO: Campo requerido para multi-tenancy
   
   // Información del evento
   eventType        String              // "connect", "disconnect", "error", "message", "ping"
@@ -3469,7 +3475,11 @@ model WebSocketLog {
   // Timestamps
   createdAt        DateTime            @default(now())
   
+  // Relaciones
+  system           System              @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  
   @@index([connectionId])
+  @@index([systemId])
   @@index([eventType])
   @@index([createdAt])
   @@map("websocket_logs")

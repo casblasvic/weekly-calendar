@@ -65,6 +65,54 @@ export interface MenuItem {
   badge?: number | string | boolean | undefined
   activePaths?: string[]
   dataTestId?: string
+  isDisabled?: boolean
+  disabledReason?: string
+}
+
+// Función helper para procesar el menú con estados de desactivación
+export function processMenuItemsWithIntegrations(
+  items: MenuItem[],
+  integrationCheckers: {
+    isShellyActive: boolean;
+    hasActiveIoTModules: boolean;
+    isModuleActive: (pattern: string) => boolean;
+    hasActiveCategoryModules: (category: string) => boolean;
+  }
+): MenuItem[] {
+  return items.map(item => {
+    // Procesar submenús recursivamente
+    let processedSubmenu = item.submenu;
+    if (item.submenu) {
+      processedSubmenu = processMenuItemsWithIntegrations(item.submenu, integrationCheckers);
+    }
+
+    // Aplicar lógica de desactivación específica
+    let isDisabled = false;
+    let disabledReason = '';
+
+    // Deshabilitar "Dispositivos IoT" si no hay módulos IoT activos
+    if (item.id === 'dispositivos-iot') {
+      if (!integrationCheckers.hasActiveIoTModules) {
+        isDisabled = true;
+        disabledReason = 'No hay módulos de dispositivos IoT activados';
+      }
+    }
+
+    // Deshabilitar "Enchufes Inteligentes" si el módulo Shelly no está activo
+    if (item.id === 'enchufes-inteligentes') {
+      if (!integrationCheckers.isShellyActive) {
+        isDisabled = true;
+        disabledReason = 'El módulo Control Inteligente (Shelly) no está activado';
+      }
+    }
+
+    return {
+      ...item,
+      submenu: processedSubmenu,
+      isDisabled,
+      disabledReason,
+    };
+  });
 }
 
 export const menuItems: MenuItem[] = [

@@ -54,11 +54,12 @@ export async function GET(request: NextRequest) {
         // 🔌 NUEVO: Obtener estado de WebSocket para cada credencial
         const credentialsWithWebSocketStatus = await Promise.all(
             credentials.map(async (credential) => {
-                // Buscar conexión WebSocket para esta credencial
+                // Buscar conexión WebSocket para esta credencial (con filtro multi-tenant)
                 const webSocketConnection = await prisma.webSocketConnection.findFirst({
                     where: {
                         type: 'SHELLY',
-                        referenceId: credential.id
+                        referenceId: credential.id,
+                        systemId: session.user.systemId // 🛡️ FILTRO MULTI-TENANT
                     },
                     select: {
                         status: true,

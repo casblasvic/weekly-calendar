@@ -5,6 +5,7 @@ import { refreshShellyToken } from '../../lib/shelly/client.ts';
 import { shellyWebSocketManager } from '../../lib/shelly/websocket-manager.ts';
 import { wsLogger } from '../../lib/utils/websocket-logger.js';
 import { deviceOfflineManager } from '../../lib/shelly/device-offline-manager.ts';
+import { isShellyModuleActive } from '../../lib/services/shelly-module-service.ts';
 
 // Almacenar conexiones por systemId
 const systemConnections = new Map();
@@ -110,15 +111,107 @@ export default function handler(req, res) {
       }
     };
 
+    // 🆕 Función para broadcast de cambios de asignación
+    global.broadcastAssignmentUpdate = (systemId, assignmentUpdate) => {
+      if (io && systemConnections.has(systemId)) {
+        io.to(systemId).emit('smart-plug-assignment-updated', assignmentUpdate);
+        console.log(`📤 [Assignment] Enviado cambio de asignación al sistema ${systemId}:`, assignmentUpdate);
+      }
+    };
+
     // 🚀 CAMBIO PRINCIPAL: Inicializar WebSocket Manager en lugar de polling
     console.log('🚀 Iniciando WebSocket Manager para tiempo real...');
     
     // Ejecutar con un pequeño delay para asegurar que Socket.io esté listo
     setTimeout(async () => {
       try {
-        await initializeWebSocketConnections(io);
+        // 🛡️ PASO 3A: Verificar módulo Shelly antes de inicializar WebSockets
+        console.log('🔍 [PASO 3A] Verificando si el módulo Shelly está activo...');
+        
+        try {
+          // Obtener cualquier sistema para verificar módulo Shelly globalmente
+          const anySystem = await prisma.system.findFirst();
+          
+          if (!anySystem) {
+            console.log('⚠️ [PASO 3A] No hay sistemas en BD - omitiendo WebSockets Shelly');
+            console.log('ℹ️  [PASO 3A] Los servicios de tiempo real permanecen desactivados hasta que haya sistemas configurados');
+            return;
+          }
+          
+          // Verificar si hay algún sistema con módulo Shelly activo
+          const systemWithShelly = await prisma.system.findFirst({
+            where: {
+              integrations: {
+                some: {
+                  module: {
+                    name: { contains: 'Shelly', mode: 'insensitive' },
+                    category: 'IOT_DEVICES'
+                  },
+                  isActive: true
+                }
+              }
+            },
+            include: {
+              integrations: {
+                where: {
+                  module: {
+                    name: { contains: 'Shelly', mode: 'insensitive' },
+                    category: 'IOT_DEVICES'
+                  }
+                },
+                include: { module: true }
+              }
+            }
+          });
+
+          const isShellyModuleActive = systemWithShelly && systemWithShelly.integrations.length > 0;
+
+          if (!isShellyModuleActive) {
+            console.log('🔒 [PASO 3A] Módulo Shelly INACTIVO - WebSockets Shelly omitidos');
+            console.log('ℹ️  [PASO 3A] Los servicios de tiempo real permanecen desactivados hasta que se active el módulo');
+            
+            // 🧹 PASO 3A+: Verificación automática de conexiones legacy para el primer sistema
+            console.log('🔍 [PASO 3A+] Verificando conexiones legacy...');
+            
+            try {
+              const { autoCleanupLegacyConnections } = await import('../../lib/services/shelly-module-service');
+              const cleanupResult = await autoCleanupLegacyConnections(anySystem.id);
+              
+              if (cleanupResult.hadLegacyConnections && cleanupResult.cleaned) {
+                console.log(`✅ [PASO 3A+] ${cleanupResult.details} - Limpieza automática completada`);
+              } else if (cleanupResult.hadLegacyConnections && !cleanupResult.cleaned) {
+                console.log(`⚠️ [PASO 3A+] ${cleanupResult.details} - Limpieza falló`);
+              } else {
+                console.log(`ℹ️ [PASO 3A+] ${cleanupResult.details}`);
+              }
+            } catch (cleanupError) {
+              console.error('❌ [PASO 3A+] Error en verificación automática:', cleanupError);
+            }
+            
+            // No inicializar WebSockets Shelly cuando módulo está inactivo
+            console.log('ℹ️ [PASO 3A] Finalizando - WebSockets Shelly omitidos por módulo inactivo');
+            
+          } else {
+            console.log(`✅ [PASO 3A] Módulo Shelly ACTIVO para sistema ${systemWithShelly.id} - inicializando WebSockets normalmente`);
+            
+            // Inicializar todos los WebSockets incluyendo Shelly
+            initializeWebSocketConnections(io).catch(error => {
+              console.error('❌ Error inicializando todos los WebSockets:', error);
+            });
+          }
+
+        } catch (verificationError) {
+          console.error('❌ [PASO 3A] Error verificando módulo Shelly:', verificationError);
+          console.log('🔄 [PASO 3A] Fallback: omitiendo WebSockets por error en verificación');
+          
+          // Fallback conservador: NO inicializar si hay error para evitar problemas
+          console.log('ℹ️ [PASO 3A] Para activar manualmente, reinicie el servidor tras activar el módulo');
+        }
       } catch (error) {
-        console.error('❌ Error crítico en initializeWebSocketConnections:', error);
+        console.error('❌ Error crítico en verificación/inicialización:', error);
+        // 🛡️ Fallback seguro: NO inicializar si hay error
+        console.log('🔄 [PASO 3A] Fallback seguro: Omitiendo inicialización por error crítico');
+        console.log('ℹ️ [PASO 3A] Para activar manualmente, reinicie el servidor tras verificar la configuración');
       }
     }, 1000);
   }
@@ -194,10 +287,16 @@ async function registerShellyWebSocketConnection(credentialId, status, errorMess
       where: { id: credentialId }
     });
 
+    if (!credential) {
+      console.error(`❌ No se encontró credencial ${credentialId}`);
+      return;
+    }
+
     const existing = await prisma.webSocketConnection.findFirst({
       where: {
         type: 'SHELLY',
-        referenceId: credentialId
+        referenceId: credentialId,
+        systemId: credential.systemId
       }
     });
 
@@ -220,6 +319,7 @@ async function registerShellyWebSocketConnection(credentialId, status, errorMess
         data: {
           type: 'SHELLY',
           referenceId: credentialId,
+          systemId: credential.systemId, // 🆔 AÑADIR systemId obligatorio
           status,
           errorMessage,
           lastPingAt: status === 'connected' ? new Date() : undefined,
@@ -237,11 +337,11 @@ async function registerShellyWebSocketConnection(credentialId, status, errorMess
     
     // Crear log del evento
     const connectionId = existing?.id || (await prisma.webSocketConnection.findFirst({
-      where: { type: 'SHELLY', referenceId: credentialId }
+      where: { type: 'SHELLY', referenceId: credentialId, systemId: credential.systemId }
     }))?.id;
     
     await createWebSocketLog(connectionId, status === 'connected' ? 'connect' : 'error', 
-      `WebSocket Shelly ${status} para credencial ${credential?.name || credentialId}`, errorMessage);
+      `WebSocket Shelly ${status} para credencial ${credential?.name || credentialId}`, errorMessage, null, credential.systemId);
     
   } catch (error) {
     console.error('Error registrando conexión WebSocket Shelly:', error);
@@ -321,7 +421,8 @@ function setupDeviceUpdateInterceptor(io) {
         const shellyConnection = await prisma.webSocketConnection.findFirst({
           where: {
             type: 'SHELLY',
-            referenceId: credentialId
+            referenceId: credentialId,
+            systemId: device.credential.systemId
           }
         });
         
@@ -336,7 +437,8 @@ function setupDeviceUpdateInterceptor(io) {
               deviceName: device.name,
               status: update,
               messageType: 'device_status_update'
-            }
+            },
+            device.credential.systemId // 🆔 AÑADIR systemId
           );
           wsLogger.verbose(`📝 Log creado para update de ${device.name}`);
         } else {
@@ -504,6 +606,7 @@ async function registerWebSocketConnection(systemId, socketId, status) {
       where: {
         type: 'SOCKET_IO',
         referenceId: systemId,
+        systemId: systemId, // 🛡️ CRUCIAL: Filtrar por systemId para multi-tenancy
         status: 'connected'
       },
       data: {
@@ -530,9 +633,10 @@ async function registerWebSocketConnection(systemId, socketId, status) {
 
     const connection = await prisma.webSocketConnection.upsert({
       where: {
-        unique_websocket_per_reference: {
+        unique_websocket_per_reference_system: {
           type: 'SOCKET_IO',
-          referenceId: systemId
+          referenceId: systemId,
+          systemId: systemId
         }
       },
       update: {
@@ -542,11 +646,14 @@ async function registerWebSocketConnection(systemId, socketId, status) {
         metadata: connectionData.metadata,
         updatedAt: new Date()
       },
-      create: connectionData
+      create: {
+        ...connectionData,
+        systemId: systemId
+      }
     });
     
     // Crear log de conexión
-    await createWebSocketLog(connection.id, 'connect', `Cliente ${socketId} conectado al sistema ${systemId}`);
+    await createWebSocketLog(connection.id, 'connect', `Cliente ${socketId} conectado al sistema ${systemId}`, null, null, systemId);
     
     console.log(`📝 Registrada conexión WebSocket: ${connection.id} para sistema ${systemId}`);
     return connection.id;
@@ -589,7 +696,7 @@ async function updateWebSocketConnection(socketId, status, errorMessage = null) 
           ? `Error en cliente ${socketId}: ${errorMessage}`
           : `Ping de cliente ${socketId}`;
       
-      await createWebSocketLog(connection.id, eventType, message, errorMessage);
+      await createWebSocketLog(connection.id, eventType, message, errorMessage, null, connection.systemId);
     }
     
   } catch (error) {
@@ -598,7 +705,7 @@ async function updateWebSocketConnection(socketId, status, errorMessage = null) 
 }
 
 // Función para crear logs de WebSocket
-async function createWebSocketLog(connectionId, eventType, message, errorDetails = null, metadata = null) {
+async function createWebSocketLog(connectionId, eventType, message, errorDetails = null, metadata = null, systemId = null) {
   try {
     // Verificar que connectionId sea válido
     if (!connectionId) {
@@ -606,9 +713,30 @@ async function createWebSocketLog(connectionId, eventType, message, errorDetails
       return;
     }
 
+    // Si no se proporciona systemId, intentar obtenerlo de la conexión
+    let logSystemId = systemId;
+    if (!logSystemId) {
+      try {
+        const connection = await prisma.webSocketConnection.findUnique({
+          where: { id: connectionId },
+          select: { systemId: true }
+        });
+        logSystemId = connection?.systemId;
+      } catch (connError) {
+        console.warn('⚠️ No se pudo obtener systemId de la conexión:', connError);
+      }
+    }
+
+    // Si aún no tenemos systemId, usar un valor por defecto
+    if (!logSystemId) {
+      logSystemId = 'cmcnvo5an0006y2hyyjx951fi'; // Default systemId para backward compatibility
+      console.warn('⚠️ Usando systemId por defecto para WebSocketLog');
+    }
+
     await prisma.webSocketLog.create({
       data: {
         connectionId,
+        systemId: logSystemId,
         eventType,
         message,
         errorDetails,

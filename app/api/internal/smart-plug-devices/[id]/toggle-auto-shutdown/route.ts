@@ -13,7 +13,7 @@ export async function POST(
     }
 
     const { autoShutdownEnabled } = await request.json();
-    const { id } = params;
+    const { id } = await params;
 
     // Actualizar el campo autoShutdownEnabled del dispositivo
     const updatedDevice = await prisma.smartPlugDevice.update({

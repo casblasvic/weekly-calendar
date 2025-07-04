@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { webSocketManager } from "@/lib/websocket";
 
 type Params = Promise<{ id: string }>;
 
@@ -30,6 +31,16 @@ export async function PUT(
             return NextResponse.json({ error: "Enchufe no encontrado" }, { status: 404 });
         }
 
+        // Verificar si la asignación de equipo cambió para invalidar cache
+        const assignmentChanged = existingPlug.equipmentClinicAssignmentId !== body.equipmentClinicAssignmentId;
+        
+        console.log('🔍 [SMART_PLUG_UPDATE] Debug cambio de asignación:', {
+          deviceName: existingPlug.name,
+          oldAssignmentId: existingPlug.equipmentClinicAssignmentId,
+          newAssignmentId: body.equipmentClinicAssignmentId,
+          assignmentChanged
+        });
+
         // Actualizar el enchufe
         const updatedDevice = await prisma.smartPlugDevice.update({
             where: { id },
@@ -57,6 +68,34 @@ export async function PUT(
                 },
             },
         });
+
+        // 📡 Si la asignación cambió, notificar por Socket.IO para actualizar el menú flotante
+        if (assignmentChanged) {
+            try {
+                console.log(`📡 [SMART_PLUG_UPDATE] Notificando cambio de asignación: ${updatedDevice.name}`);
+                
+                // Usar Socket.IO en lugar de WebSocket broadcast
+                if (global.broadcastAssignmentUpdate) {
+                    global.broadcastAssignmentUpdate(session.user.systemId, {
+                        type: 'smart-plug-assignment-updated',
+                        deviceId: updatedDevice.id,
+                        deviceName: updatedDevice.name,
+                        systemId: session.user.systemId,
+                        equipmentClinicAssignmentId: updatedDevice.equipmentClinicAssignmentId,
+                        clinicId: updatedDevice.clinicId,
+                        equipmentName: updatedDevice.equipmentClinicAssignment?.equipment?.name,
+                        clinicName: updatedDevice.equipmentClinicAssignment?.clinic?.name,
+                        timestamp: new Date().toISOString()
+                    });
+                    console.log(`✅ [SMART_PLUG_UPDATE] Notificación Socket.IO enviada exitosamente`);
+                } else {
+                    console.warn(`⚠️ [SMART_PLUG_UPDATE] broadcastAssignmentUpdate no disponible`);
+                }
+            } catch (wsError) {
+                console.warn(`⚠️ [SMART_PLUG_UPDATE] Error enviando notificación Socket.IO:`, wsError);
+                // No fallar la operación por un error de Socket.IO
+            }
+        }
 
         return NextResponse.json(updatedDevice);
 
@@ -95,6 +134,18 @@ export async function PATCH(
     if (!device) {
       return NextResponse.json({ error: 'Dispositivo no encontrado' }, { status: 404 });
     }
+
+    // Verificar si la asignación de equipo cambió para invalidar cache
+    const assignmentChanged = body.equipmentClinicAssignmentId !== undefined && 
+                             device.equipmentClinicAssignmentId !== body.equipmentClinicAssignmentId;
+    
+    console.log('🔍 [SMART_PLUG_PATCH] Debug cambio de asignación:', {
+      deviceName: device.name,
+      oldAssignmentId: device.equipmentClinicAssignmentId,
+      newAssignmentId: body.equipmentClinicAssignmentId,
+      bodyHasAssignmentId: body.equipmentClinicAssignmentId !== undefined,
+      assignmentChanged
+    });
 
     // Construir objeto de actualización con solo los campos proporcionados
     const updateData: any = {};
@@ -135,6 +186,34 @@ export async function PATCH(
         clinic: true
       }
     });
+
+    // 📡 Si la asignación cambió, notificar por Socket.IO para actualizar el menú flotante
+    if (assignmentChanged) {
+      try {
+        console.log(`📡 [SMART_PLUG_PATCH] Notificando cambio de asignación: ${updatedDevice.name}`);
+        
+        // Usar Socket.IO en lugar de WebSocket broadcast
+        if (global.broadcastAssignmentUpdate) {
+          global.broadcastAssignmentUpdate(session.user.systemId, {
+            type: 'smart-plug-assignment-updated',
+            deviceId: updatedDevice.id,
+            deviceName: updatedDevice.name,
+            systemId: session.user.systemId,
+            equipmentClinicAssignmentId: updatedDevice.equipmentClinicAssignmentId,
+            clinicId: updatedDevice.clinicId,
+            equipmentName: updatedDevice.equipmentClinicAssignment?.equipment?.name,
+            clinicName: updatedDevice.equipmentClinicAssignment?.clinic?.name,
+            timestamp: new Date().toISOString()
+          });
+          console.log(`✅ [SMART_PLUG_PATCH] Notificación Socket.IO enviada exitosamente`);
+        } else {
+          console.warn(`⚠️ [SMART_PLUG_PATCH] broadcastAssignmentUpdate no disponible`);
+        }
+      } catch (wsError) {
+        console.warn(`⚠️ [SMART_PLUG_PATCH] Error enviando notificación Socket.IO:`, wsError);
+        // No fallar la operación por un error de Socket.IO
+      }
+    }
 
     return NextResponse.json(updatedDevice);
   } catch (error) {

@@ -453,10 +453,7 @@ async function main() {
     }
     const systemId = mainSystem.id;
 
-    // --- Seed CountryInfo --- (Moved earlier)
-    console.log('Seeding countries...');
-    await seedCountries();
-    console.log('Countries seeded.');
+    // --- Seed CountryInfo will be called later in the flow ---
 
     // --- 2. Crear Legal Entities ---
     const legalEntityData = [
@@ -1448,32 +1445,22 @@ async function main() {
         where: { name_systemId: { name: equipoData.name, systemId: system!.id } },
         update: {
           description: equipoData.description,
-          serialNumber: equipoData.serialNumber,
           modelNumber: equipoData.modelNumber,
           purchaseDate: equipoData.purchaseDate ? new Date(equipoData.purchaseDate) : null,
           warrantyEndDate: equipoData.warrantyDate ? new Date(equipoData.warrantyDate) : null,
-          location: equipoData.location,
-          notes: equipoData.notes,
           isActive: equipoData.isActive,
-          clinicId: clinic.id,
-          deviceId: equipoData.deviceId
         },
         create: {
           name: equipoData.name,
           description: equipoData.description,
-          serialNumber: equipoData.serialNumber,
           modelNumber: equipoData.modelNumber,
           purchaseDate: equipoData.purchaseDate ? new Date(equipoData.purchaseDate) : null,
           warrantyEndDate: equipoData.warrantyDate ? new Date(equipoData.warrantyDate) : null,
-          location: equipoData.location,
-          notes: equipoData.notes,
           isActive: equipoData.isActive,
-          clinicId: clinic.id,
           systemId: system!.id,
-          deviceId: equipoData.deviceId
         }
       });
-      console.log(`  -> Ensured equipment: ${equipment.name} for clinic ${clinic.name}`);
+      console.log(`  -> Ensured equipment: ${equipment.name} (model: ${equipment.modelNumber || 'N/A'})`);
     } catch (error) {
       console.error(`Error creating equipment ${equipoData.name}:`, error);
     }

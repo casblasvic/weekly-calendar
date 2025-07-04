@@ -253,7 +253,7 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
         if (formData.duration === undefined || formData.duration === null || formData.duration <= 0) missing.push("Duración Total Cita (minutos)");
         if (formData.defaultVatId === undefined) missing.push("Tipo de IVA"); // Puede ser null, pero debe estar definido
         
-        // Validar duración de tratamiento si Shelly está activo y hay equipos requeridos
+        // Validar duración de tratamiento si Shelly está activo y hay equipo seleccionado
         if (isShellyActive && formData.equipmentId) {
             if (formData.treatmentDuration === undefined || formData.treatmentDuration === null || formData.treatmentDuration <= 0) {
                 missing.push("Duración Tratamiento (minutos)");
@@ -482,59 +482,69 @@ export const ServiceForm: React.FC<ServiceFormProps> = ({
                                 </div>
                             </div>
                             
-                            {/* Campo de Duración de Tratamiento - Solo visible si Shelly activo y hay equipos */}
-                            {isShellyActive && formData.equipmentId && (
+                            {/* Campo de Duración de Tratamiento - Solo visible si Shelly activo */}
+                            {isShellyActive && (
                                 <div className="border-t pt-4">
                                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                                         <div className="flex items-center gap-2 mb-3">
                                             <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
                                             <Label className="text-sm font-medium text-blue-800">Control Inteligente de Equipos</Label>
                                         </div>
-                                        <div className="space-y-2">
-                                            <Label htmlFor="treatmentDuration" className="text-sm text-blue-700">
-                                                Duración Real de Tratamiento (minutos) <span className="text-red-500">*</span>
-                                            </Label>
-                                            <div className="flex items-center gap-2">
-                                                <Button 
-                                                    type="button" 
-                                                    variant="outline" 
-                                                    size="icon" 
-                                                    className="h-9 w-9 border-blue-300 hover:border-blue-400" 
-                                                    onClick={() => handleTreatmentDurationChange(-1)} 
-                                                    disabled={isSaving || (formData.treatmentDuration ?? 0) <= 1} 
-                                                    aria-label="Disminuir duración tratamiento"
-                                                >
-                                                    <Minus className="h-4 w-4" />
-                                                </Button>
-                                                <Input 
-                                                    id="treatmentDuration" 
-                                                    name="treatmentDuration" 
-                                                    type="text" 
-                                                    inputMode="numeric" 
-                                                    value={formData.treatmentDuration ?? ''} 
-                                                    onChange={handleNumericInputChange} 
-                                                    onBlur={handleNumericInputBlur} 
-                                                    className={cn("text-center w-16 border-blue-300 focus:border-blue-500 focus:ring-blue-500")} 
-                                                    disabled={isSaving} 
-                                                    min={1} 
-                                                    step={1} 
-                                                />
-                                                <Button 
-                                                    type="button" 
-                                                    variant="outline" 
-                                                    size="icon" 
-                                                    className="h-9 w-9 border-blue-300 hover:border-blue-400" 
-                                                    onClick={() => handleTreatmentDurationChange(1)} 
-                                                    disabled={isSaving} 
-                                                    aria-label="Aumentar duración tratamiento"
-                                                >
-                                                    <Plus className="h-4 w-4" />
-                                                </Button>
-                                            </div>
-                                            <p className="text-xs text-blue-600 mt-2">
-                                                Tiempo real de uso del equipo (sin incluir preparación del paciente)
-                                            </p>
-                                        </div>
+                                                                    <div className="space-y-2">
+                                <Label htmlFor="treatmentDuration" className={`text-sm ${!formData.equipmentId ? 'text-gray-400' : 'text-blue-700'}`}>
+                                    Duración Real de Tratamiento (minutos) {isShellyActive && formData.equipmentId && <span className="text-red-500">*</span>}
+                                </Label>
+                                <div className="flex items-center gap-2">
+                                    <Button 
+                                        type="button" 
+                                        variant="outline" 
+                                        size="icon" 
+                                        className={`h-9 w-9 ${!formData.equipmentId 
+                                            ? 'border-gray-300 text-gray-400 hover:border-gray-300 hover:text-gray-400' 
+                                            : 'border-blue-300 hover:border-blue-400'}`} 
+                                        onClick={() => handleTreatmentDurationChange(-1)} 
+                                        disabled={isSaving || !formData.equipmentId || (formData.treatmentDuration ?? 0) <= 1} 
+                                        aria-label="Disminuir duración tratamiento"
+                                    >
+                                        <Minus className="h-4 w-4" />
+                                    </Button>
+                                    <Input 
+                                        id="treatmentDuration" 
+                                        name="treatmentDuration" 
+                                        type="text" 
+                                        inputMode="numeric" 
+                                        value={formData.treatmentDuration ?? ''} 
+                                        onChange={handleNumericInputChange} 
+                                        onBlur={handleNumericInputBlur} 
+                                        className={cn("text-center w-16", !formData.equipmentId 
+                                            ? 'border-gray-300 bg-gray-50 text-gray-400 cursor-not-allowed' 
+                                            : 'border-blue-300 focus:border-blue-500 focus:ring-blue-500')} 
+                                        disabled={isSaving || !formData.equipmentId} 
+                                        placeholder={!formData.equipmentId ? "---" : "0"}
+                                        min={1} 
+                                        step={1} 
+                                    />
+                                    <Button 
+                                        type="button" 
+                                        variant="outline" 
+                                        size="icon" 
+                                        className={`h-9 w-9 ${!formData.equipmentId 
+                                            ? 'border-gray-300 text-gray-400 hover:border-gray-300 hover:text-gray-400' 
+                                            : 'border-blue-300 hover:border-blue-400'}`} 
+                                        onClick={() => handleTreatmentDurationChange(1)} 
+                                        disabled={isSaving || !formData.equipmentId} 
+                                        aria-label="Aumentar duración tratamiento"
+                                    >
+                                        <Plus className="h-4 w-4" />
+                                    </Button>
+                                </div>
+                                <p className={`text-xs mt-2 ${!formData.equipmentId ? 'text-gray-400' : 'text-blue-600'}`}>
+                                    {!formData.equipmentId 
+                                        ? "Debe seleccionar un equipo para especificar la duración del tratamiento"
+                                        : "Tiempo real de uso del equipo (sin incluir preparación del paciente). Requerido cuando se usa control inteligente."
+                                    }
+                                </p>
+                            </div>
                                     </div>
                                 </div>
                             )}

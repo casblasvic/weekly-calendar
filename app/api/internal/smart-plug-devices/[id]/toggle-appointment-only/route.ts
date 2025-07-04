@@ -13,7 +13,7 @@ export async function POST(
     }
 
     const { appointmentOnlyMode } = await request.json();
-    const { id } = params;
+    const { id } = await params;
 
     // Actualizar el campo appointmentOnlyMode del dispositivo
     const updatedDevice = await prisma.smartPlugDevice.update({

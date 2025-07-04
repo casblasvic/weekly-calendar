@@ -47,6 +47,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { shellyWebSocketManager } from "@/lib/shelly/websocket-manager";
+import { isShellyModuleActive } from "@/lib/services/shelly-module-service";
 
 export async function POST(
     request: NextRequest,
@@ -55,6 +56,16 @@ export async function POST(
     const session = await auth();
     if (!session?.user?.systemId) {
         return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    }
+
+    // 🛡️ PASO 3B: Verificar módulo Shelly activo
+    const isModuleActive = await isShellyModuleActive(session.user.systemId);
+    if (!isModuleActive) {
+        console.log(`🔒 [CONTROL] Módulo Shelly INACTIVO para sistema ${session.user.systemId} - Control bloqueado`);
+        return NextResponse.json({ 
+            error: "Módulo de control de enchufes inteligentes inactivo",
+            details: "El módulo de control de enchufes inteligentes Shelly está desactivado. Active el módulo desde el marketplace para usar esta funcionalidad."
+        }, { status: 403 });
     }
 
     try {

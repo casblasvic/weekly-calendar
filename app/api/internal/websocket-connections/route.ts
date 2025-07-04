@@ -10,8 +10,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
     }
 
-    // Obtener todas las conexiones WebSocket
+    // Obtener todas las conexiones WebSocket del sistema del usuario
     const connections = await prisma.webSocketConnection.findMany({
+      where: {
+        systemId: session.user.systemId // 🛡️ FILTRO MULTI-TENANT CRÍTICO
+      },
       include: {
         logs: {
           orderBy: { createdAt: 'desc' },
@@ -27,8 +30,11 @@ export async function GET(request: NextRequest) {
     let recentLogs: any[] = [];
     
     try {
-      // Query simple sin filtros complicados
+      // Query simple con filtro multi-tenant
       recentLogs = await prisma.webSocketLog.findMany({
+        where: {
+          systemId: session.user.systemId // 🛡️ FILTRO MULTI-TENANT CRÍTICO
+        },
         orderBy: { createdAt: 'desc' },
         take: 100,
         include: {
@@ -47,9 +53,12 @@ export async function GET(request: NextRequest) {
     } catch (logsError) {
       console.warn('Error obteniendo logs WebSocket con include, intentando sin include:', logsError);
       
-      // Intentar query más simple sin include
+      // Intentar query más simple sin include (con filtro multi-tenant)
       try {
         recentLogs = await prisma.webSocketLog.findMany({
+          where: {
+            systemId: session.user.systemId // 🛡️ FILTRO MULTI-TENANT CRÍTICO
+          },
           orderBy: { createdAt: 'desc' },
           take: 100
         });

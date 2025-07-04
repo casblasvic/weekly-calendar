@@ -70,6 +70,15 @@ export class ShellyRobustWebSocketManager {
         throw new Error(`Credencial ${credentialId} no encontrada`);
       }
 
+      // 🛡️ VERIFICAR MÓDULO SHELLY ACTIVO ANTES DE CONECTAR
+      const { isShellyModuleActive } = await import('@/lib/services/shelly-module-service');
+      const isModuleActive = await isShellyModuleActive(credential.systemId);
+      
+      if (!isModuleActive) {
+        console.warn(`🔒 [ROBUST-CONNECT] Módulo Shelly INACTIVO para sistema ${credential.systemId} - Conexión bloqueada`);
+        throw new Error('Módulo de control de enchufes inteligentes Shelly está desactivado');
+      }
+
       // Buscar o crear conexión reutilizable en BD
       const { id: dbConnectionId, isNew } = await webSocketConnectionService.findOrCreateConnection({
         type: 'SHELLY',
@@ -316,6 +325,21 @@ export class ShellyRobustWebSocketManager {
   // Inicializar todas las credenciales conectadas
   async initializeAll(): Promise<void> {
     try {
+      // 🛡️ VERIFICAR MÓDULO SHELLY ACTIVO ANTES DE INICIALIZAR
+      const firstCredential = await prisma.shellyCredential.findFirst({
+        select: { systemId: true }
+      });
+      
+      if (firstCredential) {
+        const { isShellyModuleActive } = await import('@/lib/services/shelly-module-service');
+        const isModuleActive = await isShellyModuleActive(firstCredential.systemId);
+        
+        if (!isModuleActive) {
+          console.warn('🔒 Módulo Shelly INACTIVO - Omitiendo inicialización completa de credenciales');
+          return;
+        }
+      }
+      
       const credentials = await prisma.shellyCredential.findMany({
         where: { status: 'connected' },
         include: { smartPlugs: true }

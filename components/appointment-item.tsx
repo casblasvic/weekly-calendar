@@ -1114,7 +1114,8 @@ export function AppointmentItem({
                 className="w-48"
                 onCloseAutoFocus={(e) => e.preventDefault()}
               >
-                {/* 🎯 INICIAR SERVICIO - OPTIMIZADO CON CACHE */}
+                {/* 🎯 INICIAR SERVICIO - SOLO SI HAY DATOS DE EQUIPMENT (módulo activo) */}
+                {equipmentData && (
                 <DropdownMenuSub>
                   <DropdownMenuSubTrigger className="font-medium text-green-700 cursor-pointer hover:bg-green-50">
                     <Play className="mr-2 w-4 h-4" />
@@ -1341,8 +1342,9 @@ export function AppointmentItem({
                     </DropdownMenuItem>
                   </DropdownMenuSubContent>
                 </DropdownMenuSub>
+                )}
                 
-                <DropdownMenuSeparator />
+                {equipmentData && <DropdownMenuSeparator />}
                 
                 <DropdownMenuItem onClick={(e) => {
                   e.stopPropagation();

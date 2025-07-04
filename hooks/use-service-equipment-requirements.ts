@@ -3,6 +3,7 @@ import { useSession } from 'next-auth/react'
 import { useClinic } from '@/contexts/clinic-context'
 import { clientLogger } from '@/lib/utils/client-logger'
 import { deviceOfflineManager } from '@/lib/shelly/device-offline-manager'
+import { useIntegrationModules } from '@/hooks/use-integration-modules'
 
 // 🎯 CACHE GLOBAL - Una sola carga por clínica
 const serviceEquipmentCache = new Map<string, Record<string, string[]>>()
@@ -70,6 +71,15 @@ export function useServiceEquipmentRequirements({
   const { activeClinic } = useClinic()
   const { data: session } = useSession()
   const systemId = session?.user?.systemId
+  
+  // 🛡️ PASO 3C: Verificar módulo Shelly activo
+  const { isShellyActive, isLoading: isLoadingModules } = useIntegrationModules()
+  
+  // Si el módulo Shelly está inactivo, no mostrar UI de enchufes
+  if (!isShellyActive && !isLoadingModules) {
+    clientLogger.verbose('🔒 [ServiceEquipment] Módulo Shelly INACTIVO - Ocultando UI de enchufes')
+    return null
+  }
   
   // Estado principal
   const [allDevices, setAllDevices] = useState<ServiceEquipmentDevice[]>([])

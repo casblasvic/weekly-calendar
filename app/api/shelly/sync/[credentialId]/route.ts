@@ -3,6 +3,7 @@ import { PrismaClient } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { decrypt, encrypt } from "@/lib/shelly/crypto";
 import { refreshShellyToken } from "@/lib/shelly/client";
+import { isSmartPlug } from "@/utils/shelly-device-utils";
 
 const prisma = new PrismaClient();
 
@@ -386,14 +387,29 @@ async function processIndividualDevice(deviceId: string, deviceData: any, creden
     } else {
         console.log(`🆕 Creando nuevo dispositivo: ${basicData.name || deviceId}`);
         
+        // 🔌 NUEVA LÓGICA: Configurar excludeFromSync automáticamente
+        const isPlugDevice = isSmartPlug(devInfo.code);
+        const autoExcludeFromSync = !isPlugDevice; // Si NO es enchufe inteligente, excluir automáticamente
+        
+        console.log(`🎯 Dispositivo ${isPlugDevice ? 'ES' : 'NO ES'} un enchufe inteligente`);
+        console.log(`📋 excludeFromSync configurado automáticamente: ${autoExcludeFromSync}`);
+        
         // Usar la integración ya verificada
         await prisma.smartPlugDevice.create({
             data: {
                 deviceId,
                 integrationId: activeIntegration.id,
+                excludeFromSync: autoExcludeFromSync, // 🔌 CONFIGURACIÓN AUTOMÁTICA
                 ...deviceUpdateData
             }
         });
+        
+        // Log informativo sobre la configuración automática
+        if (autoExcludeFromSync) {
+            console.log(`⏭️ Dispositivo "${basicData.name || deviceId}" configurado para ser excluido de futuras sincronizaciones automáticamente (no es enchufe inteligente)`);
+        } else {
+            console.log(`✅ Dispositivo "${basicData.name || deviceId}" configurado para sincronización automática (es enchufe inteligente)`);
+        }
     }
 }
 

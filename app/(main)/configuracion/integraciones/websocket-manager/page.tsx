@@ -28,6 +28,7 @@ import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import WebSocketLogs from '@/components/websocket/websocket-logs';
+import { useIntegrationModules } from '@/hooks/use-integration-modules';
 
 interface WebSocketConnection {
     id: string;
@@ -220,6 +221,10 @@ export default function WebSocketManagerPage() {
     const [socketVersionInfo, setSocketVersionInfo] = useState<{ current: string; latest: string; hasUpdate: boolean; releaseNotes: string } | null>(null);
     const [checkingVersion, setCheckingVersion] = useState(false);
     const [updating, setUpdating] = useState(false);
+    
+    // 🛡️ Verificar módulo Shelly y estado de desconexión
+    const { isShellyActive, isLoading: isLoadingModules } = useIntegrationModules();
+    const [isDisconnectingShelly, setIsDisconnectingShelly] = useState(false);
 
     const fetchMetrics = useCallback(async () => {
         try {
@@ -354,9 +359,14 @@ export default function WebSocketManagerPage() {
         
         initializeSocket();
         
+
+        
         // Actualizar cada 120 segundos (reducido para mejor rendimiento)
         const interval = setInterval(fetchConnections, 120000);
-        return () => clearInterval(interval);
+        
+        return () => {
+            clearInterval(interval);
+        };
     }, [fetchConnections]);
 
     const handleConnectionAction = useCallback(async (connectionId: string, action: 'start' | 'stop' | 'restart' | 'refresh-token') => {
@@ -499,6 +509,42 @@ export default function WebSocketManagerPage() {
         }
     }, [socketVersionInfo, checkSocketIOVersion]);
 
+    // 🔌 Función para desconectar todas las conexiones Shelly (conexiones legacy)
+    const disconnectAllShellyConnections = useCallback(async () => {
+        if (isShellyActive || isLoadingModules) {
+            toast.error('No se puede desconectar: el módulo Shelly está activo');
+            return;
+        }
+        
+        try {
+            setIsDisconnectingShelly(true);
+            
+            const response = await fetch('/api/internal/shelly/disconnect-all', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                toast.success('Todas las conexiones WebSocket Shelly han sido desconectadas');
+                // Recargar conexiones para reflejar los cambios
+                await fetchConnections();
+            } else if (result.warning && result.moduleActive) {
+                toast.warning(result.message);
+            } else {
+                throw new Error(result.message || result.error || 'Error desconocido');
+            }
+        } catch (error) {
+            console.error('Error al desconectar conexiones Shelly:', error);
+            toast.error(error instanceof Error ? error.message : 'Error al desconectar las conexiones Shelly');
+        } finally {
+            setIsDisconnectingShelly(false);
+        }
+    }, [isShellyActive, isLoadingModules, fetchConnections]);
+
     // Memoizar estadísticas para evitar recálculos innecesarios
     const memoizedStats = useMemo(() => {
         if (!stats) return null;
@@ -511,6 +557,19 @@ export default function WebSocketManagerPage() {
             byType: stats.byType || {}
         };
     }, [stats]);
+
+    // 🔍 Detectar si hay conexiones Shelly activas
+    const hasShellyConnections = useMemo(() => {
+        return connections.some(conn => conn.type === 'SHELLY' && conn.status === 'connected');
+    }, [connections]);
+
+    // 🎯 Mostrar botón de desconexión solo si:
+    // - Hay conexiones Shelly activas
+    // - El módulo Shelly está inactivo
+    // - No está cargando módulos
+    const shouldShowDisconnectButton = useMemo(() => {
+        return hasShellyConnections && !isShellyActive && !isLoadingModules;
+    }, [hasShellyConnections, isShellyActive, isLoadingModules]);
 
     // Memoizar info del socket
     const socketInfo = useMemo(() => (
@@ -647,6 +706,33 @@ export default function WebSocketManagerPage() {
             </div>
 
             {socketInfo}
+
+            {/* 🛡️ Banner simplificado de respaldo (solo casos excepcionales) */}
+            {shouldShowDisconnectButton && (
+                <div className="p-3 mb-4 bg-blue-50 rounded-lg border border-blue-200">
+                    <div className="flex items-center gap-3">
+                        <AlertTriangle className="w-4 h-4 text-blue-600" />
+                        <div className="flex-1">
+                            <p className="text-sm text-blue-700">
+                                <strong>Conexiones legacy detectadas.</strong> El sistema las limpia automáticamente al cargar.
+                            </p>
+                            <p className="text-xs text-blue-600 mt-1">
+                                Si persisten tras recargar, use el botón para forzar limpieza manual.
+                            </p>
+                        </div>
+                        <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={disconnectAllShellyConnections}
+                            disabled={isDisconnectingShelly}
+                            className="text-blue-700 border-blue-300 hover:bg-blue-100"
+                        >
+                            <WifiOff className={`mr-1 w-3 h-3 ${isDisconnectingShelly ? 'animate-spin' : ''}`} />
+                            {isDisconnectingShelly ? 'Procesando...' : 'Forzar Limpieza'}
+                        </Button>
+                    </div>
+                </div>
+            )}
 
             <Tabs defaultValue="connections" className="w-full" value={activeTab} onValueChange={setActiveTab}>
                 <TabsList className="grid grid-cols-2 w-full">

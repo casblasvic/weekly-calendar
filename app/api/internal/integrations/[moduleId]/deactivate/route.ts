@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
 import { auth } from "@/lib/auth";
+import { disconnectAllShellyWebSockets, shellyModuleService } from "@/lib/services/shelly-module-service";
 
 const prisma = new PrismaClient();
 
@@ -34,7 +35,36 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
             data: { isActive: false },
         });
 
-        return NextResponse.json({ success: true, integration: updatedIntegration });
+        // 🔄 INVALIDAR CACHE: Invalidar cache del servicio para este sistema
+        if (integrationModule.name.toLowerCase().includes('shelly') && integrationModule.category === 'IOT_DEVICES') {
+            shellyModuleService.invalidateCache(systemId);
+            console.log(`🗑️ [DEACTIVATE] Cache de módulo Shelly invalidado para sistema ${systemId}`);
+        }
+
+        // 🔌 TRIGGER AUTOMÁTICO: Si es módulo Shelly, desconectar WebSockets inmediatamente
+        if (integrationModule.name.toLowerCase().includes('shelly') && integrationModule.category === 'IOT_DEVICES') {
+            console.log(`🔌 [DEACTIVATE] Módulo Shelly desactivado para sistema ${systemId} - Desconectando WebSockets automáticamente`);
+            
+            try {
+                // Desconectar todas las conexiones Shelly de forma asíncrona
+                // No esperamos para no bloquear la respuesta
+                disconnectAllShellyWebSockets(systemId).catch(error => {
+                    console.error('❌ [DEACTIVATE] Error en desconexión automática:', error);
+                });
+                
+                console.log('✅ [DEACTIVATE] Desconexión automática de WebSockets Shelly iniciada');
+            } catch (error) {
+                console.error('❌ [DEACTIVATE] Error iniciando desconexión automática:', error);
+            }
+        }
+
+        return NextResponse.json({ 
+            success: true, 
+            integration: updatedIntegration,
+            // 🔄 Señal para invalidar cache en el frontend
+            invalidateCache: true,
+            cacheKeys: ['integrations']
+        });
 
     } catch (error) {
         console.error(`Error al desactivar el módulo ${moduleId}:`, error);

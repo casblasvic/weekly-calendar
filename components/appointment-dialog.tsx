@@ -48,6 +48,7 @@ import {
   ArrowUpRight,
   RefreshCw,
   RotateCcw,
+  Play,
 } from "lucide-react"
 import { useState, forwardRef, useEffect, useRef, useMemo } from "react"
 import { cn } from "@/lib/utils"
@@ -65,6 +66,8 @@ import { useClinic } from '@/contexts/clinic-context'
 import { useServicesQuery, useBonosQuery, usePackagesQuery } from '@/lib/hooks/use-api-query'
 import { extractTimeFromString, calculateDurationInMinutes, calculateEndTime } from "@/lib/utils/time-parser"
 import { useGranularity } from "@/lib/drag-drop/granularity-context"
+import { useIntegrationModules } from '@/hooks/use-integration-modules'
+import { AppointmentEquipmentSelector } from './appointment-equipment-selector'
 
 // WhatsApp icon component
 const WhatsAppIcon = ({ className }: { className?: string }) => (
@@ -189,6 +192,10 @@ export function AppointmentDialog({
   
   // Estado para saber si la cita está validada
   const isAppointmentValidated = existingAppointment?.isValidated || false
+  
+  // 🛡️ Verificar módulo Shelly activo y estado de equipamiento
+  const { isShellyActive } = useIntegrationModules()
+  const [showEquipmentSelector, setShowEquipmentSelector] = useState(false)
   
   const { getTags, getTagById } = useAppointmentTags()
   const router = useRouter()
@@ -1266,11 +1273,25 @@ export function AppointmentDialog({
                       No asistido
                     </Button>
                     
+                    {/* 🎯 BOTÓN INICIAR SERVICIO - Solo si módulo Shelly activo */}
+                    {isEditing && isShellyActive && (
+                      <Button
+                        variant="outline"
+                        className="justify-start font-light text-xs border-0 shadow-sm h-8 bg-green-500 hover:bg-green-600 text-white disabled:opacity-50 disabled:cursor-not-allowed w-full mt-2"
+                        onClick={() => setShowEquipmentSelector(true)}
+                        disabled={!selectedServices.length || isAppointmentValidated}
+                      >
+                        <Play className="h-3.5 w-3.5 mr-1.5" />
+                        Iniciar Servicio
+                      </Button>
+                    )}
+                    
                     {isEditing && (
                       <Button
                         variant="outline"
                         className={cn(
-                          "justify-start font-light text-xs border-0 shadow-sm h-8 disabled:opacity-50 disabled:cursor-not-allowed w-full mt-2",
+                          "justify-start font-light text-xs border-0 shadow-sm h-8 disabled:opacity-50 disabled:cursor-not-allowed w-full",
+                          isShellyActive ? "mt-1" : "mt-2", // Menos margen si hay botón de equipamiento arriba
                           Object.values(servicesToValidate).some(status => status === 'VALIDATED') 
                             ? "bg-[#28A745] hover:bg-[#218838] text-white" 
                             : "bg-red-500 hover:bg-red-600 text-white"
@@ -1499,6 +1520,20 @@ export function AppointmentDialog({
         onOpenChange={setShowClientDetails}
         client={initialClient}
       />
+
+      {/* 🎯 MODAL SELECTOR DE EQUIPAMIENTO - Solo si módulo Shelly activo */}
+      {isShellyActive && existingAppointment?.id && !existingAppointment.id.toString().startsWith('temp-') && (
+        <AppointmentEquipmentSelector
+          open={showEquipmentSelector}
+          onOpenChange={setShowEquipmentSelector}
+          appointmentId={existingAppointment.id}
+          appointmentClientName={initialClient ? `${initialClient.firstName} ${initialClient.lastName}` : undefined}
+          onStartWithoutEquipment={() => {
+            console.log('Iniciar sin equipamiento desde modal de edición');
+            setShowEquipmentSelector(false);
+          }}
+        />
+      )}
     </React.Fragment>
   )
 }

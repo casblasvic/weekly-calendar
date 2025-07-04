@@ -478,7 +478,7 @@ export default function GestionServiciosPage() {
         getSortedRowModel: getSortedRowModel(),
         globalFilterFn: serviceGlobalFilterFn,
         enableRowSelection: true,
-        debugTable: process.env.NODE_ENV === 'development',
+        debugTable: false,
     });
 
     useEffect(() => {

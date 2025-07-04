@@ -8,6 +8,7 @@ import { useClinic } from '@/contexts/clinic-context';
 import useSocket from '@/hooks/useSocket';
 import { clientLogger } from '@/lib/utils/client-logger';
 import { deviceOfflineManager, OfflineUpdate } from '@/lib/shelly/device-offline-manager';
+import { useIntegrationModules } from '@/hooks/use-integration-modules';
 
 interface SmartPlugDevice {
   id: string;
@@ -76,11 +77,13 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
   const { data: session } = useSession();
   const systemId = session?.user?.systemId;
   
+  // ✅ USAR NUEVO HOOK DE INTEGRATIONS
+  const { isShellyActive, isLoading: isLoadingIntegrations } = useIntegrationModules();
+  
   // Estado principal
   const [allDevices, setAllDevices] = useState<SmartPlugDevice[]>([]);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
-  const [isShellyModuleActive, setIsShellyModuleActive] = useState<boolean | null>(null);
   
   // Refs para tracking updates
   const messagesReceivedRef = useRef<Set<string>>(new Set());
@@ -88,55 +91,7 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
   // ✅ SOCKET - Igual que la página principal
   const { isConnected, subscribe } = useSocket(systemId);
 
-  // 🔒 VERIFICAR SI EL MÓDULO SHELLY ESTÁ ACTIVO
-  const checkShellyModuleStatus = useCallback(async () => {
-    if (!systemId) {
-      setIsShellyModuleActive(false);
-      return;
-    }
-    
-    try {
-      clientLogger.debug('🔍 [FloatingMenu] Verificando estado del módulo Shelly...');
-      
-      const response = await fetch('/api/internal/integrations');
-      if (!response.ok) {
-        if (response.status === 401 || response.status === 403) {
-          console.error('❌ [FloatingMenu] Sesión expirada verificando módulo, redirigiendo al login...');
-          window.location.href = '/login';
-          return;
-        }
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-      
-      const integrationsByCategory = await response.json();
-      
-      // Buscar en todas las categorías el módulo Shelly
-      let shellyModule = null;
-      for (const category in integrationsByCategory) {
-        const modules = integrationsByCategory[category];
-        shellyModule = modules.find((module: any) => 
-          module.name.includes('Shelly') || 
-          module.name.includes('Control Inteligente')
-        );
-        if (shellyModule) break;
-      }
-      
-      const isActive = shellyModule?.isActive || false;
-      
-      clientLogger.debug('🔍 [FloatingMenu] Estado módulo Shelly:', {
-        found: !!shellyModule,
-        moduleName: shellyModule?.name,
-        isActive,
-        moduleId: shellyModule?.id
-      });
-      
-      setIsShellyModuleActive(isActive);
-      
-    } catch (error) {
-      console.error('❌ [FloatingMenu] Error verificando módulo Shelly:', error);
-      setIsShellyModuleActive(false);
-    }
-  }, [systemId]);
+  // ✅ VERIFICACIÓN ELIMINADA - Ahora usa useIntegrationModules
 
   // 🔥 FETCH INICIAL - Cargar todos los dispositivos asignados a clínicas
   const fetchAllDevices = useCallback(async () => {
@@ -164,6 +119,16 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
         hasActiveClinic: !!activeClinic?.id
       });
       
+      console.log('🔄 [FloatingMenu] Dispositivos cargados desde API:', {
+        total: data.data?.length || 0,
+        devices: data.data?.map(d => ({
+          name: d.name,
+          equipmentClinicAssignmentId: d.equipmentClinicAssignmentId,
+          clinicId: d.equipmentClinicAssignment?.clinicId,
+          clinicName: d.equipmentClinicAssignment?.clinic?.name
+        })) || []
+      });
+      
       setAllDevices(data.data || []);
       setIsInitialized(true);
       setLastUpdate(new Date());
@@ -181,90 +146,100 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
     }
   }, [systemId, activeClinic?.id]);
 
-  // 🌐 INICIALIZACIÓN
-  useEffect(() => {
-    if (systemId) {
-      // Primero verificar si el módulo está activo
-      checkShellyModuleStatus();
-    }
-  }, [systemId, checkShellyModuleStatus]);
-
   // 🔥 CARGAR DISPOSITIVOS solo si el módulo está activo
   useEffect(() => {
-    if (systemId && isShellyModuleActive === true && !isInitialized) {
+    if (systemId && isShellyActive && !isInitialized && !isLoadingIntegrations) {
       fetchAllDevices();
     }
-  }, [systemId, isShellyModuleActive, fetchAllDevices, isInitialized]);
+  }, [systemId, isShellyActive, isLoadingIntegrations, fetchAllDevices, isInitialized]);
 
   // 📡 WEBSOCKET TIEMPO REAL - Updates normales de dispositivos
   useEffect(() => {
-    if (!isConnected || !isInitialized || isShellyModuleActive !== true) {
+    if (!isConnected || !isInitialized || !isShellyActive) {
       return;
     }
 
     clientLogger.verbose('📡 [FloatingMenu] WebSocket activo - configurando listener');
     
-    const unsubscribe = subscribe((update) => {
-      clientLogger.debug('🔍 [FloatingMenu] Update normal recibido:', {
-        deviceId: update.deviceId,
-        online: update.online,
-        relayOn: update.relayOn,
-        currentPower: update.currentPower
-      });
+    const unsubscribe = subscribe((update: any) => {
+      // 🔄 MANEJAR ACTUALIZACIONES DE ASIGNACIÓN DE EQUIPOS
+      if (update.type === 'smart-plug-assignment-updated') {
+        console.log('🔄 [FloatingMenu] Cambio de asignación detectado:', {
+          deviceId: update.deviceId,
+          deviceName: update.deviceName,
+          equipmentName: update.equipmentName,
+          clinicName: update.clinicName
+        });
+        
+        // Refrescar todos los dispositivos para obtener las asignaciones actualizadas
+        console.log('🔄 [FloatingMenu] Refrescando dispositivos debido a cambio de asignación...');
+        fetchAllDevices();
+        return;
+      }
       
-      // Actualizar dispositivo en la lista
-      setAllDevices(prev => {
-        const deviceIndex = prev.findIndex(device => 
-          device.id === update.deviceId || device.deviceId === update.deviceId
-        );
-        
-        if (deviceIndex === -1) {
-          clientLogger.verbose('⚠️ [FloatingMenu] Dispositivo no encontrado:', update.deviceId);
-          return prev;
-        }
-        
-        const oldDevice = prev[deviceIndex];
-        
-        // Verificar cambios reales (incluyendo validez de datos)
-        const hasChanges = (
-          Boolean(oldDevice.online) !== Boolean(update.online) ||
-          Boolean(oldDevice.relayOn) !== Boolean(update.relayOn) ||
-          // Para currentPower, considerar null como un cambio válido
-          (oldDevice.currentPower !== update.currentPower)
-        );
-        
-        if (!hasChanges) {
-          return prev;
-        }
-        
-        // Actualizar dispositivo
-        const updated = [...prev];
-        updated[deviceIndex] = { 
-          ...oldDevice, 
+      // 📡 MANEJAR UPDATES NORMALES DE ESTADO (online/offline/power)
+      if (update.deviceId) {
+        clientLogger.debug('🔍 [FloatingMenu] Update normal recibido:', {
+          deviceId: update.deviceId,
           online: update.online,
           relayOn: update.relayOn,
-          currentPower: update.currentPower,
-          voltage: update.voltage,
-          temperature: update.temperature,
-          lastSeenAt: new Date(update.timestamp)
-        };
+          currentPower: update.currentPower
+        });
         
-        clientLogger.verbose(`✅ [FloatingMenu] Dispositivo actualizado: ${oldDevice.name} → ${update.online ? 'ONLINE' : 'OFFLINE'}`);
+        // Actualizar dispositivo en la lista
+        setAllDevices(prev => {
+          const deviceIndex = prev.findIndex(device => 
+            device.id === update.deviceId || device.deviceId === update.deviceId
+          );
+          
+          if (deviceIndex === -1) {
+            clientLogger.verbose('⚠️ [FloatingMenu] Dispositivo no encontrado:', update.deviceId);
+            return prev;
+          }
+          
+          const oldDevice = prev[deviceIndex];
+          
+          // Verificar cambios reales (incluyendo validez de datos)
+          const hasChanges = (
+            Boolean(oldDevice.online) !== Boolean(update.online) ||
+            Boolean(oldDevice.relayOn) !== Boolean(update.relayOn) ||
+            // Para currentPower, considerar null como un cambio válido
+            (oldDevice.currentPower !== update.currentPower)
+          );
+          
+          if (!hasChanges) {
+            return prev;
+          }
+          
+          // Actualizar dispositivo
+          const updated = [...prev];
+          updated[deviceIndex] = { 
+            ...oldDevice, 
+            online: update.online,
+            relayOn: update.relayOn,
+            currentPower: update.currentPower,
+            voltage: update.voltage,
+            temperature: update.temperature,
+            lastSeenAt: new Date(update.timestamp)
+          };
+          
+          clientLogger.verbose(`✅ [FloatingMenu] Dispositivo actualizado: ${oldDevice.name} → ${update.online ? 'ONLINE' : 'OFFLINE'}`);
+          
+          return updated;
+        });
         
-        return updated;
-      });
-      
-      setLastUpdate(new Date());
+        setLastUpdate(new Date());
+      }
     });
     
     return () => {
       unsubscribe();
     };
-  }, [subscribe, isConnected, isInitialized, isShellyModuleActive]);
+  }, [subscribe, isConnected, isInitialized, isShellyActive, fetchAllDevices]);
 
   // 🎯 SISTEMA CENTRALIZADO OFFLINE/ONLINE - Reemplaza lógica local
   useEffect(() => {
-    if (!isInitialized || isShellyModuleActive !== true) {
+    if (!isInitialized || !isShellyActive) {
       return;
     }
     
@@ -317,7 +292,7 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
     return () => {
       unsubscribeOffline();
     };
-  }, [isInitialized, isShellyModuleActive]);
+  }, [isInitialized, isShellyActive]);
 
   // 🎯 FILTRADO POR CLÍNICA ACTIVA - Solo equipmentClinicAssignment.clinicId
   const clinicDevices = useMemo(() => {
@@ -351,13 +326,18 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
       return hasAssignment;
     });
     
-    clientLogger.verbose('🏥 [FloatingMenu] Resultado filtrado:', {
+    console.log('🏥 [FloatingMenu] Resultado filtrado:', {
       clinicName: activeClinic.name,
       totalAsignados: filtered.length,
       online: filtered.filter(d => d.online).length,
       offline: filtered.filter(d => !d.online).length,
       ON: filtered.filter(d => d.online && d.relayOn).length,
-      deviceNames: filtered.map(d => d.name)
+      deviceNames: filtered.map(d => d.name),
+      filteredDevices: filtered.map(d => ({
+        name: d.name,
+        equipmentClinicAssignmentId: d.equipmentClinicAssignmentId,
+        clinicId: d.equipmentClinicAssignment?.clinicId
+      }))
     });
     
     return filtered;
@@ -435,11 +415,11 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
   }, []);
 
   // 🎯 DATOS FINALES
-  if (!systemId || !activeClinic || isShellyModuleActive !== true) {
+  if (!systemId || !activeClinic || !isShellyActive) {
     clientLogger.verbose('🔒 [FloatingMenu] Módulo no disponible:', {
       hasSystemId: !!systemId,
       hasActiveClinic: !!activeClinic,
-      isShellyModuleActive,
+      isShellyActive,
       reason: !systemId ? 'Sin systemId' : 
               !activeClinic ? 'Sin clínica activa' : 
               'Módulo Shelly no activo'
