@@ -1,5 +1,12 @@
 "use client"
 
+/*
+ * 📂 MainSidebar — Prefetch de rutas y limpieza de caché en logout
+ * ----------------------------------------------------------------
+ * Este componente ejecuta `router.prefetch` (IndexedDB friendly) y
+ * borra React-Query + IndexedDB al cerrar sesión para cumplir la
+ * política descrita en `docs/PERSISTENT_CACHE_STRATEGY.md`.
+ */
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import type React from "react"
 import { cn } from "@/lib/utils"
@@ -24,6 +31,7 @@ import { useOpenTicketsCountQuery } from "@/lib/hooks/use-ticket-query"
 import { useOpenCashSessionsCountQuery } from "@/lib/hooks/use-cash-session-query"
 import { TicketStatus } from "@prisma/client"
 import { useTranslation } from "react-i18next"
+import { useQueryClient } from "@tanstack/react-query"
 
 interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {
   isCollapsed?: boolean
@@ -471,6 +479,7 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
   const [isScrolling, setIsScrolling] = useState(false);
   const [showScrollIndicator, setShowScrollIndicator] = useState(false);
   const userMenuHoverTimeout = useRef<NodeJS.Timeout | null>(null); // Timer para el hover del menú de usuario
+  const queryClient = useQueryClient();
   
   // Hook para verificar módulos de integración
   const {
@@ -1331,7 +1340,19 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
                     className="flex items-center w-full px-4 py-2.5 text-sm text-red-600 transition-colors duration-200 hover:bg-red-50"
                     onClick={(e) => {
                       e.stopPropagation();
-                      signOut({ callbackUrl: '/' }); // Desconectar y redirigir a la raíz
+                      try {
+                        // 1️⃣ Limpiar React-Query y IndexedDB para seguridad
+                        const qc = queryClient; // useQueryClient hook arriba
+                        qc?.clear();
+                        if (typeof indexedDB !== 'undefined') {
+                          indexedDB.deleteDatabase('rq_cache');
+                        }
+                      } catch (err) {
+                        console.warn('[Logout] Fallo al limpiar caché', err);
+                      }
+
+                      // 2️⃣ Cerrar sesión y redirigir
+                      signOut({ callbackUrl: '/' });
                       setIsUserMenuOpen(false);
                     }}
                   >

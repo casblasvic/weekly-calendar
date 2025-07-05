@@ -1,3 +1,10 @@
+/*
+ * 🎟️ use-ticket-query — Tickets persistidos en IndexedDB
+ * -----------------------------------------------------
+ * La query `['ticket', id]` se persiste siguiendo la estrategia explicada
+ * en `docs/PERSISTENT_CACHE_STRATEGY.md`.  
+ * Si cambias clave, TTL o meta.noPersist, recuerda actualizar el README.
+ */
 import { UseQueryOptions, useQuery, useQueryClient, useMutation, QueryFunctionContext, QueryKey } from '@tanstack/react-query';
 import { api } from '@/utils/api-client'; 
 import { CACHE_TIME } from '@/lib/react-query'; 

@@ -1,3 +1,10 @@
+/*
+ * 🗄️ Persistencia de Caché — QueryProvider
+ * -------------------------------------------------------------
+ * Este archivo crea el `QueryClient` y el persister basado en IndexedDB.
+ * @see docs/PERSISTENT_CACHE_STRATEGY.md
+ * Si modificas TTL, clave de DB o lógica de serialización **actualiza el README**.
+ */
 "use client";
 
 import React, { useState } from 'react';

@@ -1,5 +1,11 @@
 'use client';
 
+/*
+ * ⚡ AppPrefetcher — Precarga masiva de datos a IndexedDB  
+ * @see docs/PERSISTENT_CACHE_STRATEGY.md
+ * Al añadir nuevas colecciones o cambiar TTL, actualiza ese README
+ * y añade cabecera similar en el nuevo archivo.
+ */
 import { useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
