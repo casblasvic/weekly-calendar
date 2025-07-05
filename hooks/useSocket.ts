@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import io, { Socket } from 'socket.io-client';
 import { clientLogger } from '@/lib/utils/client-logger';
+import { useSystem } from '@/contexts/system/system-context';
 
 interface DeviceUpdate {
   deviceId: string;
@@ -76,6 +77,22 @@ const useSocket = (systemId?: string): SocketHook => {
       return;
     }
 
+    // ---------------------------------------------------------------------
+    // Seleccionar URL final del WebSocket ----------------------------------
+    // ---------------------------------------------------------------------
+    const { systemConfig } = useSystem();
+    const envWs = process.env.NEXT_PUBLIC_WS_URL;
+    const fallbackUrl = typeof window !== 'undefined'
+      ? `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`
+      : undefined;
+
+    const WS_URL = (systemConfig as any)?.websocketUrl || envWs || fallbackUrl;
+
+    if (!WS_URL) {
+      console.warn('[useSocket] WebSocket deshabilitado: no se pudo determinar URL');
+      return;
+    }
+
     initializingRef.current = true;
     lastSystemIdRef.current = systemId;
     console.log('🔌 useSocket: Inicializando conexión Socket.io para systemId:', systemId);
@@ -88,8 +105,8 @@ const useSocket = (systemId?: string): SocketHook => {
     });
 
     // Inicializar conexión Socket.io
-    socketRef.current = io({
-      path: '/api/socket',
+    socketRef.current = io(WS_URL, {
+      path: '/socket', // ruta estándar en producción
       forceNew: false, // Reutilizar conexiones existentes
       reconnection: true,
       timeout: 20000,

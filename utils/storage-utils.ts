@@ -378,7 +378,9 @@ export function loadClinicData(): void {
     
     // Verificar si tenemos datos
     if (!localData && !cookieData) {
-      console.log("No se encontraron datos de clínicas en el almacenamiento")
+      if (process.env.NODE_ENV === 'development') {
+        console.log("No se encontraron datos de clínicas en el almacenamiento")
+      }
     } else {
     }
   } catch (error) {
