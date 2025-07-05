@@ -52,7 +52,7 @@ export default function GestionTarifas() {
   const clinicContext = useClinic()
   const tarifContext = useTarif()
 
-  const isLoadingTarifs = tarifContext?.isLoading ?? true;
+  const isLoadingTarifs = (tarifContext?.isLoading ?? true) && (tarifContext?.tarifas?.length === 0);
   const tarifas = tarifContext?.tarifas ?? [];
   const addTarifa = tarifContext?.addTarifa;
   const updateTarifa = tarifContext?.updateTarifa;

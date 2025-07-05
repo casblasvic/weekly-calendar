@@ -1,11 +1,13 @@
 'use client';
 
 import { useEffect } from 'react';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '@/utils/api-client';
 import { CACHE_TIME } from '@/lib/react-query';
 import { useClinic } from '@/contexts/clinic-context';
+import { cashSessionKeys } from '@/lib/hooks/use-cash-session-query';
+import { menuItems } from '@/config/menu-structure';
 
 /**
  * AppPrefetcher es un componente invisible que se encarga de precargar datos
@@ -17,6 +19,7 @@ import { useClinic } from '@/contexts/clinic-context';
 export function AppPrefetcher() {
   const queryClient = useQueryClient();
   const pathname = usePathname();
+  const router = useRouter();
   const { activeClinic } = useClinic();
 
   // Prefetching basado en la página actual
@@ -181,7 +184,150 @@ export function AppPrefetcher() {
     
     prefetchForPage();
   }, [pathname, queryClient, activeClinic?.id, activeClinic?.systemId]);
+
+  /**
+   * PREFETCH UNIVERSAL POR CLÍNICA ─ se ejecuta cada vez que cambia la clínica
+   * activa.  Persistimos catálogos que se usan en múltiples páginas (agenda y
+   * configuración).  Si el usuario cambia entre varias clínicas NO borramos la
+   * caché previa; simplemente añadimos la nueva entrada.  React-Query gestionará
+   * el tamaño en IndexedDB con LRU y nuestro TTL de 12 h.
+   */
+  useEffect(() => {
+    if (!activeClinic?.id) return;
+
+    const clinicId = activeClinic.id;
+    const systemId = activeClinic.systemId;
+
+    // 1️⃣ Integraciones (stripe, shelly, etc.)
+    if (systemId && !queryClient.getQueryData(['integrations', systemId])) {
+      queryClient.prefetchQuery({
+        queryKey: ['integrations', systemId],
+        queryFn: () => api.cached.get('/api/internal/integrations'),
+        staleTime: CACHE_TIME.LARGO,
+      });
+    }
+
+    // 2️⃣ Dispositivos IoT / enchufes inteligentes
+    if (systemId && !queryClient.getQueryData(['smartPlugDevices', systemId])) {
+      queryClient.prefetchQuery({
+        queryKey: ['smartPlugDevices', systemId],
+        queryFn: () => api.cached.get('/api/internal/smart-plug-devices?page=1&pageSize=1000'),
+        staleTime: CACHE_TIME.LARGO,
+      });
+    }
+
+    // 3️⃣ Asignaciones de equipos por clínica
+    if (!queryClient.getQueryData(['equipmentAssignments', clinicId])) {
+      queryClient.prefetchQuery({
+        queryKey: ['equipmentAssignments', clinicId],
+        queryFn: () => api.cached.get(`/api/equipment-assignments?clinicId=${clinicId}`),
+        staleTime: CACHE_TIME.LARGO,
+      });
+    }
+
+    // 4️⃣ Requerimientos de equipo por servicio (catálogo estático por clínica)
+    if (!queryClient.getQueryData(['equipmentRequirementsCatalog', clinicId])) {
+      queryClient.prefetchQuery({
+        queryKey: ['equipmentRequirementsCatalog', clinicId],
+        queryFn: () => api.cached.get(`/api/services/equipment-requirements?clinicId=${clinicId}`),
+        staleTime: CACHE_TIME.LARGO,
+      });
+    }
+
+    // 5️⃣ Servicios / Tarifas / Paquetes
+    if (!queryClient.getQueryData(['services', clinicId])) {
+      queryClient.prefetchQuery({
+        queryKey: ['services', clinicId],
+        queryFn: () => api.cached.get(`/api/services?clinicId=${clinicId}`),
+        staleTime: CACHE_TIME.LARGO,
+      });
+    }
+
+    if (!queryClient.getQueryData(['tariffs', clinicId])) {
+      queryClient.prefetchQuery({
+        queryKey: ['tariffs', clinicId],
+        queryFn: () => api.cached.get(`/api/tariffs?clinicId=${clinicId}`),
+        staleTime: CACHE_TIME.LARGO,
+      });
+    }
+
+    // 7️⃣ Tarifas por clínica -------------------------------------------------
+    if (!queryClient.getQueryData(['tariffs', clinicId])) {
+      queryClient.prefetchQuery({
+        queryKey: ['tariffs', clinicId],
+        queryFn: () => api.cached.get(`/api/tariffs?clinicId=${clinicId}`),
+        staleTime: 1000 * 60 * 60 * 12,
+      });
+    }
+
+    // 8️⃣ Cash Session (día actual) -----------------------------------------
+    const todayStr = new Date().toISOString().split('T')[0];
+    const cashKey = cashSessionKeys.detailByDate(clinicId, { date: todayStr, sessionId: undefined });
+    if (!queryClient.getQueryData(cashKey)) {
+      queryClient.prefetchQuery({
+        queryKey: cashKey,
+        queryFn: () => api.cached.get(`/api/cash-sessions/by-date?clinicId=${clinicId}&date=${todayStr}`),
+        staleTime: 1000 * 60 * 5,
+      });
+    }
+
+    // 9️⃣ Tickets abiertos y cerrados (página 1) ----------------------------
+    const pageSize = 10;
+    const openFilters = { clinicId, status: ['OPEN'], page: 1, pageSize };
+
+    // NOTA: Solo persistimos tickets en estado OPEN.  Los cerrados/contabilizados
+    // pueden ser miles y no aportan valor al flujo diario; se cargarán on-demand.
+    const openKey: any = ['tickets', openFilters];
+
+    if (!queryClient.getQueryData(openKey)) {
+      queryClient.prefetchQuery({
+        queryKey: openKey,
+        queryFn: () => api.cached.get(`/api/tickets?clinicId=${clinicId}&status=OPEN&page=1&pageSize=${pageSize}`),
+        staleTime: CACHE_TIME.MEDIO,
+        gcTime: CACHE_TIME.MUY_LARGO,
+      }).then((openList: any) => {
+        // Prefetch detalle de cada ticket abierto para edición instantánea
+        const tickets: any[] = openList?.data ?? [];
+        tickets.forEach((t) => {
+          const detailKey = ['ticket', t.id] as const;
+          if (!queryClient.getQueryData(detailKey)) {
+            queryClient.prefetchQuery({
+              queryKey: detailKey,
+              queryFn: () => api.cached.get(`/api/tickets/${t.id}`),
+              staleTime: CACHE_TIME.MEDIO,
+              gcTime: CACHE_TIME.MUY_LARGO,
+            });
+          }
+        });
+      });
+    }
+
+    // Si quisieras persistir un resumen de tickets cerrados, hazlo limitado a
+    // los más recientes (<50) y usando otra clave.  Por ahora omitimos.
+  }, [activeClinic?.id, activeClinic?.systemId, queryClient]);
   
-  // No renderiza nada, solo es un gestor invisible de datos
+  // Prefetch rutas de menú al estar ocioso
+  useEffect(() => {
+    const idle = (cb: () => void) => {
+      if (typeof (window as any).requestIdleCallback === 'function') {
+        (window as any).requestIdleCallback(cb, { timeout: 1500 });
+      } else {
+        setTimeout(cb, 500);
+      }
+    };
+
+    idle(() => {
+      const links: string[] = [];
+      const collect = (items: any[]) => {
+        items?.forEach((it) => {
+          if (it.href) links.push(it.href);
+          if (it.submenu) collect(it.submenu);
+        });
+      };
+      collect(menuItems);
+      links.forEach((href) => router.prefetch(href));
+    });
+  }, [router]);
+
   return null;
 } 

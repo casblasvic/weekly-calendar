@@ -39,7 +39,7 @@ const defaultTheme: ThemeConfig = {
   accentColor: '#a78bfa', // Purple-400
   textColor: '#111827', // Gray-900
   backgroundColor: '#ffffff', // White
-  logoUrl: '/logo.png', // Logo predeterminado
+  logoUrl: '/placeholder-logo.svg', // Logo predeterminado Qleven
   
   // Valores predeterminados para los nuevos elementos
   containerBackgroundColor: '#f5f5f5', // Gris claro

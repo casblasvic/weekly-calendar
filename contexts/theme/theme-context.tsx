@@ -39,7 +39,7 @@ const defaultTheme: ThemeConfig = {
   accentColor: '#a78bfa', // Purple-400
   textColor: '#111827', // Gray-900
   backgroundColor: '#ffffff', // White
-  logoUrl: '/logo.png', // Logo predeterminado
+  logoUrl: '/placeholder-logo.svg', // Logo predeterminado Qleven
   
   // Valores predeterminados para los nuevos elementos
   containerBackgroundColor: '#f5f5f5', // Gris claro
@@ -89,6 +89,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     if (savedTheme) {
       try {
         const parsedTheme = JSON.parse(savedTheme);
+        // Reemplazar rutas antiguas de logo si apuntan a /logo.png (Acme)
+        if (parsedTheme.logoUrl === '/logo.png') {
+          parsedTheme.logoUrl = '/placeholder-logo.svg';
+        }
         setTheme(parsedTheme);
       } catch (error) {
         console.error('Error parsing theme from localStorage:', error);

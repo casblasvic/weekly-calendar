@@ -1,10 +1,10 @@
 "use client"
 
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import type React from "react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { ChevronRight, Search, User, LogOut, Settings, CreditCard, Receipt, Menu, Bell, Calendar, MoreVertical, ClipboardList, LogIn } from "lucide-react"
-import { useState, useCallback, useEffect, useRef, useMemo } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import { menuItems, type MenuItem, processMenuItemsWithIntegrations } from "@/config/menu-structure"
 import { useIntegrationModules } from "@/hooks/use-integration-modules"
@@ -498,6 +498,19 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
   const openCashCount = openCashCountData ?? 0;
   // <<< FIN: Query para el conteo de tickets abiertos >>>
 
+  // Prefetch de todas las rutas del menú para navegación instantánea
+  useEffect(() => {
+    const links: string[] = [];
+    const collect = (items: any[]) => {
+      items?.forEach((it) => {
+        if (it.href) links.push(it.href);
+        if (it.submenu) collect(it.submenu);
+      });
+    };
+    collect(menuItems);
+    links.forEach((href) => router.prefetch(href));
+  }, [menuItems, router]);
+
   // Hook para cerrar el menú de usuario al hacer clic fuera
   useOnClickOutside(
     [avatarRef], // Escuchar clics fuera del avatar
@@ -989,7 +1002,7 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
                     alt="Logo de la clínica" 
                     className={cn(
                       "object-contain transition-all duration-300", 
-                      isCollapsed ? "h-5 max-w-[20px]" : "h-8 max-w-[120px]"
+                      isCollapsed ? "h-6 max-w-[24px]" : "h-10 max-w-[140px]"
                     )}
                     style={{
                       imageRendering: '-webkit-optimize-contrast',

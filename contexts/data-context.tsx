@@ -23,8 +23,14 @@ interface DataServiceProviderProps {
 
 // Componente proveedor
 export const DataServiceProvider = ({ children }: DataServiceProviderProps) => {
-  const [dataService, setDataService] = useState<DataService | null>(null);
-  const [isInitialized, setIsInitialized] = useState(false);
+  const [dataService, setDataService] = useState<DataService | null>(() => {
+    try {
+      return getDataService();
+    } catch {
+      return null;
+    }
+  });
+  const [isInitialized, setIsInitialized] = useState(() => !!dataService);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -57,7 +63,7 @@ export const DataServiceProvider = ({ children }: DataServiceProviderProps) => {
       }
     };
 
-    if (!isInitialized) {
+    if (!isInitialized && !dataService) {
       initializeService();
     }
   }, [isInitialized]);

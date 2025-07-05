@@ -59,8 +59,16 @@ export function QueryProvider({ children }: QueryProviderProps) {
 
     return {
       persistClient: async (client: unknown) => {
-        const db = await getDb();
-        await db.put('queries', client, 'react-query');
+        try {
+          const db = await getDb();
+          await db.put('queries', client, 'react-query');
+        } catch (err: any) {
+          if (err?.name === 'DataCloneError') {
+            console.warn('[QueryProvider] DataCloneError al persistir caché. Se ignorará este ciclo y se volverá a intentar más tarde.', err);
+          } else {
+            throw err;
+          }
+        }
       },
       restoreClient: async () => {
         const db = await getDb();
@@ -82,7 +90,8 @@ export function QueryProvider({ children }: QueryProviderProps) {
         persister,
         maxAge: 1000 * 60 * 60 * 12, // 12 h TTL
         dehydrateOptions: {
-          shouldDehydrateQuery: (query) => !(query.meta as any)?.noPersist,
+          shouldDehydrateQuery: (query) =>
+            query.state.status === 'success' && !(query.meta as any)?.noPersist,
         },
       }}
     >

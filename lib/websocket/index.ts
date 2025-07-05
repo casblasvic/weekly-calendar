@@ -151,7 +151,9 @@ export const webSocketManager = {
   getConnection: (connectionId: string) => getWebSocketManager().getConnection(connectionId),
   getMetrics: () => getWebSocketManager().getMetrics(),
   getEventBus: () => getWebSocketManager().getEventBus(),
-  healthCheck: (connectionId?: string) => getWebSocketManager().healthCheck(connectionId)
+  healthCheck: (connectionId?: string) => getWebSocketManager().healthCheck(connectionId),
+  // Limpieza completa de todas las conexiones; utilizado por webSocketInitializer
+  destroy: () => getWebSocketManager().destroy(),
 };
 
 // Configuraciones predefinidas

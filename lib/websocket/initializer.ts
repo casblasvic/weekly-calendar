@@ -169,8 +169,12 @@ class WebSocketSystemInitializer {
 // Singleton para uso global
 export const webSocketInitializer = new WebSocketSystemInitializer();
 
-// Auto-inicializar en entornos de servidor
-if (typeof window === 'undefined') {
+// Auto-inicializar SOLO cuando se ejecuta el servidor (dev o runtime) pero
+// NO durante la fase de compilación `next build` en Vercel o local.
+const isServer = typeof window === 'undefined';
+const isBuildPhase = process.env.NEXT_PHASE === 'phase-production-build';
+
+if (isServer && !isBuildPhase) {
   // Solo en servidor (Node.js)
   process.nextTick(async () => {
     try {

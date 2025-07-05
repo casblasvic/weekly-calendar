@@ -34,12 +34,25 @@ export interface SystemConfig {
 // Valores predeterminados del sistema
 const defaultSystemConfig: SystemConfig = {
   theme: {
-    primaryColor: '#7c3aed', // Purple-600
-    secondaryColor: '#8b5cf6', // Purple-500
-    accentColor: '#a78bfa', // Purple-400
-    textColor: '#111827', // Gray-900
-    backgroundColor: '#ffffff', // White
-    logoUrl: '/logo.png', // Logo predeterminado
+    primaryColor: '#7c3aed',
+    secondaryColor: '#8b5cf6',
+    accentColor: '#a78bfa',
+    textColor: '#111827',
+    backgroundColor: '#ffffff',
+    logoUrl: '/placeholder-logo.svg',
+    containerBackgroundColor: '#f5f5f5',
+    tableHeaderColor: '#ede9fe',
+    tabActiveColor: '#8b5cf6',
+    cardBackgroundColor: '#ffffff',
+    buttonPrimaryColor: '#7c3aed',
+    buttonSecondaryColor: '#e5e7eb',
+    tableRowHoverColor: '#f5f3ff',
+    headerBackgroundColor: '#7c3aed',
+    footerBackgroundColor: '#f8f9fa',
+    sidebarBackgroundColor: '#f9fafb',
+    sidebarTextColor: '#111827',
+    sidebarHoverColor: '#f3f4f6',
+    inputFocusBorderColor: '#7c3aed',
   },
   companyName: 'Mi Empresa',
   language: 'es',

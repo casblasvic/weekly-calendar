@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
+import { useClinic } from '@/contexts/clinic-context';
 
 interface Module {
     id: string;
@@ -23,6 +24,7 @@ interface Module {
 export default function IntegrationsMarketplacePage() {
     const { t } = useTranslation();
     const queryClient = useQueryClient();
+    const { activeClinic } = useClinic();
     const [integrations, setIntegrations] = useState<Record<string, Module[]>>({});
     const [isLoading, setIsLoading] = useState(true);
     const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -30,6 +32,17 @@ export default function IntegrationsMarketplacePage() {
     const [categoryPages, setCategoryPages] = useState<Record<string, number>>({});
 
     useEffect(() => {
+        if (!activeClinic?.systemId) return;
+
+        const cacheKey = ['integrations', activeClinic.systemId];
+        const cached = queryClient.getQueryData<Record<string, Module[]>>(cacheKey);
+
+        if (cached) {
+            setIntegrations(cached);
+            setIsLoading(false);
+            return; // 🚀 ya tenemos datos
+        }
+
         const fetchIntegrations = async () => {
             setIsLoading(true);
             try {
@@ -37,6 +50,8 @@ export default function IntegrationsMarketplacePage() {
                 if (response.ok) {
                     const data = await response.json();
                     setIntegrations(data);
+                    // Guardar en cache para futuros accesos
+                    queryClient.setQueryData(cacheKey, data);
                 }
             } catch (error) {
                 console.error("Error fetching integrations:", error);
@@ -45,7 +60,7 @@ export default function IntegrationsMarketplacePage() {
             }
         };
         fetchIntegrations();
-    }, []);
+    }, [activeClinic?.systemId, queryClient]);
 
     const filteredIntegrations = useMemo(() => {
         if (selectedCategory === 'ACTIVE') {
@@ -176,7 +191,7 @@ export default function IntegrationsMarketplacePage() {
         ACCOUNTING: t('integrations.categories.ACCOUNTING'),
     };
 
-    if (isLoading) {
+    if (isLoading && Object.keys(integrations).length === 0) {
         return (
             <div className="container mx-auto p-4 md:p-6">
                 <div className="flex items-center justify-center h-64">

@@ -197,7 +197,8 @@ export function useTicketDetailQuery(ticketId: string | null, options?: Omit<Use
         return api.get(`/api/tickets/${ticketId}`);
       },
       enabled: !!ticketId,
-      staleTime: 0,
+      staleTime: CACHE_TIME.MEDIO,
+      gcTime: CACHE_TIME.MUY_LARGO,
       refetchOnMount: 'always',
       ...options,
     }
@@ -370,7 +371,8 @@ export function useTicketsQuery(
   const queryOptions: UseQueryOptions<PaginatedTicketsResponse, unknown, PaginatedTicketsResponse, TicketsQueryKey> = {
     queryKey,
     queryFn,
-    staleTime: CACHE_TIME.CORTO,
+    staleTime: CACHE_TIME.MEDIO,
+    gcTime: CACHE_TIME.MUY_LARGO,
     enabled: !!filters.clinicId, // La query solo se ejecuta si clinicId está presente
     ...hookOptions, // Aplicar opciones pasadas al hook
   };
@@ -447,7 +449,8 @@ export function useOpenTicketsCountQuery(
     queryKey,
     queryFn,
     enabled: !!clinicId, // La query solo se ejecuta si clinicId está presente
-    staleTime: CACHE_TIME.CORTO, // Ajusta según necesidad
+    staleTime: CACHE_TIME.MEDIO,
+    gcTime: CACHE_TIME.MUY_LARGO,
     ...options,
   });
 }
@@ -1030,4 +1033,16 @@ export function useSaveTicketBatchMutation() {
       });
     },
   });
-} 
+}
+
+/**
+ * ESTRATEGIA DE CACHÉ
+ * -------------------
+ * • Persistimos SOLO los tickets en estado OPEN (y la primera página) porque
+ *   son los que el personal necesita ver/actualizar a tiempo real.
+ * • Los cerrados/contabilizados se solicitan on-demand.  Así evitamos que la
+ *   IndexedDB crezca sin control (una clínica puede acumular >50 000 tickets
+ *   históricos).
+ * • Las mutaciones invalidateQueries(['tickets']) e insertan/actualizan usando
+ *   las mismas keys para mantener la renderización optimista.
+ */ 

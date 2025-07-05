@@ -1,6 +1,8 @@
 "use client"
 
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode, useMemo } from "react"
+import { useQueryClient } from '@tanstack/react-query';
+import { useClinic } from '@/contexts/clinic-context';
 // QUITAR: import { useRouter } from "next/navigation"
 // QUITAR: import { useInterfaz } from "./interfaz-Context"
 // QUITAR: import { Tarifa as TarifaModel, FamiliaTarifa as FamiliaTarifaModel, EntityImage } from "@/services/data/models/interfaces"
@@ -50,17 +52,35 @@ export const TarifProvider = ({ children }: { children: ReactNode }) => {
   // QUITAR: const interfaz = useInterfaz();
   // QUITAR: dataFetched
 
-  // Cargar tarifas iniciales desde API
+  const queryClient = useQueryClient();
+  const { activeClinic } = useClinic();
+
+  // Cargar tarifas iniciales desde API (pero usar cache si existe)
   const fetchTariffs = useCallback(async () => {
+    if (!activeClinic?.id) return;
+
+    const cacheKey = ['tariffs', activeClinic.id];
+
+    // 1️⃣  Comprobar caché persistida ----------------------------------------------------
+    const cached = queryClient.getQueryData<Tarifa[]>(cacheKey);
+    if (cached && cached.length > 0) {
+      setTarifas(cached);
+      setIsLoading(false);
+      console.debug('[TarifContext] Tariffs loaded from react-query cache');
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetch('/api/tariffs');
+      const response = await fetch(`/api/tariffs?clinicId=${activeClinic.id}`);
       if (!response.ok) {
         throw new Error(`Error ${response.status}: ${response.statusText}`);
       }
       const loadedTarifas: Tarifa[] = await response.json();
       setTarifas(loadedTarifas);
+      // 2️⃣  Guardar en caché para accesos futuros -------------------------------------
+      queryClient.setQueryData(cacheKey, loadedTarifas);
       console.log("TarifContext: Tarifas cargadas/actualizadas desde API");
       // TODO: Cargar familias de tarifa cuando la API esté lista
       // const familiasResponse = await fetch('/api/tariff-families'); ... setFamiliasTarifa(...)
@@ -72,7 +92,7 @@ export const TarifProvider = ({ children }: { children: ReactNode }) => {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [activeClinic?.id, queryClient]);
 
   useEffect(() => {
     fetchTariffs();

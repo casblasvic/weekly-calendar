@@ -139,19 +139,21 @@ export const LogoUploader: React.FC<LogoUploaderProps> = ({
       >
         <div className="flex items-center justify-center w-40 h-40 bg-gray-100 border rounded-lg overflow-hidden">
           {hasMounted && logoPreview ? (
-            <img 
-              src={logoPreview} 
-              alt="Logotipo de la empresa" 
+            <img
+              src={logoPreview}
+              alt="Logotipo de la empresa"
+              onError={() => setLogoPreview('')}
               className={cn(
                 'max-w-full max-h-full object-contain transition-opacity',
                 isHovering && 'opacity-70'
               )}
             />
           ) : (
-            <div className="flex flex-col items-center justify-center">
-              <Image className="w-16 h-16 text-gray-400" />
-              <span className="text-gray-500 mt-2">Logo predeterminado</span>
-            </div>
+            <img
+              src="/placeholder-logo.svg"
+              alt="Logo de Qleven"
+              className="max-w-full max-h-full object-contain"
+            />
           )}
         </div>
         

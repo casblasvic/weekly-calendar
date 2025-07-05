@@ -39,7 +39,7 @@ const defaultSystemConfig: SystemConfig = {
     accentColor: '#a78bfa', // Purple-400
     textColor: '#111827', // Gray-900
     backgroundColor: '#ffffff', // White
-    logoUrl: '/logo.png', // Logo predeterminado
+    logoUrl: '/placeholder-logo.svg', // Logo predeterminado Qleven
   },
   companyName: 'Mi Empresa',
   language: 'es',

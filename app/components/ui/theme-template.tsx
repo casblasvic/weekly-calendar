@@ -21,7 +21,7 @@ export const ThemeTemplate: React.FC<ThemeTemplateProps> = ({
     accentColor: '#a78bfa',
     textColor: '#111827',
     backgroundColor: '#ffffff',
-    logoUrl: '/logo.png',
+    logoUrl: '/placeholder-logo.svg',
     containerBackgroundColor: '#f5f5f5',
     tableHeaderColor: '#ede9fe',
     tabActiveColor: '#8b5cf6',

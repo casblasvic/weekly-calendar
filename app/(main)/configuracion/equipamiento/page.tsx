@@ -66,11 +66,8 @@ export default function EquipmentPage() {
       });
     }
     
-    // Invalidar TODAS las queries relacionadas con equipamiento
-    queryClient.invalidateQueries({ queryKey: ['equipment'] });
-    queryClient.invalidateQueries({ queryKey: ['equipment-with-assignments'] });
-    queryClient.removeQueries({ queryKey: ['equipment'] });
-    queryClient.removeQueries({ queryKey: ['equipment-with-assignments'] });
+    // No invalidamos las queries si ya existen en caché; esto evita mostrar
+    // spinner cuando los datos ya fueron precargados por AppPrefetcher.
   }, [queryClient]);
   
   // Usar los hooks optimizados en lugar del contexto
@@ -102,8 +99,8 @@ export default function EquipmentPage() {
   const [sortColumn, setSortColumn] = useState<string>("name")
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc")
 
-  // Estado de carga combinado
-  const loading = loadingEquipment || loadingClinics;
+  // Estado de carga: solo mostramos spinner/esqueleto si NO hay datos en caché
+  const loading = (loadingEquipment && equipos.length === 0) || (loadingClinics && clinics.length === 0);
 
   const clinicNameMap = useMemo(() => {
     const map = new Map<string, string>();

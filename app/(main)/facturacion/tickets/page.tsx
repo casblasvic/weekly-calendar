@@ -512,17 +512,20 @@ export default function ListadoTicketsPage() {
 
   const {
     data: pendingTicketsData,
-    isLoading: isLoadingPending,
+    isLoading: isLoadingPendingRaw,
     isError: isErrorPending,
     error: errorPending,
   } = useTicketsQuery(pendingTicketsFilters, { enabled: !!activeClinic?.id && isInitialized });
 
   const {
     data: closedTicketsData,
-    isLoading: isLoadingClosed,
+    isLoading: isLoadingClosedRaw,
     isError: isErrorClosed,
     error: errorClosed,
   } = useTicketsQuery(closedTicketsFilters, { enabled: !!activeClinic?.id && isInitialized });
+
+  const isLoadingPending = isLoadingPendingRaw && (!((pendingTicketsData as any)?.data?.length));
+  const isLoadingClosed = isLoadingClosedRaw && (!((closedTicketsData as any)?.data?.length));
 
   // Hooks de mutaciones
   const reopenTicketMutation = useReopenTicketMutation();
