@@ -134,6 +134,7 @@ import { DatabaseProvider } from "@/contexts/database-context"
 import I18nProviderClient from "@/lib/i18n-provider-client"
 import { QueryProvider } from '@/components/providers/query-provider'
 import { GlobalLoadingOverlay } from '@/app/components/global-loading-overlay'
+import { AppPrefetcher } from '@/lib/app-prefetcher'
 
 // ✅ PROVIDERS SENSIBLES QUE REQUIEREN AUTENTICACIÓN
 import { FileProvider } from '@/contexts/file-context';
@@ -290,6 +291,7 @@ const AuthenticatedProviders = memo(function AuthenticatedProviders({ children }
                                         <ClientCardProvider>
                                           <ServicioProvider>
                                             <ConsumoServicioProvider>
+                                              <AppPrefetcher />
                                               <GlobalLoadingOverlay />
                                               {children}
                                             </ConsumoServicioProvider>
