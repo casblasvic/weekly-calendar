@@ -280,10 +280,10 @@ export function AppPrefetcher() {
     // 9️⃣ Tickets abiertos y cerrados (página 1) ----------------------------
     const pageSize = 10;
     const openFilters = { clinicId, status: ['OPEN'], page: 1, pageSize };
+    const closedFilters = { clinicId, status: ['CLOSED'], page: 1, pageSize };
 
-    // NOTA: Solo persistimos tickets en estado OPEN.  Los cerrados/contabilizados
-    // pueden ser miles y no aportan valor al flujo diario; se cargarán on-demand.
     const openKey: any = ['tickets', openFilters];
+    const closedKey: any = ['tickets', closedFilters];
 
     if (!queryClient.getQueryData(openKey)) {
       queryClient.prefetchQuery({
@@ -308,8 +308,28 @@ export function AppPrefetcher() {
       });
     }
 
-    // Si quisieras persistir un resumen de tickets cerrados, hazlo limitado a
-    // los más recientes (<50) y usando otra clave.  Por ahora omitimos.
+    // Prefetch lista CLOSED (página 1) y sus detalles (consultados con frecuencia)
+    if (!queryClient.getQueryData(closedKey)) {
+      queryClient.prefetchQuery({
+        queryKey: closedKey,
+        queryFn: () => api.cached.get(`/api/tickets?clinicId=${clinicId}&status=CLOSED&page=1&pageSize=${pageSize}`),
+        staleTime: 1000 * 60 * 15, // 15 min
+        gcTime: CACHE_TIME.MUY_LARGO,
+      }).then((closedList: any) => {
+        const tickets: any[] = closedList?.data ?? [];
+        tickets.forEach((t) => {
+          const detailKey = ['ticket', t.id] as const;
+          if (!queryClient.getQueryData(detailKey)) {
+            queryClient.prefetchQuery({
+              queryKey: detailKey,
+              queryFn: () => api.cached.get(`/api/tickets/${t.id}`),
+              staleTime: 1000 * 60 * 15,
+              gcTime: CACHE_TIME.MUY_LARGO,
+            });
+          }
+        });
+      });
+    }
   }, [activeClinic?.id, activeClinic?.systemId, queryClient]);
   
   // Prefetch rutas de menú al estar ocioso

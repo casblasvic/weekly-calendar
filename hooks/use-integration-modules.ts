@@ -1,3 +1,8 @@
+/*
+ * 🔌 use-integration-modules — Estado de módulos de integración
+ * Datos se persisten en IndexedDB para start-up instantáneo.
+ * @see docs/PERSISTENT_CACHE_STRATEGY.md
+ */
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 

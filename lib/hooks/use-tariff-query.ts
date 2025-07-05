@@ -1,3 +1,7 @@
+/*
+ * 💲 use-tariff-query — Tarifas persistidas por clínica
+ * @see docs/PERSISTENT_CACHE_STRATEGY.md
+ */
 import { UseQueryOptions, useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { api } from '@/utils/api-client';
 import { useServiceDetailQuery } from '@/lib/hooks/use-service-query';

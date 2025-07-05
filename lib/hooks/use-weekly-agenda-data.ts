@@ -1,9 +1,13 @@
+/*
+ * 📅 use-weekly-agenda-data — Agenda Semanal persistida en IndexedDB
+ * @see docs/PERSISTENT_CACHE_STRATEGY.md
+ */
 import { useMemo, useCallback, useEffect } from 'react';
 import { format, startOfWeek, endOfWeek } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
 import { useWeekAppointmentsQuery, getWeekKey, useWeekAppointmentsQueryGuard } from './use-appointments-query';
 import { useClinic } from '@/contexts/clinic-context';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueryClient, useQuery, UseQueryOptions } from '@tanstack/react-query';
 import { usePrefetchAppointmentDevices } from './use-appointment-devices-cache';
 
 export interface WeeklyAgendaAppointment {

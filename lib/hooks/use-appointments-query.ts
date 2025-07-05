@@ -1,3 +1,7 @@
+/*
+ * 📆 use-appointments-query — Citas diarias/semanales persistidas
+ * @see docs/PERSISTENT_CACHE_STRATEGY.md
+ */
 import { useQuery, useQueries, useMutation, useQueryClient, UseQueryOptions } from '@tanstack/react-query';
 import { CACHE_TIME } from '@/lib/react-query';
 import { format, addWeeks, startOfWeek, endOfWeek, addDays } from 'date-fns';

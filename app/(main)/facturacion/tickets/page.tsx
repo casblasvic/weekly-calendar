@@ -28,6 +28,8 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/components/ui/use-toast';
 import { Checkbox } from "@/components/ui/checkbox";
+import { api } from '@/utils/api-client';
+import { CACHE_TIME } from '@/lib/react-query';
 
 // Helper function for date normalization (client-side)
 // Normalizes a date to the start of its UTC day (00:00:00.000Z)
@@ -328,7 +330,19 @@ const TicketsTable = ({
                 // --- FIN LÓGICA DE CANDADOS MEJORADA ---
 
                 return (
-              <TableRow key={ticket.id}>
+              <TableRow key={ticket.id}
+                onMouseEnter={() => {
+                  const detailKey = ['ticket', ticket.id] as const;
+                  if (!queryClient.getQueryData(detailKey)) {
+                    queryClient.prefetchQuery({
+                      queryKey: detailKey,
+                      queryFn: () => api.cached.get(`/api/tickets/${ticket.id}`),
+                      staleTime: ticket.status === TicketStatus.OPEN ? 1000 * 60 * 5 : 1000 * 60 * 15,
+                      gcTime: CACHE_TIME.MUY_LARGO,
+                    });
+                  }
+                  router.prefetch(`/facturacion/tickets/editar/${ticket.id}`);
+                }}>
                 {enableSelection && (
                   <TableCell>
                     <Checkbox

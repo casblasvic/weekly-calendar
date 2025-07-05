@@ -4,8 +4,8 @@
  * 📂 MainSidebar — Prefetch de rutas y limpieza de caché en logout
  * ----------------------------------------------------------------
  * Este componente ejecuta `router.prefetch` (IndexedDB friendly) y
- * borra React-Query + IndexedDB al cerrar sesión para cumplir la
- * política descrita en `docs/PERSISTENT_CACHE_STRATEGY.md`.
+ * borra React-Query + IndexedDB al cerrar sesión.
+ * @see docs/PERSISTENT_CACHE_STRATEGY.md
  */
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import type React from "react"

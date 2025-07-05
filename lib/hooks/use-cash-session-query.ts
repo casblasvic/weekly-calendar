@@ -1,3 +1,7 @@
+/*
+ * 💶 use-cash-session-query — Caja-día persistida (clave clinicId + fecha)
+ * @see docs/PERSISTENT_CACHE_STRATEGY.md
+ */
 import { UseQueryOptions, useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { api } from '@/utils/api-client'; 
 import { CACHE_TIME } from '@/lib/react-query'; 
