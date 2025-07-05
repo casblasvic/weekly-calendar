@@ -68,7 +68,8 @@ export function QueryProvider({ children }: QueryProviderProps) {
       persistClient: async (client: unknown) => {
         try {
           const db = await getDb();
-          await db.put('queries', client, 'react-query');
+          // Serializar como JSON plano para evitar DataCloneError con valores no clonables
+          await db.put('queries', JSON.stringify(client), 'react-query');
         } catch (err: any) {
           if (err?.name === 'DataCloneError') {
             console.warn('[QueryProvider] DataCloneError al persistir caché. Se ignorará este ciclo y se volverá a intentar más tarde.', err);
@@ -79,7 +80,8 @@ export function QueryProvider({ children }: QueryProviderProps) {
       },
       restoreClient: async () => {
         const db = await getDb();
-        return db.get('queries', 'react-query');
+        const raw = await db.get('queries', 'react-query');
+        return raw ? JSON.parse(raw) : undefined;
       },
       removeClient: async () => {
         const db = await getDb();
