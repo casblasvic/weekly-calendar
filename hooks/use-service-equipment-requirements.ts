@@ -4,6 +4,7 @@ import { useClinic } from '@/contexts/clinic-context'
 import { clientLogger } from '@/lib/utils/client-logger'
 import { deviceOfflineManager } from '@/lib/shelly/device-offline-manager'
 import { useIntegrationModules } from '@/hooks/use-integration-modules'
+import { useQueryClient } from '@tanstack/react-query'
 
 // 🎯 CACHE GLOBAL - Una sola carga por clínica
 const serviceEquipmentCache = new Map<string, Record<string, string[]>>()
@@ -81,12 +82,19 @@ export function useServiceEquipmentRequirements({
     return null
   }
   
+  const queryClient = useQueryClient();
+
+  const cacheKey = ['equipmentRequirements', appointmentId];
+
+  // Intentar hidratar desde caché inmediatamente
+  const cachedReq = queryClient.getQueryData<any>(cacheKey);
+
   // Estado principal
-  const [allDevices, setAllDevices] = useState<ServiceEquipmentDevice[]>([])
-  const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
+  const [allDevices, setAllDevices] = useState<ServiceEquipmentDevice[]>(cachedReq?.availableDevices || [])
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(cachedReq ? new Date() : null)
   const [isLoading, setIsLoading] = useState(false)
-  const [requiredEquipmentIds, setRequiredEquipmentIds] = useState<string[]>([])
-  const [currentAppointmentUsages, setCurrentAppointmentUsages] = useState<string[]>([])
+  const [requiredEquipmentIds, setRequiredEquipmentIds] = useState<string[]>(cachedReq?.requiredEquipmentIds || [])
+  const [currentAppointmentUsages, setCurrentAppointmentUsages] = useState<string[]>(cachedReq?.currentAppointmentUsages || [])
   
   // ✅ ESTADO CONEXIÓN desde DeviceOfflineManager
   const [isConnected, setIsConnected] = useState(false)
@@ -124,6 +132,9 @@ export function useServiceEquipmentRequirements({
       setCurrentAppointmentUsages(data.currentAppointmentUsages || [])
       setLastUpdate(new Date())
       
+      // Persistir en caché para futuras hidrataciones
+      queryClient.setQueryData(cacheKey, data); // TODO-MULTIUSER invalidar con WS
+      
     } catch (error) {
       console.error('❌ [ServiceEquipment] Error obteniendo equipos requeridos:', error)
       setRequiredEquipmentIds([])
@@ -132,7 +143,7 @@ export function useServiceEquipmentRequirements({
     } finally {
       setIsLoading(false)
     }
-  }, [systemId, appointmentId, enabled])
+  }, [systemId, appointmentId, enabled, queryClient])
 
   // 🌐 INICIALIZACIÓN - Cargar equipos requeridos
   useEffect(() => {

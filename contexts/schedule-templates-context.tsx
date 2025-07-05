@@ -5,6 +5,7 @@ import { useInterfaz } from "./interfaz-Context"
 import { WeekSchedule, DEFAULT_SCHEDULE } from "@/types/schedule"
 import { ScheduleTemplate } from "@prisma/client"
 import { useSession } from "next-auth/react"
+import { useQueryClient } from '@tanstack/react-query'
 
 // Interfaz del contexto
 interface ScheduleTemplatesContextType {
@@ -32,6 +33,7 @@ const defaultTemplates: ScheduleTemplate[] = [
     openTime: null,
     closeTime: null,
     slotDuration: 15,
+    createGranularity: 15,
   }
 ];
 
@@ -44,6 +46,20 @@ export function ScheduleTemplatesProvider({ children }: { children: ReactNode })
   const [loading, setLoading] = useState<boolean>(true);
   const interfaz = useInterfaz();
   const { data: session, status } = useSession();
+  const queryClient = useQueryClient();
+
+  // Hidratación inicial desde cache persistido
+  useEffect(() => {
+    const systemId = session?.user?.systemId;
+    if (systemId) {
+      const cached = queryClient.getQueryData<ScheduleTemplate[]>(['scheduleTemplates', systemId]);
+      if (cached && cached.length > 0) {
+        console.log('[ScheduleTemplatesProvider] Hidratando plantillas desde cache.');
+        setTemplates(cached);
+        setLoading(false);
+      }
+    }
+  }, [session?.user?.systemId]);
 
   // Cargar plantillas al iniciar (o al cambiar estado de sesión)
   const loadTemplates = useCallback(async () => {
@@ -54,6 +70,11 @@ export function ScheduleTemplatesProvider({ children }: { children: ReactNode })
         return;
     }
     
+    if (templates.length > 0) {
+      // Ya tenemos plantillas en memoria (probablemente hidratadas). Evitar refetch inmediato.
+      console.log('[ScheduleTemplatesProvider] Templates already in state, skipping refetch.');
+      return;
+    }
     setLoading(true);
     try {
       console.log("[ScheduleTemplatesProvider] Fetching templates from API...");
@@ -65,7 +86,11 @@ export function ScheduleTemplatesProvider({ children }: { children: ReactNode })
       }
       const templatesFromApi: ScheduleTemplate[] = await response.json();
       console.log(`[ScheduleTemplatesProvider] Received ${templatesFromApi.length} templates from API.`);
-      setTemplates(templatesFromApi); 
+      setTemplates(templatesFromApi);
+      const systemId = session?.user?.systemId;
+      if (systemId) {
+        queryClient.setQueryData(['scheduleTemplates', systemId], templatesFromApi); // TODO-MULTIUSER invalidar con WS
+      }
     } catch (error) {
       console.error("Error al cargar plantillas horarias desde API:", error);
       setTemplates([]); 
@@ -205,7 +230,7 @@ export function ScheduleTemplatesProvider({ children }: { children: ReactNode })
     } finally {
         setLoading(false);
   }
-  }, [status, loadTemplates]);
+  }, [status, templates.length]);
 
   const refreshTemplates = useCallback(async (): Promise<void> => {
     if (status === 'authenticated') {
@@ -246,7 +271,7 @@ export function ScheduleTemplatesProvider({ children }: { children: ReactNode })
     } finally {
         setLoading(false);
     }
-  }, [status, loadTemplates]);
+  }, [status, templates.length]);
 
   // Valor del contexto
   const contextValue = useMemo(() => ({

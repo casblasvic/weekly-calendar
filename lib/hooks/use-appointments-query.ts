@@ -2,6 +2,7 @@ import { useQuery, useQueries, useMutation, useQueryClient, UseQueryOptions } fr
 import { CACHE_TIME } from '@/lib/react-query';
 import { format, addWeeks, startOfWeek, endOfWeek, addDays } from 'date-fns';
 import { useSession } from 'next-auth/react';
+import { useClinic } from '@/contexts/clinic-context';
 
 // Tipos para appointments
 interface Appointment {
@@ -103,15 +104,19 @@ async function fetchDayAppointments(dayKey: string, clinicId: string, isAuthenti
 }
 
 // ✅ HOOK PRINCIPAL: Query de semana
+// 🔥 SOLUCIÓN CRÍTICA RACE CONDITION: Este hook DEBE esperar a que isInitialized sea true
+// ❌ NUNCA ELIMINAR isInitialized de la condición enabled - causa múltiples recargas y redirección a /dashboard
+// 📚 DOCUMENTACIÓN: isInitialized evita que se ejecute antes de que ClinicContext esté completamente listo
 export function useWeekAppointmentsQuery(weekKey: string, clinicId: string | null) {
   const { data: session, status } = useSession();
+  const { isInitialized } = useClinic(); // 🔥 CRÍTICO: Previene race condition
   const isAuthenticated = status === 'authenticated';
   
   return useQuery<WeekAppointmentsResponse, Error>({
     queryKey: ['appointments', 'week', weekKey, clinicId],
     queryFn: () => fetchWeekAppointments(weekKey, clinicId!, isAuthenticated),
-    enabled: !!clinicId && isAuthenticated,
-    staleTime: 1000 * 60 * 2, // ✅ 2 minutos para evitar refetches que sobrescriban optimista
+    enabled: !!clinicId && isAuthenticated && isInitialized, // 🔥 CRÍTICO: isInitialized previene race condition
+    staleTime: 1000 * 60 * 15, // 15 min de cortesía
     gcTime: 1000 * 60 * 5, // ✅ 5 minutos para cache
     refetchOnMount: false, // ✅ NO refetch automático - el optimista maneja los datos
     refetchOnWindowFocus: false, // ✅ NO refetch en focus
@@ -120,15 +125,18 @@ export function useWeekAppointmentsQuery(weekKey: string, clinicId: string | nul
 }
 
 // ✅ HOOK: Query de día específico
+// 🔥 SOLUCIÓN CRÍTICA RACE CONDITION: Este hook DEBE esperar a que isInitialized sea true
+// ❌ NUNCA ELIMINAR isInitialized de la condición enabled - causa múltiples recargas y redirección a /dashboard
 export function useDayAppointmentsQuery(dayKey: string, clinicId: string | null) {
   const { data: session, status } = useSession();
+  const { isInitialized } = useClinic(); // 🔥 CRÍTICO: Previene race condition
   const isAuthenticated = status === 'authenticated';
   
   return useQuery<DayAppointmentsResponse, Error>({
     queryKey: ['appointments', 'day', dayKey, clinicId],
     queryFn: () => fetchDayAppointments(dayKey, clinicId!, isAuthenticated),
-    enabled: !!clinicId && isAuthenticated,
-    staleTime: 1000 * 60 * 2, // ✅ 2 minutos para evitar refetches constantes
+    enabled: !!clinicId && isAuthenticated && isInitialized, // 🔥 CRÍTICO: isInitialized previene race condition
+    staleTime: 1000 * 60 * 15, // 15 min de cortesía
     gcTime: 1000 * 60 * 3, // ✅ REDUCIR a 3 minutos para días
     refetchOnMount: false, // ✅ NO refetch automático - causa bucles infinitos
     refetchOnWindowFocus: false, // ✅ NO refetch en focus para evitar spam
@@ -137,11 +145,14 @@ export function useDayAppointmentsQuery(dayKey: string, clinicId: string | null)
 }
 
 // ✅ HOOK PRINCIPAL: Sliding Window Cache (3 semanas)
+// 🔥 SOLUCIÓN CRÍTICA RACE CONDITION: Todas las queries DEBEN esperar a que isInitialized sea true
+// ❌ NUNCA ELIMINAR isInitialized de las condiciones enabled - causa múltiples recargas y redirección a /dashboard
 export function useSlidingAgendaCache(
   currentWeek: string,
   clinicId: string | null
 ) {
   const { data: session, status } = useSession(); // ✅ AÑADIR verificación de sesión
+  const { isInitialized } = useClinic(); // 🔥 CRÍTICO: Previene race condition
   const isAuthenticated = status === 'authenticated';
   
   const prevWeek = getWeekKey(currentWeek, -1);
@@ -153,9 +164,9 @@ export function useSlidingAgendaCache(
       {
         queryKey: ['appointments', 'week', prevWeek, clinicId],
         queryFn: () => fetchWeekAppointments(prevWeek, clinicId!, isAuthenticated),
-        staleTime: 1000 * 60 * 2, // ✅ 2 minutos para evitar refetches constantes
+        staleTime: 1000 * 60 * 15, // 15 min de cortesía
         gcTime: 1000 * 60 * 5, // ✅ 5 minutos para sliding cache
-        enabled: !!clinicId && isAuthenticated, // ✅ VERIFICAR AUTENTICACIÓN
+        enabled: !!clinicId && isAuthenticated && isInitialized, // 🔥 CRÍTICO: isInitialized previene race condition
         refetchOnMount: false, // ✅ NO refetch automático - causa bucles
         refetchOnWindowFocus: false,
         refetchInterval: false // ✅ NO polling automático
@@ -163,9 +174,9 @@ export function useSlidingAgendaCache(
       {
         queryKey: ['appointments', 'week', currentWeek, clinicId],
         queryFn: () => fetchWeekAppointments(currentWeek, clinicId!, isAuthenticated),
-        staleTime: 1000 * 60 * 2, // ✅ 2 minutos para evitar refetches constantes
+        staleTime: 1000 * 60 * 15, // 15 min de cortesía
         gcTime: 1000 * 60 * 5, // ✅ 5 minutos para sliding cache
-        enabled: !!clinicId && isAuthenticated, // ✅ VERIFICAR AUTENTICACIÓN
+        enabled: !!clinicId && isAuthenticated && isInitialized, // 🔥 CRÍTICO: isInitialized previene race condition
         refetchOnMount: false, // ✅ NO refetch automático - causa bucles
         refetchOnWindowFocus: false,
         refetchInterval: false // ✅ NO polling automático
@@ -173,9 +184,9 @@ export function useSlidingAgendaCache(
       {
         queryKey: ['appointments', 'week', nextWeek, clinicId],
         queryFn: () => fetchWeekAppointments(nextWeek, clinicId!, isAuthenticated),
-        staleTime: 1000 * 60 * 2, // ✅ 2 minutos para evitar refetches constantes
+        staleTime: 1000 * 60 * 15, // 15 min de cortesía
         gcTime: 1000 * 60 * 5, // ✅ 5 minutos para sliding cache
-        enabled: !!clinicId && isAuthenticated, // ✅ VERIFICAR AUTENTICACIÓN
+        enabled: !!clinicId && isAuthenticated && isInitialized, // 🔥 CRÍTICO: isInitialized previene race condition
         refetchOnMount: false, // ✅ NO refetch automático - causa bucles
         refetchOnWindowFocus: false,
         refetchInterval: false // ✅ NO polling automático
@@ -318,4 +329,42 @@ export function useAppointmentMutations() {
     createAppointment,
     deleteAppointment
   };
+}
+
+// ----------------------------------------------------------------------------------
+// 🛡️ HOOK AUXILIAR: useWeekAppointmentsQueryGuard
+// Evita disparar queries redundantes si los datos ya están en caché.
+// Siempre se llama (cumple las reglas de Hooks) y decide internamente si
+// delegar a useWeekAppointmentsQuery o devolver un stub.
+// ----------------------------------------------------------------------------------
+export function useWeekAppointmentsQueryGuard(weekKey: string, clinicId: string | null) {
+  const queryClient = useQueryClient();
+  const { isInitialized } = useClinic();
+
+  // Siempre invocamos el hook base para cumplir la regla de Hooks
+  const underlyingQuery = useWeekAppointmentsQuery(weekKey, (isInitialized ? clinicId : null));
+
+  // Si no hay clínica o contexto no listo devolvemos el query base (estará disabled)
+  if (!isInitialized || !clinicId) {
+    return underlyingQuery;
+  }
+
+  const cacheKey = ['appointments', 'week', weekKey, clinicId];
+  const cachedData = queryClient.getQueryData<WeekAppointmentsResponse>(cacheKey);
+  const isFetchingNow = queryClient.isFetching({ queryKey: cacheKey }) > 0;
+
+  // Si ya existe cache y no se está refrescando, sobreescribimos los flags
+  if (cachedData && !isFetchingNow) {
+    return {
+      ...underlyingQuery,
+      data: cachedData,
+      isLoading: false,
+      isFetching: false,
+      isError: false,
+      error: undefined,
+    } as any;
+  }
+
+  // En cualquier otro caso devolvemos el query base
+  return underlyingQuery;
 } 

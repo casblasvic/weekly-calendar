@@ -93,11 +93,94 @@ export function AppPrefetcher() {
             staleTime: CACHE_TIME.MUY_CORTO
           });
         }
+
+        // 🗄️ PREFETCH CABINAS de la clínica (muy utilizadas para renderizar columnas)
+        if (!queryClient.getQueryData(['cabins', activeClinicId])) {
+          queryClient.prefetchQuery({
+            queryKey: ['cabins', activeClinicId],
+            queryFn: () => api.cached.get(`/api/clinics/${activeClinicId}/cabins?systemId=${activeClinic?.systemId ?? ''}`),
+            staleTime: CACHE_TIME.LARGO
+          });
+        }
+
+        // 🗄️ PREFETCH PLANTILLAS DE HORARIO del sistema (casi estáticas)
+        const systemId = activeClinic?.systemId;
+        if (systemId && !queryClient.getQueryData(['scheduleTemplates', systemId])) {
+          queryClient.prefetchQuery({
+            queryKey: ['scheduleTemplates', systemId],
+            queryFn: () => api.cached.get('/api/templates'),
+            staleTime: CACHE_TIME.LARGO
+          });
+        }
+
+        if (systemId && !queryClient.getQueryData(['integrations', systemId])) {
+          queryClient.prefetchQuery({
+            queryKey: ['integrations', systemId],
+            queryFn: () => api.cached.get('/api/internal/integrations'),
+            staleTime: CACHE_TIME.LARGO
+          });
+        }
+
+        // PREFETCH EQUIPMENT REQUIREMENTS for appointments of current week
+        const weekData: any = queryClient.getQueryData(['appointments','week', currentWeek, activeClinicId]);
+        const appointmentIds: string[] = weekData?.appointments?.map((a:any)=>a.id) || [];
+        appointmentIds.forEach(id=>{
+          if (!queryClient.getQueryData(['equipmentRequirements', id])) {
+            queryClient.prefetchQuery({
+              queryKey: ['equipmentRequirements', id],
+              queryFn: () => api.cached.get(`/api/services/equipment-requirements?appointmentId=${id}`),
+              staleTime: CACHE_TIME.CORTO
+            });
+          }
+        });
+
+        // PREFETCH smart plug devices
+        if (systemId && !queryClient.getQueryData(['smartPlugDevices', systemId])) {
+          queryClient.prefetchQuery({
+            queryKey: ['smartPlugDevices', systemId],
+            queryFn: () => api.cached.get('/api/internal/smart-plug-devices?page=1&pageSize=1000'),
+            staleTime: CACHE_TIME.LARGO
+          });
+        }
+
+        // PREFETCH EQUIPMENT CATALOGO
+        if (!queryClient.getQueryData(['equipment'])) {
+          queryClient.prefetchQuery({
+            queryKey: ['equipment'],
+            queryFn: () => api.cached.get('/api/equipment'),
+            staleTime: CACHE_TIME.LARGO,
+          });
+        }
+
+        // PREFETCH USERS POR CLÍNICA ACTIVA
+        if (activeClinicId && !queryClient.getQueryData(['usersByClinic', { clinicId: activeClinicId }])) {
+          queryClient.prefetchQuery({
+            queryKey: ['usersByClinic', { clinicId: activeClinicId }],
+            queryFn: () => api.cached.get(`/api/users/byClinic/${activeClinicId}`),
+            staleTime: CACHE_TIME.LARGO,
+          });
+        }
+
+        // Prefetch de overrides de cabinas para la semana actual
+        const monday = new Date();
+        monday.setDate(monday.getDate() - ((monday.getDay()+6)%7)); // lunes
+        const sunday = new Date(monday);
+        sunday.setDate(monday.getDate()+6);
+        const mondayStr = monday.toISOString().split('T')[0];
+        const sundayStr = sunday.toISOString().split('T')[0];
+
+        if (!queryClient.getQueryData(['overrides', currentWeek, activeClinicId])) {
+          queryClient.prefetchQuery({
+            queryKey: ['overrides', currentWeek, activeClinicId],
+            queryFn: () => api.cached.get(`/api/cabin-schedule-overrides?clinicId=${activeClinicId}&startDate=${mondayStr}&endDate=${sundayStr}`),
+            staleTime: CACHE_TIME.CORTO,
+          });
+        }
       }
     };
     
     prefetchForPage();
-  }, [pathname, queryClient]);
+  }, [pathname, queryClient, activeClinic?.id, activeClinic?.systemId]);
   
   // No renderiza nada, solo es un gestor invisible de datos
   return null;

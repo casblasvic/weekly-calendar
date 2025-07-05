@@ -673,19 +673,19 @@ const SmartPlugsPage = () => {
     // Función para controlar dispositivo - SIMPLE y DIRECTO
     const handleDeviceToggle = async (deviceId: string, turnOn: boolean) => {
         console.log(`🎯 [TOGGLE] Iniciando control ${turnOn ? 'ON' : 'OFF'} para ${deviceId}`);
-        
-        const response = await fetch(`/api/shelly/device/${deviceId}/control`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ action: turnOn ? 'on' : 'off' })
-        });
+
+            const response = await fetch(`/api/shelly/device/${deviceId}/control`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ action: turnOn ? 'on' : 'off' })
+            });
 
         if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || 'Error desconocido');
-        }
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Error desconocido');
+            }
 
         const result = await response.json();
         console.log('✅ [TOGGLE] Control exitoso:', result);

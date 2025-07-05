@@ -6,6 +6,7 @@ import { expandHexColor } from "@/utils/color-utils"
 import { useClinic } from './clinic-context'
 // import { Cabin as CabinModel } from "@/services/data/models/interfaces" // Eliminado
 import type { Cabin } from '@prisma/client'; // Añadido
+import { useQueryClient } from '@tanstack/react-query'
 
 // Definir alias para los tipos usando los tipos del modelo central
 // export type Cabin = CabinModel; // Eliminado
@@ -23,9 +24,13 @@ interface CabinContextType {
 const CabinContext = createContext<CabinContextType | undefined>(undefined)
 
 export const CabinProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [cabins, setCabins] = useState<Cabin[]>([])
-  const [loading, setLoading] = useState(true)
+  const queryClient = useQueryClient();
   const { activeClinic, isLoading: isLoadingClinic, activeClinicCabins } = useClinic()
+
+  const cachedCabins = activeClinic?.id ? queryClient.getQueryData<Cabin[]>(['cabins', activeClinic.id]) : null;
+
+  const [cabins, setCabins] = useState<Cabin[]>(cachedCabins || [])
+  const [loading, setLoading] = useState(cachedCabins ? false : true)
 
   useEffect(() => {
     if (isLoadingClinic) {

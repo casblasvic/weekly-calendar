@@ -152,6 +152,8 @@ export function AgendaNavBar({
       // Si tenemos onViewChange, lo usamos para transición suave
       if (onViewChange) {
         onViewChange("day", newDate);
+        setTimeout(() => { isUpdatingRef.current = false; }, 50);
+        return;
       } else {
         // Fallback al comportamiento anterior
         setCurrentDate(newDate);
@@ -189,6 +191,8 @@ export function AgendaNavBar({
     if (onViewChange) {
       try {
         onViewChange("day", prevDay);
+        setTimeout(() => { isUpdatingRef.current = false; }, 50);
+        return;
       } finally {
         // Asegurar que se libera el bloqueo incluso si hay error
         setTimeout(() => {
@@ -237,6 +241,8 @@ export function AgendaNavBar({
     if (onViewChange) {
       try {
         onViewChange("day", nextDay);
+        setTimeout(() => { isUpdatingRef.current = false; }, 50);
+        return;
       } finally {
         // Asegurar que se libera el bloqueo incluso si hay error
         setTimeout(() => {

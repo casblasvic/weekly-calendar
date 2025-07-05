@@ -287,10 +287,10 @@ export default function DayView({
   }, [dateString]);
 
   // Estado de carga combinado
-  const isLoading = isLoadingClinic;
+  const isLoading = isLoadingClinic && (!activeClinicCabins || activeClinicCabins.length === 0);
 
   if (isLoading) {
-    console.log(`[DayView] Mostrando carga: isLoadingClinic=${isLoadingClinic}`);
+    console.log(`[DayView] Mostrando carga inicial: isLoadingClinic=${isLoadingClinic}`);
     return <div className="flex justify-center items-center h-full"><Loader2 className="w-8 h-8 text-purple-600 animate-spin" /> Cargando datos...</div>;
   }
   
@@ -563,7 +563,7 @@ export default function DayView({
     } 
 
     return getTimeSlots(dayStartTime, dayEndTime, slotDuration);
-  }, [correctSchedule, currentDate, openTime, closeTime, slotDuration]); // Dependencias correctas
+  }, [correctSchedule, currentDate, openTime, closeTime, slotDuration]);
 
   // ✅ ESPERAR A QUE LA INICIALIZACIÓN ESTÉ COMPLETA
   if (!isInitialized) {
@@ -1044,6 +1044,7 @@ export default function DayView({
             tags: appointmentData.tags || [],
             notes: appointmentData.notes || '',
             personId: appointmentData.personId || selectedPerson?.id || '',
+            clinicId: appointmentData.clinicId || activeClinic?.id || '',
           };
           
           console.log('[DayView] 🎨 Cita optimista completa creada:', {
@@ -1354,7 +1355,8 @@ export default function DayView({
           phone: savedAppointment.person.phone || '',
           services: savedAppointment.services || [],
           tags: tagIds,
-          personId: savedAppointment.person.id || ''
+          personId: savedAppointment.person.id || '',
+          clinicId: savedAppointment.clinicId || activeClinic?.id || '',
         };
         
         if (isUpdate) {

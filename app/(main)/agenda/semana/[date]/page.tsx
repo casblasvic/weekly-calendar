@@ -171,6 +171,35 @@ export default function WeeklyAgendaPage({ params: paramsProp }: WeeklyAgendaPag
     }
   }, [router, currentDate, handleDateChange]);
 
+  // Prefetch del bundle de vista diaria para la fecha actual. El hook debe estar
+  // SIEMPRE en el mismo orden para evitar errores de "Rendered more hooks than during previous render".
+  useEffect(() => {
+    if (shouldShowLoading) return; // Esperar hasta que tengamos fecha y clínica
+    const formatted = format((currentDate ?? new Date()), 'yyyy-MM-dd');
+    router.prefetch(`/agenda/dia/${formatted}`);
+  }, [shouldShowLoading, currentDate, router]);
+
+  // Prefetch de todos los días visibles en la semana actual para que cualquier
+  // clic al día sea instantáneo y no se quede la vista semanal renderizada.
+  const weekDays = useMemo(() => {
+    const monday = currentDate ? currentDate : new Date();
+    // Ajustar a lunes de la semana correspondiente
+    const mondayAdj = monday.getDay() === 0 ? new Date(monday.getTime() - 6*24*60*60*1000) : new Date(monday);
+    mondayAdj.setDate(mondayAdj.getDate() - ((mondayAdj.getDay()+6)%7));
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(mondayAdj);
+      d.setDate(mondayAdj.getDate() + i);
+      return d;
+    });
+  }, [currentDate]);
+
+  useEffect(() => {
+    weekDays.forEach(d => {
+      const f = format(d, 'yyyy-MM-dd');
+      router.prefetch(`/agenda/dia/${f}`);
+    });
+  }, [weekDays, router]);
+
   // ✅ MOSTRAR LOADING SOLO CUANDO REALMENTE ES NECESARIO
   if (shouldShowLoading) {
     return (

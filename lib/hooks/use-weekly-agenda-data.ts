@@ -1,9 +1,10 @@
-import { useMemo, useCallback } from 'react';
+import { useMemo, useCallback, useEffect } from 'react';
 import { format, startOfWeek, endOfWeek } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
-import { useWeekAppointmentsQuery, getWeekKey } from './use-appointments-query';
+import { useWeekAppointmentsQuery, getWeekKey, useWeekAppointmentsQueryGuard } from './use-appointments-query';
 import { useClinic } from '@/contexts/clinic-context';
 import { useQueryClient } from '@tanstack/react-query';
+import { usePrefetchAppointmentDevices } from './use-appointment-devices-cache';
 
 export interface WeeklyAgendaAppointment {
   id: string;
@@ -35,6 +36,7 @@ export interface WeeklyAgendaAppointment {
 export function useWeeklyAgendaData(currentDate: Date) {
   const { activeClinic } = useClinic();
   const queryClient = useQueryClient();
+  const { prefetchDevicesForAppointments } = usePrefetchAppointmentDevices();
   
   // Generar key de semana desde la fecha actual
   const weekKey = useMemo(() => {
@@ -50,6 +52,19 @@ export function useWeeklyAgendaData(currentDate: Date) {
     error,
     refetch 
   } = useWeekAppointmentsQuery(weekKey, activeClinic?.id || null);
+
+  // 🚀 PREFETCH AUTOMÁTICO DE DISPOSITIVOS cuando se cargan citas
+  useEffect(() => {
+    if (weekData?.appointments && weekData.appointments.length > 0) {
+      const appointmentIds = weekData.appointments.map(apt => apt.id);
+      console.log(`🚀 [useWeeklyAgendaData] Auto-prefetching devices for ${appointmentIds.length} appointments`);
+      
+      // Ejecutar prefetch en background (no bloquear UI)
+      prefetchDevicesForAppointments(appointmentIds).catch(error => {
+        console.error('❌ [useWeeklyAgendaData] Error in device prefetch:', error);
+      });
+    }
+  }, [weekData?.appointments, prefetchDevicesForAppointments]);
   
   // ✅ DEBUG: Ver estados del hook principal - SOLO EN DESARROLLO
   // console.log('[useWeeklyAgendaData] 🔍 ESTADOS QUERY:', {
@@ -580,16 +595,39 @@ export function useWeeklyAgendaData(currentDate: Date) {
  * Hook para prefetch de semanas adyacentes (sliding window)
  */
 export function useWeeklyAgendaPrefetch(currentDate: Date) {
-  const { activeClinic } = useClinic();
-  
+  // ----------------------------------------------------------------------------------
+  // 🔥 GUARDIA CRÍTICA CONTRA PRECARGAS DUPLICADAS ----------------------------------
+  // Este hook existía para precargar las semanas adyacentes cuando la vista semanal se
+  // monta *después* del cambio de clínica.  Desde que `ClinicContext` ya ejecuta un
+  // prefetch central al cambiar de clínica, disparar inmediatamente otro prefetch en
+  // paralelo provoca **llamadas redundantes** en la primera renderización.
+  //
+  // ► Solución: esperar a que `isInitialized` sea true Y comprobar primero si las
+  //   semanas ya están en caché.  De ese modo:
+  //     • Evitamos duplicar llamadas en la carga inicial.
+  //     • Seguimos precargando SEMANAS NUEVAS cuando el usuario navega a otra semana.
+  //
+  // ⚠️  NUNCA eliminar este guard sin leer docs/clinic-context-race-condition-fix.md
+  // ----------------------------------------------------------------------------------
+
+  const { activeClinic, isInitialized } = useClinic();
+  const queryClient = useQueryClient();
+
+  // Determinar clinicId sólo cuando el contexto está inicializado
+  const clinicId = isInitialized ? activeClinic?.id || null : null;
+
   const currentWeek = getWeekKey(currentDate, 0);
   const prevWeek = getWeekKey(currentDate, -1);
   const nextWeek = getWeekKey(currentDate, +1);
-  
-  // ✅ PREFETCH AUTOMÁTICO de 3 semanas
-  const prevWeekQuery = useWeekAppointmentsQuery(prevWeek, activeClinic?.id || null);
-  const currentWeekQuery = useWeekAppointmentsQuery(currentWeek, activeClinic?.id || null);
-  const nextWeekQuery = useWeekAppointmentsQuery(nextWeek, activeClinic?.id || null);
+
+  // Ejecución normal de las queries; su propia condición `enabled` evita requests
+  // duplicados porque `ClinicContext` ya las ha prefetchado y React-Query detecta
+  // los datos en caché.  Mantenerlas aquí garantiza que, al navegar a OTRAS
+  // semanas, el componente seguirá precargando la ventana deslizante.
+
+  const prevWeekQuery = useWeekAppointmentsQueryGuard(prevWeek, clinicId);
+  const currentWeekQuery = useWeekAppointmentsQueryGuard(currentWeek, clinicId);
+  const nextWeekQuery = useWeekAppointmentsQueryGuard(nextWeek, clinicId);
   
   // ✅ DEBUG: Ver estados de prefetch - SOLO EN DESARROLLO Y SIN SPAM
   // console.log('[useWeeklyAgendaPrefetch] 🔍 ESTADOS PREFETCH:', {

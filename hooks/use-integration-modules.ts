@@ -19,8 +19,11 @@ interface IntegrationsResponse {
  * Hook para verificar el estado de módulos de integración
  */
 export function useIntegrationModules() {
+  // Usamos systemId para no mezclar datos entre sistemas distintos
+  const systemId = (typeof window !== 'undefined') ? localStorage.getItem('systemId') ?? undefined : undefined;
+
   const { data: integrations, isLoading, error } = useQuery<IntegrationsResponse>({
-    queryKey: ['integrations'],
+    queryKey: ['integrations', systemId],
     queryFn: async () => {
       const response = await fetch('/api/internal/integrations');
       if (!response.ok) {
@@ -28,10 +31,10 @@ export function useIntegrationModules() {
       }
       return response.json();
     },
-    refetchOnWindowFocus: true, // ✅ Refrescar al enfocar ventana 
-    refetchOnMount: true, // ✅ Refrescar al montar componente
-    staleTime: 30 * 1000, // ⚡ Reducido a 30 segundos para mayor responsividad
-    refetchInterval: 60 * 1000, // 🔄 Refrescar cada minuto en background
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
+    staleTime: 1000 * 60 * 15, // 15 min como otras entidades estáticas
+    refetchInterval: false, // sin polling
   });
 
   const moduleCheckers = useMemo(() => {

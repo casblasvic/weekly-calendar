@@ -9,6 +9,7 @@ import useSocket from '@/hooks/useSocket';
 import { clientLogger } from '@/lib/utils/client-logger';
 import { deviceOfflineManager, OfflineUpdate } from '@/lib/shelly/device-offline-manager';
 import { useIntegrationModules } from '@/hooks/use-integration-modules';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface SmartPlugDevice {
   id: string;
@@ -80,9 +81,13 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
   // ✅ USAR NUEVO HOOK DE INTEGRATIONS
   const { isShellyActive, isLoading: isLoadingIntegrations } = useIntegrationModules();
   
+  const queryClient = useQueryClient();
+  const cacheKey = ['smartPlugDevices', systemId ?? 'unknown'];
+  const cachedDevices = queryClient.getQueryData<SmartPlugDevice[]>(cacheKey) || [];
+  
   // Estado principal
-  const [allDevices, setAllDevices] = useState<SmartPlugDevice[]>([]);
-  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  const [allDevices, setAllDevices] = useState<SmartPlugDevice[]>(cachedDevices);
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(cachedDevices.length ? new Date() : null);
   const [isInitialized, setIsInitialized] = useState(false);
   
   // Refs para tracking updates
@@ -130,6 +135,7 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
       });
       
       setAllDevices(data.data || []);
+      queryClient.setQueryData(cacheKey, data.data || []);
       setIsInitialized(true);
       setLastUpdate(new Date());
       
@@ -144,7 +150,7 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
       
       setAllDevices([]);
     }
-  }, [systemId, activeClinic?.id]);
+  }, [systemId, activeClinic?.id, queryClient]);
 
   // 🔥 CARGAR DISPOSITIVOS solo si el módulo está activo
   useEffect(() => {
@@ -179,56 +185,56 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
       
       // 📡 MANEJAR UPDATES NORMALES DE ESTADO (online/offline/power)
       if (update.deviceId) {
-        clientLogger.debug('🔍 [FloatingMenu] Update normal recibido:', {
-          deviceId: update.deviceId,
+      clientLogger.debug('🔍 [FloatingMenu] Update normal recibido:', {
+        deviceId: update.deviceId,
+        online: update.online,
+        relayOn: update.relayOn,
+        currentPower: update.currentPower
+      });
+      
+      // Actualizar dispositivo en la lista
+      setAllDevices(prev => {
+        const deviceIndex = prev.findIndex(device => 
+          device.id === update.deviceId || device.deviceId === update.deviceId
+        );
+        
+        if (deviceIndex === -1) {
+          clientLogger.verbose('⚠️ [FloatingMenu] Dispositivo no encontrado:', update.deviceId);
+          return prev;
+        }
+        
+        const oldDevice = prev[deviceIndex];
+        
+        // Verificar cambios reales (incluyendo validez de datos)
+        const hasChanges = (
+          Boolean(oldDevice.online) !== Boolean(update.online) ||
+          Boolean(oldDevice.relayOn) !== Boolean(update.relayOn) ||
+          // Para currentPower, considerar null como un cambio válido
+          (oldDevice.currentPower !== update.currentPower)
+        );
+        
+        if (!hasChanges) {
+          return prev;
+        }
+        
+        // Actualizar dispositivo
+        const updated = [...prev];
+        updated[deviceIndex] = { 
+          ...oldDevice, 
           online: update.online,
           relayOn: update.relayOn,
-          currentPower: update.currentPower
-        });
+          currentPower: update.currentPower,
+          voltage: update.voltage,
+          temperature: update.temperature,
+          lastSeenAt: new Date(update.timestamp)
+        };
         
-        // Actualizar dispositivo en la lista
-        setAllDevices(prev => {
-          const deviceIndex = prev.findIndex(device => 
-            device.id === update.deviceId || device.deviceId === update.deviceId
-          );
-          
-          if (deviceIndex === -1) {
-            clientLogger.verbose('⚠️ [FloatingMenu] Dispositivo no encontrado:', update.deviceId);
-            return prev;
-          }
-          
-          const oldDevice = prev[deviceIndex];
-          
-          // Verificar cambios reales (incluyendo validez de datos)
-          const hasChanges = (
-            Boolean(oldDevice.online) !== Boolean(update.online) ||
-            Boolean(oldDevice.relayOn) !== Boolean(update.relayOn) ||
-            // Para currentPower, considerar null como un cambio válido
-            (oldDevice.currentPower !== update.currentPower)
-          );
-          
-          if (!hasChanges) {
-            return prev;
-          }
-          
-          // Actualizar dispositivo
-          const updated = [...prev];
-          updated[deviceIndex] = { 
-            ...oldDevice, 
-            online: update.online,
-            relayOn: update.relayOn,
-            currentPower: update.currentPower,
-            voltage: update.voltage,
-            temperature: update.temperature,
-            lastSeenAt: new Date(update.timestamp)
-          };
-          
-          clientLogger.verbose(`✅ [FloatingMenu] Dispositivo actualizado: ${oldDevice.name} → ${update.online ? 'ONLINE' : 'OFFLINE'}`);
-          
-          return updated;
-        });
+        clientLogger.verbose(`✅ [FloatingMenu] Dispositivo actualizado: ${oldDevice.name} → ${update.online ? 'ONLINE' : 'OFFLINE'}`);
         
-        setLastUpdate(new Date());
+        return updated;
+      });
+      
+      setLastUpdate(new Date());
       }
     });
     

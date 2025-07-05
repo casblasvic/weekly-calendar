@@ -32,6 +32,7 @@ import { useScrollHoverClearance } from '@/lib/hooks/use-global-hover-state'
 import { Button } from "@/components/ui/button"
 import { DeviceControlButton } from "@/components/ui/device-control-button"
 import { useServiceEquipmentRequirements } from '@/hooks/use-service-equipment-requirements'
+import { useAppointmentDevicesWithFallback } from '@/lib/hooks/use-appointment-devices-cache'
 import { toast } from 'sonner'
 
 // Función para ajustar el brillo del color
@@ -764,18 +765,18 @@ export function AppointmentItem({
     }
   }, [currentPreviewDuration, isResizing, getHeight, appointment.id]);
 
-  // 🔥 HOOK ESPECÍFICO PARA EQUIPAMIENTO DE SERVICIOS DE CITA
+  // 🔥 HOOK ESPECÍFICO PARA EQUIPAMIENTO DE SERVICIOS DE CITA - NUEVO SISTEMA DE CACHE
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [isHovering, setIsHovering] = useState(false)
   const [processingDevices, setProcessingDevices] = useState<Set<string>>(new Set()) // ✅ NUEVO: Estado para evitar dobles clics
   
-  // ✅ USAR HOOK CORRECTO QUE FILTRA POR SERVICIOS DE LA CITA
-  const serviceEquipmentData = useServiceEquipmentRequirements({
-    appointmentId: appointment.id,
-    enabled: dropdownOpen || isHovering // ✅ CARGAR también en hover
-  });
+  // 🚀 NUEVO: Usar hook de cache de dispositivos (carga instantánea)
+  const serviceEquipmentData = useAppointmentDevicesWithFallback(
+    appointment.id,
+    true // ✅ SIEMPRE HABILITADO: datos ya pre-cargados en cache
+  );
 
-  // Logs eliminados para evitar verbosidad - solo logs en clics reales
+  console.log(`🔍 [AppointmentItem] Device cache source for ${appointment.id}:`, serviceEquipmentData?.source || 'unknown');
 
   // ✅ DATOS FINALES: Solo dispositivos que pueden hacer los servicios de esta cita
   const equipmentData = serviceEquipmentData ? {

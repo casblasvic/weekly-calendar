@@ -18,61 +18,19 @@
  * 5. Si hay error → redirigir a dashboard
  */
 
-"use client";
+import { redirect } from 'next/navigation';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { format } from 'date-fns';
-import { Loader2 } from 'lucide-react';
-import { useClinic } from '@/contexts/clinic-context';
+export default function AgendaRedirectPage() {
+  // Aseguramos que la página se genere siempre de forma dinámica para calcular la fecha actual
+  // (sin esto Next podría intentar cachear la ruta estáticamente y se produciría un error).
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  // (no aplicable en server components, solo aclaratorio)
 
-export default function AgendaBasePage() {
-  const router = useRouter();
-  const { activeClinic, isLoading: isLoadingClinic } = useClinic();
-  const [isRedirecting, setIsRedirecting] = useState(false);
-
-  useEffect(() => {
-    // ✅ ESPERAR A QUE SE CARGUE LA CLÍNICA ACTIVA
-    if (isLoadingClinic) {
-      console.log('[AgendaBasePage] ⏳ Esperando carga de clínica activa...');
-      return;
-    }
-
-    // ✅ VERIFICAR QUE HAY CLÍNICA ACTIVA
-    if (!activeClinic) {
-      console.log('[AgendaBasePage] ⚠️ No hay clínica activa - redirigiendo a dashboard');
-      router.replace('/dashboard');
-      return;
-    }
-
-    // ✅ REDIRIGIR A VISTA SEMANAL ACTUAL
-    console.log('[AgendaBasePage] ✅ Clínica activa detectada - redirigiendo a agenda semanal');
-    setIsRedirecting(true);
-    
-    const today = new Date();
-    const formattedDate = format(today, 'yyyy-MM-dd');
-    const targetUrl = `/agenda/semana/${formattedDate}`;
-    
-    router.replace(targetUrl);
-  }, [activeClinic, isLoadingClinic, router]);
-
-  // ✅ MOSTRAR LOADING STATE MIENTRAS SE RESUELVE LA REDIRECCIÓN
-  return (
-    <div className="flex items-center justify-center h-screen bg-gray-50">
-      <div className="text-center">
-        <Loader2 className="w-8 h-8 mx-auto mb-4 animate-spin text-blue-600"/>
-        <h2 className="text-lg font-semibold text-gray-900 mb-2">
-          {isLoadingClinic ? 'Cargando clínica...' : 
-           isRedirecting ? 'Cargando agenda...' : 
-           'Preparando agenda...'}
-        </h2>
-        <p className="text-sm text-gray-600">
-          {isLoadingClinic ? 'Verificando configuración de la clínica' :
-           isRedirecting ? 'Redirigiendo a la vista semanal' :
-           'Un momento por favor...'}
-        </p>
-      </div>
-    </div>
-  );
+  const today = new Date();
+  const formattedDate = today.toISOString().split('T')[0];
+  redirect(`/agenda/semana/${formattedDate}`);
 }
+
+// Forzar renderizado dinámico (Next.js 13/14)
+export const dynamic = 'force-dynamic';
 

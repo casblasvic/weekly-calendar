@@ -115,6 +115,9 @@ export function processMenuItemsWithIntegrations(
   });
 }
 
+// Obtener fecha actual en formato YYYY-MM-DD para construir enlace de agenda
+const todayStr = new Date().toISOString().split('T')[0];
+
 export const menuItems: MenuItem[] = [
   {
     id: "inicio",
@@ -190,7 +193,8 @@ export const menuItems: MenuItem[] = [
     id: "agenda",
     label: "Agenda",
     icon: Calendar,
-    href: "/agenda",
+    href: `/agenda/semana/${todayStr}`,
+    activePaths: ["/agenda", "/agenda/semana"],
   },
   {
     id: "facturacion",

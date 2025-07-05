@@ -6,6 +6,7 @@ import type { Cabin, Clinic as PrismaClinic } from '@prisma/client'
 import { useSession } from "next-auth/react";
 import type { ClinicSchedule, ScheduleTemplate as PrismaScheduleTemplate, ScheduleTemplateBlock as PrismaScheduleTemplateBlock } from '@prisma/client';
 import type { ClinicaApiOutput } from "@/lib/types/api-outputs";
+import { useQueryClient } from '@tanstack/react-query';
 
 // Función auxiliar para comparar IDs que pueden ser string o number
 const isSameId = (id1: string | number | undefined | null, id2: string | number | undefined | null): boolean => {
@@ -29,7 +30,7 @@ interface ClinicContextType {
   setActiveClinicById: (id: string) => Promise<void>
   clinics: PrismaClinic[]
   isLoading: boolean
-  isInitialized: boolean
+  isInitialized: boolean // 🔥 CRÍTICO: Previene race condition con appointment queries - NUNCA ELIMINAR
   error: string | null
   refetchClinics: () => Promise<void>
   getAllClinicas: () => Promise<PrismaClinic[]>
@@ -47,18 +48,46 @@ interface ClinicContextType {
 const ClinicContext = createContext<ClinicContextType | undefined>(undefined)
 
 export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [clinics, setClinics] = useState<PrismaClinic[]>([])
-  const [activeClinic, setActiveClinicState] = useState<ClinicaApiOutput | null>(null)
+  const queryClient = useQueryClient();
+  const cachedClinics = queryClient.getQueryData<PrismaClinic[]>(['clinics']) || [];
+
+  // Iniciar estado con datos ya hidratados para evitar spinner innecesario
+  const [clinics, setClinics] = useState<PrismaClinic[]>(cachedClinics);
+  const [isLoadingClinics, setIsLoadingClinics] = useState(cachedClinics.length === 0);
+
+  // --- Hidratación de activeClinic ----------------------------------------
+  const storedActiveId = typeof window !== 'undefined' ? localStorage.getItem('activeClinicId') : null;
+  const cachedDetailedClinic = storedActiveId ? queryClient.getQueryData<ClinicaApiOutput>(['clinic', storedActiveId]) : null;
+
+  const [activeClinic, setActiveClinicState] = useState<ClinicaApiOutput | null>(cachedDetailedClinic ?? null);
+  // Si ya teníamos clínica detallada en caché, consideramos que no está cargando
+  const [isLoadingDetails, setIsLoadingDetails] = useState(cachedDetailedClinic ? false : false);
   const [activeClinicCabins, setActiveClinicCabins] = useState<Cabin[] | null>(null)
-  const [isLoadingClinics, setIsLoadingClinics] = useState(true)
   const [isLoadingCabinsContext, setIsLoadingCabinsContext] = useState(false)
-  const [isInitialized, setIsInitialized] = useState(false)
+  // 🔥 CRÍTICO: isInitialized previene race condition con appointment queries
+  // ❌ NUNCA ELIMINAR: Causa múltiples recargas + redirección a /dashboard
+  // 📚 VER: docs/clinic-context-race-condition-fix.md
+  const [isInitialized, setIsInitialized] = useState(cachedDetailedClinic ? true : false)
   const [error, setError] = useState<string | null>(null)
-  const [isLoadingDetails, setIsLoadingDetails] = useState(false);
   const [currentlyFetchingClinicId, setCurrentlyFetchingClinicId] = useState<string | null>(null);
   const [isFetchingClinics, setIsFetchingClinics] = useState(false);
   const fetchClinicsCalledRef = useRef<boolean>(false);
   const { data: session, status } = useSession();
+
+  // ----------------------------------------------------------------------------------
+  // 🔥 MICRO-OPTIMIZACIÓN UX ---------------------------------------------------------
+  // Cuando `activeClinic` ya está disponible pero `isLoadingClinics` sigue en true unos
+  // milisegundos, la UI muestra "Cargando clínica..." aunque ya tengamos la clínica
+  // seleccionada.  Este useEffect baja inmediatamente `isLoadingClinics` a false en
+  // cuanto detecta que existe una clínica activa.  No altera ningún flujo de datos
+  // porque la lista de clínicas ya se ha cargado.
+  // ----------------------------------------------------------------------------------
+
+  useEffect(() => {
+    if (activeClinic && isLoadingClinics) {
+      setIsLoadingClinics(false);
+    }
+  }, [activeClinic, isLoadingClinics]);
 
   // ✅ MEMOIZAR internalSetActiveClinic para evitar re-creaciones
   const internalSetActiveClinic = useCallback((clinic: ClinicaApiOutput | null) => {
@@ -190,8 +219,11 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         console.log(`  - independentScheduleBlocks:`, detailedClinicData.independentScheduleBlocks && detailedClinicData.independentScheduleBlocks.length > 0 ? `Exists (${detailedClinicData.independentScheduleBlocks.length} blocks)` : 'null/undefined/empty', detailedClinicData.independentScheduleBlocks);
       }
       
-      // Actualizar clínica activa
+      // Actualizar clínica activa y cachear resultado detallado
       internalSetActiveClinic(detailedClinicData);
+      if (detailedClinicData.id) {
+        queryClient.setQueryData(['clinic', String(detailedClinicData.id)], detailedClinicData);
+      }
       
       // Asignar las cabinas recibidas directamente para que la UI las tenga de inmediato
       if (Array.isArray(detailedClinicData.cabins)) {
@@ -206,6 +238,8 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setCurrentlyFetchingClinicId(null);
       setIsLoadingDetails(false);
       // ✅ MARCAR COMO INICIALIZADO cuando se completa la carga de detalles
+      // 🔥 CRÍTICO: isInitialized=true permite que appointment queries se ejecuten
+      // ❌ NO ELIMINAR: Previene race condition y múltiples recargas
       if (!isInitialized) {
         console.log(`[ClinicContext] fetchAndUpdateDetailedClinic - Clinic details loaded, marking as initialized.`);
         setIsInitialized(true);
@@ -260,6 +294,7 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const loadedClinics: PrismaClinic[] = await response.json();
       console.log("ClinicContext: Clínicas cargadas desde API:", loadedClinics);
       setClinics(loadedClinics);
+      queryClient.setQueryData(['clinics'], loadedClinics);
       console.log("ClinicContext: Estado 'clinics' actualizado.");
     } catch (err) {
       console.error("Error al cargar clínicas desde API:", err);
@@ -626,6 +661,8 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       } else {
         const cabinsData: Cabin[] = await response.json();
         setActiveClinicCabins(cabinsData);
+        // 🗄️ Guardar en React-Query para hidratación futura (IndexedDB persister)
+        queryClient.setQueryData(['cabins', clinicId], cabinsData); // TODO-MULTIUSER: invalidar vía WS
       }
     } catch (err) {
       console.error(`[ClinicContext] fetchCabinsForClinic - Error fetching cabins for clinic ${clinicId}:`, err);
@@ -634,7 +671,7 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     } finally {
       setIsLoadingCabinsContext(false);
     }
-  }, [setError, setActiveClinicCabins]);
+  }, [setError, setActiveClinicCabins, queryClient]);
 
   // ✅ MEMOIZAR refreshActiveClinicCabins
   const refreshActiveClinicCabins = useCallback(async () => {
@@ -669,6 +706,24 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     // console.log("ClinicProvider - Estado activeClinicCabins actualizado:", activeClinicCabins); // Log optimizado
   }, [activeClinicCabins]);
   // --- Fin Log ---
+
+  // ---------------------------------------------------------------------------
+  // ✨ HIDRATACIÓN INSTANTÁNEA DE CLÍNICAS -------------------------------------
+  // Leemos la query ['clinics'] desde el caché persistido (IndexedDB). Si existe,
+  // llenamos `clinics` y desactivamos `isLoadingClinics` antes de hacer el fetch
+  // real, evitando el spinner "Cargando clínica…". El fetch posterior actualizará
+  // los datos y la caché, por lo que la UI no se queda obsoleta.
+  // TODO-MULTIUSER: cuando añadamos WebSocket broadcast, invalidaremos esta query
+  // en todos los clientes para mantener sincronía.
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    const cached = queryClient.getQueryData<PrismaClinic[]>(['clinics']);
+    if (cached && cached.length > 0) {
+      console.log('[ClinicContext] Hidratando clínicas desde cache persistido.');
+      setClinics(cached);
+      setIsLoadingClinics(false);
+    }
+  }, []);
 
   const value = useMemo(() => ({
     // Propiedades requeridas por ClinicContextType:

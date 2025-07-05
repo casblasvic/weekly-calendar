@@ -23,11 +23,11 @@ export function SidebarWithAvatar({ isCollapsed, onToggle }: SidebarProps) {
   const pathname = usePathname()
   const [showUserMenu, setShowUserMenu] = useState(false)
 
-  // Ejemplo de estructura de menú
+  const todayStr = new Date().toISOString().split('T')[0]
   const menuItems = [
     { name: "Inicio", href: "/", icon: "home" },
     { name: "Clientes", href: "/clientes", icon: "users" },
-    { name: "Agenda", href: "/agenda", icon: "calendar" },
+    { name: "Agenda", href: `/agenda/semana/${todayStr}`, icon: "calendar" },
     // Añade más elementos según sea necesario
   ]
 

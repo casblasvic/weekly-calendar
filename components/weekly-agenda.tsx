@@ -588,14 +588,27 @@ function WeeklyAgendaContent({
     return activeClinicCabins?.filter(cabin => cabin.isActive).sort((a, b) => a.order - b.order) ?? []; 
   }, [activeClinicCabins, cabinsCount, cabinsIds]); // ✅ Dependencias más específicas
 
+  // --- GESTIÓN DE LOADER INICIAL SIN PARPADEOS ------------------------------
+  // Queremos mostrar el spinner únicamente la PRIMERA vez que la agenda aún no
+  // dispone de cabinas. Una vez que haya cabinas en memoria, no debemos volver
+  // a enseñar el loader aunque el contexto lance refetchs en segundo plano.
+
+  const hasLoadedOnceRef = useRef(false);
+
+  // En cuanto hay cabinas activas, marcamos que ya hemos cargado al menos una vez
+  if (!hasLoadedOnceRef.current && activeClinicCabins && activeClinicCabins.length > 0) {
+    hasLoadedOnceRef.current = true;
+  }
+
   // ✅ ESPERAR A QUE LA INICIALIZACIÓN ESTÉ COMPLETA
   if (!isInitialized) {
     return <div className="flex justify-center items-center h-full"><Loader2 className="w-8 h-8 text-purple-600 animate-spin" /> Inicializando clínicas...</div>;
   }
 
-  // Considerar el estado de carga de la clínica Y de las cabinas del contexto
-  if (isLoadingClinic || isLoadingCabinsContext) { 
-      console.log(`[WeeklyAgenda] Mostrando carga: isLoadingClinic=${isLoadingClinic}, isLoadingCabinsContext=${isLoadingCabinsContext}`);
+  // Mostrar spinner SOLO la primera vez que no hay cabinas. Evitamos flashes en
+  // navegaciones posteriores a DIA → SEMANA.
+  if (!hasLoadedOnceRef.current && (isLoadingClinic || isLoadingCabinsContext) && (!activeClinicCabins || activeClinicCabins.length === 0)) {
+      console.log(`[WeeklyAgenda] Mostrando carga inicial (sin cabinas en cache). isLoadingClinic=${isLoadingClinic}, isLoadingCabinsContext=${isLoadingCabinsContext}`);
       return <div className="flex justify-center items-center h-full"><Loader2 className="w-8 h-8 text-purple-600 animate-spin" /> Cargando datos de clínica/cabinas...</div>;
   }
   
