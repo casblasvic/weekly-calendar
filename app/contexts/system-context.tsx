@@ -1,3 +1,18 @@
+/**
+ * SystemContext - CONTEXTO CANÓNICO
+ * --------------------------------------------------
+ * Este archivo es la ÚNICA fuente de verdad para la configuración
+ * del sistema (SystemContext). Se ha eliminado la versión duplicada
+ * que existía en `contexts/system/` para evitar confusiones.
+ *
+ * ➡️ Para usar este contexto SIEMPRE importa desde:
+ *    "@/app/contexts/system-context"
+ *
+ * Si detectas cualquier import residual a la antigua ruta, cámbialo
+ * inmediatamente o avísanos.
+ * --------------------------------------------------
+ * @see docs/PERSISTENT_CACHE_STRATEGY.md
+ */
 "use client"
 
 import React, { createContext, useContext, useEffect, useState } from 'react'
@@ -40,6 +55,19 @@ const defaultSystemConfig: SystemConfig = {
     textColor: '#111827', // Gray-900
     backgroundColor: '#ffffff', // White
     logoUrl: '/placeholder-logo.svg', // Logo predeterminado Qleven
+    containerBackgroundColor: '#f5f5f5',
+    tableHeaderColor: '#ede9fe',
+    tabActiveColor: '#8b5cf6',
+    cardBackgroundColor: '#ffffff',
+    buttonPrimaryColor: '#7c3aed',
+    buttonSecondaryColor: '#e5e7eb',
+    tableRowHoverColor: '#f5f3ff',
+    headerBackgroundColor: '#7c3aed',
+    footerBackgroundColor: '#f8f9fa',
+    sidebarBackgroundColor: '#f9fafb',
+    sidebarTextColor: '#111827',
+    sidebarHoverColor: '#f3f4f6',
+    inputFocusBorderColor: '#7c3aed',
   },
   companyName: 'Mi Empresa',
   language: 'es',
