@@ -102,126 +102,180 @@ const useSocket = (systemId?: string): SocketHook => {
     let localSocket: Socket | null = null;
     let testTimeout: NodeJS.Timeout | null = null;
 
-    // Inicializar el servidor Socket.io primero
-    fetch('/api/socket/init').then(() => {
-      console.log('✅ Socket.io server inicializado');
+    // Primero inicializar el servidor (cold-start en serverless)
+    fetch('/api/socket/init')
+      .then(() => {
+        console.log('✅ Socket.io server inicializado');
 
-      // 🔄 Sólo crear conexión UNA VEZ que el servidor está listo
-      localSocket = io(WS_URL, {
-        path: '/api/socket',
-        forceNew: false,
-        reconnection: true,
-        timeout: 20000,
-        transports: ['websocket'], // Evitar fallback a long-polling (que suele fallar en serverless)
-        upgrade: true,
-      });
+        // 🔄 Estrategia robusta para producción SaaS
+        console.log(`🔗 Creando conexión Socket.io a ${WS_URL}/socket.io`);
 
-      socketRef.current = localSocket;
-
-      localSocket.on('connect', () => {
-        console.log('🔗 Socket.io conectado con ID:', socketRef.current?.id);
-        setIsConnected(true);
-        isInitializedRef.current = true;
-        console.log('📡 Uniéndose al room del sistema:', systemId);
-        localSocket.emit('join-system', systemId);
-      });
-
-      localSocket.on('disconnect', (reason) => {
-        console.log('🔌 Socket.io desconectado. Razón:', reason);
-        setIsConnected(false);
-        isInitializedRef.current = false;
-      });
-
-      localSocket.on('connect_error', (error) => {
-        console.error('❌ Error de conexión Socket.io:', error);
-        setIsConnected(false);
-        isInitializedRef.current = false;
-      });
-
-      localSocket.on('connection-status', (status) => {
-        console.log('📡 Estado de conexión recibido:', status);
-      });
-
-      localSocket.on('device-update', (update: DeviceUpdate) => {
-        clientLogger.verbose('📱 Actualización de dispositivo recibida:', update);
-        setLastUpdate(update);
-        
-        // Notificar a todos los suscriptores
-        clientLogger.verbose(`📢 Notificando a ${subscribersRef.current.size} suscriptores`);
-        subscribersRef.current.forEach(callback => {
-          try {
-            callback(update);
-          } catch (error) {
-            console.error('Error en callback de suscriptor:', error);
-          }
+        localSocket = io(WS_URL, {
+          path: '/socket.io',
+          forceNew: false,
+          reconnection: true,
+          reconnectionAttempts: 10,       // Límite de reintentos para evitar spam
+          reconnectionDelay: 3000,        // Empezar con 3s (más conservador)
+          reconnectionDelayMax: 30000,    // Máximo 30s entre reintentos
+          randomizationFactor: 0.5,       // Añadir algo de aleatoriedad para evitar thundering herd
+          timeout: 30000,                 // Timeout más generoso para cold starts
+          // CRÍTICO: Permitir que Socket.io elija el mejor transporte
+          // En Vercel empezará con polling y hará upgrade si es posible
+          transports: ['polling', 'websocket'],
+          upgrade: true,                  // Intentar upgrade de polling a websocket
+          autoConnect: false,
         });
-      });
 
-      // ✅ ELIMINADO: device-offline-status para evitar duplicación
-      // El DeviceOfflineManager maneja estos eventos directamente
+        socketRef.current = localSocket;
 
-      localSocket.on('device-error', (error) => {
-        console.error('❌ Error de dispositivo recibido:', error);
-      });
-
-      localSocket.on('test-response', (data) => {
-        console.log('🧪 Test response recibido:', data);
-      });
-
-      // 🆕 Escuchar cambios de asignación de smart plugs
-      localSocket.on('smart-plug-assignment-updated', (data) => {
-        console.log('🔄 [Socket.IO] Cambio de asignación recibido:', data);
+        // Delay más largo en producción para cold starts de Vercel
+        const delayBeforeConnect = process.env.NODE_ENV === 'production' ? 3000 : 0;
         
-        // Notificar a todos los suscriptores directamente
-        subscribersRef.current.forEach(callback => {
-          try {
-            callback(data);  // Pasar los datos directamente
-          } catch (error) {
-            console.error('Error en callback de suscriptor (assignment):', error);
+        // Solo conectar si hay conectividad
+        const attemptConnection = () => {
+          if (!localSocket) return;
+          
+          // Verificar conectividad básica antes de intentar
+          if (typeof navigator !== 'undefined' && !navigator.onLine) {
+            console.log('🔌 Sin conexión a internet, esperando...');
+            // Reintentar cuando vuelva la conexión
+            window.addEventListener('online', () => {
+              console.log('🔌 Conexión restaurada, intentando conectar...');
+              localSocket.connect();
+            }, { once: true });
+            return;
           }
+          
+          console.log('🔌 Iniciando conexión Socket.io...');
+          localSocket.connect();
+        };
+
+        setTimeout(attemptConnection, delayBeforeConnect);
+
+        /* --- LISTENERS ----------------------------- */
+        localSocket.on('connect', () => {
+          console.log('✅ Conectado a servidor Socket.io de Railway');
+          setIsConnected(true);
+          isInitializedRef.current = true;
+          
+          // Resetear contador de errores tras conexión exitosa
+          if (localSocket) {
+            (localSocket as any)._errorCount = 0;
+          }
+          
+          // Registrar el sistema actual
+          console.log('📡 Uniéndose al room del sistema:', systemId);
+          localSocket.emit('join-system', systemId);
         });
+
+        localSocket.on('disconnect', (reason) => {
+          console.log('🔌 Socket.io desconectado. Razón:', reason);
+          setIsConnected(false);
+          isInitializedRef.current = false;
+        });
+
+        localSocket.on('connect_error', (error) => {
+          // Incrementar contador de errores
+          if (!localSocket) return;
+          const errorCount = ((localSocket as any)._errorCount || 0) + 1;
+          (localSocket as any)._errorCount = errorCount;
+          
+          // Solo mostrar error cada 5 intentos para reducir spam en consola
+          if (errorCount === 1 || errorCount % 5 === 0) {
+            console.error(`❌ Error de conexión Socket.io (intento ${errorCount}):`, error.message);
+            
+            // Si llegamos al límite, mostrar mensaje más claro
+            if (errorCount >= 10) {
+              console.warn('⚠️ Múltiples fallos de conexión. El servidor puede estar inaccesible.');
+            }
+          }
+          
+          setIsConnected(false);
+          isInitializedRef.current = false;
+        });
+
+        localSocket.on('connection-status', (status) => {
+          console.log('📡 Estado de conexión recibido:', status);
+        });
+
+        localSocket.on('device-update', (update: DeviceUpdate) => {
+          clientLogger.verbose('📱 Actualización de dispositivo recibida:', update);
+          setLastUpdate(update);
+          
+          // Notificar a todos los suscriptores
+          clientLogger.verbose(`📢 Notificando a ${subscribersRef.current.size} suscriptores`);
+          subscribersRef.current.forEach(callback => {
+            try {
+              callback(update);
+            } catch (error) {
+              console.error('Error en callback de suscriptor:', error);
+            }
+          });
+        });
+
+        // ✅ ELIMINADO: device-offline-status para evitar duplicación
+        // El DeviceOfflineManager maneja estos eventos directamente
+
+        localSocket.on('device-error', (error) => {
+          console.error('❌ Error de dispositivo recibido:', error);
+        });
+
+        localSocket.on('test-response', (data) => {
+          console.log('🧪 Test response recibido:', data);
+        });
+
+        // 🆕 Escuchar cambios de asignación de smart plugs
+        localSocket.on('smart-plug-assignment-updated', (data) => {
+          console.log('🔄 [Socket.IO] Cambio de asignación recibido:', data);
+          
+          // Notificar a todos los suscriptores directamente
+          subscribersRef.current.forEach(callback => {
+            try {
+              callback(data);  // Pasar los datos directamente
+            } catch (error) {
+              console.error('Error en callback de suscriptor (assignment):', error);
+            }
+          });
+        });
+
+        // Test de conexión después de 5 segundos (más tiempo para apps complejas)
+        testTimeout = setTimeout(() => {
+          if (localSocket?.connected) {
+            console.log('✅ Test: Socket conectado correctamente');
+            localSocket.emit('test-message', { systemId, timestamp: Date.now() });
+          } else {
+            console.warn('⚠️ Test: Socket NO conectado después de 5 segundos, pero puede conectar más tarde');
+          }
+        }, 5000);
+
       });
 
-      // Test de conexión después de 5 segundos (más tiempo para apps complejas)
-      testTimeout = setTimeout(() => {
-        if (localSocket.connected) {
-          console.log('✅ Test: Socket conectado correctamente');
-          localSocket.emit('test-message', { systemId, timestamp: Date.now() });
-        } else {
-          console.warn('⚠️ Test: Socket NO conectado después de 5 segundos, pero puede conectar más tarde');
-        }
-      }, 5000);
-
-    }).catch(err => {
-      console.error('❌ Error inicializando Socket.io server:', err);
-    });
-
-    // Cleanup
-    return () => {
-      if (testTimeout) clearTimeout(testTimeout);
-      if (localSocket) {
-        console.log('🧹 Limpiando conexión Socket.io');
-        localSocket.disconnect();
-      }
+  // Cleanup
+  return () => {
+    if (testTimeout) clearTimeout(testTimeout);
+    if (localSocket) {
       console.log('🧹 Limpiando conexión Socket.io');
-      socketRef.current = null;
-      setIsConnected(false);
-      initializingRef.current = false;
-      isInitializedRef.current = false;
-      lastSystemIdRef.current = undefined;
-    };
-  }, [systemId]); // Solo depende de systemId
+      localSocket.disconnect();
+    }
+    console.log('🧹 Limpiando conexión Socket.io');
+    socketRef.current = null;
+    setIsConnected(false);
+    initializingRef.current = false;
+    isInitializedRef.current = false;
+    lastSystemIdRef.current = undefined;
+  };
+}, [systemId]); // Solo depende de systemId
 
-  // ✅ MEMOIZAR el resultado del hook
-  const result = useMemo(() => ({
-    socket: socketRef.current,
-    isConnected,
-    lastUpdate,
-    requestDeviceUpdate,
-    subscribe
-  }), [isConnected, lastUpdate, requestDeviceUpdate, subscribe]);
+// ✅ MEMOIZAR el resultado del hook
+const result = useMemo(() => ({
+  socket: socketRef.current,
+  isConnected,
+  lastUpdate,
+  requestDeviceUpdate,
+  subscribe
+}), [isConnected, lastUpdate, requestDeviceUpdate, subscribe]);
 
-  return result;
+return result;
 };
 
 export default useSocket; 

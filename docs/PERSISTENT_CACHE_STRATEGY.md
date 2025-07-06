@@ -148,5 +148,26 @@ De esta forma los seeds, notificaciones y links generados funcionan en cualquier
 
 ---
 
+## Troubleshooting
+
+### Cache no persiste
+- Verificar límites de IndexedDB del navegador
+- Revisar errores en consola sobre cuota excedida
+- Comprobar que las claves de React Query coincidan
+
+### Datos desactualizados
+- Verificar que las invalidaciones se ejecuten correctamente
+- Revisar que el WebSocket esté conectado para actualizaciones en tiempo real
+- Comprobar TTL de las queries
+
+## WebSocket y Tiempo Real
+
+Para la estrategia de WebSocket en producción (Vercel), ver:
+- [Estrategia WebSocket](./WEBSOCKET_STRATEGY.md)
+
+El sistema está configurado para funcionar con las limitaciones de Vercel usando HTTP long-polling como fallback cuando WebSocket nativo no está disponible.
+
+---
+
 > **Mantén este archivo como fuente ÚNICA** de la estrategia de caché.
 > Si se modifica un TTL o se añade una colección, actualiza la tabla y la descripción. 
