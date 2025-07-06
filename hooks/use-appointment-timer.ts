@@ -157,15 +157,15 @@ export function useAppointmentTimer({
 
     const connectWebSocket = async () => {
       try {
-        // Usar el mismo patrón del sistema existente
-        const initResponse = await fetch('/api/socket/init', { method: 'POST' });
-        if (!initResponse.ok) throw new Error('Failed to initialize socket');
+        // Crear conexión Socket.IO al servidor externo (Railway)
+        const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? window.location.origin;
 
-        // Crear conexión Socket.IO
+        console.log(`[AppointmentTimer] 🔗 Conectando a ${WS_URL}/socket.io`);
+
         const { io } = await import('socket.io-client');
-        socketRef.current = io({
-          path: '/api/socket',
-          transports: ['websocket'],
+        socketRef.current = io(WS_URL, {
+          path: '/socket.io',        // Ruta estándar en Railway
+          transports: ['websocket'], // WebSocket puro, sin fallback polling
           auth: {
             systemId: session.user.systemId,
             userId: session.user.id
@@ -173,7 +173,7 @@ export function useAppointmentTimer({
         });
 
         socketRef.current.on('connect', () => {
-          console.log('[AppointmentTimer] ✅ WebSocket conectado');
+          console.log('[AppointmentTimer] ✅ Conectado a servidor Socket.io (Railway)');
         });
 
         // 🎯 ESCUCHAR UPDATES DE CRONÓMETRO EN TIEMPO REAL

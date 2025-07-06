@@ -121,7 +121,6 @@ const useSocket = (systemId?: string): SocketHook => {
           timeout: 30000,                 // Timeout más generoso para cold starts
           // 🚀 Railway soporta WebSocket nativo; evitamos polling para reducir errores
           transports: ['websocket'],      // Usar WebSocket puro en Railway
-          upgrade: false,
           autoConnect: false,
         });
 
@@ -174,6 +173,10 @@ const useSocket = (systemId?: string): SocketHook => {
         });
 
         localSocket.on('connect_error', (error) => {
+          // TODO[sockets-monitoring]: En el futuro capturar este error con Sentry u otra
+          // herramienta APM para registrar `userAgent` y métricas de fallos. Queda
+          // pendiente de aprobación tras revisar costes del proyecto.
+
           // Incrementar contador de errores
           if (!localSocket) return;
           const errorCount = ((localSocket as any)._errorCount || 0) + 1;
