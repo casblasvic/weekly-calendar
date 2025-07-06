@@ -126,5 +126,27 @@ sequenceDiagram
 
 ---
 
+## 📚 Referencias rápidas
+
+### Site URL Helper
+
+Para construir URLs absolutas sin depender del dominio guardado en BD se utiliza `getSiteUrl()`
+
+```ts
+import { getSiteUrl } from '@/lib/utils/site-url';
+
+const fullUrl = `${getSiteUrl()}/api/webhooks/${id}`;
+```
+
+Prioridad de resolución: `NEXTAUTH_URL` → `VERCEL_URL` → `window.location.origin` → `http://localhost:3000`.
+
+De esta forma los seeds, notificaciones y links generados funcionan en cualquier entorno sin actualizar la BD.
+
+## Archivos implicados
+* `components/providers/query-provider.tsx` — Persistencia principal
+* `lib/app-prefetcher.tsx` — Precarga masiva
+
+---
+
 > **Mantén este archivo como fuente ÚNICA** de la estrategia de caché.
 > Si se modifica un TTL o se añade una colección, actualiza la tabla y la descripción. 

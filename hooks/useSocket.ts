@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import io, { Socket } from 'socket.io-client';
 import { clientLogger } from '@/lib/utils/client-logger';
-import { useSystem } from '@/contexts/system/system-context';
+import { useSystem } from '@/app/contexts/system-context';
 
 interface DeviceUpdate {
   deviceId: string;
@@ -29,6 +29,8 @@ const useSocket = (systemId?: string): SocketHook => {
   const initializingRef = useRef(false);
   const lastSystemIdRef = useRef<string | undefined>(undefined);
   const isInitializedRef = useRef(false);
+
+  const { systemConfig } = useSystem();
 
   // ✅ MEMOIZAR requestDeviceUpdate
   const requestDeviceUpdate = useCallback((deviceId: string) => {
@@ -80,7 +82,6 @@ const useSocket = (systemId?: string): SocketHook => {
     // ---------------------------------------------------------------------
     // Seleccionar URL final del WebSocket ----------------------------------
     // ---------------------------------------------------------------------
-    const { systemConfig } = useSystem();
     const envWs = process.env.NEXT_PUBLIC_WS_URL;
     const fallbackUrl = typeof window !== 'undefined'
       ? `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`
