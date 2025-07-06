@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { Prisma } from '@prisma/client';
 import { hashPassword } from '@/lib/hash'; // Necesario para hashear contraseñas
 import { getServerAuthSession } from "@/lib/auth"; // Importar helper
 import { z } from 'zod'; // Importar Zod para validación

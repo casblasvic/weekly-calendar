@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSession } from 'next-auth/react';
+import { useSocketStatus } from '@/app/contexts/socket-status-context';
 import { 
   calculateActualMinutes, 
   getCurrentPauseDuration, 
@@ -36,6 +37,7 @@ export function useAppointmentTimer({
   onError
 }: UseAppointmentTimerProps) {
   const { data: session } = useSession();
+  const { setStatus } = useSocketStatus();
   const [state, setState] = useState<AppointmentTimerState>({
     timerData: null,
     isLoading: false,
@@ -161,6 +163,7 @@ export function useAppointmentTimer({
         const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? window.location.origin;
 
         console.log(`[AppointmentTimer] 🔗 Conectando a ${WS_URL}/socket.io`);
+        setStatus('connecting');
 
         const { io } = await import('socket.io-client');
         socketRef.current = io(WS_URL, {
@@ -173,7 +176,8 @@ export function useAppointmentTimer({
         });
 
         socketRef.current.on('connect', () => {
-          console.log('[AppointmentTimer] ✅ Conectado a servidor Socket.io (Railway)');
+          console.log('✅ [AppointmentTimer] Conectado a tiempo real');
+          setStatus('connected');
         });
 
         // 🎯 ESCUCHAR UPDATES DE CRONÓMETRO EN TIEMPO REAL
@@ -208,12 +212,14 @@ export function useAppointmentTimer({
           }
         });
 
-        socketRef.current.on('disconnect', () => {
-          console.log('[AppointmentTimer] ❌ WebSocket desconectado');
+        socketRef.current.on('disconnect', (reason: string) => {
+          console.log('[AppointmentTimer] Socket desconectado', reason);
+          setStatus('disconnected');
         });
 
       } catch (error) {
-        console.error('[AppointmentTimer] ❌ Error conectando WebSocket:', error);
+        console.error('[AppointmentTimer] Error de conexión', error);
+        setStatus('disconnected');
       }
     };
 
@@ -226,7 +232,7 @@ export function useAppointmentTimer({
         socketRef.current = null;
       }
     };
-  }, [session?.user?.systemId, session?.user?.id, appointmentId, updateCurrentTimeFromData, state.timerData?.deviceId]);
+  }, [session?.user?.systemId, session?.user?.id, appointmentId, updateCurrentTimeFromData, state.timerData?.deviceId, setStatus]);
 
   // ✅ CARGA INICIAL DE DATOS (una sola vez)
   useEffect(() => {

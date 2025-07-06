@@ -1,6 +1,5 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { z } from 'zod';
-import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { getServerAuthSession } from '@/lib/auth';
 import { ApiBonoDefinitionPayloadSchema } from '@/lib/schemas/bono-definition';

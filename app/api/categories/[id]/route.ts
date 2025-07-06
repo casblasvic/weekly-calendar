@@ -1,5 +1,4 @@
 import { prisma } from '@/lib/db';
-import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { NextResponse } from 'next/server';
 

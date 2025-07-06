@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { PrismaClient } from '@prisma/client'
-
-const prisma = new PrismaClient()
+import { prisma, Prisma } from '@/lib/db';
+// const prisma = new PrismaClient(); // MIGRADO: usar singleton desde @/lib/db
 
 // POST /api/internal/webhooks/validate-slug - Validar disponibilidad de slug
 export async function POST(request: NextRequest) {

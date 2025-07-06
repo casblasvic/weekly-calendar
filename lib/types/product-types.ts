@@ -1,5 +1,3 @@
-import { Prisma } from '@prisma/client';
-
 // Define las relaciones a incluir para Product
 const productIncludes = {
   category: true,

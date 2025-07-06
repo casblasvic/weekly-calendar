@@ -1,9 +1,10 @@
+import { prisma, Prisma } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient, TicketStatus, CashSessionStatus } from '@prisma/client';
 import { z } from 'zod';
 import { formatISO } from 'date-fns'; // Using formatISO for consistency with Prisma
 
-const prisma = new PrismaClient();
+// const prisma = new PrismaClient(); // MIGRADO: usar singleton desde @/lib/db
 
 // Zod schema for input validation
 const searchParamsSchema = z.object({

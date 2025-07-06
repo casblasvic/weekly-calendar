@@ -3439,6 +3439,7 @@ model WebSocketConnection {
   errorMessage  String?
   metadata      Json?
   autoReconnect Boolean  @default(true) // Control de reconexión automática
+  loggingEnabled Boolean @default(true) // 🔧 NUEVO: Control de logging de eventos
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   

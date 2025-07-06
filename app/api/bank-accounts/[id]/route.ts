@@ -4,7 +4,6 @@ import { NextResponse } from 'next/server';
 import { getServerAuthSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { bankAccountFormSchema } from '@/lib/schemas/bank-account'; // Asumiendo que existe este schema
-import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { bankAccountObjectSchema } from '@/lib/schemas/bank-account';
 

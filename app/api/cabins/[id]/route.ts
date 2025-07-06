@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { getServerAuthSession } from "@/lib/auth"; // <<< IMPORTAR HELPER DE SESIÓN
 
 // Eliminar instanciación directa
-// const prisma = new PrismaClient();
+// // const prisma = new PrismaClient(); // MIGRADO: usar singleton desde @/lib/db
 
 // Esquema para validar el ID en los parámetros
 const ParamsSchema = z.object({

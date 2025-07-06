@@ -148,7 +148,7 @@ import { useGranularity } from "@/lib/drag-drop/granularity-context"
 import { DragTimeProvider, useDragTime } from "@/lib/drag-drop/drag-time-context"
 import { useMoveAppointment } from "@/contexts/move-appointment-context"
 import { MoveAppointmentProvider } from "@/contexts/move-appointment-context"
-import { useSmartPlugsFloatingMenu } from "@/hooks/use-smart-plugs-floating-menu"
+import { useSmartPlugsContextOptional } from "@/contexts/smart-plugs-context"
 
 // Función para generar slots de tiempo
 function getTimeSlots(startTime: string, endTime: string, interval = 15): string[] {
@@ -220,8 +220,9 @@ function WeeklyAgendaContent({
   const { activeClinic, activeClinicCabins, isLoading: isLoadingClinic, isLoadingCabinsContext, isInitialized } = useClinic()
   const { cabinOverrides, loadingOverrides, fetchOverridesByDateRange } = useScheduleBlocks()
   
-  // 🔌 DATOS EN TIEMPO REAL DE ENCHUFES INTELIGENTES
-  const smartPlugsData = useSmartPlugsFloatingMenu()
+  // ✅ OBTENER DATOS DE SMART PLUGS DESDE CONTEXTO
+  const smartPlugsContext = useSmartPlugsContextOptional()
+  const smartPlugsData = smartPlugsContext?.smartPlugsData || null
   
   // Precarga de datos para el modal de citas - ejecutar siempre para tenerlos en caché
   const { data: allServicesData = [] } = useServicesQuery({ enabled: true })

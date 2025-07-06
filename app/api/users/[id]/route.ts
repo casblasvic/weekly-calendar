@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { Prisma } from '@prisma/client';
 // Import Zod for validation
 import { z } from 'zod';
 import { getServerAuthSession } from '@/lib/auth'; // <<< IMPORTAR HELPER

@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 // import { getServerAuthSession } from '@/lib/auth'; // No necesario si usamos auth directo
 import { prisma } from '@/lib/db';
-import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 // import { getServerSession } from 'next-auth/next'; // <<< INCORRECTO para v5
 // import { authOptions } from '@/lib/auth'; // No necesario si usamos auth directo

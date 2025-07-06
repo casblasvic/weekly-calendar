@@ -776,8 +776,6 @@ export function AppointmentItem({
     true // ✅ SIEMPRE HABILITADO: datos ya pre-cargados en cache
   );
 
-  console.log(`🔍 [AppointmentItem] Device cache source for ${appointment.id}:`, serviceEquipmentData?.source || 'unknown');
-
   // ✅ DATOS FINALES: Solo dispositivos que pueden hacer los servicios de esta cita
   const equipmentData = serviceEquipmentData ? {
     availableDevices: serviceEquipmentData.availableDevices.map(device => ({

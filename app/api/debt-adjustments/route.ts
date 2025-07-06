@@ -1,8 +1,9 @@
+import { prisma, Prisma } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { PrismaClient, DebtAdjustmentType, DebtStatus, CashSessionStatus, EntityType } from '@prisma/client';
 import { auth } from '@/lib/auth'; // Correct import for Auth.js (NextAuth.js v5+)
 
-const prisma = new PrismaClient();
+// const prisma = new PrismaClient(); // MIGRADO: usar singleton desde @/lib/db
 
 interface DebtAdjustmentRequestBody {
   debtLedgerId: string;

@@ -1,6 +1,5 @@
-import { PrismaClient } from '@prisma/client'
-
-const prisma = new PrismaClient()
+import { prisma, Prisma } from '@/lib/db';
+// const prisma = new PrismaClient(); // MIGRADO: usar singleton desde @/lib/db
 
 async function migrateSmartPlugAssignments() {
   console.log('🔄 Iniciando migración de SmartPlugDevice a asignaciones...')

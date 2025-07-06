@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import { prisma, Prisma } from '@/lib/db';
 import { auth } from "@/lib/auth";
 import { disconnectAllShellyWebSockets, shellyModuleService } from "@/lib/services/shelly-module-service";
 
-const prisma = new PrismaClient();
+// const prisma = new PrismaClient(); // MIGRADO: usar singleton desde @/lib/db
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ moduleId: string }> }) {
     const session = await auth();

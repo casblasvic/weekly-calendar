@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { PrismaClient } from '@prisma/client'
+import { prisma, Prisma } from '@/lib/db';
 import { auth } from '@/lib/auth'
 
-const prisma = new PrismaClient()
+// const prisma = new PrismaClient(); // MIGRADO: usar singleton desde @/lib/db
 
 // GET /api/internal/webhooks/all-logs - Obtener todos los logs de un sistema
 export async function GET(request: NextRequest) {

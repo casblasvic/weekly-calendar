@@ -1,7 +1,6 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { z } from 'zod';
-import { Prisma } from '@prisma/client';
 import type { WeekSchedule } from '@/types/schedule'; // Asumiendo que WeekSchedule está aquí
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
 

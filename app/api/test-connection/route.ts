@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 // Eliminar importación directa
-// import { PrismaClient } from '@prisma/client';
+// import { prisma, Prisma } from '@/lib/db';
 // Importar instancia singleton
 import { prisma } from '@/lib/db';
 

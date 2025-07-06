@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { z } from 'zod';
-import { Prisma } from '@prisma/client';
 import type { WeekSchedule } from '@/types/schedule'; // Importar tipo WeekSchedule
 
 // <<< INICIO: Definiciones de tipos locales >>>

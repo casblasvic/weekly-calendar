@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { getServerAuthSession } from '@/lib/auth';
-import { Prisma } from '@prisma/client';
 import { ApiPackageDefinitionPayloadSchema } from '@/lib/schemas/package-definition';
 
 // Esquema para validar el ID en los parámetros

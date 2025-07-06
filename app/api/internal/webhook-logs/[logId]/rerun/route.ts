@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { PrismaClient } from '@prisma/client'
+import { prisma, Prisma } from '@/lib/db';
 import { auth } from '@/lib/auth'
 
-const prisma = new PrismaClient()
+// const prisma = new PrismaClient(); // MIGRADO: usar singleton desde @/lib/db
 
 // POST /api/internal/webhook-logs/[logId]/rerun - Re-ejecutar un log de webhook fallido
 export async function POST(request: NextRequest, { params }: { params: { logId: string } }) {

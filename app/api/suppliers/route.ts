@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
-import { PrismaClient } from '@prisma/client';
+import { prisma, Prisma } from '@/lib/db';
 import { z } from 'zod';
 import { getSystemId } from '@/lib/auth/getSystemId';
 
-const prisma = new PrismaClient();
+// const prisma = new PrismaClient(); // MIGRADO: usar singleton desde @/lib/db
 
 // Schema de validación para crear/actualizar proveedores
 const supplierSchema = z.object({

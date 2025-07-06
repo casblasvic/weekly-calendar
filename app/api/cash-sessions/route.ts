@@ -4,7 +4,6 @@ import { prisma } from '@/lib/db'; // CORREGIDO
 import { z } from 'zod';
 import { CashSessionStatus } from '@prisma/client';
 import { NextRequest } from 'next/server';
-import { Prisma } from '@prisma/client';
 import { TicketStatus } from '@prisma/client';
 
 // Esquema de validación para la entrada del POST

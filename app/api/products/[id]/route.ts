@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { Prisma } from '@prisma/client';
 // import { getCurrentUserSystemId } from '@/lib/auth'; // TODO: Ajustar ruta
 import { getServerAuthSession } from '@/lib/auth'; 
 import { ApiProductPayloadSchema, ProductFormValues } from '@/lib/schemas/product'; // <<< Importar nuevo schema

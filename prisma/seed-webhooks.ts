@@ -1,10 +1,21 @@
 // @ts-nocheck
-import { PrismaClient } from '@prisma/client'
-import { getSiteUrl } from '../lib/utils/site-url'
+import { prisma, Prisma } from '@/lib/db';
+// Función local para evitar problemas de import
+function getSiteUrl(): string {
+  if (typeof window !== 'undefined') {
+    return window.location.origin;
+  }
+  const envUrl = process.env.NEXTAUTH_URL || process.env.VERCEL_URL;
+  if (envUrl) {
+    if (/^https?:\/\//i.test(envUrl)) {
+      return envUrl;
+    }
+    return `https://${envUrl}`;
+  }
+  return 'http://localhost:3000';
+}
 
-const prisma = new PrismaClient()
-
-export async function seedWebhooks(systemId: string) {
+export async function seedWebhooks(prisma: PrismaClient, systemId: string) {
   console.log('🔗 Creating example webhooks for smart plug integration...')
   
   try {
@@ -348,7 +359,7 @@ export async function seedWebhooks(systemId: string) {
 }
 
 // Función para crear datos de apoyo (equipos, dispositivos, etc.)
-export async function createSupportingData(systemId: string) {
+export async function createSupportingData(prisma: PrismaClient, systemId: string) {
   console.log('🏗️ Creating supporting data for webhook testing...')
 
   try {

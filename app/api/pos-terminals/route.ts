@@ -4,7 +4,6 @@ import { NextResponse } from 'next/server';
 import { getServerAuthSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { posTerminalFormSchema } from '@/lib/schemas/pos-terminal';
-import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 
 // GET /api/pos-terminals - Obtener todos los terminales POS

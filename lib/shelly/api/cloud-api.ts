@@ -122,7 +122,7 @@ export class ShellyCloudAPI {
     
     // Obtener credencial actualizada de BD
     const { PrismaClient } = await import('@prisma/client');
-    const prisma = new PrismaClient();
+    // const prisma = new PrismaClient(); // MIGRADO: usar singleton desde @/lib/db
     
     const credential = await prisma.shellyCredential.findUnique({
       where: { id: this.credential.id }

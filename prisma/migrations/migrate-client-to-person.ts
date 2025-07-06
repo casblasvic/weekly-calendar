@@ -6,9 +6,8 @@
  * 3. Actualiza todas las referencias de clientId a personId en los modelos relacionados
  */
 
-import { PrismaClient } from '@prisma/client'
-
-const prisma = new PrismaClient()
+import { prisma, Prisma } from '@/lib/db';
+// const prisma = new PrismaClient(); // MIGRADO: usar singleton desde @/lib/db
 
 async function main() {
   console.log('🚀 Iniciando migración de Client a Person...')

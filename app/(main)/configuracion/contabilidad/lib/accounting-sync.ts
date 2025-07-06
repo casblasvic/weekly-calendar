@@ -3,7 +3,6 @@
  */
 
 import { prisma } from '@/lib/db';
-import { Prisma } from '@prisma/client';
 import { SERIES_TEMPLATES_BY_COUNTRY, generateSeriesCode } from '@/config/accounting';
 
 /**

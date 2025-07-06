@@ -8,7 +8,7 @@ import { z } from 'zod';
 import { getServerAuthSession } from "@/lib/auth"; // Importar helper de sesión
 
 // Eliminar instanciación directa
-// const prisma = new PrismaClient();
+// // const prisma = new PrismaClient(); // MIGRADO: usar singleton desde @/lib/db
 
 // Esquema para validar el body de la solicitud POST (SIN systemId)
 const CreateCabinSchema = z.object({

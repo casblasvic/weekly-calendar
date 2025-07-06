@@ -1,8 +1,8 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma, Prisma } from '@/lib/db';
 import { shellyWebSocketManager } from './websocket-manager';
 import { createClient } from '@supabase/supabase-js';
 
-const prisma = new PrismaClient();
+// const prisma = new PrismaClient(); // MIGRADO: usar singleton desde @/lib/db
 const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_KEY! // Service key para operaciones del servidor

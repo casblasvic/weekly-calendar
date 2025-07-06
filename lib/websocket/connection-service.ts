@@ -368,9 +368,35 @@ export class WebSocketConnectionService {
 
   /**
    * Registra un evento/log en la conexión
+   * 🔧 CONTROL DE LOGGING: Verifica si el logging está habilitado para la conexión
    */
   async logEvent(data: WebSocketLogData): Promise<void> {
     try {
+      // 🔧 VERIFICAR SI EL LOGGING ESTÁ HABILITADO PARA ESTA CONEXIÓN
+      // Manejo gracioso para cuando el campo loggingEnabled no existe aún
+      let loggingEnabled = true; // Default a true si no existe el campo
+      
+      try {
+        const connection = await prisma.webSocketConnection.findUnique({
+          where: { id: data.connectionId },
+          select: { loggingEnabled: true }
+        });
+        
+        // Si la conexión existe y tiene el campo, usar su valor
+        if (connection && connection.loggingEnabled !== undefined) {
+          loggingEnabled = connection.loggingEnabled;
+        }
+      } catch (fieldError) {
+        // Si el campo loggingEnabled no existe aún, continuar con default true
+        console.log(`📝 Campo loggingEnabled no existe aún, usando default true para ${data.connectionId}`);
+      }
+
+      // Si el logging está deshabilitado, no registrar
+      if (!loggingEnabled) {
+        console.log(`📝 Log omitido: ${data.eventType} en ${data.connectionId} (logging deshabilitado)`);
+        return;
+      }
+
       await prisma.webSocketLog.create({
         data: {
           connectionId: data.connectionId,
@@ -440,6 +466,71 @@ export class WebSocketConnectionService {
     } catch (error) {
       console.error('❌ Error obteniendo conexiones por tipo:', error);
       return [];
+    }
+  }
+
+  /**
+   * 🔧 NUEVO: Actualiza el estado del logging para una conexión específica
+   */
+  async updateLoggingEnabled(connectionId: string, loggingEnabled: boolean): Promise<boolean> {
+    try {
+      // Verificar si el campo loggingEnabled existe en la tabla
+      try {
+        await prisma.webSocketConnection.update({
+          where: { id: connectionId },
+          data: { 
+            loggingEnabled,
+            updatedAt: new Date()
+          }
+        });
+
+        console.log(`🔧 Logging ${loggingEnabled ? 'habilitado' : 'deshabilitado'} para conexión ${connectionId}`);
+        return true;
+      } catch (fieldError: any) {
+        // Si el campo no existe, informar al usuario
+        if (fieldError.message?.includes('loggingEnabled')) {
+          console.warn(`⚠️ Campo loggingEnabled no existe en la base de datos. Ejecute la migración primero.`);
+          return false;
+        }
+        throw fieldError;
+      }
+    } catch (error) {
+      console.error('❌ Error actualizando estado de logging:', error);
+      return false;
+    }
+  }
+
+  /**
+   * 🔧 NUEVO: Actualiza el estado del logging para todas las conexiones de un tipo
+   */
+  async updateLoggingEnabledByType(type: string, systemId: string, loggingEnabled: boolean): Promise<number> {
+    try {
+      // Verificar si el campo loggingEnabled existe en la tabla
+      try {
+        const result = await prisma.webSocketConnection.updateMany({
+          where: { 
+            type,
+            systemId // 🛡️ FILTRO MULTI-TENANT CRÍTICO
+          },
+          data: { 
+            loggingEnabled,
+            updatedAt: new Date()
+          }
+        });
+
+        console.log(`🔧 Logging ${loggingEnabled ? 'habilitado' : 'deshabilitado'} para ${result.count} conexiones tipo ${type}`);
+        return result.count;
+      } catch (fieldError: any) {
+        // Si el campo no existe, informar al usuario
+        if (fieldError.message?.includes('loggingEnabled')) {
+          console.warn(`⚠️ Campo loggingEnabled no existe en la base de datos. Ejecute la migración primero.`);
+          return 0;
+        }
+        throw fieldError;
+      }
+    } catch (error) {
+      console.error('❌ Error actualizando estado de logging por tipo:', error);
+      return 0;
     }
   }
 

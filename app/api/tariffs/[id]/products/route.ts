@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { getServerAuthSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { Prisma } from '@prisma/client';
 import * as z from "zod";
 
 // Esquema para validar el ID de la tarifa en los parámetros

@@ -7,8 +7,7 @@
  * Necesitamos actualizar el cloudId para que coincida con lo que envía WebSocket
  */
 
-import { PrismaClient } from '@prisma/client';
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/db';
 
 async function fixRideauCafcCloudId() {
   try {

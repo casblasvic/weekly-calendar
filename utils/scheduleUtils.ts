@@ -1,4 +1,3 @@
-import { Prisma } from '@prisma/client';
 import type { WeekSchedule, DaySchedule, TimeRange } from "@/types/schedule";
 import type { ScheduleTemplateBlock, ClinicScheduleBlock } from '@prisma/client';
 

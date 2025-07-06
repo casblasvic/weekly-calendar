@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import io, { Socket } from 'socket.io-client';
 import { clientLogger } from '@/lib/utils/client-logger';
 import { useSystem } from '@/app/contexts/system-context';
+import { useSocketStatus } from '@/app/contexts/socket-status-context';
 
 interface DeviceUpdate {
   deviceId: string;
@@ -31,6 +32,7 @@ const useSocket = (systemId?: string): SocketHook => {
   const isInitializedRef = useRef(false);
 
   const { systemConfig } = useSystem();
+  const { setStatus } = useSocketStatus();
 
   // ✅ MEMOIZAR requestDeviceUpdate
   const requestDeviceUpdate = useCallback((deviceId: string) => {
@@ -96,6 +98,7 @@ const useSocket = (systemId?: string): SocketHook => {
 
     initializingRef.current = true;
     lastSystemIdRef.current = systemId;
+    setStatus('connecting');
     console.log('🔌 useSocket: Inicializando conexión Socket.io para systemId:', systemId);
 
     // Variables para referencia en cleanup
@@ -155,6 +158,7 @@ const useSocket = (systemId?: string): SocketHook => {
           console.log('✅ Conectado a servidor Socket.io de Railway');
           setIsConnected(true);
           isInitializedRef.current = true;
+          setStatus('connected');
           
           // Resetear contador de errores tras conexión exitosa
           if (localSocket) {
@@ -170,6 +174,7 @@ const useSocket = (systemId?: string): SocketHook => {
           console.log('🔌 Socket.io desconectado. Razón:', reason);
           setIsConnected(false);
           isInitializedRef.current = false;
+          setStatus('disconnected');
         });
 
         localSocket.on('connect_error', (error) => {
@@ -184,7 +189,8 @@ const useSocket = (systemId?: string): SocketHook => {
           
           // Solo mostrar error cada 5 intentos para reducir spam en consola
           if (errorCount === 1 || errorCount % 5 === 0) {
-            console.error(`❌ Error de conexión Socket.io (intento ${errorCount}):`, error.message);
+            const msg = error?.message || 'Error desconocido';
+            console.error(`❌ Error de conexión Socket.io (intento ${errorCount}):`, msg);
             
             // Si llegamos al límite, mostrar mensaje más claro
             if (errorCount >= 10) {
@@ -194,6 +200,7 @@ const useSocket = (systemId?: string): SocketHook => {
           
           setIsConnected(false);
           isInitializedRef.current = false;
+          setStatus('disconnected');
         });
 
         localSocket.on('connection-status', (status) => {

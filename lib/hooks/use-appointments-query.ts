@@ -37,7 +37,33 @@ interface DayAppointmentsResponse {
 
 // Utilidades para keys
 export function getWeekKey(date: Date | string, offset: number = 0): string {
-  const targetDate = typeof date === 'string' ? new Date(date) : date;
+  let targetDate: Date;
+  
+  // ✅ MANEJAR STRINGS DE SEMANA ISO (formato "W2025-27")
+  if (typeof date === 'string') {
+    if (date.startsWith('W')) {
+      // Es un weekKey, extraer la fecha de inicio de semana
+      const match = date.match(/^W(\d{4})-(\d{2})$/);
+      if (match) {
+        const year = parseInt(match[1]);
+        const week = parseInt(match[2]);
+        
+        // Calcular fecha de inicio de semana ISO
+        const jan1 = new Date(year, 0, 1);
+        const daysToFirstMonday = (8 - jan1.getDay()) % 7;
+        const firstMonday = new Date(year, 0, 1 + daysToFirstMonday);
+        targetDate = new Date(firstMonday.getTime() + (week - 1) * 7 * 24 * 60 * 60 * 1000);
+      } else {
+        console.error('[getWeekKey] Formato de weekKey inválido:', date);
+        targetDate = new Date(); // Fallback a fecha actual
+      }
+    } else {
+      // Es una fecha normal en string
+      targetDate = new Date(date);
+    }
+  } else {
+    targetDate = date;
+  }
   
   // ✅ VALIDAR que la fecha sea válida
   if (isNaN(targetDate.getTime())) {

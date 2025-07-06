@@ -135,6 +135,7 @@ import I18nProviderClient from "@/lib/i18n-provider-client"
 import { QueryProvider } from '@/components/providers/query-provider'
 import { GlobalLoadingOverlay } from '@/app/components/global-loading-overlay'
 import { AppPrefetcher } from '@/lib/app-prefetcher'
+import { SocketStatusProvider } from '@/app/contexts/socket-status-context'
 
 // ✅ PROVIDERS SENSIBLES QUE REQUIEREN AUTENTICACIÓN
 import { FileProvider } from '@/contexts/file-context';
@@ -325,15 +326,17 @@ export function ProvidersWrapper({ children, session }: ProvidersWrapperProps) {
         <StorageInitializer />
         <ThemeProvider>
           <DatabaseProvider>
-            <SystemProvider>
-              <QueryProvider>
-                {/* ✅ WRAPPER QUE SOLO CARGA PROVIDERS SENSIBLES CUANDO HAY AUTENTICACIÓN */}
-                <AuthenticatedProviders>
-                  {children}
-                </AuthenticatedProviders>
-                <Toaster />
-              </QueryProvider>
-            </SystemProvider>
+            <SocketStatusProvider>
+              <SystemProvider>
+                <QueryProvider>
+                  {/* ✅ WRAPPER QUE SOLO CARGA PROVIDERS SENSIBLES CUANDO HAY AUTENTICACIÓN */}
+                  <AuthenticatedProviders>
+                    {children}
+                  </AuthenticatedProviders>
+                  <Toaster />
+                </QueryProvider>
+              </SystemProvider>
+            </SocketStatusProvider>
           </DatabaseProvider>
         </ThemeProvider>
       </I18nProviderClient>

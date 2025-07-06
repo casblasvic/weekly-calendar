@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerAuthSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { bankFormSchema } from '@/lib/schemas/bank';
-import { Prisma } from '@prisma/client';
 import { getRemappingService } from '@/lib/accounting/remapping-service';
 
 // Handler para GET /api/banks/[id]

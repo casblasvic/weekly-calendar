@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma, Prisma } from '@/lib/db';
 import { createId } from '@paralleldrive/cuid2';
 
 export async function seedPersons(prisma: PrismaClient, systemId: string) {

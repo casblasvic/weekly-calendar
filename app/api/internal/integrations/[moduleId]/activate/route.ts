@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import { prisma, Prisma } from '@/lib/db';
 import { auth } from "@/lib/auth";
 import { shellyModuleService, reactivateAllShellyWebSockets } from "@/lib/services/shelly-module-service";
 
-const prisma = new PrismaClient();
+// const prisma = new PrismaClient(); // MIGRADO: usar singleton desde @/lib/db
 
 // Datos de configuración para el webhook de Shelly
 const SHELLY_WEBHOOK_CONFIG = {

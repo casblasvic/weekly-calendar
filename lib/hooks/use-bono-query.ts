@@ -1,7 +1,5 @@
 import { UseQueryOptions, useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { api } from '@/utils/api-client';
-import { Prisma } from '@prisma/client';
-
 // Definición completa incluyendo relaciones necesarias y settings para la API
 export type BonoDefinitionWithRelations = Prisma.BonoDefinitionGetPayload<{
     include: {

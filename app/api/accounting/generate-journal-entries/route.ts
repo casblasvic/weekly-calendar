@@ -1,10 +1,11 @@
+import { prisma, Prisma } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { getSystemId, requireSystemId } from '@/lib/auth/getSystemId';
 import { decimal } from '@/lib/utils';
 
-const prisma = new PrismaClient();
+// const prisma = new PrismaClient(); // MIGRADO: usar singleton desde @/lib/db
 
 // Schema de validación
 const GenerateJournalEntriesSchema = z.object({

@@ -6,9 +6,7 @@
  */
 
 import { generateMaximumConfiguration } from '@/lib/accounting/generators/maximum-template-configurator';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/db';
 
 /**
  * Ejemplo 1: Importar configuración máxima para España

@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db'; // Importar la instancia de Prisma
-import { Prisma } from '@prisma/client';
 import { z } from 'zod'; // Añadir Zod
 import { getServerAuthSession } from "@/lib/auth"; // Importar helper de sesión
 

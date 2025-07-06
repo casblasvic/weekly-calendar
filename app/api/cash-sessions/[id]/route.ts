@@ -4,7 +4,6 @@ import { prisma } from '@/lib/db';
 import { z } from 'zod';
 import { Decimal } from '@prisma/client/runtime/library';
 // Añadir Prisma directamente si se necesita para Prisma.JsonNull
-import { Prisma } from '@prisma/client'; 
 import { CashSessionStatus, TicketStatus, PaymentMethodType } from '@prisma/client';
 
 // Esquema para validar el ID (CUID)

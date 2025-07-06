@@ -12,8 +12,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerAuthSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
-import { Prisma } from '@prisma/client';
-
 // GET /api/accounting/reports
 export async function GET(request: NextRequest) {
   try {

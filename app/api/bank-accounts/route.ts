@@ -3,7 +3,6 @@
 import { NextResponse } from 'next/server';
 import { getServerAuthSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
-import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 
 // Handler para GET /api/bank-accounts

@@ -46,6 +46,7 @@
  * - Sincronización inicial de dispositivos
  */
 
+import { prisma, Prisma } from '@/lib/db';
 import { SmartPlugDevice, ShellyCredential } from '@prisma/client';
 import { 
   UnifiedDeviceCommands, 
@@ -591,7 +592,7 @@ export class ShellyDeviceClient {
         
         // Obtener credencial actualizada de BD
         const { PrismaClient } = await import('@prisma/client');
-        const prisma = new PrismaClient();
+        // const prisma = new PrismaClient(); // MIGRADO: usar singleton desde @/lib/db
         
         const credential = await prisma.shellyCredential.findUnique({
           where: { id: this.device.credentialId! }

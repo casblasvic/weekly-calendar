@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import { prisma, Prisma } from '@/lib/db';
 import { auth } from "@/lib/auth";
 import { decrypt, encrypt } from "@/lib/shelly/crypto";
 import { refreshShellyToken } from "@/lib/shelly/client";
 
-const prisma = new PrismaClient();
+// const prisma = new PrismaClient(); // MIGRADO: usar singleton desde @/lib/db
 
 export async function POST(
     request: NextRequest,

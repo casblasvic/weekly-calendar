@@ -1,7 +1,5 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { Prisma } from '@prisma/client';
-
 /**
  * Handler para obtener una tarifa específica por su ID.
  * @param request La solicitud entrante.

@@ -1,6 +1,5 @@
-import { PrismaClient } from '@prisma/client'
-
-const prisma = new PrismaClient()
+import { prisma, Prisma } from '@/lib/db';
+// const prisma = new PrismaClient(); // MIGRADO: usar singleton desde @/lib/db
 
 // Función para generar deviceId basado en nombre del equipamiento y clínica
 function generateDeviceId(equipmentName, clinicPrefix, counter = 1) {

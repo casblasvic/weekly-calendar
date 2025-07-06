@@ -74,20 +74,23 @@ interface SmartPlugsFloatingMenuData {
 }
 
 export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
+  // ✅ TODOS LOS HOOKS AL INICIO - SIEMPRE SE EJECUTAN EN EL MISMO ORDEN
+  const { isShellyActive, isLoading: isLoadingIntegrations } = useIntegrationModules();
   const { activeClinic } = useClinic();
   const { data: session } = useSession();
   const systemId = session?.user?.systemId;
   
-  // ✅ USAR NUEVO HOOK DE INTEGRATIONS
-  const { isShellyActive, isLoading: isLoadingIntegrations } = useIntegrationModules();
-  
   const queryClient = useQueryClient();
   const cacheKey = ['smartPlugDevices', systemId ?? 'unknown'];
-  const cachedDevices = queryClient.getQueryData<SmartPlugDevice[]>(cacheKey) || [];
+  const cachedDevices = queryClient.getQueryData<SmartPlugDevice[]>(cacheKey);
   
-  // Estado principal
-  const [allDevices, setAllDevices] = useState<SmartPlugDevice[]>(cachedDevices);
-  const [lastUpdate, setLastUpdate] = useState<Date | null>(cachedDevices.length ? new Date() : null);
+  // Estado principal - asegurar que siempre sea un array
+  const [allDevices, setAllDevices] = useState<SmartPlugDevice[]>(
+    Array.isArray(cachedDevices) ? cachedDevices : []
+  );
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(
+    Array.isArray(cachedDevices) && cachedDevices.length > 0 ? new Date() : null
+  );
   const [isInitialized, setIsInitialized] = useState(false);
   
   // Refs para tracking updates
@@ -96,9 +99,7 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
   // ✅ SOCKET - Igual que la página principal
   const { isConnected, subscribe } = useSocket(systemId);
 
-  // ✅ VERIFICACIÓN ELIMINADA - Ahora usa useIntegrationModules
-
-  // 🔥 FETCH INICIAL - Cargar todos los dispositivos asignados a clínicas
+  // 🔥 FETCH INICIAL - DECLARAR CALLBACK SIEMPRE
   const fetchAllDevices = useCallback(async () => {
     if (!systemId) return;
     
@@ -134,8 +135,10 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
         })) || []
       });
       
-      setAllDevices(data.data || []);
-      queryClient.setQueryData(cacheKey, data.data || []);
+      // ✅ ASEGURAR QUE SIEMPRE SEA UN ARRAY
+      const devices = Array.isArray(data.data) ? data.data : [];
+      setAllDevices(devices);
+      queryClient.setQueryData(cacheKey, devices);
       setIsInitialized(true);
       setLastUpdate(new Date());
       
@@ -151,6 +154,87 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
       setAllDevices([]);
     }
   }, [systemId, activeClinic?.id, queryClient]);
+
+  // 🎮 FUNCIÓN DE CONTROL - DECLARAR CALLBACK SIEMPRE
+  const handleDeviceToggle = useCallback(async (deviceId: string, turnOn: boolean) => {
+    try {
+      const response = await fetch(`/api/shelly/device/${deviceId}/control`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ action: turnOn ? 'on' : 'off' })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Error desconocido');
+      }
+
+      clientLogger.verbose(`✅ [FloatingMenu] Control exitoso: ${deviceId} → ${turnOn ? 'ON' : 'OFF'}`);
+      
+    } catch (error) {
+      console.error('❌ [FloatingMenu] Error controlando dispositivo:', error);
+      throw error;
+    }
+  }, []);
+
+  // 🎯 FILTRADO POR CLÍNICA ACTIVA - DECLARAR MEMO SIEMPRE
+  const clinicDevices = useMemo(() => {
+    if (!activeClinic?.id || !Array.isArray(allDevices) || allDevices.length === 0) {
+      return [];
+    }
+    
+    // ✅ FILTRADO SIMPLE: Solo equipmentClinicAssignment.clinicId
+    const filtered = allDevices.filter(device => {
+      return device.equipmentClinicAssignmentId && device.equipmentClinicAssignment?.clinicId === activeClinic.id;
+    });
+    
+    return filtered;
+  }, [allDevices, activeClinic?.id]);
+
+  // 📊 CONTADORES PARA EL ÍCONO - DECLARAR MEMO SIEMPRE
+  const deviceStats = useMemo(() => {
+    const total = clinicDevices.length;
+    const online = clinicDevices.filter(d => d.online).length;
+    const offline = total - online;
+    const consuming = clinicDevices.filter(d => {
+      if (!d.online || !d.relayOn) return false;
+      
+      const hasValidConsumption = d.currentPower !== null && d.currentPower !== undefined;
+      if (!hasValidConsumption) return false;
+      
+      const threshold = d.equipmentClinicAssignment?.equipment?.powerThreshold;
+      return d.currentPower > threshold;
+    }).length;
+    
+    return { total, online, offline, consuming };
+  }, [clinicDevices]);
+
+  // 🔥 DISPOSITIVOS ON - DECLARAR MEMO SIEMPRE
+  const activeDevices = useMemo(() => {
+    return clinicDevices.filter(device => {
+      if (!device.online || !device.relayOn) return false;
+      
+      const hasValidConsumption = device.currentPower !== null && device.currentPower !== undefined;
+      if (!hasValidConsumption) return false;
+      
+      const threshold = device.equipmentClinicAssignment?.equipment?.powerThreshold;
+      const isConsuming = device.currentPower > threshold;
+      
+      return isConsuming;
+    });
+  }, [clinicDevices]);
+
+  // 📊 CÁLCULO DE CONSUMO TOTAL - DECLARAR MEMO SIEMPRE
+  const totalPower = useMemo(() => {
+    return activeDevices
+      .filter(device => {
+        const hasValidConsumption = device.currentPower !== null && device.currentPower !== undefined;
+        return hasValidConsumption && device.currentPower > 0.1;
+      })
+      .reduce((sum, device) => sum + device.currentPower!, 0);
+  }, [activeDevices]);
 
   // 🔥 CARGAR DISPOSITIVOS solo si el módulo está activo
   useEffect(() => {
@@ -300,136 +384,9 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
     };
   }, [isInitialized, isShellyActive]);
 
-  // 🎯 FILTRADO POR CLÍNICA ACTIVA - Solo equipmentClinicAssignment.clinicId
-  const clinicDevices = useMemo(() => {
-    if (!activeClinic?.id || allDevices.length === 0) {
-      clientLogger.verbose('🏥 [FloatingMenu] Sin clínica activa o sin dispositivos:', {
-        hasActiveClinic: !!activeClinic?.id,
-        clinicId: activeClinic?.id,
-        clinicName: activeClinic?.name,
-        totalDevices: allDevices.length
-      });
-      return [];
-    }
-    
-    clientLogger.verbose('🏥 [FloatingMenu] Filtrando dispositivos por clínica:', {
-      clinicId: activeClinic.id,
-      clinicName: activeClinic.name,
-      totalDevices: allDevices.length
-    });
-    
-    // ✅ FILTRADO SIMPLE: Solo equipmentClinicAssignment.clinicId
-    const filtered = allDevices.filter(device => {
-      // Solo verificar equipmentClinicAssignment.clinicId
-      const hasAssignment = device.equipmentClinicAssignmentId && device.equipmentClinicAssignment?.clinicId === activeClinic.id;
-      
-      if (hasAssignment) {
-        clientLogger.verbose(`✅ [FloatingMenu] ${device.name} → Asignado a clínica ${activeClinic.name}`);
-      } else {
-        clientLogger.verbose(`❌ [FloatingMenu] ${device.name} → NO asignado (equipmentClinicAssignmentId: ${device.equipmentClinicAssignmentId}, clinicId: ${device.equipmentClinicAssignment?.clinicId})`);
-      }
-      
-      return hasAssignment;
-    });
-    
-    console.log('🏥 [FloatingMenu] Resultado filtrado:', {
-      clinicName: activeClinic.name,
-      totalAsignados: filtered.length,
-      online: filtered.filter(d => d.online).length,
-      offline: filtered.filter(d => !d.online).length,
-      ON: filtered.filter(d => d.online && d.relayOn).length,
-      deviceNames: filtered.map(d => d.name),
-      filteredDevices: filtered.map(d => ({
-        name: d.name,
-        equipmentClinicAssignmentId: d.equipmentClinicAssignmentId,
-        clinicId: d.equipmentClinicAssignment?.clinicId
-      }))
-    });
-    
-    return filtered;
-  }, [allDevices, activeClinic?.id]);
-
-  // 📊 CONTADORES PARA EL ÍCONO
-  const deviceStats = useMemo(() => {
-    const total = clinicDevices.length;
-    const online = clinicDevices.filter(d => d.online).length;
-    const offline = total - online;
-    const consuming = clinicDevices.filter(d => {
-      if (!d.online || !d.relayOn) return false;
-      
-      // ESTRATEGIA DOS NIVELES: Solo contar si hay dato válido de consumo
-      const hasValidConsumption = d.currentPower !== null && d.currentPower !== undefined;
-      if (!hasValidConsumption) return false;
-      
-      // ✅ Usar powerThreshold del equipment (schema default: 1.0W)
-      const threshold = d.equipmentClinicAssignment?.equipment?.powerThreshold;
-      return d.currentPower > threshold;
-    }).length;
-    
-    return { total, online, offline, consuming };
-  }, [clinicDevices]);
-
-  // 🔥 DISPOSITIVOS ON (para mostrar dinámicamente en el modal)
-  const activeDevices = useMemo(() => {
-    return clinicDevices.filter(device => {
-      if (!device.online || !device.relayOn) return false;
-      
-      // ESTRATEGIA DOS NIVELES: Solo incluir si hay dato válido de consumo
-      const hasValidConsumption = device.currentPower !== null && device.currentPower !== undefined;
-      if (!hasValidConsumption) return false;
-      
-      // ✅ Usar powerThreshold del equipment (schema default: 1.0W)
-      const threshold = device.equipmentClinicAssignment?.equipment?.powerThreshold;
-      const isConsuming = device.currentPower > threshold;
-      
-      return isConsuming;
-    });
-  }, [clinicDevices]);
-
-  // 📊 CÁLCULO DE CONSUMO TOTAL (solo dispositivos con datos válidos)
-  const totalPower = useMemo(() => {
-    return activeDevices
-      .filter(device => {
-        const hasValidConsumption = device.currentPower !== null && device.currentPower !== undefined;
-        return hasValidConsumption && device.currentPower > 0.1;
-      })
-      .reduce((sum, device) => sum + device.currentPower!, 0);
-  }, [activeDevices]);
-
-  // 🎮 FUNCIÓN DE CONTROL
-  const handleDeviceToggle = useCallback(async (deviceId: string, turnOn: boolean) => {
-    try {
-      const response = await fetch(`/api/shelly/device/${deviceId}/control`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ action: turnOn ? 'on' : 'off' })
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Error desconocido');
-      }
-
-      clientLogger.verbose(`✅ [FloatingMenu] Control exitoso: ${deviceId} → ${turnOn ? 'ON' : 'OFF'}`);
-      
-    } catch (error) {
-      console.error('❌ [FloatingMenu] Error controlando dispositivo:', error);
-      throw error;
-    }
-  }, []);
-
-  // 🎯 DATOS FINALES
+  // ✅ VERIFICACIÓN: Retornar null si el módulo no está activo
+  // IMPORTANTE: Esto debe ir DESPUÉS de todos los hooks para mantener orden consistente
   if (!systemId || !activeClinic || !isShellyActive) {
-    clientLogger.verbose('🔒 [FloatingMenu] Módulo no disponible:', {
-      hasSystemId: !!systemId,
-      hasActiveClinic: !!activeClinic,
-      isShellyActive,
-      reason: !systemId ? 'Sin systemId' : 
-              !activeClinic ? 'Sin clínica activa' : 
-              'Módulo Shelly no activo'
-    });
     return null;
   }
 

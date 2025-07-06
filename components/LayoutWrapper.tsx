@@ -57,7 +57,7 @@
 
 "use client"
 
-import type React from "react"
+import React from 'react'
 import { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { useSession } from "next-auth/react"
 import { useRouter } from "next/navigation"
@@ -82,8 +82,7 @@ import { GranularityProvider } from "@/lib/drag-drop/granularity-context"
 import { MoveAppointmentProvider } from "@/contexts/move-appointment-context"
 import { MoveAppointmentUI } from "@/components/move-appointment-ui"
 import { format } from "date-fns"
-// ✅ NUEVO: Hook para integración de enchufes inteligentes en floating menu
-import { useSmartPlugsFloatingMenu } from "@/hooks/use-smart-plugs-floating-menu"
+import { SmartPlugsProvider, useSmartPlugsContextOptional } from "@/contexts/smart-plugs-context"
 import { clientLogger } from "@/lib/utils/client-logger"
 
 interface LayoutWrapperProps {
@@ -103,53 +102,23 @@ export function LayoutWrapper({ children, user }: LayoutWrapperProps) {
   const lastPathname = useRef<string>(pathname || "")
   const lastLayoutState = useRef<string>('')
   
-  // ✅ NUEVO: Hook para enchufes inteligentes en floating menu
-  const smartPlugsData = useSmartPlugsFloatingMenu()
+  // ✅ USAR CONTEXTO OPCIONAL para obtener datos de Smart Plugs
+  const smartPlugsContext = useSmartPlugsContextOptional()
+  const smartPlugsData = smartPlugsContext?.smartPlugsData || null
   
-  // ✅ DETECCIÓN CORREGIDA: SOLO USAR PATHNAME DE NEXT.JS
   const isLoginPage = useMemo(() => {
-    // ✅ SOLO usar pathname de Next.js (es más confiable)
     const result = pathname === '/login'
     return result
   }, [pathname])
 
-  /**
-   * LÓGICA CRÍTICA DE SEGURIDAD - shouldShowFullLayout
-   * 
-   * 🔐 PROPÓSITO:
-   * Determina si debe mostrarse el layout completo (con sidebar, menús, etc.)
-   * o el layout simple (solo children).
-   * 
-   * 🛡️ SEGURIDAD:
-   * Esta lógica es FUNDAMENTAL para prevenir que componentes sensibles
-   * (como MainSidebar) se rendericen antes de que los providers estén disponibles.
-   * 
-   * 📋 REGLA SIMPLE PERO CRÍTICA:
-   * - Si pathname === '/login' → Layout simple (sin sidebar)
-   * - Si pathname !== '/login' → Layout completo (con sidebar)
-   * 
-   * ⚠️ POR QUÉ ES SIMPLE:
-   * Cualquier lógica adicional (verificar status, session, etc.) puede crear
-   * condiciones de carrera donde el layout completo se bloquea incorrectamente.
-   * 
-   * 🔄 COORDINACIÓN:
-   * Esta lógica DEBE estar sincronizada con AuthenticatedProviders:
-   * - Ambos usan pathname === '/login' para detectar login
-   * - Ambos cambian de estado al mismo tiempo
-   * - Esto evita errores de contexto durante transiciones
-   */
-  // ✅ LÓGICA SIMPLIFICADA: Solo bloquear en login
   const shouldShowFullLayout = useMemo(() => {
-    // SOLO bloquear si estamos en página de login
     if (isLoginPage) {
       return false
     }
     
-    // ✅ PARA TODO LO DEMÁS: Mostrar layout completo
     return true
   }, [isLoginPage])
 
-  // ✅ LOGS OPTIMIZADOS: Solo mostrar cuando hay cambio real
   useEffect(() => {
     const currentState = `${pathname}-${status}-${!!session}-${hasMounted}`;
     
@@ -183,9 +152,7 @@ export function LayoutWrapper({ children, user }: LayoutWrapperProps) {
     shouldShowFullLayout
   })
 
-  // ✅ VERIFICACIÓN DE SESIÓN EN TIEMPO REAL
   useEffect(() => {
-    // ✅ EXCLUIR PÁGINA DE LOGIN para evitar bucles infinitos
     if (pathname === '/login') {
       if (process.env.NODE_ENV === 'development') {
         console.log('🔍 [LayoutWrapper] En página de login - saltando verificación de sesión')
@@ -193,12 +160,11 @@ export function LayoutWrapper({ children, user }: LayoutWrapperProps) {
       return
     }
     
-    // ✅ SOLO VERIFICAR SESIÓN EN PÁGINAS PROTEGIDAS
     if (status === "loading") {
       if (process.env.NODE_ENV === 'development') {
         console.log('⏳ [LayoutWrapper] Sesión cargando...')
       }
-      return // Aún cargando
+      return
     }
     
     if (status === "unauthenticated" || !session) {
@@ -207,12 +173,10 @@ export function LayoutWrapper({ children, user }: LayoutWrapperProps) {
       return
     }
     
-    // ✅ VERIFICAR EXPIRACIÓN DE SESIÓN con debugging detallado
     if (session?.expires) {
       const now = new Date()
       const currentTime = now.getTime()
       
-      // ✅ VALIDAR formato de fecha
       let expirationDate: Date
       try {
         expirationDate = new Date(session.expires)
@@ -228,7 +192,6 @@ export function LayoutWrapper({ children, user }: LayoutWrapperProps) {
       const expirationTime = expirationDate.getTime()
       const timeUntilExpiration = expirationTime - currentTime
       
-      // Verificar si la sesión ha expirado
       if (currentTime >= expirationTime) {
         console.error('❌ Sesión expirada, redirigiendo al login...')
         router.push('/login')
@@ -237,11 +200,9 @@ export function LayoutWrapper({ children, user }: LayoutWrapperProps) {
     }
   }, [session, status, router, pathname])
   
-  // ✅ CORREGIDA: Obtener fecha actual de la vista desde la URL (ruta + query params)
   const getCurrentViewDate = useCallback((): Date => {
     if (pathname?.includes('/agenda')) {
       try {
-        // ✅ MÉTODO 1: Buscar fecha en la RUTA (e.g., /agenda/dia/2025-06-27)
         const routeMatch = pathname.match(/\/agenda\/(?:dia|semana)\/(\d{4}-\d{2}-\d{2})/)
         if (routeMatch && routeMatch[1]) {
           const parsedDate = new Date(routeMatch[1])
@@ -253,7 +214,6 @@ export function LayoutWrapper({ children, user }: LayoutWrapperProps) {
           }
         }
         
-        // ✅ MÉTODO 2: Buscar fecha en QUERY PARAMS (fallback)
         if (typeof window !== 'undefined') {
           const urlParams = new URLSearchParams(window.location.search)
           const dateParam = urlParams.get('date')
@@ -274,28 +234,23 @@ export function LayoutWrapper({ children, user }: LayoutWrapperProps) {
       }
     }
     
-    // ✅ FALLBACK: Solo usar fecha actual si NO hay nada más
     if (process.env.NODE_ENV === 'development') {
       console.log('[LayoutWrapper] ⚠️ No se pudo obtener fecha de vista - usando fecha actual')
     }
     return new Date()
   }, [pathname])
   
-  // ✅ CORREGIDO: Usar useMemo para evitar error de hooks
   const currentViewDate = useMemo(() => {
     return getCurrentViewDate()
   }, [getCurrentViewDate])
   
 
   
-  // Función para alternar la barra lateral
   const toggleSidebar = useCallback(() => {
     console.log("TOGGLE SIDEBAR CALLED");
-    // Simplemente alternamos el estado de la barra lateral
     setIsSidebarCollapsed(prev => !prev);
   }, []);
   
-  // Verificar si el componente se ha montado en el cliente
   useEffect(() => {
     setHasMounted(true)
     
@@ -303,20 +258,16 @@ export function LayoutWrapper({ children, user }: LayoutWrapperProps) {
       const mobile = window.innerWidth < 768
       setIsMobile(mobile)
       
-      // En móvil, colapsar la barra lateral y ocultarla
       if (mobile) {
         setIsSidebarCollapsed(true)
         setIsSidebarVisible(false)
       }
       
-      // Ajustes específicos para iOS
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
       if (isIOS && mobile) {
-        // Forzar el recálculo del viewport para iOS
         const vh = window.innerHeight * 0.01;
         document.documentElement.style.setProperty('--vh', `${vh}px`);
         
-        // Agregar clase CSS específica para iOS
         document.documentElement.classList.add('ios-device');
       }
     }
@@ -324,7 +275,6 @@ export function LayoutWrapper({ children, user }: LayoutWrapperProps) {
     checkMobile()
     window.addEventListener('resize', checkMobile)
     
-    // Asegurarse de que el viewport esté correctamente establecido en iOS
     window.addEventListener('orientationchange', () => {
       setTimeout(checkMobile, 100);
     });
@@ -335,29 +285,22 @@ export function LayoutWrapper({ children, user }: LayoutWrapperProps) {
     }
   }, [])
   
-  // Cerrar la barra lateral cuando cambia la ruta
   useEffect(() => {
-    // Si la ruta ha cambiado
     if (pathname && pathname !== lastPathname.current) {
-      // En móvil, ocultar la barra lateral
       if (isMobile) {
         setIsSidebarVisible(false);
       }
-      // En escritorio, colapsar la barra lateral
       else if (!isSidebarCollapsed) {
         setIsSidebarCollapsed(true);
       }
       
-      // Asegurarnos de cerrar cualquier menú desplegable o notificación que esté abierto
       const mainSidebar = document.getElementById('main-sidebar');
       if (mainSidebar) {
-        // Disparar un evento personalizado que MainSidebar puede escuchar
         const routeChangeEvent = new CustomEvent('route-change', {
           detail: { path: pathname, forced: true }
         });
         mainSidebar.dispatchEvent(routeChangeEvent);
         
-        // Asegurarnos de que todos los submenús se oculten
         setTimeout(() => {
           const submenus = document.querySelectorAll('.submenu');
           submenus.forEach(submenu => {
@@ -370,12 +313,10 @@ export function LayoutWrapper({ children, user }: LayoutWrapperProps) {
         }, 100);
       }
       
-      // Actualizar la última ruta conocida
       lastPathname.current = pathname;
     }
   }, [pathname, isMobile, isSidebarCollapsed]);
 
-  // Actualizar la variable CSS --sidebar-width cuando el estado del sidebar cambie
   useEffect(() => {
     const root = document.documentElement;
     if (isMobile) {
@@ -385,43 +326,34 @@ export function LayoutWrapper({ children, user }: LayoutWrapperProps) {
     }
   }, [isMobile, isSidebarVisible, isSidebarCollapsed]);
   
-  // Manejar el cambio de visibilidad de la barra lateral en móvil
   const toggleMobileSidebar = useCallback(() => {
     console.log("Toggle mobile sidebar");
     
-    // Para iOS, forzar reflow y restablecer posición
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
     if (isIOS) {
-      // Forzar reflow y mejorar posicionamiento
       document.body.style.webkitTransform = 'scale(1)';
       
-      // Pequeño retraso antes de cambiar el estado
       setTimeout(() => {
         setIsSidebarVisible(prev => !prev);
         document.body.style.webkitTransform = '';
       }, 10);
     } else {
-      // En otros navegadores, comportamiento normal
       setIsSidebarVisible(prev => !prev);
     }
   }, []);
 
-  // Manejar clic fuera de la barra lateral
   const handleOutsideClick = useCallback((e: MouseEvent) => {
-    // Verificar si el clic ocurrió en algún menú flotante o en algún menú desplegable
     const isClickInFloatingMenu = 
       e.target instanceof Node && 
       (document.querySelector('.floating-client-menu')?.contains(e.target) || 
        document.querySelector('.floating-staff-menu')?.contains(e.target) ||
        document.querySelector('.submenu')?.contains(e.target));
     
-    // Verificar si el clic ocurrió en un botón de toggle o similar
     const isClickInControlButton = 
       e.target instanceof Element && 
       (e.target.closest('button[aria-label="Toggle navigation"]') ||
        e.target.closest('[data-sidebar="menu-button"]'));
        
-    // Verificar si es un clic en el menú de usuario o su botón
     const isClickInUserMenu =
       e.target instanceof Node &&
       (document.querySelector('.user-menu')?.contains(e.target) ||
@@ -430,25 +362,20 @@ export function LayoutWrapper({ children, user }: LayoutWrapperProps) {
        document.querySelector('#notifications-button')?.contains(e.target) ||
        document.querySelector('.clinic-selector-menu')?.contains(e.target));
     
-    // Si el clic ocurrió en un menú flotante, menú de usuario o en un botón de control, ignorarlo
     if (isClickInFloatingMenu || isClickInControlButton || isClickInUserMenu) {
       return;
     }
     
-    // Si el clic ocurrió fuera de la barra lateral y no en un menú flotante o botón de control
     if (sidebarRef.current && !sidebarRef.current.contains(e.target as Node)) {
-      // En móvil, ocultar la barra lateral
       if (isMobile && isSidebarVisible) {
         setIsSidebarVisible(false);
       }
-      // En escritorio, colapsar la barra lateral si está expandida
       else if (!isMobile && !isSidebarCollapsed) {
         setIsSidebarCollapsed(true);
       }
     }
   }, [isMobile, isSidebarVisible, isSidebarCollapsed]);
 
-  // Configurar listener para clics fuera de la barra lateral
   useEffect(() => {
     document.addEventListener('mousedown', handleOutsideClick);
     return () => {
@@ -456,7 +383,6 @@ export function LayoutWrapper({ children, user }: LayoutWrapperProps) {
     };
   }, [handleOutsideClick]);
 
-  // Calcular estilos para main ANTES del return
   const mainStyle = useMemo(() => {
     const ml = isMobile ? (isSidebarVisible ? "3.5rem" : "0") : (isSidebarCollapsed ? "3.5rem" : "16rem");
     const w = isMobile ? 
@@ -469,45 +395,36 @@ export function LayoutWrapper({ children, user }: LayoutWrapperProps) {
         transition: "margin-left 0.3s ease-in-out, width 0.3s ease-in-out",
         '--main-margin-left': ml, 
         '--main-width': w,
-    } as React.CSSProperties; // Cast para incluir CSS Variables
+    } as React.CSSProperties;
   }, [isMobile, isSidebarVisible, isSidebarCollapsed]);
 
-  // ✅ FUNCIÓN PARA VOLVER A LA CITA ORIGINAL (funcionalidad "deshacer")
   const handleGoBackToAppointment = useCallback((appointment: any) => {
     console.log('[LayoutWrapper] 🔄 Navegando de vuelta a cita original:', appointment.name)
     
-    // Determinar vista apropiada y navegar
     const appointmentDate = appointment.date instanceof Date ? appointment.date : new Date(appointment.date)
     const dateString = format(appointmentDate, 'yyyy-MM-dd')
     
-    // ✅ DETECTAR VISTA ACTUAL desde la URL para preservarla
     const currentView = (() => {
       if (pathname.includes('/agenda/dia/')) return 'day'
       if (pathname.includes('/agenda/semana/')) return 'week'
-      // Fallback: detectar desde query params si existe
       const urlParams = new URLSearchParams(window.location.search)
       const viewParam = urlParams.get('view')
-      return viewParam === 'day' ? 'day' : 'week' // Default a semana
+      return viewParam === 'day' ? 'day' : 'week'
     })()
     
     console.log('[LayoutWrapper] 🔍 Vista detectada:', currentView, 'navegando a fecha:', dateString)
     
-    // ✅ NAVEGAR PRESERVANDO LA VISTA ACTUAL
     if (currentView === 'day') {
-      // Vista diaria: navegar a día específico
       router.push(`/agenda/dia/${dateString}`)
     } else {
-      // Vista semanal: navegar a semana que contiene la fecha
       router.push(`/agenda/semana/${dateString}`)
     }
   }, [router, pathname])
 
-  // Si no estamos montados, mostrar un layout básico
   if (!hasMounted) {
     return <div className="min-h-screen">{children}</div>
   }
 
-  // ✅ SI NO DEBERÍAMOS MOSTRAR LAYOUT COMPLETO → LAYOUT SIMPLE
   if (!shouldShowFullLayout) {
     return (
       <div className="min-h-screen bg-gray-50">
@@ -517,62 +434,56 @@ export function LayoutWrapper({ children, user }: LayoutWrapperProps) {
   }
 
   return (
-    <div className="flex min-h-screen bg-gray-50"> {/* Cambiado OTRA VEZ a min-h-screen */}
-      {/* Sidebar */}
-      <div 
-        ref={sidebarRef}
-        className="flex-shrink-0 transition-all duration-300 ease-in-out"
-        style={{ zIndex: 45 }}
-      >
-        {/* ✅ RENDERIZAR SIDEBAR CON PROTECCIÓN CONTRA ERRORES */}
-        {(() => {
-          try {
-            return (
-              <MainSidebar
-                isCollapsed={isMobile ? !isSidebarVisible : isSidebarCollapsed}
-                onToggle={toggleSidebar}
-                forceMobileView={isMobile}
-              />
-            )
-          } catch (error) {
-            console.error('❌ [LayoutWrapper] Error al renderizar MainSidebar:', error)
-            // Fallback: mostrar un sidebar mínimo o nada
-            return (
-              <div className="flex justify-center items-center w-14 h-screen bg-gray-900">
-                <div className="text-xs text-white">Cargando...</div>
-              </div>
-            )
-          }
-        })()}
+    <SmartPlugsProvider>
+      <div className="flex min-h-screen bg-gray-50">
+        <div 
+          ref={sidebarRef}
+          className="flex-shrink-0 transition-all duration-300 ease-in-out"
+          style={{ zIndex: 45 }}
+        >
+          {(() => {
+            try {
+              return (
+                <MainSidebar
+                  isCollapsed={isMobile ? !isSidebarVisible : isSidebarCollapsed}
+                  onToggle={toggleSidebar}
+                  forceMobileView={isMobile}
+                />
+              )
+            } catch (error) {
+              console.error('❌ [LayoutWrapper] Error al renderizar MainSidebar:', error)
+              return (
+                <div className="flex justify-center items-center w-14 h-screen bg-gray-900">
+                  <div className="text-xs text-white">Cargando...</div>
+                </div>
+              )
+            }
+          })()}
+        </div>
+
+        <MobileClinicButton 
+          onClick={toggleMobileSidebar}
+          isOpen={isSidebarVisible}
+        />
+
+        <div className="fixed right-0 top-0 z-[9999] space-y-1 p-3">
+          <FloatingMenu smartPlugsData={smartPlugsData} />
+        </div>
+
+        <main
+          className="flex-1" 
+          style={mainStyle}
+        >
+          <GranularityProvider>
+            <MoveAppointmentProvider 
+              onGoBackToAppointment={handleGoBackToAppointment}
+            >
+              {children}
+              <MoveAppointmentUI currentViewDate={currentViewDate} />
+            </MoveAppointmentProvider>
+          </GranularityProvider>
+        </main>
       </div>
-
-      {/* Botón móvil para mostrar la barra lateral */}
-      <MobileClinicButton 
-        onClick={toggleMobileSidebar}
-        isOpen={isSidebarVisible}
-      />
-
-      {/* Menús flotantes */}
-      <div className="fixed right-0 top-0 z-[9999] space-y-1 p-3">
-        <FloatingMenu smartPlugsData={smartPlugsData} />
-      </div>
-
-      {/* Área principal CON overflow-auto y estilos calculados */}
-      <main
-        className="flex-1" 
-        style={mainStyle} // <<< Usar el objeto style calculado
-      >
-        {/* Envolver children con GranularityProvider */}
-        <GranularityProvider>
-          <MoveAppointmentProvider 
-            onGoBackToAppointment={handleGoBackToAppointment}
-          >
-            {children}
-            {/* UI para citas en movimiento - DENTRO del provider */}
-            <MoveAppointmentUI currentViewDate={currentViewDate} />
-          </MoveAppointmentProvider>
-        </GranularityProvider>
-      </main>
-    </div>
+    </SmartPlugsProvider>
   )
 }

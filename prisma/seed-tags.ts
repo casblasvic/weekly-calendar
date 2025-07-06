@@ -1,3 +1,4 @@
+import { prisma, Prisma } from '@/lib/db';
 import pkg from '@prisma/client';
 const { PrismaClient } = pkg;
 

@@ -453,7 +453,10 @@ async function main() {
     }
     const systemId = mainSystem.id;
 
-    // --- Seed CountryInfo will be called later in the flow ---
+    // --- Crear Países PRIMERO (antes de las entidades legales) --- 
+    console.log('Creating countries...');
+    await seedCountries(prisma);
+    console.log('Countries seeded.');
 
     // --- 2. Crear Legal Entities ---
     const legalEntityData = [
@@ -677,11 +680,6 @@ async function main() {
     // No necesitamos crear otro sistema, ya tenemos mainSystem/systemId
     // Usar el sistema que ya creamos al inicio
     console.log(`Using existing system: ${mainSystem.name} (ID: ${systemId})`);
-
-    // --- Crear Países (si no existen) --- 
-    console.log('Creating countries...');
-    await seedCountries();
-    console.log('Countries seeded.');
 
     // --- Crear Permisos --- 
     console.log('Creating base permissions...');
@@ -1793,7 +1791,7 @@ async function main() {
   }
   console.log('Example invoices ensured.');
 
-  await seedWebhooks(system!.id); // Llamar al seeder de webhooks
+  await seedWebhooks(prisma, system!.id); // Llamar al seeder de webhooks
 
   // <<< --- NUEVO: Crear Clientes de Ejemplo --- >>>
   console.log('Creating example Clients...');

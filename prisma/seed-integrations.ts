@@ -1,3 +1,4 @@
+import { prisma, Prisma } from '@/lib/db';
 import { PrismaClient, IntegrationCategory } from '@prisma/client';
 
 export async function seedIntegrations(prisma: PrismaClient) {

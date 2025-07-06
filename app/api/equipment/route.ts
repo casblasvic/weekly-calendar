@@ -1,7 +1,6 @@
 import { NextResponse, NextRequest } from 'next/server'
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library'
 import { prisma } from '@/lib/db'
-import { Prisma } from '@prisma/client'
 import { getServerAuthSession } from "@/lib/auth"
 import { z } from 'zod'
 

@@ -1,13 +1,12 @@
 import { NextResponse } from 'next/server';
 // Eliminar importación directa
-// import { PrismaClient } from '@prisma/client';
+// import { prisma, Prisma } from '@/lib/db';
 // Importar instancia singleton y Prisma
 import { prisma } from '@/lib/db';
-import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 
 // Eliminar instanciación directa
-// const prisma = new PrismaClient();
+// // const prisma = new PrismaClient(); // MIGRADO: usar singleton desde @/lib/db
 
 // Esquema de validación para el cuerpo de la solicitud
 const ReorderSchema = z.object({

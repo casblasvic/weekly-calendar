@@ -1,5 +1,4 @@
-import { PrismaClient } from '@prisma/client';
-
+import { prisma, Prisma } from '@/lib/db';
 /**
  * Servicio de remapeo contable automático
  * 

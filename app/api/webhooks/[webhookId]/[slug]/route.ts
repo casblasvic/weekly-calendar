@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { PrismaClient } from '@prisma/client'
+import { prisma, Prisma } from '@/lib/db';
 import crypto from 'crypto';
 
-const prisma = new PrismaClient()
+// const prisma = new PrismaClient(); // MIGRADO: usar singleton desde @/lib/db
 
 interface RouteContext {
   params: Promise<{
