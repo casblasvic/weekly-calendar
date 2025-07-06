@@ -106,7 +106,7 @@ const useSocket = (systemId?: string): SocketHook => {
 
     // Inicializar conexión Socket.io
     socketRef.current = io(WS_URL, {
-      path: '/socket', // ruta estándar en producción
+      path: '/api/socket', // ruta estándar Next.js
       forceNew: false, // Reutilizar conexiones existentes
       reconnection: true,
       timeout: 20000,

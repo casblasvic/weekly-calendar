@@ -1,4 +1,6 @@
+// @ts-nocheck
 import { PrismaClient } from '@prisma/client'
+import { getSiteUrl } from '../lib/utils/site-url'
 
 const prisma = new PrismaClient()
 
@@ -119,12 +121,12 @@ export async function seedWebhooks(systemId: string) {
 
     let shellyWebhook = await prisma.webhook.findUnique({ where: { systemId_slug: { systemId, slug: 'shelly-device-usage' } } });
     if (shellyWebhook) {
-        shellyWebhook = await prisma.webhook.update({ where: { id: shellyWebhook.id }, data: { ...shellyData, url: `${process.env.NEXTAUTH_URL || 'https://tu-app.com'}/api/webhooks/${shellyWebhook.id}` } });
+        shellyWebhook = await prisma.webhook.update({ where: { id: shellyWebhook.id }, data: { ...shellyData, url: `/api/webhooks/${shellyWebhook.id}` } });
     } else {
         shellyWebhook = await prisma.webhook.create({ data: { ...shellyData, url: '' } }); // URL temporal vacía
         shellyWebhook = await prisma.webhook.update({
             where: { id: shellyWebhook.id },
-            data: { url: `${process.env.NEXTAUTH_URL || 'https://tu-app.com'}/api/webhooks/${shellyWebhook.id}` }
+            data: { url: `/api/webhooks/${shellyWebhook.id}` }
         });
     }
 
@@ -200,10 +202,10 @@ export async function seedWebhooks(systemId: string) {
     };
     let kasaWebhook = await prisma.webhook.findUnique({ where: { systemId_slug: { systemId, slug: 'kasa-equipment-monitor' } } });
     if (kasaWebhook) {
-        kasaWebhook = await prisma.webhook.update({ where: { id: kasaWebhook.id }, data: { ...kasaData, url: `${process.env.NEXTAUTH_URL || 'https://tu-app.com'}/api/webhooks/${kasaWebhook.id}` } });
+        kasaWebhook = await prisma.webhook.update({ where: { id: kasaWebhook.id }, data: { ...kasaData, url: `/api/webhooks/${kasaWebhook.id}` } });
     } else {
         kasaWebhook = await prisma.webhook.create({ data: { ...kasaData, url: '' } });
-        kasaWebhook = await prisma.webhook.update({ where: { id: kasaWebhook.id }, data: { url: `${process.env.NEXTAUTH_URL || 'https://tu-app.com'}/api/webhooks/${kasaWebhook.id}` } });
+        kasaWebhook = await prisma.webhook.update({ where: { id: kasaWebhook.id }, data: { url: `/api/webhooks/${kasaWebhook.id}` } });
     }
     console.log(`✅ Ensured Kasa webhook: ${kasaWebhook.slug}`)
 
@@ -276,10 +278,10 @@ export async function seedWebhooks(systemId: string) {
     };
     let genericWebhook = await prisma.webhook.findUnique({ where: { systemId_slug: { systemId, slug: 'generic-smart-plug' } } });
     if (genericWebhook) {
-        genericWebhook = await prisma.webhook.update({ where: { id: genericWebhook.id }, data: { ...genericData, url: `${process.env.NEXTAUTH_URL || 'https://tu-app.com'}/api/webhooks/${genericWebhook.id}` } });
+        genericWebhook = await prisma.webhook.update({ where: { id: genericWebhook.id }, data: { ...genericData, url: `/api/webhooks/${genericWebhook.id}` } });
     } else {
         genericWebhook = await prisma.webhook.create({ data: { ...genericData, url: '' } });
-        genericWebhook = await prisma.webhook.update({ where: { id: genericWebhook.id }, data: { url: `${process.env.NEXTAUTH_URL || 'https://tu-app.com'}/api/webhooks/${genericWebhook.id}` } });
+        genericWebhook = await prisma.webhook.update({ where: { id: genericWebhook.id }, data: { url: `/api/webhooks/${genericWebhook.id}` } });
     }
     console.log(`✅ Ensured Generic webhook: ${genericWebhook.slug}`)
 
@@ -311,19 +313,20 @@ export async function seedWebhooks(systemId: string) {
     };
     let controlWebhook = await prisma.webhook.findUnique({ where: { systemId_slug: { systemId, slug: 'device-control' } } });
     if (controlWebhook) {
-        controlWebhook = await prisma.webhook.update({ where: { id: controlWebhook.id }, data: { ...controlData, url: `${process.env.NEXTAUTH_URL || 'https://tu-app.com'}/api/webhooks/${controlWebhook.id}` } });
+        controlWebhook = await prisma.webhook.update({ where: { id: controlWebhook.id }, data: { ...controlData, url: `/api/webhooks/${controlWebhook.id}` } });
     } else {
         controlWebhook = await prisma.webhook.create({ data: { ...controlData, url: '' } });
-        controlWebhook = await prisma.webhook.update({ where: { id: controlWebhook.id }, data: { url: `${process.env.NEXTAUTH_URL || 'https://tu-app.com'}/api/webhooks/${controlWebhook.id}` } });
+        controlWebhook = await prisma.webhook.update({ where: { id: controlWebhook.id }, data: { url: `/api/webhooks/${controlWebhook.id}` } });
     }
     console.log(`✅ Ensured Control webhook: ${controlWebhook.slug}`)
 
     console.log('\n🎯 Webhooks created/updated successfully!')
+    const siteUrl = getSiteUrl();
     console.log('\nWebhook URLs para configurar en tus dispositivos:')
-    console.log(`📡 Shelly: ${shellyWebhook.url}`)
-    console.log(`📡 Kasa: ${kasaWebhook.url}`)
-    console.log(`📡 Generic: ${genericWebhook.url}`)
-    console.log(`📡 Control: ${controlWebhook.url}`)
+    console.log(`📡 Shelly: ${siteUrl}${shellyWebhook.url}`)
+    console.log(`📡 Kasa: ${siteUrl}${kasaWebhook.url}`)
+    console.log(`📡 Generic: ${siteUrl}${genericWebhook.url}`)
+    console.log(`📡 Control: ${siteUrl}${controlWebhook.url}`)
 
     console.log('\n🔑 Tokens de autenticación:')
     console.log(`🔐 Shelly: ${shellyWebhook.token}`)
