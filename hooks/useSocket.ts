@@ -119,10 +119,9 @@ const useSocket = (systemId?: string): SocketHook => {
           reconnectionDelayMax: 30000,    // Máximo 30s entre reintentos
           randomizationFactor: 0.5,       // Añadir algo de aleatoriedad para evitar thundering herd
           timeout: 30000,                 // Timeout más generoso para cold starts
-          // CRÍTICO: Permitir que Socket.io elija el mejor transporte
-          // En Vercel empezará con polling y hará upgrade si es posible
-          transports: ['polling', 'websocket'],
-          upgrade: true,                  // Intentar upgrade de polling a websocket
+          // 🚀 Railway soporta WebSocket nativo; evitamos polling para reducir errores
+          transports: ['websocket'],      // Usar WebSocket puro en Railway
+          upgrade: false,
           autoConnect: false,
         });
 

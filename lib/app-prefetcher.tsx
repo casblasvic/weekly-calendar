@@ -226,19 +226,13 @@ export function AppPrefetcher() {
     if (!queryClient.getQueryData(['equipmentAssignments', clinicId])) {
       queryClient.prefetchQuery({
         queryKey: ['equipmentAssignments', clinicId],
-        queryFn: () => api.cached.get(`/api/equipment-assignments?clinicId=${clinicId}`),
+        queryFn: () => api.cached.get(`/api/equipment/clinic-assignments?clinicId=${clinicId}`),
         staleTime: CACHE_TIME.LARGO,
       });
     }
 
-    // 4️⃣ Requerimientos de equipo por servicio (catálogo estático por clínica)
-    if (!queryClient.getQueryData(['equipmentRequirementsCatalog', clinicId])) {
-      queryClient.prefetchQuery({
-        queryKey: ['equipmentRequirementsCatalog', clinicId],
-        queryFn: () => api.cached.get(`/api/services/equipment-requirements?clinicId=${clinicId}`),
-        staleTime: CACHE_TIME.LARGO,
-      });
-    }
+    // 4️⃣ Requerimientos de equipo por servicio
+    // Ruta antigua eliminada (devuelve 400). A la espera de nuevo endpoint por clínica.
 
     // 5️⃣ Servicios / Tarifas / Paquetes
     if (!queryClient.getQueryData(['services', clinicId])) {
