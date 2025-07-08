@@ -25,20 +25,41 @@ interface LayoutWrapperProps {
 }
 
 export function LayoutWrapper({ children }: LayoutWrapperProps) {
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
+  // Estado inicial: siempre colapsada para el comportamiento de hover
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true)
   const [hasMounted, setHasMounted] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
   const [isSidebarVisible, setIsSidebarVisible] = useState(false)
+  const [isHovering, setIsHovering] = useState(false) // Nuevo estado para hover
   const pathname = usePathname()
   const sidebarRef = useRef<HTMLDivElement>(null)
   const lastPathname = useRef<string>(pathname || "")
   
-  // Función para alternar la barra lateral
+  // Función para alternar la barra lateral (solo para móvil)
   const toggleSidebar = useCallback(() => {
     console.log("TOGGLE SIDEBAR CALLED");
-    // Simplemente alternamos el estado de la barra lateral
-    setIsSidebarCollapsed(prev => !prev);
-  }, []);
+    if (isMobile) {
+      setIsSidebarVisible(prev => !prev);
+    } else {
+      // En escritorio, el toggle solo afecta temporalmente
+      setIsSidebarCollapsed(prev => !prev);
+    }
+  }, [isMobile]);
+  
+  // Funciones para manejar el hover
+  const handleSidebarMouseEnter = useCallback(() => {
+    if (!isMobile) {
+      setIsHovering(true);
+      setIsSidebarCollapsed(false);
+    }
+  }, [isMobile]);
+  
+  const handleSidebarMouseLeave = useCallback(() => {
+    if (!isMobile) {
+      setIsHovering(false);
+      setIsSidebarCollapsed(true);
+    }
+  }, [isMobile]);
   
   // Verificar si el componente se ha montado en el cliente
   useEffect(() => {
@@ -52,6 +73,9 @@ export function LayoutWrapper({ children }: LayoutWrapperProps) {
       if (mobile) {
         setIsSidebarCollapsed(true)
         setIsSidebarVisible(false)
+      } else {
+        // En escritorio, siempre colapsada por defecto
+        setIsSidebarCollapsed(true)
       }
       
       // Ajustes específicos para iOS
@@ -87,10 +111,10 @@ export function LayoutWrapper({ children }: LayoutWrapperProps) {
       // En móvil, ocultar la barra lateral
       if (isMobile) {
         setIsSidebarVisible(false);
-      }
-      // En escritorio, colapsar la barra lateral
-      else if (!isSidebarCollapsed) {
+      } else {
+        // En escritorio, asegurar que esté colapsada
         setIsSidebarCollapsed(true);
+        setIsHovering(false);
       }
       
       // Asegurarnos de cerrar cualquier menú desplegable o notificación que esté abierto
@@ -176,9 +200,10 @@ export function LayoutWrapper({ children }: LayoutWrapperProps) {
       if (isMobile && isSidebarVisible) {
         setIsSidebarVisible(false);
       }
-      // En escritorio, colapsar la barra lateral si está expandida
-      else if (!isMobile && !isSidebarCollapsed) {
+      // En escritorio, asegurar que esté colapsada
+      else if (!isMobile) {
         setIsSidebarCollapsed(true);
+        setIsHovering(false);
       }
     }
   }, [isMobile, isSidebarVisible, isSidebarCollapsed]);
@@ -203,7 +228,7 @@ export function LayoutWrapper({ children }: LayoutWrapperProps) {
         ref={sidebarRef}
         className="transition-all duration-300 ease-in-out"
         style={{
-          position: 'relative',
+          position: isMobile ? 'relative' : 'fixed',
           left: 0,
           top: 0,
           height: '100%',
@@ -211,6 +236,8 @@ export function LayoutWrapper({ children }: LayoutWrapperProps) {
           visibility: 'visible',
           width: 'auto'
         }}
+        onMouseEnter={handleSidebarMouseEnter}
+        onMouseLeave={handleSidebarMouseLeave}
       >
         <MainSidebar
           isCollapsed={isMobile ? !isSidebarVisible : isSidebarCollapsed}
@@ -234,11 +261,11 @@ export function LayoutWrapper({ children }: LayoutWrapperProps) {
       <main
         className="flex-1 overflow-auto"
         style={{
-          marginLeft: isMobile ? (isSidebarVisible ? "3.5rem" : "0") : (isSidebarCollapsed ? "3.5rem" : "16rem"),
+          marginLeft: isMobile ? (isSidebarVisible ? "3.5rem" : "0") : "3.5rem",
           transition: "margin-left 0.3s ease-in-out",
           width: isMobile ? 
             (isSidebarVisible ? "calc(100% - 3.5rem)" : "100%") : 
-            `calc(100% - ${isSidebarCollapsed ? "3.5rem" : "16rem"})`,
+            "calc(100% - 3.5rem)",
         }}
       >
         {children}
