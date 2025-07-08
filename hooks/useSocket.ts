@@ -230,8 +230,14 @@ const useSocket = (systemId?: string): SocketHook => {
           });
         });
 
-        // ✅ ELIMINADO: device-offline-status para evitar duplicación
-        // El DeviceOfflineManager maneja estos eventos directamente
+        // Manejar eventos offline específicos (mismo formato que device-update)
+        localSocket.on('device-offline-status', (update: DeviceUpdate) => {
+          clientLogger.verbose('📱 Offline status recibido:', update);
+          setLastUpdate(update);
+          subscribersRef.current.forEach(cb => {
+            try { cb(update); } catch(e) { console.error(e); }
+          });
+        });
 
         localSocket.on('device-error', (error) => {
           console.error('❌ Error de dispositivo recibido:', error);

@@ -81,6 +81,9 @@ class ShellyWebSocketManager {
     
     // 🎯 NUEVO: Mapeo automático de IDs (deviceId BD → deviceId Cloud)
     private deviceIdMapping: Map<string, string> = new Map();
+
+    // 🔢 Conteo de conexiones activas para notificar correctamente al OfflineManager
+    private activeConnectionCount = 0;
     
     // Callback para interceptar actualizaciones de dispositivos
     public onDeviceUpdate?: (credentialId: string, deviceId: string, status: DeviceStatus) => Promise<void>;
@@ -161,8 +164,11 @@ class ShellyWebSocketManager {
     private async handleOpen(credentialId: string): Promise<void> {
         console.log(`✅ WebSocket Shelly conectado para credencial ${credentialId}`);
         
-        // 🎯 NOTIFICAR AL OFFLINE MANAGER
-        deviceOfflineManager.setWebSocketConnected(true);
+        // 🎯 NOTIFICAR AL OFFLINE MANAGER SOLO EN LA PRIMERA CONEXIÓN ACTIVA
+        this.activeConnectionCount++;
+        if (this.activeConnectionCount === 1) {
+            deviceOfflineManager.setWebSocketConnected(true);
+        }
         
         // Limpiar timer de reconexión si existe
         const timer = this.reconnectTimers.get(credentialId);
@@ -182,6 +188,66 @@ class ShellyWebSocketManager {
         }
         
         console.log(`🎯 WebSocket Shelly listo para recibir eventos en tiempo real`);
+
+        // -------------------------------------------------------------
+        // 🔄 SINCRONIZACIÓN INICIAL DE ESTADOS
+        // -------------------------------------------------------------
+        try {
+          this.refreshAllDeviceStatuses(credentialId).catch(err => {
+            console.warn('⚠️  Error refrescando estados iniciales:', err);
+          });
+        } catch { /* noop */ }
+    }
+
+    /**
+     * Sincroniza el estado de TODOS los dispositivos de la credencial
+     * justo después de abrir el WebSocket. Así la UI muestra online/offline
+     * correcto sin esperar al primer mensaje.
+     */
+    private async refreshAllDeviceStatuses(credentialId: string): Promise<void> {
+        const credential = await prisma.shellyCredential.findUnique({
+            where: { id: credentialId }
+        });
+
+        if (!credential) return;
+
+        // Importación dinámica para evitar ciclos
+        const { ShellyCloudAPI } = await import('./api/cloud-api');
+        const api = new ShellyCloudAPI(credential as any);
+
+        const devices = await prisma.smartPlugDevice.findMany({
+            where: { credentialId },
+            select: { id: true, deviceId: true, cloudId: true }
+        });
+
+        for (const dev of devices) {
+            const cloudId = dev.cloudId || this.deviceIdMapping.get(dev.deviceId);
+            if (!cloudId || !/^\d+$/.test(cloudId)) continue;
+
+            try {
+                const raw = await api.getDeviceStatus(cloudId);
+
+                const switchStatus = raw['switch:0'] ?? raw['relay:0'] ?? {};
+                const status = {
+                    online: true,
+                    'switch:0': {
+                        output: switchStatus.output || switchStatus.ison || false,
+                        apower: switchStatus.apower || switchStatus.power || 0,
+                        voltage: switchStatus.voltage || null,
+                        aenergy: switchStatus.aenergy || null
+                    },
+                    temperature: raw.temperature || raw.sys?.temperature || null
+                } as any;
+
+                await this.handleDeviceStatusUpdate(credentialId, dev.deviceId, status);
+            } catch (err) {
+                // Si falla la petición lo marcamos offline
+                await this.handleDeviceStatusUpdate(credentialId, dev.deviceId, {
+                    online: false,
+                    'switch:0': { output: false }
+                } as any);
+            }
+        }
     }
 
     private async handleMessage(credentialId: string, event: MessageEvent): Promise<void> {
@@ -229,6 +295,15 @@ class ShellyWebSocketManager {
                     console.log(`✅ [WebSocket CMD] Comando ejecutado exitosamente en ${deviceId}`);
                 } else {
                     console.error(`❌ [WebSocket CMD] Error en comando para ${deviceId}:`, responseData?.errors);
+
+                    // Si recibimos error, marcar dispositivo offline inmediatamente
+                    try {
+                        await this.handleDeviceStatusUpdate(credentialId, deviceId, {
+                            online: false,
+                            'switch:0': { output: false },
+                            errorReason: 'command_failed'
+                        });
+                    } catch {}
                 }
                 return;
             }
@@ -369,12 +444,27 @@ class ShellyWebSocketManager {
                     { cloudId: deviceId }
                 ]
             },
-            select: { id: true, deviceId: true, cloudId: true, name: true }
+            select: { id: true, deviceId: true, cloudId: true, name: true, credential: { select: { systemId: true } } }
         });
         
         if (device) {
+            // 🆕 SI cloudId está vacío en BD y tenemos cloudId numérico válido, actualizar
+            // Usar possibleNumericId (calculado arriba) como cloudId potencial
+            if (!device.cloudId && /^\d+$/.test(possibleNumericId)) {
+                try {
+                    await prisma.smartPlugDevice.update({
+                        where: { id: device.id },
+                        data: { cloudId: possibleNumericId }
+                    });
+                    this.deviceIdMapping.set(device.deviceId, possibleNumericId);
+                    console.log(`🔄 [AUTO-UPDATE] cloudId actualizado en BD: ${device.deviceId} → ${possibleNumericId}`);
+                } catch (cloudErr) {
+                    console.warn(`⚠️  Error actualizando cloudId para ${device.deviceId}:`, cloudErr);
+                }
+            }
+
             // 🎯 REGISTRAR ACTIVIDAD CON DATOS ESPECÍFICOS DEL DISPOSITIVO
-            deviceOfflineManager.trackActivity(device.id, device.name, updatedData);
+            deviceOfflineManager.trackActivity(device.id, device.name, updatedData, status.online);
 
             wsLogger.verbose(`📡 [TIEMPO REAL] Dispositivo encontrado - ${device.name}:`, {
                 deviceId: device.id,
@@ -382,21 +472,105 @@ class ShellyWebSocketManager {
                 relayOn: updatedData.relayOn,
                 currentPower: updatedData.currentPower
             });
-        } else {
-            // 🚨 NO ENCONTRADO: Log y seguir
-            console.warn(`⚠️ [SKIP] Dispositivo ${deviceId} no encontrado - ignorando update`);
-            console.log(`⚠️ No se encontró dispositivo ${deviceId} para credencial ${credentialId}`);
-            console.warn(`⚠️ Dispositivo ${deviceId} no mapeado correctamente tras múltiples intentos.`);
-            
-            // DEBUG: Solo en desarrollo 
-            if (process.env.NODE_ENV === 'development') {
-                const allDevicesForCredential = await prisma.smartPlugDevice.findMany({
-                    where: { credentialId },
-                    select: { id: true, deviceId: true, cloudId: true, name: true }
-                });
-                console.log(`🔍 [DEBUG] Dispositivos en BD para credencial ${credentialId}:`, allDevicesForCredential);
+
+            // 🚀 BROADCAST DIRECTO (fallback) ---------------------------------
+            try {
+              const globalBroadcast = (globalThis as any).broadcastDeviceUpdate;
+              if (globalBroadcast && device.credential?.systemId) {
+                const payload = {
+                  deviceId: device.id,
+                  shellyDeviceId: device.deviceId,
+                  online: status.online,
+                  relayOn: updatedData.relayOn,
+                  currentPower: updatedData.currentPower,
+                  voltage: updatedData.voltage,
+                  temperature: updatedData.temperature,
+                  timestamp: Date.now(),
+                  reason: 'websocket_status'
+                };
+                globalBroadcast(device.credential.systemId, payload);
+              }
+            } catch (brErr) {
+              console.warn('⚠️  Broadcast fallback error:', brErr);
             }
-            return; // Salir sin procesar
+        } else {
+            // -------------------------------------------------------------
+            // 🛠️ Fallback: intentar resolver deviceId numérico (cloudId)
+            // -------------------------------------------------------------
+            let fallbackDevice: typeof device | null = null;
+            if (/^\d+$/.test(deviceId)) {
+                const originalEntry = Array.from(this.deviceIdMapping.entries()).find(([, cloud]) => cloud === deviceId);
+                const originalDeviceId = originalEntry?.[0];
+                if (originalDeviceId) {
+                    fallbackDevice = await prisma.smartPlugDevice.findFirst({
+                        where: { deviceId: originalDeviceId, credentialId },
+                        include: { credential: { select: { systemId: true } } }
+                    });
+
+                    if (fallbackDevice) {
+                        console.info(`🔄 [FALLBACK] Encontrado dispositivo por mapeo inverso ${deviceId} → ${originalDeviceId}`);
+
+                        // Actualizar cloudId en BD si aún está vacío
+                        if (!fallbackDevice.cloudId) {
+                            try {
+                                await prisma.smartPlugDevice.update({
+                                    where: { id: fallbackDevice.id },
+                                    data: { cloudId: deviceId }
+                                });
+                            } catch (err) {
+                                console.warn(`⚠️ Error actualizando cloudId fallback para ${fallbackDevice.deviceId}:`, err);
+                            }
+                        }
+                        // Asignar para continuar procesamiento normal
+                        device = fallbackDevice;
+                    }
+                }
+            }
+
+            // ➡️ Intento final: buscar por cloudId en toda la base (cualquier credencial)
+            if (!device && /^\d+$/.test(deviceId)) {
+                const byCloud = await prisma.smartPlugDevice.findFirst({
+                    where: { cloudId: deviceId }
+                });
+                if (byCloud) {
+                    console.info(`🔄 [FALLBACK-GLOBAL] Dispositivo encontrado por cloudId global: ${byCloud.deviceId}`);
+                    device = byCloud as any;
+                    // Asegurar mapeo para futuros mensajes
+                    this.deviceIdMapping.set(byCloud.deviceId, deviceId);
+                }
+            }
+
+            // Si AÚN no se encontró pero necesitamos reflejar offline, emitir payload mínimo
+            if (!device && status.online === false) {
+                const globalBroadcast = (globalThis as any).broadcastDeviceUpdate;
+                const sysId = null; // no conocemos systemId
+                if (globalBroadcast && sysId) {
+                    globalBroadcast(sysId, {
+                        deviceId: deviceId,
+                        online: false,
+                        relayOn: false,
+                        currentPower: 0,
+                        timestamp: Date.now(),
+                        reason: 'command_failed_no_device'
+                    });
+                }
+            }
+
+            if (!device) {
+                console.warn(`⚠️ [SKIP] Dispositivo ${deviceId} no encontrado - ignorando update`);
+                console.log(`⚠️ No se encontró dispositivo ${deviceId} para credencial ${credentialId}`);
+                console.warn(`⚠️ Dispositivo ${deviceId} no mapeado correctamente tras múltiples intentos.`);
+
+                // DEBUG: Solo en desarrollo 
+                if (process.env.NODE_ENV === 'development') {
+                    const allDevicesForCredential = await prisma.smartPlugDevice.findMany({
+                        where: { credentialId },
+                        select: { id: true, deviceId: true, cloudId: true, name: true }
+                    });
+                    console.log(`🔍 [DEBUG] Dispositivos en BD para credencial ${credentialId}:`, allDevicesForCredential);
+                }
+                return; // Salir sin procesar si sigue sin encontrarse
+            }
         }
         
         // Llamar callback si existe
@@ -421,8 +595,13 @@ class ShellyWebSocketManager {
     private async handleClose(credentialId: string): Promise<void> {
         console.log(`WebSocket cerrado para credential ${credentialId}`);
         
-        // 🎯 NOTIFICAR AL OFFLINE MANAGER
-        deviceOfflineManager.setWebSocketConnected(false);
+        // 🎯 NOTIFICAR AL OFFLINE MANAGER SOLO CUANDO NO QUEDEN CONEXIONES
+        if (this.activeConnectionCount > 0) {
+            this.activeConnectionCount--;
+        }
+        if (this.activeConnectionCount === 0) {
+            deviceOfflineManager.setWebSocketConnected(false);
+        }
         
         // Actualizar estado
         await this.updateConnectionStatus(credentialId, 'disconnected');
@@ -693,8 +872,7 @@ class ShellyWebSocketManager {
             
             // Buscar por deviceId en la misma credencial
             const allDevicesForCredential = await prisma.smartPlugDevice.findMany({
-                where: { credentialId },
-                select: { id: true, deviceId: true, cloudId: true, name: true }
+                where: { credentialId }
             });
             
             console.info(`🔍 [FALLBACK] Dispositivos disponibles para credencial ${credentialId}:`, 
@@ -747,6 +925,21 @@ class ShellyWebSocketManager {
                 }
             }
             
+            // Persistir cloudId en BD si aún no está guardado o ha cambiado
+            if (!device.cloudId && /^\d+$/.test(targetCloudId)) {
+                try {
+                    await prisma.smartPlugDevice.update({
+                        where: { id: device.id },
+                        data: { cloudId: targetCloudId }
+                    });
+                    // Actualizar mapping en memoria
+                    this.deviceIdMapping.set(device.deviceId, targetCloudId);
+                    console.log(`💾 [CONTROL] cloudId persistido en BD: ${device.deviceId} → ${targetCloudId}`);
+                } catch (persistErr) {
+                    console.warn(`⚠️ [CONTROL] No se pudo persistir cloudId para ${device.deviceId}:`, persistErr);
+                }
+            }
+
             // Usar formato de comando Cloud según la documentación
             const command = {
                 event: 'Shelly:CommandRequest',
@@ -1086,14 +1279,29 @@ class ShellyWebSocketManager {
     }
 }
 
-// ================= INIT CLEANUP (fuera de la clase) =================
-export const shellyWebSocketManager = new ShellyWebSocketManager();
+// ================= INIT SINGLETON GLOBAL ============================
+// Usamos globalThis para garantizar que TODOS los bundles/compilaciones de
+// Next.js (API routes, RSC, edge, etc.) compartan **la misma instancia** y
+// evitemos el problema de “callbacks no configurados” cuando hay múltiples
+// imports con rutas distintas.
 
-(async () => {
-  try {
-    await shellyWebSocketManager.cleanupZombieConnections();
-    await shellyWebSocketManager.sanitizeCloudIds();
-  } catch (e) {
-    console.warn('⚠️ Error en rutina de limpieza inicial:', e);
-  }
-})(); 
+const g = globalThis as any;
+
+if (!g.__shellyWebSocketManager__) {
+  g.__shellyWebSocketManager__ = new ShellyWebSocketManager();
+}
+
+export const shellyWebSocketManager: ShellyWebSocketManager = g.__shellyWebSocketManager__;
+
+// ================= INIT CLEANUP (una sola vez) ======================
+if (!g.__shellyWebSocketManager__initialized__) {
+  (async () => {
+    try {
+      await shellyWebSocketManager.cleanupZombieConnections();
+      await shellyWebSocketManager.sanitizeCloudIds();
+    } catch (e) {
+      console.warn('⚠️ Error en rutina de limpieza inicial:', e);
+    }
+  })();
+  g.__shellyWebSocketManager__initialized__ = true;
+} 

@@ -4,35 +4,4 @@ globs:
 alwaysApply: true
 ---
 Recuerda que prisma siempre se importa con la linea import { prisma } from '@/lib/db';
-
-### ✅ Task: Interactive Task Loop with User Feedback
-
-1. **Check if `userinput.py` exists** in the root directory.
-
-   * If it doesn't exist, create it with the following content:
-
-     ```python
-     # userinput.py
-     user_input = input("prompt: ")
-     ```
-
-2. **Main Workflow**:
-
-   * Perform your assigned tasks.
-
-   * Run:
-
-     ```bash
-     python userinput.py
-     ```
-   * The terminal should be opened in the chat window itself.
-
-   * Read the user's input.
-
-   * Based on the input, perform the next set of tasks.
-
-   * Repeat the process.
-
-3. **Exit Condition**:
-
-   * If the user enters `"stop"` when prompted, exit the loop and terminate the process.
+Recuerda documentar siempre los arhcivos añadiendo cabeceras de contexto para futuros modelos de IA que puedan leer el codigo que conocan el contexto integro los riesgos y precauciones asi como las variable ssus nombres para evitar errores de interpretacion , y en general un contexto perfectamente explicado para el entendimiento de lo qu ese va haciendo y como se relaciona con el resto de la logica de la aplicacion.

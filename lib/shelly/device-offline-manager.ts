@@ -1,5 +1,17 @@
 import { wsLogger } from '@/lib/utils/websocket-logger';
 
+/**
+ * ⏱️ Tiempo máximo SIN recibir mensajes antes de considerar un dispositivo offline.
+ * Definido en un único lugar para poder cambiarlo fácilmente.
+ */
+export const DEVICE_STATE_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutos
+
+/**
+ * 🏷️ Flag global para activar o desactivar el timer interno de comprobación.
+ * En producción lo desactivamos para basarnos SOLO en los triggers que ya suceden.
+ */
+const USE_STATE_CHECK_TIMER = false;
+
 export interface OfflineUpdate {
   deviceId: string;
   deviceName?: string;
@@ -69,14 +81,16 @@ class DeviceOfflineManager {
   
   private constructor() {
     wsLogger.verbose('🎯 [OfflineManager] Inicializado - ESTRATEGIA DOS NIVELES (Consumos 5s, Estados 3min)');
-    this.startStateMonitoring();
+    if (USE_STATE_CHECK_TIMER) {
+      this.startStateMonitoring();
+    }
   }
 
   /**
    * 🟢 REGISTRAR ACTIVIDAD - Llamado desde WebSocket Manager
    * ESTRATEGIA DOS NIVELES: UI INMEDIATA + Timeouts inteligentes
    */
-  trackActivity(deviceId: string, deviceName?: string, deviceData?: any): void {
+  trackActivity(deviceId: string, deviceName?: string, deviceData?: any, onlineState: boolean = true): void {
     const now = Date.now();
     wsLogger.debug(`🔄 [OfflineManager] Dispositivo activo: ${deviceName || deviceId}`);
     
@@ -84,13 +98,19 @@ class DeviceOfflineManager {
     this.handleConsumptionData(deviceId, deviceData?.currentPower, now);
     
     // 🎯 NIVEL 2: GESTIONAR ESTADO (3 minutos)
-    this.handleDeviceState(deviceId, true, now);
+    this.handleDeviceState(deviceId, onlineState, now);
+
+    // ✅ NUEVO: Evaluar estados obsoletos SIN timers
+    const stale = this.evaluateStaleStates(now);
+    if (stale.length > 0) {
+      this.notifyCallbacks(stale);
+    }
     
     // 🚀 UI INMEDIATA: Notificar online + datos al instante
     this.notifyCallbacks([{
       deviceId,
       deviceName,
-      online: true,
+      online: onlineState,
       reason: 'websocket_message_received',
       updateBD: true, // Mensaje recibido = actualizar BD después de UI
       timestamp: now,
@@ -178,7 +198,7 @@ class DeviceOfflineManager {
    */
   private async checkStaleStates(): Promise<void> {
     const now = Date.now();
-    const STATE_TIMEOUT = 3 * 60 * 1000; // 3 minutos
+    const STATE_TIMEOUT = DEVICE_STATE_TIMEOUT_MS; // Usar constante centralizada
     const staleUpdates: OfflineUpdate[] = [];
 
     try {
@@ -357,6 +377,36 @@ class DeviceOfflineManager {
       consumptions: this.deviceConsumptions.size,
       states: this.deviceStates.size
     };
+  }
+
+  /**
+   * 🧮 EVALUAR ESTADOS OBSOLETOS SIN USAR TIMER
+   * Reutiliza la misma lógica que checkStaleStates pero se invoca bajo demanda
+   * p.e. cada vez que llega un nuevo mensaje de cualquier dispositivo.
+   */
+  private evaluateStaleStates(now: number): OfflineUpdate[] {
+    const staleUpdates: OfflineUpdate[] = [];
+
+    for (const [deviceId, state] of this.deviceStates.entries()) {
+      const timeSinceLastSeen = now - state.lastSeenAt;
+
+      if (state.online && timeSinceLastSeen > DEVICE_STATE_TIMEOUT_MS) {
+        wsLogger.debug(`🔴 [OfflineManager] Estado obsoleto: ${deviceId} (${Math.round(timeSinceLastSeen/1000)}s)`);
+
+        // Actualizar estado local
+        state.online = false;
+
+        staleUpdates.push({
+          deviceId,
+          online: false,
+          reason: 'state_timeout',
+          updateBD: true,
+          timestamp: now
+        });
+      }
+    }
+
+    return staleUpdates;
   }
 }
 

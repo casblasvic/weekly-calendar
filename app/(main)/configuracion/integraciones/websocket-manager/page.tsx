@@ -7,7 +7,6 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
 import { 
     Activity, 
     AlertTriangle, 
@@ -19,21 +18,16 @@ import {
     RotateCcw,
     ArrowLeft,
     Eye,
-    Clock,
     Zap,
     Wifi,
-    WifiOff,
-    Settings,
-    Download,
-    FileText,
-    ToggleLeft,
-    ToggleRight
+    WifiOff
 } from "lucide-react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import WebSocketLogs from '@/components/websocket/websocket-logs';
 import { useIntegrationModules } from '@/hooks/use-integration-modules';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 interface WebSocketConnection {
     id: string;
@@ -47,6 +41,7 @@ interface WebSocketConnection {
     errors: number;
     url?: string;
     type: string;
+    loggingEnabled: boolean; // Nuevo campo para controlar el logging por conexión
 }
 
 interface WebSocketStats {
@@ -84,9 +79,11 @@ const StatsCard = memo(({ title, value, subtitle, icon: Icon, color = "text-gray
 StatsCard.displayName = 'StatsCard';
 
 // Componente memoizado para filas de conexión
-const ConnectionRow = memo(({ connection, onAction }: {
+const ConnectionRow = memo(({ connection, onAction, onLoggingToggle, updatingLogging }: {
     connection: WebSocketConnection;
     onAction: (id: string, action: 'start' | 'stop' | 'restart' | 'refresh-token') => void;
+    onLoggingToggle: (id: string, enabled: boolean) => void;
+    updatingLogging: boolean;
 }) => {
     const formatUptime = useCallback((connectedAt: Date | null) => {
         if (!connectedAt) return 'Desconectado';
@@ -117,6 +114,13 @@ const ConnectionRow = memo(({ connection, onAction }: {
         }
     }, []);
 
+    const [localLogging, setLocalLogging] = useState(connection.loggingEnabled);
+
+    const handleToggle = (checked: boolean) => {
+        setLocalLogging(checked);
+        onLoggingToggle(connection.id, checked);
+    };
+
     return (
         <TableRow>
             <TableCell>
@@ -127,6 +131,10 @@ const ConnectionRow = memo(({ connection, onAction }: {
             </TableCell>
             <TableCell>
                 {getStatusBadge(connection.status)}
+            </TableCell>
+            {/* Logging column */}
+            <TableCell>
+                <Switch checked={localLogging} disabled={updatingLogging} onCheckedChange={handleToggle} />
             </TableCell>
             <TableCell>
                 <Badge variant="outline">{connection.type}</Badge>
@@ -232,7 +240,6 @@ export default function WebSocketManagerPage() {
     const [isDisconnectingShelly, setIsDisconnectingShelly] = useState(false);
 
     // 🔧 NUEVO: Estados para control de logging
-    const [loggingStats, setLoggingStats] = useState<Record<string, { enabled: number; disabled: number; total: number }>>({});
     const [isUpdatingLogging, setIsUpdatingLogging] = useState<Record<string, boolean>>({});
 
     const fetchMetrics = useCallback(async () => {
@@ -293,7 +300,8 @@ export default function WebSocketManagerPage() {
                     messagesSent,
                     messagesReceived,
                     errors: connectionLogs.filter((log: any) => log.eventType === 'error').length,
-                    url: conn.type === 'SOCKET_IO' ? '/api/socket' : undefined
+                    url: conn.type === 'SOCKET_IO' ? '/api/socket' : undefined,
+                    loggingEnabled: conn.loggingEnabled || false // Asumir que todos los nuevos tienen logging habilitado por defecto
                 };
             });
             
@@ -352,23 +360,33 @@ export default function WebSocketManagerPage() {
         }
     }, []);
 
-    const fetchLoggingStats = useCallback(async () => {
+    // Handler para toggle individual de logging
+    const handleLoggingToggle = useCallback(async (connectionId: string, enabled: boolean) => {
+        setIsUpdatingLogging(prev => ({ ...prev, [connectionId]: true }));
         try {
-            const response = await fetch('/api/websocket/logging');
-            if (response.ok) {
-                const data = await response.json();
-                setLoggingStats(data.data || {});
-            } else {
-                console.error('Error al obtener estadísticas de logging');
-            }
-        } catch (error) {
-            console.error('Error:', error);
+            const resp = await fetch(`/api/websocket/${connectionId}/logging`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ loggingEnabled: enabled })
+            });
+            const res = await resp.json();
+            if (!resp.ok || !res.success) throw new Error(res.error || 'Error actualizando logging');
+
+            // éxito: actualizar conexión local
+            setConnections(prev => prev.map(c => c.id === connectionId ? { ...c, loggingEnabled: enabled } : c));
+            toast.success(`Logging ${enabled ? 'habilitado' : 'deshabilitado'}`);
+        } catch (err:any) {
+            console.error('Error toggle logging:', err);
+            toast.error(err.message || 'Error actualizando logging');
+            // revert
+            setConnections(prev => prev.map(c => c.id === connectionId ? { ...c, loggingEnabled: !enabled } : c));
+        } finally {
+            setIsUpdatingLogging(prev => ({ ...prev, [connectionId]: false }));
         }
-    }, []);
+    }, [setConnections]);
 
     useEffect(() => {
         fetchConnections();
-        fetchLoggingStats();
         
         // Forzar inicialización del Socket.io
         const initializeSocket = async () => {
@@ -388,13 +406,60 @@ export default function WebSocketManagerPage() {
         // Actualizar cada 120 segundos (reducido para mejor rendimiento)
         const interval = setInterval(() => {
             fetchConnections();
-            fetchLoggingStats();
         }, 120000);
         
         return () => {
             clearInterval(interval);
         };
-    }, [fetchConnections, fetchLoggingStats]);
+    }, [fetchConnections]);
+
+    /* --------------------------------------------------
+     * Determinar si el WebSocket local está conectado.
+     * Basado en la fila SOCKET_IO con status 'connected'.
+     * --------------------------------------------------*/
+    const socketConnected = useMemo(() => {
+        return connections.some(c => c.type === 'SOCKET_IO' && c.status === 'connected');
+    }, [connections]);
+
+    /* --------------------------------------------------
+     * Dropdown global “Encender credenciales Shelly”
+     * --------------------------------------------------*/
+    const shellyDisconnected = useMemo(() => connections.filter(c => c.type==='SHELLY' && c.status==='disconnected'), [connections]);
+
+    const renderGlobalShellyStart = () => {
+        if (!socketConnected || shellyDisconnected.length === 0) return null;
+
+        if (shellyDisconnected.length === 1) {
+            return (
+                <Button
+                  size="sm"
+                  className="mb-4"
+                  onClick={() => handleConnectionAction(shellyDisconnected[0].id,'start')}
+                >
+                  Encender {shellyDisconnected[0].name}
+                </Button>
+            );
+        }
+
+        return (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" className="mb-4">Encender credenciales Shelly</Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem onSelect={() => shellyDisconnected.forEach(c=>handleConnectionAction(c.id,'start'))}>
+                🔄 Encender TODAS
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              {shellyDisconnected.map(c => (
+                <DropdownMenuItem key={c.id} onSelect={() => handleConnectionAction(c.id,'start')}>
+                  {c.name}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        );
+    };
 
     const handleConnectionAction = useCallback(async (connectionId: string, action: 'start' | 'stop' | 'restart' | 'refresh-token') => {
         try {
@@ -546,39 +611,6 @@ export default function WebSocketManagerPage() {
         return hasShellyConnections && !isShellyActive && !isLoadingModules;
     }, [hasShellyConnections, isShellyActive, isLoadingModules]);
 
-    // 🔧 NUEVO: Función para actualizar logging por tipo
-    const handleLoggingToggle = useCallback(async (type: string, enabled: boolean) => {
-        setIsUpdatingLogging(prev => ({ ...prev, [type]: true }));
-        
-        try {
-            const response = await fetch('/api/websocket/logging', {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    type,
-                    loggingEnabled: enabled
-                })
-            });
-
-            const result = await response.json();
-
-            if (result.success) {
-                toast.success(result.message);
-                // Actualizar estadísticas
-                await fetchLoggingStats();
-            } else {
-                throw new Error(result.error || 'Error actualizando logging');
-            }
-        } catch (error) {
-            console.error('Error actualizando logging:', error);
-            toast.error(error instanceof Error ? error.message : 'Error actualizando estado de logging');
-        } finally {
-            setIsUpdatingLogging(prev => ({ ...prev, [type]: false }));
-        }
-    }, [fetchLoggingStats]);
-
     if (isLoading) {
         return (
             <div className="p-6 space-y-6">
@@ -651,13 +683,13 @@ export default function WebSocketManagerPage() {
             {/* 🛡️ Banner simplificado de respaldo (solo casos excepcionales) */}
             {shouldShowDisconnectButton && (
                 <div className="p-3 mb-4 bg-blue-50 rounded-lg border border-blue-200">
-                    <div className="flex items-center gap-3">
+                    <div className="flex gap-3 items-center">
                         <AlertTriangle className="w-4 h-4 text-blue-600" />
                         <div className="flex-1">
                             <p className="text-sm text-blue-700">
                                 <strong>Conexiones legacy detectadas.</strong> El sistema las limpia automáticamente al cargar.
                             </p>
-                            <p className="text-xs text-blue-600 mt-1">
+                            <p className="mt-1 text-xs text-blue-600">
                                 Si persisten tras recargar, use el botón para forzar limpieza manual.
                             </p>
                         </div>
@@ -675,15 +707,13 @@ export default function WebSocketManagerPage() {
                 </div>
             )}
 
+            {renderGlobalShellyStart()}
+
             <Tabs defaultValue="connections" className="w-full" value={activeTab} onValueChange={setActiveTab}>
-                <TabsList className="grid grid-cols-3 w-full">
+                <TabsList className="grid grid-cols-2 w-full">
                     <TabsTrigger value="connections" className="flex gap-2 items-center">
                         <Activity className="w-4 h-4" />
                         Conexiones Activas
-                    </TabsTrigger>
-                    <TabsTrigger value="logging" className="flex gap-2 items-center">
-                        <FileText className="w-4 h-4" />
-                        Control de Logging
                     </TabsTrigger>
                     <TabsTrigger value="logs" className="flex gap-2 items-center">
                         <Eye className="w-4 h-4" />
@@ -704,6 +734,7 @@ export default function WebSocketManagerPage() {
                                         <TableRow>
                                             <TableHead>Nombre/Descripción</TableHead>
                                             <TableHead>Estado</TableHead>
+                                            <TableHead>Logging</TableHead>
                                             <TableHead>Tipo</TableHead>
                                             <TableHead>Tiempo Activo</TableHead>
                                             <TableHead>Mensajes</TableHead>
@@ -715,146 +746,23 @@ export default function WebSocketManagerPage() {
                                     <TableBody>
                                         {connections.length > 0 ? (
                                             connections.map((connection) => (
-                                                <ConnectionRow key={connection.id} connection={connection} onAction={handleConnectionAction} />
+                                                <ConnectionRow 
+                                                    key={connection.id} 
+                                                    connection={connection} 
+                                                    onAction={handleConnectionAction} 
+                                                    onLoggingToggle={handleLoggingToggle} 
+                                                    updatingLogging={isUpdatingLogging[connection.id] || false}
+                                                />
                                             ))
                                         ) : (
                                             <TableRow>
-                                                <TableCell colSpan={8} className="h-24 text-center">
+                                                <TableCell colSpan={9} className="h-24 text-center">
                                                     No hay conexiones WebSocket configuradas.
                                                 </TableCell>
                                             </TableRow>
                                         )}
                                     </TableBody>
                                 </Table>
-                            </div>
-                        </CardContent>
-                    </Card>
-                </TabsContent>
-
-                <TabsContent value="logging">
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Control de Logging WebSocket</CardTitle>
-                            <CardDescription>
-                                Activa o desactiva el logging de eventos para diferentes tipos de conexiones. 
-                                Útil para reducir el volumen de logs en producción y habilitarlo solo para debugging.
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            <div className="space-y-6">
-                                {/* Información general */}
-                                <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-                                    <div className="flex items-center gap-2 mb-2">
-                                        <FileText className="w-4 h-4 text-blue-600" />
-                                        <h3 className="font-medium text-blue-800">¿Qué es el logging de WebSocket?</h3>
-                                    </div>
-                                    <p className="text-sm text-blue-700">
-                                        El sistema registra eventos como conexiones, desconexiones, mensajes y errores. 
-                                        Cuando está deshabilitado, estos eventos no se guardan en la base de datos, 
-                                        reduciendo el uso de almacenamiento y mejorando el rendimiento.
-                                    </p>
-                                </div>
-
-                                {/* Controles por tipo de conexión */}
-                                <div className="space-y-4">
-                                    <h3 className="text-lg font-medium">Configuración por Tipo de Conexión</h3>
-                                    
-                                    {Object.entries(loggingStats).length > 0 ? (
-                                        Object.entries(loggingStats).map(([type, stats]) => {
-                                            const isEnabled = stats.enabled > 0;
-                                            const isUpdating = isUpdatingLogging[type] || false;
-                                            
-                                            return (
-                                                <div key={type} className="flex items-center justify-between p-4 border rounded-lg">
-                                                    <div className="flex-1">
-                                                        <div className="flex items-center gap-3">
-                                                            <Badge variant="outline" className="font-mono">
-                                                                {type}
-                                                            </Badge>
-                                                            <div>
-                                                                <h4 className="font-medium">
-                                                                    {type === 'SHELLY' ? 'Dispositivos Shelly' :
-                                                                     type === 'SOCKET_IO' ? 'Socket.io (Tiempo Real)' :
-                                                                     type === 'CUSTOM' ? 'Conexiones Personalizadas' :
-                                                                     type === 'TEST' ? 'Conexiones de Prueba' :
-                                                                     `Conexiones ${type}`}
-                                                                </h4>
-                                                                <p className="text-sm text-gray-600">
-                                                                    {stats.total} conexiones totales • 
-                                                                    {stats.enabled} con logging habilitado • 
-                                                                    {stats.disabled} con logging deshabilitado
-                                                                </p>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                    
-                                                    <div className="flex items-center gap-3">
-                                                        <div className="flex items-center gap-2">
-                                                            <Label htmlFor={`logging-${type}`} className="text-sm">
-                                                                {isEnabled ? 'Habilitado' : 'Deshabilitado'}
-                                                            </Label>
-                                                            <Switch
-                                                                id={`logging-${type}`}
-                                                                checked={isEnabled}
-                                                                disabled={isUpdating || stats.total === 0}
-                                                                onCheckedChange={(checked) => handleLoggingToggle(type, checked)}
-                                                            />
-                                                        </div>
-                                                        
-                                                        {isUpdating && (
-                                                            <RefreshCw className="w-4 h-4 animate-spin text-blue-600" />
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            );
-                                        })
-                                    ) : (
-                                        <div className="text-center py-8 text-gray-500">
-                                            <FileText className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                                            <p>No hay conexiones WebSocket configuradas</p>
-                                            <p className="text-sm">Los controles aparecerán cuando haya conexiones activas</p>
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* Acciones rápidas */}
-                                {Object.keys(loggingStats).length > 0 && (
-                                    <div className="pt-4 border-t">
-                                        <h3 className="text-lg font-medium mb-3">Acciones Rápidas</h3>
-                                        <div className="flex gap-2">
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                onClick={() => {
-                                                    Object.keys(loggingStats).forEach(type => {
-                                                        if (loggingStats[type].total > 0) {
-                                                            handleLoggingToggle(type, true);
-                                                        }
-                                                    });
-                                                }}
-                                                disabled={Object.values(isUpdatingLogging).some(Boolean)}
-                                            >
-                                                <ToggleRight className="w-4 h-4 mr-2" />
-                                                Habilitar Todo
-                                            </Button>
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                onClick={() => {
-                                                    Object.keys(loggingStats).forEach(type => {
-                                                        if (loggingStats[type].total > 0) {
-                                                            handleLoggingToggle(type, false);
-                                                        }
-                                                    });
-                                                }}
-                                                disabled={Object.values(isUpdatingLogging).some(Boolean)}
-                                            >
-                                                <ToggleLeft className="w-4 h-4 mr-2" />
-                                                Deshabilitar Todo
-                                            </Button>
-                                        </div>
-                                    </div>
-                                )}
                             </div>
                         </CardContent>
                     </Card>

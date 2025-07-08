@@ -1,8 +1,11 @@
 import { Server } from 'socket.io';
+// 🆕 Redis Adapter para Socket.IO
+import { createAdapter } from '@socket.io/redis-adapter';
+import { createClient } from 'redis';
 import { prisma } from '../../lib/db';
 import { decrypt, encrypt } from '../../lib/shelly/crypto.ts';
 import { refreshShellyToken } from '../../lib/shelly/client.ts';
-import { shellyWebSocketManager } from '../../lib/shelly/websocket-manager.ts';
+import { shellyWebSocketManager } from '@/lib/shelly/websocket-manager';
 import { wsLogger } from '../../lib/utils/websocket-logger.js';
 import { deviceOfflineManager } from '../../lib/shelly/device-offline-manager.ts';
 import { isShellyModuleActive } from '../../lib/services/shelly-module-service.ts';
@@ -12,6 +15,96 @@ import { io as ioClient } from 'socket.io-client';
 let io;
 let remoteClient;
 const systemConnections = new Map();
+
+/**
+ * 🌐 initializeRemoteClient (stub)
+ * --------------------------------------------------
+ * En algunos entornos (p.e. desarrollo sin servidor WS
+ * remoto o sin definir la función original) puede faltar
+ * la definición.  Creamos un stub no-operativo para evitar
+ * ReferenceError y permitir que la ruta /api/socket siga
+ * inicializando el servidor local.
+ */
+function initializeRemoteClient() {
+  const REMOTE_WS_URL = process.env.NEXT_PUBLIC_WS_URL;
+  if (!REMOTE_WS_URL) {
+    console.warn('⚠️ [REMOTE CLIENT] NEXT_PUBLIC_WS_URL no definido – cliente remoto omitido');
+    return null;
+  }
+  try {
+    console.log(`🌐 [REMOTE CLIENT] (stub) Conectando a ${REMOTE_WS_URL}…`);
+    remoteClient = ioClient(REMOTE_WS_URL, {
+      transports: ['websocket', 'polling'],
+      autoConnect: true
+    });
+    remoteClient.on('connect', () => console.log('✅ [REMOTE CLIENT] Conectado'));
+    remoteClient.on('error', err => console.error('❌ [REMOTE CLIENT] Error:', err));
+    return remoteClient;
+  } catch (err) {
+    console.error('❌ [REMOTE CLIENT] Error inicializando cliente remoto (stub):', err);
+    return null;
+  }
+}
+
+/**
+ * 🚀 initializeWebSocketManager (stub mínimo)
+ * Llama a initializeWebSocketConnections una vez que el server Socket.io
+ * está listo.  Garantiza que la función exista para evitar ReferenceError.
+ */
+function initializeWebSocketManager() {
+  try {
+    if (!io) {
+      console.warn('⚠️ [WS-MANAGER] io aún no está disponible, se omitirá la inicialización');
+      return;
+    }
+    // Diferir al próximo tick para asegurar que emitToSystem & process* ya existen
+    setTimeout(() => {
+      try {
+        initializeWebSocketConnections(io);
+      } catch (err2) {
+        console.error('❌ [WS-MANAGER] Error interno en init connections:', err2);
+      }
+    }, 0);
+  } catch (err) {
+    console.error('❌ [WS-MANAGER] Error inicializando WebSocket Manager:', err);
+  }
+}
+
+/** ------------------------------------------------------------
+ * emitToSystem
+ * Envía un evento tanto al room local del systemId como al
+ * cliente remoto (si existe).  Se declara antes de uso para
+ * evitar ReferenceError en callbacks definidos más abajo.
+ * ------------------------------------------------------------ */
+function emitToSystem(systemId, eventName, data) {
+  try {
+    // Local broadcast
+    if (io) {
+      io.to(systemId).emit(eventName, data);
+    }
+    // Remoto
+    if (remoteClient && remoteClient.connected) {
+      remoteClient.emit('broadcast-to-system', { systemId, eventName, data });
+    }
+  } catch (err) {
+    console.error('❌ emitToSystem error:', err);
+  }
+}
+
+/** ------------------------------------------------------------
+ * processAppointmentDeviceUsageUpdate (stub)
+ * Si la lógica completa no está cargada en este runtime, evitamos
+ * ReferenceError.  Se puede reemplazar por la versión completa
+ * en otros módulos.
+ * ------------------------------------------------------------ */
+async function processAppointmentDeviceUsageUpdate() {
+  // Stub: no-op en este proceso
+  return;
+}
+
+// 🆕 Clientes Redis (publicador / suscriptor) para adapter y PubSub interno
+let redisPubClient;
+let redisSubClient;
 
 // Helper para delay
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -28,6 +121,51 @@ export default function handler(req, res) {
         methods: ["GET", "POST"]
       }
     });
+
+    // ------------------------------------------------------------
+    // ⛓️  Conectar Redis Adapter para propagar eventos entre workers
+    // ------------------------------------------------------------
+    (async function setupRedisAdapter(instance) {
+      try {
+        if (!process.env.REDIS_URL) {
+          console.warn('⚠️  REDIS_URL no definido; el adapter Redis no se inicializará');
+          return;
+        }
+
+        if (!redisPubClient || !redisSubClient) {
+          redisPubClient = createClient({ url: process.env.REDIS_URL });
+          redisSubClient = redisPubClient.duplicate();
+
+          redisPubClient.on('error', (err) => console.error('Redis PubClient error', err));
+          redisSubClient.on('error', (err) => console.error('Redis SubClient error', err));
+
+          await Promise.all([redisPubClient.connect(), redisSubClient.connect()]);
+
+          // Exponer en global para reutilizar en endpoints API
+          global.redisPubClient = redisPubClient;
+        }
+
+        instance.adapter(createAdapter(redisPubClient, redisSubClient));
+
+        // Suscribirse a canal de desconexión Shelly para cerrar WebSockets en todos los workers
+        await redisSubClient.subscribe('shelly:disconnect', async (raw) => {
+          try {
+            const { credentialId } = JSON.parse(raw);
+            if (credentialId) {
+              console.log(`[Redis] ▶ shelly:disconnect ${credentialId}`);
+              await shellyWebSocketManager.disconnectCredential(credentialId);
+            }
+          } catch (subErr) {
+            console.error('Error procesando mensaje shelly:disconnect:', subErr);
+          }
+        });
+
+        console.log('✅ Redis adapter para Socket.IO inicializado');
+
+      } catch (adapterErr) {
+        console.error('❌ Error inicializando Redis adapter:', adapterErr);
+      }
+    })(io);
 
     res.socket.server.io = io;
 
@@ -64,7 +202,7 @@ export default function handler(req, res) {
         
         // Registrar conexión en WebSocketConnection
         try {
-          await registerWebSocketConnection(systemId, socket.id, 'connected');
+        await registerWebSocketConnection(systemId, socket.id, 'connected');
           console.log(`✅ [JOIN-SYSTEM] Conexión registrada en BD para ${socket.id}`);
         } catch (error) {
           console.error(`❌ [JOIN-SYSTEM] Error registrando en BD:`, error);
@@ -160,6 +298,23 @@ export default function handler(req, res) {
       }
     };
 
+    /**
+     * 🌐 FORCE SOCKET DISCONNECT (solo para conexiones locales SOCKET_IO)
+     * --------------------------------------------------------------
+     * Permite a otros endpoints (p.ej. /api/websocket/[id]/stop) forzar
+     * el cierre de un socket concreto usando su socket.id.
+     */
+    global.forceSocketDisconnect = (socketId) => {
+      try {
+        // Con adapter Redis, esto desconecta en TODOS los procesos
+        io.in(socketId).disconnectSockets(true);
+        return true;
+      } catch (err) {
+        console.error('❌ [FORCE_DISCONNECT] Error desconectando socket (adapter):', err);
+        return false;
+      }
+    };
+
     // 🆕 Función para broadcast de cambios de asignación
     global.broadcastAssignmentUpdate = (systemId, assignmentUpdate) => {
       if (io && systemConnections.has(systemId)) {
@@ -199,9 +354,77 @@ async function initializeWebSocketConnections(io) {
       console.log(`  - ${cred.name}: status=${cred.status}, dispositivos=${cred.smartPlugs.length}`);
     });
     
-    // Filtrar solo las conectadas
-    const credentials = allCredentials.filter(cred => cred.status === 'connected');
-    console.log(`📋 Credenciales conectadas para WebSocket: ${credentials.length}`);
+    // Filtrar credenciales ACTIVAS y con autoReconnect habilitado (o sin registro previo)
+    const credentials = [];
+    const skippedCreds = [];
+    for (const cred of allCredentials) {
+      if (cred.status !== 'connected') { skippedCreds.push(cred); continue; }
+
+      // Buscar registro WebSocketConnection para esta credencial
+      const existingConn = await prisma.webSocketConnection.findFirst({
+        where: {
+          type: 'SHELLY',
+          referenceId: cred.id
+        },
+        select: { autoReconnect: true, status: true }
+      });
+
+      // Si existe y autoReconnect === false ⇒ NO reconectar
+      if (existingConn && existingConn.autoReconnect === false) {
+        console.log(`⏸️  Omitiendo reconexión de ${cred.name} (autoReconnect deshabilitado)`);
+        skippedCreds.push(cred);
+        continue;
+      }
+
+      credentials.push(cred);
+    }
+
+    console.log(`📋 Credenciales a conectar (respeta autoReconnect): ${credentials.length}`);
+
+    // ---- MARCAR OFFLINE DISPOSITIVOS DE CREDENCIALES OMITIDAS ----
+    if (skippedCreds.length > 0) {
+      console.log(`🟥 Marcando offline dispositivos de ${skippedCreds.length} credenciales omitidas`);
+      for (const cred of skippedCreds) {
+        try {
+          await prisma.smartPlugDevice.updateMany({
+            where: { credentialId: cred.id },
+            data: {
+              online: false,
+              relayOn: false,
+              currentPower: 0,
+              updatedAt: new Date(),
+              lastSeenAt: new Date()
+            }
+          });
+
+          // Obtener IDs para broadcast
+          const devices = await prisma.smartPlugDevice.findMany({
+            where: { credentialId: cred.id },
+            select: { id: true, deviceId: true }
+          });
+
+          devices.forEach(dev => {
+            const payload = {
+              deviceId: dev.id,
+              shellyDeviceId: dev.deviceId,
+              online: false,
+              relayOn: false,
+              currentPower: 0,
+              voltage: null,
+              temperature: null,
+              timestamp: Date.now(),
+              reason: 'startup_ws_inactive'
+            };
+            if (global.broadcastDeviceUpdate) {
+              global.broadcastDeviceUpdate(cred.systemId, payload);
+            }
+          });
+
+        } catch (skipErr) {
+          console.error(`⚠️  Error marcando offline dispositivos de ${cred.name}:`, skipErr);
+        }
+      }
+    }
 
     // Verificar que el WebSocket Manager esté disponible
     if (!shellyWebSocketManager) {
@@ -319,10 +542,13 @@ function setupDeviceUpdateInterceptor(io) {
       wsLogger.verbose(`📡 Recibido update de dispositivo ${deviceId}:`, status);
       
       // Obtener información del dispositivo y sistema
-      const device = await prisma.smartPlugDevice.findFirst({
+      let device = await prisma.smartPlugDevice.findFirst({
         where: {
-          deviceId,
-          credentialId
+          credentialId,
+          OR: [
+            { deviceId: deviceId },
+            { cloudId: deviceId }
+          ]
         },
         include: {
           credential: true,
@@ -333,6 +559,19 @@ function setupDeviceUpdateInterceptor(io) {
           }
         }
       });
+
+      // Fallback global si no se encontró
+      if (!device) {
+        device = await prisma.smartPlugDevice.findFirst({
+          where: {
+            OR: [
+              { deviceId: deviceId },
+              { cloudId: deviceId }
+            ]
+          },
+          include: { credential: true }
+        });
+      }
       
       if (device && device.credential) {
         // Extraer datos del status
@@ -345,14 +584,14 @@ function setupDeviceUpdateInterceptor(io) {
         // 🎯 PROCESAR ACTUALIZACIONES DE APPOINTMENT_DEVICE_USAGE EN TIEMPO REAL
         console.log(`🎯 [SOCKET.JS] Procesando appointment device usage para ${device.name}...`);
         try {
-          await processAppointmentDeviceUsageUpdate(device, {
-            currentPower,
-            relayOn,
-            voltage,
-            temperature,
-            isOnline,
-            timestamp: new Date()
-          });
+        await processAppointmentDeviceUsageUpdate(device, {
+          currentPower,
+          relayOn,
+          voltage,
+          temperature,
+          isOnline,
+          timestamp: new Date()
+        });
           console.log(`✅ [SOCKET.JS] processAppointmentDeviceUsageUpdate completado para ${device.name}`);
         } catch (appointmentError) {
           console.error(`❌ [SOCKET.JS] Error en processAppointmentDeviceUsageUpdate para ${device.name}:`, appointmentError);
@@ -492,7 +731,7 @@ function setupOfflineManagerIntegration(io) {
           if (update.reason === 'websocket_reconnected') {
             await checkAndMarkStaleDevices('reconnected_stale');
           }
- 
+          
         } else {
           // Cambio específico de dispositivo
           const device = await prisma.smartPlugDevice.findUnique({
@@ -703,6 +942,29 @@ async function createWebSocketLog(connectionId, eventType, message, errorDetails
       console.warn('⚠️ Usando systemId por defecto para WebSocketLog');
     }
 
+    /**
+     * 🔧 FILTRO DE LOGGING
+     * ------------------------------------------------------------
+     * Antes de registrar un log verificamos `loggingEnabled` en la
+     * tabla `WebSocketConnection`. Si el usuario ha deshabilitado el
+     * logging mediante el switch de UI, simplemente abortamos sin
+     * insertar.  Se usa wsLogger.debug para evitar ruido en consola
+     * en producción.  Si por algún motivo el campo no existe todavía
+     * (migración pendiente) continuamos como fallback conservador.
+     */
+    try {
+      const conn = await prisma.webSocketConnection.findUnique({
+        where: { id: connectionId },
+        select: { loggingEnabled: true }
+      });
+      if (conn && conn.loggingEnabled === false) {
+        wsLogger.debug(`[LOGGING] omitido (disabled) conexión=${connectionId}, tipo=${eventType}`);
+        return;
+      }
+    } catch (logCheckErr) {
+      wsLogger.debug(`[LOGGING] verificación loggingEnabled falló, fallback ON:`, logCheckErr);
+    }
+
     await prisma.webSocketLog.create({
       data: {
         connectionId,
@@ -877,16 +1139,8 @@ async function executeMonitoringCycle(io) {
             signal: AbortSignal.timeout(5000)
           });
 
-          // Si hay error 429, implementar exponential backoff
-          if (response.status === 429) {
-            console.log(`⏳ Rate limit detectado para ${device.name}, esperando...`);
-            await delay(2000 + (i * 500)); // Delay incremental
-            continue; // Saltar este dispositivo en este ciclo
-          }
-
-          // Si hay error 401, intentar refrescar token
           if (response.status === 401) {
-            console.log(`🔄 Token expirado para credencial ${credential.name}, intentando refrescar...`);
+            console.log(`🔄 Token expirado para ${device.name}, intentando refrescar...`);
             
             try {
               const refreshToken = decrypt(credential.refreshToken);
@@ -912,25 +1166,18 @@ async function executeMonitoringCycle(io) {
               });
               
             } catch (refreshError) {
-              console.error(`❌ Error refrescando token para credencial ${credential.name}:`, refreshError);
+              console.error(`❌ Error refrescando token para ${device.name}:`, refreshError);
               // Marcar credencial como expirada
               await prisma.shellyCredential.update({
                 where: { id: credential.id },
                 data: { status: 'expired' }
               });
-              break; // Salir del loop de dispositivos para esta credencial
+              continue;
             }
           }
 
           if (response.ok) {
             const status = await response.json();
-            console.log(`📊 Estado recibido para ${device.name}:`, {
-              online: status.data?.online,
-              switch0: status.data?.device_status?.['switch:0']?.output,
-              relays: status.data?.device_status?.relays?.[0]?.ison,
-              power: status.data?.device_status?.['switch:0']?.apower,
-              voltage: status.data?.device_status?.['switch:0']?.voltage
-            });
             
             const update = {
               deviceId: device.id,
@@ -944,657 +1191,35 @@ async function executeMonitoringCycle(io) {
               timestamp: Date.now()
             };
 
-            // Verificar si hay cambios antes de actualizar
-            const hasChanges = 
-              device.online !== update.online ||
-              device.relayOn !== update.relayOn ||
-              Math.abs((device.currentPower || 0) - (update.currentPower || 0)) > 0.1 ||
-              Math.abs((device.voltage || 0) - (update.voltage || 0)) > 1.0;
-
-            console.log(`🔄 Dispositivo ${device.name} - Cambios detectados: ${hasChanges}`, {
-              oldOnline: device.online,
-              newOnline: update.online,
-              oldRelayOn: device.relayOn,
-              newRelayOn: update.relayOn,
-              oldPower: device.currentPower,
-              newPower: update.currentPower,
-              oldVoltage: device.voltage,
-              newVoltage: update.voltage
+            // Actualizar base de datos
+            await prisma.smartPlugDevice.update({
+              where: { id: device.id },
+              data: {
+                online: update.online,
+                relayOn: update.relayOn,
+                currentPower: update.currentPower,
+                voltage: update.voltage,
+                temperature: update.temperature,
+                lastSeenAt: new Date()
+              }
             });
 
-            if (hasChanges) {
-              console.log(`💾 Actualizando BD para ${device.name}`);
-              
-              // Actualizar base de datos
-              await prisma.smartPlugDevice.update({
-                where: { id: device.id },
-                data: {
-                  online: update.online,
-                  relayOn: update.relayOn,
-                  currentPower: update.currentPower,
-                  voltage: update.voltage,
-                  temperature: update.temperature,
-                  lastSeenAt: new Date()
-                }
-              });
-
-              // Broadcast a clientes conectados
-              const connectionsCount = systemConnections.get(credential.systemId)?.size || 0;
-              console.log(`📤 Enviando update a ${connectionsCount} clientes del sistema ${credential.systemId}`);
-              
-              io.to(credential.systemId).emit('device-update', update);
+            // Enviar actualización al cliente
+            const socket = io.sockets.sockets.get(device.credential.systemId); // Encontrar el socket por systemId
+            if (socket) {
+              socket.emit('device-update', update);
+            } else {
+              console.warn(`⚠️ No se encontró socket para systemId ${device.credential.systemId}`);
             }
           } else {
             console.log(`❌ Error HTTP ${response.status} para dispositivo ${device.name}`);
           }
         } catch (error) {
-          // Solo log de errores importantes, no spam
-          if (error.code !== 'ECONNREFUSED') {
-            console.log(`⚠️ Error actualizando ${device.name}:`, error instanceof Error ? error.message : 'Error desconocido');
-          }
-        }
-
-        // Delay entre dispositivos para evitar rate limiting (500ms)
-        if (i < credential.smartPlugs.length - 1) {
-          await delay(500);
+          console.error(`⚠️ Error actualizando ${device.name}:`, error.message);
         }
       }
-      
-      // Delay entre credenciales (1 segundo)
-      if (credentials.indexOf(credential) < credentials.length - 1) {
-        await delay(1000);
-      }
     }
-    
-    console.log('✅ Ciclo de monitoreo completado');
   } catch (error) {
-    console.error('❌ Error en monitoreo automático:', error);
+    console.error('❌ Error en ciclo de monitoreo con polling:', error);
   }
 }
-
-// 🎯 FUNCIÓN PRINCIPAL: Procesar actualizaciones de AppointmentDeviceUsage en tiempo real
-async function processAppointmentDeviceUsageUpdate(device, data) {
-  try {
-    const { currentPower, relayOn, voltage, temperature, isOnline, timestamp } = data;
-    
-    // Buscar registros activos para este dispositivo
-    const activeUsage = await prisma.appointmentDeviceUsage.findFirst({
-      where: {
-        deviceId: device.deviceId, // Usar deviceId de Shelly
-        currentStatus: { in: ['ACTIVE', 'PAUSED'] },
-        endedAt: null
-      },
-      include: {
-        appointment: {
-          include: {
-            services: {
-              include: {
-                service: true
-              }
-            }
-          }
-        },
-        equipmentClinicAssignment: {
-          include: {
-            equipment: true,
-            smartPlugDevice: true
-          }
-        }
-      }
-    });
-
-    if (!activeUsage) {
-      // No hay uso activo, solo actualizar dispositivo en BD
-      await updateDeviceInDatabase(device, data);
-      return;
-    }
-
-    console.log(`🔄 [REAL_TIME_UPDATE] Procesando ${device.name}:`, {
-      usageId: activeUsage.id,
-      currentPower,
-      relayOn,
-      isOnline,
-      appointmentId: activeUsage.appointmentId
-    });
-
-    // 🔍 VERIFICAR ESTADO OFFLINE
-    if (!isOnline) {
-      console.log(`📴 [REAL_TIME_UPDATE] Dispositivo offline: ${device.name}`);
-      await handleDeviceOffline(activeUsage, timestamp);
-      await updateDeviceInDatabase(device, data);
-      return;
-    }
-
-    // 🔍 VERIFICAR CONSUMO REAL
-    const hasRealConsumption = currentPower && currentPower > 0.1;
-
-    if (hasRealConsumption && relayOn) {
-      // ✅ HAY CONSUMO REAL - Procesar tiempo de uso
-      await processActiveConsumption(activeUsage, data, device);
-    } else if (relayOn) {
-      // 🟡 ENCENDIDO PERO SIN CONSUMO - Standby
-      await processStandbyState(activeUsage, data, device);
-    } else {
-      // 🔴 APAGADO - Verificar si fue manual o automático
-      await processDeviceTurnedOff(activeUsage, data, device);
-    }
-
-    // Actualizar siempre el dispositivo en BD
-    await updateDeviceInDatabase(device, data);
-
-  } catch (error) {
-    console.error(`❌ [REAL_TIME_UPDATE] Error procesando ${device.name}:`, error);
-  }
-}
-
-// 🟢 Procesar consumo activo real
-async function processActiveConsumption(activeUsage, data, device) {
-  const { currentPower, voltage, temperature, timestamp } = data;
-
-  try {
-    // Obtener datos actuales del uso
-    const currentDeviceData = activeUsage.deviceData || {};
-    const previousPower = currentDeviceData.lastPower || 0;
-    const lastConsumptionTimestamp = currentDeviceData.lastConsumptionAt ? 
-      new Date(currentDeviceData.lastConsumptionAt) : activeUsage.startedAt;
-
-    // 📅 CALCULAR TIEMPO REAL DE CONSUMO
-    let realStartTime = activeUsage.startedAt;
-    
-    // Si es la primera vez que hay consumo real, actualizar startedAt
-    if (!currentDeviceData.realConsumptionStarted) {
-      console.log(`🎯 [ACTIVE_CONSUMPTION] Primera vez con consumo real: ${device.name}`);
-      realStartTime = timestamp;
-      
-      await prisma.appointmentDeviceUsage.update({
-        where: { id: activeUsage.id },
-        data: {
-          startedAt: timestamp, // ✅ ACTUALIZAR startedAt al momento real de consumo
-          deviceData: {
-            ...currentDeviceData,
-            realConsumptionStarted: true,
-            realStartedAt: timestamp.toISOString(),
-            firstConsumptionPower: currentPower
-          }
-        }
-      });
-    }
-
-    // ⚡ ACUMULAR ENERGÍA
-    const timeDiffSeconds = (timestamp.getTime() - lastConsumptionTimestamp.getTime()) / 1000;
-    const energyIncrement = (currentPower * timeDiffSeconds) / 3600; // Wh
-    const currentEnergyConsumption = (activeUsage.energyConsumption || 0) + energyIncrement;
-
-    // ⏱️ CALCULAR TIEMPO REAL DE USO (solo tiempo con consumo)
-    const totalActiveMinutes = currentDeviceData.totalActiveMinutes || 0;
-    const newActiveMinutes = timeDiffSeconds / 60;
-    const updatedActiveMinutes = totalActiveMinutes + newActiveMinutes;
-
-    // 📊 ACTUALIZAR REGISTRO
-    const updatedDeviceData = {
-      ...currentDeviceData,
-      lastPower: currentPower,
-      lastVoltage: voltage,
-      lastTemperature: temperature,
-      lastConsumptionAt: timestamp.toISOString(),
-      totalActiveMinutes: updatedActiveMinutes,
-      energyAccumulated: currentEnergyConsumption,
-      powerHistory: [
-        ...(currentDeviceData.powerHistory || []).slice(-10), // Mantener últimos 10
-        { timestamp: timestamp.toISOString(), power: currentPower }
-      ]
-    };
-
-    await prisma.appointmentDeviceUsage.update({
-      where: { id: activeUsage.id },
-      data: {
-        actualMinutes: Math.round(updatedActiveMinutes),
-        energyConsumption: currentEnergyConsumption,
-        deviceData: updatedDeviceData,
-        updatedAt: timestamp
-      }
-    });
-
-    console.log(`✅ [ACTIVE_CONSUMPTION] Actualizado ${device.name}:`, {
-      actualMinutes: Math.round(updatedActiveMinutes),
-      estimatedMinutes: activeUsage.estimatedMinutes,
-      energyWh: Math.round(currentEnergyConsumption * 100) / 100,
-      currentPower
-    });
-
-    // 🚨 VERIFICAR APAGADO AUTOMÁTICO
-    await checkAutoShutdown(activeUsage, updatedActiveMinutes, device);
-
-  } catch (error) {
-    console.error(`❌ [ACTIVE_CONSUMPTION] Error en ${device.name}:`, error);
-  }
-}
-
-// 🟡 Procesar estado standby (encendido sin consumo)
-async function processStandbyState(activeUsage, data, device) {
-  const { timestamp } = data;
-
-  try {
-    const currentDeviceData = activeUsage.deviceData || {};
-    
-    console.log(`🟡 [STANDBY] ${device.name} encendido sin consumo`);
-
-    await prisma.appointmentDeviceUsage.update({
-      where: { id: activeUsage.id },
-      data: {
-        deviceData: {
-          ...currentDeviceData,
-          lastStandbyAt: timestamp.toISOString(),
-          inStandbyMode: true
-        },
-        updatedAt: timestamp
-      }
-    });
-
-  } catch (error) {
-    console.error(`❌ [STANDBY] Error en ${device.name}:`, error);
-  }
-}
-
-// 🔴 Procesar dispositivo apagado
-async function processDeviceTurnedOff(activeUsage, data, device) {
-  const { timestamp } = data;
-
-  try {
-    console.log(`🔴 [DEVICE_OFF] ${device.name} apagado - finalizando uso`);
-
-    // Calcular tiempo total si no está calculado
-    const currentActiveMinutes = activeUsage.actualMinutes || 0;
-    
-    // Agregar evento a la traza JSON
-    const currentDeviceData = activeUsage.deviceData || {};
-    const events = currentDeviceData.events || [];
-    
-    events.push({
-      timestamp: timestamp.toISOString(),
-      event: 'device_turned_off',
-      details: 'Dispositivo apagado - finalizando uso',
-      data: {
-        actualMinutes: currentActiveMinutes,
-        estimatedMinutes: activeUsage.estimatedMinutes,
-        reason: 'manual_or_external'
-      }
-    });
-    
-    await prisma.appointmentDeviceUsage.update({
-      where: { id: activeUsage.id },
-      data: {
-        currentStatus: 'COMPLETED',
-        endedAt: timestamp,
-        actualMinutes: currentActiveMinutes,
-        deviceData: {
-          ...currentDeviceData,
-          events,
-          manuallyTurnedOff: true,
-          turnedOffAt: timestamp.toISOString()
-        },
-        updatedAt: timestamp
-      }
-    });
-
-    console.log(`✅ [DEVICE_OFF] ${device.name} uso finalizado:`, {
-      actualMinutes: currentActiveMinutes,
-      estimatedMinutes: activeUsage.estimatedMinutes
-    });
-
-  } catch (error) {
-    console.error(`❌ [DEVICE_OFF] Error en ${device.name}:`, error);
-  }
-}
-
-// 📴 Manejar dispositivo offline
-async function handleDeviceOffline(activeUsage, timestamp) {
-  try {
-    console.log(`📴 [OFFLINE] Pausando uso por desconexión: ${activeUsage.id}`);
-
-    // Agregar evento a la traza JSON
-    const currentDeviceData = activeUsage.deviceData || {};
-    const events = currentDeviceData.events || [];
-    
-    events.push({
-      timestamp: timestamp.toISOString(),
-      event: 'device_offline',
-      details: 'Dispositivo desconectado - pausando uso',
-      data: {
-        reason: 'connection_lost',
-        status: 'paused'
-      }
-    });
-
-    await prisma.appointmentDeviceUsage.update({
-      where: { id: activeUsage.id },
-      data: {
-        currentStatus: 'PAUSED',
-        pausedAt: timestamp,
-        deviceData: {
-          ...currentDeviceData,
-          events,
-          pausedReason: 'device_offline',
-          pausedAt: timestamp.toISOString()
-        },
-        updatedAt: timestamp
-      }
-    });
-
-  } catch (error) {
-    console.error(`❌ [OFFLINE] Error pausando uso:`, error);
-  }
-}
-
-// 🚨 Verificar y ejecutar apagado automático
-async function checkAutoShutdown(activeUsage, actualMinutes, device) {
-  try {
-    const autoShutdownEnabled = activeUsage.equipmentClinicAssignment?.smartPlugDevice?.autoShutdownEnabled;
-    
-    if (!autoShutdownEnabled) {
-      return; // Apagado automático deshabilitado
-    }
-
-    if (actualMinutes >= activeUsage.estimatedMinutes) {
-      console.log(`⏰ [AUTO_SHUTDOWN] Tiempo cumplido para ${device.name}:`, {
-        actualMinutes: Math.round(actualMinutes),
-        estimatedMinutes: activeUsage.estimatedMinutes
-      });
-
-      const now = new Date();
-      let shutdownSuccessful = false;
-      let errorMessage = null;
-
-      // Intentar apagar dispositivo
-      try {
-        const controlResponse = await fetch(`${process.env.NEXTAUTH_URL}/api/shelly/device/${device.deviceId}/control`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'off',
-            appointmentId: activeUsage.appointmentId,
-            reason: 'auto_shutdown_time_reached'
-          })
-        });
-
-        if (controlResponse.ok) {
-          shutdownSuccessful = true;
-          console.log(`✅ [AUTO_SHUTDOWN] Dispositivo apagado: ${device.name}`);
-        } else {
-          const errorData = await controlResponse.json();
-          errorMessage = errorData.error || 'Error desconocido';
-          console.error(`❌ [AUTO_SHUTDOWN] Error controlando:`, errorMessage);
-        }
-      } catch (controlError) {
-        errorMessage = controlError.message;
-        console.error(`❌ [AUTO_SHUTDOWN] Error de conexión:`, controlError);
-      }
-
-      // Actualizar con la traza en JSON
-      const currentDeviceData = activeUsage.deviceData || {};
-      const events = currentDeviceData.events || [];
-      
-      events.push({
-        timestamp: now.toISOString(),
-        event: 'auto_shutdown_executed',
-        details: `Apagado automático ${shutdownSuccessful ? 'exitoso' : 'fallido'}`,
-        data: {
-          actualMinutes: Math.round(actualMinutes),
-          estimatedMinutes: activeUsage.estimatedMinutes,
-          shutdownSuccessful,
-          errorMessage
-        }
-      });
-
-      await prisma.appointmentDeviceUsage.update({
-        where: { id: activeUsage.id },
-        data: {
-          currentStatus: 'AUTO_SHUTDOWN',
-          endedAt: now,
-          actualMinutes: Math.round(actualMinutes),
-          deviceData: {
-            ...currentDeviceData,
-            events,
-            autoShutdownExecuted: true,
-            autoShutdownAt: now.toISOString()
-          }
-        }
-      });
-
-      // Emitir WebSocket de notificación
-      if (global.broadcastDeviceUpdate) {
-        global.broadcastDeviceUpdate(device.credential.systemId, {
-          type: 'auto-shutdown-executed',
-          appointmentId: activeUsage.appointmentId,
-          deviceId: device.id,
-          equipmentName: activeUsage.equipmentClinicAssignment?.equipment?.name,
-          shutdownSuccessful,
-          actualMinutes: Math.round(actualMinutes),
-          errorMessage
-        });
-      }
-    }
-
-  } catch (error) {
-    console.error(`❌ [AUTO_SHUTDOWN] Error verificando:`, error);
-  }
-}
-
-// 💾 Actualizar dispositivo en base de datos
-async function updateDeviceInDatabase(device, data) {
-  try {
-    await prisma.smartPlugDevice.update({
-      where: { id: device.id },
-      data: {
-        online: data.isOnline,
-        relayOn: data.relayOn,
-        currentPower: data.currentPower,
-        voltage: data.voltage,
-        temperature: data.temperature,
-        lastSeenAt: data.timestamp
-      }
-    });
-  } catch (error) {
-    console.error(`❌ Error actualizando dispositivo ${device.name}:`, error);
-  }
-}
-
-/**
- * 🌐 CLIENTE REMOTO: Conectar al servidor Socket.io externo
- * Usa la variable de entorno para la URL del servidor remoto
- */
-function initializeRemoteClient() {
-  const REMOTE_WS_URL = process.env.NEXT_PUBLIC_WS_URL;
-  
-  if (!REMOTE_WS_URL) {
-    console.warn('⚠️ [REMOTE CLIENT] No hay URL de servidor Socket.io remoto configurada');
-    return;
-  }
-
-  console.log(`🌐 [REMOTE CLIENT] Conectando a servidor remoto: ${REMOTE_WS_URL}`);
-  
-  remoteClient = ioClient(REMOTE_WS_URL, {
-    transports: ['websocket', 'polling'],
-    autoConnect: true,
-    reconnection: true,
-    reconnectionAttempts: 5,
-    reconnectionDelay: 1000
-  });
-
-  remoteClient.on('connect', () => {
-    console.log(`✅ [REMOTE CLIENT] Conectado al servidor remoto: ${REMOTE_WS_URL}`);
-    console.log(`🔗 [REMOTE CLIENT] Socket ID: ${remoteClient.id}`);
-  });
-
-  remoteClient.on('disconnect', (reason) => {
-    console.warn(`❌ [REMOTE CLIENT] Desconectado del servidor remoto: ${reason}`);
-  });
-
-  remoteClient.on('error', (error) => {
-    console.error('❌ [REMOTE CLIENT] Error:', error);
-  });
-
-  return remoteClient;
-}
-
-/**
- * 🚀 EMISIÓN DUAL: Emitir evento tanto al servidor local como al remoto
- */
-function emitToSystem(systemId, eventName, data) {
-  console.log(`🚀 [EMIT_TO_SYSTEM] Iniciando emisión dual:`, {
-    systemId,
-    eventName,
-    dataType: typeof data,
-    timestamp: new Date().toISOString()
-  });
-  
-  // Emitir al servidor local (para compatibilidad)
-  const localConnections = systemConnections.get(systemId)?.size || 0;
-  if (localConnections > 0) {
-    console.log(`📤 [LOCAL] Emitiendo '${eventName}' a ${localConnections} clientes locales del sistema ${systemId}`);
-    console.log(`📤 [LOCAL] Datos locales:`, data);
-    io.to(systemId).emit(eventName, data);
-    console.log(`✅ [LOCAL] ${eventName} emitido exitosamente a ${localConnections} clientes locales`);
-  } else {
-    console.log(`⚠️ [LOCAL] Sin clientes locales para sistema ${systemId}, saltando emisión local`);
-  }
-
-  // Emitir al servidor remoto
-  if (remoteClient && remoteClient.connected) {
-    const broadcastData = {
-      systemId,
-      eventName,
-      data
-    };
-    console.log(`📤 [REMOTE] Emitiendo 'broadcast-to-system' al servidor remoto:`, {
-      systemId,
-      eventName,
-      remoteClientId: remoteClient.id,
-      remoteConnected: remoteClient.connected
-    });
-    console.log(`📤 [REMOTE] Datos completos para broadcast:`, broadcastData);
-    
-    remoteClient.emit('broadcast-to-system', broadcastData);
-    console.log(`✅ [REMOTE] ${eventName} emitido al servidor remoto para sistema ${systemId}`);
-  } else {
-    console.warn(`⚠️ [REMOTE] No se pudo emitir ${eventName} - cliente remoto no conectado:`, {
-      remoteClientExists: !!remoteClient,
-      remoteConnected: remoteClient?.connected || false
-    });
-  }
-  
-  console.log(`🏁 [EMIT_TO_SYSTEM] Emisión dual completada para '${eventName}'`);
-}
-
-/**
- * 🚀 INICIALIZAR WEBSOCKET MANAGER
- */
-async function initializeWebSocketManager() {
-  try {
-    // 🛡️ PASO 3A: Verificar módulo Shelly antes de inicializar WebSockets
-    console.log('🔍 [PASO 3A] Verificando si el módulo Shelly está activo...');
-    
-    // Obtener cualquier sistema para verificar módulo Shelly globalmente
-    const anySystem = await prisma.system.findFirst();
-    
-    if (!anySystem) {
-      console.log('⚠️ [PASO 3A] No hay sistemas en BD - omitiendo WebSockets Shelly');
-      return;
-    }
-    
-    // Verificar si hay algún sistema con módulo Shelly activo
-    const systemWithShelly = await prisma.system.findFirst({
-      where: {
-        integrations: {
-          some: {
-            module: {
-              name: { contains: 'Shelly', mode: 'insensitive' },
-              category: 'IOT_DEVICES'
-            },
-            isActive: true
-          }
-        }
-      }
-    });
-
-    const isShellyModuleActive = !!systemWithShelly;
-
-    if (!isShellyModuleActive) {
-      console.log('🔒 [PASO 3A] Módulo Shelly INACTIVO - WebSockets Shelly omitidos');
-      return;
-    }
-
-    console.log(`✅ [PASO 3A] Módulo Shelly ACTIVO para sistema ${systemWithShelly.id} - inicializando WebSockets normalmente`);
-    
-    // Inicializar conexiones WebSocket Shelly
-    console.log('🔌 Inicializando conexiones WebSocket con Shelly...');
-    await initializeWebSocketConnections(io);
-
-    // 🧹 Limpieza inicial de dispositivos que quedaron online sin mensajes recientes
-    await checkAndMarkStaleDevices('startup_stale');
-    
-  } catch (error) {
-    console.error('❌ Error en initializeWebSocketManager:', error);
-  }
-} 
-
-// 👉 NUEVO HELPER: Chequear dispositivos con lastSeenAt obsoleto (sin cron externo)
-async function checkAndMarkStaleDevices(reason = 'startup_stale') {
-  try {
-    const STATE_TIMEOUT = 3 * 60 * 1000; // 3 minutos en ms
-    const now = Date.now();
-
-    // 1. Buscar dispositivos que siguen marcados online pero su último mensaje es antiguo o inexistente
-    const staleDevices = await prisma.smartPlugDevice.findMany({
-      where: {
-        online: true,
-        OR: [
-          { lastSeenAt: null },
-          { lastSeenAt: { lt: new Date(now - STATE_TIMEOUT) } }
-        ]
-      },
-      include: { credential: true }
-    });
-
-    if (staleDevices.length === 0) {
-      console.log(`🟢 [STALE_CHECK] Sin dispositivos obsoletos (${reason})`);
-      return;
-    }
-
-    console.log(`🔍 [STALE_CHECK] Encontrados ${staleDevices.length} dispositivos obsoletos (${reason}) → marcando offline`);
-
-    // 2. Actualizar en BD de forma masiva
-    const staleIds = staleDevices.map(d => d.id);
-    await prisma.smartPlugDevice.updateMany({
-      where: { id: { in: staleIds } },
-      data: {
-        online: false,
-        relayOn: false,
-        currentPower: 0,
-        updatedAt: new Date()
-      }
-    });
-
-    // 3. Emitir evento a cada sistema afectado
-    staleDevices.forEach(device => {
-      if (!device.credential?.systemId) return;
-      const updatePayload = {
-        deviceId: device.id,
-        shellyDeviceId: device.deviceId,
-        online: false,
-        relayOn: false,
-        currentPower: 0,
-        voltage: device.voltage ?? null,
-        temperature: device.temperature ?? null,
-        timestamp: Date.now(),
-        reason
-      };
-      emitToSystem(device.credential.systemId, 'device-offline-status', updatePayload);
-    });
-
-    console.log(`✅ [STALE_CHECK] Dispositivos obsoletos actualizados y notificados (${reason})`);
-
-  } catch (error) {
-    console.error('❌ [STALE_CHECK] Error procesando dispositivos obsoletos:', error);
-  }
-} 

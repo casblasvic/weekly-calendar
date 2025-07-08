@@ -59,6 +59,49 @@ const CONNECTION_TYPES = {
   TEST: 'TEST'
 } as const;
 
+// 🚀 HELPER: Asegurar cliente Redis de publicación para Pub/Sub
+// ========================================
+// Este helper crea (si es necesario) y retorna un cliente Redis listo para publicar
+// en el canal `shelly:disconnect`. Se utiliza en acciones que necesitan propagar
+// eventos de desconexión a todos los workers. Evita que la acción falle cuando el
+// proceso actual todavía no ha inicializado `pages/api/socket.js` (donde normalmente
+// se crea `global.redisPubClient`).
+async function ensureRedisPubClient() {
+  // Si ya existe en global, reutilizarlo
+  if ((global as any).redisPubClient) {
+    return (global as any).redisPubClient as import('redis').RedisClientType;
+  }
+
+  // Verificar variable de entorno
+  if (!process.env.REDIS_URL) {
+    console.warn('⚠️  REDIS_URL no definido – no se puede crear cliente Redis');
+    return null;
+  }
+
+  try {
+    const { createClient } = await import('redis');
+    const pubClient = createClient({ url: process.env.REDIS_URL });
+
+    pubClient.on('error', (err: any) => {
+      console.error('Redis PubClient error', err);
+    });
+
+    // Conectar si aún no está conectado
+    if (pubClient.isOpen === false) {
+      await pubClient.connect();
+    }
+
+    // Guardar en global para futuras reutilizaciones
+    (global as any).redisPubClient = pubClient;
+    console.log('✅ Redis PubClient inicializado en /api/websocket route');
+
+    return pubClient;
+  } catch (err) {
+    console.error('❌ Error creando Redis PubClient:', err);
+    return null;
+  }
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ connectionId: string; action: string }> }
@@ -246,9 +289,84 @@ async function handleStopConnection(connection: any) {
       const { shellyWebSocketManager } = await import('@/lib/shelly/websocket-manager');
       await shellyWebSocketManager.disconnectCredential(connection.referenceId);
       console.log(`🔌 WebSocket Shelly cerrado para credencial ${connection.referenceId}`);
+
+      // 🟥 MARCAR OFFLINE TODOS LOS DISPOSITIVOS RELACIONADOS Y EMITIR EVENTO
+      try {
+        // 1. Actualizar BD: offline inmediato
+        await prisma.smartPlugDevice.updateMany({
+          where: { credentialId: connection.referenceId },
+          data: {
+            online: false,
+            relayOn: false,
+            currentPower: 0,
+            updatedAt: new Date(),
+            lastSeenAt: new Date()
+          }
+        });
+
+        // 2. Obtener devices y agrupar por systemId para broadcast
+        const devicesForBroadcast = await prisma.smartPlugDevice.findMany({
+          where: { credentialId: connection.referenceId },
+          select: {
+            id: true,
+            deviceId: true,
+            credential: { select: { systemId: true } }
+          }
+        });
+
+        // Agrupar en mapa systemId → devices
+        const grouped: Record<string, typeof devicesForBroadcast> = {};
+        devicesForBroadcast.forEach(d => {
+          const sys = d.credential?.systemId;
+          if (!sys) return;
+          grouped[sys] = grouped[sys] || [];
+          grouped[sys].push(d);
+        });
+
+        // 3. Emitir evento via broadcastDeviceUpdate disponible en pages/api/socket.js
+        for (const [systemId, devs] of Object.entries(grouped)) {
+          devs.forEach(dev => {
+            const payload = {
+              deviceId: dev.id,
+              shellyDeviceId: dev.deviceId,
+              online: false,
+              relayOn: false,
+              currentPower: 0,
+              voltage: null,
+              temperature: null,
+              timestamp: Date.now(),
+              reason: 'manual_stop'
+            };
+            if ((global as any).broadcastDeviceUpdate) {
+              (global as any).broadcastDeviceUpdate(systemId, payload);
+            }
+          });
+        }
+        console.log(`📤 Dispositivos de credencial ${connection.referenceId} marcados OFFLINE y broadcast enviados`);
+      } catch (devErr) {
+        console.error('⚠️  Error marcando dispositivos offline tras stop:', devErr);
+      }
     } catch (error) {
       console.error('Error cerrando WebSocket Shelly:', error);
     }
+  }
+
+  // Para conexiones SOCKET_IO cerrar socket local por socketId = referenceId
+  if (connection.type === CONNECTION_TYPES.SOCKET_IO && (global as any).forceSocketDisconnect) {
+    (global as any).forceSocketDisconnect(connection.referenceId);
+  }
+
+  // 📢 Publicar en Redis para que otros procesos cierren la conexión Shelly correspondiente
+  try {
+    const redisPub = await ensureRedisPubClient();
+    if (redisPub && connection.type === CONNECTION_TYPES.SHELLY) {
+      await redisPub.publish('shelly:disconnect', JSON.stringify({ credentialId: connection.referenceId }));
+      console.log(`📢 [Redis] Mensaje shelly:disconnect publicado para credencial ${connection.referenceId}`);
+    } else if (!redisPub) {
+      console.warn('⚠️  Redis PubClient no disponible; no se puede propagar shelly:disconnect');
+    }
+  } catch (redisErr) {
+    console.error('⚠️  Error publicando shelly:disconnect en Redis:', redisErr);
   }
 
   return {
@@ -493,15 +611,32 @@ async function logWebSocketEvent(
   connectionId: string,
   eventType: string,
   message: string,
-  metadata?: any
+  metadata?: any,
+  systemId?: string
 ) {
   try {
+    // Obtener systemId si no lo suministran
+    let logSystemId = systemId;
+    if (!logSystemId) {
+      const conn = await prisma.webSocketConnection.findUnique({
+        where: { id: connectionId },
+        select: { systemId: true, loggingEnabled: true }
+      });
+      logSystemId = conn?.systemId || 'unknown-system';
+
+      // Respetar loggingEnabled
+      if (conn && conn.loggingEnabled === false) {
+        return;
+      }
+    }
+
     await prisma.webSocketLog.create({
       data: {
         connectionId,
+        systemId: logSystemId,
         eventType,
         message,
-        metadata: metadata ? JSON.parse(JSON.stringify(metadata)) : null,
+        metadata,
         createdAt: new Date()
       }
     });

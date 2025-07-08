@@ -149,7 +149,7 @@ export async function PATCH(
 
     // Construir objeto de actualización con solo los campos proporcionados
     const updateData: any = {};
-
+    
     // 🔍 REVERIFICAR SI ES ENCHUFE CUANDO SE ASIGNA A CLÍNICA O EQUIPO
     const assigningClinic = (body.clinicId && body.clinicId !== 'none') ||  (body.equipmentClinicAssignmentId && body.equipmentClinicAssignmentId !== 'none');
     if (assigningClinic) {

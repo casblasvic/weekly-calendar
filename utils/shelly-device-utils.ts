@@ -45,13 +45,13 @@ export function isSmartPlug(
   components?: string[]
 ): boolean {
   if (!modelCode) return false;
-
+  
   // 1) Comparación exacta
   if (KNOWN_PLUG_MODELS.includes(modelCode as any)) return true;
 
   // 2) Regex flexibles
   if (PLUG_REGEXES.some((re) => re.test(modelCode))) return true;
-
+  
   // 3) Fallback técnico por componentes del status
   if (components && components.length > 0) {
     const hasSwitch = components.includes('switch:0');
@@ -267,4 +267,4 @@ export function supportsFeature(
     default:
       return false;
   }
-} 
+}
