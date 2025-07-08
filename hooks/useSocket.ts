@@ -1,3 +1,41 @@
+/**
+ * --------------------------------------------------------------------------------------------------
+ * 🔌 useSocket – HOOK DE CLIENTE SOCKET.IO                                                           
+ * --------------------------------------------------------------------------------------------------
+ * Este hook provee una interfaz reactiva para consumir el *tiempo real* mediante Socket.IO.          
+ *                                                                                                    
+ * 1.  Selección de URL (`WS_URL`)                                                                    
+ *     ▸  Intenta en este orden:                                                                     
+ *        a) `systemConfig.websocketUrl` (provisto por la API para multiclínica)                     
+ *        b) `NEXT_PUBLIC_WS_URL` – valor de entorno (Railway u otro servidor Node)                  
+ *        c) Fallback al propio dominio actual (`ws(s)://host`)                                      
+ *                                                                                                    
+ * 2.  Flujo de Conexión                                                                              
+ *     ▸  `fetch('/api/socket/init')`   – cold-start del servidor local (Next.js Lambda)              
+ *     ▸  `io(WS_URL, { transports:['websocket'] })`                                                 
+ *     ▸  `socket.emit('join-system', systemId)`  – room aislado por tenant                          
+ *                                                                                                    
+ * 3.  Eventos Principales                                                                            
+ *     •  `device-update` / `device-offline-status`   – actualizaciones de enchufes                  
+ *     •  `smart-plug-assignment-updated`            – cambios de asignación                         
+ *                                                                                                    
+ * 4.  Suscripción                                                                                    
+ *     ▸  `subscribe(cb)` devuelve una función de cleanup.  Todos los callbacks se almacenan en       
+ *        `subscribersRef` y son notificados en el mismo orden de llegada.                           
+ *                                                                                                    
+ * 5.  Robustez                                                                                        
+ *     •  Reconexión automática (`reconnection=true`) con *backoff* de 3 → 30s                       
+ *     •  Contador `_errorCount` para log menos verboso                                               
+ *     •  Verificación `navigator.onLine` antes de `connect()`                                        
+ *                                                                                                    
+ * 6.  TL;DR                                                                                          
+ *     ```ts                                                                                          
+ *     const { isConnected, subscribe, requestDeviceUpdate } = useSocket(session?.user?.systemId)     
+ *     ```                                                                                            
+ *                                                                                                    
+ * ➕  Archivo con documentación ampliada: `docs/SOCKET_IO_ARCHITECTURE.md`                            
+ * --------------------------------------------------------------------------------------------------
+ */
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import io, { Socket } from 'socket.io-client';
 import { clientLogger } from '@/lib/utils/client-logger';

@@ -1,3 +1,59 @@
+/**
+ * ==================================================================================================
+ * 🔌 SOCKET.IO – ARQUITECTURA COMPLETA  (LOCAL ⬌ EXTERNAL)                                            
+ * ==================================================================================================
+ * Este archivo actúa como **servidor Socket.IO local** dentro de Next.js.  Se sitúa bajo la ruta
+ * `/api/socket` y arranca una instancia de `socket.io` que vive en el mismo proceso que el API route
+ * (o en cada "lambda" dentro del despliegue server-less).  Para garantizar **escalabilidad** y que
+ * todos los workers compartan eventos, usamos el **adaptador Redis** (`@socket.io/redis-adapter`).  
+ * 
+ * 1️⃣  LOCAL  ➜  FRONTEND
+ *     ───────────────────
+ *     •  Los clientes del navegador se conectan a `WS_URL` (determinada dinámicamente) vía transport
+ *        WebSocket puro.  En desarrollo suele ser `ws://localhost:3000`, en producción apontará al
+ *        servidor Railway/Vercel definido en la env `NEXT_PUBLIC_WS_URL`.
+ *     •  El evento inicial `join-system` añade cada socket a un *room* con su `systemId`, permitiendo
+ *        multi-tenant.  Todos los broadcast posteriores se envían al room ⇒ aislamiento total.
+ *
+ * 2️⃣  LOCAL  ↔  EXTERNAL  (BRIDGE)
+ *     ────────────────────────────
+ *     •  Si `NEXT_PUBLIC_WS_URL` apunta a un **servidor Socket.IO externo** (por ejemplo en Railway),
+ *        ESTE mismísimo archivo también crea un **cliente** `ioClient` que se conecta al remoto.
+ *     •  El helper `emitToSystem()` re-envía cada evento entrante saliente tanto al room local como al
+ *        servidor externo, manteniendo sincronía bidireccional.
+ *
+ * 3️⃣  REDIS ADAPTER (MULTI-PROCESS)
+ *     ─────────────────────────────
+ *     •  Cuando Next.js corre en modo server-less hay varios procesos.  El adaptador Redis propaga los
+ *        eventos entre todos ellos. Sólo se necesita la variable `REDIS_URL`.
+ *
+ * 4️⃣  GLOBAL HELPERS
+ *     ─────────────────
+ *     •  `global.broadcastDeviceUpdate()`
+ *     •  `global.broadcastAssignmentUpdate()`
+ *       Permiten a cualquier módulo emitir eventos sin requerir la instancia `io`.
+ *
+ * 5️⃣  DESCONEXIÓN / GESTIÓN
+ *     ─────────────────────
+ *     •  Otro API route (`/api/websocket/[connectionId]/[action]`) publica en Redis el canal
+ *        `shelly:disconnect` → todos los procesos llaman a `shellyWebSocketManager.disconnect` y
+ *        fuerzan cierre de streams.
+ *
+ * 6️⃣  SEGURIDAD
+ *     ───────────
+ *     •  Todos los eventos se restringen a su `systemId` (room).  Los IDs se validan previamente en
+ *        la capa de autenticación (Next-Auth) antes de exponer el WebSocket.
+ *
+ * 7️⃣  TL;DR PARA DESARROLLADORES
+ *     ──────────────────────────
+ *       –  Conectar:   `const socket = io(WS_URL, { transports:['websocket'] })`
+ *       –  Entrar en room:  `socket.emit('join-system', systemId)`
+ *       –  Emitir update:   `global.broadcastDeviceUpdate(systemId, payload)`
+ *       –  Forzar stop:     POST `/api/websocket/{connectionId}/stop`
+ *
+ * Cualquier duda adicional 👉  revisa `docs/SOCKET_IO_ARCHITECTURE.md`.
+ * ==================================================================================================
+ */
 import { Server } from 'socket.io';
 // 🆕 Redis Adapter para Socket.IO
 import { createAdapter } from '@socket.io/redis-adapter';

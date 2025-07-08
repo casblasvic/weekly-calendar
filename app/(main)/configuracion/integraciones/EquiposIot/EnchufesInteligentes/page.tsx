@@ -32,7 +32,6 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
-import { BleConnectButton } from "@/components/shelly/BleConnectButton";
 
 interface SmartPlug {
     id: string;
@@ -1125,9 +1124,6 @@ const SmartPlugsPage = () => {
                             }}
                             onToggle={handleDeviceToggle}
                         />
-                        {/* Botón BLE */}
-                        <BleConnectButton deviceId={plug.deviceId} macAddress={plug.macAddress} />
-
                         <Button 
                             variant="ghost" 
                             size="icon"
