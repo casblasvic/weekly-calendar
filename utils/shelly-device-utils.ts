@@ -6,63 +6,70 @@
  * Funciones helper para identificar y filtrar tipos específicos de dispositivos Shelly
  */
 
-// Códigos de modelo conocidos para enchufes inteligentes Shelly
-const SMART_PLUG_MODEL_CODES = {
-  // Gen 1 - HTTP REST API
-  GEN1: [
-    'SHPLG-1',    // Shelly Plug
-    'SHPLG-S',    // Shelly Plug S
-    'SHPLG-U1',   // Shelly Plug US
-  ],
-  
-  // Gen 2 - RPC JSON + WebSocket
-  GEN2: [
-    'SNPL-00112EU',  // Shelly Plus Plug S (Europa)
-    'SNPL-00112US',  // Shelly Plus Plug S (Estados Unidos)
-    'SNPL-00110EU',  // Variantes adicionales de Plus Plug S
-    'SNPL-00110US',
-  ],
-  
-  // Gen 3 - Gen2 + funcionalidades LED RGB
-  GEN3: [
-    // Los códigos exactos de Gen3 pueden variar, pero generalmente contienen "MTR" o "Gen3"
-    'MTR',        // Patrones comunes en Gen3
-  ]
-} as const;
+/**
+ * ==========================================================
+ * DETECCIÓN DE ENCHUFES INTELIGENTES SHELLY (3 capas)
+ * ----------------------------------------------------------
+ * 1. Lista exacta de modelos confirmados           (100 %)
+ * 2. Expresiones regulares flexibles               (cubre futuros)
+ * 3. Fallback técnico por componentes              (switch+meter)
+ * ==========================================================
+ */
 
-// Todos los códigos de enchufes inteligentes en un solo array
-const ALL_SMART_PLUG_CODES = [
-  ...SMART_PLUG_MODEL_CODES.GEN1,
-  ...SMART_PLUG_MODEL_CODES.GEN2,
-  ...SMART_PLUG_MODEL_CODES.GEN3
+/** Modelos oficiales confirmados */
+const KNOWN_PLUG_MODELS = [
+  // Gen1
+  'SHPLG-S', 'SHPLG-1', 'SHPLG-U1',
+  // Gen2
+  'SNPL-00112EU', 'SNPL-00112US', 'SNPL-00110EU', 'SNPL-00110US',
+  // Gen3 (Matter)
+  'S3PL-00112EU', 'S3PL-00116US'
+] as const;
+
+/** Expresiones regulares genéricas */
+const PLUG_REGEXES: RegExp[] = [
+  /^S\d?PL/i,      // S3PL-, S4PL- …
+  /^SNPL/i,        // SNPL-
+  /^SH?PLG/i,      // SHPLG- o SPLG-
+  /PLUG/i,         // contiene "PLUG"
+  /PL-\d/i         // PL-001xx
 ];
 
 /**
- * Determina si un dispositivo Shelly es un enchufe inteligente
- * @param modelCode - Código del modelo del dispositivo (ej: "SNPL-00112EU")
- * @returns true si es un enchufe inteligente, false si no
+ * Determina si un dispositivo Shelly es un enchufe inteligente.
+ * @param modelCode   Código del modelo, p. ej. "S3PL-00112EU".
+ * @param components  Lista de componentes (opcional) recibida del API Shelly.
  */
-export function isSmartPlug(modelCode: string | null | undefined): boolean {
+export function isSmartPlug(
+  modelCode?: string | null,
+  components?: string[]
+): boolean {
   if (!modelCode) return false;
-  
-  // Verificar códigos exactos
-  if (ALL_SMART_PLUG_CODES.includes(modelCode as any)) {
-    return true;
+
+  // 1) Comparación exacta
+  if (KNOWN_PLUG_MODELS.includes(modelCode as any)) return true;
+
+  // 2) Regex flexibles
+  if (PLUG_REGEXES.some((re) => re.test(modelCode))) return true;
+
+  // 3) Fallback técnico por componentes del status
+  if (components && components.length > 0) {
+    const hasSwitch = components.includes('switch:0');
+    const hasMeter = components.includes('meter:0');
+    if (hasSwitch && hasMeter) return true;
   }
-  
-  // Verificar patrones adicionales para Gen3 y variantes
-  const upperCode = modelCode.toUpperCase();
-  
-  // Patrones comunes para enchufes
-  const plugPatterns = [
-    'PLUG',     // Contiene "PLUG"
-    'SNPL',     // Shelly Plus Plug
-    'SHPLG',    // Shelly Plug Gen1
-    'MTR',      // Gen3 pattern
-  ];
-  
-  return plugPatterns.some(pattern => upperCode.includes(pattern));
+
+  return false;
 }
+
+// Exponer también arrays para uso externo
+export const SMART_PLUG_MODEL_CODES = {
+  GEN1: KNOWN_PLUG_MODELS.filter((code) => code.startsWith('SHPLG')),
+  GEN2: KNOWN_PLUG_MODELS.filter((code) => code.startsWith('SNPL')),
+  GEN3: KNOWN_PLUG_MODELS.filter((code) => code.startsWith('S3PL'))
+} as const;
+
+export const ALL_SMART_PLUG_CODES = [...KNOWN_PLUG_MODELS];
 
 /**
  * Determina la generación de un enchufe inteligente Shelly
@@ -260,9 +267,4 @@ export function supportsFeature(
     default:
       return false;
   }
-}
-
-export {
-  SMART_PLUG_MODEL_CODES,
-  ALL_SMART_PLUG_CODES
-}; 
+} 

@@ -22,8 +22,8 @@ export function SmartPlugsProvider({ children }: SmartPlugsProviderProps) {
   // ✅ SIEMPRE ejecutar el hook para mantener orden consistente de hooks
   const smartPlugsDataRaw = useSmartPlugsFloatingMenu()
   
-  // ✅ PERO solo usar los datos si el módulo está activo
-  const smartPlugsData = isShellyActive ? smartPlugsDataRaw : null
+  // Mostrar undefined mientras se resuelve el hook de módulos (permite spinner en botones)
+  const smartPlugsData = isShellyActive ? smartPlugsDataRaw : (isLoadingIntegrations ? undefined : null)
   
   const value: SmartPlugsContextType = {
     smartPlugsData,

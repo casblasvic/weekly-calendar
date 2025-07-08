@@ -6,8 +6,11 @@ import { shellyWebSocketManager } from '../../lib/shelly/websocket-manager.ts';
 import { wsLogger } from '../../lib/utils/websocket-logger.js';
 import { deviceOfflineManager } from '../../lib/shelly/device-offline-manager.ts';
 import { isShellyModuleActive } from '../../lib/services/shelly-module-service.ts';
+import { io as ioClient } from 'socket.io-client';
 
 // Almacenar conexiones por systemId
+let io;
+let remoteClient;
 const systemConnections = new Map();
 
 // Helper para delay
@@ -17,7 +20,7 @@ export default function handler(req, res) {
   if (!res.socket.server.io) {
     console.log('🔌 Configurando servidor Socket.io...');
     
-    const io = new Server(res.socket.server, {
+    io = new Server(res.socket.server, {
       path: '/api/socket',
       addTrailingSlash: false,
       cors: {
@@ -33,23 +36,39 @@ export default function handler(req, res) {
 
       // Unirse a room por systemId
       socket.on('join-system', async (systemId) => {
+        console.log(`🎯 [JOIN-SYSTEM] Petición recibida desde ${socket.id} para systemId: ${systemId}`);
+        
         if (!systemId) {
-          console.log(`❌ join-system sin systemId desde ${socket.id}`);
+          console.log(`❌ [JOIN-SYSTEM] Sin systemId desde ${socket.id}`);
           return;
         }
         
+        console.log(`🎯 [JOIN-SYSTEM] Uniendo socket ${socket.id} al room ${systemId}...`);
         socket.join(systemId);
         
         // Almacenar conexión
         if (!systemConnections.has(systemId)) {
+          console.log(`🎯 [JOIN-SYSTEM] Creando nuevo Set para systemId ${systemId}`);
           systemConnections.set(systemId, new Set());
         }
         systemConnections.get(systemId).add(socket.id);
         
-        console.log(`📡 Cliente ${socket.id} se unió al sistema ${systemId}. Total en sistema: ${systemConnections.get(systemId).size}`);
+        const totalClients = systemConnections.get(systemId).size;
+        console.log(`✅ [JOIN-SYSTEM] Cliente ${socket.id} se unió al sistema ${systemId}. Total en sistema: ${totalClients}`);
+        
+        // Debug: Mostrar todos los systemConnections activos
+        console.log(`🔍 [JOIN-SYSTEM] Estado actual de systemConnections:`);
+        for (const [sysId, connections] of systemConnections.entries()) {
+          console.log(`  - Sistema ${sysId}: ${connections.size} clientes`);
+        }
         
         // Registrar conexión en WebSocketConnection
-        await registerWebSocketConnection(systemId, socket.id, 'connected');
+        try {
+          await registerWebSocketConnection(systemId, socket.id, 'connected');
+          console.log(`✅ [JOIN-SYSTEM] Conexión registrada en BD para ${socket.id}`);
+        } catch (error) {
+          console.error(`❌ [JOIN-SYSTEM] Error registrando en BD:`, error);
+        }
         
         // Enviar estado de conexión
         socket.emit('connection-status', {
@@ -58,6 +77,36 @@ export default function handler(req, res) {
           timestamp: new Date().toISOString(),
           socketId: socket.id
         });
+        
+        console.log(`✅ [JOIN-SYSTEM] Proceso completado para ${socket.id} en sistema ${systemId}`);
+      });
+
+      // 🆕 HANDLER CRÍTICO: Redistribuir eventos desde backend local a clientes frontend
+      socket.on('broadcast-to-system', (data) => {
+        const { systemId, eventName, data: eventData } = data;
+        
+        console.log(`🔍 [BROADCAST] Handler recibido:`, {
+          systemId,
+          eventName,
+          eventData,
+          socketId: socket.id,
+          timestamp: new Date().toISOString()
+        });
+        
+        if (!systemId || !eventName || !eventData) {
+          console.warn(`❌ [BROADCAST] Datos incompletos recibidos:`, data);
+          return;
+        }
+        
+        const clientsCount = systemConnections.get(systemId)?.size || 0;
+        console.log(`📡 [BROADCAST] Redistribuyendo '${eventName}' a ${clientsCount} clientes del sistema ${systemId}`);
+        console.log(`📡 [BROADCAST] Datos completos a redistribuir:`, eventData);
+        
+        // Redistribuir evento a todos los clientes del sistema
+        io.to(systemId).emit(eventName, eventData);
+        
+        console.log(`✅ [BROADCAST] Evento '${eventName}' redistribuido exitosamente a room '${systemId}'`);
+        console.log(`✅ [BROADCAST] Clientes en room '${systemId}':`, Array.from(systemConnections.get(systemId) || []));
       });
 
       // Manejo de mensaje de test
@@ -106,7 +155,7 @@ export default function handler(req, res) {
     // Función para broadcast de actualizaciones
     global.broadcastDeviceUpdate = (systemId, deviceUpdate) => {
       if (io && systemConnections.has(systemId)) {
-        io.to(systemId).emit('device-update', deviceUpdate);
+        emitToSystem(systemId, 'device-update', deviceUpdate);
         console.log(`📤 Enviado update del dispositivo ${deviceUpdate.deviceId} al sistema ${systemId}`);
       }
     };
@@ -114,106 +163,18 @@ export default function handler(req, res) {
     // 🆕 Función para broadcast de cambios de asignación
     global.broadcastAssignmentUpdate = (systemId, assignmentUpdate) => {
       if (io && systemConnections.has(systemId)) {
-        io.to(systemId).emit('smart-plug-assignment-updated', assignmentUpdate);
+        emitToSystem(systemId, 'smart-plug-assignment-updated', assignmentUpdate);
         console.log(`📤 [Assignment] Enviado cambio de asignación al sistema ${systemId}:`, assignmentUpdate);
       }
     };
 
-    // 🚀 CAMBIO PRINCIPAL: Inicializar WebSocket Manager en lugar de polling
-    console.log('🚀 Iniciando WebSocket Manager para tiempo real...');
+    // 🌐 Inicializar cliente remoto
+    console.log('🌐 Inicializando cliente remoto...');
+    initializeRemoteClient();
     
-    // Ejecutar con un pequeño delay para asegurar que Socket.io esté listo
-    setTimeout(async () => {
-      try {
-        // 🛡️ PASO 3A: Verificar módulo Shelly antes de inicializar WebSockets
-        console.log('🔍 [PASO 3A] Verificando si el módulo Shelly está activo...');
-        
-        try {
-          // Obtener cualquier sistema para verificar módulo Shelly globalmente
-          const anySystem = await prisma.system.findFirst();
-          
-          if (!anySystem) {
-            console.log('⚠️ [PASO 3A] No hay sistemas en BD - omitiendo WebSockets Shelly');
-            console.log('ℹ️  [PASO 3A] Los servicios de tiempo real permanecen desactivados hasta que haya sistemas configurados');
-            return;
-          }
-          
-          // Verificar si hay algún sistema con módulo Shelly activo
-          const systemWithShelly = await prisma.system.findFirst({
-            where: {
-              integrations: {
-                some: {
-                  module: {
-                    name: { contains: 'Shelly', mode: 'insensitive' },
-                    category: 'IOT_DEVICES'
-                  },
-                  isActive: true
-                }
-              }
-            },
-            include: {
-              integrations: {
-                where: {
-                  module: {
-                    name: { contains: 'Shelly', mode: 'insensitive' },
-                    category: 'IOT_DEVICES'
-                  }
-                },
-                include: { module: true }
-              }
-            }
-          });
-
-          const isShellyModuleActive = systemWithShelly && systemWithShelly.integrations.length > 0;
-
-          if (!isShellyModuleActive) {
-            console.log('🔒 [PASO 3A] Módulo Shelly INACTIVO - WebSockets Shelly omitidos');
-            console.log('ℹ️  [PASO 3A] Los servicios de tiempo real permanecen desactivados hasta que se active el módulo');
-            
-            // 🧹 PASO 3A+: Verificación automática de conexiones legacy para el primer sistema
-            console.log('🔍 [PASO 3A+] Verificando conexiones legacy...');
-            
-            try {
-              const { autoCleanupLegacyConnections } = await import('../../lib/services/shelly-module-service');
-              const cleanupResult = await autoCleanupLegacyConnections(anySystem.id);
-              
-              if (cleanupResult.hadLegacyConnections && cleanupResult.cleaned) {
-                console.log(`✅ [PASO 3A+] ${cleanupResult.details} - Limpieza automática completada`);
-              } else if (cleanupResult.hadLegacyConnections && !cleanupResult.cleaned) {
-                console.log(`⚠️ [PASO 3A+] ${cleanupResult.details} - Limpieza falló`);
-              } else {
-                console.log(`ℹ️ [PASO 3A+] ${cleanupResult.details}`);
-              }
-            } catch (cleanupError) {
-              console.error('❌ [PASO 3A+] Error en verificación automática:', cleanupError);
-            }
-            
-            // No inicializar WebSockets Shelly cuando módulo está inactivo
-            console.log('ℹ️ [PASO 3A] Finalizando - WebSockets Shelly omitidos por módulo inactivo');
-            
-          } else {
-            console.log(`✅ [PASO 3A] Módulo Shelly ACTIVO para sistema ${systemWithShelly.id} - inicializando WebSockets normalmente`);
-            
-            // Inicializar todos los WebSockets incluyendo Shelly
-            initializeWebSocketConnections(io).catch(error => {
-              console.error('❌ Error inicializando todos los WebSockets:', error);
-            });
-          }
-
-        } catch (verificationError) {
-          console.error('❌ [PASO 3A] Error verificando módulo Shelly:', verificationError);
-          console.log('🔄 [PASO 3A] Fallback: omitiendo WebSockets por error en verificación');
-          
-          // Fallback conservador: NO inicializar si hay error para evitar problemas
-          console.log('ℹ️ [PASO 3A] Para activar manualmente, reinicie el servidor tras activar el módulo');
-        }
-      } catch (error) {
-        console.error('❌ Error crítico en verificación/inicialización:', error);
-        // 🛡️ Fallback seguro: NO inicializar si hay error
-        console.log('🔄 [PASO 3A] Fallback seguro: Omitiendo inicialización por error crítico');
-        console.log('ℹ️ [PASO 3A] Para activar manualmente, reinicie el servidor tras verificar la configuración');
-      }
-    }, 1000);
+    // Inicializar WebSocket Manager
+    console.log('🚀 Iniciando WebSocket Manager para tiempo real...');
+    initializeWebSocketManager();
   }
   
   res.end();
@@ -352,7 +313,9 @@ async function registerShellyWebSocketConnection(credentialId, status, errorMess
 function setupDeviceUpdateInterceptor(io) {
   // Configurar callback para actualizaciones de dispositivos
   shellyWebSocketManager.onDeviceUpdate = async (credentialId, deviceId, status) => {
+    console.log(`🎯 [SOCKET.JS] onDeviceUpdate CALLBACK EJECUTADO para deviceId=${deviceId}, credentialId=${credentialId}`);
     try {
+      console.log(`📡 [SOCKET.JS] Recibido update de dispositivo ${deviceId}:`, status);
       wsLogger.verbose(`📡 Recibido update de dispositivo ${deviceId}:`, status);
       
       // Obtener información del dispositivo y sistema
@@ -380,16 +343,24 @@ function setupDeviceUpdateInterceptor(io) {
         const isOnline = status.online;
         
         // 🎯 PROCESAR ACTUALIZACIONES DE APPOINTMENT_DEVICE_USAGE EN TIEMPO REAL
-        await processAppointmentDeviceUsageUpdate(device, {
-          currentPower,
-          relayOn,
-          voltage,
-          temperature,
-          isOnline,
-          timestamp: new Date()
-        });
+        console.log(`🎯 [SOCKET.JS] Procesando appointment device usage para ${device.name}...`);
+        try {
+          await processAppointmentDeviceUsageUpdate(device, {
+            currentPower,
+            relayOn,
+            voltage,
+            temperature,
+            isOnline,
+            timestamp: new Date()
+          });
+          console.log(`✅ [SOCKET.JS] processAppointmentDeviceUsageUpdate completado para ${device.name}`);
+        } catch (appointmentError) {
+          console.error(`❌ [SOCKET.JS] Error en processAppointmentDeviceUsageUpdate para ${device.name}:`, appointmentError);
+          // Continuar con la emisión aunque falle el appointment processing
+        }
         
         // Crear update para Socket.io
+        console.log(`🎯 [SOCKET.JS] Creando update para Socket.io para ${device.name}...`);
         const update = {
           deviceId: device.id,  // ID interno para identificar en frontend
           shellyDeviceId: device.deviceId,  // deviceId de Shelly para comandos
@@ -401,20 +372,14 @@ function setupDeviceUpdateInterceptor(io) {
           timestamp: Date.now()
         };
         
-        // Broadcast a clientes conectados
-        const connectionsCount = systemConnections.get(device.credential.systemId)?.size || 0;
-        wsLogger.verbose(`📤 Enviando WebSocket update para ${device.name}:`, {
-          deviceId: update.deviceId,
-          online: update.online,
-          relayOn: update.relayOn,
-          currentPower: update.currentPower,
-          voltage: update.voltage,
-          temperature: update.temperature,
-          clientesConectados: connectionsCount,
-          systemId: device.credential.systemId
-        });
+        console.log(`🎯 [SOCKET.JS] Update creado:`, update);
         
-        io.to(device.credential.systemId).emit('device-update', update);
+        // Broadcast a clientes conectados (local + remoto)
+        const connectionsCount = systemConnections.get(device.credential.systemId)?.size || 0;
+        console.log(`📤 [SOCKET.JS] Enviando WebSocket update para ${device.name} a ${connectionsCount} clientes locales del sistema ${device.credential.systemId}`);
+        
+        emitToSystem(device.credential.systemId, 'device-update', update);
+        console.log(`✅ [SOCKET.JS] device-update EMITIDO para ${device.name} al sistema ${device.credential.systemId}`);
         wsLogger.verbose(`📤 Update enviado a ${connectionsCount} clientes del sistema ${device.credential.systemId}`);
         
         // Crear log del evento (MEJORADO)
@@ -517,12 +482,17 @@ function setupOfflineManagerIntegration(io) {
                 reason: update.reason
               };
               
-              io.to(systemId).emit('device-offline-status', socketUpdate);
+              emitToSystem(systemId, 'device-offline-status', socketUpdate);
             });
             
             wsLogger.verbose(`📤 [OfflineManager] Enviado update masivo a ${devices.length} dispositivos del sistema ${systemId}`);
           });
-          
+
+          // 🧹 Tras reconexión, verificar dispositivos que sigan marcados online pero sin mensajes
+          if (update.reason === 'websocket_reconnected') {
+            await checkAndMarkStaleDevices('reconnected_stale');
+          }
+ 
         } else {
           // Cambio específico de dispositivo
           const device = await prisma.smartPlugDevice.findUnique({
@@ -584,7 +554,7 @@ function setupOfflineManagerIntegration(io) {
             //   socketUpdate
             // });
             
-            io.to(device.credential.systemId).emit('device-offline-status', socketUpdate);
+            emitToSystem(device.credential.systemId, 'device-offline-status', socketUpdate);
             wsLogger.verbose(`📤 [OfflineManager] Update específico enviado para ${device.name}`);
           }
         }
@@ -1426,5 +1396,205 @@ async function updateDeviceInDatabase(device, data) {
     });
   } catch (error) {
     console.error(`❌ Error actualizando dispositivo ${device.name}:`, error);
+  }
+}
+
+/**
+ * 🌐 CLIENTE REMOTO: Conectar al servidor Socket.io externo
+ * Usa la variable de entorno para la URL del servidor remoto
+ */
+function initializeRemoteClient() {
+  const REMOTE_WS_URL = process.env.NEXT_PUBLIC_WS_URL;
+  
+  if (!REMOTE_WS_URL) {
+    console.warn('⚠️ [REMOTE CLIENT] No hay URL de servidor Socket.io remoto configurada');
+    return;
+  }
+
+  console.log(`🌐 [REMOTE CLIENT] Conectando a servidor remoto: ${REMOTE_WS_URL}`);
+  
+  remoteClient = ioClient(REMOTE_WS_URL, {
+    transports: ['websocket', 'polling'],
+    autoConnect: true,
+    reconnection: true,
+    reconnectionAttempts: 5,
+    reconnectionDelay: 1000
+  });
+
+  remoteClient.on('connect', () => {
+    console.log(`✅ [REMOTE CLIENT] Conectado al servidor remoto: ${REMOTE_WS_URL}`);
+    console.log(`🔗 [REMOTE CLIENT] Socket ID: ${remoteClient.id}`);
+  });
+
+  remoteClient.on('disconnect', (reason) => {
+    console.warn(`❌ [REMOTE CLIENT] Desconectado del servidor remoto: ${reason}`);
+  });
+
+  remoteClient.on('error', (error) => {
+    console.error('❌ [REMOTE CLIENT] Error:', error);
+  });
+
+  return remoteClient;
+}
+
+/**
+ * 🚀 EMISIÓN DUAL: Emitir evento tanto al servidor local como al remoto
+ */
+function emitToSystem(systemId, eventName, data) {
+  console.log(`🚀 [EMIT_TO_SYSTEM] Iniciando emisión dual:`, {
+    systemId,
+    eventName,
+    dataType: typeof data,
+    timestamp: new Date().toISOString()
+  });
+  
+  // Emitir al servidor local (para compatibilidad)
+  const localConnections = systemConnections.get(systemId)?.size || 0;
+  if (localConnections > 0) {
+    console.log(`📤 [LOCAL] Emitiendo '${eventName}' a ${localConnections} clientes locales del sistema ${systemId}`);
+    console.log(`📤 [LOCAL] Datos locales:`, data);
+    io.to(systemId).emit(eventName, data);
+    console.log(`✅ [LOCAL] ${eventName} emitido exitosamente a ${localConnections} clientes locales`);
+  } else {
+    console.log(`⚠️ [LOCAL] Sin clientes locales para sistema ${systemId}, saltando emisión local`);
+  }
+
+  // Emitir al servidor remoto
+  if (remoteClient && remoteClient.connected) {
+    const broadcastData = {
+      systemId,
+      eventName,
+      data
+    };
+    console.log(`📤 [REMOTE] Emitiendo 'broadcast-to-system' al servidor remoto:`, {
+      systemId,
+      eventName,
+      remoteClientId: remoteClient.id,
+      remoteConnected: remoteClient.connected
+    });
+    console.log(`📤 [REMOTE] Datos completos para broadcast:`, broadcastData);
+    
+    remoteClient.emit('broadcast-to-system', broadcastData);
+    console.log(`✅ [REMOTE] ${eventName} emitido al servidor remoto para sistema ${systemId}`);
+  } else {
+    console.warn(`⚠️ [REMOTE] No se pudo emitir ${eventName} - cliente remoto no conectado:`, {
+      remoteClientExists: !!remoteClient,
+      remoteConnected: remoteClient?.connected || false
+    });
+  }
+  
+  console.log(`🏁 [EMIT_TO_SYSTEM] Emisión dual completada para '${eventName}'`);
+}
+
+/**
+ * 🚀 INICIALIZAR WEBSOCKET MANAGER
+ */
+async function initializeWebSocketManager() {
+  try {
+    // 🛡️ PASO 3A: Verificar módulo Shelly antes de inicializar WebSockets
+    console.log('🔍 [PASO 3A] Verificando si el módulo Shelly está activo...');
+    
+    // Obtener cualquier sistema para verificar módulo Shelly globalmente
+    const anySystem = await prisma.system.findFirst();
+    
+    if (!anySystem) {
+      console.log('⚠️ [PASO 3A] No hay sistemas en BD - omitiendo WebSockets Shelly');
+      return;
+    }
+    
+    // Verificar si hay algún sistema con módulo Shelly activo
+    const systemWithShelly = await prisma.system.findFirst({
+      where: {
+        integrations: {
+          some: {
+            module: {
+              name: { contains: 'Shelly', mode: 'insensitive' },
+              category: 'IOT_DEVICES'
+            },
+            isActive: true
+          }
+        }
+      }
+    });
+
+    const isShellyModuleActive = !!systemWithShelly;
+
+    if (!isShellyModuleActive) {
+      console.log('🔒 [PASO 3A] Módulo Shelly INACTIVO - WebSockets Shelly omitidos');
+      return;
+    }
+
+    console.log(`✅ [PASO 3A] Módulo Shelly ACTIVO para sistema ${systemWithShelly.id} - inicializando WebSockets normalmente`);
+    
+    // Inicializar conexiones WebSocket Shelly
+    console.log('🔌 Inicializando conexiones WebSocket con Shelly...');
+    await initializeWebSocketConnections(io);
+
+    // 🧹 Limpieza inicial de dispositivos que quedaron online sin mensajes recientes
+    await checkAndMarkStaleDevices('startup_stale');
+    
+  } catch (error) {
+    console.error('❌ Error en initializeWebSocketManager:', error);
+  }
+} 
+
+// 👉 NUEVO HELPER: Chequear dispositivos con lastSeenAt obsoleto (sin cron externo)
+async function checkAndMarkStaleDevices(reason = 'startup_stale') {
+  try {
+    const STATE_TIMEOUT = 3 * 60 * 1000; // 3 minutos en ms
+    const now = Date.now();
+
+    // 1. Buscar dispositivos que siguen marcados online pero su último mensaje es antiguo o inexistente
+    const staleDevices = await prisma.smartPlugDevice.findMany({
+      where: {
+        online: true,
+        OR: [
+          { lastSeenAt: null },
+          { lastSeenAt: { lt: new Date(now - STATE_TIMEOUT) } }
+        ]
+      },
+      include: { credential: true }
+    });
+
+    if (staleDevices.length === 0) {
+      console.log(`🟢 [STALE_CHECK] Sin dispositivos obsoletos (${reason})`);
+      return;
+    }
+
+    console.log(`🔍 [STALE_CHECK] Encontrados ${staleDevices.length} dispositivos obsoletos (${reason}) → marcando offline`);
+
+    // 2. Actualizar en BD de forma masiva
+    const staleIds = staleDevices.map(d => d.id);
+    await prisma.smartPlugDevice.updateMany({
+      where: { id: { in: staleIds } },
+      data: {
+        online: false,
+        relayOn: false,
+        currentPower: 0,
+        updatedAt: new Date()
+      }
+    });
+
+    // 3. Emitir evento a cada sistema afectado
+    staleDevices.forEach(device => {
+      if (!device.credential?.systemId) return;
+      const updatePayload = {
+        deviceId: device.id,
+        shellyDeviceId: device.deviceId,
+        online: false,
+        relayOn: false,
+        currentPower: 0,
+        voltage: device.voltage ?? null,
+        temperature: device.temperature ?? null,
+        timestamp: Date.now(),
+        reason
+      };
+      emitToSystem(device.credential.systemId, 'device-offline-status', updatePayload);
+    });
+
+    console.log(`✅ [STALE_CHECK] Dispositivos obsoletos actualizados y notificados (${reason})`);
+
+  } catch (error) {
+    console.error('❌ [STALE_CHECK] Error procesando dispositivos obsoletos:', error);
   }
 } 

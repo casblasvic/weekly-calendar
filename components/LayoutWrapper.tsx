@@ -102,10 +102,6 @@ export function LayoutWrapper({ children, user }: LayoutWrapperProps) {
   const lastPathname = useRef<string>(pathname || "")
   const lastLayoutState = useRef<string>('')
   
-  // ✅ USAR CONTEXTO OPCIONAL para obtener datos de Smart Plugs
-  const smartPlugsContext = useSmartPlugsContextOptional()
-  const smartPlugsData = smartPlugsContext?.smartPlugsData || null
-  
   const isLoginPage = useMemo(() => {
     const result = pathname === '/login'
     return result
@@ -467,7 +463,7 @@ export function LayoutWrapper({ children, user }: LayoutWrapperProps) {
         />
 
         <div className="fixed right-0 top-0 z-[9999] space-y-1 p-3">
-          <FloatingMenu smartPlugsData={smartPlugsData} />
+          <FloatingMenu />
         </div>
 
         <main

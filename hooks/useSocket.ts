@@ -89,7 +89,13 @@ const useSocket = (systemId?: string): SocketHook => {
       ? `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`
       : undefined;
 
+    console.log(`🔍 [useSocket] Debug URLs:`);
+    console.log(`  - systemConfig.websocketUrl: ${(systemConfig as any)?.websocketUrl}`);
+    console.log(`  - NEXT_PUBLIC_WS_URL: ${envWs}`);
+    console.log(`  - fallbackUrl: ${fallbackUrl}`);
+
     const WS_URL = (systemConfig as any)?.websocketUrl || envWs || fallbackUrl;
+    console.log(`🎯 [useSocket] URL final seleccionada: ${WS_URL}`);
 
     if (!WS_URL) {
       console.warn('[useSocket] WebSocket deshabilitado: no se pudo determinar URL');
@@ -155,7 +161,8 @@ const useSocket = (systemId?: string): SocketHook => {
 
         /* --- LISTENERS ----------------------------- */
         localSocket.on('connect', () => {
-          console.log('✅ Conectado a servidor Socket.io de Railway');
+          console.log(`✅ [useSocket] Conectado a servidor Socket.io: ${WS_URL}`);
+          console.log(`🔗 [useSocket] Socket ID: ${localSocket.id}`);
           setIsConnected(true);
           isInitializedRef.current = true;
           setStatus('connected');
@@ -166,8 +173,9 @@ const useSocket = (systemId?: string): SocketHook => {
           }
           
           // Registrar el sistema actual
-          console.log('📡 Uniéndose al room del sistema:', systemId);
+          console.log(`📡 [useSocket] Emitiendo join-system para systemId: ${systemId}`);
           localSocket.emit('join-system', systemId);
+          console.log(`✅ [useSocket] join-system emitido correctamente`);
         });
 
         localSocket.on('disconnect', (reason) => {

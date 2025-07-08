@@ -48,6 +48,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { useSmartPlugsContextOptional } from "@/contexts/smart-plugs-context"
 
 // ✅ INTERFACES PARA ENCHUFES INTELIGENTES
 interface SmartPlug {
@@ -99,7 +100,6 @@ interface SmartPlugsData {
 
 interface FloatingMenuProps {
   className?: string;
-  // ✅ NUEVO: Props opcionales para enchufes inteligentes
   smartPlugsData?: SmartPlugsData;
 }
 
@@ -189,7 +189,7 @@ const staffActionItems = [
   }
 ]
 
-export function FloatingMenu({ className, smartPlugsData }: FloatingMenuProps) {
+export function FloatingMenu({ className, smartPlugsData: propData }: FloatingMenuProps) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [activeSection, setActiveSection] = useState<string | null>(null)
   const [activeMenu, setActiveMenu] = useState<string | null>(null)
@@ -199,6 +199,13 @@ export function FloatingMenu({ className, smartPlugsData }: FloatingMenuProps) {
   const { lastClient } = useLastClient()
   const { activeClinic } = useClinic()
   const router = useRouter()
+  const ctx = useSmartPlugsContextOptional();
+  const smartPlugsData = propData ?? ctx?.smartPlugsData ?? null;
+
+  // Ocultar menú mientras el documento no esté listo (spinner global)
+  if (typeof document !== 'undefined' && document.readyState !== 'complete') {
+    return null;
+  }
 
   // Función para cerrar el menú
   const closeMenu = useCallback(() => {

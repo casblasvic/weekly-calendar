@@ -149,6 +149,20 @@ export async function PATCH(
 
     // Construir objeto de actualización con solo los campos proporcionados
     const updateData: any = {};
+
+    // 🔍 REVERIFICAR SI ES ENCHUFE CUANDO SE ASIGNA A CLÍNICA O EQUIPO
+    const assigningClinic = (body.clinicId && body.clinicId !== 'none') ||  (body.equipmentClinicAssignmentId && body.equipmentClinicAssignmentId !== 'none');
+    if (assigningClinic) {
+      // Determinar si el dispositivo ya se consideraba enchufe
+      const { isSmartPlug } = await import('@/utils/shelly-device-utils');
+      const isPlug = isSmartPlug(device.modelCode);
+
+      // Si no era enchufe o estaba excluido de sync, forzarlo como enchufe
+      if (!isPlug || device.excludeFromSync) {
+        console.log(`🔄 [SMART_PLUG_PATCH] Forzando dispositivo como enchufe por asignación manual: ${device.name}`);
+        updateData.excludeFromSync = false; // Asegurar que se sincronice en el futuro
+      }
+    }
     
     // Campos básicos
     if (body.name !== undefined) updateData.name = body.name;

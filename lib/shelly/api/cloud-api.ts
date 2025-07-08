@@ -28,6 +28,7 @@ export class ShellyCloudAPI {
       },
       body: JSON.stringify({
         id: deviceId,
+        channel: 0,
         turn: action
       }),
       signal: AbortSignal.timeout(10000) // 10 segundos timeout
@@ -49,6 +50,7 @@ export class ShellyCloudAPI {
           },
           body: JSON.stringify({
             id: deviceId,
+            channel: 0,
             turn: action
           }),
           signal: AbortSignal.timeout(10000)
@@ -121,8 +123,7 @@ export class ShellyCloudAPI {
     const { refreshShellyToken } = await import('../client');
     
     // Obtener credencial actualizada de BD
-    const { PrismaClient } = await import('@prisma/client');
-    // const prisma = new PrismaClient(); // MIGRADO: usar singleton desde @/lib/db
+    const { prisma } = await import('@/lib/db');
     
     const credential = await prisma.shellyCredential.findUnique({
       where: { id: this.credential.id }
