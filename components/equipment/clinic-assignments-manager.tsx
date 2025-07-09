@@ -229,6 +229,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { toast } from 'sonner'
 import { Building2, Plus, Edit, Trash2, Eye, MapPin, Calendar, Wrench, ToggleLeft, ToggleRight, Clock, Hash, Loader2, Home } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useIntegrationModules } from '@/hooks/use-integration-modules'
 
 interface EquipmentClinicAssignment {
   id: string
@@ -313,6 +314,62 @@ export function ClinicAssignmentsManager({
   const [availableCabins, setAvailableCabins] = useState<any[]>([])
   const [isLoadingCabins, setIsLoadingCabins] = useState(false)
 
+  // Map assignmentId -> plug name (para mostrar en tabla)
+  const [assignmentPlugMap, setAssignmentPlugMap] = useState<Record<string, string>>({})
+
+  /* ------------------------------------------------------------------
+   * ⏩ INTEGRACIÓN SHELLY – asignar enchufe a la instancia
+   * ------------------------------------------------------------------ */
+  const { isShellyActive } = useIntegrationModules()
+  const [credentials, setCredentials] = useState<{ id: string; name: string }[]>([])
+  const [selectedCredentialId, setSelectedCredentialId] = useState<string>('')
+  const [availablePlugs, setAvailablePlugs] = useState<{ id: string; name: string }[]>([])
+  const [selectedPlugId, setSelectedPlugId] = useState<string>('')
+
+  // Cargar credenciales Shelly cuando se abre el modal
+  useEffect(() => {
+    if (!isCreateModalOpen || !isShellyActive) return
+    ;(async () => {
+      try {
+        const res = await fetch('/api/shelly/credentials')
+        if (!res.ok) throw new Error('Error obteniendo credenciales')
+        const data = await res.json()
+        setCredentials(data || [])
+      } catch (err) {
+        console.error('Error cargando credenciales Shelly:', err)
+        setCredentials([])
+      }
+    })()
+  }, [isCreateModalOpen, isShellyActive])
+
+  // Cargar enchufes libres al cambiar credencial
+  const loadPlugsForCredential = useCallback(async (credentialId: string, currentPlugId?: string) => {
+    if (!credentialId) {
+      setAvailablePlugs([])
+      return
+    }
+    try {
+      const res = await fetch(`/api/internal/smart-plug-devices?page=1&pageSize=1000&credentialId=${credentialId}`)
+      if (!res.ok) throw new Error('Error cargando enchufes')
+      const { data } = await res.json()
+      const freePlugs = (data || []).filter((d: any) => !d.equipmentClinicAssignmentId || d.id === currentPlugId)
+                      .map((d: any) => ({ id: d.id, name: d.name || d.serialNumber || d.deviceId }))
+      setAvailablePlugs(freePlugs)
+    } catch (err) {
+      console.error('Error cargando enchufes Shelly:', err)
+      setAvailablePlugs([])
+    }
+  }, [])
+
+  // Reset selects al cerrar modal
+  useEffect(() => {
+    if (!isCreateModalOpen) {
+      setSelectedCredentialId('')
+      setSelectedPlugId('')
+      setAvailablePlugs([])
+    }
+  }, [isCreateModalOpen])
+
   /**
    * loadData — Carga datos con estrategia “cache-first”
    * ------------------------------------------------------------------
@@ -365,13 +422,33 @@ export function ClinicAssignmentsManager({
         setClinics(clinicsData || [])
         queryClient.setQueryData(['clinics'], clinicsData)
       }
+
+      // Cargar plug map si Shelly activo
+      if (isShellyActive) {
+        try {
+          const plugsRes = await fetch('/api/internal/smart-plug-devices?page=1&pageSize=1000')
+          if (plugsRes.ok) {
+            const { data: plugs } = await plugsRes.json()
+            const map: Record<string, string> = {}
+            ;(plugs || []).forEach((p: any) => {
+              if (p.equipmentClinicAssignmentId) {
+                map[p.equipmentClinicAssignmentId] = p.name || p.serialNumber || p.deviceId
+              }
+            })
+            setAssignmentPlugMap(map)
+          }
+        } catch (plugErr) {
+          console.warn('No se pudo cargar mapa de enchufes:', plugErr)
+        }
+      }
+
     } catch (error) {
       console.error('Error loading data:', error)
       toast.error('Error al cargar datos')
     } finally {
       setIsLoading(false)
     }
-  }, [equipmentId, assignments.length, queryClient])
+  }, [equipmentId, assignments.length, queryClient, isShellyActive])
 
   useEffect(() => {
     loadData()
@@ -612,7 +689,24 @@ export function ClinicAssignmentsManager({
       const serverAssignment = await response.json()
       console.log(`✅ [${isEditing ? 'UPDATE' : 'CREATE'}-SERVER] ${isEditing ? 'Actualización' : 'Creación'} exitosa en servidor`)
       
-      // 5. Si es creación, reemplazar asignación temporal con la real
+      // 5a. Si se seleccionó enchufe Shelly, vincularlo (tanto creación como edición)
+      if (selectedPlugId) {
+        try {
+          const assignmentIdForPatch = isEditing ? selectedAssignment.id : serverAssignment.id
+          await fetch(`/api/internal/smart-plug-devices/${selectedPlugId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ equipmentClinicAssignmentId: assignmentIdForPatch })
+          })
+          // Invalida cache de enchufes para reflejar asignación
+          queryClient.invalidateQueries({ queryKey: ['smart-plug-devices'] })
+          queryClient.invalidateQueries({ queryKey: ['equipment-with-assignments'] })
+        } catch (plugErr) {
+          console.warn('⚠️  Error vinculando enchufe Shelly:', plugErr)
+        }
+      }
+
+      // 5b. Si es creación, reemplazar asignación temporal con la real
       if (!isEditing) {
         console.log('🔄 [CREATE-SERVER] Reemplazando asignación temporal con la real...')
         
@@ -640,6 +734,9 @@ export function ClinicAssignmentsManager({
           return updated
         })
         
+        // 👉 ACTUALIZAR estado local para reflejar inmediatamente el cambio
+        setAssignments(prev => prev.map(a => a.id.startsWith('temp-') ? serverAssignment : a))
+
         console.log('✅ [CREATE-SERVER] Asignación temporal reemplazada exitosamente')
       }
       
@@ -686,6 +783,24 @@ export function ClinicAssignmentsManager({
     })
     if (assignment.clinicId) {
       loadCabinsForClinic(assignment.clinicId)
+    }
+    // Pre-cargar enchufe asignado (si existe) para autocompletar selects
+    if (isShellyActive) {
+      (async () => {
+        try {
+          const res = await fetch('/api/internal/smart-plug-devices?page=1&pageSize=1000')
+          if (!res.ok) return
+          const { data } = await res.json()
+          const plug = (data || []).find((d: any) => d.equipmentClinicAssignmentId === assignment.id)
+          if (plug) {
+            setSelectedCredentialId(plug.credentialId)
+            await loadPlugsForCredential(plug.credentialId, plug.id)
+            setSelectedPlugId(plug.id)
+          }
+        } catch (err) {
+          console.warn('No se pudo precargar enchufe asignado:', err)
+        }
+      })()
     }
     // Usar el modal de creación para edición también
     setIsCreateModalOpen(true)
@@ -969,7 +1084,11 @@ export function ClinicAssignmentsManager({
                 <TableHead className="w-[160px]">Nombre</TableHead>
                 <TableHead className="w-[140px]">Clínica</TableHead>
                 <TableHead className="w-[100px]">N° Serie</TableHead>
-                <TableHead className="w-[100px] text-center">Fecha</TableHead>
+                {isShellyActive ? (
+                  <TableHead className="w-[140px] text-center">Enchufe</TableHead>
+                ) : (
+                  <TableHead className="w-[100px] text-center">Fecha</TableHead>
+                )}
                 <TableHead className="w-[60px] text-center">Activo</TableHead>
                 <TableHead className="w-[120px] text-right">Acciones</TableHead>
               </TableRow>
@@ -1005,15 +1124,23 @@ export function ClinicAssignmentsManager({
                     </div>
                   </TableCell>
                   
-                  <TableCell className="text-center">
-                    <div className="text-xs text-gray-500">
-                      {new Date(assignment.assignedAt).toLocaleDateString('es-ES', {
-                        day: '2-digit',
-                        month: '2-digit',
-                        year: '2-digit'
-                      })}
-                    </div>
-                  </TableCell>
+                  {isShellyActive ? (
+                    <TableCell className="text-center">
+                      <div className="text-xs text-gray-700">
+                        {assignmentPlugMap[assignment.id] || '-'}
+                      </div>
+                    </TableCell>
+                  ) : (
+                    <TableCell className="text-center">
+                      <div className="text-xs text-gray-500">
+                        {new Date(assignment.assignedAt).toLocaleDateString('es-ES', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          year: '2-digit'
+                        })}
+                      </div>
+                    </TableCell>
+                  )}
                   
                   <TableCell className="text-center">
                     <Button
@@ -1270,6 +1397,61 @@ export function ClinicAssignmentsManager({
                 </div>
               </div>
             </div>
+
+            {/* Sección: Integración Shelly (opcional) */}
+            {isShellyActive && (
+              <div className="p-4 space-y-4 bg-green-50 rounded-lg">
+                <h3 className="flex gap-2 items-center text-sm font-semibold text-gray-800">
+                  <Wrench className="w-4 h-4 text-green-600" />
+                  Enchufe Inteligente (Shelly)
+                </h3>
+
+                {/* Select Credencial */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium text-gray-700">Credencial Shelly</Label>
+                  <Select
+                    value={selectedCredentialId}
+                    onValueChange={(value) => {
+                      setSelectedCredentialId(value)
+                      setSelectedPlugId('')
+                      loadPlugsForCredential(value)
+                    }}
+                  >
+                    <SelectTrigger className="h-10 text-sm">
+                      <SelectValue placeholder="Seleccionar credencial..." />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-48">
+                      {credentials.map((cred) => (
+                        <SelectItem key={cred.id} value={cred.id} className="py-2">
+                          {cred.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Select Enchufe */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium text-gray-700">Enchufe sin asignar</Label>
+                  <Select
+                    value={selectedPlugId}
+                    onValueChange={setSelectedPlugId}
+                    disabled={!selectedCredentialId}
+                  >
+                    <SelectTrigger className="h-10 text-sm">
+                      <SelectValue placeholder={selectedCredentialId ? (availablePlugs.length ? 'Seleccionar enchufe...' : 'No hay enchufes libres') : 'Primero selecciona credencial'} />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-48">
+                      {availablePlugs.map((plug) => (
+                        <SelectItem key={plug.id} value={plug.id} className="py-2">
+                          {plug.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="notes" className="text-sm font-medium text-gray-700">
