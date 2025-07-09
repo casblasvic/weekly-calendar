@@ -899,12 +899,7 @@ const SmartPlugsPage = () => {
                                         </span>
                                     </>
                                 )}
-                                {/* Indicador visual si está ON pero sin dato de consumo válido */}
-                                {isOnline && !hasValidConsumption && (
-                                    <span className="text-xs opacity-60 ml-1">
-                                        (...)
-                                    </span>
-                                )}
+                                {/* Cuando no hay consumo válido, simplemente no mostrar nada */}
                             </Badge>
                         ) : (
                             <Badge className="text-white bg-gray-500 text-xs px-2 py-0.5 flex items-center gap-1 w-fit">

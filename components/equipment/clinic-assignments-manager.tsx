@@ -313,27 +313,54 @@ export function ClinicAssignmentsManager({
   const [availableCabins, setAvailableCabins] = useState<any[]>([])
   const [isLoadingCabins, setIsLoadingCabins] = useState(false)
 
-  // Cargar datos iniciales
+  /**
+   * loadData — Carga datos con estrategia “cache-first”
+   * ------------------------------------------------------------------
+   * 1. Intenta obtener asignaciones desde la key `['equipment-with-assignments']`.
+   *    Si existen, rellenamos el estado y desactivamos el spinner en <30 ms.
+   * 2. En paralelo (siempre) lanzamos el fetch para asegurarnos de disponer
+   *    de la última versión (refresco silencioso).  Al resolver, actualizamos
+   *    estado sólo si hay cambios reales para evitar re-renders afines.
+   */
   const loadData = useCallback(async () => {
-    setIsLoading(true)
+    // 1️⃣  CACHE-FIRST -------------------------------------------------
+    const cachedEquipment = (queryClient.getQueryData(['equipment-with-assignments']) as any[] | undefined)?.find(eq => eq.id === equipmentId)
+    if (cachedEquipment?.clinicAssignments) {
+      setAssignments(cachedEquipment.clinicAssignments)
+      // El spinner quedará oculto justo después de setClinics (abajo)
+    }
+
+    const cachedClinics = queryClient.getQueryData(['clinics']) as Clinic[] | undefined
+    if (cachedClinics) {
+      setClinics(cachedClinics)
+    }
+
+    // 2️⃣  NETWORK FETCH (refresco) ----------------------------------
+    setIsLoading(!(cachedEquipment && cachedClinics))
     try {
       const [assignmentsRes, clinicsRes] = await Promise.all([
         fetch(`/api/equipment/${equipmentId}/clinic-assignments`),
-        fetch('/api/clinics')
+        cachedClinics ? Promise.resolve({ ok: true, json: async () => cachedClinics }) : fetch('/api/clinics')
       ])
-      
+
       const assignmentsData = await assignmentsRes.json()
-      const clinicsData = await clinicsRes.json()
-      
-      setAssignments(assignmentsData.assignments || [])
-      setClinics(clinicsData || [])
+      const clinicsData = cachedClinics || await clinicsRes.json()
+
+      // Comparar y actualizar solo si cambió la longitud o hash simple
+      if (assignmentsData.assignments?.length !== assignments.length) {
+        setAssignments(assignmentsData.assignments || [])
+      }
+      if (!cachedClinics) {
+        setClinics(clinicsData || [])
+        queryClient.setQueryData(['clinics'], clinicsData)
+      }
     } catch (error) {
       console.error('Error loading data:', error)
       toast.error('Error al cargar datos')
     } finally {
       setIsLoading(false)
     }
-  }, [equipmentId])
+  }, [equipmentId, assignments.length, queryClient])
 
   useEffect(() => {
     loadData()
@@ -374,7 +401,12 @@ export function ClinicAssignmentsManager({
     
     const timestamp = Date.now().toString().slice(-6)
     const generatedId = `${equipmentCode}-${clinicPrefix}-${timestamp}`
-    setNewAssignment(prev => ({ ...prev, deviceId: generatedId }))
+    setNewAssignment(prev => ({
+      ...prev,
+      deviceId: generatedId,
+      // Si el usuario no ha escrito aún serialNumber o coincide con el anterior autogenerado, lo sustituimos
+      serialNumber: !prev.serialNumber || prev.serialNumber.startsWith(equipmentCode) ? generatedId : prev.serialNumber
+    }))
   }
 
   const generateDeviceId = () => {

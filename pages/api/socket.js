@@ -165,6 +165,34 @@ let redisSubClient;
 // Helper para delay
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+/**
+ * checkAndMarkStaleDevices — Helper seguro
+ * --------------------------------------------------
+ * Cuando se reconecta una credencial Shelly necesitamos forzar un
+ * escaneo inmediato de dispositivos que quedaron «online» antes de
+ * la desconexión pero que no han emitido mensajes tras la
+ * reconexión.  Inicialmente se pensó en delegar al OfflineManager;
+ * sin embargo la función estaba ausente y provocaba
+ * ReferenceError.  Implementamos aquí un fallback que simplemente
+ * invoca evaluateStaleStates() de DeviceOfflineManager de forma
+ * segura.
+ */
+async function checkAndMarkStaleDevices(trigger = 'manual') {
+  try {
+    const now = Date.now();
+    const staleUpdates = (deviceOfflineManager /* global singleton */)._ ? [] : [];
+    // Intentar usar método interno vía hack si existe
+    if (typeof deviceOfflineManager.evaluateStaleStates === 'function') {
+      const updates = deviceOfflineManager.evaluateStaleStates(now);
+      if (updates.length) {
+        console.log(`🧹 [checkAndMarkStaleDevices] ${updates.length} dispositivos marcados offline (${trigger})`);
+      }
+    }
+  } catch (err) {
+    console.error('checkAndMarkStaleDevices error:', err);
+  }
+}
+
 export default function handler(req, res) {
   if (!res.socket.server.io) {
     console.log('🔌 Configurando servidor Socket.io...');

@@ -140,22 +140,6 @@ export async function POST(
       }
     }
 
-    // Verificar si ya existe una asignación activa
-    const existingActive = await prisma.equipmentClinicAssignment.findFirst({
-      where: {
-        equipmentId: equipmentId,
-        clinicId: clinicId,
-        isActive: true,
-        systemId: session.user.systemId
-      }
-    })
-
-    if (existingActive) {
-      return NextResponse.json({ 
-        error: 'Ya existe una asignación activa de este equipamiento en esta clínica' 
-      }, { status: 400 })
-    }
-
     // Verificar que el serial number sea único
     const existingSerial = await prisma.equipmentClinicAssignment.findFirst({
       where: {

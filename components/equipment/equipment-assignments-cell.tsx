@@ -174,7 +174,8 @@ export function EquipmentAssignmentsCell({ equipmentId, className }: EquipmentAs
     
     // Suscribirse a cambios del cache
     const unsubscribe = queryClient.getQueryCache().subscribe(() => {
-      updateFromCache()
+      // Programar después del ciclo de render para evitar warnings de React
+      queueMicrotask(updateFromCache)
     })
     
     return unsubscribe

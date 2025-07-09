@@ -95,7 +95,7 @@ const defaultEquipmentState = (): EquipmentFormData => ({
   name: "",
   description: null,
   modelNumber: null,
-  powerThreshold: 10.0,
+  powerThreshold: 1.0,
   purchaseDate: null,
   warrantyEndDate: null,
   isActive: true,
@@ -196,7 +196,7 @@ export default function AddEquipmentModal({
           name: initialEquipment.name ?? "",
           description: initialEquipment.description ?? null,
           modelNumber: initialEquipment.modelNumber ?? null,
-          powerThreshold: Number(initialEquipment.powerThreshold) ?? 10.0,
+          powerThreshold: Number(initialEquipment.powerThreshold) ?? 1.0,
           purchaseDate: initialEquipment.purchaseDate ? new Date(initialEquipment.purchaseDate) : null,
           warrantyEndDate: initialEquipment.warrantyEndDate ? new Date(initialEquipment.warrantyEndDate) : null,
           isActive: initialEquipment.isActive ?? true,
@@ -345,7 +345,7 @@ export default function AddEquipmentModal({
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && handleCloseSimple()}>
       <DialogContent className="w-[95vw] max-w-[800px] max-h-[90vh] flex flex-col p-4 sm:p-6 overflow-hidden">
-        <DialogHeader className="mb-4 flex-shrink-0">
+        <DialogHeader className="flex-shrink-0 mb-4">
           <DialogTitle className="text-xl">{isEditMode ? "Editar equipamiento" : "Añadir nuevo equipamiento"}</DialogTitle>
           <DialogDescription className="mt-1 text-gray-500">
             {isEditMode 
@@ -357,23 +357,23 @@ export default function AddEquipmentModal({
           </p>
         </DialogHeader>
         
-        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as any)} className="flex-grow flex flex-col min-h-0">
-          <TabsList className="grid w-full grid-cols-3 flex-shrink-0">
-            <TabsTrigger value="info" className="flex items-center gap-2">
-              <Info className="h-4 w-4" />
+        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as any)} className="flex flex-col flex-grow min-h-0">
+          <TabsList className="grid flex-shrink-0 grid-cols-3 w-full">
+            <TabsTrigger value="info" className="flex gap-2 items-center">
+              <Info className="w-4 h-4" />
               Información Básica
             </TabsTrigger>
-            <TabsTrigger value="clinic-assignments" className="flex items-center gap-2" disabled={!isEditMode || !initialEquipment?.id}>
-              <Building2 className="h-4 w-4" />
+            <TabsTrigger value="clinic-assignments" className="flex gap-2 items-center" disabled={!isEditMode || !initialEquipment?.id}>
+              <Building2 className="w-4 h-4" />
               Asignaciones
             </TabsTrigger>
-            <TabsTrigger value="spare-parts" className="flex items-center gap-2" disabled={!isEditMode || !initialEquipment?.id}>
-              <Wrench className="h-4 w-4" />
+            <TabsTrigger value="spare-parts" className="flex gap-2 items-center" disabled={!isEditMode || !initialEquipment?.id}>
+              <Wrench className="w-4 h-4" />
               Recambios
             </TabsTrigger>
           </TabsList>
           
-          <TabsContent value="info" className="flex-grow overflow-y-auto pr-2 space-y-4 mt-4 min-h-0">
+          <TabsContent value="info" className="overflow-y-auto flex-grow pr-2 mt-4 space-y-4 min-h-0">
             <div className="space-y-1.5">
               <Label htmlFor="name">Nombre <span className="text-red-500">*</span></Label>
               <Input 
@@ -394,9 +394,9 @@ export default function AddEquipmentModal({
 
             {/* Campo de Umbral de Potencia - Solo visible si módulo Shelly activo */}
             {isShellyActive && (
-              <div className="border-t pt-4">
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <div className="flex items-center gap-2 mb-3">
+              <div className="pt-4 border-t">
+                <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                  <div className="flex gap-2 items-center mb-3">
                     <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
                     <Label className="text-sm font-medium text-blue-800">Control Inteligente de Equipos</Label>
                   </div>
@@ -411,9 +411,9 @@ export default function AddEquipmentModal({
                       step="0.1"
                       min="0"
                       value={equipmentData.powerThreshold} 
-                      onChange={(e) => setEquipmentData(prev => ({ ...prev, powerThreshold: parseFloat(e.target.value) || 10.0 }))} 
+                      onChange={(e) => setEquipmentData(prev => ({ ...prev, powerThreshold: parseFloat(e.target.value) || 1.0 }))} 
                       className="w-full" 
-                      placeholder="10.0"
+                      placeholder="1.0"
                     />
                     <p className="text-xs text-blue-600">
                       Potencia mínima en Watts para detectar que el equipamiento está en uso activo mediante enchufes inteligentes
@@ -429,7 +429,7 @@ export default function AddEquipmentModal({
             </div>
           </TabsContent>
 
-          <TabsContent value="clinic-assignments" className="flex-grow overflow-hidden mt-4 min-h-0">
+          <TabsContent value="clinic-assignments" className="overflow-hidden flex-grow mt-4 min-h-0">
             {isEditMode && initialEquipment?.id ? (
               <ClinicAssignmentsManager 
                 equipmentId={initialEquipment.id} 
@@ -438,9 +438,9 @@ export default function AddEquipmentModal({
                 clinicFilter={clinicFilter}
               />
             ) : (
-              <div className="flex items-center justify-center h-full text-gray-500">
+              <div className="flex justify-center items-center h-full text-gray-500">
                 <div className="text-center">
-                  <Building2 className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <Building2 className="mx-auto mb-4 w-12 h-12 opacity-50" />
                   <p>Las asignaciones están disponibles después de crear el equipamiento</p>
                   <p className="text-sm">Guarda primero la información básica</p>
                 </div>
@@ -448,7 +448,7 @@ export default function AddEquipmentModal({
             )}
           </TabsContent>
           
-          <TabsContent value="spare-parts" className="flex-grow overflow-hidden mt-4 min-h-0">
+          <TabsContent value="spare-parts" className="overflow-hidden flex-grow mt-4 min-h-0">
             {isEditMode && initialEquipment?.id ? (
               <SparePartsTab 
                 equipmentId={initialEquipment.id} 
@@ -459,9 +459,9 @@ export default function AddEquipmentModal({
                 onDataChange={invalidateSparePartsCache}
               />
             ) : (
-              <div className="flex items-center justify-center h-full text-gray-500">
+              <div className="flex justify-center items-center h-full text-gray-500">
                 <div className="text-center">
-                  <Wrench className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <Wrench className="mx-auto mb-4 w-12 h-12 opacity-50" />
                   <p>Los recambios están disponibles después de crear el equipamiento</p>
                 </div>
               </div>
@@ -469,7 +469,7 @@ export default function AddEquipmentModal({
           </TabsContent>
         </Tabs>
 
-        <DialogFooter className="mt-4 flex-shrink-0">
+        <DialogFooter className="flex-shrink-0 mt-4">
           <Button 
             variant="outline" 
             onClick={handleCloseSimple}
@@ -480,16 +480,16 @@ export default function AddEquipmentModal({
           <Button 
             onClick={handleSave}
             disabled={isSaving || (!isFormChanged && !hasAssignmentChanges)}
-            className="flex items-center gap-2"
+            className="flex gap-2 items-center"
           >
             {isSaving ? (
               <>
-                <Save className="h-4 w-4 animate-pulse" />
+                <Save className="w-4 h-4 animate-pulse" />
                 Guardando...
               </>
             ) : (
               <>
-                <Save className="h-4 w-4" />
+                <Save className="w-4 h-4" />
                 {isEditMode ? "Actualizar" : "Crear"}
               </>
             )}

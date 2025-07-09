@@ -45,6 +45,8 @@ export function useEquipmentQuery(options?: Omit<UseQueryOptions<Equipment[], un
  * Hook para obtener equipamiento CON asignaciones de clínica
  */
 export function useEquipmentWithAssignmentsQuery(options?: Omit<UseQueryOptions<EquipmentWithClinicAssignments[], unknown, EquipmentWithClinicAssignments[]>, 'queryKey' | 'queryFn'>) {
+  const queryClient = useQueryClient();
+
   return useQuery<EquipmentWithClinicAssignments[], unknown>({
     queryKey: ['equipment-with-assignments'],
     queryFn: async () => {
@@ -72,6 +74,19 @@ export function useEquipmentWithAssignmentsQuery(options?: Omit<UseQueryOptions<
     gcTime: 0, // No guardar en cache (antes era cacheTime)
     refetchOnWindowFocus: true,
     refetchOnMount: true,
+    /**
+     * 🛡️ Prefetch de asignaciones (side-effect en `select` para mantener compatibilidad
+     * con versiones de typings que no exponen `onSuccess`).
+     */
+    select: (data) => {
+      data.forEach((eq) => {
+        queryClient.setQueryData(
+          ['equipment-assignments', eq.id],
+          eq.clinicAssignments ?? []
+        );
+      });
+      return data; // devolver intacto
+    },
     ...options,
   });
 }

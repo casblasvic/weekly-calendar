@@ -7,6 +7,14 @@ import { wsLogger } from '@/lib/utils/websocket-logger';
 export const DEVICE_STATE_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutos
 
 /**
+ * ⏱️ Tiempo máximo SIN nuevos datos de consumo antes de borrar el valor.
+ * Un número muy bajo (<5 s) provoca “ping-pong” en la UI cuando los
+ * dispositivos envían datos cada 8-10 s.  Se ajusta a 12 s para dar
+ * margen y evitar desapariciones intermitentes del consumo.
+ */
+const CONSUMPTION_TIMEOUT_MS = 12 * 1000; // 12 segundos
+
+/**
  * 🏷️ Flag global para activar o desactivar el timer interno de comprobación.
  * En producción lo desactivamos para basarnos SOLO en los triggers que ya suceden.
  */
@@ -144,7 +152,7 @@ class DeviceOfflineManager {
       
       const timeoutId = setTimeout(() => {
         this.clearConsumptionData(deviceId);
-      }, 5000); // 5 segundos
+      }, CONSUMPTION_TIMEOUT_MS);
       
       this.deviceConsumptions.set(deviceId, {
         watts: currentPower,
