@@ -316,6 +316,7 @@ export function ClinicAssignmentsManager({
 
   // Map assignmentId -> plug name (para mostrar en tabla)
   const [assignmentPlugMap, setAssignmentPlugMap] = useState<Record<string, string>>({})
+  const PLUGS_CACHE_KEY = ['smart-plug-devices-all']
 
   /* ------------------------------------------------------------------
    * ⏩ INTEGRACIÓN SHELLY – asignar enchufe a la instancia
@@ -352,9 +353,13 @@ export function ClinicAssignmentsManager({
       const res = await fetch(`/api/internal/smart-plug-devices?page=1&pageSize=1000&credentialId=${credentialId}`)
       if (!res.ok) throw new Error('Error cargando enchufes')
       const { data } = await res.json()
-      const freePlugs = (data || []).filter((d: any) => !d.equipmentClinicAssignmentId || d.id === currentPlugId)
+      const plugsArr = data || []
+      const freePlugs = plugsArr.filter((d: any) => !d.equipmentClinicAssignmentId || d.id === currentPlugId)
                       .map((d: any) => ({ id: d.id, name: d.name || d.serialNumber || d.deviceId }))
       setAvailablePlugs(freePlugs)
+
+      // Guardar todos los plugs en cache global para precarga
+      queryClient.setQueryData(PLUGS_CACHE_KEY, plugsArr)
     } catch (err) {
       console.error('Error cargando enchufes Shelly:', err)
       setAvailablePlugs([])
@@ -390,6 +395,20 @@ export function ClinicAssignmentsManager({
     const cachedClinics = queryClient.getQueryData(['clinics']) as Clinic[] | undefined
     if (cachedClinics) {
       setClinics(cachedClinics)
+    }
+
+    // 1.b  CACHE-FIRST para mapa assignment→plug
+    if (isShellyActive) {
+      const cachedPlugs = queryClient.getQueryData(PLUGS_CACHE_KEY) as any[] | undefined
+      if (cachedPlugs) {
+        const map: Record<string, string> = {}
+        cachedPlugs.forEach((p: any) => {
+          if (p.equipmentClinicAssignmentId) {
+            map[p.equipmentClinicAssignmentId] = p.name || p.serialNumber || p.deviceId
+          }
+        })
+        setAssignmentPlugMap(map)
+      }
     }
 
     // 2️⃣  NETWORK FETCH (refresco) ----------------------------------
