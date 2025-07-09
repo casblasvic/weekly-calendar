@@ -346,9 +346,20 @@ export function ClinicAssignmentsManager({
       const assignmentsData = await assignmentsRes.json()
       const clinicsData = cachedClinics || await clinicsRes.json()
 
-      // Comparar y actualizar solo si cambió la longitud o hash simple
-      if (assignmentsData.assignments?.length !== assignments.length) {
-        setAssignments(assignmentsData.assignments || [])
+      const fetchedAssignments: EquipmentClinicAssignment[] = assignmentsData.assignments || []
+
+      // 🚫 PROTECCIÓN CONTRA OVERWRITE DE OPTIMISTIC DATA
+      // Si tenemos asignaciones temporales (id comienza con 'temp-') significa que el
+      // usuario acaba de crear una y el servidor aún no la ha persistido.  En ese
+      // caso ignoramos la respuesta si ésta tiene MENOS elementos, para evitar que la
+      // UI se quede vacía unos segundos.
+      const hasTempAssignments = assignments.some(a => a.id.startsWith('temp-'))
+
+      if (hasTempAssignments && fetchedAssignments.length < assignments.length) {
+        // Mantener estado optimista – el reemplazo llegará cuando el POST responda
+        console.log('⏭️  Respuesta fetch ignorada porque hay datos optimistas pendientes')
+      } else if (fetchedAssignments.length !== assignments.length) {
+        setAssignments(fetchedAssignments)
       }
       if (!cachedClinics) {
         setClinics(clinicsData || [])

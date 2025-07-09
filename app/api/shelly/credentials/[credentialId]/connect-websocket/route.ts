@@ -165,6 +165,15 @@ export async function POST(
         }
       });
 
+      // 🔄 SINCRONIZAR DISPOSITIVOS INMEDIATAMENTE (evitar estados desfasados)
+      try {
+        await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/shelly/sync/${credentialId}`, {
+          method: 'POST'
+        });
+      } catch (syncErr) {
+        console.warn('⚠️  Error lanzando sincronización inicial:', syncErr);
+      }
+
       return NextResponse.json({
         success: true,
         message: 'Conexión en tiempo real activada exitosamente',

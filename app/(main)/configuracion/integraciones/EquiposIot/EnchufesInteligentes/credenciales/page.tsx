@@ -195,22 +195,23 @@ export default function ShellyCredentialsPage() {
         }
     };
 
-    // 🔌 NUEVO: Conectar WebSocket para tiempo real (transparente para el usuario)
-    const handleConnectWebSocket = async (credentialId: string) => {
+    // 🔌 NUEVO: Toggle WebSocket (conectar ↔ desconectar) para tiempo real
+    const toggleWebSocketConnection = async (credential: ShellyCredential) => {
+        const isConnected = credential.connectionStatus === 'connected'
         // Activar estado de loading
         setLoadingStates(prev => ({
             ...prev,
-            [credentialId]: { ...prev[credentialId], connectingWebSocket: true }
+            [credential.id]: { ...prev[credential.id], connectingWebSocket: true }
         }));
 
         try {
-            const response = await fetch(`/api/shelly/credentials/${credentialId}/connect-websocket`, {
-                method: 'POST'
-            });
+            const endpoint = isConnected
+              ? `/api/shelly/credentials/${credential.id}/disconnect-websocket`
+              : `/api/shelly/credentials/${credential.id}/connect-websocket`;
+            const response = await fetch(endpoint, { method: 'POST' });
             
             if (response.ok) {
-                const result = await response.json();
-                toast.success("Conexión en tiempo real activada exitosamente");
+                toast.success(`Conexión en tiempo real ${isConnected ? 'desactivada' : 'activada'} exitosamente`);
                 // Recargar credenciales para obtener el estado actualizado
                 await fetchCredentials();
             } else {
@@ -224,7 +225,7 @@ export default function ShellyCredentialsPage() {
             setTimeout(() => {
                 setLoadingStates(prev => ({
                     ...prev,
-                    [credentialId]: { ...prev[credentialId], connectingWebSocket: false }
+                    [credential.id]: { ...prev[credential.id], connectingWebSocket: false }
                 }));
             }, 500);
         }
@@ -355,20 +356,17 @@ export default function ShellyCredentialsPage() {
                                             </TableCell>
                                             <TableCell>
                                                 <div className="flex gap-1 justify-end items-center">
-                                                    {/* 🔌 NUEVO: Botón Conectar Tiempo Real (WebSocket) */}
-                                                    {credential.canConnectWebSocket && (
-                                                        <Button
-                                                            variant="outline"
-                                                            size="sm"
-                                                            onClick={() => handleConnectWebSocket(credential.id)}
-                                                            disabled={loadingStates[credential.id]?.connectingWebSocket}
-                                                            className="px-3 py-1 text-green-600 border-green-200 hover:bg-green-50"
-                                                            title="Activar conexión en tiempo real"
-                                                        >
-                                                            <Power className={`w-4 h-4 mr-1 ${loadingStates[credential.id]?.connectingWebSocket ? 'animate-pulse' : ''}`} />
-                                                            {loadingStates[credential.id]?.connectingWebSocket ? 'Conectando...' : 'Conectar'}
-                                                        </Button>
-                                                    )}
+                                                    {/* 🔌 Botón POWER mini */}
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        onClick={() => toggleWebSocketConnection(credential)}
+                                                        disabled={loadingStates[credential.id]?.connectingWebSocket}
+                                                        className={`${credential.connectionStatus === 'connected' ? 'text-red-600 hover:bg-red-50' : 'text-green-600 hover:bg-green-50'} p-1`}
+                                                        title={credential.connectionStatus === 'connected' ? 'Desactivar conexión en tiempo real' : 'Activar conexión en tiempo real'}
+                                                    >
+                                                        <Power className={`w-4 h-4 ${loadingStates[credential.id]?.connectingWebSocket ? 'animate-pulse' : ''}`} />
+                                                    </Button>
 
                                                     {/* Botón Reconectar (siempre disponible si no está conectado) */}
                                                     {credential.status !== 'connected' && (

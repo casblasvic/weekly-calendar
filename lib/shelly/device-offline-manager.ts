@@ -278,14 +278,9 @@ class DeviceOfflineManager {
       wsLogger.verbose('🟢 [OfflineManager] WebSocket conectado - reiniciando monitoreo');
       this.startStateMonitoring();
       
-      // 🚀 UI INMEDIATA: Notificar reconexión
-      this.notifyCallbacks([{
-        deviceId: 'ALL',
-        online: true,
-        reason: 'websocket_reconnected',
-        updateBD: false, // No actualizar BD en reconexión masiva
-        timestamp: Date.now()
-      }]);
+      // Ya no marcamos todos ONLINE; cada dispositivo recibirá su estado
+      // mediante refreshAllDeviceStatuses() que envía updates individuales.
+      wsLogger.verbose('🟢 [OfflineManager] WebSocket conectado - estados individuales se refrescarán');
       
     } else if (!connected && wasConnected) {
       wsLogger.verbose('🔴 [OfflineManager] WebSocket desconectado - todos offline');

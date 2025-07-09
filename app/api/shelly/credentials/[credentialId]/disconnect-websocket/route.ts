@@ -93,7 +93,7 @@ export async function POST(
       
       console.log(`✅ [USER ACTION] WebSocket desconectado para credencial ${credential.name} por usuario ${session.user.email}`);
       
-      // Actualizar estado a desconectado y desactivar autoReconnect
+      // 1️⃣  Actualizar estado a desconectado y desactivar autoReconnect
       await prisma.webSocketConnection.update({
         where: { id: existingConnection.id },
         data: {
@@ -103,6 +103,41 @@ export async function POST(
           updatedAt: new Date()
         }
       });
+
+      // 2️⃣  Marcar TODOS los dispositivos de la credencial como offline
+      await prisma.smartPlugDevice.updateMany({
+        where: { credentialId },
+        data: {
+          online: false,
+          relayOn: false,
+          currentPower: 0,
+          updatedAt: new Date(),
+          lastSeenAt: new Date()
+        }
+      });
+
+      // 3️⃣  Broadcast a los clientes afectados (solo su sistema)
+      const devices = await prisma.smartPlugDevice.findMany({
+        where: { credentialId },
+        select: { id: true, deviceId: true }
+      });
+
+      const broadcast = (global as any).broadcastDeviceUpdate;
+      if (broadcast) {
+        devices.forEach(dev => {
+          broadcast(credential.systemId, {
+            deviceId: dev.id,
+            shellyDeviceId: dev.deviceId,
+            online: false,
+            relayOn: false,
+            currentPower: 0,
+            voltage: null,
+            temperature: null,
+            timestamp: Date.now(),
+            reason: 'manual_disconnect'
+          });
+        });
+      }
 
       return NextResponse.json({
         success: true,

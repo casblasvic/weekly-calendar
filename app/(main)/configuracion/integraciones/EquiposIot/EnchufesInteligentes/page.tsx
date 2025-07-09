@@ -434,7 +434,10 @@ const SmartPlugsPage = () => {
         
         const unsubscribe = subscribe((update) => {
             
-
+            // Ignorar eventos masivos (deviceId==='ALL') que no contienen estado específico
+            if (update.deviceId === 'ALL') {
+                return;
+            }
             
             // 🎯 TRACKING: Marcar mensaje recibido (para compatibilidad con código existente)
             messagesReceivedRef.current.add(update.deviceId);
@@ -1179,28 +1182,29 @@ const SmartPlugsPage = () => {
     );
 
     // 🔌 NUEVO: Función para conectar WebSocket de una credencial
-    const handleConnectWebSocket = async (credentialId: string, credentialName: string) => {
-        setConnectingWebSocket(prev => ({ ...prev, [credentialId]: true }));
+    const toggleWebSocketConnection = async (credential: typeof credentialsWithPowerData[0]) => {
+        // Si está conectado ⇒ desconectar, sino conectar
+        const isConnectedCred = credential.connectionStatus === 'connected'
+        setConnectingWebSocket(prev => ({ ...prev, [credential.id]: true }));
 
         try {
-            const response = await fetch(`/api/shelly/credentials/${credentialId}/connect-websocket`, {
-                method: 'POST'
-            });
-            
+            const endpoint = isConnectedCred
+              ? `/api/shelly/credentials/${credential.id}/disconnect-websocket`
+              : `/api/shelly/credentials/${credential.id}/connect-websocket`;
+
+            const response = await fetch(endpoint, { method: 'POST' });
             if (response.ok) {
-                const result = await response.json();
-                toast.success("Conexión en tiempo real activada exitosamente");
-                // Recargar credenciales para obtener el estado actualizado
+                toast.success(`Conexión en tiempo real ${isConnectedCred ? 'desactivada' : 'activada'} exitosamente`);
                 await fetchCredentialsStatus();
             } else {
                 const errorData = await response.json();
-                toast.error(errorData.error || "Error al activar conexión en tiempo real");
+                toast.error(errorData.error || 'Error en la operación');
             }
         } catch (error) {
-            toast.error("Error de conexión");
+            toast.error('Error de conexión');
         } finally {
             setTimeout(() => {
-                setConnectingWebSocket(prev => ({ ...prev, [credentialId]: false }));
+                setConnectingWebSocket(prev => ({ ...prev, [credential.id]: false }));
             }, 500);
         }
     };
@@ -1337,19 +1341,17 @@ const SmartPlugsPage = () => {
                                         )}
                                     </div>
 
-                                    {/* Botón de conectar cuando está desconectado */}
-                                    {credential.canConnectWebSocket && (
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={() => handleConnectWebSocket(credential.id, credential.name)}
-                                            disabled={connectingWebSocket[credential.id]}
-                                            className="px-2 py-1 text-green-600 border-green-200 hover:bg-green-50"
-                                            title="Activar conexión en tiempo real"
-                                        >
-                                            <Power className={`w-3 h-3 ${connectingWebSocket[credential.id] ? 'animate-pulse' : ''}`} />
-                                        </Button>
-                                    )}
+                                    {/* Botón Power para conectar/desconectar */}
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() => toggleWebSocketConnection(credential)}
+                                        disabled={connectingWebSocket[credential.id]}
+                                        className={`${credential.connectionStatus === 'connected' ? 'text-red-600 hover:bg-red-50' : 'text-green-600 hover:bg-green-50'} p-1`}
+                                        title={credential.connectionStatus === 'connected' ? 'Desactivar conexión en tiempo real' : 'Activar conexión en tiempo real'}
+                                    >
+                                        <Power className={`w-3 h-3 ${connectingWebSocket[credential.id] ? 'animate-pulse' : ''}`} />
+                                    </Button>
                                 </div>
                             ))}
                             
