@@ -211,7 +211,7 @@ export async function GET(request: NextRequest) {
             equipmentId: equipment.id,
             equipmentName: equipment.name,
             equipmentClinicAssignmentId: assignment.id,
-            equipmentPowerThreshold: equipment.powerThreshold, // ✅ Usar valor del schema (default 1.0)
+            powerThreshold: equipment.powerThreshold,
             
             // Info de la asignación
             deviceName: assignment.deviceName,

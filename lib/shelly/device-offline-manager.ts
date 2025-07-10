@@ -330,7 +330,7 @@ class DeviceOfflineManager {
   private notifyCallbacks(updates: OfflineUpdate[]): void {
     if (updates.length === 0) return;
     
-    wsLogger.verbose(`📢 [OfflineManager] Notificando ${this.callbacks.size} callbacks con ${updates.length} updates`);
+    wsLogger.verbose(`📢 Notificando a ${this.callbacks.size} suscriptores`);
     
     this.callbacks.forEach(callback => {
       try {

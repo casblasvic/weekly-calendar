@@ -278,7 +278,7 @@ export default function EditarServicioPage() {
 
     return (
         <>
-            <div className="p-4 pb-20 mx-auto max-w-4xl md:p-6">
+            <div className="container mx-auto px-4 py-8 relative min-h-screen flex flex-col max-w-4xl pb-32">
                 <h1 className="mb-6 text-2xl font-semibold">
                     {isLoading ? t('common.loading') : (initialData ? t('services.edit.title', { serviceName: initialData.name }) : t('services.edit.loadError'))}
                 </h1>
@@ -302,16 +302,20 @@ export default function EditarServicioPage() {
                              )}
             </div>
 
-            <ServiceActionFooter 
-                serviceId={serviceId}
-                isSaving={isSaving}
-                isLoading={isLoading} 
-                formId={formId} 
-                hasInitialData={!!initialData}
-                onBack={() => router.back()}
-                onNavigate={handleSubSectionNavigation} 
-                onSubmitTrigger={triggerFormSubmit} 
-            />
+            <div className="fixed bottom-0 left-0 right-0 z-10 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+                <div className="container mx-auto px-4 py-3 max-w-4xl">
+                <ServiceActionFooter 
+                    serviceId={serviceId}
+                    isSaving={isSaving}
+                    isLoading={isLoading} 
+                    formId={formId} 
+                    hasInitialData={!!initialData}
+                    onBack={() => router.back()}
+                    onNavigate={handleSubSectionNavigation} 
+                    onSubmitTrigger={triggerFormSubmit} 
+                />
+                </div>
+            </div>
         </>
     );
 } 

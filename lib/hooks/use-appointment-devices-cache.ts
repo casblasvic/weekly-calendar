@@ -160,7 +160,7 @@ export function useAppointmentDevicesCache(appointmentId: string, enabled: boole
         return; // No es un dispositivo de esta cita
       }
 
-      console.log(`🔄 [AppointmentDevicesCache] Updating device ${update.deviceId} for appointment ${appointmentId}`);
+      console.log(`🔄 [AppointmentDevicesCache] Updating device ${update.deviceId} for appointment ${appointmentId}`, update);
 
       // 🚀 ACTUALIZACIÓN OPTIMISTA INMEDIATA
       setRealtimeDevices(prevDevices => 
@@ -176,7 +176,7 @@ export function useAppointmentDevicesCache(appointmentId: string, enabled: boole
               lastSeenAt: new Date(update.timestamp),
               // Actualizar status basado en el nuevo estado
               status: !update.online ? 'offline' : 
-                     update.relayOn ? 'occupied' : 'available'
+                     (update.currentPower && update.currentPower > 0.1) ? 'occupied' : 'available'
             };
           }
           return device;

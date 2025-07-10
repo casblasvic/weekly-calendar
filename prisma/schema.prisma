@@ -795,6 +795,8 @@ model AppointmentDeviceUsage {
   device                       Device?                    @relation(fields: [deviceId], references: [id], onDelete: SetNull)
   startedByUser                User                       @relation("DeviceUsageStartedBy", fields: [startedByUserId], references: [id])
   system                       System                     @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  endedReason     UsageEndedReason?
+  usageOutcome    UsageOutcome?
 
   @@index([appointmentId])
   @@index([startedAt])
@@ -3496,5 +3498,18 @@ enum DeviceUsageStatus {
   ACTIVE
   PAUSED
   COMPLETED
+}
+
+// Enums nuevos
+enum UsageEndedReason {
+  MANUAL
   AUTO_SHUTDOWN
+  APPOINTMENT_CLOSED
+  POWER_OFF_REANUDABLE
+}
+
+enum UsageOutcome {
+  EARLY
+  ON_TIME
+  EXTENDED
 }

@@ -933,16 +933,18 @@ export function FloatingMenu({ className, smartPlugsData: propData }: FloatingMe
                     
                     {/* Estado de conexión WebSocket */}
                     <div className="mt-2 flex items-center gap-1 text-[10px]">
-                      {smartPlugsData.isConnected ? (
+                      {smartPlugsData.isConnected && smartPlugsData.activeDevices.length > 0 ? (
                         <>
                           <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
                           <span className="text-green-600 font-medium">Conectado en tiempo real</span>
                         </>
                       ) : (
-                        <>
-                          <div className="w-1.5 h-1.5 bg-red-500 rounded-full"></div>
-                          <span className="text-red-600 font-medium">Desconectado</span>
-                        </>
+                        !smartPlugsData.isConnected ? (
+                          <>
+                            <div className="w-1.5 h-1.5 bg-red-500 rounded-full"></div>
+                            <span className="text-red-600 font-medium">Desconectado</span>
+                          </>
+                        ) : null
                       )}
                     </div>
                   </div>

@@ -44,7 +44,7 @@ export function AppointmentEquipmentSelector({
   // 🔥 USAR HOOK EN TIEMPO REAL - igual que el menú flotante
   const equipmentData = useServiceEquipmentRequirements({
     appointmentId,
-    enabled: open // Solo cargar cuando el modal está abierto
+    enabled: true // Siempre activo para recibir tiempo real
   });
 
   if (!equipmentData) {
@@ -210,7 +210,7 @@ export function AppointmentEquipmentSelector({
 
                         <div className="flex gap-3 items-center">
                           {/* Información de consumo */}
-                          {device.online && device.relayOn && device.currentPower && device.currentPower > 0.1 && (
+                          {device.online && device.currentPower && device.currentPower > 0.1 && device.status !== 'available' && (
                             <div className="text-sm text-gray-600">
                               <span className="font-medium">{device.currentPower.toFixed(1)}W</span>
                           </div>

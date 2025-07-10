@@ -323,9 +323,11 @@ export function ClinicAssignmentsManager({
    * ------------------------------------------------------------------ */
   const { isShellyActive } = useIntegrationModules()
   const [credentials, setCredentials] = useState<{ id: string; name: string }[]>([])
-  const [selectedCredentialId, setSelectedCredentialId] = useState<string>('')
+  const [selectedCredentialId, setSelectedCredentialId] = useState<string>('none') // 'none' = sin credencial
   const [availablePlugs, setAvailablePlugs] = useState<{ id: string; name: string }[]>([])
-  const [selectedPlugId, setSelectedPlugId] = useState<string>('')
+  const [selectedPlugId, setSelectedPlugId] = useState<string>('none') // 'none' = sin enchufe
+  // Mantiene el enchufe actualmente asociado cuando se edita una asignación
+  const [originalPlugId, setOriginalPlugId] = useState<string>('none')
 
   // Cargar credenciales Shelly cuando se abre el modal
   useEffect(() => {
@@ -345,7 +347,7 @@ export function ClinicAssignmentsManager({
 
   // Cargar enchufes libres al cambiar credencial
   const loadPlugsForCredential = useCallback(async (credentialId: string, currentPlugId?: string) => {
-    if (!credentialId) {
+    if (!credentialId || credentialId === 'none') {
       setAvailablePlugs([])
       return
     }
@@ -369,9 +371,10 @@ export function ClinicAssignmentsManager({
   // Reset selects al cerrar modal
   useEffect(() => {
     if (!isCreateModalOpen) {
-      setSelectedCredentialId('')
-      setSelectedPlugId('')
+      setSelectedCredentialId('none')
+      setSelectedPlugId('none')
       setAvailablePlugs([])
+      setOriginalPlugId('none')
     }
   }, [isCreateModalOpen])
 
@@ -708,20 +711,34 @@ export function ClinicAssignmentsManager({
       const serverAssignment = await response.json()
       console.log(`✅ [${isEditing ? 'UPDATE' : 'CREATE'}-SERVER] ${isEditing ? 'Actualización' : 'Creación'} exitosa en servidor`)
       
-      // 5a. Si se seleccionó enchufe Shelly, vincularlo (tanto creación como edición)
-      if (selectedPlugId) {
+      // 5a. Gestionar vinculación o desvinculación de enchufes Shelly
+      if (isShellyActive) {
+        const assignmentIdForPatch = isEditing ? selectedAssignment.id : serverAssignment.id
+
         try {
-          const assignmentIdForPatch = isEditing ? selectedAssignment.id : serverAssignment.id
-          await fetch(`/api/internal/smart-plug-devices/${selectedPlugId}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ equipmentClinicAssignmentId: assignmentIdForPatch })
-          })
-          // Invalida cache de enchufes para reflejar asignación
+          // 5a.1 Si había enchufe antes y ahora se eligió "Sin enchufe" o uno diferente → desvincular
+          if (originalPlugId !== 'none' && originalPlugId !== selectedPlugId) {
+            await fetch(`/api/internal/smart-plug-devices/${originalPlugId}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ equipmentClinicAssignmentId: null })
+            })
+          }
+
+          // 5a.2 Si se seleccionó un enchufe nuevo (no vacío) y es distinto al anterior → vincular
+          if (selectedPlugId !== 'none' && selectedPlugId !== originalPlugId) {
+            await fetch(`/api/internal/smart-plug-devices/${selectedPlugId}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ equipmentClinicAssignmentId: assignmentIdForPatch })
+            })
+          }
+
+          // 5a.3 Invalidar caches relacionados
           queryClient.invalidateQueries({ queryKey: ['smart-plug-devices'] })
           queryClient.invalidateQueries({ queryKey: ['equipment-with-assignments'] })
         } catch (plugErr) {
-          console.warn('⚠️  Error vinculando enchufe Shelly:', plugErr)
+          console.warn('⚠️  Error actualizando enlace enchufe Shelly:', plugErr)
         }
       }
 
@@ -812,9 +829,13 @@ export function ClinicAssignmentsManager({
           const { data } = await res.json()
           const plug = (data || []).find((d: any) => d.equipmentClinicAssignmentId === assignment.id)
           if (plug) {
-            setSelectedCredentialId(plug.credentialId)
-            await loadPlugsForCredential(plug.credentialId, plug.id)
+            setSelectedCredentialId(plug.credentialId || 'none')
+            await loadPlugsForCredential(plug.credentialId || 'none', plug.id)
             setSelectedPlugId(plug.id)
+            setOriginalPlugId(plug.id)
+          }
+          else {
+            setOriginalPlugId('none')
           }
         } catch (err) {
           console.warn('No se pudo precargar enchufe asignado:', err)
@@ -1432,14 +1453,21 @@ export function ClinicAssignmentsManager({
                     value={selectedCredentialId}
                     onValueChange={(value) => {
                       setSelectedCredentialId(value)
-                      setSelectedPlugId('')
-                      loadPlugsForCredential(value)
+                      // Si selecciona "none", limpiar plugs
+                      if (value === 'none') {
+                        setSelectedPlugId('none')
+                        setAvailablePlugs([])
+                      } else {
+                        setSelectedPlugId('none')
+                        loadPlugsForCredential(value)
+                      }
                     }}
                   >
                     <SelectTrigger className="h-10 text-sm">
                       <SelectValue placeholder="Seleccionar credencial..." />
                     </SelectTrigger>
                     <SelectContent className="max-h-48">
+                      <SelectItem value="none">— Sin credencial —</SelectItem>
                       {credentials.map((cred) => (
                         <SelectItem key={cred.id} value={cred.id} className="py-2">
                           {cred.name}
@@ -1461,6 +1489,7 @@ export function ClinicAssignmentsManager({
                       <SelectValue placeholder={selectedCredentialId ? (availablePlugs.length ? 'Seleccionar enchufe...' : 'No hay enchufes libres') : 'Primero selecciona credencial'} />
                     </SelectTrigger>
                     <SelectContent className="max-h-48">
+                      <SelectItem value="none">— Sin enchufe —</SelectItem>
                       {availablePlugs.map((plug) => (
                         <SelectItem key={plug.id} value={plug.id} className="py-2">
                           {plug.name}

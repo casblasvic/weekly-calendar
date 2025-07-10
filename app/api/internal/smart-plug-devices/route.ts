@@ -71,6 +71,7 @@ export async function GET(request: NextRequest) {
         // Transformar los datos para mantener compatibilidad con el frontend
         const transformedDevices = devices.map(device => ({
             ...device,
+            powerThreshold: device.equipmentClinicAssignment?.equipment.powerThreshold ?? 1,
             // Mantener compatibilidad hacia atrás con el campo equipment
             equipment: device.equipmentClinicAssignment ? {
                 name: device.equipmentClinicAssignment.equipment.name,

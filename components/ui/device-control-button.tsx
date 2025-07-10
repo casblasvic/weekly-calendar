@@ -12,12 +12,13 @@ interface DeviceControlButtonProps {
     currentPower?: number | null;
     voltage?: number | null;
     temperature?: number | null;
+    powerThreshold?: number;
   };
   onToggle: (deviceId: string, turnOn: boolean) => Promise<void>;
   disabled?: boolean;
   size?: 'sm' | 'default' | 'lg';
   showMetrics?: boolean;
-  deviceStatus?: 'available' | 'occupied' | 'offline' | 'in_use_this_appointment';
+  deviceStatus?: 'available' | 'occupied' | 'offline' | 'in_use_this_appointment' | 'over_used' | 'auto_shutdown' | 'paused';
 }
 
 export function DeviceControlButton({ 
@@ -89,7 +90,7 @@ export function DeviceControlButton({
     }
     
     // 🟢 VERDE: En uso en ESTA CITA + consumo real
-    if (deviceStatus === 'in_use_this_appointment' && device.relayOn && device.currentPower && device.currentPower > 0.1) {
+    if (deviceStatus === 'in_use_this_appointment' && device.relayOn && device.currentPower && device.currentPower > (device.powerThreshold ?? 0.1)) {
       return {
         bgColor: 'bg-green-500',
         borderColor: 'border-green-400',
@@ -100,6 +101,18 @@ export function DeviceControlButton({
       };
     }
     
+    // 🔴 INTENSO: Sobre-uso (más minutos de los estimados)
+    if (deviceStatus === 'over_used') {
+      return {
+        bgColor: 'bg-red-700',
+        borderColor: 'border-red-600',
+        iconColor: 'text-white',
+        hoverColor: 'hover:bg-red-800',
+        disabled: false,
+        title: 'Tiempo de uso superado - apagar dispositivo'
+      }
+    }
+
     // 🟠 NARANJA: Asignado a ESTA CITA pero sin consumo real
     if (deviceStatus === 'in_use_this_appointment' && device.relayOn) {
       return {
@@ -124,6 +137,30 @@ export function DeviceControlButton({
       };
     }
     
+    // 🟣 MAGENTA: Auto-shutdown (tiempo excedido)
+    if (deviceStatus === 'auto_shutdown') {
+      return {
+        bgColor: 'bg-fuchsia-600',
+        borderColor: 'border-fuchsia-500',
+        iconColor: 'text-white',
+        hoverColor: 'hover:bg-fuchsia-700',
+        disabled: true,
+        title: 'Apagado automático por sobreuso'
+      }
+    }
+
+    // 🔵 AZUL: Pausa reactivable
+    if (deviceStatus === 'paused') {
+      return {
+        bgColor: 'bg-sky-500',
+        borderColor: 'border-sky-400',
+        iconColor: 'text-white',
+        hoverColor: 'hover:bg-sky-600',
+        disabled: false,
+        title: 'Pausado - volver a encender para reanudar'
+      }
+    }
+    
     // ⚫ GRIS: Estado por defecto (offline)
     return {
       bgColor: 'bg-gray-500',
@@ -138,7 +175,7 @@ export function DeviceControlButton({
   const buttonState = getButtonState();
 
   return (
-    <div className="flex flex-col items-center gap-2">
+    <div className="flex flex-col gap-2 items-center">
       {/* Botón de control */}
       <button
         onClick={handleClick}
@@ -154,25 +191,25 @@ export function DeviceControlButton({
         title={buttonState.title}
       >
         {isLoading ? (
-          <Loader2 className="h-4 w-4 animate-spin text-white" />
+          <Loader2 className="w-4 h-4 text-white animate-spin" />
         ) : (
           <Power className={cn("h-4 w-4", buttonState.iconColor)} />
         )}
         
         {/* Indicador de actividad cuando está encendido */}
         {device.online && device.relayOn && !isLoading && (
-          <div className="absolute -top-1 -right-1 w-2 h-2 bg-green-300 rounded-full animate-pulse border border-white" />
+          <div className="absolute -top-1 -right-1 w-2 h-2 bg-green-300 rounded-full border border-white animate-pulse" />
         )}
       </button>
 
       {/* Métricas en tiempo real - Solo mostrar cuando está encendido */}
       {showMetrics && device.online && device.relayOn && (
-        <div className="flex flex-col items-center gap-1 text-center">
+        <div className="flex flex-col gap-1 items-center text-center">
           {/* Potencia */}
           {device.currentPower !== null && device.currentPower !== undefined && (
-            <div className="flex items-center gap-1 text-xs">
-              <Zap className="h-3 w-3 text-yellow-600 flex-shrink-0" />
-              <span className="font-medium text-yellow-700 font-mono">
+            <div className="flex gap-1 items-center text-xs">
+              <Zap className="flex-shrink-0 w-3 h-3 text-yellow-600" />
+              <span className="font-mono font-medium text-yellow-700">
                 {formatPower(device.currentPower)}
               </span>
             </div>
@@ -180,9 +217,9 @@ export function DeviceControlButton({
           
           {/* Voltaje */}
           {device.voltage && (
-            <div className="flex items-center gap-1 text-xs">
-              <Plug className="h-3 w-3 text-blue-600 flex-shrink-0" />
-              <span className="text-blue-700 font-medium">
+            <div className="flex gap-1 items-center text-xs">
+              <Plug className="flex-shrink-0 w-3 h-3 text-blue-600" />
+              <span className="font-medium text-blue-700">
                 {formatVoltage(device.voltage)}
               </span>
             </div>
@@ -190,9 +227,9 @@ export function DeviceControlButton({
           
           {/* Temperatura */}
           {device.temperature && (
-            <div className="flex items-center gap-1 text-xs">
-              <Thermometer className="h-3 w-3 text-red-600 flex-shrink-0" />
-              <span className="text-red-700 font-medium">
+            <div className="flex gap-1 items-center text-xs">
+              <Thermometer className="flex-shrink-0 w-3 h-3 text-red-600" />
+              <span className="font-medium text-red-700">
                 {formatTemperature(device.temperature)}
               </span>
             </div>

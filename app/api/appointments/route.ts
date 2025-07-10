@@ -807,8 +807,21 @@ export async function PUT(request: NextRequest) {
         },
       });
 
-
-
+      // ---------------------------------------------------------
+      //  SYNC estimatedMinutes en usos activos/pausados
+      // ---------------------------------------------------------
+      if (newDurationMinutes) {
+        await tx.appointmentDeviceUsage.updateMany({
+          where: {
+            appointmentId: id,
+            currentStatus: { in: ['ACTIVE', 'PAUSED'] }
+          },
+          data: {
+            estimatedMinutes: newDurationMinutes
+          }
+        })
+      }
+ 
       // Si se proporcionan servicios, actualizar la relación
       if (services && Array.isArray(services)) {
         

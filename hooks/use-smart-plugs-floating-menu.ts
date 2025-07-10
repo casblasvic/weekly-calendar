@@ -1,3 +1,22 @@
+/*
+ * 📡 REAL-TIME SMART PLUG DATA FLOW
+ * ---------------------------------------------------------------------------
+ * 1. WebSocket (useSocket) recibe mensajes Shelly → trackActivity() en
+ *    websocket-manager.ts → deviceOfflineManager.
+ * 2. deviceOfflineManager unifica: online/offline + relay + currentPower.
+ * 3. Este hook subscribe al manager y mantiene un estado React con **TODOS**
+ *    los dispositivos de la clínica.
+ * 4. Además, realiza un fetch inicial a /api/internal/smart-plug-devices que
+ *    devuelve powerThreshold (cada equipo) para determinar consumo real.
+ * 5. Expone:
+ *      • devicesMap  → mapa completo id → dispositivo (online/off/consumo)
+ *      • activeDevices → subset que realmente está consumiendo
+ *      • deviceStats, totalPower, onDeviceToggle
+ * 6. Cualquier otro componente (QuickMenu, dashboards, etc.) sólo necesita
+ *    importar este hook y fusionar sus propios metadatos (p. ej. registros de
+ *    appointment_device_usage) con la lectura en vivo que ofrecemos aquí.
+ * ---------------------------------------------------------------------------
+ */
 // ✅ HOOK PERSONALIZADO PARA FLOATING MENU DE ENCHUFES INTELIGENTES
 // 🎯 SIMPLIFICADO: Solo WebSocket, sin timeouts, muestra dispositivos offline
 // 🔒 VERIFICACIÓN: Solo funciona si el módulo Shelly está activo
@@ -20,6 +39,7 @@ interface SmartPlugDevice {
   currentPower?: number;
   voltage?: number;
   temperature?: number;
+  powerThreshold?: number;
   appointmentOnlyMode?: boolean;
   autoShutdownEnabled?: boolean;
   equipmentId?: string;
@@ -53,21 +73,24 @@ interface SmartPlugDevice {
 interface SmartPlugsFloatingMenuData {
   // 📊 CONTADORES
   deviceStats: {
-    total: number;      // Total dispositivos asignados
-    online: number;     // Dispositivos online
-    offline: number;    // Dispositivos offline
-    consuming: number;  // Dispositivos ON (online + relayOn)
+    total: number;
+    online: number;
+    offline: number;
+    consuming: number;
   };
-  
-  // 🔥 DISPOSITIVOS DINÁMICOS (solo los ON)
-  activeDevices: SmartPlugDevice[];  // Solo dispositivos online + relayOn
-  
+
+  // 🔥 DISPOSITIVOS CONSUMIENDO (online + consumo)
+  activeDevices: SmartPlugDevice[];
+
+  // 🗺️ MAPA COMPLETO DE DISPOSITIVOS DE LA CLÍNICA (incluye offline / sin consumo)
+  devicesMap: Record<string, SmartPlugDevice>;
+
   // 📊 CONSUMO TOTAL
   totalPower: number;
-  
+
   // 🔌 ESTADO CONEXIÓN
   isConnected: boolean;
-  
+
   // 🎮 FUNCIONES
   onDeviceToggle: (deviceId: string, turnOn: boolean) => Promise<void>;
   lastUpdate: Date | null;
@@ -104,7 +127,7 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
     if (!systemId) return;
     
     try {
-      clientLogger.verbose('🔄 [FloatingMenu] Cargando dispositivos...');
+      // log removed
       
       const response = await fetch(`/api/internal/smart-plug-devices?pageSize=1000&page=1`);
       
@@ -120,10 +143,7 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
       
       const data = await response.json();
       
-      clientLogger.verbose('✅ [FloatingMenu] Dispositivos cargados:', {
-        total: data.data?.length || 0,
-        hasActiveClinic: !!activeClinic?.id
-      });
+      // log removed
       
       console.log('🔄 [FloatingMenu] Dispositivos cargados desde API:', {
         total: data.data?.length || 0,
@@ -171,7 +191,7 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
         throw new Error(errorData.error || 'Error desconocido');
       }
 
-      clientLogger.verbose(`✅ [FloatingMenu] Control exitoso: ${deviceId} → ${turnOn ? 'ON' : 'OFF'}`);
+      // log removed
       
     } catch (error) {
       console.error('❌ [FloatingMenu] Error controlando dispositivo:', error);
@@ -236,6 +256,15 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
       .reduce((sum, device) => sum + device.currentPower!, 0);
   }, [activeDevices]);
 
+  // 🗺️ MAPA COMPLETO DE DISPOSITIVOS DE CLÍNICA
+  const devicesMap = useMemo(() => {
+    const map: Record<string, SmartPlugDevice> = {}
+    clinicDevices.forEach(d => {
+      map[d.deviceId ?? d.id] = d
+    })
+    return map
+  }, [clinicDevices])
+
   // 🔥 CARGAR DISPOSITIVOS solo si el módulo está activo
   useEffect(() => {
     if (systemId && isShellyActive && !isInitialized && !isLoadingIntegrations) {
@@ -249,7 +278,7 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
       return;
     }
 
-    clientLogger.verbose('📡 [FloatingMenu] WebSocket activo - configurando listener');
+    // log removed
     
     const unsubscribe = subscribe((update: any) => {
       // 🔄 MANEJAR ACTUALIZACIONES DE ASIGNACIÓN DE EQUIPOS
@@ -269,12 +298,7 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
       
       // 📡 MANEJAR UPDATES NORMALES DE ESTADO (online/offline/power)
       if (update.deviceId) {
-      clientLogger.debug('🔍 [FloatingMenu] Update normal recibido:', {
-        deviceId: update.deviceId,
-        online: update.online,
-        relayOn: update.relayOn,
-        currentPower: update.currentPower
-      });
+      // log removed
       
       // Actualizar dispositivo en la lista
       setAllDevices(prev => {
@@ -283,7 +307,7 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
         );
         
         if (deviceIndex === -1) {
-          clientLogger.verbose('⚠️ [FloatingMenu] Dispositivo no encontrado:', update.deviceId);
+          // log removed
           return prev;
         }
         
@@ -313,11 +337,55 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
           lastSeenAt: new Date(update.timestamp)
         };
         
-        clientLogger.verbose(`✅ [FloatingMenu] Dispositivo actualizado: ${oldDevice.name} → ${update.online ? 'ONLINE' : 'OFFLINE'}`);
+        // log removed
         
         return updated;
       });
       
+      // Enviar muestra viva al backend para acumular minutos/energía
+      (async () => {
+        try {
+          await fetch('/api/internal/device-usage/live-sample', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            keepalive: true,
+            body: JSON.stringify({
+              deviceId: update.deviceId,
+              currentPower: update.currentPower,
+              relayOn: update.relayOn,
+              totalEnergy: update.totalEnergy,
+            })
+          }).then(r=>r.json()).then(res=>{
+            if(res?.endedReason==='AUTO_SHUTDOWN'){
+              setAllDevices(prev=>{
+                const idx=prev.findIndex(d=>d.id===update.deviceId||d.deviceId===update.deviceId)
+                if(idx===-1) return prev
+                const arr=[...prev]
+                arr[idx]={...arr[idx], status:'auto_shutdown', relayOn:false} as any
+                return arr
+              })
+            } else if(res?.endedReason==='POWER_OFF_REANUDABLE'){
+              setAllDevices(prev=>{
+                const idx=prev.findIndex(d=>d.id===update.deviceId||d.deviceId===update.deviceId)
+                if(idx===-1) return prev
+                const arr=[...prev]
+                arr[idx]={...arr[idx], status:'paused', relayOn:false} as any
+                return arr
+              })
+            } else if(res?.warning){
+              // marcar over_used
+              setAllDevices(prev=>{
+                const idx = prev.findIndex(d=> d.id===update.deviceId || d.deviceId===update.deviceId)
+                if(idx===-1) return prev
+                const arr=[...prev]
+                arr[idx]={...arr[idx], status:'over_used'} as any
+                return arr
+              })
+            }
+          })
+        } catch(e){ /* ignore */ }
+      })()
+
       setLastUpdate(new Date());
       }
     });
@@ -333,15 +401,15 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
       return;
     }
     
-    clientLogger.verbose('🎯 [FloatingMenu] Configurando listener de Offline Manager');
+    // log removed
     
     const unsubscribeOffline = deviceOfflineManager.subscribe((updates: OfflineUpdate[]) => {
-      clientLogger.verbose('📡 [FloatingMenu] Updates offline recibidos:', updates);
+      // log removed
       
       for (const update of updates) {
         if (update.deviceId === 'ALL') {
           // Cambio masivo - todos los dispositivos
-          clientLogger.verbose(`🌐 [FloatingMenu] Cambio masivo: todos ${update.online ? 'ONLINE' : 'OFFLINE'} (${update.reason})`);
+          // log removed
       
       setAllDevices(prev => prev.map(device => ({ 
         ...device, 
@@ -367,7 +435,7 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
               currentPower: update.online ? updated[deviceIndex].currentPower : 0
             };
             
-            clientLogger.verbose(`📱 [FloatingMenu] Dispositivo específico ${update.online ? 'ONLINE' : 'OFFLINE'}: ${update.deviceName || updated[deviceIndex].name}`);
+            // log removed
             
             return updated;
           });
@@ -377,7 +445,7 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
       setLastUpdate(new Date());
     });
     
-    clientLogger.verbose('✅ [FloatingMenu] Offline Manager listener configurado');
+    // log removed
     
     return () => {
       unsubscribeOffline();
@@ -393,6 +461,7 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
   return {
     deviceStats,
     activeDevices,
+    devicesMap,
     totalPower,
     isConnected,
     onDeviceToggle: handleDeviceToggle,

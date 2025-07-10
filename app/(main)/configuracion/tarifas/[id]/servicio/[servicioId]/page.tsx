@@ -638,6 +638,7 @@ export default function NuevoServicio() {
         vatTypeId: servicio.vatTypeId || null,
         colorCode: servicio.colorCode || null,
         durationMinutes: servicio.durationMinutes || 0,
+        treatmentDurationMinutes: (servicio as any).treatmentDurationMinutes ?? 0,
         description: servicio.description || null,
       };
 
@@ -1037,12 +1038,8 @@ export default function NuevoServicio() {
   };
 
   return (
-    <div className="flex overflow-hidden flex-col h-screen bg-gray-50">
-      {/* NO hay barra superior aquí */}
-      
-      {/* Área de Contenido Scrolleable */}
-      <div className="overflow-y-auto flex-grow min-h-0">
-        <div className="container px-4 py-6 pb-12 mx-auto">
+    <>
+      <div className="container mx-auto px-4 py-8 relative min-h-screen flex flex-col max-w-4xl pb-32">
           {/* Título dentro del contenido */}
            <h1 className="mb-6 text-2xl font-semibold text-gray-800 dark:text-gray-200">
             {isNew ? "Nuevo Servicio" : "Editar Servicio"}
@@ -1234,12 +1231,10 @@ export default function NuevoServicio() {
               </HoverCard>
             </div>
           </div>
-        </div> {/* Fin container mx-auto px-4 py-6 pb-12 */}
-      </div> {/* Fin Área de Contenido Scrolleable */}
+        </div>
 
-      {/* Barra de Acciones Inferior Original (Fija) */}
-      <div className="flex-shrink-0 bg-white border-t shadow-md dark:bg-gray-800 dark:border-gray-700">
-        <div className="container flex justify-between items-center px-4 py-3 mx-auto">
+      <div className="fixed bottom-0 left-0 right-0 z-10 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="container mx-auto px-4 py-3 max-w-4xl flex justify-between items-center">
           <Button variant="outline" onClick={handleCancel} className={buttonSecondaryClass}>Cancelar</Button>
           <div className="flex space-x-2">
               {/* Botones para subsecciones si el servicio está guardado */}
@@ -1361,8 +1356,7 @@ export default function NuevoServicio() {
         accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt" // Ajustar accept según necesidad
         multiple
       />
-
-    </div> // Fin Contenedor principal
+    </>
   )
 }
 

@@ -32,7 +32,6 @@ import { useScrollHoverClearance } from '@/lib/hooks/use-global-hover-state'
 import { Button } from "@/components/ui/button"
 import { DeviceControlButton } from "@/components/ui/device-control-button"
 import { useServiceEquipmentRequirements } from '@/hooks/use-service-equipment-requirements'
-import { useAppointmentDevicesWithFallback } from '@/lib/hooks/use-appointment-devices-cache'
 import { toast } from 'sonner'
 
 // Función para ajustar el brillo del color
@@ -133,6 +132,25 @@ export function AppointmentItem({
     isConnected: boolean
     onDeviceToggle: (deviceId: string, turnOn: boolean) => Promise<void>
     lastUpdate: Date | null
+    devicesMap: {
+      [key: string]: {
+        id: string;
+        name: string;
+        deviceId: string;
+        online: boolean;
+        relayOn: boolean;
+        currentPower?: number;
+        voltage?: number;
+        temperature?: number;
+        equipmentClinicAssignment?: {
+          id: string;
+          clinicId: string;
+          deviceName?: string;
+          equipment: { id: string; name: string; };
+          clinic: { id: string; name: string; };
+        };
+      };
+    };
   }
 }) {
   // Obtener información de la clínica para validaciones de horario
@@ -770,31 +788,109 @@ export function AppointmentItem({
   const [isHovering, setIsHovering] = useState(false)
   const [processingDevices, setProcessingDevices] = useState<Set<string>>(new Set()) // ✅ NUEVO: Estado para evitar dobles clics
   
-  // 🚀 NUEVO: Usar hook de cache de dispositivos (carga instantánea)
-  const serviceEquipmentData = useAppointmentDevicesWithFallback(
-    appointment.id,
-    true // ✅ SIEMPRE HABILITADO: datos ya pre-cargados en cache
-  );
+  // ⚡ SOLO ACTIVAR HOOK CUANDO SE NECESITE
+  const shouldActivateHook = dropdownOpen || isHovering
 
-  // ✅ DATOS FINALES: Solo dispositivos que pueden hacer los servicios de esta cita
+  // ---------------------------------------------------------------------
+  // 🆕 INTEGRACIÓN CON FLOATING MENU
+  // ---------------------------------------------------------------------
+  // El Floating Menu (useSmartPlugsFloatingMenu) mantiene el estado EN VIVO
+  // de todos los smart-plugs de la clínica.  Aquí construimos un Map para
+  // acceder rápidamente al dispositivo por deviceId.
+
+  const liveDeviceMap = useMemo(() => {
+    if (!smartPlugsData) return new Map<string, any>()
+    const map = new Map<string, any>()
+    Object.values(smartPlugsData.devicesMap).forEach((d: any) => {
+      map.set(d.deviceId ?? d.id, d)
+    })
+    return map
+  }, [smartPlugsData])
+
+  // 🚀 NUEVO: Usar hook de cache de dispositivos (carga instantánea)
+  const serviceEquipmentData = useServiceEquipmentRequirements({
+    appointmentId: appointment.id,
+    enabled: shouldActivateHook
+  });
+
+  // Transformar datos para la UI del quick menu — fusionando estado en vivo.
   const equipmentData = serviceEquipmentData ? {
-    availableDevices: serviceEquipmentData.availableDevices.map(device => ({
-      id: device.id,
-      deviceId: device.deviceId,
-      name: device.name,
-      online: device.online,
-      relayOn: device.relayOn,
-      currentPower: device.currentPower,
-      voltage: device.voltage,
-      temperature: device.temperature,
-      cabinName: device.cabinName || 'Sin cabina',
-      status: device.status,
-      equipmentClinicAssignmentId: device.equipmentClinicAssignmentId // ✅ AGREGADO: El campo que faltaba
-    })),
-    isConnected: serviceEquipmentData.isConnected,
-    onDeviceToggle: serviceEquipmentData.onDeviceToggle,
+    availableDevices: serviceEquipmentData.availableDevices.map(device => {
+      const live = liveDeviceMap.get(device.deviceId)
+
+      // 🔄 Fusionar estado en vivo
+      const merged: any = {
+        ...device,
+        online:  live?.online        ?? device.online,
+        relayOn: live?.relayOn       ?? device.relayOn,
+        currentPower: live?.currentPower ?? device.currentPower,
+        voltage: live?.voltage       ?? device.voltage,
+        temperature: live?.temperature ?? device.temperature,
+      }
+       
+       // -------------------------------------------------------------
+       // ⭐ DETERMINAR operationStatus PARA ESTA CITA
+       // -------------------------------------------------------------
+      const threshold = merged.powerThreshold ?? 0.1
+      const originalStatus = device.status
+
+      if (!merged.online) {
+        merged.status = 'offline'
+      } else if (originalStatus === 'in_use_this_appointment') {
+        merged.status = 'in_use_this_appointment'
+      } else if (originalStatus === 'occupied') {
+        // Ya está asignado a otra cita según appointment_device_usage
+        merged.status = 'occupied'
+      } else if (merged.currentPower !== null && merged.currentPower !== undefined && merged.currentPower > threshold) {
+        // Hay consumo pero no asignado a esta cita ⇒ ocupado
+        merged.status = 'occupied'
+      } else {
+        merged.status = 'available'
+      }
+ 
+      return merged
+    }),
+    isConnected: smartPlugsData?.isConnected ?? serviceEquipmentData.isConnected,
+    onDeviceToggle: smartPlugsData?.onDeviceToggle ?? serviceEquipmentData.onDeviceToggle,
     refetch: serviceEquipmentData.refetch
   } : null
+
+  // ---------------------------------------------------------------------
+  //          FIN INTEGRACIÓN CON FLOATING MENU
+  // -------------------------------------------------------------
+
+  // -------------------------------------------------------------
+  // ⭐ DETERMINAR operationStatus PARA ESTA CITA
+  // -------------------------------------------------------------
+  const operationStatus = useMemo(() => {
+    if (!equipmentData) return null
+    // prioridad: over_used > verde > naranja
+    const autoSd = equipmentData.availableDevices.some(d=>d.status==='auto_shutdown')
+    if(autoSd) return 'auto_shutdown'
+    const overUsed = equipmentData.availableDevices.some(d => d.status === 'over_used')
+    if (overUsed) return 'over_used'
+
+    const active = equipmentData.availableDevices.some(d => d.status === 'in_use_this_appointment' && d.currentPower && (d.currentPower > (d.powerThreshold ?? 0.1)))
+    if (active) return 'active'
+
+    const standby = equipmentData.availableDevices.some(d => d.status === 'in_use_this_appointment')
+    if (standby) return 'standby'
+    const paused = equipmentData.availableDevices.some(d=>d.status==='paused')
+    if(paused) return 'paused'
+    return null
+  }, [equipmentData])
+
+  const operationRingClass = operationStatus === 'active'
+    ? 'ring-2 ring-green-500'
+    : operationStatus === 'standby'
+      ? 'ring-2 ring-orange-500'
+      : operationStatus === 'over_used'
+        ? 'ring-2 ring-red-600'
+        : operationStatus === 'auto_shutdown'
+          ? 'ring-2 ring-fuchsia-600'
+          : operationStatus === 'paused'
+            ? 'ring-2 ring-sky-500'
+            : ''
 
   return (
     <>
@@ -812,6 +908,7 @@ export function AppointmentItem({
           isOptimistic && "ring-1 ring-purple-300 ring-opacity-50",
           // ✅ TRANSPARENCIA CUANDO ESTÁ EN MODO MOVIMIENTO O ARRASTRE
           isThisAppointmentInOperation && "opacity-60 scale-95 ring-2 ring-purple-400 ring-opacity-70",
+          operationRingClass,
           // Estilos de borde durante el resize
           isResizing && hasResizeConflict && "ring-2 ring-red-500 ring-opacity-80",
           isResizing && !hasResizeConflict && "ring-2 ring-green-500 ring-opacity-80",
@@ -1128,7 +1225,7 @@ export function AppointmentItem({
                           return (
                           <DropdownMenuItem 
                             key={device.id}
-                            className={`p-3 cursor-pointer hover:bg-gray-50 ${processingDevices.has(device.deviceId) ? 'opacity-50 pointer-events-none' : ''}`}
+                            className={`p-3 cursor-pointer hover:bg-gray-50 ${processingDevices.has(device.deviceId) || device.status === 'occupied' ? 'opacity-50 pointer-events-none' : ''}`}
                             onSelect={(e) => {
                               // Prevenir que el dropdown se cierre automáticamente
                               e.preventDefault();
@@ -1138,10 +1235,9 @@ export function AppointmentItem({
                               e.preventDefault();
                               e.stopPropagation();
                               
-                              // 🚫 PREVENIR DOBLES CLICS - PROTECCIÓN PRINCIPAL
-                              if (processingDevices.has(device.deviceId)) {
-                                console.log('🔍 [DROPDOWN DEVICE CLICK] Dispositivo ya procesando, ignorando clic');
-                                return;
+                              // 🚫 PREVENIR DOBLES CLICS O DISPOSITIVO OCUPADO
+                              if (processingDevices.has(device.deviceId) || device.status === 'occupied') {
+                                return; // Evitar doble clic o dispositivo ocupado
                               }
 
                               // 🔍 LOG ESPECÍFICO: Capturar clic en dropdown device
@@ -1168,6 +1264,16 @@ export function AppointmentItem({
                                 toast.error('Dispositivo offline', { description: device.name });
                                 return;
                               }
+
+                              console.log('🔍 [DEVICE CLICK DEBUG]:', {
+                                deviceName: device.name,
+                                deviceId: device.deviceId,
+                                status: device.status,
+                                online: device.online,
+                                relayOn: device.relayOn,
+                                currentPower: device.currentPower,
+                                appointmentId: appointment.id
+                              });
                               
                               const turnOn = !device.relayOn;
                               
@@ -1177,8 +1283,7 @@ export function AppointmentItem({
                                 
                                 // 🎯 LÓGICA INTELIGENTE: Decidir entre asignar o controlar
                                 if (device.status === 'available' && turnOn) {
-                                  // 💡 ASIGNAR PRIMERO: Dispositivo disponible y quiere encender
-                                  console.log('🔍 [DROPDOWN CONTROL] Dispositivo disponible - ejecutando ASIGNACIÓN + ENCENDIDO');
+                                  // INFO: Dispositivo disponible, se procede a asignar + encender
                                   
                                   const assignResponse = await fetch(`/api/appointments/${appointment.id}/assign-device`, {
                                     method: 'POST',
@@ -1195,10 +1300,9 @@ export function AppointmentItem({
                                     throw new Error(errorData.error || 'Error asignando dispositivo');
                                   }
                                   
-                                  const assignResult = await assignResponse.json();
-                                  console.log('🔍 [DROPDOWN CONTROL] Asignación exitosa:', assignResult);
+                                  await assignResponse.json();
                                   
-                                  // ⚡ ACTUALIZAR ESTADO VISUAL INMEDIATAMENTE
+                                  // ⚡ Actualizar estado visual inmediatamente
                                   console.log('🎨 [DROPDOWN CONTROL] Actualizando estado visual...');
                                   
                                   // 🎯 ACTUALIZACIÓN OPTIMISTA: cambiar estado del dispositivo inmediatamente
@@ -1220,7 +1324,6 @@ export function AppointmentItem({
                                   
                                   // ⚡ INVALIDAR CACHE INMEDIATAMENTE
                                   if (equipmentData?.refetch) {
-                                    console.log('🔄 [DROPDOWN CONTROL] Invalidando cache...');
                                     await equipmentData.refetch();
                                   }
                                   
@@ -1229,8 +1332,8 @@ export function AppointmentItem({
                                     duration: 3000
                                   });
                                 } else {
-                                  // 🎛️ CONTROL DIRECTO: Dispositivo ya asignado o solo cambio de estado
-                                  console.log('🔍 [DROPDOWN CONTROL] Control directo - llamando equipmentData.onDeviceToggle...');
+                                  // 🎛️ Control directo: Dispositivo ya asignado o solo cambio de estado
+                                  // Control directo del dispositivo
                                   await equipmentData.onDeviceToggle(device.deviceId, turnOn);
                                   console.log('🔍 [DROPDOWN CONTROL] Control directo completado exitosamente');
                                   
@@ -1293,14 +1396,15 @@ export function AppointmentItem({
                                   relayOn: device.relayOn,
                                   currentPower: device.currentPower,
                                   voltage: device.voltage,
-                                  temperature: device.temperature
+                                  temperature: device.temperature,
+                                  powerThreshold: device.powerThreshold
                                 }}
                                 deviceStatus={device.status}
                                 onToggle={async (deviceId: string, turnOn: boolean) => {
                                   // 🚫 NO HACER NADA: La lógica está en DropdownMenuItem.onClick
                                   console.log('🔍 [DEVICE CONTROL BUTTON] Deshabilitado - usar DropdownMenuItem');
                                 }}
-                                disabled={processingDevices.has(device.deviceId)} // ✅ Deshabilitar si está procesando
+                                disabled={processingDevices.has(device.deviceId) || device.status === 'occupied'} // ✅ Deshabilitar si está procesando o ocupado
                                 size="sm"
                                 showMetrics={false}
                               />

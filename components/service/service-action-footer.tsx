@@ -52,16 +52,7 @@ export const ServiceActionFooter: React.FC<ServiceActionFooterProps> = ({
     ];
 
     return (
-        <footer 
-            className="fixed bottom-0 z-10 px-4 py-3 border-t bg-background md:px-6 lg:px-8" 
-            style={{
-                left: 'var(--main-margin-left)', 
-                width: 'var(--main-width)',
-                transition: 'left 0.3s ease-in-out, width 0.3s ease-in-out' // Sincronizar transición
-            } as React.CSSProperties}
-        >
-             {/* Usar flex-wrap para que los botones se muevan a la siguiente línea si no caben */}
-             <div className="flex flex-nowrap items-center justify-start gap-2 max-w-4xl mx-auto">
+        <div className="flex flex-nowrap items-center justify-start gap-2">
                 {/* Botones de Acción (Consumos, Puntos, etc.) */}
                 {actionButtons.map(btn => (
                     <Button 
@@ -95,7 +86,6 @@ export const ServiceActionFooter: React.FC<ServiceActionFooterProps> = ({
                      <HelpCircle className="w-4 h-4" />
                      <span className="sr-only">{t('common.help') || 'Ayuda'}</span>
                  </Button>
-            </div>
-         </footer>
+        </div>
     );
 }; 
