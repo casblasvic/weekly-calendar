@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Power, Loader2, Zap, Plug, Thermometer } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { getDeviceColors } from '@/lib/utils/device-colors';
 
 interface DeviceControlButtonProps {
   device: {
@@ -13,12 +14,17 @@ interface DeviceControlButtonProps {
     voltage?: number | null;
     temperature?: number | null;
     powerThreshold?: number;
+    // 🕒 CAMPOS DE TIEMPO PARA BLOQUEO
+    actualMinutes?: number;
+    estimatedMinutes?: number;
+    // 🔒 AUTO-SHUTDOWN PARA CONDICIONAR BLOQUEO
+    autoShutdownEnabled?: boolean;
   };
   onToggle: (deviceId: string, turnOn: boolean) => Promise<void>;
   disabled?: boolean;
   size?: 'sm' | 'default' | 'lg';
   showMetrics?: boolean;
-  deviceStatus?: 'available' | 'occupied' | 'offline' | 'in_use_this_appointment' | 'over_used' | 'auto_shutdown' | 'paused';
+  deviceStatus?: 'available' | 'occupied' | 'offline' | 'in_use_this_appointment' | 'over_used' | 'auto_shutdown' | 'paused' | 'completed';
 }
 
 export function DeviceControlButton({ 
@@ -32,11 +38,11 @@ export function DeviceControlButton({
   const [isLoading, setIsLoading] = useState(false);
 
   const handleClick = async () => {
-    if (isLoading || disabled || !device.online) return;
+    if (isLoading || disabled) return;
     
     setIsLoading(true);
     try {
-      await onToggle(device.id, !device.relayOn);
+      await onToggle((device as any).deviceId ?? device.id, !device.relayOn);
     } finally {
       setIsLoading(false);
     }
@@ -64,111 +70,27 @@ export function DeviceControlButton({
     return `${temp.toFixed(1)}°C`;
   };
 
-  // 🎨 NUEVA LÓGICA DE COLORES CORREGIDA
+  // 🎨 USAR FUNCIÓN CENTRALIZADA DE COLORES
   const getButtonState = () => {
-    if (!device.online) {
-      return {
-        bgColor: 'bg-gray-400',
-        borderColor: 'border-gray-300',
-        iconColor: 'text-gray-600',
-        hoverColor: 'hover:bg-gray-400',
-        disabled: true,
-        title: 'Dispositivo offline'
-      };
-    }
+    const colors = getDeviceColors({
+      online: device.online,
+      relayOn: device.relayOn,
+      currentPower: device.currentPower,
+      powerThreshold: device.powerThreshold,
+      status: deviceStatus as any,
+      // 🕒 CAMPOS DE TIEMPO PARA BLOQUEO POR AUTO-SHUTDOWN
+      actualMinutes: device.actualMinutes,
+      estimatedMinutes: device.estimatedMinutes,
+      autoShutdownEnabled: device.autoShutdownEnabled
+    });
     
-    // 🔴 ROJO: Ocupado por OTRA CITA (no disponible para esta cita)
-    if (deviceStatus === 'occupied') {
-      return {
-        bgColor: 'bg-red-500',
-        borderColor: 'border-red-400',
-        iconColor: 'text-white',
-        hoverColor: 'hover:bg-red-500',
-        disabled: true,
-        title: 'En uso por otra cita'
-      };
-    }
-    
-    // 🟢 VERDE: En uso en ESTA CITA + consumo real
-    if (deviceStatus === 'in_use_this_appointment' && device.relayOn && device.currentPower && device.currentPower > (device.powerThreshold ?? 0.1)) {
-      return {
-        bgColor: 'bg-green-500',
-        borderColor: 'border-green-400',
-        iconColor: 'text-white',
-        hoverColor: 'hover:bg-green-600',
-        disabled: false,
-        title: 'En uso - apagar dispositivo'
-      };
-    }
-    
-    // 🔴 INTENSO: Sobre-uso (más minutos de los estimados)
-    if (deviceStatus === 'over_used') {
-      return {
-        bgColor: 'bg-red-700',
-        borderColor: 'border-red-600',
-        iconColor: 'text-white',
-        hoverColor: 'hover:bg-red-800',
-        disabled: false,
-        title: 'Tiempo de uso superado - apagar dispositivo'
-      }
-    }
-
-    // 🟠 NARANJA: Asignado a ESTA CITA pero sin consumo real
-    if (deviceStatus === 'in_use_this_appointment' && device.relayOn) {
-      return {
-        bgColor: 'bg-orange-500',
-        borderColor: 'border-orange-400',
-        iconColor: 'text-white',
-        hoverColor: 'hover:bg-orange-600',
-        disabled: false,
-        title: 'Asignado sin consumo - apagar dispositivo'
-      };
-    }
-    
-    // 🔵 AZUL: Disponible para asignar
-    if (deviceStatus === 'available') {
-      return {
-        bgColor: device.relayOn ? 'bg-blue-600' : 'bg-blue-500',
-        borderColor: device.relayOn ? 'border-blue-500' : 'border-blue-400',
-        iconColor: 'text-white',
-        hoverColor: device.relayOn ? 'hover:bg-blue-700' : 'hover:bg-blue-600',
-        disabled: false,
-        title: device.relayOn ? 'Disponible (encendido) - apagar' : 'Disponible - encender'
-      };
-    }
-    
-    // 🟣 MAGENTA: Auto-shutdown (tiempo excedido)
-    if (deviceStatus === 'auto_shutdown') {
-      return {
-        bgColor: 'bg-fuchsia-600',
-        borderColor: 'border-fuchsia-500',
-        iconColor: 'text-white',
-        hoverColor: 'hover:bg-fuchsia-700',
-        disabled: true,
-        title: 'Apagado automático por sobreuso'
-      }
-    }
-
-    // 🔵 AZUL: Pausa reactivable
-    if (deviceStatus === 'paused') {
-      return {
-        bgColor: 'bg-sky-500',
-        borderColor: 'border-sky-400',
-        iconColor: 'text-white',
-        hoverColor: 'hover:bg-sky-600',
-        disabled: false,
-        title: 'Pausado - volver a encender para reanudar'
-      }
-    }
-    
-    // ⚫ GRIS: Estado por defecto (offline)
     return {
-      bgColor: 'bg-gray-500',
-      borderColor: 'border-gray-400',
-      iconColor: 'text-white',
-      hoverColor: 'hover:bg-gray-600',
-      disabled: false,
-      title: device.relayOn ? 'Apagar dispositivo' : 'Encender dispositivo'
+      bgColor: colors.bgColor,
+      borderColor: colors.borderColor,
+      iconColor: colors.iconColor,
+      hoverColor: colors.hoverColor,
+      disabled: colors.disabled,
+      title: colors.title
     };
   };
 

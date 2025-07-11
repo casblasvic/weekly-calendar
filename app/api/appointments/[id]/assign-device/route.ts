@@ -172,12 +172,107 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const existingUsage = await prisma.appointmentDeviceUsage.findFirst({
       where: {
         appointmentId: appointmentId,
+        OR: [
+          {
         currentStatus: { in: ['ACTIVE', 'PAUSED'] },
         endedAt: null
+          },
+          {
+            currentStatus: 'COMPLETED',
+            endedReason: 'POWER_OFF_REANUDABLE'
+          }
+        ]
       }
     })
 
+    // 🆕 LÓGICA: Permitir reactivar si el mismo dispositivo está PAUSED
+    //            o si fue marcado COMPLETED con endedReason=POWER_OFF_REANUDABLE
     if (existingUsage) {
+      const isReactivablePaused = existingUsage.currentStatus === 'PAUSED'
+      const isReactivableCompleted =
+        existingUsage.currentStatus === 'COMPLETED' &&
+        existingUsage.endedReason === 'POWER_OFF_REANUDABLE'
+
+      if ((isReactivablePaused || isReactivableCompleted) && existingUsage.deviceId === deviceId) {
+        const now = new Date()
+
+        await prisma.appointmentDeviceUsage.update({
+          where: { id: existingUsage.id },
+          data: {
+            currentStatus: 'ACTIVE',
+            pausedAt: null,
+            endedAt: null,
+            endedReason: null,
+            usageOutcome: null
+          }
+        })
+
+        // Opcionalmente encender dispositivo si turnOnDevice === true
+        if (turnOnDevice && assignment.smartPlugDevice) {
+          process.nextTick(async () => {
+            try {
+              const fullDevice = await prisma.smartPlugDevice.findUnique({
+                where: { id: assignment.smartPlugDevice!.id },
+                include: { credential: true }
+              })
+
+              if (!fullDevice?.credential) {
+                throw new Error('Credencial del dispositivo no encontrada')
+              }
+
+              await shellyWebSocketManager.controlDevice(
+                fullDevice.credential.id,
+                deviceId,
+                'on'
+              )
+            } catch (e) {
+              console.error('Error encendiendo dispositivo en reanudación:', e)
+            }
+          })
+        }
+
+        return NextResponse.json({
+          success: true,
+          resumed: true,
+          message: 'Dispositivo reanudado correctamente',
+          data: {
+            usageId: existingUsage.id,
+            resumedAt: now.toISOString()
+          }
+        })
+      }
+
+      // Si el uso existente pertenece a ESTE dispositivo y ya está ACTIVE, tratar como idempotente
+      if (existingUsage.currentStatus === 'ACTIVE' && existingUsage.deviceId === deviceId) {
+        // Opcionalmente encender si estaba apagado
+        if (turnOnDevice && assignment.smartPlugDevice) {
+          process.nextTick(async () => {
+            try {
+              const fullDevice = await prisma.smartPlugDevice.findUnique({
+                where: { id: assignment.smartPlugDevice!.id },
+                include: { credential: true }
+              })
+
+              if (fullDevice?.credential) {
+                await shellyWebSocketManager.controlDevice(fullDevice.credential.id, deviceId, 'on')
+              }
+            } catch (e) {
+              console.error('Error encendiendo dispositivo (idempotente):', e)
+            }
+          })
+        }
+
+        return NextResponse.json({
+          success: true,
+          message: 'Dispositivo ya estaba activo para esta cita',
+          data: {
+            usageId: existingUsage.id,
+            alreadyActive: true
+          }
+        })
+      }
+
+      // Si el uso existente pertenece a otro dispositivo → error
       return NextResponse.json({ 
         error: 'Esta cita ya tiene un dispositivo asignado activo' 
       }, { status: 409 })
@@ -289,7 +384,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     })
 
     // 🚀 TRANSACCIÓN: Crear registro y opcionalmente encender dispositivo (timeout aumentado)
-    return await prisma.$transaction(async (tx) => {
+    const transactionResponse = await prisma.$transaction(async (tx) => {
       console.log('💾 [ASSIGN_DEVICE] Dentro de la transacción - creando registro...')
       
       // 🔄 FINALIZAR EQUIPOS PREVIOS ACTIVOS EN ESTA CITA
@@ -354,7 +449,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           equipmentId: assignment.equipmentId,
           equipmentClinicAssignmentId: equipmentClinicAssignmentId,
           deviceId: deviceId,
-          startedAt: now,
+          startedAt: null,
           estimatedMinutes: estimatedMinutes,
           currentStatus: 'ACTIVE',
           startedByUserId: session.user.id,
@@ -440,7 +535,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         message: 'Dispositivo asignado correctamente',
         data: {
           usageId: deviceUsage.id,
-          assignedAt: deviceUsage.startedAt.toISOString(),
+          assignedAt: now.toISOString(),
           estimatedMinutes: deviceUsage.estimatedMinutes,
           servicesAffected: serviceIds,
           servicesDetails: servicesUsingEquipment.map(svc => ({
@@ -519,6 +614,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         }
       })
     }
+
+    return transactionResponse;
 
   } catch (error) {
     console.error('💥 [ASSIGN_DEVICE] Error capturado:', {

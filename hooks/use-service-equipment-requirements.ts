@@ -4,6 +4,8 @@ import { useClinic } from '@/contexts/clinic-context'
 import { clientLogger } from '@/lib/utils/client-logger'
 import { useIntegrationModules } from '@/hooks/use-integration-modules'
 import { useQueryClient } from '@tanstack/react-query'
+import useSocket from '@/hooks/useSocket'
+import { findDeviceInList } from '@/lib/utils/device-id-matcher'
 
 // 🎯 CACHE GLOBAL - Una sola carga por clínica
 const serviceEquipmentCache = new Map<string, Record<string, string[]>>()
@@ -30,7 +32,7 @@ interface ServiceEquipmentDevice {
   serialNumber?: string
   
   // Estado para esta cita específica
-  status: 'available' | 'occupied' | 'offline' | 'in_use_this_appointment'
+  status: 'available' | 'occupied' | 'offline' | 'in_use_this_appointment' | 'completed'
   lastSeenAt?: Date
   credentialId?: string
 }
@@ -77,7 +79,7 @@ export function useServiceEquipmentRequirements({
   if (!appointmentId || appointmentId.trim() === '') {
     return null
   }
-
+  
   // 🛡️ PASO 3C: Verificar módulo Shelly activo
   const { isShellyActive, isLoading: isLoadingModules } = useIntegrationModules()
   
@@ -106,7 +108,7 @@ export function useServiceEquipmentRequirements({
   // 🔄 REF PARA EVITAR STALE CLOSURE
   const currentAppointmentUsagesRef = useRef<string[]>([])
   currentAppointmentUsagesRef.current = currentAppointmentUsages
-  
+
   // 🔍 OBTENER EQUIPOS REQUERIDOS PARA LOS SERVICIOS DE LA CITA
   const fetchRequiredEquipment = useCallback(async () => {
     if (!systemId || !appointmentId || !enabled) return
@@ -175,20 +177,21 @@ export function useServiceEquipmentRequirements({
     const occupied = availableDevices.filter(d => d.status === 'occupied').length
     const offline = availableDevices.filter(d => d.status === 'offline').length
     const inUseThisAppointment = availableDevices.filter(d => d.status === 'in_use_this_appointment').length
+    const completed = availableDevices.filter(d => d.status === 'completed').length
     
-    return { total, available, occupied, offline, inUseThisAppointment }
+    return { total, available, occupied, offline, inUseThisAppointment, completed }
   }, [availableDevices])
 
   // 🎮 FUNCIÓN DE CONTROL - EXACTAMENTE IGUAL que otros componentes
   const handleDeviceToggle = useCallback(async (deviceId: string, turnOn: boolean) => {
     try {
-      
+
       const response = await fetch(`/api/shelly/device/${deviceId}/control`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ action: turnOn ? 'on' : 'off' })
+        body: JSON.stringify({ action: turnOn ? 'on' : 'off', appointmentId })
       })
 
       if (!response.ok) {
@@ -196,12 +199,71 @@ export function useServiceEquipmentRequirements({
         throw new Error(errorData.error || 'Error desconocido')
       }
 
-      
+      // 🔄 Actualización optimista: modificar relayOn y currentPower
+      setAllDevices(prev => prev.map(d => {
+        if (d.deviceId === deviceId) {
+          return {
+            ...d,
+            relayOn: turnOn,
+            currentPower: turnOn ? d.currentPower : 0
+          }
+        }
+        return d
+      }))
+
+      // Revalidar con la API en segundo plano
+      fetchRequiredEquipment()
+
     } catch (error) {
       console.error('❌ [ServiceEquipment] Error controlando dispositivo:', error)
       throw error
     }
-  }, [])
+  }, [fetchRequiredEquipment])
+
+  // 📡 SUSCRIPCIÓN TIEMPO REAL — actualiza estado local cuando llegue device-update
+  const { subscribe, isConnected: socketConnected } = useSocket(systemId)
+
+  useEffect(() => {
+    if (!socketConnected || !systemId || availableDevices.length === 0) return
+
+    const off = subscribe((payload: any) => {
+      if (payload?.type === 'device-update') {
+        // 🛡️ ACTUALIZACIÓN ROBUSTA: Buscar dispositivo usando múltiples identificadores
+        setAllDevices(prev => prev.map(d => {
+          // Comparar usando función robusta que maneja múltiples tipos de ID
+          const targetDevice = { 
+            deviceId: payload.deviceId,
+            shellyDeviceId: payload.shellyDeviceId 
+          };
+          const currentDevice = { 
+            id: d.id, 
+            deviceId: d.deviceId 
+          };
+          
+          // Si coincide por cualquier identificador, actualizar
+          if (findDeviceInList(targetDevice, [currentDevice])) {
+            return {
+              ...d,
+              relayOn: payload.relayOn,
+              currentPower: payload.currentPower ?? 0,
+              online: payload.online
+            };
+          }
+          return d;
+        }))
+      }
+      
+      // 🆕 ESCUCHAR CAMBIOS EN ASSIGNMENT/USAGE PARA REFETCH
+      if (payload?.type === 'device-assigned' || 
+          payload?.type === 'device-control-completed' ||
+          payload?.type === 'usage_status_change' ||
+          payload?.type === 'auto_shutdown' ||
+          payload?.type === 'appointment-timer-update') {
+        fetchRequiredEquipment();
+      }
+    })
+    return () => off()
+  }, [subscribe, socketConnected, systemId, availableDevices, fetchRequiredEquipment])
 
   // 🎯 DATOS FINALES
   if (!systemId || !activeClinic || !enabled) {

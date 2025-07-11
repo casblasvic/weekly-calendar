@@ -35,6 +35,29 @@ export async function GET(request: NextRequest) {
         for (const [credentialId, credDevices] of Object.entries(devicesByCredential)) {
             const credential = credDevices[0].credential;
             
+            // 🚫 VERIFICAR QUE LA CREDENCIAL ESTÉ CONECTADA ANTES DE CONSULTAR API
+            if (credential.status !== 'connected') {
+                console.warn(`⚠️ [API] Credencial ${credentialId} no está conectada (estado: ${credential.status}) - saltando consulta de estado`);
+                continue;
+            }
+
+            // 🚫 VERIFICAR QUE EL WEBSOCKET ESTÉ ACTIVO PARA ESTA CREDENCIAL
+            const wsConnection = await prisma.webSocketConnection.findFirst({
+                where: {
+                    type: 'SHELLY',
+                    referenceId: credentialId,
+                    systemId: session.user.systemId
+                },
+                select: {
+                    status: true
+                }
+            });
+
+            if (!wsConnection || wsConnection.status !== 'connected') {
+                console.warn(`⚠️ [API] WebSocket no está conectado para credencial ${credentialId} - saltando consulta de estado`);
+                continue;
+            }
+            
             try {
                 const accessToken = decrypt(credential.accessToken);
                 

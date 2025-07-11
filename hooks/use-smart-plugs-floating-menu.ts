@@ -78,19 +78,19 @@ interface SmartPlugsFloatingMenuData {
     offline: number;
     consuming: number;
   };
-
+  
   // 🔥 DISPOSITIVOS CONSUMIENDO (online + consumo)
   activeDevices: SmartPlugDevice[];
 
   // 🗺️ MAPA COMPLETO DE DISPOSITIVOS DE LA CLÍNICA (incluye offline / sin consumo)
   devicesMap: Record<string, SmartPlugDevice>;
-
+  
   // 📊 CONSUMO TOTAL
   totalPower: number;
-
+  
   // 🔌 ESTADO CONEXIÓN
   isConnected: boolean;
-
+  
   // 🎮 FUNCIONES
   onDeviceToggle: (deviceId: string, turnOn: boolean) => Promise<void>;
   lastUpdate: Date | null;
@@ -251,7 +251,9 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
     return activeDevices
       .filter(device => {
         const hasValidConsumption = device.currentPower !== null && device.currentPower !== undefined;
-        return hasValidConsumption && device.currentPower > 0.1;
+        // ⚠️ USAR THRESHOLD DEL EQUIPAMIENTO, NO HARDCODEADO
+        const threshold = device.equipmentClinicAssignment?.equipment?.powerThreshold;
+        return hasValidConsumption && device.currentPower > (threshold ?? 0);
       })
       .reduce((sum, device) => sum + device.currentPower!, 0);
   }, [activeDevices]);
@@ -281,6 +283,13 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
     // log removed
     
     const unsubscribe = subscribe((update: any) => {
+      // 🔄 MANEJAR INICIO/FIN DE SINCRONIZACIÓN INICIAL
+      if (update.type === 'initial-sync-done') {
+        console.log('✅ [FloatingMenu] Sincronización inicial completada – refetch de dispositivos');
+        fetchAllDevices();
+        return;
+      }
+
       // 🔄 MANEJAR ACTUALIZACIONES DE ASIGNACIÓN DE EQUIPOS
       if (update.type === 'smart-plug-assignment-updated') {
         console.log('🔄 [FloatingMenu] Cambio de asignación detectado:', {
@@ -385,7 +394,7 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
           })
         } catch(e){ /* ignore */ }
       })()
-
+      
       setLastUpdate(new Date());
       }
     });

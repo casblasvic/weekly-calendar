@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Power, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { getDeviceColors } from '@/lib/utils/device-colors';
 
 interface SimplePowerButtonProps {
   device: {
@@ -8,6 +9,8 @@ interface SimplePowerButtonProps {
     name: string;
     online: boolean;
     relayOn: boolean | null;
+    powerThreshold?: number;
+    currentPower?: number;
   };
   onToggle: (deviceId: string, turnOn: boolean) => Promise<void>;
   disabled?: boolean;
@@ -33,41 +36,24 @@ export function SimplePowerButton({
     }
   };
 
-  // 🎨 LÓGICA SIMPLE PARA TABLA DE ENCHUFES
+  // 🎨 USAR FUNCIÓN CENTRALIZADA DE COLORES
   const getButtonState = () => {
-    if (!device.online) {
-      // ⚫ GRIS: Dispositivo offline
-      return {
-        bgColor: 'bg-gray-400',
-        borderColor: 'border-gray-300',
-        iconColor: 'text-gray-600',
-        hoverColor: 'hover:bg-gray-400',
-        disabled: true,
-        title: 'Dispositivo offline'
-      };
-    }
+    const colors = getDeviceColors({
+      online: device.online,
+      relayOn: device.relayOn,
+      currentPower: device.currentPower,
+      powerThreshold: device.powerThreshold,
+      status: device.online ? 'available' : 'offline'
+    });
     
-    if (device.relayOn) {
-      // 🟢 VERDE: Online + encendido
-      return {
-        bgColor: 'bg-green-500',
-        borderColor: 'border-green-400',
-        iconColor: 'text-white',
-        hoverColor: 'hover:bg-green-600',
-        disabled: false,
-        title: 'Encendido - click para apagar'
-      };
-    } else {
-      // 🔵 AZUL: Online + apagado
-      return {
-        bgColor: 'bg-blue-500',
-        borderColor: 'border-blue-400',
-        iconColor: 'text-white',
-        hoverColor: 'hover:bg-blue-600',
-        disabled: false,
-        title: 'Apagado - click para encender'
-      };
-    }
+    return {
+      bgColor: colors.bgColor,
+      borderColor: colors.borderColor,
+      iconColor: colors.iconColor,
+      hoverColor: colors.hoverColor,
+      disabled: colors.disabled,
+      title: colors.title
+    };
   };
 
   const buttonState = getButtonState();

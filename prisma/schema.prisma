@@ -772,7 +772,7 @@ model AppointmentDeviceUsage {
   equipmentId                  String?                    // Null si es sin equipamiento
   equipmentClinicAssignmentId  String?                    // Referencia a la instancia específica utilizada
   deviceId                     String?                    // Null si es sin equipamiento
-  startedAt                    DateTime                   @db.Timestamptz(6)
+  startedAt                    DateTime?                  @db.Timestamptz(6)
   endedAt                      DateTime?                  @db.Timestamptz(6)
   estimatedMinutes             Float
   actualMinutes                Float?
@@ -3512,4 +3512,170 @@ enum UsageOutcome {
   EARLY
   ON_TIME
   EXTENDED
+}
+
+// ========= ENERGY INSIGHTS =========================
+
+enum UsageInsightType {
+  OVER_CONSUMPTION
+  UNDER_CONSUMPTION
+  POWER_ANOMALY
+  OVER_DURATION
+  UNDER_DURATION
+}
+
+model ServiceEnergyProfile {
+  id              String   @id @default(cuid())
+  systemId        String
+  equipmentId     String
+  serviceId       String
+  avgKwhPerMin    Float
+  stdDevKwhPerMin Float
+  sampleCount     Int
+  /// ⏱ Duración real en minutos
+  avgMinutes      Float     @default(0)
+  stdDevMinutes   Float     @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  /// Tabla física: smart_plug_service_energy_profiles
+  @@map("smart_plug_service_energy_profiles")
+
+  @@index([systemId])
+  @@index([equipmentId])
+  @@unique([systemId, equipmentId, serviceId])
+}
+
+model DeviceUsageInsight {
+  id                          String   @id @default(cuid())
+  systemId                    String
+  appointmentId               String
+  deviceUsageId               String?
+  equipmentClinicAssignmentId String?
+  clientId                    String?
+  detectedAt                  DateTime @default(now())
+  insightType                 UsageInsightType
+  actualKwh                   Float
+  expectedKwh                 Float
+  deviationPct                Float
+  detailJson                  Json?
+  resolved                    Boolean  @default(false)
+  resolvedByUserId            String?
+  resolvedAt                  DateTime?
+
+  /// Tabla física: smart_plug_device_usage_insights
+  @@map("smart_plug_device_usage_insights")
+
+  @@index([systemId])
+  @@index([appointmentId])
+  @@index([insightType])
+}
+
+// ========= ENERGY INSIGHTS: RAW SAMPLES & SERVICE USAGE ================
+
+model SmartPlugPowerSample {
+  /// 🔌 RAW POWER SAMPLE – Lectura cruda recibida cada ~8 s.
+  /// Tabla física: smart_plug_power_samples
+  id           String   @id @default(cuid())
+  systemId     String
+  clinicId     String
+  clientId     String?
+  userId       String?
+  deviceId     String
+  usageId      String
+  timestamp    DateTime @db.Timestamptz(6)
+  watts        Float
+  totalEnergy  Float    // kWh acumulado reportado por el Shelly
+  relayOn      Boolean
+  servicesInfo Json?    // JSONB con ids de servicio y estMinutes [{id, estMin}]
+  createdAt    DateTime @default(now())
+
+  @@index([deviceId, timestamp])
+  @@index([usageId])
+  @@index([systemId])
+  @@map("smart_plug_power_samples")
+}
+
+model AppointmentServiceEnergyUsage {
+  /// 📊 DESAGREGACIÓN POR SERVICIO – Reparto proporcional al cerrar el uso.
+  /// Tabla física: appointment_service_energy_usage
+  id               String   @id @default(cuid())
+  systemId         String
+  clinicId         String
+  clientId         String?
+  userId           String?
+  usageId          String
+  serviceId        String
+  equipmentId      String?
+  estimatedMinutes Float
+  realMinutes      Float
+  allocatedKwh     Float
+  createdAt        DateTime @default(now())
+
+  @@unique([usageId, serviceId])
+  @@index([serviceId, createdAt])
+  @@index([clinicId, serviceId, equipmentId, createdAt])
+  @@map("appointment_service_energy_usage")
+}
+
+model ServiceGroupEnergyProfile {
+  /// Perfil por combinación de servicios (hash) + hourBucket
+  id            String   @id @default(cuid())
+  systemId      String
+  clinicId      String
+  equipmentId   String
+  servicesHash  String   // md5 de ids ordenados
+  services      Json?
+  hourBucket    Int
+  meanKwh       Float
+  stdDevKwh     Float
+  meanMinutes   Float
+  stdDevMinutes Float
+  samples       Int       @default(1)
+  m2            Float     @default(0) // para Welford opcional
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([clinicId, equipmentId, servicesHash, hourBucket])
+  @@index([systemId])
+  @@map("smart_plug_service_group_energy_profile")
+}
+
+model ClientServiceEnergyProfile {
+  id            String   @id @default(cuid())
+  systemId      String
+  clinicId      String
+  clientId      String
+  serviceId     String
+  hourBucket    Int
+  meanKwh       Float
+  stdDevKwh     Float
+  meanMinutes   Float
+  stdDevMinutes Float
+  samples       Int       @default(1)
+  m2            Float     @default(0)
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([clinicId, clientId, serviceId, hourBucket])
+  @@index([systemId])
+  @@map("smart_plug_client_service_energy_profile")
+}
+
+model UserServiceEnergyProfile {
+  id            String   @id @default(cuid())
+  systemId      String
+  clinicId      String
+  userId        String
+  serviceId     String
+  hourBucket    Int
+  meanKwh       Float
+  stdDevKwh     Float
+  meanMinutes   Float
+  stdDevMinutes Float
+  samples       Int       @default(1)
+  m2            Float     @default(0)
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([clinicId, userId, serviceId, hourBucket])
+  @@index([systemId])
+  @@map("smart_plug_user_service_energy_profile")
 }

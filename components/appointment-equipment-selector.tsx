@@ -20,6 +20,8 @@ import {
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useServiceEquipmentRequirements } from '@/hooks/use-service-equipment-requirements';
+import { getDeviceColors } from '@/lib/utils/device-colors';
+import { useAppointmentTimer } from '@/hooks/use-appointment-timer';
 
 interface AppointmentEquipmentSelectorProps {
   open: boolean;
@@ -45,6 +47,12 @@ export function AppointmentEquipmentSelector({
   const equipmentData = useServiceEquipmentRequirements({
     appointmentId,
     enabled: true // Siempre activo para recibir tiempo real
+  });
+
+  // 🆕 HOOK PARA OBTENER DATOS DE TIEMPO EN TIEMPO REAL
+  const { timerData } = useAppointmentTimer({
+    appointmentId,
+    autoRefresh: false // Solo obtener datos, no auto-refresh
   });
 
   if (!equipmentData) {
@@ -82,39 +90,28 @@ export function AppointmentEquipmentSelector({
     }
   };
 
-  // 🎨 FUNCIÓN PARA OBTENER ESTILOS DE BOTÓN POWER
+  // 🎨 USAR FUNCIÓN CENTRALIZADA DE COLORES
   const getPowerButtonStyle = (device: any) => {
-    if (!device.online) {
-      return {
-        className: "bg-gray-400 hover:bg-gray-500 cursor-not-allowed",
-        disabled: true,
-        text: "Offline"
-      };
-    }
+    // 🆕 OBTENER DATOS DE TIEMPO desde useAppointmentTimer
+    const actualMinutes = timerData?.actualMinutes;
+    const estimatedMinutes = timerData?.estimatedMinutes;
     
-    if (device.status === 'in_use_this_appointment') {
-      return {
-        className: "bg-green-600 hover:bg-green-700 text-white",
-        disabled: false,
-        text: device.relayOn ? "Encendido (Esta Cita)" : "Apagado (Esta Cita)"
-      };
-    }
+    const colors = getDeviceColors({
+      online: device.online,
+      relayOn: device.relayOn,
+      currentPower: device.currentPower,
+      powerThreshold: device.powerThreshold,
+      status: device.status,
+      // 🆕 PASAR DATOS DE TIEMPO PARA DETECTAR BLOQUEO POR TIEMPO
+      actualMinutes: actualMinutes,
+      estimatedMinutes: estimatedMinutes,
+      autoShutdownEnabled: device.autoShutdownEnabled // ✅ NUEVO CAMPO
+    });
     
-    if (device.status === 'occupied') {
-      return {
-        className: "bg-red-500 hover:bg-red-600 cursor-not-allowed text-white",
-        disabled: true,
-        text: "En Uso"
-      };
-    }
-    
-    // available
     return {
-      className: device.relayOn 
-        ? "bg-green-600 hover:bg-green-700 text-white" 
-        : "bg-blue-600 hover:bg-blue-700 text-white",
-      disabled: false,
-      text: device.relayOn ? "Encendido" : "Disponible"
+      className: colors.className!,
+      disabled: colors.disabled,
+      text: colors.text!
     };
   };
 
@@ -177,11 +174,20 @@ export function AppointmentEquipmentSelector({
                 {availableDevices.map((device) => {
                   const powerButtonStyle = getPowerButtonStyle(device);
                   const isControlling = controllingDevices.has(device.deviceId);
+                  const isDeviceBlocked = powerButtonStyle.disabled; // ✅ Determinar si todo el dispositivo está bloqueado
                   
                   return (
                     <div
                       key={device.id}
-                      className="p-4 bg-white rounded-lg border transition-all hover:shadow-md"
+                      className={cn(
+                        "relative p-4 bg-white rounded-lg border transition-all", // ✅ Agregar 'relative' para el overlay
+                        isDeviceBlocked 
+                          ? "opacity-60 cursor-not-allowed" // 🔒 Bloqueado: sin hover, cursor not-allowed
+                          : "hover:shadow-md cursor-default" // ✅ Normal: con hover
+                      )}
+                      style={{
+                        pointerEvents: isDeviceBlocked ? 'none' : 'auto' // 🔒 Bloquear TODOS los clics
+                      }}
                     >
                       <div className="flex justify-between items-center">
                         <div className="flex gap-3 items-center">
@@ -220,7 +226,7 @@ export function AppointmentEquipmentSelector({
                           <Button
                             size="sm"
                             onClick={() => handleDeviceControl(device.deviceId, !device.relayOn)}
-                            disabled={powerButtonStyle.disabled || isControlling}
+                            disabled={isDeviceBlocked || isControlling} // ✅ Usar la misma lógica de bloqueo
                             className={cn(powerButtonStyle.className, "min-w-[120px]")}
                           >
                             {isControlling ? (
@@ -245,11 +251,24 @@ export function AppointmentEquipmentSelector({
                           device.status === 'available' && "text-blue-600",
                           device.status === 'occupied' && "text-red-600",
                           device.status === 'offline' && "text-gray-500",
-                          device.status === 'in_use_this_appointment' && "text-green-600"
+                          device.status === 'in_use_this_appointment' && "text-green-600",
+                          device.status === 'completed' && "text-indigo-600"
                         )}>
                           {powerButtonStyle.text}
                         </span>
                       </div>
+                      
+                      {/* Mensaje de servicio completado */}
+                      {isDeviceBlocked && (
+                        <div className="mt-1 text-xs text-indigo-600 font-medium">
+                          ✓ Servicio Completado
+                        </div>
+                      )}
+                      
+                      {/* Overlay visual para dispositivos bloqueados */}
+                      {isDeviceBlocked && (
+                        <div className="absolute inset-0 bg-indigo-50 bg-opacity-30 rounded-lg pointer-events-none" />
+                      )}
                     </div>
                   );
                 })}

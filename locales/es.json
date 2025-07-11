@@ -2214,6 +2214,12 @@
     "equipment": {
         "title": "Gestión de Equipamiento",
         "subtitle": "Administra los equipamientos y sus asignaciones a clínicas",
+        "device_status": {
+            "service_completed": "Servicio Completado",
+            "time_exhausted": "Tiempo Agotado",
+            "completed_usage": "Uso completado",
+            "device_completed": "Dispositivo completado"
+        },
         "create_new": "Crear Equipamiento",
         "edit_equipment": "Editar Equipamiento",
         "delete_equipment": "Eliminar Equipamiento",

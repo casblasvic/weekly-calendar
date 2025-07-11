@@ -71,12 +71,71 @@ export async function POST(
     try {
         const { deviceId } = await params;
         const body = await request.json();
-        const { action } = body; // "on" o "off"
+        const { action, appointmentId } = body; // "on" o "off" y opcional appointmentId
 
         if (!action || !['on', 'off'].includes(action)) {
             return NextResponse.json({ 
                 error: "Acción inválida. Debe ser 'on' o 'off'" 
             }, { status: 400 });
+        }
+
+        // 🛠️ AUTOCREAR USO SI FALTA Y SE QUIERE ENCENDER
+        if (action === 'on' && appointmentId) {
+            const existingUsage = await prisma.appointmentDeviceUsage.findFirst({
+                where: {
+                    appointmentId,
+                    deviceId,
+                    currentStatus: { in: ['ACTIVE', 'PAUSED'] },
+                    endedAt: null
+                }
+            })
+
+            if (!existingUsage) {
+                // ➕ Crear uso rápido con datos mínimos para evitar huecos
+                try {
+                    const appointment = await prisma.appointment.findUnique({
+                        where: { id: appointmentId },
+                        include: {
+                            services: { include: { service: true } },
+                            clinic: true
+                        }
+                    })
+
+                    if (appointment) {
+                        // Calcular servicioIds y duración estimada usando treatmentDurationMinutes
+                        const serviceIds: string[] = appointment.services.map(s => s.serviceId)
+                        const estimatedMinutes = appointment.services.reduce((t, s) => {
+                            // ✅ USAR treatmentDurationMinutes si está disponible y > 0, sino durationMinutes
+                            const duration = (s.service as any).treatmentDurationMinutes > 0 
+                                ? (s.service as any).treatmentDurationMinutes 
+                                : ((s.service as any).durationMinutes || 0);
+                            return t + duration
+                        }, 0)
+
+                        await prisma.appointmentDeviceUsage.create({
+                            data: {
+                                appointmentId,
+                                appointmentServiceId: JSON.stringify(serviceIds),
+                                equipmentId: null,
+                                deviceId,
+                                startedAt: null,
+                                estimatedMinutes,
+                                currentStatus: 'ACTIVE',
+                                systemId: session.user.systemId,
+                                startedByUserId: session.user.id,
+                                deviceData: {
+                                    autoCreated: true,
+                                    reason: 'missing_usage_record',
+                                    assignedAt: new Date().toISOString()
+                                }
+                            }
+                        })
+                        console.log('🆕 [CONTROL] Uso auto-creado para cita', appointmentId)
+                    }
+                } catch (autoErr) {
+                    console.error('⚠️ [CONTROL] Error autocreando uso:', autoErr)
+                }
+            }
         }
 
         // Obtener el dispositivo con sus credenciales usando el deviceId de Shelly
@@ -112,6 +171,25 @@ export async function POST(
         );
 
         console.log(`📡 [CONTROL] Comando enviado via WebSocket - esperando confirmación real del dispositivo`);
+
+        // ▶️ EMITIR ACTUALIZACIÓN OPTIMISTA PARA UI
+        try {
+          if (global.broadcastDeviceUpdate) {
+            global.broadcastDeviceUpdate(session.user.systemId, {
+              type: 'device-update',
+              deviceId: device.id,
+              shellyDeviceId: deviceId,
+              online: true, // asumimos conexión
+              relayOn: action === 'on',
+              currentPower: 0,
+              voltage: null,
+              temperature: null,
+              timestamp: Date.now()
+            })
+          }
+        } catch (e) {
+          console.error('⚠️ Error emitiendo broadcast optimista:', e)
+        }
 
         // ℹ️ NOTA: El registro de uso de dispositivos se maneja desde el endpoint de asignación
         // (/api/appointments/[id]/assign-device) - este endpoint solo controla el dispositivo directamente

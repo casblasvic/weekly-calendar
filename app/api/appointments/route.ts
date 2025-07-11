@@ -157,11 +157,53 @@ export async function GET(request: NextRequest) {
       }
     });
 
+    // =============================================================
+    // 🔄 CARGAR ESTADO FINAL DE USO DE DISPOSITIVO (marco índigo, etc.)
+    // =============================================================
+    const appointmentIds = appointments.map(a => a.id)
+
+    // Último registro COMPLETED por cita
+    const usages = await prisma.appointmentDeviceUsage.findMany({
+      where: {
+        appointmentId: { in: appointmentIds },
+        currentStatus: 'COMPLETED'
+      },
+      select: {
+        appointmentId: true,
+        endedReason: true,
+        deviceData: true,
+        updatedAt: true
+      },
+      orderBy: { updatedAt: 'desc' }
+    })
+
+    const usageStatusMap: Record<string, 'completed_ok' | 'over_stopped' | 'over_consuming' | null> = {}
+    // Función de ayuda para calcular estado final si no se guardó finalStatus
+    const tolerance = 0.5 // minutos, igual a ENERGY_INSIGHT_CFG.timeToleranceMinutes
+
+    for (const u of usages) {
+      let status: 'completed_ok' | 'over_stopped' | 'over_consuming' | null = (u.deviceData as any)?.finalStatus || null
+
+      if (!status) {
+        // Calcular diff si tenemos estimated y actual
+        const estimated = (u as any).estimatedMinutes ?? 0
+        const actual = (u as any).actualMinutes ?? 0
+        const diff = actual - estimated
+        if (Math.abs(diff) <= tolerance) status = 'completed_ok'
+        else if (diff > tolerance) status = 'over_stopped'
+      }
+
+      if (status) {
+        usageStatusMap[u.appointmentId] = status
+      }
+    }
+
     // Mapear appointments para incluir services en el formato esperado
     const appointmentsWithServices = appointments.map(apt => ({
       ...apt,
       services: apt.services || [],
-      tags: apt.tags?.map(t => t.tagId) || [] // Simplificar las etiquetas a un array de IDs
+      tags: apt.tags?.map(t => t.tagId) || [], // Simplificar las etiquetas a un array de IDs
+      usageFinalStatus: usageStatusMap[apt.id] || null
     }));
 
     return NextResponse.json(appointmentsWithServices);
@@ -821,7 +863,7 @@ export async function PUT(request: NextRequest) {
           }
         })
       }
- 
+
       // Si se proporcionan servicios, actualizar la relación
       if (services && Array.isArray(services)) {
         

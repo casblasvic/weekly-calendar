@@ -70,7 +70,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
                 service: {
                   select: {
                     name: true,
-                    durationMinutes: true
+                    durationMinutes: true,
+                    treatmentDurationMinutes: true // ✅ INCLUIR treatmentDurationMinutes
                   }
                 }
               }
@@ -89,10 +90,15 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       }, { status: 404 });
     }
 
-    // Calcular duración estimada total de los servicios
+    // Calcular duración estimada total usando treatmentDurationMinutes para equipos
     const estimatedMinutes = timerData.appointment.services.reduce(
-      (total, service) => total + (service.service.durationMinutes || 0), 
-      0
+      (total, service) => {
+        // ✅ USAR treatmentDurationMinutes si está disponible y > 0, sino durationMinutes
+        const duration = service.service.treatmentDurationMinutes > 0 
+          ? service.service.treatmentDurationMinutes 
+          : (service.service.durationMinutes || 0);
+        return total + duration;
+      }, 0
     ) || timerData.estimatedMinutes;
 
     // Formatear respuesta

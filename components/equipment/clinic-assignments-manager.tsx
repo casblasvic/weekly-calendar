@@ -421,10 +421,10 @@ export function ClinicAssignmentsManager({
         fetch(`/api/equipment/${equipmentId}/clinic-assignments`),
         cachedClinics ? Promise.resolve({ ok: true, json: async () => cachedClinics }) : fetch('/api/clinics')
       ])
-
+      
       const assignmentsData = await assignmentsRes.json()
       const clinicsData = cachedClinics || await clinicsRes.json()
-
+      
       const fetchedAssignments: EquipmentClinicAssignment[] = assignmentsData.assignments || []
 
       // 🚫 PROTECCIÓN CONTRA OVERWRITE DE OPTIMISTIC DATA
@@ -441,7 +441,7 @@ export function ClinicAssignmentsManager({
         setAssignments(fetchedAssignments)
       }
       if (!cachedClinics) {
-        setClinics(clinicsData || [])
+      setClinics(clinicsData || [])
         queryClient.setQueryData(['clinics'], clinicsData)
       }
 
@@ -772,7 +772,7 @@ export function ClinicAssignmentsManager({
         
         // 👉 ACTUALIZAR estado local para reflejar inmediatamente el cambio
         setAssignments(prev => prev.map(a => a.id.startsWith('temp-') ? serverAssignment : a))
-
+        
         console.log('✅ [CREATE-SERVER] Asignación temporal reemplazada exitosamente')
       }
       
@@ -1127,7 +1127,7 @@ export function ClinicAssignmentsManager({
                 {isShellyActive ? (
                   <TableHead className="w-[140px] text-center">Enchufe</TableHead>
                 ) : (
-                  <TableHead className="w-[100px] text-center">Fecha</TableHead>
+                <TableHead className="w-[100px] text-center">Fecha</TableHead>
                 )}
                 <TableHead className="w-[60px] text-center">Activo</TableHead>
                 <TableHead className="w-[120px] text-right">Acciones</TableHead>
@@ -1171,15 +1171,15 @@ export function ClinicAssignmentsManager({
                       </div>
                     </TableCell>
                   ) : (
-                    <TableCell className="text-center">
-                      <div className="text-xs text-gray-500">
-                        {new Date(assignment.assignedAt).toLocaleDateString('es-ES', {
-                          day: '2-digit',
-                          month: '2-digit',
-                          year: '2-digit'
-                        })}
-                      </div>
-                    </TableCell>
+                  <TableCell className="text-center">
+                    <div className="text-xs text-gray-500">
+                      {new Date(assignment.assignedAt).toLocaleDateString('es-ES', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: '2-digit'
+                      })}
+                    </div>
+                  </TableCell>
                   )}
                   
                   <TableCell className="text-center">

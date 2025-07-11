@@ -1,5 +1,7 @@
 "use client"
 import { Calendar, Clock, MoreVertical, Tag, Plus, Trash2, CheckCircle, XCircle, MessageSquare, RefreshCw, Check, ChevronRight, Move, ChevronUp, ChevronDown, ExternalLink, Copy, Info, MoveHorizontal, X, RotateCcw, Play, Zap, Power, Loader2, AlertTriangle } from "lucide-react"
+import { useSession } from 'next-auth/react'
+import useSocket from '@/hooks/useSocket'
 import { AGENDA_CONFIG } from "@/config/agenda-config"
 import { Appointment } from "@/types/appointments"
 import { useAppointmentTags } from "@/contexts/appointment-tags-context"
@@ -33,6 +35,9 @@ import { Button } from "@/components/ui/button"
 import { DeviceControlButton } from "@/components/ui/device-control-button"
 import { useServiceEquipmentRequirements } from '@/hooks/use-service-equipment-requirements'
 import { toast } from 'sonner'
+import { useIntegrationModules } from '@/hooks/use-integration-modules'
+import { getAppointmentBorderClass } from '@/lib/utils/device-colors'
+import { useAppointmentTimer } from '@/hooks/use-appointment-timer'
 
 // Función para ajustar el brillo del color
 function adjustColorBrightness(color: string, amount: number) {
@@ -787,9 +792,11 @@ export function AppointmentItem({
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [isHovering, setIsHovering] = useState(false)
   const [processingDevices, setProcessingDevices] = useState<Set<string>>(new Set()) // ✅ NUEVO: Estado para evitar dobles clics
+  const { isShellyActive } = useIntegrationModules()
   
-  // ⚡ SOLO ACTIVAR HOOK CUANDO SE NECESITE
-  const shouldActivateHook = dropdownOpen || isHovering
+  // ⚡ ACTIVAR HOOK SIEMPRE para renderizado inmediato de colores
+  // 🔥 CRÍTICO: Cargar datos inmediatamente para mostrar colores desde el inicio
+  const shouldActivateHook = isShellyActive; // ✅ SIEMPRE ACTIVO si el módulo está habilitado
 
   // ---------------------------------------------------------------------
   // 🆕 INTEGRACIÓN CON FLOATING MENU
@@ -806,7 +813,7 @@ export function AppointmentItem({
     })
     return map
   }, [smartPlugsData])
-
+  
   // 🚀 NUEVO: Usar hook de cache de dispositivos (carga instantánea)
   const serviceEquipmentData = useServiceEquipmentRequirements({
     appointmentId: appointment.id,
@@ -831,20 +838,43 @@ export function AppointmentItem({
        // -------------------------------------------------------------
        // ⭐ DETERMINAR operationStatus PARA ESTA CITA
        // -------------------------------------------------------------
-      const threshold = merged.powerThreshold ?? 0.1
-      const originalStatus = device.status
+      // ⚠️ CRÍTICO: powerThreshold DEBE venir del equipamiento configurado
+      const threshold = typeof merged.powerThreshold === 'string' ? 
+        parseFloat(merged.powerThreshold) : merged.powerThreshold;
+      
+      if (typeof threshold !== 'number' || threshold < 0 || isNaN(threshold)) {
+        console.error('🚨 [APPOINTMENT_ITEM] powerThreshold inválido:', {
+          original: merged.powerThreshold,
+          converted: threshold,
+          type: typeof merged.powerThreshold,
+          device: device.name
+        });
+        merged.status = 'offline'; // Tratar como offline si no hay threshold válido
+        return merged;
+      }
+      
+      const hasValidConsumption = (live?.hasValidConsumption ?? true)
+      // Estado base: priorizar status proveniente de liveDeviceMap si existe
+      const originalStatus = (live?.status as any) || device.status
 
-      if (!merged.online) {
+      // ⚠️  PRIORIDAD: Mantener estados especiales aunque el flag online sea incierto
+      if (['paused', 'over_used', 'auto_shutdown'].includes(originalStatus)) {
+        merged.status = originalStatus as any
+      } else if (!merged.online) {
         merged.status = 'offline'
       } else if (originalStatus === 'in_use_this_appointment') {
         merged.status = 'in_use_this_appointment'
       } else if (originalStatus === 'occupied') {
-        // Ya está asignado a otra cita según appointment_device_usage
         merged.status = 'occupied'
       } else if (merged.currentPower !== null && merged.currentPower !== undefined && merged.currentPower > threshold) {
         // Hay consumo pero no asignado a esta cita ⇒ ocupado
         merged.status = 'occupied'
       } else {
+        merged.status = 'available'
+      }
+ 
+      // Asegurar valor por defecto válido
+      if (!merged.status) {
         merged.status = 'available'
       }
  
@@ -859,38 +889,253 @@ export function AppointmentItem({
   //          FIN INTEGRACIÓN CON FLOATING MENU
   // -------------------------------------------------------------
 
-  // -------------------------------------------------------------
-  // ⭐ DETERMINAR operationStatus PARA ESTA CITA
-  // -------------------------------------------------------------
+  // 🎯 NUEVA LÓGICA DE MARCOS SIMPLE Y CORRECTA
   const operationStatus = useMemo(() => {
-    if (!equipmentData) return null
-    // prioridad: over_used > verde > naranja
-    const autoSd = equipmentData.availableDevices.some(d=>d.status==='auto_shutdown')
-    if(autoSd) return 'auto_shutdown'
-    const overUsed = equipmentData.availableDevices.some(d => d.status === 'over_used')
-    if (overUsed) return 'over_used'
+    if (!isShellyActive) return null
+    if (!equipmentData || equipmentData.availableDevices.length === 0) return null
 
-    const active = equipmentData.availableDevices.some(d => d.status === 'in_use_this_appointment' && d.currentPower && (d.currentPower > (d.powerThreshold ?? 0.1)))
-    if (active) return 'active'
+    const devs: any[] = equipmentData.availableDevices
+    if (!devs || devs.length === 0) return null
 
-    const standby = equipmentData.availableDevices.some(d => d.status === 'in_use_this_appointment')
-    if (standby) return 'standby'
-    const paused = equipmentData.availableDevices.some(d=>d.status==='paused')
-    if(paused) return 'paused'
+    // 🚫 OCUPADO por otra cita: sin marco
+    const occupied = devs.some(d => d.status === 'occupied')
+    if (occupied) return null
+
+    // 🎯 LÓGICA PRINCIPAL: RELAY + CONSUMO
+    const inUse = devs.find(d => d.status === 'in_use_this_appointment')
+    if (inUse) {
+      // ⚠️ CRÍTICO: powerThreshold DEBE venir del equipamiento configurado
+      const threshold = typeof inUse.powerThreshold === 'string' ? 
+        parseFloat(inUse.powerThreshold) : inUse.powerThreshold;
+        
+      if (typeof threshold !== 'number' || threshold < 0 || isNaN(threshold)) {
+        console.error('🚨 [OPERATION_STATUS] powerThreshold inválido:', {
+          original: inUse.powerThreshold,
+          converted: threshold,
+          type: typeof inUse.powerThreshold,
+          device: inUse.name
+        });
+        return null; // Sin estado si no hay threshold válido
+      }
+      
+      const isConsuming = (inUse.currentPower ?? 0) > threshold;
+      
+      if (inUse.relayOn) {
+        if (isConsuming) {
+          return 'active'  // 🟢 VERDE: Relay ON + consumiendo
+        } else {
+          return 'idle'    // 🟠 NARANJA: Relay ON pero sin consumo
+        }
+      } else {
+        return 'standby'   // 🔵 AZUL: Relay OFF (stand-by)
+      }
+    }
+
     return null
-  }, [equipmentData])
+  }, [equipmentData, liveDeviceMap, isShellyActive])
 
-  const operationRingClass = operationStatus === 'active'
-    ? 'ring-2 ring-green-500'
-    : operationStatus === 'standby'
-      ? 'ring-2 ring-orange-500'
-      : operationStatus === 'over_used'
-        ? 'ring-2 ring-red-600'
-        : operationStatus === 'auto_shutdown'
-          ? 'ring-2 ring-fuchsia-600'
-          : operationStatus === 'paused'
-            ? 'ring-2 ring-sky-500'
-            : ''
+  // 🆕 HOOK PARA OBTENER DATOS DE TIEMPO EN TIEMPO REAL
+  const { timerData } = useAppointmentTimer({
+    appointmentId: appointment.id,
+    autoRefresh: false // Solo obtener datos, no auto-refresh
+  })
+
+  // 🆕 -------- TRIGGER PARA RE-RENDER EN UPDATES LIVE ----------------------------
+  const { data: session } = useSession()
+  const { subscribe, isConnected } = useSocket(session?.user?.systemId)
+  const [hasInsight, setHasInsight] = useState(false)
+  // Trigger para re-render en updates live
+  const [, forceUpdate] = useState(0)
+
+  // 🎯 USAR FUNCIÓN CENTRALIZADA PARA MARCOS DE CITAS
+  const operationRingClass = useMemo(() => {
+    if (!isShellyActive) return ''
+    if (!equipmentData || equipmentData.availableDevices.length === 0) return ''
+
+    const devs: any[] = equipmentData.availableDevices
+    if (!devs || devs.length === 0) return ''
+
+    // Buscar el dispositivo en uso para esta cita
+    const inUse = devs.find(d => d.status === 'in_use_this_appointment')
+    if (inUse) {
+      // 🆕 OBTENER DATOS DE TIEMPO desde useAppointmentTimer
+      const actualMinutes = timerData?.actualMinutes
+      const estimatedMinutes = timerData?.estimatedMinutes || appointment.estimatedDurationMinutes
+      
+      const borderClass = getAppointmentBorderClass({
+        online: inUse.online,
+        relayOn: inUse.relayOn,
+        currentPower: inUse.currentPower,
+        powerThreshold: inUse.powerThreshold,
+        status: inUse.status,
+        // 🆕 NUEVO: Pasar datos de tiempo para detectar sobre-tiempo
+        actualMinutes: actualMinutes,
+        estimatedMinutes: estimatedMinutes
+      });
+      
+            // 🔍 DEBUG SIMPLE: Solo verificar que el marco correcto se aplica
+      if (borderClass) {
+        console.log('✅ [MARCO APLICADO]:', {
+          appointmentId: appointment.id,
+          deviceName: inUse.name,
+          borderClass,
+          relayOn: inUse.relayOn,
+          currentPower: inUse.currentPower,
+          isOvertime: actualMinutes && estimatedMinutes && actualMinutes > estimatedMinutes
+        });
+        
+        // ✅ MARCO NARANJA ES VÁLIDO: Relay ON + sin consumo + asignado a esta cita
+        if (borderClass === 'ring-2 ring-orange-400') {
+          console.log('🟠 [MARCO NARANJA] Dispositivo encendido sin consumo asignado a esta cita:', {
+            appointmentId: appointment.id,
+            deviceName: inUse.name,
+            relayOn: inUse.relayOn,
+            currentPower: inUse.currentPower,
+            powerThreshold: inUse.powerThreshold,
+            status: inUse.status
+          });
+        }
+      }
+      
+      return borderClass;
+    }
+    
+    return ''
+  }, [equipmentData, liveDeviceMap, isShellyActive, timerData?.actualMinutes, timerData?.estimatedMinutes, appointment.estimatedDurationMinutes, forceUpdate])
+
+
+
+  // 🆕 -------- ALERTA POR CONSUMO ANÓMALO ----------------------------
+
+  useEffect(() => {
+    // Suscribirse solo si la feature-flag SHELLY está activa y hay conexión
+    if (!process.env.NEXT_PUBLIC_FEATURE_SHELLY) return;
+    if (!isConnected) return;
+    const unsub = subscribe((payload: any) => {
+      if (payload?.type === 'device-usage-insight' && payload.appointmentId === appointment.id) {
+        setHasInsight(true)
+      }
+      if(payload?.type === 'auto_shutdown' && payload.appointmentId === appointment.id){
+        setHasInsight(false)
+        // No modificar operationStatusExternal aquí; permanecerá con el valor enviado por 'usage_status_change'
+      }
+      if(payload?.type === 'usage_status_change' && payload.appointmentId === appointment.id){
+        setOperationStatusExternal(payload.status)
+      }
+      if(payload?.type === 'device-update'){
+        // Fuerza re-evaluación del useMemo de operationStatus
+        forceUpdate(v => v + 1)
+      }
+    })
+    return () => unsub()
+  }, [subscribe, isConnected, appointment.id])
+
+  // Inicializar con estado enviado por la API (si existe)
+  const [operationStatusExternal, setOperationStatusExternal] = useState<string|null>((appointment as any).usageFinalStatus ?? null)
+
+  // 🔄 FUNCIÓN TEMPORAL: Forzar refresh si hay inconsistencias
+  const forceRefresh = () => {
+    console.log('🔄 [FORCE_REFRESH] Refrescando página para limpiar estados...');
+    window.location.reload();
+  };
+
+  // ✅ MONITOREO DE ESTADOS FINALES: Log informativo de estados externos
+  useEffect(() => {
+    if (operationStatusExternal) {
+      console.log('📊 [ESTADO FINAL]:', {
+        appointmentId: appointment.id,
+        status: operationStatusExternal,
+        description: operationStatusExternal === 'over_consuming' ? 'Dispositivo consumiendo + tiempo excedido' :
+                    operationStatusExternal === 'over_stopped' ? 'Dispositivo apagado + tiempo excedido' :
+                    operationStatusExternal === 'completed_ok' ? 'Completado correctamente' : 'Estado desconocido'
+      });
+    }
+  }, [operationStatusExternal, appointment.id]);
+
+  // 🎨 MARCO DE DISPOSITIVO INTELIGENTE - Basado en estado del dispositivo en tiempo real
+  const deviceBorderInfo = useMemo(() => {
+    // ✅ Cálculo de marco de dispositivo
+
+    // 🚫 CONDICIÓN 1: Módulo Shelly inactivo
+    if (!isShellyActive) {
+      return { borderClass: '', borderStyle: {} }
+    }
+
+    // 🚫 CONDICIÓN 2: Sin datos de equipamiento
+    if (!equipmentData || !equipmentData.availableDevices) {
+      return { borderClass: '', borderStyle: {} }
+    }
+
+    // 🔍 BUSCAR DISPOSITIVO EN USO PARA ESTA CITA
+    const inUse = equipmentData.availableDevices.find(device => 
+      device.status === 'in_use_this_appointment'
+    );
+
+    if (!inUse) {
+      return { borderClass: '', borderStyle: {} }
+    }
+
+    // ✅ Dispositivo en uso encontrado
+
+    // 🔍 DEBUG CRÍTICO: Log de datos que llegan a la función de color
+    console.log('🔍 [DEVICE_DATA_INPUT]:', {
+      appointmentId: appointment.id,
+      deviceName: inUse.name,
+      deviceId: inUse.id,
+      online: inUse.online,
+      relayOn: inUse.relayOn,
+      currentPower: inUse.currentPower,
+      powerThreshold: inUse.powerThreshold,
+      status: inUse.status,
+      equipmentClinicAssignmentId: inUse.equipmentClinicAssignmentId,
+      autoShutdownEnabled: inUse.autoShutdownEnabled // 🔒 NUEVO CAMPO
+    });
+
+    // 🎨 GENERAR MARCO USANDO FUNCIÓN CENTRALIZADA
+    const actualMinutes = timerData?.actualMinutes;
+    const estimatedMinutes = timerData?.estimatedMinutes || appointment.estimatedDurationMinutes;
+
+    const borderClass = getAppointmentBorderClass({
+      online: inUse.online,
+      relayOn: inUse.relayOn,
+      currentPower: inUse.currentPower,
+      powerThreshold: inUse.powerThreshold,
+      status: inUse.status,
+      actualMinutes: actualMinutes,
+      estimatedMinutes: estimatedMinutes,
+      autoShutdownEnabled: inUse.autoShutdownEnabled // 🔒 NUEVO CAMPO
+    });
+
+    // 🎯 CONVERTIR CLASES CSS A ESTILOS INLINE PARA FORZAR APLICACIÓN
+    let borderStyle = {};
+    if (borderClass.includes('ring-green-400')) {
+      borderStyle = {
+        outline: '2px solid #4ade80',
+        outlineOffset: '2px'
+      };
+      console.log('🟢 [INLINE STYLE] Aplicando estilo verde inline');
+    } else if (borderClass.includes('ring-orange-400')) {
+      borderStyle = {
+        outline: '2px solid #fb923c',
+        outlineOffset: '2px'
+      };
+      console.log('🟠 [INLINE STYLE] Aplicando estilo naranja inline');
+    } else if (borderClass.includes('ring-red-400')) {
+      borderStyle = {
+        outline: '2px solid #f87171',
+        outlineOffset: '2px'
+      };
+      console.log('🔴 [INLINE STYLE] Aplicando estilo rojo inline');
+    } else if (borderClass.includes('ring-purple-400')) {
+      borderStyle = {
+        outline: '2px solid #c084fc',
+        outlineOffset: '2px'
+      };
+      console.log('🟣 [INLINE STYLE] Aplicando estilo púrpura inline');
+    }
+
+    return { borderClass, borderStyle };
+  }, [equipmentData, isShellyActive, timerData?.actualMinutes, timerData?.estimatedMinutes, appointment.estimatedDurationMinutes, forceUpdate]);
 
   return (
     <>
@@ -906,12 +1151,25 @@ export function AppointmentItem({
           appointment.isContinuation && "border-l-2 border-dashed border-gray-300",
           // ✅ ESTILO SUTIL PARA CITAS OPTIMISTAS (opcional)
           isOptimistic && "ring-1 ring-purple-300 ring-opacity-50",
-          // ✅ TRANSPARENCIA CUANDO ESTÁ EN MODO MOVIMIENTO O ARRASTRE
-          isThisAppointmentInOperation && "opacity-60 scale-95 ring-2 ring-purple-400 ring-opacity-70",
-          operationRingClass,
-          // Estilos de borde durante el resize
-          isResizing && hasResizeConflict && "ring-2 ring-red-500 ring-opacity-80",
-          isResizing && !hasResizeConflict && "ring-2 ring-green-500 ring-opacity-80",
+          
+          // 🎯 PRIORIDAD 1: MARCOS DE DISPOSITIVOS (deviceBorderInfo.borderClass) - MÁXIMA PRIORIDAD
+          deviceBorderInfo.borderClass,
+          
+          // 🎯 PRIORIDAD 2: MARCOS DE ESTADOS FINALES (operationStatusExternal)
+          // ⚠️ CRÍTICO: Solo aplicar si NO hay marco de dispositivo (deviceBorderInfo.borderClass vacío o falsy)
+          (!deviceBorderInfo.borderClass || deviceBorderInfo.borderClass === '') && operationStatusExternal && ['over_stopped', 'completed_ok', 'over_consuming'].includes(operationStatusExternal) && (
+            operationStatusExternal === 'over_stopped' ? 'ring-2 ring-yellow-400' :
+            operationStatusExternal === 'completed_ok' ? 'ring-2 ring-indigo-400' :
+            operationStatusExternal === 'over_consuming' ? 'ring-2 ring-purple-400' : ''
+          ),
+          
+          // 🎯 PRIORIDAD 3: MARCOS DE RESIZE (solo durante resize) - SOLO SI NO HAY MARCO DE DISPOSITIVO
+          (!deviceBorderInfo.borderClass || deviceBorderInfo.borderClass === '') && !operationStatusExternal && isResizing && hasResizeConflict && "ring-2 ring-red-500 ring-opacity-80",
+          (!deviceBorderInfo.borderClass || deviceBorderInfo.borderClass === '') && !operationStatusExternal && isResizing && !hasResizeConflict && "ring-2 ring-gray-500 ring-opacity-80",
+          
+          // 🎯 PRIORIDAD 4: MARCO DE OPERACIÓN (movimiento/arrastre) - MENOR PRIORIDAD
+          (!deviceBorderInfo.borderClass || deviceBorderInfo.borderClass === '') && !operationStatusExternal && !isResizing && isThisAppointmentInOperation && "opacity-60 scale-95 ring-2 ring-purple-400 ring-opacity-70",
+          
           // ✅ CLASE CSS ESPECÍFICA PARA RESIZE
           isResizing && "appointment-resizing",
           isResizing && hasResizeConflict && "appointment-resize-conflict"
@@ -930,7 +1188,9 @@ export function AppointmentItem({
           boxShadow: isResizing ? '0 8px 25px rgba(0, 0, 0, 0.2)' : undefined,
           zIndex: isResizing ? 30 : 'auto',
           // ✅ DESACTIVAR POINTER EVENTS durante operaciones para que pasen a través
-          pointerEvents: isThisAppointmentInOperation ? 'none' : 'auto'
+          pointerEvents: isThisAppointmentInOperation ? 'none' : 'auto',
+          // 🎯 MARCO DE DISPOSITIVO INLINE - FORZAR APLICACIÓN
+          ...deviceBorderInfo.borderStyle
         }}
         draggable={!isDraggingDuration && !isOptimistic && !isThisAppointmentInOperation} // ✅ No draggable durante operaciones
         onDragStart={handleDragStart}
@@ -1011,7 +1271,7 @@ export function AppointmentItem({
 
           <div className={cn("px-2", isCompact ? "py-1" : "py-2")}>
             {/* Hora de inicio y fin SIN icono - más legible */}
-            <div className="flex gap-1 items-center">
+            <div className="flex gap-1 justify-between items-center">
               <div className={cn(
                 "font-semibold truncate", // ✅ MEJORADO: font-semibold y sin icono para mejor legibilidad
                 isCompact ? "text-[11px]" : "text-sm", // ✅ MEJORADO: Texto más grande
@@ -1047,6 +1307,8 @@ export function AppointmentItem({
                   return baseText;
                 })()}
               </div>
+              
+
             </div>
             
             {/* Nombre del cliente - ligeramente más grande */}
@@ -1225,7 +1487,7 @@ export function AppointmentItem({
                           return (
                           <DropdownMenuItem 
                             key={device.id}
-                            className={`p-3 cursor-pointer hover:bg-gray-50 ${processingDevices.has(device.deviceId) || device.status === 'occupied' ? 'opacity-50 pointer-events-none' : ''}`}
+                            className={`p-3 cursor-pointer hover:bg-gray-50 ${processingDevices.has(device.deviceId) || device.status === 'occupied' || device.status === 'completed' ? 'opacity-50 pointer-events-none' : ''}`}
                             onSelect={(e) => {
                               // Prevenir que el dropdown se cierre automáticamente
                               e.preventDefault();
@@ -1235,9 +1497,36 @@ export function AppointmentItem({
                               e.preventDefault();
                               e.stopPropagation();
                               
-                              // 🚫 PREVENIR DOBLES CLICS O DISPOSITIVO OCUPADO
-                              if (processingDevices.has(device.deviceId) || device.status === 'occupied') {
-                                return; // Evitar doble clic o dispositivo ocupado
+                              // 🚫 PREVENIR DOBLES CLICS, DISPOSITIVO OCUPADO O COMPLETADO
+                              if (processingDevices.has(device.deviceId) || device.status === 'occupied' || device.status === 'completed') {
+                                console.log('🚫 [DROPDOWN BLOCKED] Dispositivo bloqueado:', {
+                                  deviceName: device.name,
+                                  status: device.status,
+                                  processing: processingDevices.has(device.deviceId),
+                                  reason: device.status === 'completed' ? 'Uso completado' :
+                                          device.status === 'occupied' ? 'Ocupado por otra cita' :
+                                          'En procesamiento'
+                                });
+                                return; // Evitar doble clic o dispositivo bloqueado
+                              }
+
+                              // 🔒 VERIFICAR BLOQUEO POR TIEMPO CON AUTO-SHUTDOWN
+                              const isTimeUp = device.autoShutdownEnabled === true && 
+                                timerData?.actualMinutes && 
+                                (timerData?.estimatedMinutes || appointment.estimatedDurationMinutes) &&
+                                timerData.actualMinutes >= (timerData?.estimatedMinutes || appointment.estimatedDurationMinutes);
+                              
+                              if (isTimeUp && device.status === 'in_use_this_appointment') {
+                                console.log('🔒 [TIME_BLOCKED] Dispositivo bloqueado por tiempo agotado:', {
+                                  deviceName: device.name,
+                                  actualMinutes: timerData?.actualMinutes,
+                                  estimatedMinutes: timerData?.estimatedMinutes || appointment.estimatedDurationMinutes,
+                                  autoShutdownEnabled: device.autoShutdownEnabled
+                                });
+                                toast.error('Tiempo agotado', { 
+                                  description: 'No se puede encender el dispositivo porque se agotó el tiempo estimado' 
+                                });
+                                return;
                               }
 
                               // 🔍 LOG ESPECÍFICO: Capturar clic en dropdown device
@@ -1296,11 +1585,20 @@ export function AppointmentItem({
                                   });
                                   
                                   if (!assignResponse.ok) {
+                                    if (assignResponse.status === 409) {
+                                      // Ya asignado: simplemente enviar control
+                                      await fetch(`/api/shelly/device/${device.deviceId}/control`, {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ action: 'on', reason: 'already_assigned' })
+                                      })
+                                    } else {
                                     const errorData = await assignResponse.json();
                                     throw new Error(errorData.error || 'Error asignando dispositivo');
+                                    }
+                                  } else {
+                                    await assignResponse.json();
                                   }
-                                  
-                                  await assignResponse.json();
                                   
                                   // ⚡ Actualizar estado visual inmediatamente
                                   console.log('🎨 [DROPDOWN CONTROL] Actualizando estado visual...');
@@ -1397,14 +1695,19 @@ export function AppointmentItem({
                                   currentPower: device.currentPower,
                                   voltage: device.voltage,
                                   temperature: device.temperature,
-                                  powerThreshold: device.powerThreshold
+                                  powerThreshold: device.powerThreshold,
+                                  // 🕒 AÑADIR DATOS DE TIEMPO PARA BLOQUEO
+                                  actualMinutes: timerData?.actualMinutes,
+                                  estimatedMinutes: timerData?.estimatedMinutes || appointment.estimatedDurationMinutes,
+                                  // 🔒 AUTO-SHUTDOWN PARA CONDICIONAR BLOQUEO
+                                  autoShutdownEnabled: device.autoShutdownEnabled
                                 }}
                                 deviceStatus={device.status}
                                 onToggle={async (deviceId: string, turnOn: boolean) => {
                                   // 🚫 NO HACER NADA: La lógica está en DropdownMenuItem.onClick
                                   console.log('🔍 [DEVICE CONTROL BUTTON] Deshabilitado - usar DropdownMenuItem');
                                 }}
-                                disabled={processingDevices.has(device.deviceId) || device.status === 'occupied'} // ✅ Deshabilitar si está procesando o ocupado
+                                disabled={processingDevices.has(device.deviceId) || device.status === 'occupied' || device.status === 'completed'} // ✅ Deshabilitar si está procesando, ocupado o completado
                                 size="sm"
                                 showMetrics={false}
                               />

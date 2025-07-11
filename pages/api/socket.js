@@ -1195,6 +1195,23 @@ async function executeMonitoringCycle(io) {
     for (const credential of credentials) {
       console.log(`🔑 Procesando credencial: ${credential.name} con ${credential.smartPlugs.length} dispositivos`);
       
+      // 🚫 VERIFICAR QUE EL WEBSOCKET ESTÉ ACTIVO PARA ESTA CREDENCIAL
+      const wsConnection = await prisma.webSocketConnection.findFirst({
+        where: {
+          type: 'SHELLY',
+          referenceId: credential.id,
+          systemId: credential.systemId
+        },
+        select: {
+          status: true
+        }
+      });
+
+      if (!wsConnection || wsConnection.status !== 'connected') {
+        console.warn(`⚠️ [MONITORING] WebSocket no está conectado para credencial ${credential.id} - saltando monitoreo`);
+        continue;
+      }
+      
       // Desencriptar el access token
       let accessToken;
       try {

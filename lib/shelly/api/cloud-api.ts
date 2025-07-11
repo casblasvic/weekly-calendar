@@ -112,6 +112,44 @@ export class ShellyCloudAPI {
 
     if (!response.ok) {
       const errorText = await response.text();
+      
+      // 🎯 MANEJO ESPECÍFICO DE ERRORES DE PERMISOS
+      if (response.status === 400) {
+        try {
+          const errorData = JSON.parse(errorText);
+          if (errorData.errors?.no_permissions) {
+            // Error de permisos - crear un error más específico
+            const permissionError = new Error(`Sin permisos para acceder al dispositivo ${deviceId}`);
+            (permissionError as any).code = 'NO_PERMISSIONS';
+            (permissionError as any).status = 400;
+            (permissionError as any).deviceId = deviceId;
+            throw permissionError;
+          }
+        } catch (parseError) {
+          // Si no se puede parsear, continuar con el error genérico
+        }
+      }
+      
+      // 🎯 MANEJO ESPECÍFICO DEL ERROR 429 (TOO_MANY_REQUESTS)
+      if (response.status === 429) {
+        try {
+          const errorData = JSON.parse(errorText);
+          const rateLimitError = new Error(`Rate limit excedido para dispositivo ${deviceId}: ${errorData.error || 'Too many requests'}`);
+          (rateLimitError as any).code = 'RATE_LIMIT_EXCEEDED';
+          (rateLimitError as any).status = 429;
+          (rateLimitError as any).deviceId = deviceId;
+          (rateLimitError as any).retryAfter = response.headers.get('Retry-After') || '60'; // Default 60 segundos
+          throw rateLimitError;
+        } catch (parseError) {
+          // Si no se puede parsear, crear error genérico de rate limit
+          const rateLimitError = new Error(`Rate limit excedido para dispositivo ${deviceId}`);
+          (rateLimitError as any).code = 'RATE_LIMIT_EXCEEDED';
+          (rateLimitError as any).status = 429;
+          (rateLimitError as any).deviceId = deviceId;
+          throw rateLimitError;
+        }
+      }
+      
       throw new Error(`Error obteniendo estado: ${response.status} - ${errorText}`);
     }
 

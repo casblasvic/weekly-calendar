@@ -79,6 +79,9 @@ class ShellyWebSocketManager {
     private readonly MAX_MESSAGES_PER_MINUTE = 60;
     private readonly MAX_MESSAGE_SIZE = 10 * 1024; // 10KB
     
+    // 🚦 Cache de dispositivos con rate limit para evitar consultas repetidas
+    private rateLimitedDevices: Map<string, { until: number; retryAfter: number }> = new Map();
+    
     // 🎯 NUEVO: Mapeo automático de IDs (deviceId BD → deviceId Cloud)
     private deviceIdMapping: Map<string, string> = new Map();
 
@@ -205,27 +208,142 @@ class ShellyWebSocketManager {
      * correcto sin esperar al primer mensaje.
      */
     private async refreshAllDeviceStatuses(credentialId: string): Promise<void> {
+        console.log(`🔄 [SYNC] Iniciando sincronización inicial de estados para credencial ${credentialId}`);
+        
+        // 🛡️ VERIFICAR ESTADO DE CREDENCIAL Y WEBSOCKET ANTES DE CONSULTAR API
         const credential = await prisma.shellyCredential.findUnique({
-            where: { id: credentialId }
+            where: { id: credentialId },
+            select: { 
+                id: true, 
+                accessToken: true, 
+                apiHost: true,
+                systemId: true,
+                status: true, // 🔍 AGREGAR ESTADO DE CREDENCIAL
+                smartPlugs: {
+                    select: {
+                        id: true,
+                        name: true,
+                        deviceId: true,
+                        cloudId: true
+                    }
+                }
+            }
         });
 
-        if (!credential) return;
+        if (!credential) {
+            console.error(`❌ [SYNC] Credencial ${credentialId} no encontrada`);
+            return;
+        }
 
-        // Importación dinámica para evitar ciclos
+        // 🚫 VERIFICAR QUE LA CREDENCIAL ESTÉ CONECTADA
+        if (credential.status !== 'connected') {
+            console.warn(`⚠️ [SYNC] Credencial ${credentialId} no está conectada (estado: ${credential.status}) - saltando sincronización`);
+            return;
+        }
+
+        // 🚫 VERIFICAR QUE EL WEBSOCKET ESTÉ ACTIVO PARA ESTA CREDENCIAL
+        const wsConnection = await prisma.webSocketConnection.findFirst({
+            where: {
+                type: 'SHELLY',
+                referenceId: credentialId,
+                systemId: credential.systemId
+            },
+            select: {
+                status: true,
+                autoReconnect: true
+            }
+        });
+
+        if (!wsConnection || wsConnection.status !== 'connected') {
+            console.warn(`⚠️ [SYNC] WebSocket no está conectado para credencial ${credentialId} (estado: ${wsConnection?.status || 'no encontrado'}) - saltando sincronización`);
+            return;
+        }
+
+        // 🚫 VERIFICAR QUE EL WEBSOCKET MANAGER TENGA LA CONEXIÓN ACTIVA
+        const connectionStatus = this.getConnectionStatus(credentialId);
+        if (!connectionStatus.connected) {
+            console.warn(`⚠️ [SYNC] WebSocket Manager no tiene conexión activa para credencial ${credentialId} - saltando sincronización`);
+            return;
+        }
+
+        console.log(`✅ [SYNC] Verificaciones pasadas - credencial conectada y WebSocket activo para ${credentialId}`);
+        
+
+        const { decrypt } = await import('./crypto');
         const { ShellyCloudAPI } = await import('./api/cloud-api');
-        const api = new ShellyCloudAPI(credential as any);
+        
+        let accessToken: string;
+        try {
+            accessToken = decrypt(credential.accessToken);
+        } catch (decryptError) {
+            console.error(`❌ [SYNC] Error desencriptando token para ${credentialId}:`, decryptError);
+            return;
+        }
 
-        const devices = await prisma.smartPlugDevice.findMany({
-            where: { credentialId },
-            select: { id: true, deviceId: true, cloudId: true }
+        const api = new ShellyCloudAPI({
+            id: credential.id,
+            accessToken,
+            apiHost: credential.apiHost
         });
 
-        for (const dev of devices) {
+        const devices = credential.smartPlugs;
+        
+        console.log(`📊 [SYNC] Encontrados ${devices.length} dispositivos para sincronizar:`, 
+            devices.map(d => ({ 
+                name: d.name, 
+                deviceId: d.deviceId, 
+                cloudId: d.cloudId 
+            }))
+        );
+
+        let syncedCount = 0;
+        let errorCount = 0;
+        let rateLimitedCount = 0;
+
+        for (let i = 0; i < devices.length; i++) {
+            const dev = devices[i];
             const cloudId = dev.cloudId || this.deviceIdMapping.get(dev.deviceId);
-            if (!cloudId || !/^\d+$/.test(cloudId)) continue;
+            if (!cloudId) {
+                console.warn(`⚠️ [SYNC] Dispositivo ${dev.deviceId} no tiene cloudId - saltando sincronización inicial`);
+                continue;
+            }
+            
+            console.log(`🔄 [SYNC] Sincronizando estado inicial para dispositivo ${dev.deviceId} (cloudId: ${cloudId}) [${i + 1}/${devices.length}]`);
+            
+            // 🚦 VERIFICAR CACHE DE RATE LIMIT - Saltar dispositivos que están en rate limit
+            const rateLimitInfo = this.rateLimitedDevices.get(cloudId);
+            if (rateLimitInfo && Date.now() < rateLimitInfo.until) {
+                const remainingSeconds = Math.ceil((rateLimitInfo.until - Date.now()) / 1000);
+                console.log(`🚦 [SYNC] Saltando ${dev.name} (${cloudId}) - rate limit activo por ${remainingSeconds}s más`);
+                
+                // Marcar como offline por rate limit sin intentar consultar
+                await this.handleDeviceStatusUpdate(credentialId, dev.deviceId, {
+                    online: false,
+                    'switch:0': { output: false },
+                    reason: 'rate_limited_cached'
+                } as any);
+                
+                rateLimitedCount++;
+                continue; // Saltar a siguiente dispositivo
+            }
+            
+            // 🛡️ DELAY ENTRE CONSULTAS para evitar rate limiting (excepto el primero)
+            if (i > 0) {
+                const delay = 100 + (Math.random() * 200); // 100-300ms aleatorio
+                console.log(`⏱️ [SYNC] Esperando ${delay.toFixed(0)}ms antes de consultar ${dev.name}...`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+            }
 
             try {
+                console.log(`🌐 [SYNC] Obteniendo estado desde Shelly Cloud para ${dev.name} (${cloudId})`);
                 const raw = await api.getDeviceStatus(cloudId);
+                
+                console.log(`📊 [SYNC] Respuesta de Shelly Cloud para ${dev.name}:`, {
+                    online: true,
+                    switchOutput: raw['switch:0']?.output || raw['relay:0']?.output,
+                    power: raw['switch:0']?.apower || raw['relay:0']?.power,
+                    voltage: raw['switch:0']?.voltage
+                });
 
                 const switchStatus = raw['switch:0'] ?? raw['relay:0'] ?? {};
                 const status = {
@@ -239,15 +357,98 @@ class ShellyWebSocketManager {
                     temperature: raw.temperature || raw.sys?.temperature || null
                 } as any;
 
+                console.log(`✅ [SYNC] Enviando estado inicial ONLINE para ${dev.name}`);
                 await this.handleDeviceStatusUpdate(credentialId, dev.deviceId, status);
-            } catch (err) {
-                // Si falla la petición lo marcamos offline
-                await this.handleDeviceStatusUpdate(credentialId, dev.deviceId, {
-                    online: false,
-                    'switch:0': { output: false }
-                } as any);
+                syncedCount++;
+                
+            } catch (err: any) {
+                errorCount++;
+                
+                // 🎯 MANEJO ESPECÍFICO DE RATE LIMITING (429)
+                if (err?.code === 'RATE_LIMIT_EXCEEDED' || err?.status === 429 || err?.message?.includes('429') || err?.message?.includes('Too many requests')) {
+                    rateLimitedCount++;
+                    const retryAfter = parseInt(err?.retryAfter || '60');
+                    console.warn(`🚦 [SYNC] Rate limit para ${dev.name} (${cloudId}) - reintentando después de ${retryAfter}s`);
+                    
+                    // 🚦 AGREGAR AL CACHE DE RATE LIMIT
+                    const rateLimitUntil = Date.now() + (retryAfter * 1000);
+                    this.rateLimitedDevices.set(cloudId, {
+                        until: rateLimitUntil,
+                        retryAfter: retryAfter
+                    });
+                    console.log(`🚦 [SYNC] Dispositivo ${cloudId} agregado al cache de rate limit hasta ${new Date(rateLimitUntil).toLocaleTimeString()}`);
+                    
+                    // 📴 Marcar como offline temporalmente por rate limit
+                    console.log(`📴 [SYNC] Marcando dispositivo ${dev.name} como OFFLINE por rate limit (temporal)`);
+                    await this.handleDeviceStatusUpdate(credentialId, dev.deviceId, {
+                        online: false,
+                        'switch:0': { output: false },
+                        reason: 'rate_limited',
+                        retryAfter: retryAfter
+                    } as any);
+                    
+                    // 🛡️ DELAY ADICIONAL para evitar más rate limiting
+                    const additionalDelay = 1000 + (Math.random() * 2000); // 1-3 segundos adicionales
+                    console.log(`⏱️ [SYNC] Delay adicional de ${additionalDelay.toFixed(0)}ms por rate limit...`);
+                    await new Promise(resolve => setTimeout(resolve, additionalDelay));
+                    
+                } else if (err?.code === 'NO_PERMISSIONS' || err?.message?.includes('no_permissions') || err?.message?.includes('Sin permisos')) {
+                    console.warn(`⚠️ [SYNC] Sin permisos para ${dev.name} (${cloudId}) - dispositivo no accesible desde esta credencial`);
+                    
+                    // 📴 Marcar como offline pero NO fallar la sincronización
+                    console.log(`📴 [SYNC] Marcando dispositivo ${dev.name} como OFFLINE por falta de permisos`);
+                    await this.handleDeviceStatusUpdate(credentialId, dev.deviceId, {
+                        online: false,
+                        'switch:0': { output: false },
+                        reason: 'no_permissions'
+                    } as any);
+                    
+                } else if (err?.message?.includes('401') || err?.message?.includes('Token expirado')) {
+                    console.error(`🔑 [SYNC] Error de autenticación para ${dev.name} (${cloudId}):`, err.message);
+                    
+                    // Marcar offline y continuar - el token se refrescará en la próxima conexión
+                    await this.handleDeviceStatusUpdate(credentialId, dev.deviceId, {
+                        online: false,
+                        'switch:0': { output: false },
+                        reason: 'auth_error'
+                    } as any);
+                    
+                } else {
+                    console.error(`❌ [SYNC] Error obteniendo estado para ${dev.name} (${cloudId}):`, err);
+                    
+                    // Para otros errores, también marcar offline
+                    console.log(`📴 [SYNC] Marcando dispositivo ${dev.name} como OFFLINE por error general`);
+                    await this.handleDeviceStatusUpdate(credentialId, dev.deviceId, {
+                        online: false,
+                        'switch:0': { output: false },
+                        reason: 'sync_error'
+                    } as any);
+                }
             }
         }
+
+        // 📊 RESUMEN DE SINCRONIZACIÓN
+        console.log(`📊 [SYNC] Sincronización inicial completada para credencial ${credentialId}:`, {
+            totalDevices: devices.length,
+            syncedSuccessfully: syncedCount,
+            errors: errorCount,
+            rateLimited: rateLimitedCount,
+            skipped: devices.length - syncedCount - errorCount
+        });
+
+        // 🚀 Notificar fin de sincronización inicial (siempre, incluso con errores)
+        try {
+          if ((globalThis as any).broadcastDeviceUpdate) {
+            (globalThis as any).broadcastDeviceUpdate(credential.systemId, {
+              type: 'initial-sync-done',
+              stats: {
+                total: devices.length,
+                synced: syncedCount,
+                errors: errorCount
+              }
+            });
+          }
+        } catch {}
     }
 
     private async handleMessage(credentialId: string, event: MessageEvent): Promise<void> {

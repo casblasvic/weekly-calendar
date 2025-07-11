@@ -60,21 +60,21 @@ export const ColorPicker: React.FC<ColorPickerProps> = ({
         <PopoverTrigger asChild>
           <div
             className={cn(
-              'flex h-10 w-full items-center justify-between rounded-md border border-input px-3 py-2 text-sm ring-offset-background focus-within:ring-1 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring', 
-              disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'
+              'flex justify-between items-center px-3 py-2 w-full h-10 text-sm rounded-md border border-input ring-offset-background focus-within:ring-1 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring', 
+              disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
             )}
             onClick={() => !disabled && setIsOpen(true)}
           >
-            <div className="flex items-center gap-2">
+            <div className="flex gap-2 items-center">
               <div
-                className="h-6 w-6 rounded-md border border-gray-200"
+                className="w-6 h-6 rounded-md border border-gray-200"
                 style={{ backgroundColor: selectedColor }}
               />
               <span>{selectedColor}</span>
             </div>
           </div>
         </PopoverTrigger>
-        <PopoverContent className="w-full p-3" align="start">
+        <PopoverContent className="p-3 w-full" align="start">
           <div className="space-y-2">
             <div className="flex flex-wrap gap-2">
               {PRESET_COLORS.map((presetColor) => (

@@ -3,7 +3,7 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePathname, useRouter } from "next/navigation";
 import { ReactNode } from "react";
-import { Zap, Key, Activity } from "lucide-react";
+import { Zap, Key, Activity, AlertTriangle } from "lucide-react";
 
 export default function EnchufesInteligentesLayout({
     children,
@@ -17,6 +17,7 @@ export default function EnchufesInteligentesLayout({
     const getActiveTab = () => {
         if (pathname.includes('/credenciales')) return 'credenciales';
         if (pathname.includes('/dashboard')) return 'dashboard';
+        if (pathname.includes('/anomalies')) return 'anomalies';
         return 'dispositivos'; // Por defecto
     };
 
@@ -35,6 +36,9 @@ export default function EnchufesInteligentesLayout({
             case 'dashboard':
                 router.push(`${basePath}/dashboard`);
                 break;
+            case 'anomalies':
+                router.push(`${basePath}/anomalies`);
+                break;
         }
     };
 
@@ -46,7 +50,7 @@ export default function EnchufesInteligentesLayout({
             </div>
             
             <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
-                <TabsList className="grid w-full grid-cols-3">
+                <TabsList className="grid w-full grid-cols-4">
                     <TabsTrigger value="dispositivos">
                         <Zap className="w-4 h-4 mr-2" />
                         Dispositivos
@@ -58,6 +62,10 @@ export default function EnchufesInteligentesLayout({
                     <TabsTrigger value="dashboard">
                         <Activity className="w-4 h-4 mr-2" />
                         Dashboard
+                    </TabsTrigger>
+                    <TabsTrigger value="anomalies">
+                        <AlertTriangle className="w-4 h-4 mr-2 text-yellow-500" />
+                        Control inteligente
                     </TabsTrigger>
                 </TabsList>
                 

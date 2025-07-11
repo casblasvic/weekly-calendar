@@ -940,10 +940,10 @@ export function FloatingMenu({ className, smartPlugsData: propData }: FloatingMe
                         </>
                       ) : (
                         !smartPlugsData.isConnected ? (
-                          <>
-                            <div className="w-1.5 h-1.5 bg-red-500 rounded-full"></div>
-                            <span className="text-red-600 font-medium">Desconectado</span>
-                          </>
+                        <>
+                          <div className="w-1.5 h-1.5 bg-red-500 rounded-full"></div>
+                          <span className="text-red-600 font-medium">Desconectado</span>
+                        </>
                         ) : null
                       )}
                     </div>

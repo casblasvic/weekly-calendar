@@ -68,7 +68,8 @@ export async function GET(request: NextRequest) {
                                     currentPower: true,
                                     voltage: true,
                                     temperature: true,
-                                    credentialId: true
+                                    credentialId: true,
+                                    autoShutdownEnabled: true // ✅ AGREGAR autoShutdownEnabled
                                   }
                                 }
                               },
@@ -107,9 +108,9 @@ export async function GET(request: NextRequest) {
       svc => svc.service.settings?.equipmentRequirements || []
     )
 
-    // 3. ✅ CONSULTAR USOS ACTIVOS - Para esta cita Y otras citas (ANTES del bucle)
-    const [currentAppointmentUsages, otherAppointmentUsages] = await Promise.all([
-      // Usos de ESTA cita específica
+    // 3. ✅ CONSULTAR USOS ACTIVOS Y COMPLETADOS - Para esta cita Y otras citas (ANTES del bucle)
+    const [currentAppointmentUsages, currentAppointmentCompletedUsages, otherAppointmentUsages] = await Promise.all([
+      // Usos ACTIVOS de ESTA cita específica
       prisma.appointmentDeviceUsage.findMany({
         where: {
           appointmentId: appointmentId,
@@ -120,6 +121,22 @@ export async function GET(request: NextRequest) {
           deviceId: true,
           equipmentId: true,
           equipmentClinicAssignmentId: true
+        }
+      }),
+      
+      // 🆕 Usos COMPLETADOS de ESTA cita específica (para bloqueo por tiempo)
+      prisma.appointmentDeviceUsage.findMany({
+        where: {
+          appointmentId: appointmentId,
+          currentStatus: 'COMPLETED',
+          endedAt: { not: null }
+        },
+        select: {
+          deviceId: true,
+          equipmentId: true,
+          equipmentClinicAssignmentId: true,
+          endedReason: true,
+          usageOutcome: true
         }
       }),
       
@@ -147,6 +164,22 @@ export async function GET(request: NextRequest) {
     const thisAppointmentAssignmentIds = new Set(
       currentAppointmentUsages.map(usage => usage.equipmentClinicAssignmentId).filter(Boolean)
     )
+    
+    // 🆕 NUEVO: Sets para dispositivos completados de esta cita (para bloqueo)
+    const completedBlockedDeviceIds = new Set(
+      currentAppointmentCompletedUsages.map(usage => usage.deviceId).filter(Boolean)
+    )
+    const completedBlockedAssignmentIds = new Set(
+      currentAppointmentCompletedUsages.map(usage => usage.equipmentClinicAssignmentId).filter(Boolean)
+    )
+    
+    // 🔍 DEBUG: Log de registros completados
+    console.log('🔍 [COMPLETED_USAGES_DEBUG]:', {
+      appointmentId,
+      completedUsages: currentAppointmentCompletedUsages.length,
+      completedDeviceIds: Array.from(completedBlockedDeviceIds),
+      completedAssignmentIds: Array.from(completedBlockedAssignmentIds)
+    });
     
     const otherAppointmentDeviceIds = new Set(
       otherAppointmentUsages.map(usage => usage.deviceId).filter(Boolean)
@@ -176,15 +209,30 @@ export async function GET(request: NextRequest) {
         for (const assignment of clinicAssignments) {
           // 🔌 VERIFICAR: Estado del enchufe inteligente si existe
           const smartPlugDevice = assignment.smartPlugDevice
-          let deviceStatus: 'available' | 'occupied' | 'offline' | 'in_use_this_appointment' = 'offline'
+          let deviceStatus: 'available' | 'occupied' | 'offline' | 'in_use_this_appointment' | 'completed' = 'offline'
           
           // ✅ LÓGICA CORRECTA DE STATUS basada en appointment_device_usage
           const assignmentId = assignment.id
           const deviceId = smartPlugDevice?.deviceId || assignment.deviceId
           
+          // 🔍 DEBUG: Log de comparación para este dispositivo
+          console.log('🔍 [DEVICE_STATUS_CHECK]:', {
+            assignmentId,
+            deviceId,
+            smartPlugDeviceId: smartPlugDevice?.deviceId,
+            isCompletedByAssignment: completedBlockedAssignmentIds.has(assignmentId),
+            isCompletedByDevice: deviceId && completedBlockedDeviceIds.has(deviceId),
+            completedDeviceIds: Array.from(completedBlockedDeviceIds),
+            completedAssignmentIds: Array.from(completedBlockedAssignmentIds)
+          });
+          
           if (smartPlugDevice && !smartPlugDevice.online) {
             // Dispositivo offline
             deviceStatus = 'offline'
+          } else if (completedBlockedAssignmentIds.has(assignmentId) || (deviceId && completedBlockedDeviceIds.has(deviceId))) {
+            // 🔒 COMPLETADO POR ESTA CITA - BLOQUEADO
+            console.log('🔒 [BLOCKING_DEVICE]:', { assignmentId, deviceId, reason: 'completed' });
+            deviceStatus = 'completed'
           } else if (thisAppointmentAssignmentIds.has(assignmentId) || (deviceId && thisAppointmentDeviceIds.has(deviceId))) {
             // ✅ EN USO POR ESTA CITA
             deviceStatus = 'in_use_this_appointment'
@@ -221,7 +269,8 @@ export async function GET(request: NextRequest) {
             // Estado inicial
             status: deviceStatus,
             lastSeenAt: new Date(),
-            credentialId: smartPlugDevice?.credentialId
+            credentialId: smartPlugDevice?.credentialId,
+            autoShutdownEnabled: smartPlugDevice?.autoShutdownEnabled ?? true // ✅ AGREGAR autoShutdownEnabled con default true
           })
         }
       }

@@ -7,12 +7,18 @@ import { wsLogger } from '@/lib/utils/websocket-logger';
 export const DEVICE_STATE_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutos
 
 /**
- * ⏱️ Tiempo máximo SIN nuevos datos de consumo antes de borrar el valor.
- * Un número muy bajo (<5 s) provoca “ping-pong” en la UI cuando los
- * dispositivos envían datos cada 8-10 s.  Se ajusta a 12 s para dar
- * margen y evitar desapariciones intermitentes del consumo.
+ * CONTROL ADAPTATIVO DE CONSUMO
+ * ---------------------------------------------------------------
+ * Calculamos el timeout por dispositivo usando el promedio móvil
+ * de los últimos `AVG_WINDOW` intervalos reales (entre mensajes).
+ *   timeout = max(MIN_TIMEOUT, avgInterval * FACTOR + SAFETY_MS)
+ * De esta forma nos adaptamos a Shelly Gen-1 (4-5 s) o Gen-2 (≈10 s)
+ * e incluso a redes lentas sin hardcodear un único valor.
  */
-const CONSUMPTION_TIMEOUT_MS = 12 * 1000; // 12 segundos
+const AVG_WINDOW = 6;              // Nº de intervalos a promediar
+const MIN_TIMEOUT_MS = 8_000;      // Nunca bajar de 8 s
+const FACTOR = 1.4;                // Holgura 40 %
+const SAFETY_MS = 1_000;           // Margen fijo 1 s
 
 /**
  * 🏷️ Flag global para activar o desactivar el timer interno de comprobación.
@@ -64,6 +70,7 @@ class DeviceOfflineManager {
     watts: number;
     timestamp: number;
     timeoutId: NodeJS.Timeout;
+    intervals: number[]; // Últimos Δt
   }>();
   
   // NIVEL 2: Tracking de estados (3 minutos)  
@@ -146,19 +153,38 @@ class DeviceOfflineManager {
       clearTimeout(existing.timeoutId);
     }
     
-    // Si hay dato de consumo, programar limpieza en 5s
+    // Registrar sólo si recibimos potencia numérica (puede ser 0 si relay on pero sin consumo)
     if (typeof currentPower === 'number') {
       wsLogger.debug(`⚡ [OfflineManager] Consumo registrado: ${deviceId} = ${currentPower}W`);
+
+      // Calcular nuevo intervalo si existía timestamp previo
+      let intervals: number[] = existing?.intervals || [];
+      if (existing) {
+        const delta = now - existing.timestamp;
+        if (delta > 200) { // ignorar artefactos <200 ms
+          intervals = [...intervals, delta].slice(-AVG_WINDOW);
+        }
+      }
+
+      // Calcular timeout dinámico
+      let dynamicTimeout = MIN_TIMEOUT_MS;
+      if (intervals.length >= 2) {
+        const avg = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+        dynamicTimeout = Math.max(MIN_TIMEOUT_MS, Math.round(avg * FACTOR + SAFETY_MS));
+      }
       
       const timeoutId = setTimeout(() => {
         this.clearConsumptionData(deviceId);
-      }, CONSUMPTION_TIMEOUT_MS);
+      }, dynamicTimeout);
       
       this.deviceConsumptions.set(deviceId, {
         watts: currentPower,
         timestamp: now,
-        timeoutId
+        timeoutId,
+        intervals
       });
+
+      wsLogger.debug(`⏲️  [OfflineManager] Timeout dinámico ${deviceId} = ${dynamicTimeout} ms (intervals=${intervals.length})`);
     }
   }
 
@@ -248,23 +274,28 @@ class DeviceOfflineManager {
     const consumption = this.deviceConsumptions.get(deviceId);
     if (!consumption) return;
     
-    wsLogger.debug(`🧹 [OfflineManager] Limpiando consumo obsoleto: ${deviceId} (${consumption.watts}W)`);
+    // Guardar antes de borrar para referencia
+    const lastWatts = consumption.watts;
     
     // Limpiar del tracking
     this.deviceConsumptions.delete(deviceId);
     
-    // 🚀 UI INMEDIATA: Notificar limpieza de consumo
+    // 🚀 UI INMEDIATA: Solo notificar si el dispositivo sigue online PERO relayOn===true
+    const onlineState = this.deviceStates.get(deviceId)?.online ?? false;
+
+    if (onlineState) {
     this.notifyCallbacks([{
       deviceId,
-      online: this.deviceStates.get(deviceId)?.online ?? false,
+            online: onlineState,
       reason: 'consumption_timeout',
       updateBD: true,
       timestamp: Date.now(),
       deviceData: {
-        currentPower: null, // null = sin dato válido
+          currentPower: lastWatts,
         hasValidConsumption: false
       }
     }]);
+    }
   }
 
   /**

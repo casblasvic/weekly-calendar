@@ -50,7 +50,8 @@ import {
   Cpu,
   Link2,
   Store,
-  Plug
+  Plug,
+  AlertTriangle
 } from "lucide-react"
 
 export interface MenuItem {
@@ -547,7 +548,7 @@ export const menuItems: MenuItem[] = [
                 id: "enchufes-inteligentes",
                 label: "Enchufes Inteligentes",
                 icon: Plug,
-                href: "/configuracion/integraciones/EquiposIot/EnchufesInteligentes",
+                href: "/configuracion/integraciones/EquiposIot/EnchufesInteligentes"
               }
             ]
           },

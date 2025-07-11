@@ -438,9 +438,13 @@ async function startAppointmentWithoutEquipment(
   
   const now = new Date();
   
-  // Calcular duración estimada total
+  // Calcular duración estimada total usando treatmentDurationMinutes para equipos
   const estimatedMinutes = appointment.services.reduce((total: number, svc: any) => {
-    return total + (svc.service.durationMinutes || 0);
+    // ✅ USAR treatmentDurationMinutes si está disponible y > 0, sino durationMinutes
+    const duration = svc.service.treatmentDurationMinutes > 0 
+      ? svc.service.treatmentDurationMinutes 
+      : (svc.service.durationMinutes || 0);
+    return total + duration;
   }, 0);
 
   console.log('⏱️ [START_WITHOUT_EQUIPMENT] Duración estimada:', { estimatedMinutes });
@@ -577,9 +581,13 @@ async function startAppointmentWithEquipment(
       deviceId: assignment.deviceId
     });
     
-    // Calcular duración estimada
+    // Calcular duración estimada usando treatmentDurationMinutes para equipos
     const estimatedMinutes = appointment.services.reduce((total: number, svc: any) => {
-      return total + (svc.service.durationMinutes || 0);
+      // ✅ USAR treatmentDurationMinutes si está disponible y > 0, sino durationMinutes
+      const duration = svc.service.treatmentDurationMinutes > 0 
+        ? svc.service.treatmentDurationMinutes 
+        : (svc.service.durationMinutes || 0);
+      return total + duration;
     }, 0);
 
     // Crear registro de uso con equipamiento
@@ -794,9 +802,13 @@ async function startAppointmentWithSpecificAssignment(
       deviceId: assignment.deviceId
     });
     
-    // Calcular duración estimada
+    // Calcular duración estimada usando treatmentDurationMinutes para equipos
     const estimatedMinutes = appointment.services.reduce((total: number, svc: any) => {
-      return total + (svc.service.durationMinutes || 0);
+      // ✅ USAR treatmentDurationMinutes si está disponible y > 0, sino durationMinutes
+      const duration = svc.service.treatmentDurationMinutes > 0 
+        ? svc.service.treatmentDurationMinutes 
+        : (svc.service.durationMinutes || 0);
+      return total + duration;
     }, 0);
 
     // Crear registro de uso con la asignación específica

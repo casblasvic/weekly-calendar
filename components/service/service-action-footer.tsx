@@ -86,6 +86,6 @@ export const ServiceActionFooter: React.FC<ServiceActionFooterProps> = ({
                      <HelpCircle className="w-4 h-4" />
                      <span className="sr-only">{t('common.help') || 'Ayuda'}</span>
                  </Button>
-        </div>
+            </div>
     );
 }; 
