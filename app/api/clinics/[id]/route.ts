@@ -136,7 +136,7 @@ const UpdateClinicAndScheduleSchema = z.object({
 }).strict();
 
 // --- Función Auxiliar para convertir WeekSchedule a formato Prisma --- 
-function convertWeekScheduleToBlockInput(schedule: z.infer<typeof WeekScheduleSchema>, clinicId: string): Prisma.ClinicScheduleBlockCreateManyInput[] {
+function convertWeekScheduleToBlockInput(schedule: z.infer<typeof WeekScheduleSchema>, clinicId: string, systemId: string): Prisma.ClinicScheduleBlockCreateManyInput[] {
   const blocks: Prisma.ClinicScheduleBlockCreateManyInput[] = [];
   for (const [dayKey, daySchedule] of Object.entries(schedule)) {
     if (daySchedule.isOpen && daySchedule.ranges.length > 0) {
@@ -149,6 +149,7 @@ function convertWeekScheduleToBlockInput(schedule: z.infer<typeof WeekScheduleSc
       daySchedule.ranges.forEach(range => {
         blocks.push({
           clinicId: clinicId,
+          systemId: systemId, // 🏢 NUEVO: Añadir systemId para operaciones a nivel sistema
           dayOfWeek: prismaDay,
           startTime: range.start,
           endTime: range.end,
@@ -378,7 +379,7 @@ export async function PUT(request: Request, props: { params: Promise<{ id: strin
           await tx.clinicScheduleBlock.deleteMany({ where: { clinicId: clinicId } });
         }
         if (independentScheduleData) {
-          const blockInputs = convertWeekScheduleToBlockInput(independentScheduleData, clinicId);
+          const blockInputs = convertWeekScheduleToBlockInput(independentScheduleData, clinicId, systemId);
           if (blockInputs.length > 0) {
             await tx.clinicScheduleBlock.createMany({ data: blockInputs });
           }
@@ -390,9 +391,13 @@ export async function PUT(request: Request, props: { params: Promise<{ id: strin
         };
         await tx.clinicSchedule.upsert({
             where: { clinicId: clinicId },
-            update: clinicScheduleConfig,
+            update: { 
+              ...clinicScheduleConfig,
+              systemId: systemId, // 🏢 NUEVO: Actualizar systemId en caso de que no existiera
+            },
             create: {
                 clinicId: clinicId,
+                systemId: systemId, // 🏢 NUEVO: Añadir systemId para operaciones a nivel sistema
                 ...clinicScheduleConfig
             }
         });
@@ -516,7 +521,7 @@ export async function PATCH(request: Request, props: { params: Promise<{ id: str
         if (deleteIndependentBlocks) {
           await tx.clinicScheduleBlock.deleteMany({ where: { clinicId: clinicId } });
         }
-        const blockInputs = convertWeekScheduleToBlockInput(independentScheduleData, clinicId);
+        const blockInputs = convertWeekScheduleToBlockInput(independentScheduleData, clinicId, systemId);
         if (blockInputs.length > 0) {
           await tx.clinicScheduleBlock.createMany({ data: blockInputs });
         }
@@ -528,9 +533,13 @@ export async function PATCH(request: Request, props: { params: Promise<{ id: str
         if (Object.keys(clinicScheduleConfig).length > 0 || independentScheduleData) {
             await tx.clinicSchedule.upsert({
                 where: { clinicId: clinicId },
-                update: clinicScheduleConfig,
+                update: {
+                  ...clinicScheduleConfig,
+                  systemId: systemId, // 🏢 NUEVO: Actualizar systemId en caso de que no existiera
+                },
                 create: {
                     clinic: { connect: { id: clinicId } },
+                    systemId: systemId, // 🏢 NUEVO: Añadir systemId para operaciones a nivel sistema
                     openTime: openTimeFromInput !== undefined ? openTimeFromInput : null,
                     closeTime: closeTimeFromInput !== undefined ? closeTimeFromInput : null,
                     slotDuration: slotDurationFromInput !== undefined ? slotDurationFromInput : null,

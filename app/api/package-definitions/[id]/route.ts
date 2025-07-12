@@ -132,12 +132,16 @@ export async function PUT(request: Request) {
               await tx.packageDefinitionSetting.upsert({
                   where: { packageDefinitionId: packageDefinitionId },
                   create: {
-                      ...(settings ?? {}), 
+                      ...(settings ?? {}),
+                      systemId: systemId, // 🏢 NUEVO: systemId para operaciones a nivel sistema
+                      clinicId: null, // 🏥 NUEVO: PackageDefinitionSetting no está vinculado directamente a clínica específica
                       packageDefinition: { connect: { id: packageDefinitionId } },
                       ...(vatTypeId && { vatTypeId: vatTypeId }),
                   },
                   update: {
                       ...(settings ?? {}),
+                      systemId: systemId, // 🏢 NUEVO: Actualizar systemId en caso de que no existiera
+                      clinicId: null, // 🏥 NUEVO: PackageDefinitionSetting no está vinculado directamente a clínica específica
                       vatTypeId: vatTypeId === null ? null : (vatTypeId ?? undefined),
                   },
               });
@@ -151,6 +155,8 @@ export async function PUT(request: Request) {
               if (items.length > 0) {
               const itemsToCreate = items.map(item => ({
                   packageDefinitionId: packageDefinitionId,
+                  systemId: systemId, // 🏢 NUEVO: systemId para operaciones a nivel sistema
+                  clinicId: null, // 🏥 NUEVO: PackageItem no está vinculado directamente a clínica específica
                       itemType: item.serviceId ? 'SERVICE' : 'PRODUCT',
                       serviceId: item.serviceId,
                       productId: item.productId,

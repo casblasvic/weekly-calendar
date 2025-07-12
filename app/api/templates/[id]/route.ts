@@ -135,7 +135,12 @@ export async function PUT(request: Request, props: { params: Promise<{ id: strin
         if (blocksToCreate.length > 0) {
             console.log(`[API PUT /api/templates/${templateId}] Creating new blocks...`);
             try {
-                const blocksWithTemplateId = blocksToCreate.map(block => ({ ...block, templateId: templateId }));
+                const blocksWithTemplateId = blocksToCreate.map(block => ({ 
+                  ...block, 
+                  templateId: templateId,
+                  systemId: systemId, // 🏢 NUEVO: Añadir systemId para operaciones a nivel sistema
+                  clinicId: null, // 🏥 NUEVO: ScheduleTemplateBlock no está vinculado directamente a clínica específica
+                }));
                 await tx.scheduleTemplateBlock.createMany({ data: blocksWithTemplateId });
                 console.log(`[API PUT /api/templates/${templateId}] New blocks created successfully.`);
             } catch (createError) {

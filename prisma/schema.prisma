@@ -96,6 +96,22 @@ model System {
   serviceSettings              ServiceSetting[]
   productSettings              ProductSetting[]
   serviceConsumptions          ServiceConsumption[]
+  scheduleTemplateBlocks       ScheduleTemplateBlock[]
+  clinicSchedules              ClinicSchedule[]
+  clinicScheduleBlocks         ClinicScheduleBlock[]
+  userClinicSchedules          UserClinicSchedule[]
+  userClinicScheduleExceptions UserClinicScheduleException[]
+  cabinScheduleOverrides       CabinScheduleOverride[]
+  bonoDefinitionSettings       BonoDefinitionSetting[]
+  packageDefinitionSettings    PackageDefinitionSetting[]
+  packageItems                 PackageItem[]
+  chartOfAccountTemplateEntries ChartOfAccountTemplateEntry[]
+  chartOfAccountTemplateVersions ChartOfAccountTemplateVersion[]
+  journalEntryLines            JournalEntryLine[]
+  paymentVerifications         PaymentVerification[]
+  personLeadData               PersonLeadData[]
+  personContactData            PersonContactData[]
+  personClientData             PersonClientData[]
 
   @@map("systems")
 }
@@ -303,6 +319,10 @@ model Clinic {
   serviceSettings              ServiceSetting[]
   productSettings              ProductSetting[]
   serviceConsumptions          ServiceConsumption[]
+  scheduleTemplateBlocks       ScheduleTemplateBlock[]
+  bonoDefinitionSettings       BonoDefinitionSetting[]
+  packageDefinitionSettings    PackageDefinitionSetting[]
+  packageItems                 PackageItem[]
 
   @@unique([name, systemId], name: "Clinic_name_systemId_key")
   @@index([systemId])
@@ -910,6 +930,8 @@ model ScheduleTemplate {
 
 model ScheduleTemplateBlock {
   id         String           @id @default(cuid())
+  systemId   String?          // 🏢 NUEVO: Para operaciones a nivel sistema (opcional por compatibilidad)
+  clinicId   String?          // 🏥 NUEVO: Para optimizar filtros y reportes (opcional por compatibilidad)
   templateId String
   dayOfWeek  DayOfWeek
   startTime  String
@@ -918,13 +940,18 @@ model ScheduleTemplateBlock {
   createdAt  DateTime         @default(now())
   updatedAt  DateTime         @updatedAt
   template   ScheduleTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  system     System?          @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  clinic     Clinic?          @relation(fields: [clinicId], references: [id], onDelete: Cascade)
 
   @@index([templateId])
+  @@index([systemId])
+  @@index([clinicId])
   @@map("schedule_template_blocks")
 }
 
 model ClinicSchedule {
   id                String   @id @default(cuid())
+  systemId          String?  // 🏢 NUEVO: Para operaciones a nivel sistema (opcional por compatibilidad)
   clinicId          String   @unique
   openTime          String?
   closeTime         String?
@@ -933,13 +960,16 @@ model ClinicSchedule {
   updatedAt         DateTime @updatedAt
   createGranularity Int?     @default(5)
   clinic            Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  system            System?  @relation(fields: [systemId], references: [id], onDelete: Cascade)
 
   @@index([clinicId])
+  @@index([systemId])
   @@map("clinic_schedules")
 }
 
 model ClinicScheduleBlock {
   id        String    @id @default(cuid())
+  systemId  String?   // 🏢 NUEVO: Para operaciones a nivel sistema (opcional por compatibilidad)
   clinicId  String
   dayOfWeek DayOfWeek
   startTime String
@@ -948,8 +978,10 @@ model ClinicScheduleBlock {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   clinic    Clinic    @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  system    System?   @relation(fields: [systemId], references: [id], onDelete: Cascade)
 
   @@index([clinicId])
+  @@index([systemId])
   @@map("clinic_schedule_blocks")
 }
 
@@ -1667,6 +1699,8 @@ model BonoDefinition {
 
 model BonoDefinitionSetting {
   id               String         @id @default(cuid())
+  systemId         String?        // 🏢 NUEVO: Para operaciones a nivel sistema (opcional por compatibilidad)
+  clinicId         String?        // 🏥 NUEVO: Para optimizar filtros y reportes (opcional por compatibilidad)
   bonoDefinitionId String         @unique
   validityDays     Int?
   costPrice        Float?
@@ -1677,7 +1711,11 @@ model BonoDefinitionSetting {
   isActive         Boolean        @default(true)
   pointsAwarded    Int            @default(0)
   bonoDefinition   BonoDefinition @relation(fields: [bonoDefinitionId], references: [id], onDelete: Cascade)
+  system           System?        @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  clinic           Clinic?        @relation(fields: [clinicId], references: [id], onDelete: Cascade)
 
+  @@index([systemId])
+  @@index([clinicId])
   @@map("bono_definition_settings")
 }
 
@@ -1728,16 +1766,24 @@ model PackageDefinition {
 
 model PackageDefinitionSetting {
   id                  String            @id @default(cuid())
+  systemId            String?           // 🏢 NUEVO: Para operaciones a nivel sistema (opcional por compatibilidad)
+  clinicId            String?           // 🏥 NUEVO: Para optimizar filtros y reportes (opcional por compatibilidad)
   packageDefinitionId String            @unique
   isActive            Boolean           @default(true)
   pointsAwarded       Int               @default(0)
   packageDefinition   PackageDefinition @relation(fields: [packageDefinitionId], references: [id], onDelete: Cascade)
+  system              System?           @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  clinic              Clinic?           @relation(fields: [clinicId], references: [id], onDelete: Cascade)
 
+  @@index([systemId])
+  @@index([clinicId])
   @@map("package_definition_settings")
 }
 
 model PackageItem {
   id                  String            @id @default(cuid())
+  systemId            String?           // 🏢 NUEVO: Para operaciones a nivel sistema (opcional por compatibilidad)
+  clinicId            String?           // 🏥 NUEVO: Para optimizar filtros y reportes (opcional por compatibilidad)
   packageDefinitionId String
   itemType            String
   serviceId           String?
@@ -1748,10 +1794,14 @@ model PackageItem {
   packageDefinition   PackageDefinition @relation(fields: [packageDefinitionId], references: [id], onDelete: Cascade)
   service             Service?          @relation(fields: [serviceId], references: [id], onDelete: Restrict)
   product             Product?          @relation(fields: [productId], references: [id], onDelete: Restrict)
+  system              System?           @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  clinic              Clinic?           @relation(fields: [clinicId], references: [id], onDelete: Cascade)
 
   @@index([packageDefinitionId])
   @@index([serviceId])
   @@index([productId])
+  @@index([systemId])
+  @@index([clinicId])
   @@map("package_items")
 }
 
@@ -1956,16 +2006,19 @@ model UserClinicSchedule {
   scheduleJson         Json
   createdAt            DateTime               @default(now())
   updatedAt            DateTime               @updatedAt
+  systemId             String?                // 🏢 NUEVO: Para operaciones a nivel sistema (opcional por compatibilidad)
   clinicId             String
   id                   String                 @id @default(cuid())
   userId               String
   user                 User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
   clinic               Clinic                 @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  system               System?                @relation(fields: [systemId], references: [id], onDelete: Cascade)
   UserClinicAssignment UserClinicAssignment[]
 
   @@unique([userId, clinicId])
   @@index([userId])
   @@index([clinicId])
+  @@index([systemId])
   @@map("user_clinic_schedules")
 }
 
@@ -1976,15 +2029,18 @@ model UserClinicScheduleException {
   endDate      DateTime             @db.Date
   createdAt    DateTime             @default(now())
   updatedAt    DateTime             @updatedAt
+  systemId     String?              // 🏢 NUEVO: Para operaciones a nivel sistema (opcional por compatibilidad)
   clinicId     String
   scheduleJson Json
   userId       String
   user         User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   clinic       Clinic               @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  system       System?              @relation(fields: [systemId], references: [id], onDelete: Cascade)
   assignment   UserClinicAssignment @relation(fields: [userId, clinicId], references: [userId, clinicId], onDelete: Cascade)
 
   @@index([userId, clinicId, startDate])
   @@index([userId, clinicId])
+  @@index([systemId])
   @@map("user_clinic_schedule_exceptions")
 }
 
@@ -2038,6 +2094,7 @@ model Cabin {
 
 model CabinScheduleOverride {
   id                String    @id @default(cuid())
+  systemId          String?   // 🏢 NUEVO: Para operaciones a nivel sistema (opcional por compatibilidad)
   clinicId          String
   cabinIds          String[]
   startDate         DateTime  @map("start_date")
@@ -2051,8 +2108,10 @@ model CabinScheduleOverride {
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @updatedAt @map("updated_at")
   clinic            Clinic    @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  system            System?   @relation(fields: [systemId], references: [id], onDelete: Cascade)
 
   @@index([clinicId, startDate, endDate])
+  @@index([systemId])
   @@map("cabin_schedule_overrides")
 }
 
@@ -2303,6 +2362,7 @@ model ChartOfAccountTemplate {
 
 model ChartOfAccountTemplateEntry {
   id                 String                 @id @default(cuid())
+  systemId           String?                // 🏢 NUEVO: Para operaciones a nivel sistema (opcional por compatibilidad)
   templateId         String
   accountNumber      String
   names              Json
@@ -2320,14 +2380,17 @@ model ChartOfAccountTemplateEntry {
   serviceCategories  String[]
   productCategories  String[]
   template           ChartOfAccountTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  system             System?                @relation(fields: [systemId], references: [id], onDelete: Cascade)
 
   @@unique([templateId, accountNumber])
   @@index([templateId])
+  @@index([systemId])
   @@map("chart_of_account_template_entries")
 }
 
 model ChartOfAccountTemplateVersion {
   id         String                 @id @default(cuid())
+  systemId   String?                // 🏢 NUEVO: Para operaciones a nivel sistema (opcional por compatibilidad)
   templateId String
   version    String
   changes    Json
@@ -2335,7 +2398,9 @@ model ChartOfAccountTemplateVersion {
   createdAt  DateTime               @default(now())
   template   ChartOfAccountTemplate @relation(fields: [templateId], references: [id])
   user       User                   @relation(fields: [createdBy], references: [id])
+  system     System?                @relation(fields: [systemId], references: [id], onDelete: Cascade)
 
+  @@index([systemId])
   @@map("chart_of_account_template_versions")
 }
 
@@ -2374,6 +2439,7 @@ model JournalEntry {
 
 model JournalEntryLine {
   id             String              @id @default(cuid())
+  systemId       String?             // 🏢 NUEVO: Para operaciones a nivel sistema (opcional por compatibilidad)
   journalEntryId String
   accountId      String
   debit          Decimal             @db.Decimal(15, 2)
@@ -2386,9 +2452,11 @@ model JournalEntryLine {
   order          Int                 @default(0)
   journalEntry   JournalEntry        @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
   account        ChartOfAccountEntry @relation(fields: [accountId], references: [id])
+  system         System?             @relation(fields: [systemId], references: [id], onDelete: Cascade)
 
   @@index([journalEntryId])
   @@index([accountId])
+  @@index([systemId])
   @@map("journal_entry_lines")
 }
 
@@ -2630,6 +2698,7 @@ model DebtAdjustment {
 
 model PaymentVerification {
   id               String    @id @default(cuid())
+  systemId         String?   // 🏢 NUEVO: Para operaciones a nivel sistema (opcional por compatibilidad)
   paymentId        String    @unique
   verified         Boolean   @default(false)
   verifiedByUserId String?
@@ -2637,9 +2706,11 @@ model PaymentVerification {
   attachmentUrl    String?
   payment          Payment   @relation(fields: [paymentId], references: [id])
   verifiedByUser   User?     @relation("VerifiedBy", fields: [verifiedByUserId], references: [id])
+  system           System?   @relation(fields: [systemId], references: [id], onDelete: Cascade)
 
   @@index([paymentId])
   @@index([verifiedByUserId])
+  @@index([systemId])
 }
 
 model EntityChangeLog {
@@ -2877,6 +2948,7 @@ model PersonFunctionalRole {
 
 model PersonLeadData {
   id               String               @id @default(cuid())
+  systemId         String?              // 🏢 NUEVO: Para operaciones a nivel sistema (opcional por compatibilidad)
   functionalRoleId String               @unique
   source           String?
   assignedToUserId String?
@@ -2893,16 +2965,19 @@ model PersonLeadData {
   functionalRole   PersonFunctionalRole @relation(fields: [functionalRoleId], references: [id], onDelete: Cascade)
   assignedToUser   User?                @relation(fields: [assignedToUserId], references: [id], onDelete: SetNull)
   company          Company?             @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  system           System?              @relation(fields: [systemId], references: [id], onDelete: Cascade)
   opportunities    Opportunity[]
 
   @@index([functionalRoleId])
   @@index([assignedToUserId])
   @@index([companyId])
+  @@index([systemId])
   @@map("person_lead_data")
 }
 
 model PersonContactData {
   id                     String               @id @default(cuid())
+  systemId               String?              // 🏢 NUEVO: Para operaciones a nivel sistema (opcional por compatibilidad)
   functionalRoleId       String               @unique
   position               String?
   companyId              String
@@ -2911,9 +2986,11 @@ model PersonContactData {
   preferredContactMethod String?
   functionalRole         PersonFunctionalRole @relation(fields: [functionalRoleId], references: [id], onDelete: Cascade)
   company                Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  system                 System?              @relation(fields: [systemId], references: [id], onDelete: Cascade)
 
   @@index([functionalRoleId])
   @@index([companyId])
+  @@index([systemId])
   @@map("person_contact_data")
 }
 
@@ -2945,6 +3022,7 @@ model Opportunity {
 
 model PersonClientData {
   id                           String               @id @default(cuid())
+  systemId                     String?              // 🏢 NUEVO: Para operaciones a nivel sistema (opcional por compatibilidad)
   functionalRoleId             String               @unique
   address                      String?
   city                         String?
@@ -2964,10 +3042,12 @@ model PersonClientData {
   functionalRole               PersonFunctionalRole @relation(fields: [functionalRoleId], references: [id], onDelete: Cascade)
   company                      Company?             @relation("PersonClientCompany", fields: [companyId], references: [id])
   originClinic                 Clinic?              @relation("PersonClientOriginClinic", fields: [originClinicId], references: [id], onDelete: SetNull)
+  system                       System?              @relation(fields: [systemId], references: [id], onDelete: Cascade)
 
   @@index([functionalRoleId])
   @@index([companyId])
   @@index([originClinicId])
+  @@index([systemId])
   @@map("person_client_data")
 }
 

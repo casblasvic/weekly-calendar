@@ -53,7 +53,18 @@ import {
   RefreshCw,
   Building2,
   CheckCircle,
-  XCircle
+  XCircle,
+  Filter,
+  ChevronDown,
+  ChevronUp,
+  Calendar,
+  User,
+  Briefcase,
+  Clock,
+  ExternalLink,
+  Info,
+  Lightbulb,
+  Settings
 } from 'lucide-react'
 import { useIntegrationModules } from '@/hooks/use-integration-modules'
 import { DateRange } from 'react-day-picker'
@@ -91,15 +102,109 @@ interface DeviceUsageInsight {
   detectedAt: string
   resolvedAt?: string
   detailJson: any
+  // 🆕 NUEVOS CAMPOS PARA ANÁLISIS INTELIGENTE
+  appointment?: {
+    id: string
+    startTime: string
+    endTime: string
+    durationMinutes: number
+    person?: {
+      id: string
+      firstName: string
+      lastName: string
+      email?: string
+    }
+    professionalUser?: {
+      id: string
+      firstName: string
+      lastName: string
+    }
+    clinic?: {
+      id: string
+      name: string
+    }
+    appointmentServices?: Array<{
+      id: string
+      service: {
+        id: string
+        name: string
+        durationMinutes: number
+      }
+    }>
+    services?: Array<{
+      id: string
+      service: {
+        id: string
+        name: string
+        durationMinutes: number
+      }
+    }>
+    actualUsageMinutes?: number
+  }
+  // 🆕 ANÁLISIS DE PATRONES
+  clientPatternAnalysis?: {
+    totalAppointments: number
+    anomalyCount: number
+    anomalyRate: number
+    mostCommonAnomalyType: string
+    riskLevel: 'low' | 'medium' | 'high' | 'critical'
+  }
+  employeePatternAnalysis?: {
+    totalAppointments: number
+    anomalyCount: number
+    anomalyRate: number
+    avgEfficiency: number
+    riskLevel: 'low' | 'medium' | 'high' | 'critical'
+  }
+  // 🆕 RECOMENDACIONES INTELIGENTES
+  recommendations?: Array<{
+    type: 'review_appointment' | 'check_equipment' | 'monitor_client' | 'train_employee' | 'investigate_fraud'
+    priority: 'low' | 'medium' | 'high' | 'critical'
+    message: string
+    actionRequired: boolean
+  }>
+  // 🆕 SEVERIDAD CALCULADA
+  severity: 'low' | 'medium' | 'high' | 'critical'
+  severityColor: string
 }
 
 interface Clinic {
   id: string
   name: string
-  address?: string
   isActive: boolean
-  city?: string
-  phone?: string
+}
+
+// 🆕 NUEVAS INTERFACES PARA FILTROS AVANZADOS
+interface FilterOptions {
+  employees: Array<{
+    id: string
+    firstName: string
+    lastName: string
+    appointmentCount: number
+  }>
+  clients: Array<{
+    id: string
+    firstName: string
+    lastName: string
+    anomalyCount: number
+  }>
+  services: Array<{
+    id: string
+    name: string
+    appointmentCount: number
+  }>
+}
+
+interface AdvancedFilters {
+  clinicId: string
+  employeeIds: string[]
+  clientIds: string[]
+  serviceIds: string[]
+  resolutionStatus: 'all' | 'pending' | 'resolved'
+  severityLevels: string[]
+  anomalyTypes: string[]
+  dateFrom?: Date
+  dateTo?: Date
 }
 
 // ============================================================================
@@ -115,12 +220,33 @@ export default function EnergyInsightsDashboard() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   
-  // Filtros
+  // Filtros básicos
   const [selectedClinic, setSelectedClinic] = useState<string>('all')
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
     from: subDays(new Date(), 30),
     to: new Date()
   })
+  
+  // 🆕 FILTROS AVANZADOS
+  const [filterOptions, setFilterOptions] = useState<FilterOptions>({
+    employees: [],
+    clients: [],
+    services: []
+  })
+  const [advancedFilters, setAdvancedFilters] = useState<AdvancedFilters>({
+    clinicId: 'all',
+    employeeIds: [],
+    clientIds: [],
+    serviceIds: [],
+    resolutionStatus: 'all',
+    severityLevels: [],
+    anomalyTypes: []
+  })
+  
+  // 🆕 ESTADOS PARA DETALLES EXPANDIBLES Y SELECCIÓN MÚLTIPLE
+  const [expandedInsights, setExpandedInsights] = useState<Set<string>>(new Set())
+  const [selectedInsights, setSelectedInsights] = useState<Set<string>>(new Set())
+  const [showFilters, setShowFilters] = useState(false)
   
   // Hooks
   const { data: session } = useSession()
@@ -159,9 +285,47 @@ export default function EnergyInsightsDashboard() {
 
     try {
       const params = new URLSearchParams()
-      if (selectedClinic && selectedClinic !== 'all') params.append('clinicId', selectedClinic)
-      if (dateRange?.from) params.append('from', dateRange.from.toISOString())
-      if (dateRange?.to) params.append('to', dateRange.to.toISOString())
+      
+      // Filtros básicos
+      if (advancedFilters.clinicId !== 'all') {
+        params.append('clinicId', advancedFilters.clinicId)
+      }
+      
+      if (dateRange?.from) {
+        params.append('from', dateRange.from.toISOString())
+      }
+      
+      if (dateRange?.to) {
+        params.append('to', dateRange.to.toISOString())
+      }
+      
+      // 🆕 FILTROS AVANZADOS
+      if (advancedFilters.employeeIds.length > 0) {
+        params.append('employeeIds', advancedFilters.employeeIds.join(','))
+      }
+      
+      if (advancedFilters.clientIds.length > 0) {
+        params.append('clientIds', advancedFilters.clientIds.join(','))
+      }
+      
+      if (advancedFilters.serviceIds.length > 0) {
+        params.append('serviceIds', advancedFilters.serviceIds.join(','))
+      }
+      
+      if (advancedFilters.resolutionStatus !== 'all') {
+        params.append('resolved', advancedFilters.resolutionStatus === 'resolved' ? 'true' : 'false')
+      }
+      
+      if (advancedFilters.severityLevels.length > 0) {
+        params.append('severityLevels', advancedFilters.severityLevels.join(','))
+      }
+      
+      if (advancedFilters.anomalyTypes.length > 0) {
+        params.append('anomalyTypes', advancedFilters.anomalyTypes.join(','))
+      }
+      
+      // Incluir análisis inteligente
+      params.append('includeAnalysis', 'true')
 
       const response = await fetch(`/api/internal/energy-insights?${params}`)
       if (!response.ok) {
@@ -176,7 +340,7 @@ export default function EnergyInsightsDashboard() {
       console.error('Error fetching insights:', error)
       toast.error(`Error cargando insights: ${error instanceof Error ? error.message : 'Error desconocido'}`)
     }
-  }, [session?.user?.systemId, selectedClinic, dateRange])
+  }, [session?.user?.systemId, advancedFilters, dateRange])
 
   const fetchClinics = useCallback(async () => {
     if (!session?.user?.systemId) return
@@ -212,19 +376,42 @@ export default function EnergyInsightsDashboard() {
     }
   }, [isShellyActive, session?.user?.systemId, fetchDashboardStats, fetchInsights, fetchClinics])
 
-  // Efecto adicional para recargar datos cuando cambie la clínica seleccionada
+  // Efecto adicional para recargar datos cuando cambien los filtros
   useEffect(() => {
-    if (isShellyActive && session?.user?.systemId && selectedClinic) {
+    if (isShellyActive && session?.user?.systemId) {
       Promise.all([
         fetchDashboardStats(),
         fetchInsights()
       ])
     }
-  }, [selectedClinic, isShellyActive, session?.user?.systemId, fetchDashboardStats, fetchInsights])
+  }, [advancedFilters, dateRange, isShellyActive, session?.user?.systemId, fetchDashboardStats, fetchInsights])
 
   // ============================================================================
-  // HANDLERS
+  // HANDLERS Y FUNCIONES AVANZADAS
   // ============================================================================
+
+  // 🆕 FUNCIONES PARA FILTROS AVANZADOS Y ANÁLISIS INTELIGENTE
+  const loadFilterOptions = useCallback(async () => {
+    if (!session?.user?.systemId) return
+    
+    try {
+      const params = new URLSearchParams({
+        systemId: session.user.systemId
+      })
+      
+      if (selectedClinic !== 'all') {
+        params.append('clinicId', selectedClinic)
+      }
+      
+      const response = await fetch(`/api/internal/energy-insights/filter-options?${params}`)
+      if (response.ok) {
+        const data = await response.json()
+        setFilterOptions(data)
+      }
+    } catch (error) {
+      console.error('Error cargando opciones de filtros:', error)
+    }
+  }, [session?.user?.systemId, selectedClinic])
 
   const handleRefresh = async () => {
     setRefreshing(true)
@@ -258,6 +445,112 @@ export default function EnergyInsightsDashboard() {
 
   const handleExportReport = () => {
     toast.info('Funcionalidad de exportación en desarrollo')
+  }
+
+  // 🆕 Efecto para cargar opciones de filtros
+  useEffect(() => {
+    if (isShellyActive && session?.user?.systemId) {
+      loadFilterOptions()
+    }
+  }, [isShellyActive, session?.user?.systemId, selectedClinic, loadFilterOptions])
+
+  const toggleInsightExpansion = (insightId: string) => {
+    setExpandedInsights(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(insightId)) {
+        newSet.delete(insightId)
+      } else {
+        newSet.add(insightId)
+      }
+      return newSet
+    })
+  }
+
+  const toggleInsightSelection = (insightId: string) => {
+    setSelectedInsights(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(insightId)) {
+        newSet.delete(insightId)
+      } else {
+        newSet.add(insightId)
+      }
+      return newSet
+    })
+  }
+
+  const selectAllInsights = () => {
+    const unresolvedInsights = insights.filter(insight => !insight.resolved).map(insight => insight.id)
+    setSelectedInsights(new Set(unresolvedInsights))
+  }
+
+  const clearSelection = () => {
+    setSelectedInsights(new Set())
+  }
+
+  const handleBulkResolve = async () => {
+    if (selectedInsights.size === 0) return
+
+    try {
+      setRefreshing(true)
+      
+      // Resolver todas las anomalías seleccionadas
+      const promises = Array.from(selectedInsights).map(insightId =>
+        fetch('/api/internal/energy-insights', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            id: insightId, 
+            resolved: true,
+            notes: 'Resuelto en lote'
+          })
+        })
+      )
+
+      await Promise.all(promises)
+      
+      // Limpiar selección y recargar datos
+      setSelectedInsights(new Set())
+      await fetchInsights()
+      await fetchDashboardStats()
+      
+      toast.success(`${selectedInsights.size} anomalías marcadas como resueltas`)
+      
+    } catch (error) {
+      console.error('Error resolviendo anomalías en lote:', error)
+      toast.error('Error al resolver anomalías en lote')
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  const getSeverityColor = (severity: string) => {
+    switch (severity) {
+      case 'critical': return 'bg-red-100 border-red-500 text-red-700'
+      case 'high': return 'bg-orange-100 border-orange-500 text-orange-700'
+      case 'medium': return 'bg-yellow-100 border-yellow-500 text-yellow-700'
+      case 'low': return 'bg-blue-100 border-blue-500 text-blue-700'
+      default: return 'bg-gray-100 border-gray-500 text-gray-700'
+    }
+  }
+
+  const getSeverityIcon = (severity: string) => {
+    switch (severity) {
+      case 'critical': return <XCircle className="w-4 h-4" />
+      case 'high': return <AlertTriangle className="w-4 h-4" />
+      case 'medium': return <Eye className="w-4 h-4" />
+      case 'low': return <CheckCircle className="w-4 h-4" />
+      default: return <Activity className="w-4 h-4" />
+    }
+  }
+
+  const navigateToAppointment = (appointmentId: string, startTime: string) => {
+    // Navegar a la agenda en la fecha de la cita
+    const appointmentDate = new Date(startTime)
+    const dateString = format(appointmentDate, 'yyyy-MM-dd')
+    
+    // Abrir en nueva pestaña la agenda en esa fecha
+    window.open(`/agenda?date=${dateString}&appointmentId=${appointmentId}`, '_blank')
+    toast.success('Navegando a la cita en la agenda')
   }
 
   // ============================================================================
@@ -345,49 +638,235 @@ export default function EnergyInsightsDashboard() {
         </div>
       </div>
 
-      {/* Filtros Rápidos */}
+      {/* Filtros Unificados - Diseño Compacto y Profesional */}
       <Card className="p-4">
-        <div className="flex flex-wrap gap-4 items-center">
-          <div className="flex items-center space-x-2">
-            <Building2 className="w-4 h-4 text-muted-foreground" />
-            <Select value={selectedClinic} onValueChange={setSelectedClinic}>
-              <SelectTrigger className="w-48">
-                <SelectValue placeholder="Todas las clínicas" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">
-                  <div className="flex items-center space-x-2">
-                    <Building2 className="w-4 h-4 text-blue-500" />
-                    <span>Todas las clínicas</span>
-                  </div>
-                </SelectItem>
-                {clinics.map((clinic) => (
-                  <SelectItem key={clinic.id} value={clinic.id}>
+        <div className="space-y-4">
+          {/* Fila principal de filtros */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+            {/* Selector de Clínicas */}
+            <div className="flex flex-col space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">
+                <Building2 className="w-3 h-3 inline mr-1" />
+                Clínica
+              </label>
+              <Select 
+                value={selectedClinic} 
+                onValueChange={(value) => {
+                  setSelectedClinic(value)
+                  setAdvancedFilters(prev => ({ ...prev, clinicId: value }))
+                }}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="Todas las clínicas" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">
                     <div className="flex items-center space-x-2">
-                      {clinic.isActive ? (
-                        <CheckCircle className="w-4 h-4 text-green-500" />
-                      ) : (
-                        <XCircle className="w-4 h-4 text-red-500" />
-                      )}
-                      <span className={clinic.isActive ? '' : 'text-muted-foreground'}>
-                        {clinic.name}
-                      </span>
-                      {!clinic.isActive && (
-                        <Badge variant="outline" className="text-xs">
-                          Inactiva
-                        </Badge>
-                      )}
+                      <Building2 className="w-4 h-4 text-blue-500" />
+                      <span>Todas las clínicas</span>
                     </div>
                   </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                  {clinics.map((clinic) => (
+                    <SelectItem key={clinic.id} value={clinic.id}>
+                      <div className="flex items-center space-x-2">
+                        {clinic.isActive ? (
+                          <CheckCircle className="w-4 h-4 text-green-500" />
+                        ) : (
+                          <XCircle className="w-4 h-4 text-red-500" />
+                        )}
+                        <span className={clinic.isActive ? '' : 'text-muted-foreground'}>
+                          {clinic.name}
+                        </span>
+                        {!clinic.isActive && (
+                          <Badge variant="outline" className="text-xs">
+                            Inactiva
+                          </Badge>
+                        )}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Filtro por Empleados */}
+            <div className="flex flex-col space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">
+                <User className="w-3 h-3 inline mr-1" />
+                Empleado
+              </label>
+              <Select
+                value={advancedFilters.employeeIds.length > 0 ? advancedFilters.employeeIds[0] : 'all'}
+                onValueChange={(value) => {
+                  if (value === 'all') {
+                    setAdvancedFilters(prev => ({ ...prev, employeeIds: [] }))
+                  } else {
+                    setAdvancedFilters(prev => ({ ...prev, employeeIds: [value] }))
+                  }
+                }}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="Todos" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos los empleados</SelectItem>
+                  {filterOptions.employees.map((employee) => (
+                    <SelectItem key={employee.id} value={employee.id}>
+                      <div className="flex items-center justify-between w-full">
+                        <span>{employee.firstName} {employee.lastName}</span>
+                        <Badge variant="outline" className="text-xs ml-2">
+                          {employee.appointmentCount}
+                        </Badge>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Filtro por Clientes */}
+            <div className="flex flex-col space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">
+                <Users className="w-3 h-3 inline mr-1" />
+                Cliente
+              </label>
+              <Select
+                value={advancedFilters.clientIds.length > 0 ? advancedFilters.clientIds[0] : 'all'}
+                onValueChange={(value) => {
+                  if (value === 'all') {
+                    setAdvancedFilters(prev => ({ ...prev, clientIds: [] }))
+                  } else {
+                    setAdvancedFilters(prev => ({ ...prev, clientIds: [value] }))
+                  }
+                }}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="Todos" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos los clientes</SelectItem>
+                  {filterOptions.clients.map((client) => (
+                    <SelectItem key={client.id} value={client.id}>
+                      <div className="flex items-center justify-between w-full">
+                        <span>{client.firstName} {client.lastName}</span>
+                        <Badge variant="outline" className="text-xs ml-2">
+                          {client.anomalyCount}
+                        </Badge>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Filtro por Servicios */}
+            <div className="flex flex-col space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">
+                <Briefcase className="w-3 h-3 inline mr-1" />
+                Servicio
+              </label>
+              <Select
+                value={advancedFilters.serviceIds.length > 0 ? advancedFilters.serviceIds[0] : 'all'}
+                onValueChange={(value) => {
+                  if (value === 'all') {
+                    setAdvancedFilters(prev => ({ ...prev, serviceIds: [] }))
+                  } else {
+                    setAdvancedFilters(prev => ({ ...prev, serviceIds: [value] }))
+                  }
+                }}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="Todos" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos los servicios</SelectItem>
+                  {filterOptions.services.map((service) => (
+                    <SelectItem key={service.id} value={service.id}>
+                      <div className="flex items-center justify-between w-full">
+                        <span className="truncate">{service.name}</span>
+                        <Badge variant="outline" className="text-xs ml-2">
+                          {service.appointmentCount}
+                        </Badge>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Filtro por Estado */}
+            <div className="flex flex-col space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">
+                <CheckCircle className="w-3 h-3 inline mr-1" />
+                Estado
+              </label>
+              <Select
+                value={advancedFilters.resolutionStatus}
+                onValueChange={(value) => {
+                  setAdvancedFilters(prev => ({ ...prev, resolutionStatus: value as any }))
+                }}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas</SelectItem>
+                  <SelectItem value="pending">Pendientes</SelectItem>
+                  <SelectItem value="resolved">Resueltas</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-          
-          <Badge variant="secondary" className="ml-auto">
-            <Activity className="mr-1 w-3 h-3" />
-            {dashboardStats ? `${dashboardStats.insights.total} insights detectados` : 'Cargando...'}
-          </Badge>
+
+          {/* Indicadores de filtros activos y estadísticas */}
+          <div className="flex items-center justify-between pt-2 border-t">
+            <div className="flex items-center space-x-4">
+              {/* Indicadores de filtros activos */}
+              {(advancedFilters.employeeIds.length > 0 || 
+                advancedFilters.clientIds.length > 0 || 
+                advancedFilters.serviceIds.length > 0 || 
+                advancedFilters.resolutionStatus !== 'all') && (
+                <div className="flex items-center space-x-2">
+                  <Filter className="w-4 h-4 text-blue-500" />
+                  <span className="text-sm text-blue-600 font-medium">Filtros activos</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-xs"
+                    onClick={() => {
+                      setAdvancedFilters({
+                        clinicId: selectedClinic,
+                        employeeIds: [],
+                        clientIds: [],
+                        serviceIds: [],
+                        resolutionStatus: 'all',
+                        severityLevels: [],
+                        anomalyTypes: []
+                      })
+                    }}
+                  >
+                    <XCircle className="w-3 h-3 mr-1" />
+                    Limpiar
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            {/* Estadísticas compactas */}
+            <div className="flex items-center space-x-4">
+              <Badge variant="secondary" className="flex items-center space-x-1">
+                <Activity className="w-3 h-3" />
+                <span>{dashboardStats ? `${dashboardStats.insights.total} insights` : 'Cargando...'}</span>
+              </Badge>
+              
+              {dashboardStats && dashboardStats.insights.open > 0 && (
+                <Badge variant="destructive" className="flex items-center space-x-1">
+                  <AlertTriangle className="w-3 h-3" />
+                  <span>{dashboardStats.insights.open} pendientes</span>
+                </Badge>
+              )}
+            </div>
+          </div>
         </div>
       </Card>
 
@@ -558,65 +1037,300 @@ export default function EnergyInsightsDashboard() {
           </TabsContent>
 
           <TabsContent value="insights" className="space-y-6">
-            {/* Lista de Insights */}
+            {/* 🆕 LISTA MEJORADA DE INSIGHTS - DISEÑO COMPACTO */}
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center space-x-2">
-                  <AlertTriangle className="w-5 h-5" />
-                  <span>Anomalías Detectadas</span>
-                </CardTitle>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center space-x-2">
+                    <AlertTriangle className="w-5 h-5" />
+                    <span>Anomalías Detectadas</span>
+                  </CardTitle>
+                  <div className="flex items-center space-x-2">
+                    <Badge variant="secondary">
+                      {insights.length} anomalías
+                    </Badge>
+                    
+                    {/* Controles de selección múltiple */}
+                    {insights.some(insight => !insight.resolved) && (
+                      <div className="flex items-center space-x-2">
+                        {selectedInsights.size > 0 && (
+                          <>
+                            <Badge variant="outline" className="text-blue-600">
+                              {selectedInsights.size} seleccionadas
+                            </Badge>
+                            <Button
+                              size="sm"
+                              variant="default"
+                              onClick={handleBulkResolve}
+                              disabled={refreshing}
+                            >
+                              <CheckCircle className="w-4 h-4 mr-1" />
+                              Resolver seleccionadas
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={clearSelection}
+                            >
+                              <XCircle className="w-4 h-4 mr-1" />
+                              Limpiar
+                            </Button>
+                          </>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={selectedInsights.size === insights.filter(i => !i.resolved).length ? clearSelection : selectAllInsights}
+                        >
+                          {selectedInsights.size === insights.filter(i => !i.resolved).length ? 'Deseleccionar todo' : 'Seleccionar todo'}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </CardHeader>
               <CardContent>
                 {insights.length > 0 ? (
-                  <div className="space-y-4">
+                  <div className="space-y-2">
                     {insights.slice(0, 20).map((insight) => (
-                      <div key={insight.id} className={`p-4 border rounded-lg ${insight.resolved ? 'bg-green-50 border-green-200' : 'bg-orange-50 border-orange-200'}`}>
-                        <div className="flex justify-between items-center mb-2">
-                          <div className="flex items-center space-x-2">
-                            <Badge variant={insight.resolved ? 'default' : 'destructive'}>
-                              {insight.insightType.replace('_', ' ')}
-                            </Badge>
-                            <span className="text-sm text-muted-foreground">
-                              {format(new Date(insight.detectedAt), 'dd/MM/yyyy HH:mm', { locale: es })}
-                            </span>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            {insight.resolved ? (
-                              <Badge className="text-white bg-green-600">
-                                <CheckCircle className="mr-1 w-3 h-3" />
-                                Resuelto
-                              </Badge>
-                            ) : (
-                              <Button size="sm" onClick={() => handleResolveInsight(insight.id)}>
-                                <CheckCircle className="mr-1 w-4 h-4" />
-                                Resolver
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                        
-                        <div className="grid grid-cols-3 gap-4 text-sm">
-                          <div>
-                            <p className="text-muted-foreground">Consumo Real</p>
-                            <p className="font-medium">{insight.actualKwh.toFixed(3)} kWh</p>
-                          </div>
-                          <div>
-                            <p className="text-muted-foreground">Consumo Esperado</p>
-                            <p className="font-medium">{insight.expectedKwh.toFixed(3)} kWh</p>
-                          </div>
-                          <div>
-                            <p className="text-muted-foreground">Desviación</p>
-                            <p className={`font-medium ${insight.deviationPct > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                              {insight.deviationPct > 0 ? '+' : ''}{insight.deviationPct.toFixed(1)}%
-                            </p>
+                      <div 
+                        key={insight.id} 
+                        className={`border rounded-lg transition-all duration-200 ${
+                          insight.resolved 
+                            ? 'bg-green-50 border-green-200' 
+                            : getSeverityColor(insight.severity || 'medium')
+                        } ${selectedInsights.has(insight.id) ? 'ring-2 ring-blue-500' : ''}`}
+                      >
+                        {/* Header compacto de la anomalía */}
+                        <div className="p-3">
+                          <div className="flex items-center justify-between">
+                            {/* Información básica en una línea */}
+                            <div className="flex items-center space-x-3 flex-1 min-w-0">
+                              {/* Checkbox para selección múltiple */}
+                              {!insight.resolved && (
+                                <input
+                                  type="checkbox"
+                                  checked={selectedInsights.has(insight.id)}
+                                  onChange={() => toggleInsightSelection(insight.id)}
+                                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                />
+                              )}
+                              
+                              {/* Icono de severidad */}
+                              {getSeverityIcon(insight.severity || 'medium')}
+                              
+                              {/* Información principal */}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center space-x-2 mb-1">
+                                  <Badge variant={insight.resolved ? 'default' : 'destructive'} className="text-xs">
+                                    {insight.insightType.replace('_', ' ')}
+                                  </Badge>
+                                  <Badge variant="outline" className="text-xs">
+                                    {insight.severity || 'medium'}
+                                  </Badge>
+                                  <span className="text-xs text-muted-foreground">
+                                    {format(new Date(insight.detectedAt), 'dd/MM HH:mm', { locale: es })}
+                                  </span>
+                                </div>
+                                
+                                {/* Información de la cita en línea compacta */}
+                                <div className="flex items-center space-x-4 text-xs text-muted-foreground">
+                                  <div className="flex items-center space-x-1">
+                                    <Building2 className="w-3 h-3" />
+                                    <span className="truncate max-w-24">
+                                      {insight.appointment?.clinic?.name || 'N/A'}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center space-x-1">
+                                    <User className="w-3 h-3" />
+                                    <span className="truncate max-w-32">
+                                      {insight.appointment?.person?.firstName} {insight.appointment?.person?.lastName}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center space-x-1">
+                                    <Briefcase className="w-3 h-3" />
+                                    <span className="truncate max-w-32">
+                                      {insight.appointment?.professionalUser?.firstName} {insight.appointment?.professionalUser?.lastName}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                            
+                            {/* Métricas y acciones */}
+                            <div className="flex items-center space-x-3">
+                              {/* Desviación destacada */}
+                              <div className="text-right">
+                                <div className={`text-sm font-bold ${Math.abs(insight.deviationPct) > 50 ? 'text-red-600' : 'text-orange-600'}`}>
+                                  {insight.deviationPct > 0 ? '+' : ''}{insight.deviationPct.toFixed(1)}%
+                                </div>
+                                <div className="text-xs text-muted-foreground">desviación</div>
+                              </div>
+                              
+                              {/* Botones de acción */}
+                              <div className="flex items-center space-x-1">
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => toggleInsightExpansion(insight.id)}
+                                  className="h-8 w-8 p-0"
+                                >
+                                  {expandedInsights.has(insight.id) ? 
+                                    <ChevronUp className="w-4 h-4" /> : 
+                                    <ChevronDown className="w-4 h-4" />
+                                  }
+                                </Button>
+                                
+                                {!insight.resolved && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => handleResolveInsight(insight.id)}
+                                    className="h-8 w-8 p-0"
+                                  >
+                                    <CheckCircle className="w-4 h-4 text-green-600" />
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
                           </div>
                         </div>
 
-                        {insight.detailJson?.confidence && (
-                          <div className="mt-2">
-                            <Badge variant="outline">
-                              Confianza: {insight.detailJson.confidence}
-                            </Badge>
+                        {/* 🆕 DETALLES EXPANDIBLES REDISEÑADOS */}
+                        {expandedInsights.has(insight.id) && (
+                          <div className="border-t bg-white/30 p-4 space-y-4">
+                            {/* Servicios y Comparación Estimado vs Real */}
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                              {/* Servicios de la cita */}
+                              <div className="space-y-3">
+                                <h4 className="font-semibold text-sm flex items-center space-x-2">
+                                  <Briefcase className="w-4 h-4" />
+                                  <span>Servicios Realizados</span>
+                                </h4>
+                                
+                                {insight.appointment?.services && insight.appointment.services.length > 0 ? (
+                                  <div className="space-y-2">
+                                    {insight.appointment.services.map((appointmentService) => (
+                                      <div key={appointmentService.id} className="flex items-center justify-between p-2 bg-white/50 rounded border">
+                                        <span className="text-sm font-medium">{appointmentService.service.name}</span>
+                                        <Badge variant="outline" className="text-xs">
+                                          {appointmentService.service.durationMinutes} min
+                                        </Badge>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <p className="text-sm text-muted-foreground">No hay servicios registrados</p>
+                                )}
+                              </div>
+
+                              {/* Comparación Estimado vs Real */}
+                              <div className="space-y-3">
+                                <h4 className="font-semibold text-sm flex items-center space-x-2">
+                                  <BarChart3 className="w-4 h-4" />
+                                  <span>Estimado vs Real</span>
+                                </h4>
+                                
+                                <div className="space-y-3">
+                                  {/* Comparación de Tiempo */}
+                                  <div className="p-3 bg-blue-50 rounded border border-blue-200">
+                                    <div className="flex items-center justify-between mb-2">
+                                      <span className="text-sm font-medium text-blue-800">Duración</span>
+                                      <Clock className="w-4 h-4 text-blue-600" />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2 text-sm">
+                                      <div>
+                                        <span className="text-muted-foreground">Estimado:</span>
+                                        <span className="ml-2 font-medium">{insight.appointment?.durationMinutes || 0} min</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-muted-foreground">Real:</span>
+                                        <span className="ml-2 font-medium">{insight.appointment?.actualUsageMinutes || insight.appointment?.durationMinutes || 0} min</span>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Comparación de Energía */}
+                                  <div className="p-3 bg-orange-50 rounded border border-orange-200">
+                                    <div className="flex items-center justify-between mb-2">
+                                      <span className="text-sm font-medium text-orange-800">Consumo Energético</span>
+                                      <Zap className="w-4 h-4 text-orange-600" />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2 text-sm">
+                                      <div>
+                                        <span className="text-muted-foreground">Estimado:</span>
+                                        <span className="ml-2 font-medium">{insight.expectedKwh.toFixed(3)} kWh</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-muted-foreground">Real:</span>
+                                        <span className="ml-2 font-medium">{insight.actualKwh.toFixed(3)} kWh</span>
+                                      </div>
+                                    </div>
+                                    <div className="mt-2 pt-2 border-t border-orange-300">
+                                      <span className="text-xs text-muted-foreground">Desviación:</span>
+                                      <span className={`ml-2 text-sm font-bold ${Math.abs(insight.deviationPct) > 50 ? 'text-red-600' : 'text-orange-600'}`}>
+                                        {insight.deviationPct > 0 ? '+' : ''}{insight.deviationPct.toFixed(1)}%
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Información adicional de la cita */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3 border-t">
+                              <div className="space-y-2">
+                                <h5 className="font-medium text-sm">Detalles de la Cita</h5>
+                                <div className="space-y-1 text-sm">
+                                  <div className="flex justify-between">
+                                    <span className="text-muted-foreground">Fecha:</span>
+                                    <span>{format(new Date(insight.detectedAt), 'dd/MM/yyyy HH:mm', { locale: es })}</span>
+                                  </div>
+                                  <div className="flex justify-between">
+                                    <span className="text-muted-foreground">Clínica:</span>
+                                    <span className="font-medium">{insight.appointment?.clinic?.name}</span>
+                                  </div>
+                                </div>
+                                
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => navigateToAppointment(insight.appointmentId, insight.appointment?.startTime || '')}
+                                  className="w-full mt-2"
+                                >
+                                  <ExternalLink className="mr-2 w-4 h-4" />
+                                  Ver en agenda
+                                </Button>
+                              </div>
+
+                              {/* Análisis inteligente compacto */}
+                              {(insight.clientPatternAnalysis || insight.employeePatternAnalysis || insight.recommendations) && (
+                                <div className="space-y-2">
+                                  <h5 className="font-medium text-sm">Análisis Inteligente</h5>
+                                  
+                                  {insight.clientPatternAnalysis && (
+                                    <div className="text-xs p-2 bg-blue-50 rounded border border-blue-200">
+                                      <span className="font-medium text-blue-800">Cliente:</span>
+                                      <span className="ml-1">{insight.clientPatternAnalysis.anomalyRate.toFixed(1)}% tasa anomalías</span>
+                                    </div>
+                                  )}
+                                  
+                                  {insight.employeePatternAnalysis && (
+                                    <div className="text-xs p-2 bg-green-50 rounded border border-green-200">
+                                      <span className="font-medium text-green-800">Empleado:</span>
+                                      <span className="ml-1">{insight.employeePatternAnalysis.avgEfficiency.toFixed(1)}% eficiencia</span>
+                                    </div>
+                                  )}
+                                  
+                                  {insight.recommendations && insight.recommendations.length > 0 && (
+                                    <div className="text-xs p-2 bg-yellow-50 rounded border border-yellow-200">
+                                      <span className="font-medium text-yellow-800">Recomendación:</span>
+                                      <span className="ml-1">{insight.recommendations[0].message}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                           </div>
                         )}
                       </div>

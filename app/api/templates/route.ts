@@ -175,7 +175,12 @@ export async function POST(request: Request) {
 
       if (blocksToCreate.length > 0) {
         console.log("[API POST /api/templates] Creating ScheduleTemplateBlock entries...");
-        const blocksWithTemplateId = blocksToCreate.map(block => ({ ...block, templateId: createdTemplate.id }));
+        const blocksWithTemplateId = blocksToCreate.map(block => ({ 
+          ...block, 
+          templateId: createdTemplate.id,
+          systemId: systemId, // 🏢 NUEVO: Añadir systemId para operaciones a nivel sistema
+          clinicId: null, // 🏥 NUEVO: ScheduleTemplateBlock no está vinculado directamente a clínica específica
+        }));
         await tx.scheduleTemplateBlock.createMany({
           data: blocksWithTemplateId,
         });

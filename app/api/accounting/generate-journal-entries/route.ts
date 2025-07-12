@@ -192,6 +192,7 @@ async function generateTicketJournalEntry(
       if (accountMapping) {
         lines.push({
           accountId: accountMapping.chartOfAccountEntryId,
+          systemId: systemId, // 🏢 NUEVO: systemId para operaciones a nivel sistema
           debit: decimal(0),
           credit: decimal(item.finalPrice),
           description: item.description,
@@ -210,6 +211,7 @@ async function generateTicketJournalEntry(
       if (vatAccountId) {
         lines.push({
           accountId: vatAccountId,
+          systemId: systemId, // 🏢 NUEVO: systemId para operaciones a nivel sistema
           debit: decimal(0),
           credit: decimal(item.vatAmount),
           description: `IVA ${item.originalVatType.name}`,
@@ -225,6 +227,7 @@ async function generateTicketJournalEntry(
     if (accountMapping) {
       lines.push({
         accountId: accountMapping.chartOfAccountEntryId,
+        systemId: systemId, // 🏢 NUEVO: systemId para operaciones a nivel sistema
         debit: decimal(payment.amount),
         credit: decimal(0),
         description: `Pago - ${payment.paymentMethodDefinition.name}`,
@@ -243,6 +246,7 @@ async function generateTicketJournalEntry(
     if (discountAccountId) {
       lines.push({
         accountId: discountAccountId,
+        systemId: systemId, // 🏢 NUEVO: systemId para operaciones a nivel sistema
         debit: decimal(totalDiscount),
         credit: decimal(0),
         description: 'Descuentos aplicados',
@@ -316,6 +320,7 @@ async function generateInvoiceJournalEntry(
     const clientAccountId = await getPersonAccountId(invoice.person?.id, legalEntityIdInvoice);
     lines.push({
       accountId: clientAccountId,
+      systemId: systemId, // 🏢 NUEVO: systemId para operaciones a nivel sistema
       debit: decimal(invoice.totalAmount),
       credit: decimal(0),
       description: `${invoice.person?.firstName || ''} ${invoice.person?.lastName || ''}`.trim() || 'Cliente',
@@ -339,6 +344,7 @@ async function generateInvoiceJournalEntry(
       const incomeAccountId = await getDefaultIncomeAccountId(legalEntityIdInvoice);
       lines.push({
         accountId: incomeAccountId,
+        systemId: systemId, // 🏢 NUEVO: systemId para operaciones a nivel sistema
         debit: decimal(0),
         credit: decimal(amounts.base),
         description: 'Ingresos por ventas',
@@ -355,6 +361,7 @@ async function generateInvoiceJournalEntry(
         if (vatAccountId) {
           lines.push({
             accountId: vatAccountId,
+            systemId: systemId, // 🏢 NUEVO: systemId para operaciones a nivel sistema
             debit: decimal(0),
             credit: decimal(amounts.vat),
             description: `IVA ${amounts.rate}%`,
@@ -446,6 +453,7 @@ async function generateCashSessionJournalEntry(
   // 1. Línea de caja (debe - por el conteo)
   lines.push({
     accountId: mapping.chartOfAccountEntryId,
+    systemId: systemId, // 🏢 NUEVO: systemId para operaciones a nivel sistema
     debit: decimal(countedCash),
     credit: decimal(0),
     description: 'Arqueo de caja - Efectivo contado',
@@ -455,6 +463,7 @@ async function generateCashSessionJournalEntry(
   // 2. Línea de ingresos esperados (haber)
   lines.push({
     accountId: mapping.chartOfAccountEntryId,
+    systemId: systemId, // 🏢 NUEVO: systemId para operaciones a nivel sistema
     debit: decimal(0),
     credit: decimal(expectedCash),
     description: 'Ingresos esperados del día',
@@ -465,6 +474,7 @@ async function generateCashSessionJournalEntry(
   if (Math.abs(difference) > 0.01) {
     lines.push({
       accountId: mapping.chartOfAccountEntryId, // TODO: Usar cuenta específica para diferencias
+      systemId: systemId, // 🏢 NUEVO: systemId para operaciones a nivel sistema
       debit: difference > 0 ? decimal(0) : decimal(Math.abs(difference)),
       credit: difference > 0 ? decimal(difference) : decimal(0),
       description: difference > 0 ? 'Sobrante de caja' : 'Faltante de caja',

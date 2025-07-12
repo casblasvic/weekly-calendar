@@ -346,6 +346,7 @@ const initialMockData = {
 // --- FIN DATOS DE PAÍSES ---
 
 import { seedIntegrations } from './seed-integrations.ts';
+import { seedAnomalias } from './seed-anomalias.ts';
 
 const prisma = new PrismaClient();
 
@@ -715,9 +716,9 @@ async function main() {
         create: {
           name: 'Lunes a Viernes (9h-17h)', description: 'Horario estándar de oficina L-V de 9:00 a 17:00', systemId: system.id, openTime: '09:00', closeTime: '17:00',
           blocks: { create: [
-              { dayOfWeek: 'MONDAY', startTime: '09:00', endTime: '17:00', isWorking: true }, { dayOfWeek: 'TUESDAY', startTime: '09:00', endTime: '17:00', isWorking: true },
-              { dayOfWeek: 'WEDNESDAY', startTime: '09:00', endTime: '17:00', isWorking: true }, { dayOfWeek: 'THURSDAY', startTime: '09:00', endTime: '17:00', isWorking: true },
-              { dayOfWeek: 'FRIDAY', startTime: '09:00', endTime: '17:00', isWorking: true },
+              { dayOfWeek: 'MONDAY', startTime: '09:00', endTime: '17:00', isWorking: true, systemId: system.id }, { dayOfWeek: 'TUESDAY', startTime: '09:00', endTime: '17:00', isWorking: true, systemId: system.id },
+              { dayOfWeek: 'WEDNESDAY', startTime: '09:00', endTime: '17:00', isWorking: true, systemId: system.id }, { dayOfWeek: 'THURSDAY', startTime: '09:00', endTime: '17:00', isWorking: true, systemId: system.id },
+              { dayOfWeek: 'FRIDAY', startTime: '09:00', endTime: '17:00', isWorking: true, systemId: system.id },
           ] },
         }, include: { blocks: true }
       });
@@ -729,7 +730,7 @@ async function main() {
         update: {},
         create: {
           name: 'Fines de Semana (Mañana)', description: 'Horario solo mañanas de Sábado y Domingo (10h-14h)', systemId: system.id, openTime: '10:00', closeTime: '14:00',
-          blocks: { create: [ { dayOfWeek: 'SATURDAY', startTime: '10:00', endTime: '14:00', isWorking: true }, { dayOfWeek: 'SUNDAY', startTime: '10:00', endTime: '14:00', isWorking: true } ] },
+          blocks: { create: [ { dayOfWeek: 'SATURDAY', startTime: '10:00', endTime: '14:00', isWorking: true, systemId: system.id }, { dayOfWeek: 'SUNDAY', startTime: '10:00', endTime: '14:00', isWorking: true, systemId: system.id } ] },
         }, include: { blocks: true }
       });
       template2 = template2Result as (pkg.ScheduleTemplate & { blocks: pkg.ScheduleTemplateBlock[] });
@@ -971,6 +972,7 @@ async function main() {
                                 startTime: range.start,
                                 endTime: range.end,
                                 isWorking: true,
+                                systemId: system!.id,
                             });
                         }
                     });
@@ -1037,8 +1039,8 @@ async function main() {
      });
      await prisma.serviceSetting.upsert({
         where: { serviceId: service.id },
-         update: {},
-         create: { serviceId: service.id }
+         update: { systemId: system!.id },
+         create: { serviceId: service.id, systemId: system!.id }
      });
      if (!serviceMap.has(service.name)) serviceMap.set(service.name, service.id);
   }
@@ -1134,8 +1136,8 @@ async function main() {
       });
       await prisma.productSetting.upsert({
         where: { productId: product.id },
-          update: { currentStock: productData.currentStock, minStockThreshold: productData.minStockThreshold, isForSale: productData.isForSale, isInternalUse: productData.isInternalUse, pointsAwarded: productData.pointsAwarded },
-          create: { productId: product.id, currentStock: productData.currentStock, minStockThreshold: productData.minStockThreshold, isForSale: productData.isForSale, isInternalUse: productData.isInternalUse, pointsAwarded: productData.pointsAwarded }
+          update: { currentStock: productData.currentStock, minStockThreshold: productData.minStockThreshold, isForSale: productData.isForSale, isInternalUse: productData.isInternalUse, pointsAwarded: productData.pointsAwarded, systemId: system!.id },
+          create: { productId: product.id, currentStock: productData.currentStock, minStockThreshold: productData.minStockThreshold, isForSale: productData.isForSale, isInternalUse: productData.isInternalUse, pointsAwarded: productData.pointsAwarded, systemId: system!.id }
       });
       if (!productMap.has(product.name)) productMap.set(product.name, product.id);
       console.log(`Ensured product: ${product.name}`);
@@ -1150,7 +1152,7 @@ async function main() {
           const bonoMasaje = await prisma.bonoDefinition.upsert({
           where: { name_systemId: { name: 'Bono 5 Masajes Relajantes', systemId: system!.id } }, 
               update: { price: 200, validityDays: 90 },
-          create: { name: 'Bono 5 Masajes Relajantes', serviceId: masajeRelajanteId, quantity: 5, price: 200, validityDays: 90, vatTypeId: defaultVatTypeIdFromDB!, systemId: system!.id, settings: { create: {} } }
+          create: { name: 'Bono 5 Masajes Relajantes', serviceId: masajeRelajanteId, quantity: 5, price: 200, validityDays: 90, vatTypeId: defaultVatTypeIdFromDB!, systemId: system!.id, settings: { create: { systemId: system!.id } } }
           });
           createdBonoDefsMap.set(bonoMasaje.name, bonoMasaje.id);
   }
@@ -1166,7 +1168,7 @@ async function main() {
           const packRelax = await prisma.packageDefinition.upsert({
           where: { name_systemId: { name: 'Pack Relax Total', systemId: system!.id } }, 
               update: { price: 75 },
-          create: { name: 'Pack Relax Total', description: 'Un masaje relajante y una crema hidratante.', price: 75, systemId: system!.id, settings: { create: {} }, items: { create: [ { itemType: 'SERVICE', serviceId: masajeIdForPack, quantity: 1, price: serviceMap.get('Masaje Relajante') ? (await prisma.service.findUnique({where: {id: serviceMap.get('Masaje Relajante')!}}))?.price ?? 50 : 50 }, { itemType: 'PRODUCT', productId: cremaIdForPack, quantity: 1, price: productMap.get('Crema Hidratante Facial') ? (await prisma.product.findUnique({where: {id: productMap.get('Crema Hidratante Facial')!}}))?.price ?? 25 : 25 } ] } }
+          create: { name: 'Pack Relax Total', description: 'Un masaje relajante y una crema hidratante.', price: 75, systemId: system!.id, settings: { create: { systemId: system!.id } }, items: { create: [ { itemType: 'SERVICE', serviceId: masajeIdForPack, quantity: 1, price: serviceMap.get('Masaje Relajante') ? (await prisma.service.findUnique({where: {id: serviceMap.get('Masaje Relajante')!}}))?.price ?? 50 : 50, systemId: system!.id }, { itemType: 'PRODUCT', productId: cremaIdForPack, quantity: 1, price: productMap.get('Crema Hidratante Facial') ? (await prisma.product.findUnique({where: {id: productMap.get('Crema Hidratante Facial')!}}))?.price ?? 25 : 25, systemId: system!.id } ] } }
           });
           createdPackageDefsMap.set(packRelax.name, packRelax.id);
           console.log(`Ensured package: ${packRelax.name}`);
@@ -1185,12 +1187,12 @@ async function main() {
         description: 'Depilación láser en piernas y axilas, más un protector solar.',
         price: 160, // Precio total del paquete
         systemId: system!.id,
-        settings: { create: {} },
+        settings: { create: { systemId: system!.id } },
         items: {
           create: [
-            { itemType: 'SERVICE', serviceId: depilacionPiernasId, quantity: 1, price: serviceMap.get('Depilación Láser Piernas') ? (await prisma.service.findUnique({where: {id: serviceMap.get('Depilación Láser Piernas')!}}))?.price ?? 120 : 120 },
-            { itemType: 'SERVICE', serviceId: depilacionAxilasId, quantity: 1, price: serviceMap.get('Depilación Axilas') ? (await prisma.service.findUnique({where: {id: serviceMap.get('Depilación Axilas')!}}))?.price ?? 30 : 30 },
-            { itemType: 'PRODUCT', productId: protectorSolarId, quantity: 1, price: productMap.get('Protector Solar SPF50+') ? (await prisma.product.findUnique({where: {id: productMap.get('Protector Solar SPF50+')!}}))?.price ?? 28 : 28 },
+            { itemType: 'SERVICE', serviceId: depilacionPiernasId, quantity: 1, price: serviceMap.get('Depilación Láser Piernas') ? (await prisma.service.findUnique({where: {id: serviceMap.get('Depilación Láser Piernas')!}}))?.price ?? 120 : 120, systemId: system!.id },
+            { itemType: 'SERVICE', serviceId: depilacionAxilasId, quantity: 1, price: serviceMap.get('Depilación Axilas') ? (await prisma.service.findUnique({where: {id: serviceMap.get('Depilación Axilas')!}}))?.price ?? 30 : 30, systemId: system!.id },
+            { itemType: 'PRODUCT', productId: protectorSolarId, quantity: 1, price: productMap.get('Protector Solar SPF50+') ? (await prisma.product.findUnique({where: {id: productMap.get('Protector Solar SPF50+')!}}))?.price ?? 28 : 28, systemId: system!.id },
           ]
         }
       }
@@ -1617,14 +1619,16 @@ async function main() {
           currentStock: spareProduct.currentStock,
           minStockThreshold: spareProduct.minStock,
           isForSale: true,
-          isInternalUse: false
+          isInternalUse: false,
+          systemId: system!.id
         },
         create: {
           productId: product.id,
           currentStock: spareProduct.currentStock,
           minStockThreshold: spareProduct.minStock,
           isForSale: true,
-          isInternalUse: false
+          isInternalUse: false,
+          systemId: system!.id
         }
       });
 
@@ -2422,6 +2426,9 @@ async function main() {
   // Temporalmente comentado hasta adaptar los seeds al modelo actual
   await seedPersons(prisma, system!.id);
   await seedTags(prisma, system!.id); // Agregar llamada a seedTags
+  
+  // Crear datos de prueba para Energy Insights al final
+  await seedAnomalias(prisma, system!.id);
   
   console.log('Seeding completed.');
 } // Fin función main()

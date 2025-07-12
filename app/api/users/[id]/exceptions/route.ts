@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db';
 import { z } from 'zod';
 import type { WeekSchedule } from '@/types/schedule'; // Asumiendo que WeekSchedule está aquí
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
+import { getServerAuthSession } from "@/lib/auth";
 
 // --- Esquemas Zod para Validación ---
 const RouteParamsSchema = z.object({
@@ -111,6 +112,13 @@ export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  // 🔐 AUTENTICACIÓN: Obtener systemId de la sesión
+  const session = await getServerAuthSession();
+  if (!session || !session.user?.systemId) {
+    return NextResponse.json({ error: 'No autorizado o falta configuración del sistema.' }, { status: 401 });
+  }
+  const systemId = session.user.systemId;
+
   try {
     // 1. Validar parámetros de ruta (userId)
     const routeParamsValidation = RouteParamsSchema.safeParse(params);
@@ -194,6 +202,7 @@ export async function POST(
         startDate: bodyValidation.data.startDate,
         endDate: bodyValidation.data.endDate,
         scheduleJson: bodyValidation.data.scheduleJson,
+        systemId: systemId, // 🏢 NUEVO: Añadir systemId para operaciones a nivel sistema
         // Conectar DIRECTAMENTE a user y clinic además de la asignación
         user: {
           connect: { id: userId }
@@ -262,6 +271,13 @@ export async function POST(
 
 // --- INICIO: Handler PUT para actualizar excepciones ---
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
+  // 🔐 AUTENTICACIÓN: Obtener systemId de la sesión
+  const session = await getServerAuthSession();
+  if (!session || !session.user?.systemId) {
+    return NextResponse.json({ error: 'No autorizado o falta configuración del sistema.' }, { status: 401 });
+  }
+  const systemId = session.user.systemId;
+
   // Validar ID de usuario de la ruta
   const routeParamsValidation = RouteParamsSchema.safeParse(params);
   if (!routeParamsValidation.success) {
@@ -311,6 +327,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
         startDate: exceptionData.startDate,
         endDate: exceptionData.endDate,
         scheduleJson: exceptionData.scheduleJson as any,
+        systemId: systemId, // 🏢 NUEVO: Actualizar systemId en caso de que no existiera
       },
     });
 

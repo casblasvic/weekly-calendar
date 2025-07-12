@@ -197,6 +197,7 @@ export async function POST(request: NextRequest) {
     const newOverride = await prisma.cabinScheduleOverride.create({
       data: {
         clinicId: data.clinicId, // Clínica ya validada
+        systemId: systemId, // 🏢 NUEVO: Añadir systemId para operaciones a nivel sistema
         cabinIds: data.cabinIds, // Cabinas ya validadas
         startDate: startDate,
         endDate: endDate, // Guardar null si no se proporciona

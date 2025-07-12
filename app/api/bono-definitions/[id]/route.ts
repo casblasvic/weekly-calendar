@@ -113,9 +113,15 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
             where: { bonoDefinitionId: id },
             create: { 
                 ...settings,
+                systemId: systemId, // 🏢 NUEVO: systemId para operaciones a nivel sistema
+                clinicId: null, // 🏥 NUEVO: BonoDefinitionSetting no está vinculado directamente a clínica específica
                 bonoDefinition: { connect: { id: id } } 
             },
-            update: settings,
+            update: {
+                ...settings,
+                systemId: systemId, // 🏢 NUEVO: Actualizar systemId en caso de que no existiera
+                clinicId: null, // 🏥 NUEVO: BonoDefinitionSetting no está vinculado directamente a clínica específica
+            },
         });
 
         // 3. Devolver el bono actualizado con settings

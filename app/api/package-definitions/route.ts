@@ -50,6 +50,8 @@ export async function POST(request: Request) {
       const newSettings = await tx.packageDefinitionSetting.create({
         data: {
           ...settings,
+          systemId: systemId, // 🏢 NUEVO: systemId para operaciones a nivel sistema
+          clinicId: null, // 🏥 NUEVO: PackageDefinitionSetting no está vinculado directamente a clínica específica
           packageDefinition: { connect: { id: newPackageDef.id } },
           ...(vatTypeId && { vatTypeId: vatTypeId }), // <<< Solo conectar el ID
         }
@@ -59,6 +61,8 @@ export async function POST(request: Request) {
       if (items && items.length > 0) {
     const prismaItemsData = items.map(item => ({
           packageDefinitionId: newPackageDef.id,
+          systemId: systemId, // 🏢 NUEVO: systemId para operaciones a nivel sistema
+          clinicId: null, // 🏥 NUEVO: PackageItem no está vinculado directamente a clínica específica
       quantity: item.quantity,
           itemType: item.serviceId ? 'SERVICE' : 'PRODUCT', // <<< Añadir itemType obligatorio
           ...(item.serviceId && { serviceId: item.serviceId }),

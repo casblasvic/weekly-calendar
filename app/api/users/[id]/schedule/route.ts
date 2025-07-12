@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { z } from 'zod';
 import type { WeekSchedule } from '@/types/schedule'; // Importar tipo WeekSchedule
+import { getServerAuthSession } from "@/lib/auth";
 
 // <<< INICIO: Definiciones de tipos locales >>>
 // (Basadas en la estructura usada y devuelta por la API)
@@ -195,6 +196,13 @@ export async function GET(request: Request, props: { params: Promise<{ id: strin
  * de un usuario para una clínica específica.
  */
 export async function PUT(request: Request, props: { params: Promise<{ id: string }> }) {
+  // 🔐 AUTENTICACIÓN: Obtener systemId de la sesión
+  const session = await getServerAuthSession();
+  if (!session || !session.user?.systemId) {
+    return NextResponse.json({ error: 'No autorizado o falta configuración del sistema.' }, { status: 401 });
+  }
+  const systemId = session.user.systemId;
+
   const paramsValidation = ParamsSchema.safeParse(await props.params);
   if (!paramsValidation.success) {
     return NextResponse.json({ error: 'ID de usuario inválido.', details: paramsValidation.error.errors }, { status: 400 });
@@ -254,10 +262,12 @@ export async function PUT(request: Request, props: { params: Promise<{ id: strin
       },
       update: {
         scheduleJson: scheduleData as any,
+        systemId: systemId, // 🏢 NUEVO: Actualizar systemId en caso de que no existiera
       },
       create: {
         userId: userId,
         clinicId: clinicId,
+        systemId: systemId, // 🏢 NUEVO: Añadir systemId para operaciones a nivel sistema
         scheduleJson: scheduleData as any,
       },
       select: { 

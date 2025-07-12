@@ -155,8 +155,9 @@ const MenuItemComponent = ({
   const isOpen = openMenus.has(item.id)
   const [isHovered, setIsHovered] = useState(false)
 
-  // Condición MODIFICADA para mostrar el submenú
-  const showSubmenu = isOpen || (isHovered && hasSubmenu && ((depth === 0 && openMenus.size === 0) || depth > 0));
+  // 🔧 CORREGIDO: Condición para mostrar el submenú
+  // Solo mostrar por hover si NO está abierto por clic y no hay otros menús abiertos
+  const showSubmenu = isOpen || (isHovered && hasSubmenu && !isOpen && ((depth === 0 && openMenus.size === 0) || depth > 0));
 
   // Limpiar el temporizador al desmontar
   useEffect(() => {
@@ -173,11 +174,17 @@ const MenuItemComponent = ({
       if (isOpen) {
         toggleMenu(item.id, depth); 
       }
+      // 🔧 AÑADIDO: También cerrar hover al hacer clic fuera
+      setIsHovered(false);
+      if (hoverTimeoutRef.current) {
+        clearTimeout(hoverTimeoutRef.current);
+        hoverTimeoutRef.current = null;
+      }
     },
-    isOpen 
+    isOpen || isHovered // 🔧 CORREGIDO: Activar también cuando hay hover
   );
 
-  // Optimización del handleClick para manejar todos los casos
+  // 🔧 CORREGIDO: handleClick mejorado para manejar hover y click correctamente
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
@@ -188,6 +195,12 @@ const MenuItemComponent = ({
     }
     
     if (hasSubmenu) {
+      // 🔧 Al hacer clic, resetear hover para evitar conflictos
+      setIsHovered(false);
+      if (hoverTimeoutRef.current) {
+        clearTimeout(hoverTimeoutRef.current);
+        hoverTimeoutRef.current = null;
+      }
       toggleMenu(item.id, depth);
       return;
     }
@@ -292,16 +305,15 @@ const MenuItemComponent = ({
         }
       }}
       onMouseLeave={() => {
-        // Si el menú no está abierto por un clic (isOpen es false para este item),
-        // entonces el hover es lo que podría estar manteniéndolo abierto.
-        // En ese caso, iniciamos un temporizador para quitar el hover.
-        // Si está abierto por clic, quitar el hover inmediatamente no lo cerrará.
+        // 🔧 CORREGIDO: Lógica de mouse leave más clara
+        // Siempre quitar el hover, pero con delay si no está abierto por clic
         if (!isOpen) { 
           hoverTimeoutRef.current = setTimeout(() => {
             setIsHovered(false);
-          }, 500); // 🔧 Aumentado a 500ms para mejor UX en menús anidados
+          }, 300); // 🔧 Reducido a 300ms para mejor responsividad
         } else {
-          setIsHovered(false); // Si está fijado por clic, el hover puede irse sin cerrar
+          // Si está abierto por clic, quitar hover inmediatamente sin afectar el menú
+          setIsHovered(false);
         }
       }}
     >
@@ -401,14 +413,22 @@ const MenuItemComponent = ({
             // 🔧 Asegurar que el hover permanece activo al entrar al submenu
             setIsHovered(true);
           }}
-          onMouseLeave={() => { // Cuando el ratón sale del submenú
-            // Si el menú padre (este MenuItemComponent) no estaba abierto por un clic (isOpen es false),
-            // y ahora el ratón sale del submenú, el padre debería perder su estado de hover.
-            // 🔧 Añadir delay también aquí para mejor UX
-            if (!isOpen) { 
+          onMouseLeave={(e) => { // Cuando el ratón sale del submenú
+            // 🔧 CORREGIDO: Verificar si vuelve a la sidebar
+            const relatedTarget = e.relatedTarget as Element | null;
+            const isReturningToSidebar = relatedTarget && 
+              typeof relatedTarget.closest === 'function' && 
+              relatedTarget.closest('#main-sidebar');
+            
+            // Si el menú padre no estaba abierto por clic y no vuelve a sidebar
+            if (!isOpen && !isReturningToSidebar) { 
+              // 🔧 INMEDIATO: Sin delay para colapso rápido
+              setIsHovered(false);
+            } else if (!isOpen && isReturningToSidebar) {
+              // Si vuelve a sidebar, pequeño delay para transición suave
               hoverTimeoutRef.current = setTimeout(() => {
                 setIsHovered(false);
-              }, 300); // 🔧 Delay de 300ms al salir del submenu
+              }, 50);
             }
           }}
         >
@@ -480,6 +500,10 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
   const [showScrollIndicator, setShowScrollIndicator] = useState(false);
   const userMenuHoverTimeout = useRef<NodeJS.Timeout | null>(null); // Timer para el hover del menú de usuario
   const queryClient = useQueryClient();
+  
+  // 🔧 NUEVO: Estados para auto-colapso al salir del hover
+  const [isSidebarHovered, setIsSidebarHovered] = useState(false);
+  const sidebarCollapseTimeout = useRef<NodeJS.Timeout | null>(null);
   
   // Hook para verificar módulos de integración
   const {
@@ -561,7 +585,7 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
     toggleMenu(menuId, 0)
   }
 
-  // Mejorar el manejo de hover en los menús
+  // 🔧 CORREGIDO: Manejo de hover en los menús sin interferir con elementos normales
   const handleMenuHover = (hasSubmenu: boolean) => {
     // Si el elemento tiene submenú, cerrar otros menús como el selector de clínicas
     if (hasSubmenu) {
@@ -569,7 +593,12 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
       setIsClinicHovered(false)
       // También podríamos cerrar el menú de usuario si estuviera abierto
       // setIsUserMenuOpen(false); 
+      
+      // 🔧 CORREGIDO: Solo mantener sidebar hover activo para submenús flotantes
+      // NO interferir con elementos normales de la sidebar
     }
+    // 🔧 ELIMINADO: No cambiar isSidebarHovered aquí
+    // Dejar que el hover natural de la sidebar maneje esto
   }
 
   // Verificar si el componente se ha montado en el cliente
@@ -867,6 +896,45 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
   }, [isCollapsed, closeAllMenus]); // Dependencia: isCollapsed
   // --- Fin useEffect Cerrar Menús ---
 
+  // 🔧 CORREGIDO: Auto-colapso inmediato de sidebar al salir del hover
+  useEffect(() => {
+    // Solo aplicar en desktop y si no es móvil forzado
+    if (forceMobileView) return;
+    
+    if (!isSidebarHovered && !isCollapsed) {
+      // 🔧 COLAPSO INMEDIATO - Sin delay
+      sidebarCollapseTimeout.current = setTimeout(() => {
+        if (onToggle && !isSidebarHovered) {
+          // 🔧 No colapsar si hay menús flotantes abiertos
+          const hasOpenFloatingMenus = openMenus.size > 0 || isClinicSelectorOpen || isUserMenuOpen;
+          
+          if (!hasOpenFloatingMenus) {
+            // Cerrar todos los menús antes de colapsar
+            closeAllMenus();
+            setIsClinicSelectorOpen(false);
+            setIsClinicHovered(false);
+            setIsUserMenuOpen(false);
+            
+            // Colapsar la sidebar
+            onToggle();
+          }
+        }
+      }, 50); // 🔧 INMEDIATO: Solo 50ms para evitar glitches
+    } else if (isSidebarHovered && sidebarCollapseTimeout.current) {
+      // Cancelar timer si vuelve a hacer hover
+      clearTimeout(sidebarCollapseTimeout.current);
+      sidebarCollapseTimeout.current = null;
+    }
+    
+    // Cleanup al desmontar
+    return () => {
+      if (sidebarCollapseTimeout.current) {
+        clearTimeout(sidebarCollapseTimeout.current);
+        sidebarCollapseTimeout.current = null;
+      }
+    };
+  }, [isSidebarHovered, isCollapsed, forceMobileView, onToggle, closeAllMenus, openMenus.size, isClinicSelectorOpen, isUserMenuOpen]);
+
   // Handler de scroll
   const handleScroll = useCallback(() => {
     // ... (lógica de scroll) ...
@@ -985,6 +1053,49 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
         overflowY: 'auto',
         transition: isCollapsed ? 'width 0.3s ease-in-out' : 'width 0.3s ease-in-out'
       }}
+      onMouseEnter={() => {
+        // 🔧 NUEVO: Detectar hover sobre la sidebar
+        if (!forceMobileView) {
+          setIsSidebarHovered(true);
+          // Cancelar timer de colapso si existe
+          if (sidebarCollapseTimeout.current) {
+            clearTimeout(sidebarCollapseTimeout.current);
+            sidebarCollapseTimeout.current = null;
+          }
+        }
+      }}
+      onMouseLeave={(e) => {
+        // 🔧 CORREGIDO: Detectar salida del hover de la sidebar con precisión
+        if (!forceMobileView) {
+          // Verificar si el mouse se está moviendo hacia un menú flotante
+          const relatedTarget = e.relatedTarget as Element | null;
+          const isMovingToFloatingMenu = relatedTarget && 
+            typeof relatedTarget.closest === 'function' && (
+              relatedTarget.closest('.submenu') || 
+              relatedTarget.closest('.user-menu') ||
+              relatedTarget.closest('.clinic-selector-menu')
+            );
+          
+          // Solo desactivar hover si NO se está moviendo a un menú flotante
+          if (!isMovingToFloatingMenu) {
+            setIsSidebarHovered(false);
+          }
+        }
+      }}
+      onClick={(e) => {
+        // 🔧 AÑADIDO: Cerrar menús al hacer clic en áreas vacías del sidebar
+        const target = e.target as Element;
+        const isClickOnMenuItem = target.closest('.relative.my-1') || target.closest('.submenu');
+        const isClickOnClinicSelector = target.closest('[data-clinic-selector]');
+        const isClickOnUserMenu = target.closest('[data-user-menu]');
+        
+        if (!isClickOnMenuItem && !isClickOnClinicSelector && !isClickOnUserMenu) {
+          closeAllMenus();
+          setIsClinicSelectorOpen(false);
+          setIsClinicHovered(false);
+          setIsUserMenuOpen(false);
+        }
+      }}
     >
       {/* Header con botón hamburguesa */}
       <div className="p-2 overflow-hidden text-white bg-purple-600 border-b">
@@ -1056,6 +1167,7 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
         ref={clinicRef} // Ref para calcular posición
         className="relative p-2 border-b"
         style={{ zIndex: 50 }}
+        data-clinic-selector // 🔧 AÑADIDO: Atributo para identificar el selector de clínica
         onMouseEnter={handleClinicMouseEnter} // <<< AÑADIDO
         onMouseLeave={handleClinicMouseLeave} // <<< AÑADIDO
       >
@@ -1102,7 +1214,7 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
         {(isClinicSelectorOpen || (isClinicHovered && openMenus.size === 0)) && ( // <<< CONDICIÓN MODIFICADA
           <div 
             ref={clinicMenuRef} // Ref para aplicar estilos
-            className="fixed mt-2 overflow-hidden bg-white border rounded-md shadow-lg w-80 clinic-selector-menu" // Clases base
+            className="fixed mt-2 overflow-hidden bg-white border rounded-md shadow-lg w-80 clinic-selector-menu" // 🔧 Clase para detección de hover
             style={{ 
               // Quitar estilos inline de posición, ahora se manejan en useEffect
               visibility: 'hidden', // Empezar oculto
@@ -1110,8 +1222,29 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
               transition: 'opacity 0.2s ease-in-out, visibility 0.2s ease-in-out' // Añadir transición suave
             }}
             onClick={(e) => e.stopPropagation()} 
-            onMouseEnter={handleClinicMouseEnter} // Mantener abierto al entrar al menú
-            onMouseLeave={handleClinicMouseLeave} // Iniciar cierre al salir del menú
+            onMouseEnter={() => {
+              // Mantener abierto al entrar al menú
+              handleClinicMouseEnter();
+              // 🔧 CORREGIDO: Mantener sidebar hover activo solo para menús flotantes
+              setIsSidebarHovered(true);
+              if (sidebarCollapseTimeout.current) {
+                clearTimeout(sidebarCollapseTimeout.current);
+                sidebarCollapseTimeout.current = null;
+              }
+            }}
+            onMouseLeave={(e) => {
+              // Iniciar cierre al salir del menú
+              handleClinicMouseLeave();
+              // 🔧 CORREGIDO: Solo desactivar hover si no vuelve a la sidebar
+              const relatedTarget = e.relatedTarget as Element | null;
+              const isReturningToSidebar = relatedTarget && 
+                typeof relatedTarget.closest === 'function' && 
+                relatedTarget.closest('#main-sidebar');
+              
+              if (!isReturningToSidebar) {
+                setIsSidebarHovered(false);
+              }
+            }}
           >
             <div className="p-3">
               <div className="relative mb-3">
@@ -1217,6 +1350,7 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
         <div 
           className="relative" 
           ref={avatarRef}
+          data-user-menu // 🔧 AÑADIDO: Atributo para identificar el menú de usuario
         >
           {/* Botón principal del menú de usuario */} 
           <Button
@@ -1300,8 +1434,27 @@ export function MainSidebar({ className, isCollapsed, onToggle, forceMobileView 
                   transformOrigin: 'bottom center'
               }}
               onClick={(e) => e.stopPropagation()}
-              onMouseEnter={handleUserMenuEnter}
-              onMouseLeave={handleUserMenuLeave}
+              onMouseEnter={() => {
+                handleUserMenuEnter();
+                // 🔧 CORREGIDO: Mantener sidebar hover activo solo para menús flotantes
+                setIsSidebarHovered(true);
+                if (sidebarCollapseTimeout.current) {
+                  clearTimeout(sidebarCollapseTimeout.current);
+                  sidebarCollapseTimeout.current = null;
+                }
+              }}
+              onMouseLeave={(e) => {
+                handleUserMenuLeave();
+                // 🔧 CORREGIDO: Solo desactivar hover si no vuelve a la sidebar
+                const relatedTarget = e.relatedTarget as Element | null;
+                const isReturningToSidebar = relatedTarget && 
+                  typeof relatedTarget.closest === 'function' && 
+                  relatedTarget.closest('#main-sidebar');
+                
+                if (!isReturningToSidebar) {
+                  setIsSidebarHovered(false);
+                }
+              }}
             >
               <div className="flex flex-col">
                 {/* Cabecera del menú desplegable */} 

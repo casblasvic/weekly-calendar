@@ -28,6 +28,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { paymentId:
       verifiedByUserId: userId,
       verifiedAt: new Date(),
       attachmentUrl,
+      systemId: systemId, // 🏢 NUEVO: Actualizar systemId en caso de que no existiera
     },
     create: {
       paymentId,
@@ -35,6 +36,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { paymentId:
       verifiedByUserId: userId,
       verifiedAt: new Date(),
       attachmentUrl,
+      systemId: systemId, // 🏢 NUEVO: systemId para operaciones a nivel sistema
     },
   });
 

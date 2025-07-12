@@ -103,6 +103,7 @@ export async function finalizeDeviceUsage (usageId: string) {
     await prisma.deviceUsageInsight.create({
       data: {
         systemId: usage.systemId,
+        clinicId: usage.appointment!.clinicId,
         appointmentId: usage.appointmentId,
         deviceUsageId: usage.id,
         equipmentClinicAssignmentId: usage.equipmentClinicAssignmentId ?? null,

@@ -1,4 +1,4 @@
-import { prisma, Prisma } from '@/lib/db';
+import { prisma, Prisma, PrismaClient } from '@/lib/db';
 import { createId } from '@paralleldrive/cuid2';
 
 export async function seedPersons(prisma: PrismaClient, systemId: string) {
@@ -111,23 +111,25 @@ export async function seedPersons(prisma: PrismaClient, systemId: string) {
     // Datos específicos del cliente
     await prisma.personClientData.create({
       data: {
-        functionalRole: { connect: { id: clientRole1.id } },
+        functionalRoleId: clientRole1.id,
         marketingConsent: true,
         dataProcessingConsent: true,
         address: person1.address,
         city: person1.city,
         postalCode: person1.postalCode,
         countryIsoCode: person1.countryIsoCode,
+        systemId: systemId,
       }
     });
     
     // Datos específicos del lead
     await prisma.personLeadData.create({
       data: {
-        functionalRole: { connect: { id: leadRole1.id } },
+        functionalRoleId: leadRole1.id,
         status: 'QUALIFIED',
         source: 'WEB',
         interests: 'Tratamientos láser',
+        systemId: systemId,
       }
     });
     
@@ -143,10 +145,11 @@ export async function seedPersons(prisma: PrismaClient, systemId: string) {
     
     await prisma.personLeadData.create({
       data: {
-        functionalRole: { connect: { id: leadRole2.id } },
+        functionalRoleId: leadRole2.id,
         status: 'NEW',
         source: 'REFERRAL',
         interests: 'Paquetes empresariales',
+        systemId: systemId,
       }
     });
     
@@ -162,11 +165,12 @@ export async function seedPersons(prisma: PrismaClient, systemId: string) {
     
     await prisma.personContactData.create({
       data: {
-        functionalRole: { connect: { id: contactRole3.id } },
+        functionalRoleId: contactRole3.id,
         position: 'Directora de Recursos Humanos',
         department: 'RRHH',
-        company: { connect: { id: exampleCompany.id } },
+        companyId: exampleCompany.id,
         isPrimary: true,
+        systemId: systemId,
       }
     });
     
@@ -265,13 +269,14 @@ export async function seedClientPersons(prisma: PrismaClient, systemId: string) 
     // Crear datos de cliente
     await prisma.personClientData.create({
       data: {
-        functionalRole: { connect: { id: clientRole1.id } },
+        functionalRoleId: clientRole1.id,
         marketingConsent: true,
         dataProcessingConsent: true,
         address: persona1.address,
         city: persona1.city,
         postalCode: persona1.postalCode,
         countryIsoCode: persona1.countryIsoCode,
+        systemId: systemId,
       }
     });
     
@@ -305,13 +310,14 @@ export async function seedClientPersons(prisma: PrismaClient, systemId: string) 
     
     await prisma.personClientData.create({
       data: {
-        functionalRole: { connect: { id: clientRole2.id } },
+        functionalRoleId: clientRole2.id,
         marketingConsent: false,
         dataProcessingConsent: true,
         address: persona2.address,
         city: persona2.city,
         postalCode: persona2.postalCode,
         countryIsoCode: persona2.countryIsoCode,
+        systemId: systemId,
       }
     });
     
@@ -344,13 +350,14 @@ export async function seedClientPersons(prisma: PrismaClient, systemId: string) 
     
     await prisma.personClientData.create({
       data: {
-        functionalRole: { connect: { id: clientRole3.id } },
+        functionalRoleId: clientRole3.id,
         marketingConsent: true,
         dataProcessingConsent: true,
         address: persona3.address,
         city: persona3.city,
         postalCode: persona3.postalCode,
         countryIsoCode: persona3.countryIsoCode,
+        systemId: systemId,
       }
     });
     

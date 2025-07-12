@@ -116,6 +116,8 @@ export async function POST(request: NextRequest) {
         const newSettings = await tx.bonoDefinitionSetting.create({
             data: {
                 ...settings,
+                systemId: systemId, // 🏢 NUEVO: systemId para operaciones a nivel sistema
+                clinicId: null, // 🏥 NUEVO: BonoDefinitionSetting no está vinculado directamente a clínica específica
                 bonoDefinition: { connect: { id: newBonoDef.id } }
             }
         });
