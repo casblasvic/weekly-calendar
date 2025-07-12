@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { z } from 'zod';
+import { getServerAuthSession } from "@/lib/auth";
 
 // Esquema para validar el ID del servicio
 const ServiceIdParamSchema = z.object({
@@ -17,6 +18,12 @@ const CreateConsumptionSchema = z.object({
 
 // GET /api/services/[id]/consumptions - Obtener consumos de un servicio
 export async function GET(request: Request, { params }: { params: { id: string } }) {
+  // 0. Validar autenticación
+  const session = await getServerAuthSession();
+  if (!session || !session.user?.systemId) {
+    return NextResponse.json({ error: 'No autorizado o falta configuración del sistema.' }, { status: 401 });
+  }
+
   // 1. Validar params.id (que sea CUID)
   const paramsValidation = ServiceIdParamSchema.safeParse({ id: params?.id });
   if (!paramsValidation.success) {
@@ -41,6 +48,13 @@ export async function GET(request: Request, { params }: { params: { id: string }
 
 // POST /api/services/[id]/consumptions - Añadir un nuevo consumo a un servicio
 export async function POST(request: Request, { params }: { params: { id: string } }) {
+  // 0. Validar autenticación
+  const session = await getServerAuthSession();
+  if (!session || !session.user?.systemId) {
+    return NextResponse.json({ error: 'No autorizado o falta configuración del sistema.' }, { status: 401 });
+  }
+  const systemId = session.user.systemId;
+
   // 1. Validar params.id (que sea CUID)
   const paramsValidation = ServiceIdParamSchema.safeParse({ id: params?.id });
   if (!paramsValidation.success) {
@@ -65,6 +79,8 @@ export async function POST(request: Request, { params }: { params: { id: string 
         productId,
         quantity,
         order,
+        systemId: systemId, // 🏢 NUEVO: systemId para operaciones a nivel sistema
+        clinicId: null, // 🏥 NUEVO: ServiceConsumption no está vinculado directamente a clínica específica
         // notes, // Quitado temporalmente por error L.68
       },
        include: { product: true } // Devolver con datos del producto

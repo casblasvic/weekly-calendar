@@ -145,9 +145,15 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       // 3. Actualizar o Crear los Settings asociados
       const updatedSettings = await tx.serviceSetting.upsert({
         where: { serviceId: id },
-        update: { ...settings },
+        update: { 
+          ...settings,
+          systemId: systemId, // 🏢 NUEVO: Actualizar systemId en caso de que no existiera
+          clinicId: null, // 🏥 NUEVO: ServiceSetting no está vinculado directamente a clínica específica
+        },
         create: {
           ...settings,
+          systemId: systemId, // 🏢 NUEVO: systemId para operaciones a nivel sistema
+          clinicId: null, // 🏥 NUEVO: ServiceSetting no está vinculado directamente a clínica específica
           service: { connect: { id: id } }
         }
       });

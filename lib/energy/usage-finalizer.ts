@@ -129,12 +129,13 @@ async function upsertServiceProfile (params: {
   const { systemId, clinicId, equipmentId, serviceId, hourBucket, kwhPerMin, realMinutes } = params
   const key = { systemId, equipmentId, serviceId }
   const profile = await prisma.serviceEnergyProfile.findUnique({ where: { systemId_equipmentId_serviceId: key } })
+  
   if (!profile) {
     await prisma.serviceEnergyProfile.create({
       data: {
         ...key,
         avgKwhPerMin: kwhPerMin,
-        stdDevKwhPerMin: 0,
+        stdDevKwhPerMin: 0, // Primera muestra, no hay desviación
         sampleCount: 1,
         avgMinutes: realMinutes,
         stdDevMinutes: 0
@@ -142,15 +143,33 @@ async function upsertServiceProfile (params: {
     })
     return
   }
+  
   const newSamples = profile.sampleCount + 1
-  const newAvg    = (profile.avgKwhPerMin * profile.sampleCount + kwhPerMin) / newSamples
-  const newAvgMin = (profile.avgMinutes * profile.sampleCount + realMinutes) / newSamples
+  
+  // Algoritmo de Welford para kWh/min
+  const deltaKwh = kwhPerMin - profile.avgKwhPerMin
+  const newAvgKwh = profile.avgKwhPerMin + deltaKwh / newSamples
+  const delta2Kwh = kwhPerMin - newAvgKwh
+  const newM2Kwh = (profile.m2KwhPerMin || 0) + deltaKwh * delta2Kwh
+  const newStdDevKwh = newSamples > 1 ? Math.sqrt(newM2Kwh / (newSamples - 1)) : 0
+  
+  // Algoritmo de Welford para minutos
+  const deltaMin = realMinutes - profile.avgMinutes
+  const newAvgMin = profile.avgMinutes + deltaMin / newSamples
+  const delta2Min = realMinutes - newAvgMin
+  const newM2Min = (profile.m2Minutes || 0) + deltaMin * delta2Min
+  const newStdDevMin = newSamples > 1 ? Math.sqrt(newM2Min / (newSamples - 1)) : 0
+  
   await prisma.serviceEnergyProfile.update({
     where: { systemId_equipmentId_serviceId: key },
     data: {
-      avgKwhPerMin: newAvg,
+      avgKwhPerMin: newAvgKwh,
+      stdDevKwhPerMin: newStdDevKwh,
       sampleCount: newSamples,
-      avgMinutes: newAvgMin
+      avgMinutes: newAvgMin,
+      stdDevMinutes: newStdDevMin,
+      m2KwhPerMin: newM2Kwh,
+      m2Minutes: newM2Min
     }
   })
 }

@@ -128,7 +128,9 @@ export async function POST(
           console.log('   📝 Creando ServiceSetting...');
           await tx.serviceSetting.create({
             data: {
-              serviceId: service.id
+              serviceId: service.id,
+              systemId: systemId, // 🏢 NUEVO: systemId para operaciones a nivel sistema
+              clinicId: null, // 🏥 NUEVO: ServiceSetting no está vinculado directamente a clínica específica
             }
           });
           processLog.push(`Creado ServiceSetting para ${service.name}`);

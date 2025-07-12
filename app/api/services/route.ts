@@ -149,6 +149,8 @@ export async function POST(request: Request) {
       const newSettings = await tx.serviceSetting.create({
         data: {
           ...settings,
+          systemId: sessionSystemId, // 🏢 NUEVO: systemId para operaciones a nivel sistema
+          clinicId: null, // 🏥 NUEVO: ServiceSetting no está vinculado directamente a clínica específica
           service: {
             connect: { id: newService.id }
           }

@@ -85,8 +85,8 @@ export async function POST (req: NextRequest) {
 
   let insightsCreated = 0
   for (const usage of usages) {
-    const { expectedKwh, stdDevSum } = await calculateExpectedEnergy(usage)
-    if (expectedKwh === 0) continue
+    const { expectedKwh, stdDevSum, confidence } = await calculateExpectedEnergy(usage)
+    if (expectedKwh === 0 || confidence === 'insufficient_data') continue
 
     const deviationPct = (usage.energyConsumption! - expectedKwh) / expectedKwh
     const exceeds = deviationPct > 0.25 &&
@@ -114,7 +114,12 @@ export async function POST (req: NextRequest) {
           actualKwh: usage.energyConsumption ?? 0,
           expectedKwh,
           deviationPct: deviationPct * 100,
-          detailJson: { stdDevSum, recalc: true, timestamp: new Date().toISOString() }
+          detailJson: { 
+            stdDevSum, 
+            confidence,
+            recalc: true, 
+            timestamp: new Date().toISOString() 
+          }
         }
       })
       insightsCreated++

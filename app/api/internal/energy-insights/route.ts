@@ -13,10 +13,12 @@ export async function GET (req: NextRequest) {
   const systemId = session.user.systemId
   const { searchParams } = new URL(req.url)
   const status = searchParams.get('status') // open | resolved | all
+  const clinicId = searchParams.get('clinicId')
   const dateFrom = searchParams.get('from')
   const dateTo   = searchParams.get('to')
 
   const where: any = { systemId }
+  if (clinicId) where.clinicId = clinicId
   if (status === 'open') where.resolved = false
   if (status === 'resolved') where.resolved = true
   if (dateFrom) where.detectedAt = { gte: new Date(dateFrom) }
@@ -50,7 +52,7 @@ export async function PATCH (req: NextRequest) {
       resolved: resolved ?? true,
       resolvedByUserId: session.user.id,
       resolvedAt: new Date(),
-      detailJson: notes ? prisma.raw("jsonb_set(detail_json, '{notes}', ?::jsonb)", [JSON.stringify(notes)]) : undefined
+      detailJson: notes ? { notes } : undefined
     }
   })
 

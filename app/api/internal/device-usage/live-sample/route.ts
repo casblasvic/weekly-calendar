@@ -182,9 +182,9 @@ export async function POST(req: NextRequest) {
     // =======  ENERGY INSIGHT DETECTION  ==========
     let insightCreated = false
     try {
-      const { expectedKwh, stdDevSum } = await calculateExpectedEnergy(usage)
+      const { expectedKwh, stdDevSum, confidence, validProfiles, totalProfiles } = await calculateExpectedEnergy(usage)
 
-      if (expectedKwh > 0) {
+      if (expectedKwh > 0 && confidence !== 'insufficient_data') {
         const deviationPct = (energyConsumption - expectedKwh) / expectedKwh
 
         const exceeds = deviationPct > ENERGY_INSIGHT_CFG.deviationPct &&
@@ -219,6 +219,9 @@ export async function POST(req: NextRequest) {
                 deviationPct: deviationPct * 100,
                 detailJson: {
                   stdDevSum,
+                  confidence,
+                  validProfiles,
+                  totalProfiles,
                   timestamp: now.toISOString()
                 }
               }
@@ -231,7 +234,8 @@ export async function POST(req: NextRequest) {
                   type: 'device-usage-insight',
                   appointmentId: usage.appointmentId,
                   deviceUsageId: usage.id,
-                  deviationPct: deviationPct * 100
+                  deviationPct: deviationPct * 100,
+                  confidence
                 })
               }
             } catch {}
@@ -239,6 +243,8 @@ export async function POST(req: NextRequest) {
             insightCreated = true
           }
         }
+      } else if (confidence === 'insufficient_data') {
+        console.warn(`[ENERGY] Datos insuficientes para detectar anomalías en uso ${usage.id}`)
       }
     } catch (e) {
       console.error('Error calculando energía esperada', e)

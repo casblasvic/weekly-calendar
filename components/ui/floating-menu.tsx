@@ -618,7 +618,7 @@ export function FloatingMenu({ className, smartPlugsData: propData }: FloatingMe
               "ml-3 px-3 py-1 text-xs font-medium transition-all duration-200",
               isActive 
                 ? "bg-red-500 hover:bg-red-600 text-white" 
-                : "bg-emerald-500 hover:bg-emerald-600 text-white",
+                : "bg-blue-500 hover:bg-blue-600 text-white", // ✅ Cambiar a azul para consistencia
               !device.online && "opacity-50 cursor-not-allowed"
             )}
             disabled={!device.online}

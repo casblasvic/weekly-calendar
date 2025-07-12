@@ -144,6 +144,8 @@ export async function POST(request: Request) {
             const newSettings = await tx.productSetting.create({
                 data: {
                     ...settings, // Usar los datos validados del objeto settings
+                    systemId: systemId, // 🏢 NUEVO: systemId para operaciones a nivel sistema
+                    clinicId: null, // 🏥 NUEVO: ProductSetting no está vinculado directamente a clínica específica
                     product: { connect: { id: newProduct.id } }
                 }
             });

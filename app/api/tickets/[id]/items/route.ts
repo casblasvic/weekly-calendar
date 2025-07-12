@@ -207,9 +207,17 @@ export async function POST(request: NextRequest, { params: paramsPromise }: { pa
       const vatAmountItem = netLinePriceAfterItemDiscounts * (resolvedVatRateDetails.rate / 100);
       const finalPriceItem = netLinePriceAfterItemDiscounts + vatAmountItem;
 
+      // Obtener información de la clínica del ticket
+      const ticketInfo = await tx.ticket.findUnique({
+        where: { id: ticketId },
+        select: { clinicId: true }
+      })
+
       await tx.ticketItem.create({
         data: {
           ticketId: ticketId, 
+          systemId: systemId, // 🏢 NUEVO: Añadir systemId
+          clinicId: ticketInfo?.clinicId, // 🏥 NUEVO: Añadir clinicId
           itemType: itemType,
           productId: itemType === 'PRODUCT' ? itemId : null,
           serviceId: itemType === 'SERVICE' ? itemId : null,

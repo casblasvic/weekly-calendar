@@ -189,6 +189,8 @@ export async function POST(request: NextRequest) {
           await tx.ticketItem.create({
             data: {
               ticketId: ticket.id,
+              systemId: systemId, // 🏢 NUEVO: Añadir systemId
+              clinicId: clinicId, // 🏥 NUEVO: Añadir clinicId
               serviceId: validatedService.serviceId,
               description: validatedService.service.name,
               quantity: 1,

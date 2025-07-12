@@ -461,6 +461,7 @@ async function startAppointmentWithoutEquipment(
         currentStatus: 'ACTIVE',
         startedByUserId: userId,
         systemId: systemId,
+        clinicId: appointment.clinicId, // 🏥 NUEVO: Añadir clinicId para optimización
         pauseIntervals: []
       }
     });
@@ -602,6 +603,7 @@ async function startAppointmentWithEquipment(
         currentStatus: 'ACTIVE',
         startedByUserId: userId,
         systemId: systemId,
+        clinicId: appointment.clinicId, // 🏥 NUEVO: Añadir clinicId para optimización
         pauseIntervals: []
       }
     });
@@ -823,6 +825,7 @@ async function startAppointmentWithSpecificAssignment(
         currentStatus: 'ACTIVE',
         startedByUserId: userId,
         systemId: systemId,
+        clinicId: appointment.clinicId, // 🏥 NUEVO: Añadir clinicId para optimización
         pauseIntervals: []
       }
     });

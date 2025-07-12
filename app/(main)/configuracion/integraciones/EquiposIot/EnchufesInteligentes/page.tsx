@@ -19,7 +19,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 
 import { useSession } from "next-auth/react";
 import { DeviceConfigModalV2 } from '@/components/shelly/device-config-modal-v2';
-import { SimplePowerButton } from '@/components/ui/simple-power-button';
+import { SmartPlugPowerButton } from '@/components/ui/smart-plug-power-button';
 import useSocket from '@/hooks/useSocket';
 import { useIntegrationModules } from '@/hooks/use-integration-modules';
 import { isSmartPlug, getSmartPlugInfo } from '@/utils/shelly-device-utils';
@@ -1113,7 +1113,7 @@ const SmartPlugsPage = () => {
                 
                 return (
                     <div className="flex gap-2 justify-end items-center">
-                        <SimplePowerButton
+                        <SmartPlugPowerButton
                             device={{
                                 id: plug.deviceId, // ✅ Usar deviceId de Shelly para comandos
                                 name: plug.name,

@@ -373,8 +373,8 @@ export async function POST(request: NextRequest) {
     for (const serviceId of services) {
       try {
         const appointmentService = await prisma.$executeRaw`
-          INSERT INTO saasavatar.appointment_services (id, "appointmentId", "serviceId", status, "createdAt", "updatedAt")
-          VALUES (${createId()}, ${appointment.id}, ${serviceId}, 'SCHEDULED', NOW(), NOW())
+          INSERT INTO saasavatar.appointment_services (id, "systemId", "clinicId", "appointmentId", "serviceId", status, "createdAt", "updatedAt")
+          VALUES (${createId()}, ${session.user.systemId}, ${clinicId}, ${appointment.id}, ${serviceId}, 'SCHEDULED', NOW(), NOW())
         `;
         createdServices.push({ serviceId, appointmentId: appointment.id });
       } catch (error) {
@@ -881,6 +881,8 @@ export async function PUT(request: NextRequest) {
             data: services.map((serviceId: string) => ({
               appointmentId: id,
               serviceId: serviceId,
+              systemId: session.user.systemId, // 🏢 NUEVO: Añadir systemId
+              clinicId: existingAppointment.clinicId, // 🏥 NUEVO: Añadir clinicId
               status: 'SCHEDULED' as const
             }))
           });

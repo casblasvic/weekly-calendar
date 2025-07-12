@@ -93,6 +93,9 @@ model System {
   equipmentAssignments         EquipmentClinicAssignment[]
   webSocketConnections         WebSocketConnection[]
   webSocketLogs                WebSocketLog[]
+  serviceSettings              ServiceSetting[]
+  productSettings              ProductSetting[]
+  serviceConsumptions          ServiceConsumption[]
 
   @@map("systems")
 }
@@ -295,6 +298,11 @@ model Clinic {
   smartPlugDevices             SmartPlugDevice[]
   shellyCredentials            ShellyCredential[]
   equipmentAssignments         EquipmentClinicAssignment[]
+  ClientServiceEnergyProfile   ClientServiceEnergyProfile[]
+  deviceUsageInsights          DeviceUsageInsight[]
+  serviceSettings              ServiceSetting[]
+  productSettings              ProductSetting[]
+  serviceConsumptions          ServiceConsumption[]
 
   @@unique([name, systemId], name: "Clinic_name_systemId_key")
   @@index([systemId])
@@ -626,7 +634,7 @@ model Equipment {
   purchaseDate       DateTime?
   warrantyEndDate    DateTime?
   isActive           Boolean                       @default(true)
-  powerThreshold     Decimal                       @default(1.0) @db.Decimal(5,2)
+  powerThreshold     Decimal                       @default(1.0) @db.Decimal(5, 2)
   systemId           String
   createdAt          DateTime                      @default(now())
   updatedAt          DateTime                      @updatedAt
@@ -638,6 +646,7 @@ model Equipment {
   usageLog           EquipmentUsageLog?
   clinicAssignments  EquipmentClinicAssignment[]
   categoriesUsing    Category[]                    @relation("CategoryEquipmentType") // ✅ NUEVO: Relación inversa
+  energyProfiles     ServiceEnergyProfile[]
 
   @@unique([name, systemId])
   @@index([systemId])
@@ -645,31 +654,31 @@ model Equipment {
 }
 
 model EquipmentClinicAssignment {
-  id                String                  @id @default(cuid())
-  equipmentId       String
-  clinicId          String
-  cabinId           String?                 // Cabina donde se instala (opcional)
-  deviceName        String?                 // Alias/nombre descriptivo del dispositivo
-  serialNumber      String                  @unique
-  deviceId          String                  @unique
-  isActive          Boolean                 @default(true)
-  assignedAt        DateTime                @default(now())
-  unassignedAt      DateTime?
-  notes             String?
-  systemId          String
-  createdAt         DateTime                @default(now())
-  updatedAt         DateTime                @updatedAt
-  
+  id           String    @id @default(cuid())
+  equipmentId  String
+  clinicId     String
+  cabinId      String? // Cabina donde se instala (opcional)
+  deviceName   String? // Alias/nombre descriptivo del dispositivo
+  serialNumber String    @unique
+  deviceId     String    @unique
+  isActive     Boolean   @default(true)
+  assignedAt   DateTime  @default(now())
+  unassignedAt DateTime?
+  notes        String?
+  systemId     String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
   // Relaciones
-  equipment         Equipment               @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
-  clinic            Clinic                  @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  cabin             Cabin?                  @relation(fields: [cabinId], references: [id], onDelete: SetNull)
-  system            System                  @relation(fields: [systemId], references: [id], onDelete: Cascade)
-  installations     SparePartInstallation[]
-  deviceUsage       AppointmentDeviceUsage[]
-  appointments      Appointment[]           @relation("EquipmentClinicAssignmentAppointments")
-  smartPlugDevice   SmartPlugDevice?        // Nueva relación con dispositivos IoT
-  
+  equipment       Equipment                @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+  clinic          Clinic                   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  cabin           Cabin?                   @relation(fields: [cabinId], references: [id], onDelete: SetNull)
+  system          System                   @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  installations   SparePartInstallation[]
+  deviceUsage     AppointmentDeviceUsage[]
+  appointments    Appointment[]            @relation("EquipmentClinicAssignmentAppointments")
+  smartPlugDevice SmartPlugDevice? // Nueva relación con dispositivos IoT
+
   @@unique([equipmentId, clinicId, serialNumber])
   @@index([equipmentId])
   @@index([clinicId])
@@ -681,18 +690,18 @@ model EquipmentClinicAssignment {
 }
 
 model Device {
-  id                  String                   @id @default(cuid())
-  name                String
-  deviceIdProvider    String?                  @unique
-  deviceType          String?
-  apiEndpoint         String?
-  lastKnownStatus     DeviceStatus?
-  notes               String?
-  systemId            String
-  createdAt           DateTime                 @default(now())
-  updatedAt           DateTime                 @updatedAt
-  system              System                   @relation(fields: [systemId], references: [id], onDelete: Cascade)
-  usageRecords        AppointmentDeviceUsage[]
+  id               String                   @id @default(cuid())
+  name             String
+  deviceIdProvider String?                  @unique
+  deviceType       String?
+  apiEndpoint      String?
+  lastKnownStatus  DeviceStatus?
+  notes            String?
+  systemId         String
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+  system           System                   @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  usageRecords     AppointmentDeviceUsage[]
 
   @@index([systemId])
   @@index([deviceIdProvider])
@@ -700,39 +709,40 @@ model Device {
 }
 
 model Appointment {
-  id                           String                     @id @default(cuid())
-  startTime                    DateTime                   @db.Timestamptz(6)
-  endTime                      DateTime                   @db.Timestamptz(6)
-  durationMinutes              Int
-  status                       AppointmentStatus          @default(SCHEDULED)
-  notes                        String?
-  clientNotes                  String?
-  professionalUserId           String
-  systemId                     String
-  clinicId                     String
-  equipmentId                  String?
-  equipmentClinicAssignmentId  String?                    // Referencia a la instancia específica
-  deviceActivationTimestamp    DateTime?                  @db.Timestamptz(6)
-  deviceDeactivationTimestamp  DateTime?                  @db.Timestamptz(6)
-  actualUsageMinutes           Int?
-  isUsageLocked                Boolean                    @default(false)
-  originalAppointmentId        String?
-  createdAt                    DateTime                   @default(now()) @db.Timestamptz(6)
-  updatedAt                    DateTime                   @updatedAt @db.Timestamptz(6)
-  estimatedDurationMinutes     Int?
-  personId                     String
-  roomId                       String?
-  person                       Person                     @relation(fields: [personId], references: [id])
-  professionalUser             User                       @relation("ProfessionalUserAppointments", fields: [professionalUserId], references: [id])
-  system                       System                     @relation(fields: [systemId], references: [id], onDelete: Cascade)
-  clinic                       Clinic                     @relation(fields: [clinicId], references: [id])
-  equipment                    Equipment?                 @relation(fields: [equipmentId], references: [id], onDelete: SetNull)
-  equipmentClinicAssignment    EquipmentClinicAssignment? @relation("EquipmentClinicAssignmentAppointments", fields: [equipmentClinicAssignmentId], references: [id], onDelete: SetNull)
-  relatedTicket                Ticket?
-  services                     AppointmentService[]
-  tags                         AppointmentTag[]
-  extensions                   AppointmentExtension[]
-  deviceUsage                  AppointmentDeviceUsage[]
+  id                          String                     @id @default(cuid())
+  startTime                   DateTime                   @db.Timestamptz(6)
+  endTime                     DateTime                   @db.Timestamptz(6)
+  durationMinutes             Int
+  status                      AppointmentStatus          @default(SCHEDULED)
+  notes                       String?
+  clientNotes                 String?
+  professionalUserId          String
+  systemId                    String
+  clinicId                    String
+  equipmentId                 String?
+  equipmentClinicAssignmentId String? // Referencia a la instancia específica
+  deviceActivationTimestamp   DateTime?                  @db.Timestamptz(6)
+  deviceDeactivationTimestamp DateTime?                  @db.Timestamptz(6)
+  actualUsageMinutes          Int?
+  isUsageLocked               Boolean                    @default(false)
+  originalAppointmentId       String?
+  createdAt                   DateTime                   @default(now()) @db.Timestamptz(6)
+  updatedAt                   DateTime                   @updatedAt @db.Timestamptz(6)
+  estimatedDurationMinutes    Int?
+  personId                    String
+  roomId                      String?
+  person                      Person                     @relation(fields: [personId], references: [id])
+  professionalUser            User                       @relation("ProfessionalUserAppointments", fields: [professionalUserId], references: [id])
+  system                      System                     @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  clinic                      Clinic                     @relation(fields: [clinicId], references: [id])
+  equipment                   Equipment?                 @relation(fields: [equipmentId], references: [id], onDelete: SetNull)
+  equipmentClinicAssignment   EquipmentClinicAssignment? @relation("EquipmentClinicAssignmentAppointments", fields: [equipmentClinicAssignmentId], references: [id], onDelete: SetNull)
+  relatedTicket               Ticket?
+  services                    AppointmentService[]
+  tags                        AppointmentTag[]
+  extensions                  AppointmentExtension[]
+  deviceUsage                 AppointmentDeviceUsage[]
+  deviceUsageInsights         DeviceUsageInsight[]
 
   @@index([startTime])
   @@index([personId])
@@ -766,37 +776,38 @@ model AppointmentExtension {
 }
 
 model AppointmentDeviceUsage {
-  id                           String                     @id @default(cuid())
-  appointmentId                String
-  appointmentServiceId         String?
-  equipmentId                  String?                    // Null si es sin equipamiento
-  equipmentClinicAssignmentId  String?                    // Referencia a la instancia específica utilizada
-  deviceId                     String?                    // Null si es sin equipamiento
-  startedAt                    DateTime?                  @db.Timestamptz(6)
-  endedAt                      DateTime?                  @db.Timestamptz(6)
-  estimatedMinutes             Float
-  actualMinutes                Float?
-  
+  id                          String    @id @default(cuid())
+  clinicId                    String?   // 🏥 NUEVO: Para optimizar filtros y reportes (opcional por compatibilidad)
+  appointmentId               String
+  appointmentServiceId        String?
+  equipmentId                 String? // Null si es sin equipamiento
+  equipmentClinicAssignmentId String? // Referencia a la instancia específica utilizada
+  deviceId                    String? // Null si es sin equipamiento
+  startedAt                   DateTime? @db.Timestamptz(6)
+  endedAt                     DateTime? @db.Timestamptz(6)
+  estimatedMinutes            Float
+  actualMinutes               Float?
+
   // 🆕 CAMPOS DE PAUSAS MEJORADOS
-  pauseIntervals               Json?                      // Array de {pausedAt, resumedAt, reason?, durationMinutes?}
-  currentStatus                DeviceUsageStatus          @default(ACTIVE) // ACTIVE, PAUSED, COMPLETED, AUTO_SHUTDOWN
-  pausedAt                     DateTime?                  @db.Timestamptz(6) // Para estado actual de pausa
-  
-  energyConsumption            Float?
-  deviceData                   Json?
-  startedByUserId              String
-  systemId                     String
-  createdAt                    DateTime                   @default(now()) @db.Timestamptz(6)
-  updatedAt                    DateTime                   @updatedAt @db.Timestamptz(6)
-  appointment                  Appointment                @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
-  appointmentService           AppointmentService?        @relation(fields: [appointmentServiceId], references: [id], onDelete: SetNull)
-  equipment                    Equipment?                 @relation(fields: [equipmentId], references: [id], onDelete: SetNull)
-  equipmentClinicAssignment    EquipmentClinicAssignment? @relation(fields: [equipmentClinicAssignmentId], references: [id], onDelete: SetNull)
-  device                       Device?                    @relation(fields: [deviceId], references: [id], onDelete: SetNull)
-  startedByUser                User                       @relation("DeviceUsageStartedBy", fields: [startedByUserId], references: [id])
-  system                       System                     @relation(fields: [systemId], references: [id], onDelete: Cascade)
-  endedReason     UsageEndedReason?
-  usageOutcome    UsageOutcome?
+  pauseIntervals Json? // Array de {pausedAt, resumedAt, reason?, durationMinutes?}
+  currentStatus  DeviceUsageStatus @default(ACTIVE) // ACTIVE, PAUSED, COMPLETED, AUTO_SHUTDOWN
+  pausedAt       DateTime?         @db.Timestamptz(6) // Para estado actual de pausa
+
+  energyConsumption         Float?
+  deviceData                Json?
+  startedByUserId           String
+  systemId                  String
+  createdAt                 DateTime                   @default(now()) @db.Timestamptz(6)
+  updatedAt                 DateTime                   @updatedAt @db.Timestamptz(6)
+  appointment               Appointment                @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  appointmentService        AppointmentService?        @relation(fields: [appointmentServiceId], references: [id], onDelete: SetNull)
+  equipment                 Equipment?                 @relation(fields: [equipmentId], references: [id], onDelete: SetNull)
+  equipmentClinicAssignment EquipmentClinicAssignment? @relation(fields: [equipmentClinicAssignmentId], references: [id], onDelete: SetNull)
+  device                    Device?                    @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  startedByUser             User                       @relation("DeviceUsageStartedBy", fields: [startedByUserId], references: [id])
+  system                    System                     @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  endedReason               UsageEndedReason?
+  usageOutcome              UsageOutcome?
 
   @@index([appointmentId])
   @@index([startedAt])
@@ -804,6 +815,7 @@ model AppointmentDeviceUsage {
   @@index([equipmentId])
   @@index([equipmentClinicAssignmentId])
   @@index([systemId])
+  @@index([clinicId])
   @@index([appointmentServiceId])
   @@index([startedByUserId])
   @@index([currentStatus])
@@ -812,6 +824,8 @@ model AppointmentDeviceUsage {
 
 model AppointmentService {
   id                     String                   @id @default(cuid())
+  systemId               String?                  // 🏢 NUEVO: Para operaciones a nivel sistema (opcional por compatibilidad)
+  clinicId               String?                  // 🏥 NUEVO: Para optimizar filtros y reportes (opcional por compatibilidad)
   appointmentId          String
   serviceId              String
   quantity               Int                      @default(1)
@@ -835,6 +849,8 @@ model AppointmentService {
   @@unique([appointmentId, serviceId])
   @@index([appointmentId])
   @@index([serviceId])
+  @@index([systemId])
+  @@index([clinicId])
   @@index([status])
   @@index([validatedAt])
   @@index([validatedByUserId])
@@ -938,33 +954,35 @@ model ClinicScheduleBlock {
 }
 
 model Service {
-  id                          String                  @id @default(cuid())
-  name                        String
-  description                 String?
-  durationMinutes             Int                     // Duración total de cita (mantenemos compatibilidad)
-  treatmentDurationMinutes    Int                     @default(0) // Nuevo: duración real de tratamiento (para IoT)
-  price                       Float?
-  colorCode                   String?
-  systemId                    String
-  createdAt                   DateTime                @default(now())
-  updatedAt                   DateTime                @updatedAt
-  categoryId                  String?
-  code                        String?
-  vatTypeId                   String?
-  system                      System                  @relation(fields: [systemId], references: [id], onDelete: Cascade)
-  ticketItems                 TicketItem[]
-  invoiceItems                InvoiceItem[]
-  bonoDefinitions             BonoDefinition[]
-  includedInPackages          PackageItem[]
-  category                    Category?               @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  vatType                     VATType?                @relation(fields: [vatTypeId], references: [id], onDelete: SetNull)
-  tariffPrices                TariffServicePrice[]
-  consumptions                ServiceConsumption[]
-  settings                    ServiceSetting?
-  targetedPromotions          Promotion[]             @relation("TargetService")
-  bogoGiftPromotions          Promotion[]             @relation("BogoService")
-  serviceAccountMappings      ServiceAccountMapping[]
-  appointmentServices         AppointmentService[]
+  id                         String                       @id @default(cuid())
+  name                       String
+  description                String?
+  durationMinutes            Int // Duración total de cita (mantenemos compatibilidad)
+  treatmentDurationMinutes   Int                          @default(0) // Nuevo: duración real de tratamiento (para IoT)
+  price                      Float?
+  colorCode                  String?
+  systemId                   String
+  createdAt                  DateTime                     @default(now())
+  updatedAt                  DateTime                     @updatedAt
+  categoryId                 String?
+  code                       String?
+  vatTypeId                  String?
+  system                     System                       @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  ticketItems                TicketItem[]
+  invoiceItems               InvoiceItem[]
+  bonoDefinitions            BonoDefinition[]
+  includedInPackages         PackageItem[]
+  category                   Category?                    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  vatType                    VATType?                     @relation(fields: [vatTypeId], references: [id], onDelete: SetNull)
+  tariffPrices               TariffServicePrice[]
+  consumptions               ServiceConsumption[]
+  settings                   ServiceSetting?
+  targetedPromotions         Promotion[]                  @relation("TargetService")
+  bogoGiftPromotions         Promotion[]                  @relation("BogoService")
+  serviceAccountMappings     ServiceAccountMapping[]
+  appointmentServices        AppointmentService[]
+  energyProfiles             ServiceEnergyProfile[]
+  ClientServiceEnergyProfile ClientServiceEnergyProfile[]
 
   @@unique([name, systemId])
   @@index([systemId])
@@ -975,8 +993,10 @@ model Service {
 
 model ServiceSetting {
   id                     String                        @id @default(cuid())
+  systemId               String?                       // 🏢 NUEVO: Para operaciones a nivel sistema (opcional por compatibilidad)
+  clinicId               String?                       // 🏥 NUEVO: Para optimizar filtros y reportes (opcional por compatibilidad)
   serviceId              String                        @unique
-  isActive               Boolean                       @default(true)  // ✅ NUEVO: Campo para activar/desactivar servicios
+  isActive               Boolean                       @default(true) // ✅ NUEVO: Campo para activar/desactivar servicios
   requiresMedicalSignOff Boolean                       @default(false)
   pointsAwarded          Int                           @default(0)
   commissionType         String?
@@ -992,9 +1012,13 @@ model ServiceSetting {
   cleanupTimeMinutes     Int?
   internalNotes          String?
   service                Service                       @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  system                 System?                       @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  clinic                 Clinic?                       @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   equipmentRequirements  ServiceEquipmentRequirement[]
   skillRequirements      ServiceSkillRequirement[]
 
+  @@index([systemId])
+  @@index([clinicId])
   @@map("service_settings")
 }
 
@@ -1057,16 +1081,22 @@ model Product {
 }
 
 model ProductSetting {
-  id                String  @id @default(cuid())
-  productId         String  @unique
-  currentStock      Int     @default(0)
+  id                String   @id @default(cuid())
+  systemId          String?  // 🏢 NUEVO: Para operaciones a nivel sistema (opcional por compatibilidad)
+  clinicId          String?  // 🏥 NUEVO: Para optimizar filtros y reportes (opcional por compatibilidad)
+  productId         String   @unique
+  currentStock      Int      @default(0)
   minStockThreshold Int?
-  isForSale         Boolean @default(true)
-  isInternalUse     Boolean @default(false)
-  isActive          Boolean @default(true)
-  pointsAwarded     Int     @default(0)
-  product           Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  isForSale         Boolean  @default(true)
+  isInternalUse     Boolean  @default(false)
+  isActive          Boolean  @default(true)
+  pointsAwarded     Int      @default(0)
+  product           Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  system            System?  @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  clinic            Clinic?  @relation(fields: [clinicId], references: [id], onDelete: Cascade)
 
+  @@index([systemId])
+  @@index([clinicId])
   @@map("product_settings")
 }
 
@@ -1094,6 +1124,8 @@ model StockLedger {
 
 model ServiceConsumption {
   id        String   @id @default(cuid())
+  systemId  String?  // 🏢 NUEVO: Para operaciones a nivel sistema (opcional por compatibilidad)
+  clinicId  String?  // 🏥 NUEVO: Para optimizar filtros y reportes (opcional por compatibilidad)
   serviceId String
   productId String
   quantity  Float
@@ -1103,43 +1135,47 @@ model ServiceConsumption {
   notes     String?
   service   Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
   product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  system    System?  @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  clinic    Clinic?  @relation(fields: [clinicId], references: [id], onDelete: Cascade)
 
   @@index([serviceId])
   @@index([productId])
+  @@index([systemId])
+  @@index([clinicId])
   @@map("service_consumptions")
 }
 
 model EquipmentSparePart {
-  id                    String   @id @default(cuid())
-  equipmentId           String   
-  productId             String   
-  
+  id          String @id @default(cuid())
+  equipmentId String
+  productId   String
+
   // Configuración específica del recambio
-  partName              String   
-  partNumber            String?  
-  compatibleModels      String?  
-  
+  partName         String
+  partNumber       String?
+  compatibleModels String?
+
   // Configuración de mantenimiento
-  recommendedLifespan   Int?     
-  warningThreshold      Int?     
-  criticalThreshold     Int?     
-  
+  recommendedLifespan Int?
+  warningThreshold    Int?
+  criticalThreshold   Int?
+
   // Configuración adicional
-  installationNotes     String?  
-  isRequired            Boolean  @default(true) 
-  category              String?  
-  costPrice             Float?   // Coste específico del recambio (puede diferir del producto)
-  
-  systemId              String
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
-  
+  installationNotes String?
+  isRequired        Boolean @default(true)
+  category          String?
+  costPrice         Float? // Coste específico del recambio (puede diferir del producto)
+
+  systemId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   // Relaciones
-  equipment             Equipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
-  product               Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
-  system                System    @relation(fields: [systemId], references: [id], onDelete: Cascade)
-  installations         SparePartInstallation[]
-  
+  equipment     Equipment               @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+  product       Product                 @relation(fields: [productId], references: [id], onDelete: Cascade)
+  system        System                  @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  installations SparePartInstallation[]
+
   @@unique([equipmentId, productId])
   @@index([equipmentId])
   @@index([productId])
@@ -1147,53 +1183,53 @@ model EquipmentSparePart {
 }
 
 model SparePartInstallation {
-  id                             String                     @id @default(cuid())
-  equipmentSparePartId           String
-  equipmentClinicAssignmentId    String                     // Nueva referencia a la instancia específica
-  
+  id                          String @id @default(cuid())
+  equipmentSparePartId        String
+  equipmentClinicAssignmentId String // Nueva referencia a la instancia específica
+
   // Datos de la instalación
-  installedAt                    DateTime
-  installedByUserId              String
-  
+  installedAt       DateTime
+  installedByUserId String
+
   // Tipo de instalación y referencias
-  installationType               InstallationType           @default(INITIAL_INSTALLATION)
-  replacedInstallationId         String?                    // Referencia a la instalación anterior que se reemplaza
-  replacementReason              ReplacementReason?         // Motivo de la sustitución (solo para REPLACEMENT)
-  
+  installationType       InstallationType   @default(INITIAL_INSTALLATION)
+  replacedInstallationId String? // Referencia a la instalación anterior que se reemplaza
+  replacementReason      ReplacementReason? // Motivo de la sustitución (solo para REPLACEMENT)
+
   // Estado y seguimiento
-  isActive                       Boolean                    @default(true) 
-  removedAt                      DateTime?
-  removedByUserId                String?
-  
+  isActive        Boolean   @default(true)
+  removedAt       DateTime?
+  removedByUserId String?
+
   // Datos del recambio específico
-  serialNumber                   String?  
-  batchNumber                    String?  
-  costPrice                      Float?   
-  
+  serialNumber String?
+  batchNumber  String?
+  costPrice    Float?
+
   // Seguimiento de uso (se calcula desde AppointmentDeviceUsage)
-  initialUsageHours              Float                      @default(0) 
-  currentUsageHours              Float                      @default(0) 
-  estimatedEndOfLife             DateTime? 
-  
+  initialUsageHours  Float     @default(0)
+  currentUsageHours  Float     @default(0)
+  estimatedEndOfLife DateTime?
+
   // Notas y observaciones
-  installationNotes              String?
-  removalReason                  String?
-  condition                      String?  
-  
-  systemId                       String
-  createdAt                      DateTime                   @default(now())
-  updatedAt                      DateTime                   @updatedAt
-  
+  installationNotes String?
+  removalReason     String?
+  condition         String?
+
+  systemId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   // Relaciones
-  equipmentSparePart             EquipmentSparePart         @relation(fields: [equipmentSparePartId], references: [id], onDelete: Cascade)
-  equipmentClinicAssignment      EquipmentClinicAssignment  @relation(fields: [equipmentClinicAssignmentId], references: [id], onDelete: Cascade)
-  installedByUser                User                       @relation("SparePartInstalledBy", fields: [installedByUserId], references: [id])
-  removedByUser                  User?                      @relation("SparePartRemovedBy", fields: [removedByUserId], references: [id])
-  system                         System                     @relation(fields: [systemId], references: [id], onDelete: Cascade)
-  
+  equipmentSparePart        EquipmentSparePart        @relation(fields: [equipmentSparePartId], references: [id], onDelete: Cascade)
+  equipmentClinicAssignment EquipmentClinicAssignment @relation(fields: [equipmentClinicAssignmentId], references: [id], onDelete: Cascade)
+  installedByUser           User                      @relation("SparePartInstalledBy", fields: [installedByUserId], references: [id])
+  removedByUser             User?                     @relation("SparePartRemovedBy", fields: [removedByUserId], references: [id])
+  system                    System                    @relation(fields: [systemId], references: [id], onDelete: Cascade)
+
   // Referencia a la instalación que se reemplaza (sin auto-referencia completa para evitar ciclos)
   // La relación inversa se puede consultar mediante queries si es necesario
-  
+
   @@index([equipmentSparePartId])
   @@index([equipmentClinicAssignmentId])
   @@index([installedAt])
@@ -1203,24 +1239,24 @@ model SparePartInstallation {
 }
 
 model EquipmentUsageLog {
-  id          String   @id @default(cuid())
-  equipmentId String   @unique
-  
+  id          String @id @default(cuid())
+  equipmentId String @unique
+
   // Datos de uso acumulado
   totalHours  Float    @default(0)
   lastUpdated DateTime @default(now())
-  
+
   // Seguimiento por período
-  dailyHours  Float    @default(0)
-  weeklyHours Float    @default(0)
-  monthlyHours Float   @default(0)
-  
-  systemId    String
-  
+  dailyHours   Float @default(0)
+  weeklyHours  Float @default(0)
+  monthlyHours Float @default(0)
+
+  systemId String
+
   // Relaciones
-  equipment   Equipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
-  system      System    @relation(fields: [systemId], references: [id], onDelete: Cascade)
-  
+  equipment Equipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+  system    System    @relation(fields: [systemId], references: [id], onDelete: Cascade)
+
   @@map("equipment_usage_logs")
 }
 
@@ -1241,7 +1277,7 @@ model VATType {
   tariffs                Tariff[]
   appliedTicketItems     TicketItem[]            @relation("AppliedVATType")
   originalTicketItems    TicketItem[]            @relation("OriginalVATType")
-  invoiceItems           InvoiceItem[]            @relation("AppliedInvoiceVATType")
+  invoiceItems           InvoiceItem[]           @relation("AppliedInvoiceVATType")
   tariffServicePrices    TariffServicePrice[]
   tariffProductPrices    TariffProductPrice[]
   tariffBonoPrices       TariffBonoPrice[]
@@ -1357,6 +1393,8 @@ model Ticket {
 
 model TicketItem {
   id                        String             @id @default(cuid())
+  systemId                  String?            // 🏢 NUEVO: Para operaciones a nivel sistema (opcional por compatibilidad)
+  clinicId                  String?            // 🏥 NUEVO: Para optimizar filtros y reportes (opcional por compatibilidad)
   ticketId                  String
   serviceId                 String?
   productId                 String?
@@ -1397,6 +1435,8 @@ model TicketItem {
   @@index([ticketId])
   @@index([serviceId])
   @@index([productId])
+  @@index([systemId])
+  @@index([clinicId])
   @@index([bonoDefinitionId])
   @@index([packageDefinitionId])
   @@index([vatRateId])
@@ -1463,6 +1503,8 @@ model Invoice {
 
 model InvoiceItem {
   id             String   @id @default(cuid())
+  systemId       String?  // 🏢 NUEVO: Para operaciones a nivel sistema (opcional por compatibilidad)
+  clinicId       String?  // 🏥 NUEVO: Para optimizar filtros y reportes (opcional por compatibilidad)
   invoiceId      String
   description    String
   quantity       Float
@@ -1483,6 +1525,8 @@ model InvoiceItem {
   @@index([invoiceId])
   @@index([productId])
   @@index([serviceId])
+  @@index([systemId])
+  @@index([clinicId])
   @@index([vatRateId])
   @@map("invoice_items")
 }
@@ -1952,7 +1996,7 @@ model Category {
   createdAt               DateTime                 @default(now())
   updatedAt               DateTime                 @updatedAt
   parentId                String?
-  equipmentTypeId         String?                  // ✅ NUEVO: Referencia al tipo de equipamiento
+  equipmentTypeId         String? // ✅ NUEVO: Referencia al tipo de equipamiento
   type                    CategoryType             @default(MIXED) // ✅ NUEVO: Tipo de categoría
   system                  System                   @relation(fields: [systemId], references: [id], onDelete: Cascade)
   parent                  Category?                @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: Restrict, onUpdate: Restrict)
@@ -2769,38 +2813,39 @@ model PromotionAccountMapping {
 }
 
 model Person {
-  id               String                 @id @default(cuid())
-  firstName        String
-  lastName         String
-  email            String?
-  phone            String?
-  birthDate        DateTime?
-  gender           String?
-  address          String?
-  city             String?
-  postalCode       String?
-  countryIsoCode   String?
-  nationalId       String?
-  notes            String?
-  systemId         String
-  createdAt        DateTime               @default(now())
-  updatedAt        DateTime               @updatedAt
-  nationalIdType   String?
-  passportCountry  String?
-  passportNumber   String?
-  stateProvince    String?
-  taxId            String?
-  system           System                 @relation(fields: [systemId], references: [id], onDelete: Cascade)
-  functionalRoles  PersonFunctionalRole[]
-  appointments     Appointment[]
-  tickets          Ticket[]
-  invoices         Invoice[]
-  timeLogs         TimeLog[]
-  bonoInstances    BonoInstance[]
-  packageInstances PackageInstance[]
-  loyaltyLedgers   LoyaltyLedger[]
-  debtLedgers      DebtLedger[]
-  payerPayments    Payment[]              @relation("PayerPersonPayments")
+  id                         String                       @id @default(cuid())
+  firstName                  String
+  lastName                   String
+  email                      String?
+  phone                      String?
+  birthDate                  DateTime?
+  gender                     String?
+  address                    String?
+  city                       String?
+  postalCode                 String?
+  countryIsoCode             String?
+  nationalId                 String?
+  notes                      String?
+  systemId                   String
+  createdAt                  DateTime                     @default(now())
+  updatedAt                  DateTime                     @updatedAt
+  nationalIdType             String?
+  passportCountry            String?
+  passportNumber             String?
+  stateProvince              String?
+  taxId                      String?
+  system                     System                       @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  functionalRoles            PersonFunctionalRole[]
+  appointments               Appointment[]
+  tickets                    Ticket[]
+  invoices                   Invoice[]
+  timeLogs                   TimeLog[]
+  bonoInstances              BonoInstance[]
+  packageInstances           PackageInstance[]
+  loyaltyLedgers             LoyaltyLedger[]
+  debtLedgers                DebtLedger[]
+  payerPayments              Payment[]                    @relation("PayerPersonPayments")
+  ClientServiceEnergyProfile ClientServiceEnergyProfile[]
 
   @@index([systemId])
   @@index([email])
@@ -2928,49 +2973,49 @@ model PersonClientData {
 
 // === WEBHOOKS MODELS ===
 model Webhook {
-  id        String   @id @default(cuid())
-  systemId  String
-  name      String
-  description String?  @db.Text
-  slug      String
-  direction String   @default("incoming") // incoming, outgoing, bidirectional
-  url       String   @db.Text
-  isActive  Boolean  @default(true)
+  id          String  @id @default(cuid())
+  systemId    String
+  name        String
+  description String? @db.Text
+  slug        String
+  direction   String  @default("incoming") // incoming, outgoing, bidirectional
+  url         String  @db.Text
+  isActive    Boolean @default(true)
 
   // Auth & Security
-  allowedMethods Json?     // ["GET", "POST"]
-  token          String?   @unique
-  secretKey      String?
-  requiresAuth   Boolean   @default(false)
-  ipWhitelist    String[]
-  rateLimitPerMinute Int   @default(120)
+  allowedMethods     Json? // ["GET", "POST"]
+  token              String?  @unique
+  secretKey          String?
+  requiresAuth       Boolean  @default(false)
+  ipWhitelist        String[]
+  rateLimitPerMinute Int      @default(120)
 
   // Configuración Outgoing
-  triggerEvents  Json?      // ["appointment.created", "client.updated"]
-  targetUrl      String?    @db.Text
+  triggerEvents Json? // ["appointment.created", "client.updated"]
+  targetUrl     String? @db.Text
 
   // Configuración Incoming
-  customHeaders     Json?
-  expectedSchema    Json?
-  samplePayload     Json?
-  dataMapping       Json?
-  responseConfig    Json?
-  isSystemWebhook   Boolean  @default(false)
-  integrationId     String?  @unique
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-  createdByUserId   String?
+  customHeaders   Json?
+  expectedSchema  Json?
+  samplePayload   Json?
+  dataMapping     Json?
+  responseConfig  Json?
+  isSystemWebhook Boolean  @default(false)
+  integrationId   String?  @unique
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdByUserId String?
 
   // Relations
-  system            System   @relation(fields: [systemId], references: [id], onDelete: Cascade)
-  createdBy      User?    @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
-  logs           WebhookLog[]
+  system    System       @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  createdBy User?        @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+  logs      WebhookLog[]
 
   @@unique([systemId, slug])
 }
 
 model WebhookLog {
-  id              String          @id @default(cuid())
+  id              String    @id @default(cuid())
   webhookId       String
   systemId        String
   method          String
@@ -2980,14 +3025,14 @@ model WebhookLog {
   sourceIp        String?
   statusCode      Int?
   responseBody    Json?
-  isSuccess       Boolean         @default(false)
-  wasProcessed    Boolean         @default(false)
-  processingError String?       @db.Text
-  retries         Int             @default(0)
-  createdAt       DateTime        @default(now())
+  isSuccess       Boolean   @default(false)
+  wasProcessed    Boolean   @default(false)
+  processingError String?   @db.Text
+  retries         Int       @default(0)
+  createdAt       DateTime  @default(now())
   processedAt     DateTime?
-  webhook         Webhook         @relation(fields: [webhookId], references: [id], onDelete: Cascade)
-  system          System          @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  webhook         Webhook   @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+  system          System    @relation(fields: [systemId], references: [id], onDelete: Cascade)
 
   @@index([webhookId])
   @@index([createdAt])
@@ -2998,8 +3043,8 @@ model WebhookLog {
 }
 
 enum WebhookDirection {
-  INCOMING     // Recibe datos
-  OUTGOING     // Envía datos
+  INCOMING // Recibe datos
+  OUTGOING // Envía datos
   BIDIRECTIONAL // Ambos
 }
 
@@ -3295,108 +3340,109 @@ enum ReplacementReason {
 }
 
 model IntegrationModule {
-  id          String   @id @default(cuid())
-  name        String   @unique
-  description String
-  logoUrl     String?
-  category    IntegrationCategory
-  isPaid      Boolean  @default(false)
+  id           String              @id @default(cuid())
+  name         String              @unique
+  description  String
+  logoUrl      String?
+  category     IntegrationCategory
+  isPaid       Boolean             @default(false)
   integrations SystemIntegration[]
 }
 
 model SystemIntegration {
-  id         String            @id @default(cuid())
-  systemId   String
-  system     System            @relation(fields: [systemId], references: [id])
-  moduleId   String
-  module     IntegrationModule @relation(fields: [moduleId], references: [id])
-  isActive   Boolean           @default(false)
-  settings   Json?
+  id           String            @id @default(cuid())
+  systemId     String
+  system       System            @relation(fields: [systemId], references: [id])
+  moduleId     String
+  module       IntegrationModule @relation(fields: [moduleId], references: [id])
+  isActive     Boolean           @default(false)
+  settings     Json?
   smartDevices SmartPlugDevice[]
+
   @@unique([systemId, moduleId])
 }
 
 model SmartPlugDevice {
-  id                           String   @id @default(cuid())
-  name                         String
-  type                         String   // "SHELLY", "KASA", etc.
-  deviceId                     String   // ID del fabricante
-  cloudId                      String?  // 🆔 NUEVO: ID para comandos WebSocket (ej: b0b21c12dd94)
-  deviceIp                     String?  // IP actual del dispositivo
-  equipmentClinicAssignmentId  String?  @unique // Nueva relación con asignación específica
-  equipmentClinicAssignment    EquipmentClinicAssignment? @relation(fields: [equipmentClinicAssignmentId], references: [id])
-  integrationId                String
-  integration                  SystemIntegration @relation(fields: [integrationId], references: [id])
-  systemId                     String
-  system                       System   @relation(fields: [systemId], references: [id])
-  clinicId                     String?  // Opcional
-  clinic                       Clinic?  @relation(fields: [clinicId], references: [id])
-  
+  id                          String                     @id @default(cuid())
+  name                        String
+  type                        String // "SHELLY", "KASA", etc.
+  deviceId                    String // ID del fabricante
+  cloudId                     String? // 🆔 NUEVO: ID para comandos WebSocket (ej: b0b21c12dd94)
+  deviceIp                    String? // IP actual del dispositivo
+  equipmentClinicAssignmentId String?                    @unique // Nueva relación con asignación específica
+  equipmentClinicAssignment   EquipmentClinicAssignment? @relation(fields: [equipmentClinicAssignmentId], references: [id])
+  integrationId               String
+  integration                 SystemIntegration          @relation(fields: [integrationId], references: [id])
+  systemId                    String
+  system                      System                     @relation(fields: [systemId], references: [id])
+  clinicId                    String? // Opcional
+  clinic                      Clinic?                    @relation(fields: [clinicId], references: [id])
+
   // Campos Shelly básicos
-  credentialId  String?
-  credential    ShellyCredential? @relation(fields: [credentialId], references: [id], onDelete: SetNull)
-  online        Boolean   @default(false)
-  lastSeenAt    DateTime?
-  
+  credentialId String?
+  credential   ShellyCredential? @relation(fields: [credentialId], references: [id], onDelete: SetNull)
+  online       Boolean           @default(false)
+  lastSeenAt   DateTime?
+
   // Información del dispositivo
-  generation    String?   // "G1", "G2", "GBLE"
-  modelCode     String?   // "SHSW-1", "S3PL-00112EU", etc.
-  macAddress    String?   // MAC del dispositivo
+  generation      String? // "G1", "G2", "GBLE"
+  modelCode       String? // "SHSW-1", "S3PL-00112EU", etc.
+  macAddress      String? // MAC del dispositivo
   firmwareVersion String? // Versión actual del firmware
-  hasUpdate     Boolean?  // Si hay actualizaciones disponibles
-  
+  hasUpdate       Boolean? // Si hay actualizaciones disponibles
+
   // Estado del switch/relay principal
-  relayOn       Boolean?  // null si no se conoce el estado
-  relaySource   String?   // "button", "SHC", "timer", etc.
-  
+  relayOn     Boolean? // null si no se conoce el estado
+  relaySource String? // "button", "SHC", "timer", etc.
+
   // Datos energéticos
-  currentPower  Float?    // Potencia actual en watts
-  totalEnergy   Float?    // Energía total consumida en Wh
-  voltage       Float?    // Voltaje actual
-  current       Float?    // Corriente actual en amperios
-  
+  currentPower Float? // Potencia actual en watts
+  totalEnergy  Float? // Energía total consumida en Wh
+  voltage      Float? // Voltaje actual
+  current      Float? // Corriente actual en amperios
+
   // Conectividad WiFi
-  wifiSsid      String?   // Red WiFi conectada
-  wifiRssi      Int?      // Señal WiFi (-dBm)
-  
+  wifiSsid String? // Red WiFi conectada
+  wifiRssi Int? // Señal WiFi (-dBm)
+
   // Temperatura del dispositivo
-  temperature   Float?    // Temperatura en Celsius
-  
+  temperature Float? // Temperatura en Celsius
+
   // Configuraciones adicionales del modal
   // Pestaña Básico
-  timezone      String?   // Zona horaria del dispositivo
-  autoUpdate    Boolean   @default(true) // Actualizaciones automáticas
-  
+  timezone   String? // Zona horaria del dispositivo
+  autoUpdate Boolean @default(true) // Actualizaciones automáticas
+
   // Pestaña Red
   wifiBackupEnabled Boolean @default(false) // Si WiFi backup está habilitado
   wifiBackupSsid    String? // SSID de respaldo
   apModeEnabled     Boolean @default(false) // Modo Access Point
-  
+
   // Pestaña Protección  
-  autoOffEnabled    Boolean @default(false) // Auto-apagado habilitado
-  autoOffDelay      Int?    // Segundos para auto-apagado
-  powerLimit        Float?  // Límite de potencia en watts
-  
+  autoOffEnabled Boolean @default(false) // Auto-apagado habilitado
+  autoOffDelay   Int? // Segundos para auto-apagado
+  powerLimit     Float? // Límite de potencia en watts
+
   // Pestaña LED (solo Gen3)
-  ledBrightness     Int?    // 0-100
-  ledColorMode      String? // "color" o "white"
-  ledColorR         Int?    // 0-255
-  ledColorG         Int?    // 0-255
-  ledColorB         Int?    // 0-255
-  ledNightMode      Boolean @default(false)
-  
+  ledBrightness Int? // 0-100
+  ledColorMode  String? // "color" o "white"
+  ledColorR     Int? // 0-255
+  ledColorG     Int? // 0-255
+  ledColorB     Int? // 0-255
+  ledNightMode  Boolean @default(false)
+
   // Control de encendido y apagado automático
-  appointmentOnlyMode Boolean @default(true)  // Control de encendido solo desde citas
-  autoShutdownEnabled Boolean @default(true)  // Control de apagado automático
-  
+  appointmentOnlyMode Boolean @default(true) // Control de encendido solo desde citas
+  autoShutdownEnabled Boolean @default(true) // Control de apagado automático
+
   // Metadatos adicionales
-  rawData       Json?     // Datos completos del dispositivo para debugging
+  rawData         Json? // Datos completos del dispositivo para debugging
   excludeFromSync Boolean @default(false) // Si true, no se sincroniza en futuras sync
-  
+
   // Timestamps
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt @default(now())
-  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
   @@index([credentialId])
   @@index([systemId])
   @@index([clinicId])
@@ -3406,25 +3452,25 @@ model SmartPlugDevice {
 }
 
 model ShellyCredential {
-  id             String            @id @default(cuid())
-  name           String            // Alias visible para el usuario
-  email          String
-  accessToken    String            @db.Text // Cifrado
-  refreshToken   String            @db.Text // Cifrado
-  apiHost        String            // ej: https://shelly-47-eu.shelly.cloud
-  systemId       String
-  clinicId       String?           // Opcional - usuario puede no estar asignado a clínica
-  status         String            @default("connected") // connected | error | expired
-  lastSyncAt     DateTime?
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
-  
+  id           String    @id @default(cuid())
+  name         String // Alias visible para el usuario
+  email        String
+  accessToken  String    @db.Text // Cifrado
+  refreshToken String    @db.Text // Cifrado
+  apiHost      String // ej: https://shelly-47-eu.shelly.cloud
+  systemId     String
+  clinicId     String? // Opcional - usuario puede no estar asignado a clínica
+  status       String    @default("connected") // connected | error | expired
+  lastSyncAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
   // Relations
-  system         System            @relation(fields: [systemId], references: [id], onDelete: Cascade)
-  clinic         Clinic?           @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  smartPlugs     SmartPlugDevice[]
-  
-  @@unique([email, systemId])  // Cambiar unique constraint para permitir null en clinicId
+  system     System            @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  clinic     Clinic?           @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  smartPlugs SmartPlugDevice[]
+
+  @@unique([email, systemId]) // Cambiar unique constraint para permitir null en clinicId
   @@index([systemId])
   @@index([clinicId])
   @@index([status])
@@ -3432,23 +3478,23 @@ model ShellyCredential {
 }
 
 model WebSocketConnection {
-  id            String   @id @default(cuid())
-  type          String   // "SHELLY", "OTHER_IOT", "SOCKET_IO"
-  referenceId   String   // credentialId para Shelly, systemId para Socket.io
-  systemId      String   // 🆔 NUEVO: Campo requerido para multi-tenancy
-  status        String   // "connected", "disconnected", "error", "reconnecting"
-  lastPingAt    DateTime?
-  errorMessage  String?
-  metadata      Json?
-  autoReconnect Boolean  @default(true) // Control de reconexión automática
-  loggingEnabled Boolean @default(true) // 🔧 NUEVO: Control de logging de eventos
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  
+  id             String    @id @default(cuid())
+  type           String // "SHELLY", "OTHER_IOT", "SOCKET_IO"
+  referenceId    String // credentialId para Shelly, systemId para Socket.io
+  systemId       String // 🆔 NUEVO: Campo requerido para multi-tenancy
+  status         String // "connected", "disconnected", "error", "reconnecting"
+  lastPingAt     DateTime?
+  errorMessage   String?
+  metadata       Json?
+  autoReconnect  Boolean   @default(true) // Control de reconexión automática
+  loggingEnabled Boolean   @default(true) // 🔧 NUEVO: Control de logging de eventos
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
   // Relaciones
-  system        System   @relation(fields: [systemId], references: [id], onDelete: Cascade)
-  logs          WebSocketLog[]
-  
+  system System         @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  logs   WebSocketLog[]
+
   @@unique([type, referenceId, systemId], name: "unique_websocket_per_reference_system")
   @@index([type, referenceId])
   @@index([systemId])
@@ -3456,31 +3502,31 @@ model WebSocketConnection {
 }
 
 model WebSocketLog {
-  id               String              @id @default(cuid())
-  connectionId     String
-  connection       WebSocketConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
-  systemId         String              // 🆔 NUEVO: Campo requerido para multi-tenancy
-  
+  id           String              @id @default(cuid())
+  connectionId String
+  connection   WebSocketConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  systemId     String // 🆔 NUEVO: Campo requerido para multi-tenancy
+
   // Información del evento
-  eventType        String              // "connect", "disconnect", "error", "message", "ping"
-  message          String?             @db.Text
-  errorDetails     String?             @db.Text
-  metadata         Json?               // Datos adicionales del evento
-  
+  eventType    String // "connect", "disconnect", "error", "message", "ping"
+  message      String? @db.Text
+  errorDetails String? @db.Text
+  metadata     Json? // Datos adicionales del evento
+
   // Métricas de rendimiento
-  responseTime     Int?                // Tiempo de respuesta en ms
-  dataSize         Int?                // Tamaño de datos en bytes
-  
+  responseTime Int? // Tiempo de respuesta en ms
+  dataSize     Int? // Tamaño de datos en bytes
+
   // Información del cliente
-  clientIp         String?
-  userAgent        String?
-  
+  clientIp  String?
+  userAgent String?
+
   // Timestamps
-  createdAt        DateTime            @default(now())
-  
+  createdAt DateTime @default(now())
+
   // Relaciones
-  system           System              @relation(fields: [systemId], references: [id], onDelete: Cascade)
-  
+  system System @relation(fields: [systemId], references: [id], onDelete: Cascade)
+
   @@index([connectionId])
   @@index([systemId])
   @@index([eventType])
@@ -3533,42 +3579,53 @@ model ServiceEnergyProfile {
   stdDevKwhPerMin Float
   sampleCount     Int
   /// ⏱ Duración real en minutos
-  avgMinutes      Float     @default(0)
-  stdDevMinutes   Float     @default(0)
+  avgMinutes      Float    @default(0)
+  stdDevMinutes   Float    @default(0)
+  /// 📊 Campos para algoritmo de Welford (suma de cuadrados)
+  m2KwhPerMin     Float    @default(0)
+  m2Minutes       Float    @default(0)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  /// Tabla física: smart_plug_service_energy_profiles
-  @@map("smart_plug_service_energy_profiles")
+  // Relaciones
+  equipment Equipment @relation(fields: [equipmentId], references: [id])
+  service   Service   @relation(fields: [serviceId], references: [id])
 
+  @@unique([systemId, equipmentId, serviceId])
   @@index([systemId])
   @@index([equipmentId])
-  @@unique([systemId, equipmentId, serviceId])
+  /// Tabla física: smart_plug_service_energy_profiles
+  @@map("smart_plug_service_energy_profiles")
 }
 
 model DeviceUsageInsight {
-  id                          String   @id @default(cuid())
+  id                          String           @id @default(cuid())
   systemId                    String
+  clinicId                    String           // 🏥 NUEVO: Para optimizar filtros sin joins
   appointmentId               String
   deviceUsageId               String?
   equipmentClinicAssignmentId String?
   clientId                    String?
-  detectedAt                  DateTime @default(now())
+  detectedAt                  DateTime         @default(now())
   insightType                 UsageInsightType
   actualKwh                   Float
   expectedKwh                 Float
   deviationPct                Float
   detailJson                  Json?
-  resolved                    Boolean  @default(false)
+  resolved                    Boolean          @default(false)
   resolvedByUserId            String?
   resolvedAt                  DateTime?
 
-  /// Tabla física: smart_plug_device_usage_insights
-  @@map("smart_plug_device_usage_insights")
+  // Relaciones
+  clinic      Clinic      @relation(fields: [clinicId], references: [id])
+  appointment Appointment @relation(fields: [appointmentId], references: [id])
 
   @@index([systemId])
+  @@index([clinicId])
   @@index([appointmentId])
   @@index([insightType])
+  /// Tabla física: smart_plug_device_usage_insights
+  @@map("smart_plug_device_usage_insights")
 }
 
 // ========= ENERGY INSIGHTS: RAW SAMPLES & SERVICE USAGE ================
@@ -3585,9 +3642,9 @@ model SmartPlugPowerSample {
   usageId      String
   timestamp    DateTime @db.Timestamptz(6)
   watts        Float
-  totalEnergy  Float    // kWh acumulado reportado por el Shelly
+  totalEnergy  Float // kWh acumulado reportado por el Shelly
   relayOn      Boolean
-  servicesInfo Json?    // JSONB con ids de servicio y estMinutes [{id, estMin}]
+  servicesInfo Json? // JSONB con ids de servicio y estMinutes [{id, estMin}]
   createdAt    DateTime @default(now())
 
   @@index([deviceId, timestamp])
@@ -3624,16 +3681,16 @@ model ServiceGroupEnergyProfile {
   systemId      String
   clinicId      String
   equipmentId   String
-  servicesHash  String   // md5 de ids ordenados
+  servicesHash  String // md5 de ids ordenados
   services      Json?
   hourBucket    Int
   meanKwh       Float
   stdDevKwh     Float
   meanMinutes   Float
   stdDevMinutes Float
-  samples       Int       @default(1)
-  m2            Float     @default(0) // para Welford opcional
-  updatedAt     DateTime  @updatedAt
+  samples       Int      @default(1)
+  m2            Float    @default(0) // para Welford opcional
+  updatedAt     DateTime @updatedAt
 
   @@unique([clinicId, equipmentId, servicesHash, hourBucket])
   @@index([systemId])
@@ -3651,9 +3708,14 @@ model ClientServiceEnergyProfile {
   stdDevKwh     Float
   meanMinutes   Float
   stdDevMinutes Float
-  samples       Int       @default(1)
-  m2            Float     @default(0)
-  updatedAt     DateTime  @updatedAt
+  samples       Int      @default(1)
+  m2            Float    @default(0)
+  updatedAt     DateTime @updatedAt
+
+  // Relaciones
+  client  Person  @relation(fields: [clientId], references: [id])
+  service Service @relation(fields: [serviceId], references: [id])
+  clinic  Clinic  @relation(fields: [clinicId], references: [id])
 
   @@unique([clinicId, clientId, serviceId, hourBucket])
   @@index([systemId])
@@ -3671,9 +3733,9 @@ model UserServiceEnergyProfile {
   stdDevKwh     Float
   meanMinutes   Float
   stdDevMinutes Float
-  samples       Int       @default(1)
-  m2            Float     @default(0)
-  updatedAt     DateTime  @updatedAt
+  samples       Int      @default(1)
+  m2            Float    @default(0)
+  updatedAt     DateTime @updatedAt
 
   @@unique([clinicId, userId, serviceId, hourBucket])
   @@index([systemId])

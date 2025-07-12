@@ -231,6 +231,8 @@ export async function POST(
           return tx.invoiceItem.create({
             data: {
               invoiceId: invoice.id,
+              systemId: session.user.systemId, // 🏢 NUEVO: Añadir systemId
+              clinicId: ticket.clinicId, // 🏥 NUEVO: Añadir clinicId
               
               // Descripción y cantidad
               description: ticketItem.service?.name || ticketItem.product?.name || ticketItem.description || 'Item',

@@ -454,6 +454,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           currentStatus: 'ACTIVE',
           startedByUserId: session.user.id,
           systemId: systemId,
+          clinicId: appointment.clinicId, // 🏥 NUEVO: Añadir clinicId para optimización
           pauseIntervals: [],
           deviceData: {
             assignedAt: now.toISOString(),

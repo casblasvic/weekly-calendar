@@ -134,10 +134,16 @@ export async function PUT(request: Request) {
             await tx.productSetting.upsert({
                 where: { productId: productId },
                 create: { 
-                    ...settings, 
+                    ...settings,
+                    systemId: systemId, // 🏢 NUEVO: systemId para operaciones a nivel sistema
+                    clinicId: null, // 🏥 NUEVO: ProductSetting no está vinculado directamente a clínica específica
                     product: { connect: { id: productId } } 
                 },
-                update: settings,
+                update: {
+                    ...settings,
+                    systemId: systemId, // 🏢 NUEVO: Actualizar systemId en caso de que no existiera
+                    clinicId: null, // 🏥 NUEVO: ProductSetting no está vinculado directamente a clínica específica
+                },
             });
 
             // 4. Devolver el producto actualizado con settings

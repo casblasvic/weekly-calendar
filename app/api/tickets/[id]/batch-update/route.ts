@@ -394,6 +394,8 @@ export async function PUT(request: NextRequest, { params: paramsPromise }: { par
 
           const ticketItemDataForCreation: Prisma.TicketItemUncheckedCreateInput = {
             ticketId: ticket.id,
+            systemId: systemId, // 🏢 NUEVO: Añadir systemId
+            clinicId: ticket.clinicId, // 🏥 NUEVO: Añadir clinicId
             itemType: itemToAdd.itemType,
             ...(itemToAdd.itemType === TicketItemType.PRODUCT && { productId: itemToAdd.itemId }),
             ...(itemToAdd.itemType === TicketItemType.SERVICE && { serviceId: itemToAdd.itemId }),

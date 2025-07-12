@@ -112,6 +112,12 @@ export async function POST(
                             return t + duration
                         }, 0)
 
+                        // Obtener clinicId de la cita
+                        const appointmentData = await prisma.appointment.findUnique({
+                            where: { id: appointmentId },
+                            select: { clinicId: true }
+                        })
+
                         await prisma.appointmentDeviceUsage.create({
                             data: {
                                 appointmentId,
@@ -122,6 +128,7 @@ export async function POST(
                                 estimatedMinutes,
                                 currentStatus: 'ACTIVE',
                                 systemId: session.user.systemId,
+                                clinicId: appointmentData?.clinicId, // 🏥 NUEVO: Añadir clinicId para optimización
                                 startedByUserId: session.user.id,
                                 deviceData: {
                                     autoCreated: true,
