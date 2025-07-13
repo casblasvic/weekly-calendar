@@ -1,62 +1,74 @@
 "use client"
 
 import "@/styles/globals.css"
-import { ClinicProvider } from "@/contexts/clinic-context"
-import { LastClientProvider } from "@/contexts/last-client-context"
-import { ClientCardProvider } from "@/contexts/client-card-context"
-import { CabinProvider } from "@/contexts/CabinContext"
-import { FamilyProvider } from "@/contexts/family-context"
-import { ServicioProvider } from "@/contexts/servicios-context"
-import { ConsumoServicioProvider } from "@/contexts/consumo-servicio-context"
-import { EquipmentProvider } from "@/contexts/equipment-context"
-import { SystemProvider } from "@/app/contexts/system-context"
-import { StorageInitializer } from "@/components/storage-initializer"
-import { Toaster } from "@/app/components/ui/toaster"
+import { useEffect, useState } from "react"
 import { ThemeProvider } from "@/app/contexts/theme-context"
-import { AppProviders } from '@/contexts'
-import { LayoutWrapper } from "@/components/LayoutWrapper"
+import { SystemProvider } from "@/app/contexts/system-context"
+import { Toaster } from "@/app/components/ui/toaster"
 import { DatabaseProvider } from "@/contexts/database-context"
-import { useEffect } from "react"
-import { initializeDataService } from "@/services/data"
+import { StorageInitializer } from "@/components/storage-initializer"
+import { DataProviders } from "@/contexts/data-providers"
+import { UIProviders } from "@/contexts/ui-providers"
+import { LayoutWrapper } from "@/components/LayoutWrapper"
+
+// ⚡ COMPONENTE DE LOADING OPTIMIZADO
+const LoadingFallback = ({ message }: { message: string }) => (
+  <div className="flex items-center justify-center min-h-screen bg-background">
+    <div className="text-center">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+      <p className="text-muted-foreground text-sm">{message}</p>
+    </div>
+  </div>
+)
+
+// ⚡ INICIALIZACIÓN DIFERIDA - No bloquea renderizado inicial
+const DeferredInitializer = () => {
+  const [shouldInitialize, setShouldInitialize] = useState(false)
+
+  useEffect(() => {
+    // Diferir inicialización pesada hasta que el renderizado inicial esté completo
+    const timer = setTimeout(() => {
+      setShouldInitialize(true)
+    }, 100) // Muy pequeño delay para no bloquear renderizado inicial
+
+    return () => clearTimeout(timer)
+  }, [])
+
+  useEffect(() => {
+    if (shouldInitialize) {
+      // Inicializar servicio de datos de forma asíncrona sin bloquear
+      import("@/services/data").then(({ initializeDataService }) => {
+        initializeDataService().catch(error => {
+          console.error('Error al inicializar el servicio de datos:', error)
+        })
+      })
+    }
+  }, [shouldInitialize])
+
+  return shouldInitialize ? <StorageInitializer /> : null
+}
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  
-  // Inicializar el servicio de datos al cargar la aplicación
-  useEffect(() => {
-    initializeDataService().catch(error => {
-      console.error('Error al inicializar el servicio de datos:', error);
-    });
-  }, []);
-  
   return (
     <html lang="es" suppressHydrationWarning>
       <body>
-        <StorageInitializer />
+        {/* ✅ PROVIDERS CRÍTICOS - Se cargan inmediatamente */}
         <ThemeProvider>
-          <DatabaseProvider>
-            <SystemProvider>
-              <AppProviders>
-                <EquipmentProvider>
-                  <ClinicProvider>
-                    <FamilyProvider>
-                      <CabinProvider>
-                        <LastClientProvider>
-                          <ClientCardProvider>
-                            <ServicioProvider>
-                              <ConsumoServicioProvider>
-                                <LayoutWrapper>{children}</LayoutWrapper>
-                                <Toaster />
-                              </ConsumoServicioProvider>
-                            </ServicioProvider>
-                          </ClientCardProvider>
-                        </LastClientProvider>
-                      </CabinProvider>
-                    </FamilyProvider>
-                  </ClinicProvider>
-                </EquipmentProvider>
-              </AppProviders>
-            </SystemProvider>
-          </DatabaseProvider>
+          <SystemProvider>
+            {/* ✅ INICIALIZACIÓN DIFERIDA - No bloquea renderizado inicial */}
+            <DeferredInitializer />
+            
+                        {/* ✅ PROVIDERS SECUNDARIOS - Carga diferida para mejor rendimiento */}
+            <DatabaseProvider>
+              <DataProviders>
+                <UIProviders>
+                  <LayoutWrapper>{children}</LayoutWrapper>
+                </UIProviders>
+              </DataProviders>
+            </DatabaseProvider>
+            
+            <Toaster />
+          </SystemProvider>
         </ThemeProvider>
       </body>
     </html>
