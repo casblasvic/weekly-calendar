@@ -27,15 +27,10 @@
  *      - duracion: number (duración normal del servicio)
  *      - duracionTratamiento?: number (duración del tratamiento para Shelly)
  * 
- * 5. BOTÓN DE PRUEBA TEMPORAL:
- *    - Se agregó un botón temporal para activar/desactivar el módulo de Shelly
- *    - Utiliza localStorage para persistir el estado
- *    - ⚠️ IMPORTANTE: Remover en producción una vez implementado el contexto real
- * 
- * 6. HOOK DE VERIFICACIÓN:
- *    - useIsShellyModuleActive(): Hook que verifica si el módulo está activo
- *    - Actualmente lee de localStorage (temporal)
- *    - Debe ser adaptado para usar el contexto SmartPlugsProvider real
+ * 5. IMPLEMENTACIÓN PENDIENTE:
+ *    - ⚠️ IMPORTANTE: Necesita integración con el contexto real del módulo Shelly
+ *    - Actualmente la columna está oculta (isShellyModuleActive = false)
+ *    - Requiere implementar el hook/contexto real que controla el estado del módulo
  * 
  * @see /styles/servicios-table.css - Estilos CSS optimizados
  * @see docs/SMART_PLUGS_MODULE_ISOLATION.md - Documentación del módulo Shelly
@@ -65,28 +60,11 @@ import { toast } from "@/components/ui/use-toast"
 import { useClinic } from "@/contexts/clinic-context"
 import { Tarifa, FamiliaTarifa, Servicio } from "@/services/data/models/interfaces"
 
-// Hook para verificar si el módulo de Shelly está activo
-// Basado en el contexto SmartPlugsProvider mencionado en las memorias del usuario
-const useIsShellyModuleActive = () => {
-  // Esta función debe ser adaptada según la implementación real del contexto SmartPlugsProvider
-  // Por ahora, simularemos la verificación del estado del módulo
-  const [isActivated, setIsActivated] = useState(false)
-  
-  useEffect(() => {
-    // Aquí debería ir la lógica real para verificar el estado del módulo de Shelly
-    // Por ejemplo: checkear localStorage, context, o hacer una llamada a la API
-    try {
-      // Simulación temporal - adaptar según la implementación real
-      const shellyModuleStatus = localStorage.getItem('shellyModuleActive')
-      setIsActivated(shellyModuleStatus === 'true')
-    } catch (error) {
-      console.error('Error verificando estado del módulo Shelly:', error)
-      setIsActivated(false)
-    }
-  }, [])
-  
-  return isActivated
-}
+// TODO: Importar el contexto/hook real del módulo Shelly
+// const useIsShellyModuleActive = () => {
+//   // Implementación real del contexto SmartPlugsProvider
+//   return false // Placeholder hasta encontrar la implementación real
+// }
 
 export default function ConfiguracionTarifa() {
   const router = useRouter()
@@ -101,7 +79,8 @@ export default function ConfiguracionTarifa() {
   const { clinics } = useClinic()
   
   // Verificar si el módulo de Shelly está activo
-  const isShellyModuleActive = useIsShellyModuleActive()
+  // const isShellyModuleActive = useIsShellyModuleActive()
+  const isShellyModuleActive = false // Placeholder hasta encontrar la implementación real
   
   const [tarifa, setTarifa] = useState<Tarifa | null>(null)
   const [serviciosLista, setServiciosLista] = useState<Servicio[]>([])
@@ -686,31 +665,7 @@ export default function ConfiguracionTarifa() {
 
   return (
     <div className="container mx-auto p-6 mt-16">
-      {/* Botón temporal para testing - remover en producción */}
-      <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-yellow-800">
-              Módulo de Enchufes Inteligentes Shelly: {isShellyModuleActive ? 'ACTIVO' : 'INACTIVO'}
-            </p>
-            <p className="text-xs text-yellow-600 mt-1">
-              {isShellyModuleActive ? 'La columna "Duración Tratamiento" es visible' : 'La columna "Duración Tratamiento" está oculta'}
-            </p>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              const newStatus = !isShellyModuleActive
-              localStorage.setItem('shellyModuleActive', newStatus.toString())
-              window.location.reload() // Recargar para ver los cambios
-            }}
-            className="ml-4"
-          >
-            {isShellyModuleActive ? 'Desactivar' : 'Activar'} Módulo
-          </Button>
-        </div>
-      </div>
+      {/* TODO: Implementar verificación real del módulo Shelly */}
 
       {/* Card con buscador y botones de acciones */}
       <Card className="mb-6">
