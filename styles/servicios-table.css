@@ -1,0 +1,103 @@
+/* Estilos optimizados para la tabla de servicios */
+.servicios-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.servicios-table th,
+.servicios-table td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Columnas con anchos específicos */
+.servicios-table .col-tipo {
+  width: 80px;
+}
+
+.servicios-table .col-familia {
+  width: 140px;
+}
+
+.servicios-table .col-nombre {
+  width: auto; /* Toma el espacio restante */
+  min-width: 200px;
+}
+
+.servicios-table .col-codigo {
+  width: 100px;
+}
+
+.servicios-table .col-duracion {
+  width: 80px;
+}
+
+.servicios-table .col-duracion-tratamiento {
+  width: 120px;
+}
+
+.servicios-table .col-precio {
+  width: 90px;
+}
+
+.servicios-table .col-iva {
+  width: 60px;
+}
+
+.servicios-table .col-acciones {
+  width: 100px;
+}
+
+/* Mejorar la visualización de texto truncado */
+.servicios-table .truncate-tooltip {
+  cursor: help;
+}
+
+/* Estilos responsivos */
+@media (max-width: 1200px) {
+  .servicios-table .col-familia {
+    width: 120px;
+  }
+  
+  .servicios-table .col-nombre {
+    min-width: 180px;
+  }
+}
+
+@media (max-width: 768px) {
+  .servicios-table {
+    font-size: 0.875rem;
+  }
+  
+  .servicios-table .col-familia {
+    width: 100px;
+  }
+  
+  .servicios-table .col-nombre {
+    min-width: 150px;
+  }
+  
+  .servicios-table .col-codigo {
+    width: 80px;
+  }
+  
+  .servicios-table .col-duracion {
+    width: 70px;
+  }
+  
+  .servicios-table .col-duracion-tratamiento {
+    width: 100px;
+  }
+  
+  .servicios-table .col-precio {
+    width: 80px;
+  }
+  
+  .servicios-table .col-iva {
+    width: 50px;
+  }
+  
+  .servicios-table .col-acciones {
+    width: 80px;
+  }
+}

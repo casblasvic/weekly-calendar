@@ -1,7 +1,52 @@
+/**
+ * 🔧 MODIFICACIONES REALIZADAS:
+ * 
+ * 1. COLUMNA CONDICIONAL "DURACIÓN TRATAMIENTO":
+ *    - Se agregó la columna "Duración Tratamiento" que aparece solo cuando el módulo de Shelly está activo
+ *    - Se utiliza el hook useIsShellyModuleActive() para verificar el estado del módulo
+ *    - La columna se posiciona entre "Duración" y "Precio"
+ * 
+ * 2. OPTIMIZACIÓN DE DIMENSIONES:
+ *    - Se ajustaron las dimensiones de todas las columnas para un mejor aprovechamiento del espacio
+ *    - Columna "Código": reducida a 100px (antes era muy ancha para 4-5 caracteres)
+ *    - Columna "Duración": reducida a 80px (optimizada para mostrar minutos)
+ *    - Columna "Tipo": reducida a 80px (solo muestra íconos)
+ *    - Columna "Familia": ajustada a 140px
+ *    - Columna "Precio": reducida a 90px
+ *    - Columna "IVA": reducida a 60px
+ *    - Columna "Acciones": reducida a 100px
+ * 
+ * 3. ESTILOS CSS PERSONALIZADOS:
+ *    - Se creó el archivo /styles/servicios-table.css con estilos optimizados
+ *    - Se aplicó table-layout: fixed para un control preciso de anchos
+ *    - Se agregaron estilos responsivos para pantallas pequeñas
+ *    - Se mejoró la visualización de texto truncado con tooltips
+ * 
+ * 4. INTERFAZ DE DATOS:
+ *    - Se extendió la interfaz ServicioFormateado para incluir:
+ *      - duracion: number (duración normal del servicio)
+ *      - duracionTratamiento?: number (duración del tratamiento para Shelly)
+ * 
+ * 5. BOTÓN DE PRUEBA TEMPORAL:
+ *    - Se agregó un botón temporal para activar/desactivar el módulo de Shelly
+ *    - Utiliza localStorage para persistir el estado
+ *    - ⚠️ IMPORTANTE: Remover en producción una vez implementado el contexto real
+ * 
+ * 6. HOOK DE VERIFICACIÓN:
+ *    - useIsShellyModuleActive(): Hook que verifica si el módulo está activo
+ *    - Actualmente lee de localStorage (temporal)
+ *    - Debe ser adaptado para usar el contexto SmartPlugsProvider real
+ * 
+ * @see /styles/servicios-table.css - Estilos CSS optimizados
+ * @see docs/SMART_PLUGS_MODULE_ISOLATION.md - Documentación del módulo Shelly
+ * @author Asistente AI - Modificaciones para optimización de tabla de servicios
+ */
+
 "use client"
 
 import { useState, useEffect, useRef, useMemo } from "react"
 import { useRouter, useParams } from "next/navigation"
+import "@/styles/servicios-table.css"
 import { ChevronDown, Pencil, Trash2, ShoppingCart, Package, User, ChevronUp, ArrowUpDown, ChevronsLeft, ChevronLeft, ChevronRight, ChevronsRight, Wrench, ShoppingBag, SmilePlus, Plus, Edit3, Building2, AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -20,6 +65,29 @@ import { toast } from "@/components/ui/use-toast"
 import { useClinic } from "@/contexts/clinic-context"
 import { Tarifa, FamiliaTarifa, Servicio } from "@/services/data/models/interfaces"
 
+// Hook para verificar si el módulo de Shelly está activo
+// Basado en el contexto SmartPlugsProvider mencionado en las memorias del usuario
+const useIsShellyModuleActive = () => {
+  // Esta función debe ser adaptada según la implementación real del contexto SmartPlugsProvider
+  // Por ahora, simularemos la verificación del estado del módulo
+  const [isActivated, setIsActivated] = useState(false)
+  
+  useEffect(() => {
+    // Aquí debería ir la lógica real para verificar el estado del módulo de Shelly
+    // Por ejemplo: checkear localStorage, context, o hacer una llamada a la API
+    try {
+      // Simulación temporal - adaptar según la implementación real
+      const shellyModuleStatus = localStorage.getItem('shellyModuleActive')
+      setIsActivated(shellyModuleStatus === 'true')
+    } catch (error) {
+      console.error('Error verificando estado del módulo Shelly:', error)
+      setIsActivated(false)
+    }
+  }, [])
+  
+  return isActivated
+}
+
 export default function ConfiguracionTarifa() {
   const router = useRouter()
   const params = useParams()
@@ -31,6 +99,9 @@ export default function ConfiguracionTarifa() {
   const { getServiciosByTarifaId, eliminarServicio, getServicioById, actualizarServicio, getServiceImages, saveServiceImages, getServiceDocuments, saveServiceDocuments, deleteServiceImages, deleteServiceDocuments } = useServicio()
   const { getTiposIVAByTarifaId } = useIVA()
   const { clinics } = useClinic()
+  
+  // Verificar si el módulo de Shelly está activo
+  const isShellyModuleActive = useIsShellyModuleActive()
   
   const [tarifa, setTarifa] = useState<Tarifa | null>(null)
   const [serviciosLista, setServiciosLista] = useState<Servicio[]>([])
@@ -73,6 +144,8 @@ export default function ConfiguracionTarifa() {
     precio: number;
     iva: string;
     tipo: string;
+    duracion: number; // Duración en minutos
+    duracionTratamiento?: number; // Duración del tratamiento (opcional, para Shelly)
   }
   
   // Estado para los servicios formateados
@@ -135,7 +208,9 @@ export default function ConfiguracionTarifa() {
               familia: getFamiliaName(servicio.familiaId),
               precio: parseFloat(servicio.precioConIVA) || 0,
               iva: "N/A",
-              tipo: 'servicio'
+              tipo: 'servicio',
+              duracion: servicio.duracion || 0, // Duración normal del servicio
+              duracionTratamiento: servicio.duracionTratamiento || servicio.estimatedTreatmentDuration || 0 // Duración del tratamiento para Shelly
             }));
             
             setServiciosFormateados(serviciosFormateados);
@@ -611,6 +686,32 @@ export default function ConfiguracionTarifa() {
 
   return (
     <div className="container mx-auto p-6 mt-16">
+      {/* Botón temporal para testing - remover en producción */}
+      <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-yellow-800">
+              Módulo de Enchufes Inteligentes Shelly: {isShellyModuleActive ? 'ACTIVO' : 'INACTIVO'}
+            </p>
+            <p className="text-xs text-yellow-600 mt-1">
+              {isShellyModuleActive ? 'La columna "Duración Tratamiento" es visible' : 'La columna "Duración Tratamiento" está oculta'}
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              const newStatus = !isShellyModuleActive
+              localStorage.setItem('shellyModuleActive', newStatus.toString())
+              window.location.reload() // Recargar para ver los cambios
+            }}
+            className="ml-4"
+          >
+            {isShellyModuleActive ? 'Desactivar' : 'Activar'} Módulo
+          </Button>
+        </div>
+      </div>
+
       {/* Card con buscador y botones de acciones */}
       <Card className="mb-6">
         <CardContent className="p-6">
@@ -861,20 +962,20 @@ export default function ConfiguracionTarifa() {
 
       {/* Tabla de servicios */}
       <div className="overflow-x-auto bg-white rounded-lg shadow">
-        <table className="min-w-full divide-y divide-gray-200">
+        <table className="servicios-table min-w-full divide-y divide-gray-200">
           <thead className="table-header">
             <tr>
               <th
                 scope="col"
-                className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer"
+                className="col-tipo px-3 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer"
               >
-                <div className="flex items-center space-x-1">
+                <div className="flex items-center justify-center">
                   <span>Tipo</span>
                 </div>
               </th>
               <th
                 scope="col"
-                className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer"
+                className="col-familia px-3 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer"
                 onClick={() => requestSort('familia')}
               >
                 <div className="flex items-center">
@@ -884,7 +985,7 @@ export default function ConfiguracionTarifa() {
               </th>
               <th
                 scope="col"
-                className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer"
+                className="col-nombre px-4 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer"
                 onClick={() => requestSort('nombre')}
               >
                 <div className="flex items-center">
@@ -894,7 +995,7 @@ export default function ConfiguracionTarifa() {
               </th>
               <th
                 scope="col"
-                className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer"
+                className="col-codigo px-3 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer"
                 onClick={() => requestSort('codigo')}
               >
                 <div className="flex items-center">
@@ -904,7 +1005,25 @@ export default function ConfiguracionTarifa() {
               </th>
               <th
                 scope="col"
-                className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider cursor-pointer"
+                className="col-duracion px-3 py-3 text-center text-xs font-medium uppercase tracking-wider"
+              >
+                <div className="flex items-center justify-center">
+                  Duración
+                </div>
+              </th>
+              {isShellyModuleActive && (
+                <th
+                  scope="col"
+                  className="col-duracion-tratamiento px-3 py-3 text-center text-xs font-medium uppercase tracking-wider"
+                >
+                  <div className="flex items-center justify-center">
+                    Duración Tratamiento
+                  </div>
+                </th>
+              )}
+              <th
+                scope="col"
+                className="col-precio px-3 py-3 text-right text-xs font-medium uppercase tracking-wider cursor-pointer"
                 onClick={() => requestSort('precio')}
               >
                 <div className="flex items-center justify-end">
@@ -914,7 +1033,7 @@ export default function ConfiguracionTarifa() {
               </th>
               <th
                 scope="col"
-                className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider cursor-pointer"
+                className="col-iva px-3 py-3 text-right text-xs font-medium uppercase tracking-wider cursor-pointer"
                 onClick={() => requestSort('iva')}
               >
                 <div className="flex items-center justify-end">
@@ -924,7 +1043,7 @@ export default function ConfiguracionTarifa() {
               </th>
               <th
                 scope="col"
-                className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider"
+                className="col-acciones px-3 py-3 text-right text-xs font-medium uppercase tracking-wider"
               >
                 Acciones
               </th>
@@ -936,40 +1055,55 @@ export default function ConfiguracionTarifa() {
                 key={servicio.id} 
                 className="table-row-hover"
               >
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="flex items-center">
+                <td className="col-tipo px-3 py-4 whitespace-nowrap">
+                  <div className="flex items-center justify-center">
                     {servicio.tipo === 'servicio' ? (
-                      <SmilePlus size={18} className="text-purple-600" />
+                      <SmilePlus size={16} className="text-purple-600" />
                     ) : servicio.tipo === 'producto' ? (
-                      <ShoppingCart size={18} className="text-blue-600" />
+                      <ShoppingCart size={16} className="text-blue-600" />
                     ) : (
-                      <Package size={18} className="text-green-600" />
+                      <Package size={16} className="text-green-600" />
                     )}
-                    <span className="ml-2 text-xs font-medium text-gray-500 uppercase">
-                      {servicio.tipo}
-                    </span>
                   </div>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{servicio.familia || "(Ninguna)"}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{servicio.nombre}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{servicio.codigo}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                <td className="col-familia px-3 py-4 whitespace-nowrap text-sm text-gray-900 truncate truncate-tooltip" title={servicio.familia || "(Ninguna)"}>
+                  {servicio.familia || "(Ninguna)"}
+                </td>
+                <td className="col-nombre px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                  {servicio.nombre}
+                </td>
+                <td className="col-codigo px-3 py-4 whitespace-nowrap text-sm text-gray-900 text-center">
+                  {servicio.codigo}
+                </td>
+                <td className="col-duracion px-3 py-4 whitespace-nowrap text-sm text-gray-900 text-center">
+                  {servicio.duracion > 0 ? `${servicio.duracion}min` : '-'}
+                </td>
+                {isShellyModuleActive && (
+                  <td className="col-duracion-tratamiento px-3 py-4 whitespace-nowrap text-sm text-gray-900 text-center">
+                    {servicio.duracionTratamiento && servicio.duracionTratamiento > 0 ? `${servicio.duracionTratamiento}min` : '-'}
+                  </td>
+                )}
+                <td className="col-precio px-3 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
                   {typeof servicio.precio === 'number' ? servicio.precio.toFixed(2) : servicio.precio}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{servicio.iva}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  <div className="flex justify-end space-x-2">
+                <td className="col-iva px-3 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {servicio.iva}
+                </td>
+                <td className="col-acciones px-3 py-4 whitespace-nowrap text-sm text-gray-900">
+                  <div className="flex justify-end space-x-1">
                     <button
                       onClick={() => handleEditarServicio(servicio.id)}
                       className="text-indigo-600 hover:text-indigo-900"
+                      title="Editar servicio"
                     >
-                      <Edit3 size={18} />
+                      <Edit3 size={16} />
                     </button>
                     <button
                       onClick={() => handleEliminarServicio(servicio.id, servicio.nombre)}
                       className="text-red-600 hover:text-red-900"
+                      title="Eliminar servicio"
                     >
-                      <Trash2 size={18} />
+                      <Trash2 size={16} />
                     </button>
                   </div>
                 </td>
@@ -977,7 +1111,7 @@ export default function ConfiguracionTarifa() {
             ))}
             {currentItems.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-6 py-4 text-center text-gray-500">
+                <td colSpan={isShellyModuleActive ? 9 : 8} className="px-6 py-4 text-center text-gray-500">
                   No se encontraron servicios o productos.
                 </td>
               </tr>
