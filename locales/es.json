@@ -2399,5 +2399,76 @@
           "equipment_has_assignments": "No se puede eliminar: el equipamiento tiene asignaciones activas",
           "assignment_has_spare_parts": "No se puede eliminar: la asignación tiene recambios instalados"
         }
+    },
+    "energyInsights": {
+        "title": "Energy Insights",
+        "subtitle": "Análisis inteligente de consumo energético basado en datos reales",
+        "variabilityAnalysis": {
+            "title": "Análisis de Variabilidad",
+            "equipmentVariability": "Variabilidad por Equipo",
+            "futureVariability": "Variabilidad Futura",
+            "currentVariability": "Variabilidad Actual",
+            "tooltip": {
+                "title": "Predicción de Variabilidad",
+                "subtitle": "Análisis inteligente basado en datos reales de tratamientos",
+                "statesTitle": "Estados de Variabilidad",
+                "stable": "🟢 Estable",
+                "stableDesc": "Diferencia < 10% entre duración real y estimada",
+                "moderate": "🟡 Moderado", 
+                "moderateDesc": "Diferencia 10-25% o tiempo real ≈ duración cita",
+                "variable": "🔴 Variable",
+                "variableDesc": "Diferencia > 25% o tiempo real > duración cita",
+                "recommendationTitle": "💡 Recomendación Clave",
+                "recommendation": "La duración de cita debe incluir tiempo de preparación (5-10 min) además del tratamiento real para evitar retrasos y optimizar la experiencia del cliente.",
+                "optimizationTitle": "Tips de Optimización",
+                "optimizationStable": "Verde: Configuración óptima, mantener",
+                "optimizationModerate": "Amarillo: Revisar y ajustar gradualmente", 
+                "optimizationVariable": "Rojo: Requiere atención inmediata",
+                "technicalNote": "Basado en algoritmo Welford de análisis de datos reales"
+            },
+            "status": {
+                "stable": "Estable",
+                "moderate": "Moderado",
+                "variable": "Variable",
+                "urgent": "Urgente"
+            },
+            "recommendations": {
+                "stable": "Configuración óptima. El tiempo de cita incluye margen adecuado para preparación.",
+                "moderate": "Considere ajustar la duración de cita para incluir 5-10 min de preparación adicional.",
+                "variable": "Requiere atención: El tiempo real excede la duración programada. Revise la configuración.",
+                "urgent": "Acción inmediata: El tratamiento no cabe en el tiempo asignado. Ajuste urgente necesario."
+            }
+        },
+        "equipmentSummary": {
+            "averageVariability": "Variabilidad Promedio",
+            "highVariabilityServices": "servicios con alta variabilidad",
+            "allServicesStable": "Todos los servicios estables",
+            "servicesWithHighVariability": "{{count}} servicios con alta variabilidad"
+        },
+        "table": {
+            "headers": {
+                "service": "Servicio",
+                "samples": "Muestras",
+                "avgConsumption": "Consumo Promedio",
+                "appointmentDuration": "Duración Cita",
+                "estimatedTreatment": "Tratamiento Estimado",
+                "avgRealDuration": "Duración Real Prom.",
+                "variability": "Variabilidad",
+                "futureVariability": "Variabilidad Futura",
+                "actions": "Acciones"
+            },
+            "noData": "Sin datos",
+            "notConfigured": "No configurada",
+            "estimated": "Estimado",
+            "fewSamples": "Pocas muestras",
+            "updateDuration": "Actualizar Duración"
+        },
+        "actions": {
+            "expandAll": "Expandir Todo",
+            "collapseAll": "Colapsar Todo",
+            "updateDuration": "Actualizar Duración",
+            "requiresAttention": "Requiere atención",
+            "review": "Revisar"
+        }
     }
 }

@@ -19,6 +19,7 @@ export type DataServiceConfig = SupabaseConnectionConfig;
  */
 // >>> AJUSTAR TIPO: Ahora siempre será SupabaseDataService o null
 let dataServiceInstance: SupabaseDataService | null = null;
+let isInitializing = false; // Flag para evitar inicializaciones concurrentes
 
 /**
  * Inicializa el servicio de datos (AHORA SOLO PARA SUPABASE)
@@ -26,22 +27,33 @@ let dataServiceInstance: SupabaseDataService | null = null;
  */
 export const initializeDataService = async (config: SupabaseConnectionConfig): Promise<void> => {
 
-  // Si ya está inicializado, no hacer nada (podría añadir un check más robusto)
-  if (dataServiceInstance) {
-      console.warn("initializeDataService llamado de nuevo, pero ya existe una instancia.");
+  // Si ya está inicializado o se está inicializando, no hacer nada
+  if (dataServiceInstance || isInitializing) {
+      if (process.env.NODE_ENV === 'development') {
+        // Solo mostrar en desarrollo y con más contexto
+        console.debug("DataService: Ya inicializado o en proceso de inicialización, omitiendo...");
+      }
       return;
   }
 
+  isInitializing = true;
 
-  // Crear directamente la instancia de Supabase
-  if (!config) { // Chequeo básico por si acaso
-      throw new Error('Configuración de Supabase requerida para inicializar.');
+  try {
+    // Crear directamente la instancia de Supabase
+    if (!config) { // Chequeo básico por si acaso
+        throw new Error('Configuración de Supabase requerida para inicializar.');
+    }
+    dataServiceInstance = new SupabaseDataService(config);
+    
+    // Inicializar el servicio
+    await dataServiceInstance.initialize();
+    
+    if (process.env.NODE_ENV === 'development') {
+      console.debug("DataService: Inicializado correctamente");
+    }
+  } finally {
+    isInitializing = false;
   }
-  dataServiceInstance = new SupabaseDataService(config);
-  
-  // Inicializar el servicio
-  await dataServiceInstance.initialize();
-  
 };
 
 /**

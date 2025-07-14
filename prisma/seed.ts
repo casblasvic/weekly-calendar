@@ -49,7 +49,11 @@ import { seedCountries } from './seed-countries.ts';
 import { seedPersons } from './seed-persons.ts';
 import { seedTags } from './seed-tags.ts';
 import { seedWebhooks } from './seed-webhooks.ts'; // Importar el nuevo seeder
+import { seedPersonContacts } from './seed-person-contacts.ts'; // Importar seeder de contactos múltiples
+import { seedPersonRelations } from './seed-person-relations.ts'; // Importar seeder de relaciones
+import { seedCompanies } from './seed-companies.ts'; // Importar seeder de companies
 import { getOrCreateCuid, getMappedId, initializeKnownIds, generateCuid } from './seed-helpers.ts';
+import { upsertPersonSafely } from '../lib/person-validation.ts'; // Importar función helper
 // <<< ELIMINAR Importación dinámica de mockData >>>
 // import seedCountries from './seed-countries'; // <<< ELIMINAR Importación (ya integrada)
 
@@ -1820,14 +1824,10 @@ async function main() {
         where: { email: client1Data.email, systemId: system!.id } 
       });
       let client1;
-      if (client1Found) {
-          client1 = await prisma.person.update({ 
-            where: { id: client1Found.id }, 
-            data: client1Data 
-          });
-      } else {
-          client1 = await prisma.person.create({ data: client1Data });
-      }
+      client1 = await upsertPersonSafely({
+        ...client1Data,
+        systemId: system!.id
+      });
       
       // Crear el rol funcional CLIENT para esta persona
       const client1Role = await prisma.personFunctionalRole.upsert({
@@ -1883,7 +1883,10 @@ async function main() {
             data: client2Data 
           });
       } else {
-          client2 = await prisma.person.create({ data: client2Data });
+          client2 = await upsertPersonSafely({
+            ...client2Data,
+            systemId: system!.id
+          });
       }
       
       // Crear el rol funcional CLIENT para esta persona
@@ -1920,6 +1923,7 @@ async function main() {
       const client3Data = { 
         firstName: 'Cliente', 
         lastName: 'Test Sin Email', 
+        email: 'cliente.test.sin.email@example.com',
         phone: '600333444', 
         system: { connect: { id: system!.id } }, 
         birthDate: new Date('1995-01-01'), 
@@ -1929,7 +1933,10 @@ async function main() {
         countryIsoCode: 'ES', 
         postalCode: '41001',
       };
-      const client3 = await prisma.person.create({ data: client3Data });
+      const client3 = await upsertPersonSafely({
+        ...client3Data,
+        systemId: system!.id
+      });
       
       // Crear el rol funcional CLIENT para esta persona
       const client3Role = await prisma.personFunctionalRole.upsert({
@@ -2425,10 +2432,15 @@ async function main() {
 
   // Temporalmente comentado hasta adaptar los seeds al modelo actual
   await seedPersons(prisma, system!.id);
+  await seedCompanies(system!.id); // Agregar seeding de companies
   await seedTags(prisma, system!.id); // Agregar llamada a seedTags
   
   // Crear datos de prueba para Energy Insights al final
   await seedAnomalias(prisma, system!.id);
+  
+  // 🔗 NUEVOS SEEDERS: Contactos múltiples y relaciones entre personas
+  await seedPersonContacts(prisma, system!.id);
+  await seedPersonRelations(prisma, system!.id);
   
   console.log('Seeding completed.');
 } // Fin función main()

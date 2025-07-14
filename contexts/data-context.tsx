@@ -1,11 +1,19 @@
 'use client';
 
-import React, { createContext, useContext, ReactNode, useEffect, useState } from 'react';
-import { DataService } from '@/services/data/data-service';
-import { initializeDataService, getDataService, type SupabaseConnectionConfig } from '@/services/data';
+import { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
+import { initializeDataService, getDataService, type DataServiceConfig } from '@/services/data';
+import type { SupabaseConnectionConfig } from '@/services/data/supabase-data-service';
+
+// Definir el tipo de DataService basado en el servicio actual
+type DataService = ReturnType<typeof getDataService>;
+
+interface DataServiceContextValue {
+  dataService: DataService | null;
+  isInitialized: boolean;
+}
 
 // Crear el contexto
-const DataServiceContext = createContext<DataService | null>(null);
+const DataServiceContext = createContext<DataServiceContextValue | null>(null);
 
 // Hook personalizado para usar el contexto
 export const useDataService = () => {
@@ -32,9 +40,17 @@ export const DataServiceProvider = ({ children }: DataServiceProviderProps) => {
   });
   const [isInitialized, setIsInitialized] = useState(() => !!dataService);
   const [error, setError] = useState<string | null>(null);
+  const initializationAttempted = useRef(false); // Evitar re-inicializaciones en StrictMode
 
   useEffect(() => {
+    // Si ya tenemos el servicio o ya intentamos inicializar, no hacer nada
+    if ((dataService && isInitialized) || initializationAttempted.current) {
+      return;
+    }
+
     const initializeService = async () => {
+      initializationAttempted.current = true; // Marcar que ya intentamos inicializar
+      
       try {
         // Verificar variables de entorno
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -63,10 +79,11 @@ export const DataServiceProvider = ({ children }: DataServiceProviderProps) => {
       }
     };
 
-    if (!isInitialized && !dataService) {
+    // Solo inicializar si no está inicializado Y no tenemos servicio Y no hemos intentado antes
+    if (!isInitialized && !dataService && !initializationAttempted.current) {
       initializeService();
     }
-  }, [isInitialized]);
+  }, [dataService, isInitialized]); // Agregar dataService como dependencia
 
   // Mostrar error si hay problemas de configuración
   if (error) {
@@ -90,7 +107,7 @@ export const DataServiceProvider = ({ children }: DataServiceProviderProps) => {
   }
 
   return (
-    <DataServiceContext.Provider value={dataService}>
+    <DataServiceContext.Provider value={{ dataService, isInitialized }}>
       {children}
     </DataServiceContext.Provider>
   );

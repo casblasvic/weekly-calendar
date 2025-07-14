@@ -63,7 +63,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(
       { 
         error: 'Error interno del servidor',
-        details: error.message
+        details: error instanceof Error ? error.message : 'Unknown error'
       },
       { status: 500 }
     )

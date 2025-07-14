@@ -10,11 +10,25 @@ import { es } from "date-fns/locale"
 import { DateRange } from "react-day-picker"
 import { useState } from "react"
 
-export function CalendarDateRangePicker() {
-  const [dateRange, setDateRange] = useState<DateRange | undefined>({
+interface CalendarDateRangePickerProps {
+  dateRange?: DateRange | undefined
+  setDateRange?: (dateRange: DateRange | undefined) => void
+  className?: string
+}
+
+export function CalendarDateRangePicker({ 
+  dateRange: externalDateRange, 
+  setDateRange: externalSetDateRange,
+  className 
+}: CalendarDateRangePickerProps = {}) {
+  const [internalDateRange, setInternalDateRange] = useState<DateRange | undefined>({
     from: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
     to: new Date(),
   })
+
+  // Usar props externas si están disponibles, sino usar estado interno
+  const dateRange = externalDateRange !== undefined ? externalDateRange : internalDateRange
+  const setDateRange = externalSetDateRange || setInternalDateRange
 
   return (
     <Popover>
@@ -22,7 +36,7 @@ export function CalendarDateRangePicker() {
         <Button
           id="date"
           variant={"outline"}
-          className="w-full justify-start text-left font-normal"
+          className={cn("w-full justify-start text-left font-normal", className)}
         >
           <CalendarIcon className="mr-2 h-4 w-4 flex-shrink-0" />
           <span className="block truncate">

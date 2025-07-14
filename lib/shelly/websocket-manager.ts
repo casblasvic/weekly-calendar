@@ -380,8 +380,8 @@ class ShellyWebSocketManager {
                     
                     // 📴 Marcar como offline temporalmente por rate limit
                     console.log(`📴 [SYNC] Marcando dispositivo ${dev.name} como OFFLINE por rate limit (temporal)`);
-                    await this.handleDeviceStatusUpdate(credentialId, dev.deviceId, {
-                        online: false,
+                await this.handleDeviceStatusUpdate(credentialId, dev.deviceId, {
+                    online: false,
                         'switch:0': { output: false },
                         reason: 'rate_limited',
                         retryAfter: retryAfter
@@ -422,9 +422,9 @@ class ShellyWebSocketManager {
                         online: false,
                         'switch:0': { output: false },
                         reason: 'sync_error'
-                    } as any);
-                }
+                } as any);
             }
+        }
         }
 
         // 📊 RESUMEN DE SINCRONIZACIÓN

@@ -203,7 +203,7 @@ export class EnergyConfigValidator {
     
     return baseConfig
   }
-  
+
   /**
    * Obtiene configuración desde variables de entorno
    */
@@ -243,7 +243,7 @@ export class EnergyConfigValidator {
   }
 }
 
-/**
+  /**
  * Obtiene la configuración activa basada en el entorno
  */
 export function getActiveEnergyConfig(): EnergyInsightsConfig {
