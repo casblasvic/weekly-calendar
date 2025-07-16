@@ -130,12 +130,59 @@ export async function GET(request: NextRequest) {
         services: {
           include: {
             service: {
-              select: {
-                id: true,
-                name: true,
-                colorCode: true,
-                categoryId: true,
-                durationMinutes: true,  // ✅ AÑADIR duración para cálculos
+              // 🆕 CAMBIAR select por include para poder incluir equipamientos
+              include: {
+                settings: {
+                  include: {
+                    equipmentRequirements: {
+                      include: {
+                        equipment: {
+                          include: {
+                            clinicAssignments: {
+                              include: {
+                                cabin: {
+                                  select: { id: true, name: true }
+                                },
+                                                            smartPlugDevice: {
+                              select: {
+                                id: true,
+                                name: true,
+                                deviceId: true,
+                                online: true,
+                                relayOn: true,
+                                currentPower: true,
+                                voltage: true,
+                                temperature: true,
+                                credentialId: true,
+                                autoShutdownEnabled: true,
+                                // ⚡ OBTENER POWERTHRESHOLD DE EQUIPAMIENTO
+                                equipmentClinicAssignment: {
+                                  select: {
+                                    id: true,
+                                    equipment: {
+                                      select: {
+                                        id: true,
+                                        name: true,
+                                        powerThreshold: true // ⚡ CRÍTICO: Aquí está el powerThreshold correcto
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                              },
+                              where: {
+                                isActive: true,
+                                // 🔥 FILTRAR SOLO ASIGNACIONES DE LA CLÍNICA ACTUAL
+                                clinicId: clinicId
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
               }
             }
           }
@@ -368,14 +415,19 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Crear los servicios de la cita manualmente
+    // Crear los servicios de la cita usando Prisma ORM
     const createdServices = [];
     for (const serviceId of services) {
       try {
-        const appointmentService = await prisma.$executeRaw`
-          INSERT INTO saasavatar.appointment_services (id, "systemId", "clinicId", "appointmentId", "serviceId", status, "createdAt", "updatedAt")
-          VALUES (${createId()}, ${session.user.systemId}, ${clinicId}, ${appointment.id}, ${serviceId}, 'SCHEDULED', NOW(), NOW())
-        `;
+        const appointmentService = await prisma.appointmentService.create({
+          data: {
+            systemId: session.user.systemId,
+            clinicId,
+            appointmentId: appointment.id,
+            serviceId,
+            status: 'SCHEDULED'
+          }
+        });
         createdServices.push({ serviceId, appointmentId: appointment.id });
       } catch (error) {
         console.error('Error creating appointment service:', error);

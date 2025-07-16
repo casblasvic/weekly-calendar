@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from "react"
 import { useInterfaz } from "./interfaz-Context"
+import { useQueryClient } from '@tanstack/react-query'
 import type { 
     ClinicScheduleBlock,
     ScheduleTemplateBlock,
@@ -41,6 +42,7 @@ export function ScheduleBlocksProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState<boolean>(true);
   const [dataFetched, setDataFetched] = useState(false);
   const interfaz = useInterfaz();
+  const queryClient = useQueryClient();
 
   const [cabinOverrides, setCabinOverrides] = useState<CabinScheduleOverride[]>([]);
   const [loadingOverrides, setLoadingOverrides] = useState<boolean>(false);
@@ -146,14 +148,26 @@ export function ScheduleBlocksProvider({ children }: { children: ReactNode }) {
   };
 
   const fetchOverridesByDateRange = useCallback(async (clinicId: string, startDate: string, endDate: string) => {
-    // console.log(`[ScheduleBlocksContext] Fetching overrides for clinic ${clinicId} from ${startDate} to ${endDate}`); // Log optimizado
+    // ✅ OPTIMIZACIÓN CRÍTICA: Verificar cache pre-cargado primero
+    const cacheKey = ['cabin-schedule-overrides', clinicId, startDate, endDate];
+    const cachedData = queryClient.getQueryData<CabinScheduleOverride[]>(cacheKey);
+    
+    if (cachedData) {
+      console.log(`[ScheduleBlocksContext] ✅ Usando overrides desde cache: ${cachedData.length} overrides`);
+      setCabinOverrides(cachedData);
+      setLoadingOverrides(false);
+      setErrorOverrides(null);
+      setLastFetchedRange({ clinicId, startDate, endDate });
+      return;
+    }
+    
+    // ✅ SOLO hacer llamada API si no hay cache
+    console.log(`[ScheduleBlocksContext] 🌐 No hay cache, haciendo llamada API para overrides de ${clinicId} (${startDate} - ${endDate})`);
     setLoadingOverrides(true);
     setErrorOverrides(null);
     setLastFetchedRange({ clinicId, startDate, endDate });
     try {
       const apiUrl = `/api/cabin-schedule-overrides?clinicId=${clinicId}&startDate=${startDate}&endDate=${endDate}`;
-      // console.log(`[ScheduleBlocksContext] Calling API URL: ${apiUrl}`); // Log optimizado
-
       const response = await fetch(apiUrl);
 
       // console.log(`[ScheduleBlocksContext] API Response Status: ${response.status}`); // Log optimizado
@@ -187,7 +201,9 @@ export function ScheduleBlocksProvider({ children }: { children: ReactNode }) {
       // console.log('>>> FETCHED Overrides:', JSON.stringify(overridesWithDates, null, 2)); // Log optimizado
 
       setCabinOverrides(overridesWithDates);
-      // console.log('[ScheduleBlocksContext] Overrides fetched and parsed successfully:', overridesWithDates); // Log original
+      // ✅ GUARDAR EN CACHE para futuras consultas
+      queryClient.setQueryData(cacheKey, overridesWithDates);
+      console.log(`[ScheduleBlocksContext] ✅ Overrides guardados en cache: ${overridesWithDates.length} items`);
 
     } catch (error: any) {
       console.error("[ScheduleBlocksContext] Error in fetchOverridesByDateRange:", error);
@@ -197,7 +213,7 @@ export function ScheduleBlocksProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoadingOverrides(false);
     }
-  }, []);
+  }, [queryClient]);
 
   const createCabinOverride = useCallback(async (overrideData: Omit<CabinScheduleOverride, 'id' | 'createdAt' | 'updatedAt' | 'clinic'>): Promise<CabinScheduleOverride | null> => {
     console.log("[ScheduleBlocksContext] Creating cabin override:", overrideData);

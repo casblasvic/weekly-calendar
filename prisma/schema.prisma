@@ -683,6 +683,7 @@ model Equipment {
   clinicAssignments  EquipmentClinicAssignment[]
   categoriesUsing    Category[]                    @relation("CategoryEquipmentType") // ✅ NUEVO: Relación inversa
   energyProfiles     ServiceEnergyProfile[]
+  groupEnergyProfiles ServiceGroupEnergyProfile[] // 🔧 AGREGADO: Relación inversa para grupos
 
   @@unique([name, systemId])
   @@index([systemId])
@@ -2965,6 +2966,12 @@ model Person {
   @@index([systemId, phone], name: "person_system_phone_idx")
   @@index([systemId, nationalId], name: "person_system_national_id_idx")
   @@index([systemId, firstName, lastName, birthDate], name: "person_system_name_birth_idx")
+  
+  // 🔒 CONSTRAINTS ÚNICOS PARA PREVENIR DUPLICADOS
+  @@unique([systemId, email], name: "person_system_email_unique")
+  @@unique([systemId, phone], name: "person_system_phone_unique") 
+  @@unique([systemId, nationalId], name: "person_system_national_id_unique")
+  
   // Índices existentes
   @@index([systemId])
   @@index([email])
@@ -3808,6 +3815,7 @@ model ServiceGroupEnergyProfile {
   id            String   @id @default(cuid())
   systemId      String
   clinicId      String
+  equipmentId   String   // 🔧 AGREGADO: Para almacenar perfiles por equipment específico
   serviceId     String
   hourBucket    Int
   meanKwh       Float
@@ -3819,11 +3827,13 @@ model ServiceGroupEnergyProfile {
   updatedAt     DateTime @updatedAt
 
   // Relaciones
-  service Service @relation(fields: [serviceId], references: [id])
-  clinic  Clinic  @relation(fields: [clinicId], references: [id])
+  equipment Equipment @relation(fields: [equipmentId], references: [id])
+  service   Service   @relation(fields: [serviceId], references: [id])
+  clinic    Clinic    @relation(fields: [clinicId], references: [id])
 
-  @@unique([clinicId, serviceId, hourBucket])
+  @@unique([clinicId, equipmentId, serviceId, hourBucket])
   @@index([systemId])
+  @@index([equipmentId])
   @@map("smart_plug_service_group_energy_profile")
 }
 

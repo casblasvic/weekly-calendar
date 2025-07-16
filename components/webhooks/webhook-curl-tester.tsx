@@ -31,6 +31,7 @@ import {
   Trash2,
   Wand2
 } from "lucide-react"
+import { getSiteUrl } from '@/lib/utils/site-url'
 
 
 interface WebhookCurlTesterProps {
@@ -424,7 +425,7 @@ export function WebhookCurlTester({ webhook, onTestDataReceived, onConfigChange 
     }
 
     // ===== GENERAR URL DINÁMICA CON PUERTO CORRECTO =====
-    const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001'
+    const currentOrigin = typeof window !== 'undefined' ? window.location.origin : getSiteUrl()
     const webhookPath = webhook.url ? webhook.url.split('/api/webhooks')[1] : '/fallback/webhook'
     const dynamicUrl = `${currentOrigin}/api/webhooks${webhookPath}`
     
@@ -841,7 +842,7 @@ export function WebhookCurlTester({ webhook, onTestDataReceived, onConfigChange 
       }
       
       // ===== USAR URL DINÁMICA CON PUERTO CORRECTO =====
-      const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001'
+      const currentOrigin = typeof window !== 'undefined' ? window.location.origin : getSiteUrl()
       const webhookPath = webhook.url ? webhook.url.split('/api/webhooks')[1] : '/fallback/webhook'
       const dynamicBaseUrl = `${currentOrigin}/api/webhooks${webhookPath}`
       
@@ -1053,7 +1054,7 @@ export function WebhookCurlTester({ webhook, onTestDataReceived, onConfigChange 
     setListeningStartTime(new Date())
     setIncomingData([])
     setExecutionLogs(["👂 Webhook en modo escucha..."])
-    const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001'
+    const currentOrigin = typeof window !== 'undefined' ? window.location.origin : getSiteUrl()
     const webhookPath = webhook.url ? webhook.url.split('/api/webhooks')[1] : '/fallback/webhook'
     const dynamicWebhookUrl = `${currentOrigin}/api/webhooks${webhookPath}`
     setExecutionLogs(prev => [...prev, "🔗 URL del webhook: " + dynamicWebhookUrl])

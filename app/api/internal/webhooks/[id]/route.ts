@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma, Prisma } from '@/lib/db';
 // const prisma = new PrismaClient(); // MIGRADO: usar singleton desde @/lib/db
 import { auth } from "@/lib/auth"
+import { getSiteUrl } from '@/lib/utils/site-url'
 
 export async function PATCH(
   request: NextRequest,
@@ -110,11 +111,8 @@ export async function PATCH(
       data: updateData
     })
 
-    // Regenerar URL si cambió el slug - detección dinámica de puerto
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 
-                   process.env.NEXTAUTH_URL || 
-                   process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` :
-                   `http://localhost:${process.env.PORT || 3001}`
+    // Regenerar URL si cambió el slug usando helper estándar
+    const baseUrl = getSiteUrl()
     const updatedUrl = `${baseUrl}/api/webhooks/${webhookId}/${updatedWebhook.slug}`
 
     // Actualizar la URL del webhook si es necesario

@@ -37,7 +37,8 @@ import { useServiceEquipmentRequirements } from '@/hooks/use-service-equipment-r
 import { toast } from 'sonner'
 import { useIntegrationModules } from '@/hooks/use-integration-modules'
 import { getAppointmentBorderClass } from '@/lib/utils/device-colors'
-import { useAppointmentTimer } from '@/hooks/use-appointment-timer'
+// ✅ ELIMINADO: import { useAppointmentTimer } from '@/hooks/use-appointment-timer'
+// Los datos de tiempo se manejan directamente desde appointment_device_usage via WebSocket
 
 // Función para ajustar el brillo del color
 function adjustColorBrightness(color: string, amount: number) {
@@ -317,13 +318,13 @@ export function AppointmentItem({
     }
   }, [isThisAppointmentInOperation]);
 
-  // ✅ OBTENER DATOS DEL CACHE para validación consistente
-  const { appointments: cacheAppointments } = useWeeklyAgendaData(appointment.date);
+  // ✅ OPTIMIZACIÓN CRÍTICA: Eliminar llamada individual a useWeeklyAgendaData
+  // Los datos del cache ya se obtienen en WeeklyAgenda y se pasan como props
 
   // ✅ VALIDACIÓN CENTRALIZADA: Usar función unificada para botones de granularidad
   const canMoveUp = useMemo(() => {
-    // ✅ USAR DATOS DEL CACHE para garantizar consistencia absoluta
-    const appointmentsToUse = cacheAppointments || appointments || [];
+    // ✅ OPTIMIZACIÓN: Usar datos pasados como props
+    const appointmentsToUse = appointments || [];
     
     if (appointmentsToUse.length === 0 || !activeClinic) return true;
     
@@ -336,11 +337,11 @@ export function AppointmentItem({
     );
     
     return validation.isValid;
-  }, [appointment, cacheAppointments, appointments, minuteGranularity, activeClinic]);
+  }, [appointment, appointments, minuteGranularity, activeClinic]);
 
   const canMoveDown = useMemo(() => {
-    // ✅ USAR DATOS DEL CACHE para garantizar consistencia absoluta
-    const appointmentsToUse = cacheAppointments || appointments || [];
+    // ✅ OPTIMIZACIÓN: Usar datos pasados como props
+    const appointmentsToUse = appointments || [];
     
     if (appointmentsToUse.length === 0 || !activeClinic) return true;
     
@@ -353,12 +354,12 @@ export function AppointmentItem({
     );
     
     return validation.isValid;
-  }, [appointment, cacheAppointments, appointments, minuteGranularity, activeClinic]);
+  }, [appointment, appointments, minuteGranularity, activeClinic]);
 
   // ✅ NUEVA: VALIDACIÓN PARA OCULTAR HOVER DE ESTIRAR
   const canResize = useMemo(() => {
-    // ✅ USAR DATOS DEL CACHE para garantizar consistencia absoluta
-    const appointmentsToUse = cacheAppointments || appointments || [];
+    // ✅ OPTIMIZACIÓN: Usar datos pasados como props
+    const appointmentsToUse = appointments || [];
     
     if (appointmentsToUse.length === 0 || !activeClinic) return true;
     
@@ -374,7 +375,7 @@ export function AppointmentItem({
     );
     
     return validation.isValid;
-  }, [appointment, cacheAppointments, appointments, minuteGranularity, activeClinic]);
+  }, [appointment, appointments, minuteGranularity, activeClinic]);
 
   const handleDragStart = (e: React.DragEvent) => {
     // ✅ BLOQUEO: No permitir drag en citas optimistas
@@ -504,10 +505,10 @@ export function AppointmentItem({
       const granularDelta = Math.round(deltaMinutes / minuteGranularity) * minuteGranularity;
       let newDuration = Math.max(minuteGranularity, originalDuration + granularDelta);
       
-      // ✅ DETECCIÓN DE CONFLICTOS SUAVE - USAR DATOS DEL CACHE
+      // ✅ DETECCIÓN DE CONFLICTOS SUAVE - OPTIMIZACIÓN
       let hasConflict = false;
-      // ✅ USAR DATOS DEL CACHE para garantizar consistencia absoluta
-      const appointmentsToUse = cacheAppointments || appointments || [];
+      // ✅ OPTIMIZACIÓN: Usar datos pasados como props
+      const appointmentsToUse = appointments || [];
       
       if (appointmentsToUse.length > 0) {
         const [startHours, startMinutes] = appointment.startTime.split(':').map(Number);
@@ -626,7 +627,7 @@ export function AppointmentItem({
     overlay.addEventListener('mousemove', handleMouseMove);
     overlay.addEventListener('mouseup', handleMouseUp);
           document.addEventListener('keydown', handleKeyDown);
-  }, [appointment.id, appointment.duration, appointment.startTime, appointment.roomId, minuteGranularity, height, onDurationChange, onDraggingDurationChange, cacheAppointments, appointments]);
+  }, [appointment.id, appointment.duration, appointment.startTime, appointment.roomId, minuteGranularity, height, onDurationChange, onDraggingDurationChange, appointments]);
 
   // 🆕 HANDLER PARA INICIAR CRONÓMETRO CON DROPDOWN INTELIGENTE
   const handleStartTimer = useCallback(async () => {
@@ -794,9 +795,9 @@ export function AppointmentItem({
   const [processingDevices, setProcessingDevices] = useState<Set<string>>(new Set()) // ✅ NUEVO: Estado para evitar dobles clics
   const { isShellyActive } = useIntegrationModules()
   
-  // ⚡ ACTIVAR HOOK SIEMPRE para renderizado inmediato de colores
-  // 🔥 CRÍTICO: Cargar datos inmediatamente para mostrar colores desde el inicio
-  const shouldActivateHook = isShellyActive; // ✅ SIEMPRE ACTIVO si el módulo está habilitado
+  // ⚡ OPTIMIZACIÓN CRÍTICA: Solo activar hook cuando sea necesario
+  // 🔥 RENDIMIENTO: Evitar 50+ llamadas individuales al hook
+  const shouldActivateHook = isShellyActive && (showQuickActions || isHovering); // ✅ Solo durante hover/interacción
 
   // ---------------------------------------------------------------------
   // 🆕 INTEGRACIÓN CON FLOATING MENU
@@ -814,10 +815,11 @@ export function AppointmentItem({
     return map
   }, [smartPlugsData])
   
-  // 🚀 NUEVO: Usar hook de cache de dispositivos (carga instantánea)
+  // 🚀 OPTIMIZADO: Usar datos pre-cargados del appointment (carga instantánea)
   const serviceEquipmentData = useServiceEquipmentRequirements({
     appointmentId: appointment.id,
-    enabled: shouldActivateHook
+    enabled: shouldActivateHook,
+    appointmentData: appointment // ⚡ Datos pre-cargados - elimina llamadas API individuales
   });
 
   // Transformar datos para la UI del quick menu — fusionando estado en vivo.
@@ -934,11 +936,9 @@ export function AppointmentItem({
     return null
   }, [equipmentData, liveDeviceMap, isShellyActive])
 
-  // 🆕 HOOK PARA OBTENER DATOS DE TIEMPO EN TIEMPO REAL
-  const { timerData } = useAppointmentTimer({
-    appointmentId: appointment.id,
-    autoRefresh: false // Solo obtener datos, no auto-refresh
-  })
+  // ✅ ELIMINADO: useAppointmentTimer 
+  // Los datos de tiempo ahora se obtienen directamente desde appointment_device_usage via WebSocket
+  // El sistema useSmartPlugsFloatingMenu ya maneja esto automáticamente
 
   // 🆕 -------- TRIGGER PARA RE-RENDER EN UPDATES LIVE ----------------------------
   const { data: session } = useSession()
@@ -947,10 +947,12 @@ export function AppointmentItem({
   // Trigger para re-render en updates live
   const [, forceUpdate] = useState(0)
 
-  // 🎯 USAR FUNCIÓN CENTRALIZADA PARA MARCOS DE CITAS
+  // 🎯 OPTIMIZACIÓN: Cálculo ligero para marcos de citas
   const operationRingClass = useMemo(() => {
-    if (!isShellyActive) return ''
-    if (!equipmentData || equipmentData.availableDevices.length === 0) return ''
+    // ✅ OPTIMIZACIÓN: Solo calcular si hay datos de equipamiento
+    if (!isShellyActive || !equipmentData || equipmentData.availableDevices.length === 0) {
+      return ''
+    }
 
     const devs: any[] = equipmentData.availableDevices
     if (!devs || devs.length === 0) return ''
@@ -958,9 +960,9 @@ export function AppointmentItem({
     // Buscar el dispositivo en uso para esta cita
     const inUse = devs.find(d => d.status === 'in_use_this_appointment')
     if (inUse) {
-      // 🆕 OBTENER DATOS DE TIEMPO desde useAppointmentTimer
-      const actualMinutes = timerData?.actualMinutes
-      const estimatedMinutes = timerData?.estimatedMinutes || appointment.estimatedDurationMinutes
+      // ✅ SIMPLIFICADO: Usar duración de la cita directamente
+      const actualMinutes = undefined // Se obtendrá via WebSocket cuando sea necesario
+      const estimatedMinutes = appointment.estimatedDurationMinutes
       
       const borderClass = getAppointmentBorderClass({
         online: inUse.online,
@@ -968,40 +970,15 @@ export function AppointmentItem({
         currentPower: inUse.currentPower,
         powerThreshold: inUse.powerThreshold,
         status: inUse.status,
-        // 🆕 NUEVO: Pasar datos de tiempo para detectar sobre-tiempo
         actualMinutes: actualMinutes,
         estimatedMinutes: estimatedMinutes
       });
-      
-            // 🔍 DEBUG SIMPLE: Solo verificar que el marco correcto se aplica
-      if (borderClass) {
-        console.log('✅ [MARCO APLICADO]:', {
-          appointmentId: appointment.id,
-          deviceName: inUse.name,
-          borderClass,
-          relayOn: inUse.relayOn,
-          currentPower: inUse.currentPower,
-          isOvertime: actualMinutes && estimatedMinutes && actualMinutes > estimatedMinutes
-        });
-        
-        // ✅ MARCO NARANJA ES VÁLIDO: Relay ON + sin consumo + asignado a esta cita
-        if (borderClass === 'ring-2 ring-orange-400') {
-          console.log('🟠 [MARCO NARANJA] Dispositivo encendido sin consumo asignado a esta cita:', {
-            appointmentId: appointment.id,
-            deviceName: inUse.name,
-            relayOn: inUse.relayOn,
-            currentPower: inUse.currentPower,
-            powerThreshold: inUse.powerThreshold,
-            status: inUse.status
-          });
-        }
-      }
       
       return borderClass;
     }
     
     return ''
-  }, [equipmentData, liveDeviceMap, isShellyActive, timerData?.actualMinutes, timerData?.estimatedMinutes, appointment.estimatedDurationMinutes, forceUpdate])
+  }, [equipmentData, liveDeviceMap, isShellyActive, appointment.estimatedDurationMinutes, forceUpdate])
 
 
 
@@ -1052,16 +1029,16 @@ export function AppointmentItem({
     }
   }, [operationStatusExternal, appointment.id]);
 
-  // 🎨 MARCO DE DISPOSITIVO INTELIGENTE - Basado en estado del dispositivo en tiempo real
+  // 🎨 MARCO DE DISPOSITIVO INTELIGENTE - OPTIMIZADO para rendimiento
   const deviceBorderInfo = useMemo(() => {
-    // ✅ Cálculo de marco de dispositivo
-
+    // ✅ OPTIMIZACIÓN: Cálculo ligero solo cuando hay equipmentData
+    
     // 🚫 CONDICIÓN 1: Módulo Shelly inactivo
     if (!isShellyActive) {
       return { borderClass: '', borderStyle: {} }
     }
 
-    // 🚫 CONDICIÓN 2: Sin datos de equipamiento
+    // 🚫 CONDICIÓN 2: Sin datos de equipamiento (hook no ejecutado)
     if (!equipmentData || !equipmentData.availableDevices) {
       return { borderClass: '', borderStyle: {} }
     }
@@ -1075,25 +1052,9 @@ export function AppointmentItem({
       return { borderClass: '', borderStyle: {} }
     }
 
-    // ✅ Dispositivo en uso encontrado
-
-    // 🔍 DEBUG CRÍTICO: Log de datos que llegan a la función de color
-    console.log('🔍 [DEVICE_DATA_INPUT]:', {
-      appointmentId: appointment.id,
-      deviceName: inUse.name,
-      deviceId: inUse.id,
-      online: inUse.online,
-      relayOn: inUse.relayOn,
-      currentPower: inUse.currentPower,
-      powerThreshold: inUse.powerThreshold,
-      status: inUse.status,
-      equipmentClinicAssignmentId: inUse.equipmentClinicAssignmentId,
-      autoShutdownEnabled: inUse.autoShutdownEnabled // 🔒 NUEVO CAMPO
-    });
-
-    // 🎨 GENERAR MARCO USANDO FUNCIÓN CENTRALIZADA
-    const actualMinutes = timerData?.actualMinutes;
-    const estimatedMinutes = timerData?.estimatedMinutes || appointment.estimatedDurationMinutes;
+    // ✅ Dispositivo en uso encontrado - cálculo ligero
+    const actualMinutes = undefined; // Se obtendrá via WebSocket cuando sea necesario
+    const estimatedMinutes = appointment.estimatedDurationMinutes;
 
     const borderClass = getAppointmentBorderClass({
       online: inUse.online,
@@ -1103,7 +1064,7 @@ export function AppointmentItem({
       status: inUse.status,
       actualMinutes: actualMinutes,
       estimatedMinutes: estimatedMinutes,
-      autoShutdownEnabled: inUse.autoShutdownEnabled // 🔒 NUEVO CAMPO
+      autoShutdownEnabled: inUse.autoShutdownEnabled
     });
 
     // 🎯 CONVERTIR CLASES CSS A ESTILOS INLINE PARA FORZAR APLICACIÓN
@@ -1113,29 +1074,25 @@ export function AppointmentItem({
         outline: '2px solid #4ade80',
         outlineOffset: '2px'
       };
-      console.log('🟢 [INLINE STYLE] Aplicando estilo verde inline');
     } else if (borderClass.includes('ring-orange-400')) {
       borderStyle = {
         outline: '2px solid #fb923c',
         outlineOffset: '2px'
       };
-      console.log('🟠 [INLINE STYLE] Aplicando estilo naranja inline');
     } else if (borderClass.includes('ring-red-400')) {
       borderStyle = {
         outline: '2px solid #f87171',
         outlineOffset: '2px'
       };
-      console.log('🔴 [INLINE STYLE] Aplicando estilo rojo inline');
     } else if (borderClass.includes('ring-purple-400')) {
       borderStyle = {
         outline: '2px solid #c084fc',
         outlineOffset: '2px'
       };
-      console.log('🟣 [INLINE STYLE] Aplicando estilo púrpura inline');
     }
 
     return { borderClass, borderStyle };
-  }, [equipmentData, isShellyActive, timerData?.actualMinutes, timerData?.estimatedMinutes, appointment.estimatedDurationMinutes, forceUpdate]);
+  }, [equipmentData, isShellyActive, appointment.estimatedDurationMinutes, forceUpdate]);
 
   return (
     <>
@@ -1510,24 +1467,8 @@ export function AppointmentItem({
                                 return; // Evitar doble clic o dispositivo bloqueado
                               }
 
-                              // 🔒 VERIFICAR BLOQUEO POR TIEMPO CON AUTO-SHUTDOWN
-                              const isTimeUp = device.autoShutdownEnabled === true && 
-                                timerData?.actualMinutes && 
-                                (timerData?.estimatedMinutes || appointment.estimatedDurationMinutes) &&
-                                timerData.actualMinutes >= (timerData?.estimatedMinutes || appointment.estimatedDurationMinutes);
-                              
-                              if (isTimeUp && device.status === 'in_use_this_appointment') {
-                                console.log('🔒 [TIME_BLOCKED] Dispositivo bloqueado por tiempo agotado:', {
-                                  deviceName: device.name,
-                                  actualMinutes: timerData?.actualMinutes,
-                                  estimatedMinutes: timerData?.estimatedMinutes || appointment.estimatedDurationMinutes,
-                                  autoShutdownEnabled: device.autoShutdownEnabled
-                                });
-                                toast.error('Tiempo agotado', { 
-                                  description: 'No se puede encender el dispositivo porque se agotó el tiempo estimado' 
-                                });
-                                return;
-                              }
+                              // ✅ SIMPLIFICADO: Eliminado bloqueo por tiempo
+                              // El sistema de auto-shutdown se maneja ahora via WebSocket en tiempo real
 
                               // 🔍 LOG ESPECÍFICO: Capturar clic en dropdown device
                               console.log('🔍 [DROPDOWN DEVICE CLICK]:', device.name);
@@ -1696,9 +1637,9 @@ export function AppointmentItem({
                                   voltage: device.voltage,
                                   temperature: device.temperature,
                                   powerThreshold: device.powerThreshold,
-                                  // 🕒 AÑADIR DATOS DE TIEMPO PARA BLOQUEO
-                                  actualMinutes: timerData?.actualMinutes,
-                                  estimatedMinutes: timerData?.estimatedMinutes || appointment.estimatedDurationMinutes,
+                                  // ✅ SIMPLIFICADO: Tiempo se maneja via WebSocket
+                                  actualMinutes: undefined,
+                                  estimatedMinutes: appointment.estimatedDurationMinutes,
                                   // 🔒 AUTO-SHUTDOWN PARA CONDICIONAR BLOQUEO
                                   autoShutdownEnabled: device.autoShutdownEnabled
                                 }}

@@ -152,6 +152,7 @@ import { UserProvider } from '@/contexts/user-context';
 import { ClinicScheduleProvider } from '@/contexts/clinic-schedule-context';
 import { ServiceProvider } from '@/contexts/service-context';
 import { ClinicProvider } from '@/contexts/clinic-context';
+import { SmartPlugsProvider } from '@/contexts/smart-plugs-context';
 
 interface ProvidersWrapperProps {
   children: React.ReactNode
@@ -254,14 +255,9 @@ const AuthenticatedProviders = memo(function AuthenticatedProviders({ children }
   
   // ✅ SOLO RENDERIZAR PROVIDERS SENSIBLES SI ESTÁ COMPLETAMENTE AUTENTICADO
   if (authState.isLoading) {
-    return (
-      <div className="flex justify-center items-center min-h-screen">
-        <div className="text-center">
-          <div className="mx-auto mb-4 w-8 h-8 rounded-full border-b-2 border-blue-600 animate-spin"></div>
-          <p className="text-gray-600">Verificando autenticación...</p>
-        </div>
-      </div>
-    )
+    // 🎯 CONSISTENCIA: No mostrar spinner de verificación separado
+    // El GlobalLoadingOverlay ya maneja la carga inicial
+    return <>{children}</>
   }
   
   if (authState.isUnauthenticated) {
@@ -283,27 +279,29 @@ const AuthenticatedProviders = memo(function AuthenticatedProviders({ children }
                       <ScheduleBlocksProvider>
                         <AppointmentTagsProvider>
                           <ClinicProvider>
-                            <ClinicScheduleProvider>
-                              <ServiceProvider>
-                                <EquipmentProvider>
-                                  <FamilyProvider>
-                                    <CabinProvider>
-                                      <LastClientProvider>
-                                        <ClientCardProvider>
-                                          <ServicioProvider>
-                                            <ConsumoServicioProvider>
-                                              <AppPrefetcher />
-                                              <GlobalLoadingOverlay />
-                                              {children}
-                                            </ConsumoServicioProvider>
-                                          </ServicioProvider>
-                                        </ClientCardProvider>
-                                      </LastClientProvider>
-                                    </CabinProvider>
-                                  </FamilyProvider>
-                                </EquipmentProvider>
-                              </ServiceProvider>
-                            </ClinicScheduleProvider>
+                            <SmartPlugsProvider>
+                              <ClinicScheduleProvider>
+                                <ServiceProvider>
+                                  <EquipmentProvider>
+                                    <FamilyProvider>
+                                      <CabinProvider>
+                                        <LastClientProvider>
+                                          <ClientCardProvider>
+                                            <ServicioProvider>
+                                              <ConsumoServicioProvider>
+                                                <AppPrefetcher />
+                                                <GlobalLoadingOverlay />
+                                                {children}
+                                              </ConsumoServicioProvider>
+                                            </ServicioProvider>
+                                          </ClientCardProvider>
+                                        </LastClientProvider>
+                                      </CabinProvider>
+                                    </FamilyProvider>
+                                  </EquipmentProvider>
+                                </ServiceProvider>
+                              </ClinicScheduleProvider>
+                            </SmartPlugsProvider>
                           </ClinicProvider>
                         </AppointmentTagsProvider>
                       </ScheduleBlocksProvider>

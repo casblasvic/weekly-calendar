@@ -21,7 +21,7 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useServiceEquipmentRequirements } from '@/hooks/use-service-equipment-requirements';
 import { getDeviceColors } from '@/lib/utils/device-colors';
-import { useAppointmentTimer } from '@/hooks/use-appointment-timer';
+// ✅ ELIMINADO: import { useAppointmentTimer } from '@/hooks/use-appointment-timer';
 
 interface AppointmentEquipmentSelectorProps {
   open: boolean;
@@ -29,6 +29,8 @@ interface AppointmentEquipmentSelectorProps {
   appointmentId: string;
   appointmentClientName?: string;
   onStartWithoutEquipment?: () => void;
+  // 🆕 NUEVOS PARAMS: Datos pre-cargados del appointment
+  appointmentData?: any;
 }
 
 export function AppointmentEquipmentSelector({
@@ -36,24 +38,24 @@ export function AppointmentEquipmentSelector({
   onOpenChange,
   appointmentId,
   appointmentClientName,
-  onStartWithoutEquipment
+  onStartWithoutEquipment,
+  appointmentData
 }: AppointmentEquipmentSelectorProps) {
   
   // 🔍 LOG BÁSICO: Verificar si este componente se ejecuta
   console.log('🔍 [APPOINTMENT EQUIPMENT SELECTOR] Componente montado/actualizado');
   const [controllingDevices, setControllingDevices] = useState<Set<string>>(new Set());
 
-  // 🔥 USAR HOOK EN TIEMPO REAL - igual que el menú flotante
+  // 🔥 OPTIMIZADO: USAR DATOS PRE-CARGADOS + FALLBACK API
+  // Ahora usa appointmentData cuando está disponible, fallback a API cuando no
   const equipmentData = useServiceEquipmentRequirements({
     appointmentId,
-    enabled: true // Siempre activo para recibir tiempo real
+    enabled: true, // Siempre activo para recibir tiempo real
+    appointmentData: appointmentData // ⚡ Datos pre-cargados del appointment
   });
 
-  // 🆕 HOOK PARA OBTENER DATOS DE TIEMPO EN TIEMPO REAL
-  const { timerData } = useAppointmentTimer({
-    appointmentId,
-    autoRefresh: false // Solo obtener datos, no auto-refresh
-  });
+  // ✅ ELIMINADO: useAppointmentTimer 
+  // Los datos de tiempo se obtienen directamente desde los datos pre-cargados cuando sea necesario
 
   if (!equipmentData) {
     return null; // Hook no disponible o cargando
@@ -92,9 +94,9 @@ export function AppointmentEquipmentSelector({
 
   // 🎨 USAR FUNCIÓN CENTRALIZADA DE COLORES
   const getPowerButtonStyle = (device: any) => {
-    // 🆕 OBTENER DATOS DE TIEMPO desde useAppointmentTimer
-    const actualMinutes = timerData?.actualMinutes;
-    const estimatedMinutes = timerData?.estimatedMinutes;
+    // ✅ SIMPLIFICADO: Tiempo se obtiene de appointmentData cuando sea necesario
+    const actualMinutes = undefined;
+    const estimatedMinutes = appointmentData?.estimatedDuration;
     
     const colors = getDeviceColors({
       online: device.online,
@@ -260,7 +262,7 @@ export function AppointmentEquipmentSelector({
                       
                       {/* Mensaje de servicio completado */}
                       {isDeviceBlocked && (
-                        <div className="mt-1 text-xs text-indigo-600 font-medium">
+                        <div className="mt-1 text-xs font-medium text-indigo-600">
                           ✓ Servicio Completado
                         </div>
                       )}

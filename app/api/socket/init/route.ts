@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getSiteUrl } from '@/lib/utils/site-url';
 
 export async function GET(request: NextRequest) {
     try {
         // Hacer una llamada al endpoint socket.js para inicializarlo
-        const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
+        const baseUrl = getSiteUrl();
 
         // Propagar cookies y cabeceras de autentificación para evitar redirección a /login
         const headers: Record<string, string> = {};

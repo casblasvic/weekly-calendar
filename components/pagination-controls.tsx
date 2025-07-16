@@ -30,8 +30,7 @@ export const PageSizeSelector: React.FC<{
   itemType = 'elementos'
 }) => {
   return (
-    <div className="flex items-center space-x-2 text-sm text-muted-foreground">
-      <span>Mostrar</span>
+    <div className="flex items-center">
       <Select
         value={String(pageSize)}
         onValueChange={(value) => onPageSizeChange(Number(value))}
@@ -47,7 +46,6 @@ export const PageSizeSelector: React.FC<{
           ))}
         </SelectContent>
       </Select>
-      <span>{itemType} por página</span>
     </div>
   );
 };

@@ -43,7 +43,7 @@
 
 import { prisma } from '@/lib/db'
 import { Prisma } from '@prisma/client'
-import crypto from 'crypto'
+import * as crypto from 'crypto'
 import { 
   updateClientAnomalyScore, 
   updateEmployeeAnomalyScore,
@@ -193,50 +193,26 @@ export async function finalizeDeviceUsage(usageId: string) {
 
   console.log(`📊 [FINALIZER] Duración total efectiva: ${totalEffectiveDuration} min`)
 
-  // 🔄 DESAGREGAR CONSUMO POR SERVICIO CON NUEVA LÓGICA
-  const energyUsageInserts: Prisma.AppointmentServiceEnergyUsageCreateManyInput[] = []
+  // 🎯 OPTIMIZACIÓN: DIFERENCIAR SERVICIO ÚNICO VS MÚLTIPLES SERVICIOS
+  const isSingleService = servicesWithEffectiveDuration.length === 1
   
-  for (const serviceData of servicesWithEffectiveDuration) {
-    // 📊 CALCULAR REPARTO PROPORCIONAL
-    const ratio = serviceData.effectiveDuration / totalEffectiveDuration
-    const allocatedKwh = usage.energyConsumption * ratio
-    const realMinutes = usage.actualMinutes * ratio
-
-    console.log(`📈 [FINALIZER] Servicio ${serviceData.serviceName}:`, {
-      effectiveDuration: serviceData.effectiveDuration,
-      ratio: ratio.toFixed(3),
-      allocatedKwh: allocatedKwh.toFixed(4),
-      realMinutes: realMinutes.toFixed(2),
-      durationSource: serviceData.durationSource
-    })
-
-    // 📝 CREAR REGISTRO DE ENERGÍA DESAGREGADA
-    energyUsageInserts.push({
-      id: crypto.randomUUID(),
-      systemId: usage.systemId,
-      clinicId: usage.appointment!.clinicId,
-      clientId: usage.appointment!.personId ?? undefined,
-      userId: usage.startedByUserId,
-      usageId: usage.id,
-      serviceId: serviceData.serviceId,
-      equipmentId: usage.equipmentId ?? undefined,
-      estimatedMinutes: serviceData.effectiveDuration, // 🔥 Usar duración efectiva
-      realMinutes: realMinutes,
-      allocatedKwh: allocatedKwh,
-      createdAt: new Date()
-    })
-
-    // 📊 ACTUALIZAR PERFIL ENERGÉTICO INCREMENTAL (ALGORITMO WELFORD)
+  if (isSingleService) {
+    console.log(`🔧 [FINALIZER] Caso optimizado: SERVICIO ÚNICO - Saltando desagregación redundante`)
+    
+    // Para servicio único, los datos de appointment_device_usage son directos
+    const singleService = servicesWithEffectiveDuration[0]
+    
+    // 📊 ACTUALIZAR PERFIL ENERGÉTICO INDIVIDUAL (SIEMPRE necesario)
     await upsertServiceProfile({
       systemId: usage.systemId,
       clinicId: usage.appointment!.clinicId,
       equipmentId: usage.equipmentId!,
-      serviceId: serviceData.serviceId,
+      serviceId: singleService.serviceId,
       hourBucket: new Date(usage.startedAt).getHours(),
-      kwhPerMin: allocatedKwh / realMinutes,
-      realMinutes: realMinutes,
-      effectiveDuration: serviceData.effectiveDuration,
-      durationSource: serviceData.durationSource
+      kwhPerMin: usage.energyConsumption / usage.actualMinutes, // Usar datos directos
+      realMinutes: usage.actualMinutes, // Usar datos directos
+      effectiveDuration: singleService.effectiveDuration,
+      durationSource: singleService.durationSource
     })
 
     // 📊 ACTUALIZAR CONTADOR DE SERVICIOS (para tasa de anomalías)
@@ -247,31 +223,94 @@ export async function finalizeDeviceUsage(usageId: string) {
       employeeId: usage.startedByUserId || undefined
     })
 
-    console.log(`✅ [ENERGY_USAGE] Registro creado - Servicio: ${serviceData.serviceId.substring(0, 8)}, Real: ${realMinutes}min, Energía: ${allocatedKwh.toFixed(3)}kWh`)
-  }
+    console.log(`✅ [FINALIZER] Servicio único procesado directamente - ${singleService.serviceName}`)
+    
+    // 🚫 SALTAR: No crear appointment_service_energy_usage (redundante)
+    // 🚫 SALTAR: No crear service_group_energy_profile (no es grupo real)
+    
+  } else {
+    console.log(`🔧 [FINALIZER] Caso complejo: MÚLTIPLES SERVICIOS (${servicesWithEffectiveDuration.length}) - Aplicando desagregación`)
+    
+    // 🔄 DESAGREGAR CONSUMO POR SERVICIO CON NUEVA LÓGICA
+    const energyUsageInserts: Prisma.AppointmentServiceEnergyUsageCreateManyInput[] = []
+    
+    for (const serviceData of servicesWithEffectiveDuration) {
+      // 📊 CALCULAR REPARTO PROPORCIONAL
+      const ratio = serviceData.effectiveDuration / totalEffectiveDuration
+      const allocatedKwh = usage.energyConsumption * ratio
+      const realMinutes = usage.actualMinutes * ratio
 
-  // 💾 INSERTAR REGISTROS DE ENERGÍA DESAGREGADA
-  if (energyUsageInserts.length > 0) {
-    await prisma.appointmentServiceEnergyUsage.createMany({ 
-      data: energyUsageInserts 
+      console.log(`📈 [FINALIZER] Servicio ${serviceData.serviceName}:`, {
+        effectiveDuration: serviceData.effectiveDuration,
+        ratio: ratio.toFixed(3),
+        allocatedKwh: allocatedKwh.toFixed(4),
+        realMinutes: realMinutes.toFixed(2),
+        durationSource: serviceData.durationSource
+      })
+
+      // 📝 CREAR REGISTRO DE ENERGÍA DESAGREGADA
+      energyUsageInserts.push({
+        id: crypto.randomUUID(),
+        systemId: usage.systemId,
+        clinicId: usage.appointment!.clinicId,
+        clientId: usage.appointment!.personId ?? undefined,
+        userId: usage.startedByUserId,
+        usageId: usage.id,
+        serviceId: serviceData.serviceId,
+        equipmentId: usage.equipmentId ?? undefined,
+        estimatedMinutes: serviceData.effectiveDuration, // 🔥 Usar duración efectiva
+        realMinutes: realMinutes,
+        allocatedKwh: allocatedKwh,
+        createdAt: new Date()
+      })
+
+      // 📊 ACTUALIZAR PERFIL ENERGÉTICO INCREMENTAL (ALGORITMO WELFORD)
+      await upsertServiceProfile({
+        systemId: usage.systemId,
+        clinicId: usage.appointment!.clinicId,
+        equipmentId: usage.equipmentId!,
+        serviceId: serviceData.serviceId,
+        hourBucket: new Date(usage.startedAt).getHours(),
+        kwhPerMin: allocatedKwh / realMinutes,
+        realMinutes: realMinutes,
+        effectiveDuration: serviceData.effectiveDuration,
+        durationSource: serviceData.durationSource
+      })
+
+      // 📊 ACTUALIZAR CONTADOR DE SERVICIOS (para tasa de anomalías)
+      await updateServiceCount({
+        systemId: usage.systemId,
+        clinicId: usage.appointment!.clinicId,
+        clientId: usage.appointment!.personId || undefined,
+        employeeId: usage.startedByUserId || undefined
+      })
+
+      console.log(`✅ [ENERGY_USAGE] Registro creado - Servicio: ${serviceData.serviceId.substring(0, 8)}, Real: ${realMinutes}min, Energía: ${allocatedKwh.toFixed(3)}kWh`)
+    }
+
+    // 💾 INSERTAR REGISTROS DE ENERGÍA DESAGREGADA (SOLO para múltiples servicios)
+    if (energyUsageInserts.length > 0) {
+      await prisma.appointmentServiceEnergyUsage.createMany({ 
+        data: energyUsageInserts 
+      })
+      console.log(`✅ [FINALIZER] ${energyUsageInserts.length} registros de energía desagregada creados`)
+    }
+
+    // 🔄 ACTUALIZAR PERFIL POR GRUPO DE SERVICIOS (SOLO para múltiples servicios)
+    const serviceIds = servicesWithEffectiveDuration.map(s => s.serviceId).sort()
+    
+    await upsertGroupProfile({
+      systemId: usage.systemId,
+      clinicId: usage.appointment!.clinicId,
+      equipmentId: usage.equipmentId!,
+      serviceId: serviceIds[0], // Usar el primer servicio para el perfil
+      hourBucket: new Date(usage.startedAt).getHours(),
+      kwh: usage.energyConsumption, // 🔧 USAR DATOS DIRECTOS: uso agrupado real
+      minutes: usage.actualMinutes    // 🔧 USAR DATOS DIRECTOS: duración real agrupada
     })
-    console.log(`✅ [FINALIZER] ${energyUsageInserts.length} registros de energía desagregada creados`)
+    
+    console.log(`✅ [FINALIZER] Perfil de grupo creado para ${serviceIds.length} servicios`)
   }
-
-  // 🔄 ACTUALIZAR PERFIL POR GRUPO DE SERVICIOS (HASH)
-  const serviceIds = servicesWithEffectiveDuration.map(s => s.serviceId).sort()
-  const servicesHash = crypto.createHash('md5').update(serviceIds.join('+')).digest('hex')
-
-  await upsertGroupProfile({
-    systemId: usage.systemId,
-    clinicId: usage.appointment!.clinicId,
-    equipmentId: usage.equipmentId!,
-    servicesHash: servicesHash,
-    servicesJson: serviceIds,
-    hourBucket: new Date(usage.startedAt).getHours(),
-    kwh: usage.energyConsumption,
-    minutes: usage.actualMinutes
-  })
 
   // 🔍 GENERAR INSIGHTS DE DURACIÓN (OVER/UNDER_DURATION)
   const totalEstimatedMinutes = servicesWithEffectiveDuration.reduce(
@@ -290,7 +329,87 @@ export async function finalizeDeviceUsage(usageId: string) {
   if (Math.abs(diffMinutes) > 0.5 && totalEstimatedMinutes > 0) {
     const deviationPct = Math.abs(diffMinutes) * 100 / totalEstimatedMinutes
     
-    if (deviationPct >= 10) { // Solo crear insight si hay desviación >= 10%
+    // 🎯 LÓGICA MEJORADA: Considerar contexto estadístico para UNDER_DURATION
+    let shouldCreateInsight = false
+    let insightReason = ''
+    
+    if (diffMinutes > 0) {
+      // OVER_DURATION: Siempre crear insight si desviación >= 10%
+      if (deviationPct >= 10) {
+        shouldCreateInsight = true
+        insightReason = 'Servicio excedió tiempo estimado significativamente'
+      }
+    } else {
+      // UNDER_DURATION: Lógica más inteligente
+      const reductionMinutes = Math.abs(diffMinutes)
+      
+      // 🔍 Obtener datos históricos para contexto estadístico
+      const serviceIds = servicesWithEffectiveDuration.map(s => s.serviceId)
+      const historicalData = await prisma.serviceEnergyProfile.findMany({
+        where: {
+          systemId: usage.systemId,
+          serviceId: { in: serviceIds },
+          equipmentId: usage.equipmentId,
+          sampleCount: { gte: 5 } // Mínimo 5 muestras para ser estadísticamente relevante
+        },
+        select: {
+          serviceId: true,
+          avgMinutes: true,
+          stdDevMinutes: true,
+          sampleCount: true
+        }
+      })
+      
+      if (historicalData.length > 0) {
+        // 📊 Calcular media ponderada y desviación estándar histórica
+        let totalWeightedAvg = 0
+        let totalWeightedStdDev = 0
+        let totalWeight = 0
+        
+        for (const profile of historicalData) {
+          const weight = profile.sampleCount || 1
+          totalWeightedAvg += (profile.avgMinutes || 0) * weight
+          totalWeightedStdDev += (profile.stdDevMinutes || 0) * weight
+          totalWeight += weight
+        }
+        
+        const historicalAvgMinutes = totalWeight > 0 ? totalWeightedAvg / totalWeight : totalEstimatedMinutes
+        const historicalStdDev = totalWeight > 0 ? totalWeightedStdDev / totalWeight : totalEstimatedMinutes * 0.15
+        
+        // 🎯 CRITERIOS INTELIGENTES PARA UNDER_DURATION
+        const minAcceptableTime = historicalAvgMinutes - (historicalStdDev * 2) // 2 desviaciones estándar
+        const extremelyShortTime = historicalAvgMinutes * 0.4 // Menos del 40% del tiempo histórico
+        
+        if (usage.actualMinutes < extremelyShortTime) {
+          shouldCreateInsight = true
+          insightReason = `Tiempo extremadamente reducido (${usage.actualMinutes}min vs ${historicalAvgMinutes.toFixed(1)}min histórico) - Posible servicio no realizado`
+        } else if (usage.actualMinutes < minAcceptableTime && deviationPct >= 25) {
+          shouldCreateInsight = true
+          insightReason = `Tiempo fuera del rango estadístico normal (${usage.actualMinutes}min vs ${historicalAvgMinutes.toFixed(1)}min ± ${historicalStdDev.toFixed(1)}min)`
+        } else if (deviationPct >= 10 && deviationPct < 25) {
+          // 👍 CASO NORMAL: Reducción dentro del rango esperado - NO crear insight
+          console.log(`✅ [FINALIZER] Reducción de tiempo dentro del rango normal: ${usage.actualMinutes}min vs ${historicalAvgMinutes.toFixed(1)}min histórico (${deviationPct.toFixed(1)}% desviación)`)
+        }
+        
+        console.log(`📊 [FINALIZER] Análisis estadístico:`, {
+          historicalAvg: historicalAvgMinutes.toFixed(1),
+          historicalStdDev: historicalStdDev.toFixed(1),
+          minAcceptable: minAcceptableTime.toFixed(1),
+          extremelyShort: extremelyShortTime.toFixed(1),
+          actualTime: usage.actualMinutes,
+          shouldCreateInsight,
+          reason: insightReason
+        })
+      } else {
+        // 🔄 FALLBACK: Sin datos históricos, usar lógica conservadora
+        if (deviationPct >= 30) {
+          shouldCreateInsight = true
+          insightReason = `Reducción significativa sin datos históricos para comparar (${deviationPct.toFixed(1)}% desviación)`
+        }
+      }
+    }
+    
+    if (shouldCreateInsight) {
       const deviationType = diffMinutes > 0 ? 'OVER_DURATION' : 'UNDER_DURATION'
       
       try {
@@ -313,6 +432,8 @@ export async function finalizeDeviceUsage(usageId: string) {
               validationPassed: true,
               servicesProcessed: servicesWithEffectiveDuration.length,
               newArchitecture: true,
+              intelligentAnalysis: true,
+              insightReason: insightReason,
               durationSources: servicesWithEffectiveDuration.map(s => ({
                 serviceName: s.serviceName,
                 durationSource: s.durationSource,
@@ -322,7 +443,7 @@ export async function finalizeDeviceUsage(usageId: string) {
           }
         })
         
-        console.log(`🚨 [FINALIZER] Insight de duración creado: ${deviationType}, desviación: ${deviationPct.toFixed(1)}%`)
+        console.log(`🚨 [FINALIZER] Insight de duración creado: ${deviationType}, desviación: ${deviationPct.toFixed(1)}%, razón: ${insightReason}`)
       } catch (error) {
         console.error(`❌ [FINALIZER] Error creando insight de duración:`, error)
       }
@@ -475,9 +596,8 @@ async function upsertServiceProfile(params: {
 async function upsertGroupProfile(params: {
   systemId: string
   clinicId: string
-  equipmentId: string
-  servicesHash: string
-  servicesJson: string[]
+  equipmentId: string  // 🔧 AGREGADO: equipmentId necesario para el schema
+  serviceId: string
   hourBucket: number
   kwh: number
   minutes: number
@@ -485,15 +605,14 @@ async function upsertGroupProfile(params: {
   const { 
     systemId, 
     clinicId, 
-    equipmentId, 
-    servicesHash, 
-    servicesJson, 
+    equipmentId,  // 🔧 AGREGADO
+    serviceId, 
     hourBucket, 
     kwh, 
     minutes 
   } = params
   
-  const key = { clinicId, equipmentId, servicesHash, hourBucket }
+  const key = { clinicId, equipmentId, serviceId, hourBucket }  // 🔧 AGREGADO equipmentId
   
   // 🔍 BUSCAR PERFIL DE GRUPO EXISTENTE
   const profile = await prisma.serviceGroupEnergyProfile.findFirst({ 
@@ -507,9 +626,8 @@ async function upsertGroupProfile(params: {
         id: crypto.randomUUID(),
         systemId,
         clinicId,
-        equipmentId,
-        servicesHash,
-        services: servicesJson as any,
+        equipmentId,  // 🔧 AGREGADO
+        serviceId,
         hourBucket,
         meanKwh: kwh,
         stdDevKwh: 0,
@@ -520,25 +638,36 @@ async function upsertGroupProfile(params: {
       }
     })
     
-    console.log(`🆕 [GROUP_PROFILE] Perfil de grupo creado - Hash: ${servicesHash.substring(0, 8)}, Servicios: ${servicesJson.length}`)
-    return
+    console.log(`✅ [GROUP_PROFILE] Perfil de grupo creado - Equipment: ${equipmentId.substring(0, 8)}, Servicio: ${serviceId.substring(0, 8)}, Hora: ${hourBucket}`)
+  } else {
+    // 🔄 ACTUALIZAR PERFIL EXISTENTE CON ALGORITMO WELFORD
+    const newSamples = profile.samples + 1
+    const deltaKwh = kwh - profile.meanKwh
+    const newMeanKwh = profile.meanKwh + deltaKwh / newSamples
+    const delta2Kwh = kwh - newMeanKwh
+    const newM2 = profile.m2 + deltaKwh * delta2Kwh
+    const newStdDevKwh = newSamples > 1 ? Math.sqrt(newM2 / (newSamples - 1)) : 0
+    
+    const deltaMinutes = minutes - profile.meanMinutes
+    const newMeanMinutes = profile.meanMinutes + deltaMinutes / newSamples
+    const delta2Minutes = minutes - newMeanMinutes
+    const newM2Minutes = profile.m2 + deltaMinutes * delta2Minutes
+    const newStdDevMinutes = newSamples > 1 ? Math.sqrt(newM2Minutes / (newSamples - 1)) : 0
+    
+    await prisma.serviceGroupEnergyProfile.update({
+      where: { id: profile.id },
+      data: {
+        meanKwh: newMeanKwh,
+        stdDevKwh: newStdDevKwh,
+        meanMinutes: newMeanMinutes,
+        stdDevMinutes: newStdDevMinutes,
+        samples: newSamples,
+        m2: newM2
+      }
+    })
+    
+    console.log(`🔄 [GROUP_PROFILE] Perfil de grupo actualizado - Equipment: ${equipmentId.substring(0, 8)}, Servicio: ${serviceId.substring(0, 8)}, Muestras: ${newSamples}`)
   }
-  
-  // 🔄 ACTUALIZAR PERFIL DE GRUPO EXISTENTE (ALGORITMO SIMPLIFICADO)
-  const newSamples = profile.samples + 1
-  const newMeanKwh = (profile.meanKwh * profile.samples + kwh) / newSamples
-  const newMeanMin = (profile.meanMinutes * profile.samples + minutes) / newSamples
-  
-  await prisma.serviceGroupEnergyProfile.update({
-    where: { id: profile.id },
-    data: {
-      meanKwh: newMeanKwh,
-      meanMinutes: newMeanMin,
-      samples: newSamples
-    }
-  })
-  
-  console.log(`🔄 [GROUP_PROFILE] Perfil de grupo actualizado - Hash: ${servicesHash.substring(0, 8)}, Muestras: ${newSamples}`)
 }
 
 // ========= FUNCIONES OBSOLETAS ELIMINADAS =========================

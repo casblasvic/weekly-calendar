@@ -4,7 +4,10 @@
  * Configuración central para el sistema de análisis energético.
  * Define umbrales, validaciones y parámetros estadísticos.
  * 
+ * ⚡ VELOCIDAD CRÍTICA: Configuración de cache y persistencia para rendimiento máximo
+ * 
  * @see docs/ENERGY_INSIGHTS.md
+ * @see docs/PERSISTENT_CACHE_STRATEGY.md
  */
 
 export interface EnergyInsightsConfig {
@@ -37,7 +40,149 @@ export interface EnergyInsightsConfig {
     maxProcessingTimeMs: number     // Tiempo máximo de procesamiento
     sampleIntervalSeconds: number   // Intervalo esperado entre muestras
   }
+
+  // ⚡ CONFIGURACIÓN DE CACHE Y PERSISTENCIA
+  cache: {
+    // Configuración de React Query
+    staleTime: number              // Tiempo que los datos se consideran frescos
+    gcTime: number                 // Tiempo de garbage collection
+    refetchInterval: number        // Intervalo de refetch automático
+    
+    // Configuración de IndexedDB
+    indexedDB: {
+      enabled: boolean             // Habilitar persistencia IndexedDB
+      dbName: string              // Nombre de la base de datos
+      version: number             // Versión de la base de datos
+      maxAge: number              // Edad máxima de datos en cache (ms)
+    }
+    
+    // Configuración de prefetch
+    prefetch: {
+      enabled: boolean            // Habilitar prefetch agresivo
+      preloadTabs: string[]       // Pestañas a precargar
+      backgroundRefresh: boolean  // Refrescar en background
+    }
+    
+    // Configuración de invalidación
+    invalidation: {
+      websocketTriggers: boolean  // Usar WebSocket para invalidaciones
+      manualTriggers: string[]    // Eventos manuales que invalidan cache
+      smartInvalidation: boolean  // Invalidación inteligente por cambios
+    }
+  }
 }
+
+/**
+ * ⚡ CONFIGURACIÓN DE CACHE PARA MÁXIMA VELOCIDAD
+ * 
+ * Configuración específica para cada tipo de dato con estrategias optimizadas:
+ * - Datos estables: Cache largo con persistencia
+ * - Datos dinámicos: Cache corto sin persistencia
+ * - Datos críticos: Prefetch + optimistic updates
+ */
+export const ENERGY_CACHE_CONFIG = {
+  // 📊 DATOS ESTABLES (anomaly scores, listas, estadísticas)
+  stable: {
+    staleTime: 5 * 60 * 1000,      // 5 minutos - datos frescos
+    gcTime: 30 * 60 * 1000,        // 30 minutos - mantener en memoria
+    persist: true,                  // Persistir en IndexedDB
+    prefetch: true,                 // Precargar proactivamente
+    meta: { persist: true }         // Metadatos para React Query
+  },
+  
+  // ⚡ DATOS DINÁMICOS (estados enchufes, lecturas actuales)
+  dynamic: {
+    staleTime: 0,                   // Siempre stale - refetch inmediato
+    gcTime: 0,                      // No mantener en memoria
+    persist: false,                 // NO persistir
+    prefetch: false,                // No precargar
+    meta: { noPersist: true }       // Metadatos para React Query
+  },
+  
+  // 🎯 DATOS CRÍTICOS (configuración clínicas, perfiles usuario)
+  critical: {
+    staleTime: 10 * 60 * 1000,     // 10 minutos - muy frescos
+    gcTime: 60 * 60 * 1000,        // 1 hora - mantener mucho tiempo
+    persist: true,                  // Persistir siempre
+    prefetch: true,                 // Precargar siempre
+    meta: { persist: true, priority: 'high' }
+  }
+} as const
+
+/**
+ * ⚡ CONFIGURACIÓN DE PERSISTENCIA INDEXEDDB
+ * 
+ * Define qué datos se persisten y cuáles no para optimizar velocidad
+ */
+export const INDEXEDDB_PERSISTENCE_CONFIG = {
+  // ✅ DATOS QUE SE PERSISTEN (aparición instantánea)
+  persist: [
+    'energy-insights-client-scores',
+    'energy-insights-employee-scores', 
+    'energy-insights-device-usage',
+    'energy-insights-general-stats',
+    'clinic-configurations',
+    'user-profiles'
+  ],
+  
+  // ❌ DATOS QUE NO SE PERSISTEN (tiempo real)
+  noPersist: [
+    'smart-plug-states',
+    'live-consumption-readings',
+    'device-active-assignments',
+    'floating-menu-smart-plugs',
+    'service-device-states'
+  ],
+  
+  // 🔧 CONFIGURACIÓN DE INDEXEDDB
+  dbConfig: {
+    name: 'energy-insights-cache',
+    version: 1,
+    stores: {
+      clientScores: 'id',
+      employeeScores: 'id', 
+      deviceUsage: 'id',
+      generalStats: 'clinicId',
+      clinicConfig: 'id'
+    }
+  }
+} as const
+
+/**
+ * ⚡ FACTORY DE QUERY KEYS PARA CACHE MANAGEMENT
+ * 
+ * Centraliza todas las query keys para invalidaciones precisas
+ */
+export const energyInsightsKeys = {
+  // 📊 Keys principales
+  all: ['energy-insights'] as const,
+  
+  // 👤 Clientes
+  clients: () => [...energyInsightsKeys.all, 'clients'] as const,
+  clientScores: (clinicId?: string) => [...energyInsightsKeys.clients(), 'scores', clinicId] as const,
+  clientDetails: (clientId: string) => [...energyInsightsKeys.clients(), 'details', clientId] as const,
+  
+  // 👨‍⚕️ Empleados  
+  employees: () => [...energyInsightsKeys.all, 'employees'] as const,
+  employeeScores: (clinicId?: string) => [...energyInsightsKeys.employees(), 'scores', clinicId] as const,
+  employeeDetails: (employeeId: string) => [...energyInsightsKeys.employees(), 'details', employeeId] as const,
+  
+  // 🔧 Servicios
+  services: () => [...energyInsightsKeys.all, 'services'] as const,
+  serviceVariability: (clinicId?: string) => [...energyInsightsKeys.services(), 'variability', clinicId] as const,
+  
+  // 📈 Insights
+  insights: () => [...energyInsightsKeys.all, 'insights'] as const,
+  deviceUsage: (filters?: any) => [...energyInsightsKeys.insights(), 'device-usage', filters] as const,
+  
+  // 🏥 Configuración
+  config: () => [...energyInsightsKeys.all, 'config'] as const,
+  clinicConfig: (clinicId: string) => [...energyInsightsKeys.config(), 'clinic', clinicId] as const,
+  
+  // 📊 Estadísticas generales
+  stats: () => [...energyInsightsKeys.all, 'stats'] as const,
+  generalStats: (clinicId?: string) => [...energyInsightsKeys.stats(), 'general', clinicId] as const
+} as const
 
 /**
  * Configuración por defecto del sistema Energy Insights
@@ -67,6 +212,32 @@ export const ENERGY_INSIGHT_CFG: EnergyInsightsConfig = {
     batchSize: 1000,              // Lotes de 1000 registros
     maxProcessingTimeMs: 30 * 60 * 1000, // 30 minutos máximo
     sampleIntervalSeconds: 8      // Muestras cada 8 segundos
+  },
+
+  // ⚡ CONFIGURACIÓN DE CACHE OPTIMIZADA
+  cache: {
+    staleTime: 5 * 60 * 1000,     // 5 minutos por defecto
+    gcTime: 30 * 60 * 1000,       // 30 minutos GC
+    refetchInterval: 0,           // No refetch automático (usar WebSocket)
+    
+    indexedDB: {
+      enabled: true,              // Habilitar IndexedDB
+      dbName: 'energy-insights-cache',
+      version: 1,
+      maxAge: 24 * 60 * 60 * 1000 // 24 horas máximo
+    },
+    
+    prefetch: {
+      enabled: true,              // Prefetch agresivo
+      preloadTabs: ['clients', 'employees', 'services'],
+      backgroundRefresh: true     // Refrescar en background
+    },
+    
+    invalidation: {
+      websocketTriggers: true,    // Usar WebSocket para invalidaciones
+      manualTriggers: ['recalculate', 'data-change'],
+      smartInvalidation: true     // Invalidación inteligente
+    }
   }
 }
 
@@ -230,6 +401,27 @@ export class EnergyConfigValidator {
         batchSize: parseInt(process.env.ENERGY_BATCH_SIZE || '1000'),
         maxProcessingTimeMs: parseInt(process.env.ENERGY_MAX_PROCESSING_TIME_MS || '1800000'),
         sampleIntervalSeconds: parseInt(process.env.ENERGY_SAMPLE_INTERVAL_SECONDS || '8')
+      },
+      cache: {
+        staleTime: parseInt(process.env.ENERGY_CACHE_STALE_TIME || '5000'),
+        gcTime: parseInt(process.env.ENERGY_CACHE_GC_TIME || '300000'),
+        refetchInterval: parseInt(process.env.ENERGY_CACHE_REFETCH_INTERVAL || '0'),
+        indexedDB: {
+          enabled: process.env.ENERGY_INDEXEDDB_ENABLED === 'true',
+          dbName: process.env.ENERGY_INDEXEDDB_NAME || 'energy-insights-cache',
+          version: parseInt(process.env.ENERGY_INDEXEDDB_VERSION || '1', 10),
+          maxAge: parseInt(process.env.ENERGY_INDEXEDDB_MAX_AGE || '86400000', 10) // 24 horas
+        },
+        prefetch: {
+          enabled: process.env.ENERGY_CACHE_PREFETCH_ENABLED === 'true',
+          preloadTabs: process.env.ENERGY_CACHE_PREFETCH_TABS?.split(',') || ['clients', 'employees', 'services'],
+          backgroundRefresh: process.env.ENERGY_CACHE_BACKGROUND_REFRESH === 'true'
+        },
+        invalidation: {
+          websocketTriggers: process.env.ENERGY_CACHE_WEBSOCKET_TRIGGERS === 'true',
+          manualTriggers: process.env.ENERGY_CACHE_MANUAL_TRIGGERS?.split(',') || ['recalculate', 'data-change'],
+          smartInvalidation: process.env.ENERGY_CACHE_SMART_INVALIDATION === 'true'
+        }
       }
     }
     

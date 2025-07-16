@@ -138,6 +138,7 @@ import type { CabinScheduleOverride } from '@prisma/client'
 // Añadir hooks de precarga para servicios, bonos y paquetes
 import { useServicesQuery, useBonosQuery, usePackagesQuery } from "@/lib/hooks/use-api-query"
 import { useWeeklyAgendaData, useWeeklyAgendaPrefetch, type WeeklyAgendaAppointment } from "@/lib/hooks/use-weekly-agenda-data"
+import { useQueryClient } from '@tanstack/react-query'
 
 // Importar nuevos módulos de drag & drop
 import { useOptimizedDragAndDrop } from "@/lib/drag-drop/optimized-hooks"
@@ -224,11 +225,6 @@ function WeeklyAgendaContent({
   const smartPlugsContext = useSmartPlugsContextOptional()
   const smartPlugsData = smartPlugsContext?.smartPlugsData || null
   
-  // Precarga de datos para el modal de citas - ejecutar siempre para tenerlos en caché
-  const { data: allServicesData = [] } = useServicesQuery({ enabled: true })
-  useBonosQuery({ enabled: true })
-  usePackagesQuery({ enabled: true })
-  
   // TEMP: Comentado para eliminar bucle infinito  
   // console.log("[WeeklyAgenda] activeClinic from context:", activeClinic);
   
@@ -263,7 +259,6 @@ function WeeklyAgendaContent({
     appointments: cachedAppointments,
     isLoading: loadingAppointments,
     isDataStable,
-    fetchAppointments: refetchFromCache,
     invalidateCache,
     weekKey,
     hasData,
@@ -289,6 +284,36 @@ function WeeklyAgendaContent({
   const cabinsCount = activeClinicCabins?.length ?? 0;
   const cabinsIds = activeClinicCabins?.map(c => c.id).join(',') ?? '';
   
+  // ✅ OPTIMIZACIÓN CRÍTICA: Usar cache pre-cargado para datos esenciales
+  // AppPrefetcher ya precarga estos datos con query keys consistentes
+  // Solo ejecutar hooks si NO hay datos en cache para evitar llamadas API redundantes
+  const queryClient = useQueryClient();
+  
+  // ✅ SERVICIOS: Usar cache pre-cargado primero
+  const cachedServices = queryClient.getQueryData(['services', activeClinicId]);
+  const { data: allServicesData = [] } = useServicesQuery({ 
+    enabled: !cachedServices && !!activeClinicId // Solo si no hay cache y hay clínica activa
+  });
+  
+  // ✅ BONOS: Usar cache pre-cargado primero  
+  const cachedBonos = queryClient.getQueryData(['bonos', activeClinicId]);
+  useBonosQuery({ 
+    enabled: !cachedBonos && !!activeClinicId // Solo si no hay cache y hay clínica activa
+  });
+  
+  // ✅ PAQUETES: Usar cache pre-cargado primero
+  const cachedPackages = queryClient.getQueryData(['packages', activeClinicId]);
+  usePackagesQuery({ 
+    enabled: !cachedPackages && !!activeClinicId // Solo si no hay cache y hay clínica activa
+  });
+  
+  // ✅ DATOS FINALES: Usar cache si existe, sino usar hook data
+  const finalServicesData = cachedServices || allServicesData || [];
+  
+  console.log(`[WeeklyAgenda] 🔍 Datos de servicios: ${finalServicesData.length} (cache: ${!!cachedServices})`);
+  console.log(`[WeeklyAgenda] 🔍 Datos de bonos: cache=${!!cachedBonos}`);
+  console.log(`[WeeklyAgenda] 🔍 Datos de paquetes: cache=${!!cachedPackages}`);
+  
   // ✅ SIMPLIFICADO: Usar directamente cachedAppointments del hook con cache estable
   const appointmentsList = useMemo(() => {
     const appointments = (cachedAppointments as any) || [];
@@ -303,114 +328,12 @@ function WeeklyAgendaContent({
   // Flag para evitar recargas innecesarias después de actualizaciones optimistas
   // ✅ skipNextFetch eliminado - ya no necesario con sistema optimista global
   
-  // ✅ FUNCIÓN DE COMPATIBILIDAD: Usar refetch del cache
-  const fetchAppointments = useCallback(async () => {
-    // console.log('[WeeklyAgenda] 🔄 fetchAppointments called - usando cache hook'); // Log optimizado
-    if (!activeClinic?.id) {
-      console.log('[WeeklyAgenda] No activeClinic ID, skipping fetch');
-      return;
-    }
-    
-    // ✅ USAR REFETCH DEL HOOK en lugar de fetch manual
-    try {
-      await refetchFromCache();
-      // console.log('[WeeklyAgenda] ✅ Refetch desde cache completado'); // Log optimizado
-    } catch (error) {
-      console.error('[WeeklyAgenda] ❌ Error en refetch desde cache:', error);
-    }
-    return; // ✅ SALIR TEMPRANO - el resto de la función se puede eliminar gradualmente
-    
-    // 🗑️ CÓDIGO LEGACY - mantener temporalmente para compatibilidad
-    try {
-      const startDate = startOfWeek(currentDate, { weekStartsOn: 1 });
-      const endDate = addDays(startDate, 6);
-      
-      const url = `/api/appointments?clinicId=${activeClinic.id}&startDate=${format(startDate, 'yyyy-MM-dd')}&endDate=${format(endDate, 'yyyy-MM-dd')}`;
-      console.log('[WeeklyAgenda] Fetching appointments from:', url);
-      
-      const response = await fetch(url);
-      
-      if (!response.ok) throw new Error('Error fetching appointments');
-      
-      const data = await response.json();
-      console.log('[WeeklyAgenda] Received appointments:', data);
-      
-      // Procesar las citas para el formato esperado por la agenda
-      const processedAppointments = data.map((apt: any) => {
-        const clinicTz = (activeClinic as any)?.countryInfo?.timezone || (activeClinic as any)?.country?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
-        const startUtc = parseISO(apt.startTime);
-        const endUtc = parseISO(apt.endTime);
-        const startTime = toZonedTime(startUtc, clinicTz);
-        const endTime = toZonedTime(endUtc, clinicTz);
-        
-        // Determinar el color basado en los servicios
-        let appointmentColor = '#9CA3AF'; // Color por defecto (gris)
-        
-        console.log('[WeeklyAgenda] 🎨 fetchAppointments - Servicios para', apt.id, ':', apt.services);
-        console.log('[WeeklyAgenda] 🎨 fetchAppointments - Equipment para', apt.id, ':', apt.equipment);
-        
-        if (apt.services && apt.services.length > 0) {
-          // Si todos los servicios son del mismo tipo, usar ese color
-          const serviceTypes = new Set(apt.services.map((s: any) => s.service?.categoryId));
-          const uniqueColors = new Set(apt.services.map((s: any) => s.service?.colorCode).filter(Boolean));
-          
-          console.log('[WeeklyAgenda] 🎨 fetchAppointments - Service types para', apt.id, ':', Array.from(serviceTypes));
-          console.log('[WeeklyAgenda] 🎨 fetchAppointments - Unique colors para', apt.id, ':', Array.from(uniqueColors));
-          
-          if (serviceTypes.size === 1 && uniqueColors.size === 1) {
-            // Todos los servicios del mismo tipo - usar el color del servicio
-            const firstColor = Array.from(uniqueColors)[0];
-            appointmentColor = (typeof firstColor === 'string' ? firstColor : null) || appointmentColor;
-            console.log('[WeeklyAgenda] 🎨 fetchAppointments - Color de servicio único para', apt.id, ':', appointmentColor);
-          } else if (apt.equipment?.color) {
-            // Múltiples tipos de servicios - usar el color de la cabina
-            appointmentColor = apt.equipment.color;
-            console.log('[WeeklyAgenda] 🎨 fetchAppointments - Color de cabina para', apt.id, ':', appointmentColor);
-          } else {
-            console.log('[WeeklyAgenda] 🎨 fetchAppointments - Sin color específico para', apt.id, ', usando gris por defecto');
-          }
-        } else {
-          console.log('[WeeklyAgenda] 🎨 fetchAppointments - Sin servicios para', apt.id, ', usando gris por defecto');
-        }
-        
-        return {
-          id: apt.id,
-          name: `${apt.person.firstName} ${apt.person.lastName}`,
-          service: apt.services?.map((s: any) => s.service?.name).filter(Boolean).join(", ") || 'Sin servicio',
-          date: startTime,
-          roomId: apt.roomId, // SIEMPRE usar roomId para cabinas
-          startTime: format(startTime, 'HH:mm'),
-          endTime: format(endTime, 'HH:mm'), // Agregar hora de fin en formato HH:mm
-          duration: Math.ceil((endTime.getTime() - startTime.getTime()) / (1000 * 60)),
-          color: appointmentColor,
-          phone: apt.person.phone,
-          services: apt.services || [],
-          tags: apt.tags?.map((tagRelation: any) => tagRelation.tagId || tagRelation) || [], // Corregir formato de etiquetas
-          // Información adicional para la vista detallada
-          notes: apt.notes,
-        };
-      }) as Appointment[];
-      
-      const dedupedAppointments = Array.from(new Map(processedAppointments.map((a: Appointment) => [a.id, a])).values());
-      
-      // ✅ COMENTADO: Usar sistema de cache del hook, no setState local
-      // setAppointments(dedupedAppointments);
-      console.log('[WeeklyAgenda] ⚠️ LEGACY: fetchAppointments procesado pero no usado (hook maneja cache):', dedupedAppointments.length);
-    } catch (error) {
-      console.error('[WeeklyAgenda] Error fetching appointments:', error);
-      // Podríamos mostrar un toast de error aquí
-    } finally {
-      // ✅ loadingAppointments ahora se maneja automáticamente por el hook
-    }
-  }, [activeClinic?.id, format(currentDate, 'yyyy-MM-dd')]);
-  
-  // Fetch appointments cuando cambia la clínica o la semana
-  useEffect(() => {
-    // console.log('[WeeklyAgenda] useEffect triggered - activeClinic:', activeClinicId, 'currentDate:', formattedCurrentDate); // Log optimizado
-    if (activeClinicId) {
-      fetchAppointments();
-    }
-  }, [activeClinicId, formattedCurrentDate, fetchAppointments]); // ✅ Usar variables memorizadas
+  // ✅ ELIMINADO: fetchAppointments redundante - los hooks useWeeklyAgendaData y useWeeklyAgendaPrefetch ya manejan automáticamente:
+  // - Llamadas API optimizadas
+  // - Cache inteligente 
+  // - Prefetch de sliding window
+  // - Invalidación automática
+  // - Re-fetch cuando cambia la clínica
   
   // Estados para diálogos y selección
   const [selectedSlot, setSelectedSlot] = useState<{
@@ -2664,7 +2587,7 @@ function WeeklyAgendaContent({
       console.error('[WeeklyAgenda handleTimeAdjust] Error:', error);
       
       // Revertir el cambio en caso de error
-      fetchAppointments();
+      invalidateCache();
       
       toast({
         title: "Error",
@@ -2672,7 +2595,7 @@ function WeeklyAgendaContent({
         variant: "destructive",
       });
     }
-  }, [appointmentsList, fetchAppointments, toast, formatDateForAPI, minuteGranularity, findAvailableSlot]);
+  }, [appointmentsList, invalidateCache, toast, formatDateForAPI, minuteGranularity, findAvailableSlot]);
 
   if (containerMode) {
     return (
@@ -3065,9 +2988,9 @@ function WeeklyAgendaContent({
                       if (servicesChanged) {
                         console.log('[WeeklyAgenda] 🔧 Servicios cambiaron, detectados IDs:', appointmentData.services);
                         
-                        // ✅ OBTENER DATOS REALES de servicios desde allServicesData
+                        // ✅ OBTENER DATOS REALES de servicios desde finalServicesData
                         const realServices = appointmentData.services.map((serviceId: string) => {
-                          return allServicesData.find((s: any) => s.id === serviceId);
+                          return finalServicesData.find((s: any) => s.id === serviceId);
                         }).filter(Boolean); // Eliminar servicios no encontrados
                         
                         console.log('[WeeklyAgenda] 🔧 Servicios reales encontrados:', realServices.length, 'de', appointmentData.services.length);

@@ -145,11 +145,11 @@ export function ClientQuickViewDialog({
           <SheetTitle>Información del cliente</SheetTitle>
         </SheetHeader>
         {/* Header con avatar y nombre */}
-        <div className="border-b px-6 py-4 bg-gradient-to-r from-purple-50 to-blue-50">
-          <div className="flex items-center gap-3">
-            <Avatar className="h-12 w-12 bg-purple-100">
+        <div className="px-6 py-4 bg-gradient-to-r from-purple-50 to-blue-50 border-b">
+          <div className="flex gap-3 items-center">
+            <Avatar className="w-12 h-12 bg-purple-100">
               
-              <AvatarFallback className="bg-purple-100 text-purple-700">{initials || 'U'}</AvatarFallback>
+              <AvatarFallback className="text-purple-700 bg-purple-100">{initials || 'U'}</AvatarFallback>
             </Avatar>
             <div className="flex-1">
               <h2 className="text-xl font-semibold">{clientName || 'Sin nombre'}</h2>
@@ -160,9 +160,9 @@ export function ClientQuickViewDialog({
         </div>
 
         {/* Contenido con scroll */}
-        <div className="flex-1 overflow-hidden">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
-            <TabsList className="w-full justify-start rounded-none border-b bg-gray-50 h-11 p-0">
+        <div className="overflow-hidden flex-1">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col h-full">
+            <TabsList className="justify-start p-0 w-full h-11 bg-gray-50 rounded-none border-b">
               <TabsTrigger 
                 value="datos" 
                 className="rounded-none border-b-2 border-transparent data-[state=active]:border-purple-600 data-[state=active]:bg-white data-[state=active]:text-purple-600 hover:bg-gray-100 hover:text-gray-900 px-4"
@@ -193,8 +193,8 @@ export function ClientQuickViewDialog({
               </TabsTrigger>
             </TabsList>
 
-            <div className="flex-1 overflow-y-auto">
-              <TabsContent value="datos" className="mt-0 space-y-4 p-6">
+            <div className="overflow-y-auto flex-1">
+              <TabsContent value="datos" className="p-6 mt-0 space-y-4">
                 <div className="grid gap-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
@@ -218,8 +218,8 @@ export function ClientQuickViewDialog({
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="phone" className="text-xs font-medium flex items-center gap-1">
-                      <Phone className="h-3 w-3" />
+                    <Label htmlFor="phone" className="flex gap-1 items-center text-xs font-medium">
+                      <Phone className="w-3 h-3" />
                       Teléfono
                     </Label>
                     <Input
@@ -231,8 +231,8 @@ export function ClientQuickViewDialog({
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="email" className="text-xs font-medium flex items-center gap-1">
-                      <Mail className="h-3 w-3" />
+                    <Label htmlFor="email" className="flex gap-1 items-center text-xs font-medium">
+                      <Mail className="w-3 h-3" />
                       Email
                     </Label>
                     <Input
@@ -245,8 +245,8 @@ export function ClientQuickViewDialog({
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="address" className="text-xs font-medium flex items-center gap-1">
-                      <MapPin className="h-3 w-3" />
+                    <Label htmlFor="address" className="flex gap-1 items-center text-xs font-medium">
+                      <MapPin className="w-3 h-3" />
                       Dirección
                     </Label>
                     <Input
@@ -279,8 +279,8 @@ export function ClientQuickViewDialog({
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="birthDate" className="text-xs font-medium flex items-center gap-1">
-                      <Calendar className="h-3 w-3" />
+                    <Label htmlFor="birthDate" className="flex gap-1 items-center text-xs font-medium">
+                      <Calendar className="w-3 h-3" />
                       Fecha de nacimiento
                     </Label>
                     <Input
@@ -294,34 +294,34 @@ export function ClientQuickViewDialog({
                 </div>
               </TabsContent>
 
-              <TabsContent value="bonos" className="mt-0 p-6">
+              <TabsContent value="bonos" className="p-6 mt-0">
                 <div className="space-y-4">
                   <h3 className="text-sm font-medium text-gray-700">Bonos activos</h3>
-                  <div className="border rounded-lg p-4 text-center text-gray-500 text-sm">
+                  <div className="p-4 text-sm text-center text-gray-500 rounded-lg border">
                     No hay bonos activos
                   </div>
                 </div>
               </TabsContent>
 
-              <TabsContent value="paquetes" className="mt-0 p-6">
+              <TabsContent value="paquetes" className="p-6 mt-0">
                 <div className="space-y-4">
                   <h3 className="text-sm font-medium text-gray-700">Paquetes activos</h3>
-                  <div className="border rounded-lg p-4 text-center text-gray-500 text-sm">
+                  <div className="p-4 text-sm text-center text-gray-500 rounded-lg border">
                     No hay paquetes activos
                   </div>
                 </div>
               </TabsContent>
 
-              <TabsContent value="pagos" className="mt-0 p-6">
+              <TabsContent value="pagos" className="p-6 mt-0">
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between">
+                  <div className="flex justify-between items-center">
                     <h3 className="text-sm font-medium text-gray-700">Historial de pagos</h3>
                     <Button size="sm" variant="outline" className="h-8 text-xs">
-                      <Clock className="h-3 w-3 mr-1" />
+                      <Clock className="mr-1 w-3 h-3" />
                       Ver aplazados
                     </Button>
                   </div>
-                  <div className="border rounded-lg p-4 text-center text-gray-500 text-sm">
+                  <div className="p-4 text-sm text-center text-gray-500 rounded-lg border">
                     No hay pagos registrados
                   </div>
                 </div>
@@ -331,19 +331,19 @@ export function ClientQuickViewDialog({
         </div>
 
         {/* Footer fijo con botones */}
-        <div className="border-t px-6 py-4 bg-gray-50">
+        <div className="px-6 py-4 bg-gray-50 border-t">
           <div className="flex gap-3 justify-end">
             <Button
               variant="outline"
               onClick={() => onOpenChange(false)}
-              className="h-9 px-4 text-sm hover:bg-gray-100 hover:text-gray-900"
+              className="px-4 h-9 text-sm hover:bg-gray-100 hover:text-gray-900"
             >
               Cancelar
             </Button>
             <Button
               onClick={handleSave}
               disabled={!hasChanges || isSaving}
-              className="h-9 px-4 text-sm bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-4 h-9 text-sm bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isSaving ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1.5" />}
               Guardar cambios

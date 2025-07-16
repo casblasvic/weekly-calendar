@@ -120,6 +120,13 @@ interface DeviceUsageInsight {
     actualMinutes?: number;
     realMinutes?: number;
   };
+  appointmentDetails?: {
+    timeAnalysis?: {
+      hasTimeDeviation: boolean;
+      timeDeviationPct: number;
+      timeDeviationType: 'OVER_DURATION' | 'UNDER_DURATION';
+    };
+  };
 }
 
 interface GroupedInsight {
@@ -632,6 +639,24 @@ export function InsightsTab({
                                       </div>
                                     </div>
 
+                                    {/* ⏱️ ANÁLISIS DE DESVIACIÓN DE TIEMPO */}
+                                    {insight.appointmentDetails?.timeAnalysis && insight.appointmentDetails.timeAnalysis.hasTimeDeviation && (
+                                      <div className="grid grid-cols-2 gap-3 text-xs border rounded p-2 bg-yellow-50">
+                                        <div>
+                                          <span className="text-muted-foreground">Desviación Tiempo:</span>
+                                          <div className="font-medium text-orange-600">
+                                            {insight.appointmentDetails.timeAnalysis.timeDeviationPct}%
+                                          </div>
+                                        </div>
+                                        <div>
+                                          <span className="text-muted-foreground">Tipo:</span>
+                                          <div className="font-medium text-orange-600">
+                                            {insight.appointmentDetails.timeAnalysis.timeDeviationType === 'OVER_DURATION' ? 'Exceso' : 'Defecto'}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
+
                                     {/* Consumos energéticos */}
                                     <div className="grid grid-cols-2 gap-3 text-xs">
                                       <div>
@@ -672,6 +697,26 @@ export function InsightsTab({
                                             {format(new Date(insight.appointment.startTime), 'd MMM yyyy HH:mm', { locale: es })}
                                           </span>
                                         </div>
+
+                                        {/* 🏥 INFORMACIÓN DE CLÍNICA */}
+                                        {insight.appointment.clinic && (
+                                          <div className="flex justify-between">
+                                            <span className="text-muted-foreground">Clínica:</span>
+                                            <span className="font-medium text-blue-600">
+                                              {insight.appointment.clinic.name}
+                                            </span>
+                                          </div>
+                                        )}
+
+                                        {/* 👨‍⚕️ INFORMACIÓN DE EMPLEADO */}
+                                        {insight.appointment.professionalUser && (
+                                          <div className="flex justify-between">
+                                            <span className="text-muted-foreground">Empleado:</span>
+                                            <span className="font-medium text-green-600">
+                                              {`${insight.appointment.professionalUser.firstName || ''} ${insight.appointment.professionalUser.lastName || ''}`.trim()}
+                                            </span>
+                                          </div>
+                                        )}
 
                                         {/* Servicios realizados - compactado */}
                                         {insight.appointment.services && insight.appointment.services.length > 0 && (

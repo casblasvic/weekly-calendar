@@ -173,6 +173,8 @@ export async function GET(req: NextRequest) {
         variabilityPct: variabilityPct,
         
         // ⏱️ MÉTRICAS DE DURACIÓN (ALGORITMO WELFORD)
+        durationMinutes: profile.service?.durationMinutes || null,
+        treatmentDurationMinutes: profile.service?.treatmentDurationMinutes || null,
         configuredDurationMinutes: configuredDurationMinutes,
         avgRealDurationMinutes: formattedAvgMinutes,
         stdDevRealDurationMinutes: formattedStdDevMinutes,

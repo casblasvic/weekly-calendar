@@ -70,6 +70,36 @@ export async function GET(request: NextRequest) {
       // ✅ ELIMINADO: clinic !== null - ya no es necesario
     )
 
+    // 🔍 RESOLVER NOMBRES DE CLIENTES FAVORECIDOS
+    // Obtener todos los IDs de clientes únicos de todos los empleados
+    const allClientIds = new Set<string>()
+    validEmployeeScores.forEach(score => {
+      const favoredClients = score.favoredClients as Record<string, number>
+      Object.keys(favoredClients).forEach(clientId => {
+        allClientIds.add(clientId)
+      })
+    })
+
+    // Consultar nombres de clientes en una sola query
+    const clientsData = await prisma.person.findMany({
+      where: {
+        id: { in: Array.from(allClientIds) },
+        systemId: session.user.systemId
+      },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true
+      }
+    })
+
+    // Crear mapa de ID -> nombre para resolución rápida
+    const clientNamesMap = new Map<string, string>()
+    clientsData.forEach(client => {
+      const fullName = `${client.firstName || ''} ${client.lastName || ''}`.trim()
+      clientNamesMap.set(client.id, fullName || `Cliente ${client.id.slice(-8)}`)
+    })
+
     // 📊 Calcular estadísticas agregadas
     const stats = {
       totalEmployees: validEmployeeScores.length,
@@ -87,25 +117,36 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      employeeScores: validEmployeeScores.map(score => ({
-        id: score.id,
-        employeeId: score.employeeId,
-        employee: score.employee,
-        // ✅ ELIMINADO: clinic - ya no está en el modelo
-        totalServices: score.totalServices,
-        totalAnomalies: score.totalAnomalies,
-        anomalyRate: Number(score.anomalyRate),
-        avgEfficiency: Number(score.avgEfficiency),
-        consistencyScore: Number(score.consistencyScore),
-        favoredClients: score.favoredClients,
-        fraudIndicators: score.fraudIndicators,
-        timePatterns: score.timePatterns,
-        riskScore: score.riskScore,
-        riskLevel: score.riskLevel,
-        lastCalculated: score.lastCalculated,
-        createdAt: score.createdAt,
-        updatedAt: score.updatedAt
-      })),
+      employeeScores: validEmployeeScores.map(score => {
+        // 🎯 TRANSFORMAR favoredClients: ID -> nombres
+        const favoredClientsWithNames: Record<string, number> = {}
+        const originalFavoredClients = score.favoredClients as Record<string, number>
+        
+        Object.entries(originalFavoredClients).forEach(([clientId, count]) => {
+          const clientName = clientNamesMap.get(clientId) || `Cliente ${clientId.slice(-8)}`
+          favoredClientsWithNames[clientName] = count
+        })
+
+        return {
+          id: score.id,
+          employeeId: score.employeeId,
+          employee: score.employee,
+          // ✅ ELIMINADO: clinic - ya no está en el modelo
+          totalServices: score.totalServices,
+          totalAnomalies: score.totalAnomalies,
+          anomalyRate: Number(score.anomalyRate),
+          avgEfficiency: Number(score.avgEfficiency),
+          consistencyScore: Number(score.consistencyScore),
+          favoredClients: favoredClientsWithNames, // ✅ NOMBRES EN LUGAR DE IDs
+          fraudIndicators: score.fraudIndicators,
+          timePatterns: score.timePatterns,
+          riskScore: score.riskScore,
+          riskLevel: score.riskLevel,
+          lastCalculated: score.lastCalculated,
+          createdAt: score.createdAt,
+          updatedAt: score.updatedAt
+        }
+      }),
       stats
     })
 

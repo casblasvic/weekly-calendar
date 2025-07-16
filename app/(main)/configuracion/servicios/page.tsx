@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import {
     Plus, Search, Edit3, Trash2, ArrowUpDown, ChevronUp, ChevronDown, 
     CheckCircle, XCircle, SmilePlus, Check, PackageCheck, 
-    Loader2, Rows, Columns3, Settings2, Filter, ArrowLeft, HelpCircle, FilterX, Clock
+    Loader2, Rows, Columns3, Settings2, Filter, ArrowLeft, HelpCircle, FilterX, Clock, Timer
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -48,6 +48,7 @@ import {
     CaretSortIcon,
     CheckIcon
 } from "@radix-ui/react-icons";
+import { useIntegrationModules } from '@/hooks/use-integration-modules';
 import {
     Popover,
     PopoverContent,
@@ -161,6 +162,9 @@ export default function GestionServiciosPage() {
       data: allTariffs = [], 
       isLoading: isLoadingTariffs 
     } = useTariffsQuery();
+
+    // 🔌 Verificar si el plugin de Shelly está activo
+    const { isShellyActive, isLoading: isLoadingModules } = useIntegrationModules();
 
     // Consulta condicional para tarifa específica cuando estamos en modo selección
     const {
@@ -326,6 +330,17 @@ export default function GestionServiciosPage() {
             cell: ({ row }) => <div className="text-center">{row.getValue("durationMinutes") ? `${row.getValue("durationMinutes")} min` : '-'}</div>,
             meta: { align: 'center' }
         },
+        // 🔌 Columna de "Duración Tratamiento" - Solo si Shelly está activo
+        ...(isShellyActive ? [{
+            accessorKey: "treatmentDurationMinutes",
+            header: ({ column }) => (
+                <Button variant="ghost" onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')} className="justify-center w-full text-center">
+                    <Timer className="w-3 h-3 mr-1" /> Duración Tratamiento
+                </Button>
+            ),
+            cell: ({ row }) => <div className="text-center">{row.getValue("treatmentDurationMinutes") ? `${row.getValue("treatmentDurationMinutes")} min` : '-'}</div>,
+            meta: { align: 'center' }
+        }] : []),
         {
             accessorKey: "price",
             header: ({ column }) => (
@@ -601,16 +616,9 @@ export default function GestionServiciosPage() {
     // Determinar el número total de filas después del filtrado (antes de la paginación)
     const totalFilteredRows = table.getFilteredRowModel().rows.length;
 
-    // JSX para controles de tabla (Selector de Filas y Visibilidad de Columnas)
+    // JSX para controles de tabla (Visibilidad de Columnas)
     const tableControlsJsx = (
-        <div className="flex items-center justify-between mb-4">
-            {/* ✅ NUEVO: Selector de filas por página movido a la izquierda */}
-            <PageSizeSelector
-                pageSize={table.getState().pagination.pageSize}
-                onPageSizeChange={(size) => table.setPageSize(size)}
-                itemType="servicios"
-            />
-
+        <div className="flex items-center justify-end mb-4">
             {/* Dropdown de Visibilidad de Columnas */}
             <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -826,7 +834,15 @@ export default function GestionServiciosPage() {
 
                 {/* Paginación */}
                 {services.length > 0 && (
-                    <div className="flex items-center justify-end mt-0.5">
+                    <div className="flex items-center justify-between mt-0.5">
+                        {/* Selector de tamaño de página a la izquierda */}
+                        <PageSizeSelector
+                            pageSize={table.getState().pagination.pageSize}
+                            onPageSizeChange={(size) => table.setPageSize(size)}
+                            itemType="servicios"
+                        />
+                        
+                        {/* Controles de paginación a la derecha */}
                         <PaginationControls 
                             currentPage={table.getState().pagination.pageIndex + 1}
                             totalPages={table.getPageCount()}

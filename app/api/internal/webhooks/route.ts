@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma, Prisma } from '@/lib/db';
+import { getSiteUrl } from '@/lib/utils/site-url'
 // const prisma = new PrismaClient(); // MIGRADO: usar singleton desde @/lib/db
 
 // GET /api/internal/webhooks - Listar webhooks
@@ -155,11 +156,8 @@ export async function POST(request: NextRequest) {
       }
     })
 
-    // Generar URL del webhook con el ID real
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 
-                   process.env.NEXTAUTH_URL || 
-                   process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` :
-                   `http://localhost:${process.env.PORT || 3001}`
+    // Generar URL del webhook con el ID real usando helper estándar
+    const baseUrl = getSiteUrl()
     const webhookUrl = `${baseUrl}/api/webhooks/${webhook.id}/${slug}`
 
     // Actualizar el webhook con la URL correcta

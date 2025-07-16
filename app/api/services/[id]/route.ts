@@ -147,14 +147,14 @@ export async function PUT(request: Request, { params }: { params: { id: string }
         where: { serviceId: id },
         update: { 
           ...settings,
-          systemId: systemId, // 🏢 NUEVO: Actualizar systemId en caso de que no existiera
-          clinicId: null, // 🏥 NUEVO: ServiceSetting no está vinculado directamente a clínica específica
+          system: { connect: { id: systemId } }, // 🏢 NUEVO: Actualizar systemId en caso de que no existiera
+          // clinic: omitido cuando es null
         },
         create: {
           ...settings,
-          systemId: systemId, // 🏢 NUEVO: systemId para operaciones a nivel sistema
-          clinicId: null, // 🏥 NUEVO: ServiceSetting no está vinculado directamente a clínica específica
+          system: { connect: { id: systemId } }, // 🏢 NUEVO: systemId para operaciones a nivel sistema
           service: { connect: { id: id } }
+          // clinic: omitido cuando es null
         }
       });
 

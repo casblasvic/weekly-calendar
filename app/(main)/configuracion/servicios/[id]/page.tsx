@@ -12,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PackagesUsingItemTable } from '@/components/package/packages-using-item-table';
 import { useTranslation } from 'react-i18next';
 import { ServiceActionFooter } from '@/components/service/service-action-footer';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface SimplePackageDefinition {
     id: string;
@@ -43,6 +44,7 @@ export default function EditarServicioPage() {
     const params = useParams();
     const serviceId = params.id as string;
     const { t } = useTranslation();
+    const queryClient = useQueryClient();
     const formId = "edit-service-form";
 
     const [initialData, setInitialData] = useState<ServiceFormData | null>(null);
@@ -217,6 +219,14 @@ export default function EditarServicioPage() {
 
             const updatedService = await response.json();
             toast.success(t('services.updateSuccess', { name: updatedService.name }) || `Servicio "${updatedService.name}" actualizado correctamente.`);
+            
+            // 🔧 INVALIDAR CACHE para que se actualicen los datos en la tabla
+            await Promise.all([
+                queryClient.invalidateQueries({ queryKey: ['services'] }),
+                queryClient.invalidateQueries({ queryKey: ['service', serviceId] }),
+                queryClient.refetchQueries({ queryKey: ['services'] }) // Forzar refetch inmediato
+            ]);
+            
             router.push('/configuracion/servicios');
 
         } catch (err: any) {

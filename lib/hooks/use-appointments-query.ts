@@ -146,11 +146,16 @@ export function useWeekAppointmentsQuery(weekKey: string, clinicId: string | nul
     queryKey: ['appointments', 'week', weekKey, clinicId],
     queryFn: () => fetchWeekAppointments(weekKey, clinicId!, isAuthenticated),
     enabled: !!clinicId && isAuthenticated && isInitialized, // 🔥 CRÍTICO: isInitialized previene race condition
-    staleTime: 1000 * 60 * 15, // 15 min de cortesía
-    gcTime: 1000 * 60 * 5, // ✅ 5 minutos para cache
-    refetchOnMount: false, // ✅ NO refetch automático - el optimista maneja los datos
+    staleTime: 1000 * 60 * 15, // 15 min - datos frescos para navegación inmediata
+    gcTime: 1000 * 60 * 60, // ✅ 60 minutos para navegación inmediata
+    refetchOnMount: false, // ✅ NO refetch si hay datos en cache - navegación inmediata
     refetchOnWindowFocus: false, // ✅ NO refetch en focus
     refetchInterval: false, // ✅ NO polling automático
+    // ✅ CRÍTICO: Configuración para IndexedDB
+    meta: {
+      persist: true, // Persistir en IndexedDB
+      persistTime: 1000 * 60 * 60 * 24 // 24 horas
+    }
   });
 }
 
@@ -166,11 +171,16 @@ export function useDayAppointmentsQuery(dayKey: string, clinicId: string | null)
     queryKey: ['appointments', 'day', dayKey, clinicId],
     queryFn: () => fetchDayAppointments(dayKey, clinicId!, isAuthenticated),
     enabled: !!clinicId && isAuthenticated && isInitialized, // 🔥 CRÍTICO: isInitialized previene race condition
-    staleTime: 1000 * 60 * 15, // 15 min de cortesía
-    gcTime: 1000 * 60 * 3, // ✅ REDUCIR a 3 minutos para días
-    refetchOnMount: false, // ✅ NO refetch automático - causa bucles infinitos
+    staleTime: 1000 * 60 * 10, // 10 min - datos frescos para día actual
+    gcTime: 1000 * 60 * 30, // ✅ 30 minutos para navegación rápida
+    refetchOnMount: false, // ✅ NO refetch si hay datos en cache - navegación inmediata
     refetchOnWindowFocus: false, // ✅ NO refetch en focus para evitar spam
     refetchInterval: false, // ✅ NO polling automático
+    // ✅ CRÍTICO: Configuración para IndexedDB
+    meta: {
+      persist: true, // Persistir en IndexedDB
+      persistTime: 1000 * 60 * 60 * 12 // 12 horas para días
+    }
   });
 }
 
@@ -188,38 +198,50 @@ export function useSlidingAgendaCache(
   const prevWeek = getWeekKey(currentWeek, -1);
   const nextWeek = getWeekKey(currentWeek, +1);
   
-  // ✅ PREFETCH AUTOMÁTICO DE 3 SEMANAS - SIN BUCLE INFINITO
+  // ✅ PREFETCH AUTOMÁTICO DE 3 SEMANAS - CONFIGURACIÓN PARA NAVEGACIÓN INMEDIATA
   const queries = useQueries({
     queries: [
       {
         queryKey: ['appointments', 'week', prevWeek, clinicId],
         queryFn: () => fetchWeekAppointments(prevWeek, clinicId!, isAuthenticated),
-        staleTime: 1000 * 60 * 15, // 15 min de cortesía
-        gcTime: 1000 * 60 * 5, // ✅ 5 minutos para sliding cache
+        staleTime: 1000 * 60 * 15, // 15 min - datos frescos para navegación inmediata
+        gcTime: 1000 * 60 * 60, // ✅ 60 minutos para navegación inmediata
         enabled: !!clinicId && isAuthenticated && isInitialized, // 🔥 CRÍTICO: isInitialized previene race condition
-        refetchOnMount: false, // ✅ NO refetch automático - causa bucles
+        refetchOnMount: false, // ✅ NO refetch si hay datos en cache - navegación inmediata
         refetchOnWindowFocus: false,
-        refetchInterval: false // ✅ NO polling automático
+        refetchInterval: false, // ✅ NO polling automático
+        meta: {
+          persist: true, // Persistir en IndexedDB
+          persistTime: 1000 * 60 * 60 * 24 // 24 horas
+        }
       },
       {
         queryKey: ['appointments', 'week', currentWeek, clinicId],
         queryFn: () => fetchWeekAppointments(currentWeek, clinicId!, isAuthenticated),
-        staleTime: 1000 * 60 * 15, // 15 min de cortesía
-        gcTime: 1000 * 60 * 5, // ✅ 5 minutos para sliding cache
+        staleTime: 1000 * 60 * 15, // 15 min - datos frescos para navegación inmediata
+        gcTime: 1000 * 60 * 60, // ✅ 60 minutos para navegación inmediata
         enabled: !!clinicId && isAuthenticated && isInitialized, // 🔥 CRÍTICO: isInitialized previene race condition
-        refetchOnMount: false, // ✅ NO refetch automático - causa bucles
+        refetchOnMount: false, // ✅ NO refetch si hay datos en cache - navegación inmediata
         refetchOnWindowFocus: false,
-        refetchInterval: false // ✅ NO polling automático
+        refetchInterval: false, // ✅ NO polling automático
+        meta: {
+          persist: true, // Persistir en IndexedDB
+          persistTime: 1000 * 60 * 60 * 24 // 24 horas
+        }
       },
       {
         queryKey: ['appointments', 'week', nextWeek, clinicId],
         queryFn: () => fetchWeekAppointments(nextWeek, clinicId!, isAuthenticated),
-        staleTime: 1000 * 60 * 15, // 15 min de cortesía
-        gcTime: 1000 * 60 * 5, // ✅ 5 minutos para sliding cache
+        staleTime: 1000 * 60 * 15, // 15 min - datos frescos para navegación inmediata
+        gcTime: 1000 * 60 * 60, // ✅ 60 minutos para navegación inmediata
         enabled: !!clinicId && isAuthenticated && isInitialized, // 🔥 CRÍTICO: isInitialized previene race condition
-        refetchOnMount: false, // ✅ NO refetch automático - causa bucles
+        refetchOnMount: false, // ✅ NO refetch si hay datos en cache - navegación inmediata
         refetchOnWindowFocus: false,
-        refetchInterval: false // ✅ NO polling automático
+        refetchInterval: false, // ✅ NO polling automático
+        meta: {
+          persist: true, // Persistir en IndexedDB
+          persistTime: 1000 * 60 * 60 * 24 // 24 horas
+        }
       }
     ]
   });

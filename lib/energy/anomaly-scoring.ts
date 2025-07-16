@@ -33,8 +33,8 @@
  */
 
 import { prisma } from '@/lib/db'
-import { isShellyModuleActive } from '@/lib/services/shelly-module-service'
-import crypto from 'crypto'
+import { isShellyModuleActive } from '../services/shelly-module-service'
+import * as crypto from 'crypto'
 
 // 🎯 TIPOS DE PATRONES DE ANOMALÍAS
 export const CLIENT_ANOMALY_PATTERNS = {
@@ -176,33 +176,32 @@ export async function updateClientAnomalyScore(params: {
   const { systemId, clinicId, clientId, deviationPct, insightType, employeeId, timeOfDay } = params
   
   try {
-    // 🛡️ VERIFICAR MÓDULO SHELLY ACTIVO ANTES DE PROCEDER
+    // 🔒 Verificar que el módulo Shelly esté activo
     const isModuleActive = await isShellyModuleActive(systemId)
     if (!isModuleActive) {
       console.log(`🔒 [CLIENT_SCORE] Módulo Shelly INACTIVO para sistema ${systemId} - Scoring omitido`)
       return null
     }
     
-    // 🔍 Buscar o crear score del cliente usando query directa
-    const existingScores = await prisma.$queryRaw<Array<{
-      id: string
-      totalServices: number
-      totalAnomalies: number
-      avgDeviationPercent: number
-      maxDeviationPercent: number
-      suspiciousPatterns: any
-      favoredByEmployees: any
-    }>>`
-      SELECT id, "totalServices", "totalAnomalies", "avgDeviationPercent", 
-             "maxDeviationPercent", "suspiciousPatterns", "favoredByEmployees"
-      FROM smart_plug_client_anomaly_scores 
-      WHERE "systemId" = ${systemId} 
-        AND "clientId" = ${clientId}
-      LIMIT 1
-    `
+    // 🔍 Buscar score existente del cliente usando Prisma ORM
+    const existingScore = await prisma.clientAnomalyScore.findFirst({
+      where: {
+        systemId,
+        clientId
+      },
+      select: {
+        id: true,
+        totalServices: true,
+        totalAnomalies: true,
+        avgDeviationPercent: true,
+        maxDeviationPercent: true,
+        suspiciousPatterns: true,
+        favoredByEmployees: true
+      }
+    })
     
-    if (existingScores.length === 0) {
-      // 🆕 Crear nuevo score usando query directa
+    if (!existingScore) {
+      // 🆕 Crear nuevo score usando Prisma ORM
       const initialPatterns = { [insightType]: 1 }
       const initialEmployees = employeeId ? { [employeeId]: 1 } : {}
       const initialRiskScore = calculateClientRiskScore({
@@ -212,39 +211,47 @@ export async function updateClientAnomalyScore(params: {
         maxDeviation: Math.abs(deviationPct)
       })
       
-      await prisma.$executeRaw`
-        INSERT INTO smart_plug_client_anomaly_scores (
-          id, "systemId", "clinicId", "clientId", "totalServices", "totalAnomalies",
-          "anomalyRate", "avgDeviationPercent", "maxDeviationPercent", 
-          "suspiciousPatterns", "favoredByEmployees", "riskScore", "riskLevel",
-          "lastAnomalyDate", "lastCalculated", "createdAt", "updatedAt"
-        ) VALUES (
-          ${crypto.randomUUID()}, ${systemId}, ${clinicId}, ${clientId}, 1, 1,
-          100, ${deviationPct}, ${Math.abs(deviationPct)}, 
-          ${JSON.stringify(initialPatterns)}, ${JSON.stringify(initialEmployees)}, 
-          ${initialRiskScore}, ${getRiskLevel(initialRiskScore)},
-          NOW(), NOW(), NOW(), NOW()
-        )
-      `
+      const newScore = await prisma.clientAnomalyScore.create({
+        data: {
+          systemId,
+          clinicId,
+          clientId,
+          totalServices: 1,
+          totalAnomalies: 1,
+          anomalyRate: 100,
+          avgDeviationPercent: deviationPct,
+          maxDeviationPercent: Math.abs(deviationPct),
+          suspiciousPatterns: initialPatterns,
+          favoredByEmployees: initialEmployees,
+          riskScore: initialRiskScore,
+          riskLevel: getRiskLevel(initialRiskScore),
+          lastAnomalyDate: new Date(),
+          lastCalculated: new Date()
+        },
+        select: {
+          id: true,
+          riskScore: true
+        }
+      })
       
       console.log(`🆕 [CLIENT_SCORE] Nuevo score creado para cliente ${clientId}: ${initialRiskScore}/100`)
-      return { id: crypto.randomUUID(), riskScore: initialRiskScore }
+      return { id: newScore.id, riskScore: initialRiskScore }
     }
     
-    // 🔄 Actualizar score existente
-    const newTotalAnomalies = existingScores[0].totalAnomalies + 1
-    const newAnomalyRate = (newTotalAnomalies / existingScores[0].totalServices) * 100
+    // 🔄 Actualizar score existente usando Prisma ORM
+    const newTotalAnomalies = existingScore.totalAnomalies + 1
+    const newAnomalyRate = (newTotalAnomalies / existingScore.totalServices) * 100
     
     // 📊 Actualizar desviación promedio (algoritmo incremental)
-    const newAvgDeviation = (Number(existingScores[0].avgDeviationPercent) * existingScores[0].totalAnomalies + deviationPct) / newTotalAnomalies
-    const newMaxDeviation = Math.max(Number(existingScores[0].maxDeviationPercent), Math.abs(deviationPct))
+    const newAvgDeviation = (Number(existingScore.avgDeviationPercent) * existingScore.totalAnomalies + deviationPct) / newTotalAnomalies
+    const newMaxDeviation = Math.max(Number(existingScore.maxDeviationPercent), Math.abs(deviationPct))
     
     // 🔍 Actualizar patrones sospechosos
-    const patterns = existingScores[0].suspiciousPatterns as any || {}
+    const patterns = existingScore.suspiciousPatterns as any || {}
     patterns[insightType] = (patterns[insightType] || 0) + 1
     
     // 👨‍⚕️ Actualizar empleados favorecidos
-    const favoredEmployees = existingScores[0].favoredByEmployees as any || {}
+    const favoredEmployees = existingScore.favoredByEmployees as any || {}
     if (employeeId) {
       favoredEmployees[employeeId] = (favoredEmployees[employeeId] || 0) + 1
     }
@@ -257,23 +264,24 @@ export async function updateClientAnomalyScore(params: {
       maxDeviation: newMaxDeviation
     })
     
-    await prisma.$executeRaw`
-      UPDATE smart_plug_client_anomaly_scores 
-      SET "totalAnomalies" = ${newTotalAnomalies},
-          "anomalyRate" = ${newAnomalyRate},
-          "avgDeviationPercent" = ${newAvgDeviation},
-          "maxDeviationPercent" = ${newMaxDeviation},
-          "suspiciousPatterns" = ${JSON.stringify(patterns)},
-          "favoredByEmployees" = ${JSON.stringify(favoredEmployees)},
-          "riskScore" = ${newRiskScore},
-          "riskLevel" = ${getRiskLevel(newRiskScore)},
-          "lastAnomalyDate" = NOW(),
-          "updatedAt" = NOW()
-      WHERE "id" = ${existingScores[0].id}
-    `
+    await prisma.clientAnomalyScore.update({
+      where: { id: existingScore.id },
+      data: {
+        totalAnomalies: newTotalAnomalies,
+        anomalyRate: newAnomalyRate,
+        avgDeviationPercent: newAvgDeviation,
+        maxDeviationPercent: newMaxDeviation,
+        suspiciousPatterns: patterns,
+        favoredByEmployees: favoredEmployees,
+        riskScore: newRiskScore,
+        riskLevel: getRiskLevel(newRiskScore),
+        lastAnomalyDate: new Date(),
+        updatedAt: new Date()
+      }
+    })
     
     console.log(`🔄 [CLIENT_SCORE] Score actualizado para cliente ${clientId}: ${newRiskScore}/100`)
-    return { id: existingScores[0].id, riskScore: newRiskScore }
+    return { id: existingScore.id, riskScore: newRiskScore }
     
   } catch (error) {
     console.error(`❌ [CLIENT_SCORE] Error actualizando score de cliente ${clientId}:`, error)

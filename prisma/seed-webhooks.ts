@@ -1,17 +1,25 @@
 // @ts-nocheck
 import { prisma, Prisma } from '@/lib/db';
-// Función local para evitar problemas de import
+
+// 🌐 Función local para obtener URL base del sitio
+// Prioridad: NEXTAUTH_URL → VERCEL_URL → localhost fallback
 function getSiteUrl(): string {
   if (typeof window !== 'undefined') {
     return window.location.origin;
   }
-  const envUrl = process.env.NEXTAUTH_URL || process.env.VERCEL_URL;
-  if (envUrl) {
-    if (/^https?:\/\//i.test(envUrl)) {
-      return envUrl;
-    }
-    return `https://${envUrl}`;
+  
+  // 🎯 PRIORIDAD 1: NEXTAUTH_URL (variable principal)
+  if (process.env.NEXTAUTH_URL) {
+    return process.env.NEXTAUTH_URL;
   }
+  
+  // 🎯 PRIORIDAD 2: VERCEL_URL (para deploys en Vercel)
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL}`;
+  }
+  
+  // 🎯 FALLBACK: localhost solo si no hay variables de entorno
+  console.warn('⚠️ No NEXTAUTH_URL found, using localhost fallback. Set NEXTAUTH_URL for production.');
   return 'http://localhost:3000';
 }
 

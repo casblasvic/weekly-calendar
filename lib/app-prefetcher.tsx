@@ -130,18 +130,9 @@ export function AppPrefetcher() {
           });
         }
 
-        // PREFETCH EQUIPMENT REQUIREMENTS for appointments of current week
-        const weekData: any = queryClient.getQueryData(['appointments','week', currentWeek, activeClinicId]);
-        const appointmentIds: string[] = weekData?.appointments?.map((a:any)=>a.id) || [];
-        appointmentIds.forEach(id=>{
-          if (!queryClient.getQueryData(['equipmentRequirements', id])) {
-            queryClient.prefetchQuery({
-              queryKey: ['equipmentRequirements', id],
-              queryFn: () => api.cached.get(`/api/services/equipment-requirements?appointmentId=${id}`),
-              staleTime: CACHE_TIME.CORTO
-            });
-          }
-        });
+        // ✅ ELIMINADO: PREFETCH EQUIPMENT REQUIREMENTS - ahora viene pre-cargado con appointments
+        // Los datos de equipamiento ya vienen incluidos en la API /api/appointments
+        // Ver: docs/SERVICE_EQUIPMENT_REQUIREMENTS_OPTIMIZATION.md
 
         // PREFETCH smart plug devices
         if (systemId && !queryClient.getQueryData(['smartPlugDevices', systemId])) {
@@ -170,21 +161,32 @@ export function AppPrefetcher() {
           });
         }
 
-        // Prefetch de overrides de cabinas para la semana actual
-        const monday = new Date();
-        monday.setDate(monday.getDate() - ((monday.getDay()+6)%7)); // lunes
-        const sunday = new Date(monday);
-        sunday.setDate(monday.getDate()+6);
-        const mondayStr = monday.toISOString().split('T')[0];
-        const sundayStr = sunday.toISOString().split('T')[0];
+        // ✅ PREFETCH MEJORADO: Overrides de cabinas para múltiples semanas
+        const prefetchOverrides = async (weekOffset: number) => {
+          const targetDate = new Date();
+          targetDate.setDate(targetDate.getDate() + (weekOffset * 7));
+          const monday = new Date(targetDate);
+          monday.setDate(monday.getDate() - ((monday.getDay()+6)%7)); // lunes
+          const sunday = new Date(monday);
+          sunday.setDate(monday.getDate()+6);
+          const mondayStr = monday.toISOString().split('T')[0];
+          const sundayStr = sunday.toISOString().split('T')[0];
 
-        if (!queryClient.getQueryData(['overrides', currentWeek, activeClinicId])) {
-          queryClient.prefetchQuery({
-            queryKey: ['overrides', currentWeek, activeClinicId],
-            queryFn: () => api.cached.get(`/api/cabin-schedule-overrides?clinicId=${activeClinicId}&startDate=${mondayStr}&endDate=${sundayStr}`),
-            staleTime: CACHE_TIME.CORTO,
-          });
-        }
+          const cacheKey = ['cabin-schedule-overrides', activeClinicId, mondayStr, sundayStr];
+          
+          if (!queryClient.getQueryData(cacheKey)) {
+            queryClient.prefetchQuery({
+              queryKey: cacheKey,
+              queryFn: () => api.cached.get(`/api/cabin-schedule-overrides?clinicId=${activeClinicId}&startDate=${mondayStr}&endDate=${sundayStr}`),
+              staleTime: CACHE_TIME.CORTO,
+            });
+          }
+        };
+
+        // Prefetch semana anterior, actual y siguiente
+        prefetchOverrides(-1); // Semana anterior
+        prefetchOverrides(0);  // Semana actual
+        prefetchOverrides(1);  // Semana siguiente
       }
     };
     
@@ -234,11 +236,29 @@ export function AppPrefetcher() {
     // 4️⃣ Requerimientos de equipo por servicio
     // Ruta antigua eliminada (devuelve 400). A la espera de nuevo endpoint por clínica.
 
-    // 5️⃣ Servicios / Tarifas / Paquetes
+    // 5️⃣ Servicios / Tarifas / Paquetes / Bonos
     if (!queryClient.getQueryData(['services', clinicId])) {
       queryClient.prefetchQuery({
         queryKey: ['services', clinicId],
         queryFn: () => api.cached.get(`/api/services?clinicId=${clinicId}`),
+        staleTime: CACHE_TIME.LARGO,
+      });
+    }
+
+    // ✅ NUEVO: Prefetch de bonos para agenda
+    if (!queryClient.getQueryData(['bonos', clinicId])) {
+      queryClient.prefetchQuery({
+        queryKey: ['bonos', clinicId],
+        queryFn: () => api.cached.get(`/api/bonos?clinicId=${clinicId}`),
+        staleTime: CACHE_TIME.LARGO,
+      });
+    }
+
+    // ✅ NUEVO: Prefetch de paquetes para agenda
+    if (!queryClient.getQueryData(['packages', clinicId])) {
+      queryClient.prefetchQuery({
+        queryKey: ['packages', clinicId],
+        queryFn: () => api.cached.get(`/api/packages?clinicId=${clinicId}`),
         staleTime: CACHE_TIME.LARGO,
       });
     }

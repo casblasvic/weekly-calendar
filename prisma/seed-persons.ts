@@ -1,25 +1,25 @@
 /**
- * 👥 SEED: PERSONAS DE EJEMPLO (OPTIMIZADO)
- * Versión optimizada que crea datos mínimos pero suficientes
- * para probar el sistema de gestión de identidades.
+ * 👥 SEED: PERSONAS DE EJEMPLO (CORREGIDO ANTI-DUPLICADOS)
+ * Versión corregida que usa upserts individuales en lugar de createMany
+ * para prevenir duplicados efectivamente con los nuevos constraints únicos.
  * 
- * OPTIMIZACIONES:
- * - Usa createMany en lugar de upserts individuales
- * - Reduce cantidad de personas de ejemplo
- * - Elimina validaciones complejas durante seeding
+ * CORRECCIONES:
+ * - Usa upsert individual en lugar de createMany
+ * - Respeta constraints únicos del schema
+ * - Previene duplicados por email, phone, nationalId
+ * - Mantiene datos consistentes entre ejecuciones
  */
 
 import { PrismaClient } from '@prisma/client';
 import { createId } from '@paralleldrive/cuid2';
 
 export async function seedPersons(prisma: PrismaClient, systemId: string) {
-  console.log('👥 Seeding Persons (Optimized)...');
+  console.log('👥 Seeding Persons (Anti-Duplicates Fixed)...');
 
   try {
-    // Crear personas básicas con createMany (más rápido)
+    // Datos de personas con upsert individual
     const personsData = [
       {
-        id: createId(),
         firstName: 'María',
         lastName: 'García López',
         email: 'maria.garcia@example.com',
@@ -30,7 +30,6 @@ export async function seedPersons(prisma: PrismaClient, systemId: string) {
         systemId: systemId,
       },
       {
-        id: createId(),
         firstName: 'Carlos',
         lastName: 'Rodríguez Martín', 
         email: 'carlos.rodriguez@techcorp.com',
@@ -41,7 +40,6 @@ export async function seedPersons(prisma: PrismaClient, systemId: string) {
         systemId: systemId,
       },
       {
-        id: createId(),
         firstName: 'Ana',
         lastName: 'Fernández Ruiz',
         email: 'ana.fernandez@clinic.com',
@@ -52,7 +50,6 @@ export async function seedPersons(prisma: PrismaClient, systemId: string) {
         systemId: systemId,
       },
       {
-        id: createId(),
         firstName: 'Cliente Test',
         lastName: 'Sin Email',
         phone: '+34699000111',
@@ -63,13 +60,45 @@ export async function seedPersons(prisma: PrismaClient, systemId: string) {
       }
     ];
 
-    // Insertar todas las personas de una vez
-    await prisma.person.createMany({
-      data: personsData,
-      skipDuplicates: true
-    });
+    // 🔒 UPSERT INDIVIDUAL para respetar constraints únicos
+    let createdCount = 0;
+    let updatedCount = 0;
+    
+    for (const personData of personsData) {
+      // Buscar persona existente por email, phone o nationalId
+      const existingPerson = await prisma.person.findFirst({
+        where: {
+          systemId,
+          OR: [
+            { email: personData.email },
+            { phone: personData.phone },
+            { nationalId: personData.nationalId }
+          ]
+        }
+      });
 
-    console.log(`✅ Created ${personsData.length} persons optimized`);
+      if (existingPerson) {
+        // Actualizar persona existente
+        await prisma.person.update({
+          where: { id: existingPerson.id },
+          data: personData
+        });
+        updatedCount++;
+        console.log(`  ✅ Updated person: ${personData.firstName} ${personData.lastName}`);
+      } else {
+        // Crear nueva persona
+        await prisma.person.create({
+          data: {
+            id: createId(),
+            ...personData
+          }
+        });
+        createdCount++;
+        console.log(`  ✅ Created person: ${personData.firstName} ${personData.lastName}`);
+      }
+    }
+
+    console.log(`✅ Persons seeding completed: ${createdCount} created, ${updatedCount} updated`);
 
   } catch (error) {
     console.error('❌ Error seeding persons:', error);

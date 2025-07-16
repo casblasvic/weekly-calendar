@@ -1,4 +1,4 @@
-import "@/app/globals.css"
+import "@/styles/globals.css"
 import { ProvidersWrapper } from "@/app/components/providers-wrapper"
 import { auth } from "@/lib/auth"
 import type { Metadata } from 'next'

@@ -8,7 +8,8 @@ import { toZonedTime } from 'date-fns-tz';
 import { useWeekAppointmentsQuery, getWeekKey, useWeekAppointmentsQueryGuard } from './use-appointments-query';
 import { useClinic } from '@/contexts/clinic-context';
 import { useQueryClient, useQuery, UseQueryOptions } from '@tanstack/react-query';
-import { usePrefetchAppointmentDevices } from './use-appointment-devices-cache';
+// ✅ ELIMINADO: import { usePrefetchAppointmentDevices } from './use-appointment-devices-cache';
+// Los datos de equipamiento ahora vienen pre-cargados con appointments
 
 export interface WeeklyAgendaAppointment {
   id: string;
@@ -40,7 +41,8 @@ export interface WeeklyAgendaAppointment {
 export function useWeeklyAgendaData(currentDate: Date) {
   const { activeClinic } = useClinic();
   const queryClient = useQueryClient();
-  const { prefetchDevicesForAppointments } = usePrefetchAppointmentDevices();
+  // ✅ ELIMINADO: const { prefetchDevicesForAppointments } = usePrefetchAppointmentDevices();
+  // Los datos de equipamiento ahora vienen pre-cargados con appointments
   
   // Generar key de semana desde la fecha actual
   const weekKey = useMemo(() => {
@@ -57,18 +59,9 @@ export function useWeeklyAgendaData(currentDate: Date) {
     refetch 
   } = useWeekAppointmentsQuery(weekKey, activeClinic?.id || null);
 
-  // 🚀 PREFETCH AUTOMÁTICO DE DISPOSITIVOS cuando se cargan citas
-  useEffect(() => {
-    if (weekData?.appointments && weekData.appointments.length > 0) {
-      const appointmentIds = weekData.appointments.map(apt => apt.id);
-      console.log(`🚀 [useWeeklyAgendaData] Auto-prefetching devices for ${appointmentIds.length} appointments`);
-      
-      // Ejecutar prefetch en background (no bloquear UI)
-      prefetchDevicesForAppointments(appointmentIds).catch(error => {
-        console.error('❌ [useWeeklyAgendaData] Error in device prefetch:', error);
-      });
-    }
-  }, [weekData?.appointments, prefetchDevicesForAppointments]);
+  // ✅ ELIMINADO: PREFETCH AUTOMÁTICO DE DISPOSITIVOS 
+  // Los datos de equipamiento ahora vienen pre-cargados con appointments en la API
+  // Ver: docs/SERVICE_EQUIPMENT_REQUIREMENTS_OPTIMIZATION.md
   
   // ✅ DEBUG: Ver estados del hook principal - SOLO EN DESARROLLO
   // console.log('[useWeeklyAgendaData] 🔍 ESTADOS QUERY:', {

@@ -63,14 +63,35 @@ export async function GET(request: NextRequest) {
         orderBy: { _count: { id: 'desc' } }
       }),
       
-      // Logs por tipo de conexión (necesita join)
-      prisma.$queryRaw`
-        SELECT wc.type, COUNT(wl.id) as count
-        FROM "WebSocketLog" wl
-        JOIN "WebSocketConnection" wc ON wl."connectionId" = wc.id
-        GROUP BY wc.type
-        ORDER BY COUNT(wl.id) DESC
-      `,
+      // Logs por tipo de conexión (usando Prisma ORM con include)
+      prisma.webSocketLog.groupBy({
+        by: ['connectionId'],
+        _count: { id: true },
+        orderBy: { _count: { id: 'desc' } }
+      }).then(async (connectionStats) => {
+        const connections = await prisma.webSocketConnection.findMany({
+          where: {
+            id: { in: connectionStats.map(stat => stat.connectionId) }
+          },
+          select: {
+            id: true,
+            type: true
+          }
+        })
+        
+        const typeStats = connections.reduce((acc, conn) => {
+          const stat = connectionStats.find(s => s.connectionId === conn.id)
+          if (stat) {
+            acc[conn.type] = (acc[conn.type] || 0) + stat._count.id
+          }
+          return acc
+        }, {} as Record<string, number>)
+        
+        return Object.entries(typeStats).map(([type, count]) => ({
+          type,
+          count
+        })).sort((a, b) => b.count - a.count)
+      }),
       
       // Actividad reciente (últimas 24 horas)
       prisma.webSocketLog.count({

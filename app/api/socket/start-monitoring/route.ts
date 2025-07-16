@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from '@/lib/db';
+import { getSiteUrl } from '@/lib/utils/site-url';
 
 export async function POST(request: NextRequest) {
     try {
         console.log('🚀 Forzando inicio de monitoreo de dispositivos...');
         
         // Verificar que el servidor Socket.io esté inicializado
-        const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
+        const baseUrl = getSiteUrl();
         await fetch(`${baseUrl}/api/socket`);
         
         // Ejecutar un ciclo de monitoreo inmediatamente

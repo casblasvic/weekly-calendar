@@ -263,6 +263,16 @@ export async function GET(request: NextRequest) {
               deviationPct: insight.deviationPct,
               efficiency: insight.expectedKwh > 0 ? 
                 Math.round((insight.expectedKwh / insight.actualKwh) * 100) : 0
+            },
+            // ⏱️ ANÁLISIS DE DESVIACIÓN DE TIEMPO
+            timeAnalysis: {
+              estimatedMinutes: detailJson?.estimatedMinutes || 0,
+              actualMinutes: detailJson?.actualMinutes || 0,
+              diffMinutes: detailJson?.diffMinutes || 0,
+              timeDeviationPct: detailJson?.estimatedMinutes > 0 ? 
+                Math.round((Math.abs(detailJson?.diffMinutes || 0) / detailJson.estimatedMinutes) * 100) : 0,
+              timeDeviationType: (detailJson?.diffMinutes || 0) > 0 ? 'OVER_DURATION' : 'UNDER_DURATION',
+              hasTimeDeviation: Math.abs(detailJson?.diffMinutes || 0) > 0.5
             }
           }
         }
@@ -799,9 +809,13 @@ async function analyzeClientPattern(
       filter.clinicId = clinicId
     }
 
-    // 🚀 CONSULTA OPTIMIZADA: Usar nueva tabla de scores de anomalías de clientes
+    // 🚀 CONSULTA REFACTORIZADA: Usar Prisma ORM para obtener client anomaly scores
     const clientScore = await prisma.clientAnomalyScore.findFirst({
-      where: filter,
+      where: {
+        systemId,
+        clientId,
+        ...(clinicId && clinicId !== 'all' ? { clinicId } : {})
+      },
       select: {
         totalServices: true,
         totalAnomalies: true,
@@ -823,7 +837,7 @@ async function analyzeClientPattern(
       }
     }
 
-    // 📊 USAR MÉTRICAS DIRECTAS DE LA TABLA DE SCORES
+    // 📊 USAR MÉTRICAS DIRECTAS DE LA TABLA REAL
     return {
       totalAppointments: clientScore.totalServices,
       anomalyCount: clientScore.totalAnomalies,
@@ -863,7 +877,7 @@ async function analyzeEmployeePattern(
         anomalyRate: true,
         avgEfficiency: true,
         consistencyScore: true,
-        performanceLevel: true
+        riskLevel: true
       }
     })
 

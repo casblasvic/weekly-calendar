@@ -22,6 +22,7 @@ export function GlobalLoadingOverlay() {
   });
 
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
+  const [showMinimumLoadingTime, setShowMinimumLoadingTime] = useState(false);
 
   // Marcar cuando la primera carga masiva termina
   useEffect(() => {
@@ -30,7 +31,21 @@ export function GlobalLoadingOverlay() {
     }
   }, [isInitialized, globalFetching, initialLoadComplete]);
 
-  const visible = !initialLoadComplete && (!isInitialized || globalFetching > 0);
+  // 🎯 CONSISTENCIA: Mostrar loading mínimo para evitar parpadeos
+  useEffect(() => {
+    if (!isInitialized || globalFetching > 0) {
+      setShowMinimumLoadingTime(true);
+      
+      // Mínimo 800ms de loading para UX consistente
+      const minLoadingTimer = setTimeout(() => {
+        setShowMinimumLoadingTime(false);
+      }, 800);
+
+      return () => clearTimeout(minLoadingTimer);
+    }
+  }, [isInitialized, globalFetching]);
+
+  const visible = !initialLoadComplete && (!isInitialized || globalFetching > 0 || showMinimumLoadingTime);
 
   if (!visible) return null;
 

@@ -1,45 +1,45 @@
 /**
- * 🔄 ENERGY INSIGHTS RECALCULATION ENGINE - NUEVA ARQUITECTURA
+ * 🔄 ENERGY INSIGHTS RECALCULATION ENGINE - ARQUITECTURA ACTUALIZADA
  * ================================================================
  * 
- * Sistema completamente refactorizado para recalcular perfiles energéticos
- * basado en servicios VALIDATED y lógica de treatmentDurationMinutes.
+ * Sistema actualizado para recalcular tanto perfiles energéticos como
+ * scores de anomalías basado en servicios VALIDATED.
  * 
  * ✅ NUEVA ARQUITECTURA IMPLEMENTADA:
  * 1. Procesa SOLO servicios con status = 'VALIDATED' 
- * 2. Aplica lógica treatmentDurationMinutes vs durationMinutes
- * 3. Lee directamente de ServiceEnergyProfile (datos ya calculados)
- * 4. Elimina dependencia de AppointmentServiceEnergyUsage
- * 5. Mantiene coherencia con finalizador refactorizado
+ * 2. Recalcula ServiceEnergyProfile (legacy pero útil)
+ * 3. 🆕 RECALCULA ClientAnomalyScore y EmployeeAnomalyScore
+ * 4. Genera insights basados en nueva arquitectura
  * 
  * 🎯 CAMBIOS CRÍTICOS:
  * - Obtiene datos de appointment_device_usage + appointment_services
  * - Filtra por servicios VALIDATED únicamente
- * - Calcula duración efectiva con nueva lógica
- * - Recalcula perfiles usando algoritmo de Welford
- * - Genera insights basados en nueva arquitectura
+ * - Calcula scores de anomalías por cliente y empleado
+ * - Detecta patrones sospechosos
+ * - Actualiza niveles de riesgo
  * 
  * 🔐 AUTENTICACIÓN: auth() de @/lib/auth
  * 
  * Variables críticas:
  * - systemId: Multi-tenant isolation obligatorio
  * - validatedServices: Solo servicios VALIDATED
- * - effectiveDuration: treatmentDurationMinutes o durationMinutes según lógica
- * - profilesRecalculated: Número de perfiles actualizados
- * - insightsCreated: Número de insights generados
+ * - clientScoresUpdated: Número de scores de clientes actualizados
+ * - employeeScoresUpdated: Número de scores de empleados actualizados
  * 
  * @see docs/ENERGY_INSIGHTS_VALIDATED_SERVICES.md
- * @see lib/energy/usage-finalizer.ts
+ * @see lib/energy/anomaly-scoring.ts
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma, Prisma } from '@/lib/db'
 import { calculateExpectedEnergy } from '@/lib/energy/calculate-expected-energy'
+import { updateClientAnomalyScore, updateEmployeeAnomalyScore, updateServiceCount } from '@/lib/energy/anomaly-scoring'
 
 interface Body {
   startDate?: string
   endDate?: string
+  clinicId?: string
 }
 
 export async function POST(req: NextRequest) {
@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
 
   console.log(`🔄 [RECALC] Iniciando recálculo para systemId: ${systemId}`)
 
-  const { startDate, endDate } = (await req.json()) as Body
+  const { startDate, endDate, clinicId } = (await req.json()) as Body
   
   // 🎯 FILTRO DE FECHAS PARA DATOS DE USO
   const dateFilter: Prisma.AppointmentDeviceUsageWhereInput = startDate || endDate ? {
@@ -189,30 +189,59 @@ export async function POST(req: NextRequest) {
       (sum, s) => sum + s.effectiveDuration, 0
     )
 
-    if (totalEffectiveDuration === 0) continue
-
-    for (const serviceData of servicesWithEffectiveDuration) {
-      const ratio = serviceData.effectiveDuration / totalEffectiveDuration
-      const allocatedKwh = usage.energyConsumption! * ratio
-      const realMinutes = usage.actualMinutes! * ratio
-
-      const key = `${usage.equipmentId}-${serviceData.serviceId}`
+    // 🎯 OPTIMIZACIÓN: DIFERENCIAR SERVICIO ÚNICO VS MÚLTIPLES SERVICIOS
+    const isSingleService = servicesWithEffectiveDuration.length === 1
+    
+    if (isSingleService) {
+      // Para servicio único, usar datos directos de appointment_device_usage
+      const singleService = servicesWithEffectiveDuration[0]
+      const key = `${usage.equipmentId}-${singleService.serviceId}`
       
       if (!serviceDataForRecalc.has(key)) {
         serviceDataForRecalc.set(key, [])
       }
-
+      
       serviceDataForRecalc.get(key)!.push({
         equipmentId: usage.equipmentId!,
-        serviceId: serviceData.serviceId,
-        serviceName: serviceData.serviceName,
-        effectiveDuration: serviceData.effectiveDuration,
-        realMinutes: realMinutes,
-        allocatedKwh: allocatedKwh,
-        durationSource: serviceData.durationSource
+        serviceId: singleService.serviceId,
+        serviceName: singleService.serviceName,
+        effectiveDuration: singleService.effectiveDuration,
+        realMinutes: usage.actualMinutes, // Usar datos directos
+        allocatedKwh: usage.energyConsumption, // Usar datos directos
+        durationSource: singleService.durationSource
       })
-
+      
       totalValidServices++
+      
+      console.log(`🔧 [RECALC] Servicio único procesado: ${singleService.serviceName}`)
+      
+    } else {
+      // Para múltiples servicios, aplicar lógica de desagregación
+      for (const serviceData of servicesWithEffectiveDuration) {
+        const ratio = serviceData.effectiveDuration / totalEffectiveDuration
+        const allocatedKwh = usage.energyConsumption * ratio
+        const realMinutes = usage.actualMinutes * ratio
+        
+        const key = `${usage.equipmentId}-${serviceData.serviceId}`
+        
+        if (!serviceDataForRecalc.has(key)) {
+          serviceDataForRecalc.set(key, [])
+        }
+        
+        serviceDataForRecalc.get(key)!.push({
+          equipmentId: usage.equipmentId!,
+          serviceId: serviceData.serviceId,
+          serviceName: serviceData.serviceName,
+          effectiveDuration: serviceData.effectiveDuration,
+          realMinutes: realMinutes,
+          allocatedKwh: allocatedKwh,
+          durationSource: serviceData.durationSource
+        })
+        
+        totalValidServices++
+      }
+      
+      console.log(`🔧 [RECALC] Múltiples servicios procesados: ${servicesWithEffectiveDuration.length}`)
     }
 
     totalValidUsages++
@@ -227,7 +256,7 @@ export async function POST(req: NextRequest) {
   // 3️⃣ RECALCULAR PERFILES CON ALGORITMO DE WELFORD
   let profilesRecalculated = 0
 
-  for (const [key, serviceDataArray] of serviceDataForRecalc) {
+  for (const [key, serviceDataArray] of Array.from(serviceDataForRecalc)) {
     const [equipmentId, serviceId] = key.split('-')
     
     // 📊 APLICAR ALGORITMO DE WELFORD PARA RECÁLCULO COMPLETO
@@ -351,6 +380,151 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // 🆕 5️⃣ RECALCULAR SCORES DE ANOMALÍAS DE CLIENTES Y EMPLEADOS
+  console.log(`🎯 [RECALC] Recalculando scores de anomalías...`)
+  
+  let clientScoresUpdated = 0
+  let employeeScoresUpdated = 0
+
+  // Obtener todos los device usages completados para recalcular scores
+  const allCompletedUsages = await prisma.appointmentDeviceUsage.findMany({
+    where: {
+      systemId,
+      currentStatus: 'COMPLETED',
+      ...(clinicId && clinicId !== 'all' ? { appointment: { clinicId } } : {}),
+      ...dateFilter
+    },
+    include: {
+      appointment: {
+        include: {
+          person: true,
+          professionalUser: true,
+          services: {
+            where: { status: 'VALIDATED' },
+            include: { service: true }
+          }
+        }
+      }
+    }
+  })
+
+  // Agrupar por cliente para recalcular scores
+  const clientUsages = new Map<string, typeof allCompletedUsages>()
+  const employeeUsages = new Map<string, typeof allCompletedUsages>()
+
+  for (const usage of allCompletedUsages) {
+    if (!usage.appointment.person || !usage.appointment.professionalUser) continue
+
+    const clientId = usage.appointment.person.id
+    const employeeId = usage.appointment.professionalUser.id
+
+    if (!clientUsages.has(clientId)) {
+      clientUsages.set(clientId, [])
+    }
+    clientUsages.get(clientId)!.push(usage)
+
+    if (!employeeUsages.has(employeeId)) {
+      employeeUsages.set(employeeId, [])
+    }
+    employeeUsages.get(employeeId)!.push(usage)
+  }
+
+  // Recalcular scores de clientes
+  for (const [clientId, usages] of Array.from(clientUsages)) {
+    try {
+      const firstUsage = usages[0]
+      if (!firstUsage.appointment.clinicId) continue
+
+      // Calcular desviaciones promedio para este cliente
+      let totalDeviations = 0
+      let anomalyCount = 0
+      
+      for (const usage of usages) {
+        const expectedMinutes = usage.appointment.services[0]?.service?.treatmentDurationMinutes || 
+                              usage.appointment.estimatedDurationMinutes || 0
+        if (expectedMinutes > 0 && usage.actualMinutes) {
+          const deviationPct = ((usage.actualMinutes - expectedMinutes) / expectedMinutes) * 100
+          totalDeviations += Math.abs(deviationPct)
+          
+          // Considerar anomalía si desviación > 20%
+          if (Math.abs(deviationPct) > 20) {
+            anomalyCount++
+            
+            // Actualizar score por cada anomalía detectada
+            await updateClientAnomalyScore({
+              systemId,
+              clinicId: firstUsage.appointment.clinicId,
+              clientId,
+              deviationPct,
+              insightType: deviationPct > 0 ? 'OVER_DURATION' : 'UNDER_DURATION',
+              employeeId: firstUsage.appointment.professionalUser?.id,
+              timeOfDay: new Date(firstUsage.appointment.startTime).getHours()
+            })
+          }
+        }
+      }
+      
+      // Actualizar contador de servicios totales
+      await updateServiceCount({
+        systemId,
+        clinicId: firstUsage.appointment.clinicId,
+        clientId
+      })
+      
+      clientScoresUpdated++
+    } catch (error) {
+      console.error(`❌ [RECALC] Error actualizando score de cliente ${clientId}:`, error)
+    }
+  }
+
+  // Recalcular scores de empleados
+  for (const [employeeId, usages] of Array.from(employeeUsages)) {
+    try {
+      const firstUsage = usages[0]
+      if (!firstUsage.appointment.clinicId) continue
+
+      // Calcular desviaciones promedio para este empleado
+      let totalDeviations = 0
+      let anomalyCount = 0
+      
+      for (const usage of usages) {
+        const expectedMinutes = usage.appointment.services[0]?.service?.treatmentDurationMinutes || 
+                              usage.appointment.estimatedDurationMinutes || 0
+        if (expectedMinutes > 0 && usage.actualMinutes) {
+          const deviationPct = ((usage.actualMinutes - expectedMinutes) / expectedMinutes) * 100
+          totalDeviations += Math.abs(deviationPct)
+          
+          // Considerar anomalía si desviación > 20%
+          if (Math.abs(deviationPct) > 20) {
+            anomalyCount++
+            
+            // Actualizar score por cada anomalía detectada
+            await updateEmployeeAnomalyScore({
+              systemId,
+              clinicId: firstUsage.appointment.clinicId,
+              employeeId,
+              deviationPct,
+              insightType: deviationPct > 0 ? 'OVER_DURATION' : 'UNDER_DURATION',
+              clientId: usage.appointment.person?.id,
+              timeOfDay: new Date(firstUsage.appointment.startTime).getHours()
+            })
+          }
+        }
+      }
+      
+      // Actualizar contador de servicios totales
+      await updateServiceCount({
+        systemId,
+        clinicId: firstUsage.appointment.clinicId,
+        employeeId
+      })
+      
+      employeeScoresUpdated++
+    } catch (error) {
+      console.error(`❌ [RECALC] Error actualizando score de empleado ${employeeId}:`, error)
+    }
+  }
+
   console.log(`✅ [RECALC] Recálculo completado exitosamente`)
 
   return NextResponse.json({
@@ -360,7 +534,9 @@ export async function POST(req: NextRequest) {
       usagesReprocessed: totalValidUsages,
       servicesProcessed: totalValidServices,
       insightsCreated,
-      message: `✅ Recálculo con nueva arquitectura completado. ${profilesRecalculated} perfiles actualizados desde ${totalValidUsages} usos con ${totalValidServices} servicios VALIDATED, ${insightsCreated} insights creados.`
+      clientScoresUpdated,
+      employeeScoresUpdated,
+      message: `✅ Recálculo completo: ${profilesRecalculated} perfiles, ${clientScoresUpdated} scores de clientes, ${employeeScoresUpdated} scores de empleados actualizados desde ${totalValidUsages} usos con ${totalValidServices} servicios VALIDATED, ${insightsCreated} insights creados.`
     }
   })
 } 

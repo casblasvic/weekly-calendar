@@ -10,7 +10,7 @@ export function useServicesQuery(options?: Omit<UseQueryOptions<any, unknown, an
     queryFn: async () => {
       return await api.get('/api/services');
     },
-    staleTime: 1000 * 60 * 2, // 2 minutos (reducido para mejor actualización)
+    staleTime: 1000 * 30, // 30 segundos (reducido para mejor actualización)
     refetchOnMount: false, // No refrescar automáticamente al montar
     refetchOnWindowFocus: false, // No refrescar al cambiar ventana
     ...options,

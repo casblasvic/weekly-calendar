@@ -280,6 +280,7 @@ export default function EnergyInsightsDashboard() {
   const [selectedClinic, setSelectedClinic] = useState<string>('')
   const [clinics, setClinics] = useState<Clinic[]>([])
   const [activeTab, setActiveTab] = useState('insights')
+  const [isRecalculating, setIsRecalculating] = useState(false) // 🧠 NUEVO: Estado para animación del cerebro
   
   // Estados para filtros y selecciones
   const [selectedInsights, setSelectedInsights] = useState<Record<string, boolean>>({})
@@ -735,6 +736,7 @@ export default function EnergyInsightsDashboard() {
   }
 
   const handleRecalculate = async () => {
+    setIsRecalculating(true)
     try {
       const response = await fetch('/api/internal/energy-insights/recalc', {
         method: 'POST',
@@ -751,6 +753,8 @@ export default function EnergyInsightsDashboard() {
       }
     } catch (error) {
       toast.error('Error en recálculo')
+    } finally {
+      setIsRecalculating(false)
     }
   }
 
@@ -1056,9 +1060,13 @@ export default function EnergyInsightsDashboard() {
             Actualizar
           </Button>
           
-          <Button variant="outline" size="sm" onClick={handleRecalculate}>
-            <Brain className="w-4 h-4 mr-2" />
-            Recalcular
+          <Button variant="outline" size="sm" onClick={handleRecalculate} disabled={isRecalculating}>
+            <Brain className={`w-4 h-4 mr-2 transition-all duration-300 ${
+              isRecalculating 
+                ? 'animate-pulse text-blue-500 drop-shadow-lg' 
+                : 'text-gray-600 hover:text-blue-500'
+            }`} />
+            {isRecalculating ? 'Recalculando...' : 'Recalcular'}
         </Button>
         </div>
       </div>

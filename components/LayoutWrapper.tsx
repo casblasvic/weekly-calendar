@@ -82,7 +82,7 @@ import { GranularityProvider } from "@/lib/drag-drop/granularity-context"
 import { MoveAppointmentProvider } from "@/contexts/move-appointment-context"
 import { MoveAppointmentUI } from "@/components/move-appointment-ui"
 import { format } from "date-fns"
-import { SmartPlugsProvider, useSmartPlugsContextOptional } from "@/contexts/smart-plugs-context"
+import { useSmartPlugsContextOptional } from "@/contexts/smart-plugs-context"
 import { clientLogger } from "@/lib/utils/client-logger"
 
 interface LayoutWrapperProps {
@@ -430,56 +430,54 @@ export function LayoutWrapper({ children, user }: LayoutWrapperProps) {
   }
 
   return (
-    <SmartPlugsProvider>
-      <div className="flex min-h-screen bg-gray-50">
-        <div 
-          ref={sidebarRef}
-          className="flex-shrink-0 transition-all duration-300 ease-in-out"
-          style={{ zIndex: 45 }}
-        >
-          {(() => {
-            try {
-              return (
-                <MainSidebar
-                  isCollapsed={isMobile ? !isSidebarVisible : isSidebarCollapsed}
-                  onToggle={toggleSidebar}
-                  forceMobileView={isMobile}
-                />
-              )
-            } catch (error) {
-              console.error('❌ [LayoutWrapper] Error al renderizar MainSidebar:', error)
-              return (
-                <div className="flex justify-center items-center w-14 h-screen bg-gray-900">
-                  <div className="text-xs text-white">Cargando...</div>
-                </div>
-              )
-            }
-          })()}
-        </div>
-
-        <MobileClinicButton 
-          onClick={toggleMobileSidebar}
-          isOpen={isSidebarVisible}
-        />
-
-        <div className="fixed right-0 top-0 z-[9999] space-y-1 p-3">
-          <FloatingMenu />
-        </div>
-
-        <main
-          className="flex-1" 
-          style={mainStyle}
-        >
-          <GranularityProvider>
-            <MoveAppointmentProvider 
-              onGoBackToAppointment={handleGoBackToAppointment}
-            >
-              {children}
-              <MoveAppointmentUI currentViewDate={currentViewDate} />
-            </MoveAppointmentProvider>
-          </GranularityProvider>
-        </main>
+    <div className="flex min-h-screen bg-gray-50">
+      <div 
+        ref={sidebarRef}
+        className="flex-shrink-0 transition-all duration-300 ease-in-out"
+        style={{ zIndex: 45 }}
+      >
+        {(() => {
+          try {
+            return (
+              <MainSidebar
+                isCollapsed={isMobile ? !isSidebarVisible : isSidebarCollapsed}
+                onToggle={toggleSidebar}
+                forceMobileView={isMobile}
+              />
+            )
+          } catch (error) {
+            console.error('❌ [LayoutWrapper] Error al renderizar MainSidebar:', error)
+            return (
+              <div className="flex justify-center items-center w-14 h-screen bg-gray-900">
+                <div className="text-xs text-white">Cargando...</div>
+              </div>
+            )
+          }
+        })()}
       </div>
-    </SmartPlugsProvider>
+
+      <MobileClinicButton 
+        onClick={toggleMobileSidebar}
+        isOpen={isSidebarVisible}
+      />
+
+      <div className="fixed right-0 top-0 z-[9999] space-y-1 p-3">
+        <FloatingMenu />
+      </div>
+
+      <main
+        className="flex-1" 
+        style={mainStyle}
+      >
+        <GranularityProvider>
+          <MoveAppointmentProvider 
+            onGoBackToAppointment={handleGoBackToAppointment}
+          >
+            {children}
+            <MoveAppointmentUI currentViewDate={currentViewDate} />
+          </MoveAppointmentProvider>
+        </GranularityProvider>
+      </main>
+    </div>
   )
 }

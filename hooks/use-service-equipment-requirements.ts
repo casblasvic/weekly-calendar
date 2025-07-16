@@ -65,11 +65,14 @@ interface ServiceEquipmentRequirementsData {
 interface UseServiceEquipmentRequirementsProps {
   appointmentId: string
   enabled?: boolean
+  // 🆕 NUEVO: Datos pre-cargados del appointment
+  appointmentData?: any
 }
 
 export function useServiceEquipmentRequirements({ 
   appointmentId, 
-  enabled = true 
+  enabled = true,
+  appointmentData
 }: UseServiceEquipmentRequirementsProps): ServiceEquipmentRequirementsData | null {
   const { activeClinic } = useClinic()
   const { data: session } = useSession()
@@ -109,6 +112,71 @@ export function useServiceEquipmentRequirements({
   const currentAppointmentUsagesRef = useRef<string[]>([])
   currentAppointmentUsagesRef.current = currentAppointmentUsages
 
+  // 🆕 NUEVO: Función para extraer datos de equipamientos de los datos pre-cargados
+  const processPreloadedEquipmentData = useCallback((appointmentData: any) => {
+    if (!appointmentData?.services || !Array.isArray(appointmentData.services)) {
+      return null
+    }
+
+    const availableDevices: ServiceEquipmentDevice[] = []
+    const requiredEquipmentIds: string[] = []
+
+    // Procesar cada servicio de la cita
+    appointmentData.services.forEach((appointmentService: any) => {
+      const service = appointmentService.service
+      if (!service?.settings?.equipmentRequirements) return
+
+      // Procesar cada requerimiento de equipamiento
+      service.settings.equipmentRequirements.forEach((requirement: any) => {
+        const equipment = requirement.equipment
+        if (!equipment?.clinicAssignments) return
+
+        // Filtrar solo las asignaciones de la clínica actual
+        const clinicAssignments = equipment.clinicAssignments.filter(
+          (assignment: any) => assignment.clinicId === activeClinic?.id
+        )
+
+        // Procesar cada asignación de equipamiento
+        clinicAssignments.forEach((assignment: any) => {
+          requiredEquipmentIds.push(equipment.id)
+
+          // Si hay un enchufe inteligente asociado, agregarlo a los dispositivos disponibles
+          if (assignment.smartPlugDevice) {
+            const device = assignment.smartPlugDevice
+            const equipmentDevice: ServiceEquipmentDevice = {
+              id: device.id,
+              name: device.name,
+              deviceId: device.deviceId,
+              online: device.online ?? false,
+              relayOn: device.relayOn ?? false,
+              currentPower: device.currentPower || 0,
+              voltage: device.voltage || 0,
+              temperature: device.temperature || 0,
+              // ⚡ OBTENER POWERTHRESHOLD DEL EQUIPAMIENTO CORRECTO
+              powerThreshold: device.equipmentClinicAssignment?.equipment?.powerThreshold || 1.0,
+              equipmentId: equipment.id,
+              equipmentName: equipment.name,
+              equipmentClinicAssignmentId: assignment.id,
+              deviceName: assignment.deviceName,
+              cabinName: assignment.cabin?.name,
+              serialNumber: assignment.serialNumber,
+              status: 'available', // Estado inicial, se actualiza por WebSocket
+              lastSeenAt: device.lastSeenAt ? new Date(device.lastSeenAt) : undefined,
+              credentialId: device.credentialId
+            }
+            availableDevices.push(equipmentDevice)
+          }
+        })
+      })
+    })
+
+    return {
+      availableDevices,
+      requiredEquipmentIds,
+      currentAppointmentUsages: [] // TODO: Extraer esto de los datos pre-cargados si está disponible
+    }
+  }, [activeClinic?.id])
+
   // 🔍 OBTENER EQUIPOS REQUERIDOS PARA LOS SERVICIOS DE LA CITA
   const fetchRequiredEquipment = useCallback(async () => {
     if (!systemId || !appointmentId || !enabled) return
@@ -116,6 +184,26 @@ export function useServiceEquipmentRequirements({
     try {
       setIsLoading(true)
       
+      // 🆕 PRIORIDAD 1: Usar datos pre-cargados si están disponibles
+      if (appointmentData) {
+        console.log('🚀 [ServiceEquipment] Usando datos pre-cargados para appointment:', appointmentId)
+        const preloadedData = processPreloadedEquipmentData(appointmentData)
+        
+        if (preloadedData) {
+          setRequiredEquipmentIds(preloadedData.requiredEquipmentIds || [])
+          setAllDevices(preloadedData.availableDevices || [])
+          setCurrentAppointmentUsages(preloadedData.currentAppointmentUsages || [])
+          setLastUpdate(new Date())
+          
+          // Persistir en caché para futuras hidrataciones
+          queryClient.setQueryData(cacheKey, preloadedData)
+          setIsLoading(false)
+          return
+        }
+      }
+      
+      // 🆕 FALLBACK: Usar API solo si no hay datos pre-cargados
+      console.log('⚠️ [ServiceEquipment] Fallback a API para appointment:', appointmentId)
       const response = await fetch(`/api/services/equipment-requirements?appointmentId=${appointmentId}`)
       
       if (!response.ok) {
@@ -146,7 +234,7 @@ export function useServiceEquipmentRequirements({
     } finally {
       setIsLoading(false)
     }
-  }, [systemId, appointmentId, enabled, queryClient])
+  }, [systemId, appointmentId, enabled, queryClient, appointmentData, processPreloadedEquipmentData])
 
   // 🌐 INICIALIZACIÓN - Cargar equipos requeridos
   useEffect(() => {

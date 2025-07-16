@@ -1,0 +1,554 @@
+/* stylelint-disable at-rule-no-unknown */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 262.1 83.3% 57.8%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 262.1 83.3% 57.8%;
+    --radius: 0.5rem;
+
+    /* Colors for new theme elements */
+    --container-background: #f5f5f5;
+    --table-header: #ede9fe;
+    --tab-active: #8b5cf6;
+    --card-background: #ffffff;
+
+    --button-primary: #7c3aed;
+    --button-primary-hover: #6d28d9;
+    --button-secondary: #e5e7eb;
+    --button-secondary-hover: #d1d5db;
+    
+    --table-hover: rgba(124, 58, 237, 0.05); /* 5% de --primary por defecto */
+
+    /* Elementos estructurales */
+    --header-background: #7c3aed;
+    --footer-background: #f8f9fa;
+    --sidebar-background: #f9fafb;
+    --sidebar-text: #111827;
+    --sidebar-hover: #f3f4f6;
+    --input-focus-border: #7c3aed;
+
+    --purple-50: #f5f3ff;
+    --purple-100: #ede9fe;
+    --purple-200: #ddd6fe;
+    --purple-300: #c4b5fd;
+    --purple-400: #a78bfa;
+    --purple-500: #8b5cf6;
+    --purple-600: #7c3aed;
+    --purple-700: #6d28d9;
+    --purple-800: #5b21b6;
+    --purple-900: #4c1d95;
+
+    /* Variables de tema */
+    --theme-primary: #7c3aed;
+    --theme-secondary: #8b5cf6;
+    --theme-accent: #a78bfa;
+    --theme-text: #111827;
+    --theme-background: #ffffff;
+    --theme-header-bg: #7c3aed;
+    --theme-sidebar-bg: #f9fafb;
+    --theme-button-bg: #7c3aed;
+    --theme-button-text: #ffffff;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 262.1 83.3% 57.8%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 262.1 83.3% 57.8%;
+  }
+}
+
+/* Clases personalizadas para elementos del tema */
+.main-container {
+  background-color: var(--container-background);
+}
+
+.card-container {
+  background-color: var(--card-background);
+}
+
+/* Estilos para tablas */
+.table-header {
+  background-color: var(--table-header);
+}
+
+.table-header th {
+  color: var(--primary);
+  font-weight: 500;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+}
+
+.table-row-hover:hover {
+  background-color: var(--table-hover);
+  cursor: pointer;
+}
+
+/* Aplicamos estilos específicos a las filas de las tablas */
+tr.table-row-hover:hover {
+  background-color: rgba(0, 0, 0, 0.04);
+}
+
+/* Estilos para pestañas */
+.tab-active {
+  background-color: var(--tab-active);
+  color: white;
+}
+
+/* Mejor apariencia para TabsList */
+[role="tabslist"] {
+  background-color: var(--container-background);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.25rem;
+}
+
+/* Efecto hover para las pestañas */
+[role="tab"]:hover:not([data-state="active"]) {
+  background-color: var(--table-hover);
+}
+
+/* Estilos para elementos estructurales */
+.app-header {
+  background-color: var(--header-background);
+  color: white;
+}
+
+.app-footer {
+  background-color: var(--footer-background);
+}
+
+.app-sidebar {
+  background-color: var(--sidebar-background);
+}
+
+.app-sidebar-item {
+  color: var(--sidebar-text);
+}
+
+.app-sidebar-item:hover, .hover\:app-sidebar-hover:hover {
+  background-color: var(--sidebar-hover);
+}
+
+/* Estilos adicionales para menús */
+.app-menu-active {
+  background-color: var(--table-hover);
+  font-weight: 500;
+  color: var(--primary);
+}
+
+[role="tab"][data-state="active"] {
+  background-color: var(--tab-active) !important;
+  color: white !important;
+}
+
+/* Estilos para campos con foco */
+input:focus, 
+textarea:focus, 
+select:focus {
+  outline: none !important;
+  border-color: var(--input-focus-border) !important;
+  box-shadow: 0 0 0 1px var(--input-focus-border) !important;
+}
+
+/* Estilos para botones */
+.btn-primary {
+  background-color: var(--button-primary);
+  color: white;
+  transition: background-color 0.2s ease-in-out;
+}
+
+.btn-primary:hover {
+  background-color: var(--button-primary-hover);
+}
+
+.btn-secondary {
+  background-color: var(--button-secondary);
+  color: var(--foreground);
+  transition: background-color 0.2s ease-in-out;
+}
+
+.btn-secondary:hover {
+  background-color: var(--button-secondary-hover);
+}
+
+.btn-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+@layer utilities {
+  .animate-in {
+    animation: animate-in 0.3s ease-in-out;
+  }
+
+  .slide-in-from-right {
+    animation: slide-in-from-right 0.3s ease-in-out;
+  }
+
+  .line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+}
+
+@keyframes animate-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slide-in-from-right {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+/* Input focus styles */
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none !important;
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 1px var(--primary) !important;
+}
+
+/* Override shadcn focus styles */
+.focus-visible\:ring-2:focus-visible,
+.focus-visible\:ring-ring:focus-visible,
+.focus-visible\:ring-offset-2:focus-visible {
+  --tw-ring-color: var(--primary) !important;
+  --tw-ring-offset-width: 0px !important;
+  box-shadow: 0 0 0 1px var(--primary) !important;
+}
+
+[data-state="open"] > .focus-visible\:ring-2,
+[data-state="open"] > .focus-visible\:ring-ring {
+  --tw-ring-color: var(--primary) !important;
+  box-shadow: 0 0 0 1px var(--primary) !important;
+}
+
+/* Z-index management */
+.z-header {
+  z-index: 40;
+}
+
+.z-sidebar {
+  z-index: 50;
+}
+
+.z-dropdown {
+  z-index: 1000;
+}
+
+.z-modal {
+  z-index: 1010;
+}
+
+.z-tooltip {
+  z-index: 1020;
+}
+
+.z-popover {
+  z-index: 1030;
+}
+
+.z-sticky {
+  z-index: 30;
+}
+
+.z-fixed {
+  z-index: 20;
+}
+
+.z-default {
+  z-index: 1;
+}
+
+.z-below {
+  z-index: -1;
+}
+
+/* Ajustes para la barra lateral y los submenús */
+#main-sidebar {
+  box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
+}
+
+/* Se eliminan los estilos .submenu que estaban causando conflictos */
+/* El estilo ahora se aplica directamente en el componente */
+
+/* Hover states for action buttons */
+.action-button {
+  @apply transition-colors duration-200;
+}
+
+.action-button:hover {
+  @apply bg-opacity-10;
+}
+
+/* Button styles */
+.button-purple {
+  @apply text-white bg-purple-600 hover:bg-purple-700;
+}
+
+/* Input focus styles */
+.input-focus {
+  @apply focus:border-purple-600 focus:ring-1 focus:ring-purple-600;
+}
+
+/* Checkbox styles */
+input[type="checkbox"] {
+  @apply text-purple-600 rounded border-purple-300 focus:ring-purple-600;
+}
+
+/* Tab styles */
+[data-state="active"].tab {
+  background-color: var(--tab-active);
+  color: white;
+}
+
+/* Button hover states */
+.button-purple:hover {
+  @apply bg-purple-700;
+}
+
+/* Input and select focus states */
+.input-focus:focus,
+.select-focus:focus {
+  @apply border-purple-600 ring-1 ring-purple-600;
+}
+
+/* Clases de utilidad para colores del tema */
+.theme-text-primary {
+  color: var(--theme-primary);
+}
+
+.theme-bg-primary {
+  background-color: var(--theme-primary);
+}
+
+.theme-border-primary {
+  border-color: var(--theme-primary);
+}
+
+/* Sobrescribir colores de componentes específicos */
+.appointment {
+  background-color: var(--theme-primary);
+  color: var(--theme-button-text);
+}
+
+.time-indicator {
+  background-color: var(--theme-accent);
+}
+
+.mobile-header {
+  background-color: var(--theme-header-bg);
+}
+
+/* Permitir sobrescritura de colores a nivel de componente */
+.theme-container {
+  --theme-primary: var(--theme-override-primary, #7c3aed);
+  --theme-secondary: var(--theme-override-secondary, #8b5cf6);
+  --theme-accent: var(--theme-override-accent, #a78bfa);
+  --theme-text: var(--theme-override-text, #111827);
+  --theme-background: var(--theme-override-background, #ffffff);
+  --theme-header-bg: var(--theme-override-header-bg, #7c3aed);
+  --theme-sidebar-bg: var(--theme-override-sidebar-bg, #f9fafb);
+}
+
+/* Prevenir recargas accidentales en dispositivos móviles */
+.prevent-reload {
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.prevent-reload * {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Excepciones para elementos que deben ser seleccionables */
+.prevent-reload input,
+.prevent-reload textarea,
+.prevent-reload [contenteditable="true"] {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* Mejorar el renderizado en iOS */
+@supports (-webkit-touch-callout: none) {
+  .ios-scroll-container {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+  }
+}
+
+/* Animaciones para el componente ShimmerButton */
+@keyframes shimmer-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes spin-around {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-shimmer-slide {
+  animation: shimmer-slide 3s linear infinite;
+}
+
+.animate-spin-around {
+  animation: spin-around 6s linear infinite;
+}
+
+/* ✅ ANIMACIÓN PARA CITAS OPTIMISTAS */
+@keyframes pulse-subtle {
+  0%, 100% {
+    opacity: 0.85;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.95;
+    transform: scale(1.01);
+  }
+}
+
+.animate-pulse-subtle {
+  animation: pulse-subtle 2s ease-in-out infinite;
+}
+
+/* ✅ SISTEMA DE RESIZE MEJORADO - CURSORS Y ESTADOS */
+
+/* Cursor global para resize activo */
+body[data-resizing="true"] {
+  cursor: ns-resize !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  -ms-user-select: none !important;
+}
+
+body[data-resizing="true"] * {
+  cursor: ns-resize !important;
+}
+
+/* Área de resize visible */
+.resize-handle {
+  cursor: ns-resize;
+  transition: background-color 0.15s ease-in-out;
+}
+
+.resize-handle:hover {
+  background-color: rgba(124, 58, 237, 0.1);
+}
+
+/* Overlay invisible para capturar mouse durante resize */
+.resize-capture-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9999;
+  cursor: ns-resize !important;
+  background: transparent;
+  user-select: none;
+}
+
+/* Estados de cita durante resize */
+.appointment-resizing {
+  z-index: 200 !important;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.25) !important;
+  transform: scale(1.02) !important;
+  transition: none !important; /* Sin transición para feedback inmediato */
+  border: 2px solid rgba(147, 51, 234, 0.8) !important;
+}
+
+/* Indicador de conflicto durante resize */
+.appointment-resize-conflict {
+  background-color: rgba(239, 68, 68, 0.9) !important;
+  border: 2px solid #ef4444 !important;
+  box-shadow: 0 8px 25px rgba(239, 68, 68, 0.4) !important;
+}
+
+/* Indicador visual de nueva duración */
+.resize-duration-preview {
+  position: absolute;
+  bottom: 2px;
+  right: 4px;
+  background: rgba(0, 0, 0, 0.9);
+  color: white;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  z-index: 201;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(4px);
+}
+
+/* Efectos visuales adicionales para resize */
+.appointment-item[data-resizing="true"] {
+  filter: brightness(1.1) contrast(1.1);
+}
+
+.appointment-item[data-resizing="true"] .resize-handle {
+  background: linear-gradient(45deg, rgba(147, 51, 234, 0.6), rgba(168, 85, 247, 0.6)) !important;
+}
+

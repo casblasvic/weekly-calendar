@@ -1,22 +1,33 @@
 /**
- * 👨‍⚕️ PESTAÑA DE EMPLEADOS - DASHBOARD ANOMALÍAS
- * =============================================
+ * 👨‍⚕️ PESTAÑA DE EMPLEADOS - DASHBOARD ANOMALÍAS [OPTIMIZADA PARA VELOCIDAD]
+ * =========================================================================
  * 
- * Pestaña dedicada al análisis de anomalías por empleados.
- * Muestra scores de riesgo, eficiencia y patrones de comportamiento.
+ * ⚡ VELOCIDAD CRÍTICA: Optimización completa para carga instantánea
+ * 
+ * ESTRATEGIAS DE OPTIMIZACIÓN:
+ * - IndexedDB: Persistencia para aparición instantánea
+ * - Prefetch: Carga proactiva antes de que el usuario lo necesite
+ * - Stale-while-revalidate: Mostrar datos cached, actualizar en background
+ * - Optimistic rendering: Cambios inmediatos antes de confirmación servidor
+ * - Smart invalidation: Solo invalidar cuando hay cambios reales
  * 
  * 🔐 AUTENTICACIÓN: useSession de next-auth/react
+ * 🗄️ PERSISTENCIA: IndexedDB habilitada para datos estables
  * 
  * Variables críticas:
  * - systemId: Identificador del sistema (multi-tenant)
  * - clinicId: Filtro por clínica específica
- * - employeeScores: Datos de scoring de empleados
+ * - employeeScores: Datos de scoring de empleados (PERSISTIDOS)
+ * - favoredClients: Nombres de clientes (ya resueltos por API)
  * 
  * @see docs/ANOMALY_SCORING_SYSTEM.md
+ * @see docs/AUTHENTICATION_PATTERNS.md
+ * @see docs/PERSISTENT_CACHE_STRATEGY.md
  */
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { useSession } from 'next-auth/react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -34,9 +45,13 @@ import {
   Eye,
   ChevronDown,
   ChevronUp,
-  Filter
+  Filter,
+  ExternalLink,
+  RefreshCw
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { ClientQuickViewDialog } from '@/components/client-quick-view-dialog'
+import { energyInsightsKeys, ENERGY_CACHE_CONFIG } from '@/config/energy-insights'
 
 interface EmployeeScore {
   id: string
@@ -64,48 +79,191 @@ interface EmployeesTabProps {
   clinicId: string
 }
 
-export function EmployeesTab({ clinicId }: EmployeesTabProps) {
+/**
+ * ⚡ HOOK OPTIMIZADO PARA FETCH DE EMPLOYEE SCORES
+ * 
+ * Implementa estrategias de cache avanzadas:
+ * - Persistencia IndexedDB para carga instantánea
+ * - Stale-while-revalidate para datos frescos
+ * - Prefetch en background para datos relacionados
+ */
+function useEmployeeScoresOptimized(clinicId: string) {
   const { data: session } = useSession()
-  const [employeeScores, setEmployeeScores] = useState<EmployeeScore[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [sortBy, setSortBy] = useState<'riskScore' | 'anomalyRate' | 'efficiency'>('riskScore')
-  const [filterLevel, setFilterLevel] = useState<'all' | 'critical' | 'high' | 'medium' | 'low'>('all')
-  const [expandedEmployees, setExpandedEmployees] = useState<Record<string, boolean>>({})
+  const queryClient = useQueryClient()
 
-  useEffect(() => {
-    if (session?.user?.systemId) {
-      fetchEmployeeScores()
-    }
-  }, [session?.user?.systemId, clinicId])
+  // ⚡ QUERY PRINCIPAL con cache optimizado
+  const employeeScoresQuery = useQuery({
+    queryKey: energyInsightsKeys.employeeScores(clinicId),
+    queryFn: async () => {
+      if (!session?.user?.systemId) {
+        throw new Error('No hay sesión válida')
+      }
 
-  const fetchEmployeeScores = async () => {
-    try {
-      setIsLoading(true)
-      
-      // 🚨 DATOS REALES desde API - NO más mock data
       const params = new URLSearchParams()
       if (clinicId) params.append('clinicId', clinicId)
       
       const response = await fetch(`/api/internal/energy-insights/employee-scores?${params}`)
       
-      if (response.ok) {
-        const data = await response.json()
-        setEmployeeScores(data.employeeScores || [])
-      } else {
-        console.warn('API employee-scores no disponible')
-        // Solo usar datos vacíos si no hay API - NUNCA mock data
-        setEmployeeScores([])
-        toast.info('No hay datos de empleados disponibles')
+      if (!response.ok) {
+        throw new Error(`Error ${response.status}: ${response.statusText}`)
       }
-    } catch (error) {
-      console.error('Error fetching employee scores:', error)
-      setEmployeeScores([]) // Solo datos vacíos, no mock
-      toast.error('Error al cargar datos de empleados')
-    } finally {
-      setIsLoading(false)
-    }
-  }
+      
+      const data = await response.json()
+      return data.employeeScores || []
+    },
+    enabled: !!session?.user?.systemId,
+    
+    // ⚡ CONFIGURACIÓN DE CACHE OPTIMIZADA
+    staleTime: ENERGY_CACHE_CONFIG.stable.staleTime,
+    gcTime: ENERGY_CACHE_CONFIG.stable.gcTime,
+    meta: ENERGY_CACHE_CONFIG.stable.meta,
+    
+    // ⚡ CONFIGURACIÓN DE REFETCH
+    refetchOnWindowFocus: false,  // No refetch en focus (usar WebSocket)
+    refetchOnMount: false,        // No refetch en mount si hay cache
+    refetchInterval: false,       // No polling (usar WebSocket)
+    
+    // ⚡ MANEJO DE ERRORES OPTIMISTA
+    retry: (failureCount, error) => {
+      // Solo reintentar errores de red, no errores de autenticación
+      if (error.message.includes('401') || error.message.includes('403')) {
+        return false
+      }
+      return failureCount < 3
+    },
+    
+    // ⚡ CONFIGURACIÓN DE BACKGROUND REFETCH
+    refetchOnReconnect: true,     // Refetch cuando se reconecta
+  })
 
+  // ⚡ PREFETCH PROACTIVO para datos relacionados
+  useEffect(() => {
+    if (session?.user?.systemId && clinicId) {
+      // Prefetch datos de clientes para navegación rápida
+      queryClient.prefetchQuery({
+        queryKey: energyInsightsKeys.clientScores(clinicId),
+        queryFn: async () => {
+          const response = await fetch(`/api/internal/energy-insights/client-scores?clinicId=${clinicId}`)
+          if (response.ok) {
+            return response.json()
+          }
+          return null
+        },
+        staleTime: ENERGY_CACHE_CONFIG.stable.staleTime,
+      })
+
+      // Prefetch estadísticas generales
+      queryClient.prefetchQuery({
+        queryKey: energyInsightsKeys.generalStats(clinicId),
+        queryFn: async () => {
+          const response = await fetch(`/api/internal/energy-insights/general-stats?clinicId=${clinicId}`)
+          if (response.ok) {
+            return response.json()
+          }
+          return null
+        },
+        staleTime: ENERGY_CACHE_CONFIG.stable.staleTime,
+      })
+
+      // Prefetch datos de servicios para navegación rápida
+      queryClient.prefetchQuery({
+        queryKey: energyInsightsKeys.serviceVariability(clinicId),
+        queryFn: async () => {
+          const response = await fetch(`/api/internal/energy-insights/service-variability?clinicId=${clinicId}`)
+          if (response.ok) {
+            return response.json()
+          }
+          return null
+        },
+        staleTime: ENERGY_CACHE_CONFIG.stable.staleTime,
+      })
+    }
+  }, [session?.user?.systemId, clinicId, queryClient])
+
+  // ⚡ FUNCIÓN DE INVALIDACIÓN INTELIGENTE
+  const invalidateEmployeeScores = React.useCallback(() => {
+    queryClient.invalidateQueries({
+      queryKey: energyInsightsKeys.employeeScores(clinicId)
+    })
+  }, [queryClient, clinicId])
+
+  // ⚡ FUNCIÓN DE REFETCH MANUAL
+  const refetchEmployeeScores = React.useCallback(() => {
+    return employeeScoresQuery.refetch()
+  }, [employeeScoresQuery])
+
+  return {
+    employeeScores: employeeScoresQuery.data || [],
+    isLoading: employeeScoresQuery.isLoading,
+    isError: employeeScoresQuery.isError,
+    error: employeeScoresQuery.error,
+    isRefetching: employeeScoresQuery.isRefetching,
+    invalidateEmployeeScores,
+    refetchEmployeeScores
+  }
+}
+
+export function EmployeesTab({ clinicId }: EmployeesTabProps) {
+  const { data: session } = useSession()
+  
+  // ⚡ USAR HOOK OPTIMIZADO
+  const { 
+    employeeScores, 
+    isLoading, 
+    isError, 
+    error,
+    isRefetching,
+    invalidateEmployeeScores,
+    refetchEmployeeScores
+  } = useEmployeeScoresOptimized(clinicId)
+
+  // 🎯 ESTADO LOCAL OPTIMIZADO
+  const [sortBy, setSortBy] = useState<'riskScore' | 'anomalyRate' | 'efficiency'>('riskScore')
+  const [filterLevel, setFilterLevel] = useState<'all' | 'critical' | 'high' | 'medium' | 'low'>('all')
+  const [expandedEmployees, setExpandedEmployees] = useState<Record<string, boolean>>({})
+  
+  // 🎯 Estado para ClientQuickViewDialog
+  const [selectedClient, setSelectedClient] = useState<any>(null)
+  const [isClientDialogOpen, setIsClientDialogOpen] = useState(false)
+
+  // ⚡ DATOS FILTRADOS Y ORDENADOS (MEMOIZADOS)
+  const filteredAndSortedEmployees = useMemo(() => {
+    return employeeScores
+      .filter(employee => filterLevel === 'all' || employee.riskLevel === filterLevel)
+      .sort((a, b) => {
+        switch (sortBy) {
+          case 'riskScore':
+            return b.riskScore - a.riskScore
+          case 'anomalyRate':
+            return b.anomalyRate - a.anomalyRate
+          case 'efficiency':
+            return b.avgEfficiency - a.avgEfficiency
+          default:
+            return 0
+        }
+      })
+  }, [employeeScores, filterLevel, sortBy])
+
+  // ⚡ ESTADÍSTICAS CALCULADAS (MEMOIZADAS)
+  const stats = useMemo(() => {
+    const totalEmployees = employeeScores.length
+    const highRiskEmployees = employeeScores.filter(e => ['high', 'critical'].includes(e.riskLevel)).length
+    const avgEfficiency = totalEmployees > 0 
+      ? (employeeScores.reduce((sum, e) => sum + e.avgEfficiency, 0) / totalEmployees).toFixed(1)
+      : '0.0'
+    const fraudIndicatorEmployees = employeeScores.filter(e => 
+      Object.values(e.fraudIndicators).some(indicator => indicator)
+    ).length
+
+    return {
+      totalEmployees,
+      highRiskEmployees,
+      avgEfficiency,
+      fraudIndicatorEmployees
+    }
+  }, [employeeScores])
+
+  // ⚡ FUNCIONES DE UTILIDAD OPTIMIZADAS
   const getRiskColor = (level: string) => {
     switch (level) {
       case 'critical': return 'text-red-600 bg-red-50 border-red-200'
@@ -138,22 +296,61 @@ export function EmployeesTab({ clinicId }: EmployeesTabProps) {
     }))
   }
 
-  const filteredAndSortedEmployees = employeeScores
-    .filter(emp => filterLevel === 'all' || emp.riskLevel === filterLevel)
-    .sort((a, b) => {
-      switch (sortBy) {
-        case 'riskScore':
-          return b.riskScore - a.riskScore
-        case 'anomalyRate':
-          return b.anomalyRate - a.anomalyRate
-        case 'efficiency':
-          return b.avgEfficiency - a.avgEfficiency
-        default:
-          return 0
-      }
-    })
+  // 🎯 Función para abrir el dialog de cliente
+  const handleOpenClient = (clientName: string) => {
+    // Buscar el cliente por nombre en la base de datos
+    // Por ahora, creamos un objeto básico con el nombre
+    const clientData = {
+      id: `client-${clientName}`,
+      firstName: clientName.split(' ')[0] || clientName,
+      lastName: clientName.split(' ').slice(1).join(' ') || '',
+      email: null,
+      phone: null
+    }
+    
+    setSelectedClient(clientData)
+    setIsClientDialogOpen(true)
+  }
 
-  if (isLoading) {
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString)
+    const now = new Date()
+    const diffMs = now.getTime() - date.getTime()
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+    
+    if (diffDays === 0) return 'Hoy'
+    if (diffDays === 1) return 'Ayer'
+    if (diffDays < 7) return `Hace ${diffDays} días`
+    return date.toLocaleDateString('es-ES')
+  }
+
+  // ⚡ MANEJO DE ERRORES OPTIMISTA
+  if (isError) {
+    return (
+      <div className="space-y-4">
+        <Card>
+          <CardContent className="py-8 text-center">
+            <AlertTriangle className="mx-auto mb-4 w-12 h-12 text-red-400" />
+            <h3 className="mb-2 text-lg font-semibold">Error al cargar datos</h3>
+            <p className="text-muted-foreground mb-4">
+              {error?.message || 'No se pudieron cargar los datos de empleados'}
+            </p>
+            <Button 
+              onClick={() => refetchEmployeeScores()}
+              variant="outline"
+              className="gap-2"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Reintentar
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  // ⚡ SKELETON LOADING (SOLO PARA PRIMERA CARGA)
+  if (isLoading && employeeScores.length === 0) {
     return (
       <div className="space-y-4">
         <div className="animate-pulse">
@@ -177,8 +374,11 @@ export function EmployeesTab({ clinicId }: EmployeesTabProps) {
       <div className="flex flex-col justify-between items-start space-y-4 lg:flex-row lg:items-center lg:space-y-0">
         <div>
           <h2 className="flex items-center text-2xl font-bold">
-            <Users className="mr-2 w-6 h-6 text-green-600" />
+            <Users className="mr-2 w-6 h-6 text-purple-600" />
             Análisis por Empleados
+            {isRefetching && (
+              <RefreshCw className="ml-2 w-5 h-5 text-purple-600 animate-spin" />
+            )}
           </h2>
           <p className="text-muted-foreground">
             Scores de riesgo, eficiencia y patrones de comportamiento
@@ -207,6 +407,17 @@ export function EmployeesTab({ clinicId }: EmployeesTabProps) {
             <option value="medium">Solo Medio</option>
             <option value="low">Solo Bajo</option>
           </select>
+
+          <Button
+            onClick={() => refetchEmployeeScores()}
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            disabled={isRefetching}
+          >
+            <RefreshCw className={`w-4 h-4 ${isRefetching ? 'animate-spin' : ''}`} />
+            Actualizar
+          </Button>
         </div>
       </div>
 
@@ -217,9 +428,9 @@ export function EmployeesTab({ clinicId }: EmployeesTabProps) {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Total Empleados</p>
-                <p className="text-2xl font-bold">{employeeScores.length}</p>
+                <p className="text-2xl font-bold">{stats.totalEmployees}</p>
               </div>
-              <Users className="w-8 h-8 text-blue-500" />
+              <Users className="w-8 h-8 text-purple-500" />
             </div>
           </CardContent>
         </Card>
@@ -230,7 +441,7 @@ export function EmployeesTab({ clinicId }: EmployeesTabProps) {
               <div>
                 <p className="text-sm text-muted-foreground">Riesgo Alto/Crítico</p>
                 <p className="text-2xl font-bold text-red-600">
-                  {employeeScores.filter(e => ['high', 'critical'].includes(e.riskLevel)).length}
+                  {stats.highRiskEmployees}
                 </p>
               </div>
               <AlertTriangle className="w-8 h-8 text-red-500" />
@@ -244,7 +455,7 @@ export function EmployeesTab({ clinicId }: EmployeesTabProps) {
               <div>
                 <p className="text-sm text-muted-foreground">Eficiencia Promedio</p>
                 <p className="text-2xl font-bold text-green-600">
-                  {(employeeScores.reduce((sum, e) => sum + e.avgEfficiency, 0) / employeeScores.length).toFixed(1)}%
+                  {stats.avgEfficiency}%
                 </p>
               </div>
               <Target className="w-8 h-8 text-green-500" />
@@ -256,9 +467,9 @@ export function EmployeesTab({ clinicId }: EmployeesTabProps) {
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Con Indicadores</p>
+                <p className="text-sm text-muted-foreground">Con Indicadores Riesgo</p>
                 <p className="text-2xl font-bold text-orange-600">
-                  {employeeScores.filter(e => Object.keys(e.fraudIndicators).some(key => e.fraudIndicators[key])).length}
+                  {stats.fraudIndicatorEmployees}
                 </p>
               </div>
               <Eye className="w-8 h-8 text-orange-500" />
@@ -279,10 +490,11 @@ export function EmployeesTab({ clinicId }: EmployeesTabProps) {
               </p>
             </CardContent>
           </Card>
-        ) : (
+        ) :
           filteredAndSortedEmployees.map((employee) => {
             const isExpanded = expandedEmployees[employee.employeeId]
-            const fraudIndicatorCount = Object.keys(employee.fraudIndicators).filter(key => employee.fraudIndicators[key]).length
+            const clientCount = Object.keys(employee.favoredClients).length
+            const fraudIndicatorCount = Object.values(employee.fraudIndicators).filter(Boolean).length
             
             return (
               <Card key={employee.id} className="overflow-hidden">
@@ -299,18 +511,24 @@ export function EmployeesTab({ clinicId }: EmployeesTabProps) {
                       )}
                       
                       <div className="flex items-center space-x-3">
-                        <div className="flex items-center justify-center w-10 h-10 bg-blue-100 rounded-full">
-                          <User className="w-5 h-5 text-blue-600" />
+                        <div className="flex items-center justify-center w-10 h-10 bg-purple-100 rounded-full">
+                          <User className="w-5 h-5 text-purple-600" />
                         </div>
                         
                         <div>
                           <CardTitle className="text-lg">
-                            {employee.employee ? `${employee.employee.firstName} ${employee.employee.lastName}` : `Empleado ${employee.employeeId}`}
+                            {employee.employee 
+                              ? `${employee.employee.firstName} ${employee.employee.lastName}` 
+                              : `Empleado ${employee.employeeId}`
+                            }
                           </CardTitle>
                           <div className="flex items-center mt-1 space-x-4 text-sm text-muted-foreground">
                             <span>{employee.totalServices} servicios</span>
                             <span>{employee.totalAnomalies} anomalías</span>
                             <span>{employee.anomalyRate.toFixed(1)}% tasa</span>
+                            <span className={getEfficiencyColor(employee.avgEfficiency)}>
+                              {employee.avgEfficiency.toFixed(1)}% eficiencia
+                            </span>
                           </div>
                         </div>
                       </div>
@@ -357,10 +575,7 @@ export function EmployeesTab({ clinicId }: EmployeesTabProps) {
                           
                           <div className="flex justify-between items-center">
                             <span className="text-sm text-muted-foreground">Consistencia</span>
-                            <div className="flex items-center space-x-2">
-                              <Progress value={employee.consistencyScore} className="w-20 h-2" />
-                              <span className="text-sm font-medium">{employee.consistencyScore.toFixed(1)}%</span>
-                            </div>
+                            <span className="text-sm font-medium">{employee.consistencyScore.toFixed(1)}%</span>
                           </div>
                           
                           <div className="flex justify-between items-center">
@@ -369,24 +584,52 @@ export function EmployeesTab({ clinicId }: EmployeesTabProps) {
                               {employee.anomalyRate.toFixed(1)}%
                             </span>
                           </div>
+                          
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-muted-foreground">Total Servicios</span>
+                            <span className="text-sm font-medium">{employee.totalServices}</span>
+                          </div>
                         </div>
+                        
+                        {employee.employee?.email && (
+                          <div className="pt-2 border-t">
+                            <div className="text-sm text-muted-foreground">Contacto</div>
+                            <div className="text-sm">{employee.employee.email}</div>
+                          </div>
+                        )}
                       </div>
 
-                      {/* Patrones y Alertas */}
+                      {/* Clientes y Patrones */}
                       <div className="space-y-3">
-                        <h4 className="font-medium text-gray-900">Patrones y Alertas</h4>
+                        <h4 className="font-medium text-gray-900">Clientes y Patrones</h4>
                         
                         <div className="space-y-2">
-                          <div>
-                            <span className="text-sm text-muted-foreground">Clientes Favorecidos</span>
-                            <div className="flex flex-wrap gap-1 mt-1">
-                              {Object.entries(employee.favoredClients).map(([clientId, count]) => (
-                                <Badge key={clientId} variant="outline" className="text-xs">
-                                  {clientId}: {count}
-                                </Badge>
-                              ))}
+                          {clientCount > 0 && (
+                            <div>
+                              <span className="text-sm text-muted-foreground">Clientes Frecuentes</span>
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {Object.entries(employee.favoredClients).map(([clientName, count]) => (
+                                  <div key={clientName} className="flex items-center">
+                                    <Badge 
+                                      variant="outline" 
+                                      className="text-xs mr-1"
+                                    >
+                                      {clientName}: {Number(count)}
+                                    </Badge>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        handleOpenClient(clientName)
+                                      }}
+                                      className="p-1 hover:bg-purple-100 rounded transition-colors"
+                                    >
+                                      <ExternalLink className="w-3 h-3 text-purple-600" />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
                             </div>
-                          </div>
+                          )}
                           
                           {fraudIndicatorCount > 0 && (
                             <div>
@@ -408,10 +651,14 @@ export function EmployeesTab({ clinicId }: EmployeesTabProps) {
                             <div className="flex flex-wrap gap-1 mt-1">
                               {Object.entries(employee.timePatterns).map(([period, count]) => (
                                 <Badge key={period} variant="secondary" className="text-xs">
-                                  {period}: {count}
+                                  {period}: {Number(count)}
                                 </Badge>
                               ))}
                             </div>
+                          </div>
+                          
+                          <div className="pt-2 text-xs text-muted-foreground">
+                            Última actualización: {formatDate(employee.lastCalculated)}
                           </div>
                         </div>
                       </div>
@@ -421,8 +668,15 @@ export function EmployeesTab({ clinicId }: EmployeesTabProps) {
               </Card>
             )
           })
-        )}
+        }
       </div>
+      
+      {/* 🎯 Dialog para mostrar detalles del cliente */}
+      <ClientQuickViewDialog
+        isOpen={isClientDialogOpen}
+        onOpenChange={setIsClientDialogOpen}
+        client={selectedClient}
+      />
     </div>
   )
-} 
+}

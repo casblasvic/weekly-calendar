@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerAuthSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { isShellyModuleActive } from '@/lib/services/shelly-module-service';
+import { getSiteUrl } from '@/lib/utils/site-url';
 
 /**
  * ========================================
@@ -167,7 +168,7 @@ export async function POST(
 
       // 🔄 SINCRONIZAR DISPOSITIVOS INMEDIATAMENTE (evitar estados desfasados)
       try {
-        await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/shelly/sync/${credentialId}`, {
+        await fetch(`${getSiteUrl()}/api/shelly/sync/${credentialId}`, {
           method: 'POST'
         });
       } catch (syncErr) {

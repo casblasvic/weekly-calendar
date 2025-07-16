@@ -1,7 +1,6 @@
 // Declaraciones globales para corregir problemas de tipado
 
 import { RefObject } from 'react';
-import { AlertProps } from '@/components/ui/alert'
 
 // Extender módulos existentes
 declare module '@/components/current-time-indicator' {
@@ -13,13 +12,6 @@ declare module '@/components/current-time-indicator' {
     agendaRef: RefObject<HTMLDivElement>;
     clinicOpenTime?: string;
     clinicCloseTime?: string;
-  }
-}
-
-// Ampliar las propiedades de Alert para incluir la variante 'success'
-declare module '@/components/ui/alert' {
-  interface AlertProps {
-    variant?: 'default' | 'destructive' | 'success';
   }
 }
 

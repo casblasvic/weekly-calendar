@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/db';
+import { prisma, Prisma } from '@/lib/db';
 import { z } from 'zod';
 import { getServerAuthSession } from "@/lib/auth";
 import { ApiServicePayloadSchema, ServiceFormValues } from '@/lib/schemas/service';
@@ -56,6 +56,7 @@ export async function GET(request: Request) {
           name: true,
           price: true,
           durationMinutes: true,
+          treatmentDurationMinutes: true, // 🔧 AÑADIDO: Campo para duración de tratamiento
           settings: {
             select: {
               isActive: true
@@ -149,11 +150,11 @@ export async function POST(request: Request) {
       const newSettings = await tx.serviceSetting.create({
         data: {
           ...settings,
-          systemId: sessionSystemId, // 🏢 NUEVO: systemId para operaciones a nivel sistema
-          clinicId: null, // 🏥 NUEVO: ServiceSetting no está vinculado directamente a clínica específica
+          system: { connect: { id: sessionSystemId } }, // 🏢 NUEVO: systemId para operaciones a nivel sistema
           service: {
             connect: { id: newService.id }
           }
+          // clinic: omitido cuando es null
         }
       });
       

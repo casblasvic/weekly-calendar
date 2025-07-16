@@ -113,43 +113,51 @@ export async function GET(request: NextRequest) {
         take: 50 // Limitar para evitar sobrecarga
       }),
 
-      // 🛠️ SERVICIOS que han generado anomalías
-      prisma.service.findMany({
-        where: {
-          systemId,
-          appointmentServices: {
-            some: {
-              appointment: {
-                systemId,
-                ...(clinicId && clinicId !== 'all' && { clinicId }),
-                deviceUsageInsights: {
-                  some: baseFilter
+      // 🛠️ SERVICIOS que han generado anomalías - CONSULTA SIMPLIFICADA Y CORREGIDA
+      (async () => {
+        // Primero obtener todos los appointmentIds que tienen insights
+        const insightAppointmentIds = await prisma.deviceUsageInsight.findMany({
+          where: baseFilter,
+          select: { appointmentId: true },
+          distinct: ['appointmentId']
+        })
+        
+        const appointmentIds = insightAppointmentIds.map(i => i.appointmentId)
+        
+        if (appointmentIds.length === 0) {
+          return []
+        }
+        
+        // Luego obtener todos los servicios de esas citas
+        return await prisma.service.findMany({
+          where: {
+            systemId,
+            appointmentServices: {
+              some: {
+                appointmentId: {
+                  in: appointmentIds
                 }
               }
             }
-          }
-        },
-        select: {
-          id: true,
-          name: true,
-          _count: {
-            select: {
-              appointmentServices: {
-                where: {
-                  appointment: {
-                    systemId,
-                    ...(clinicId && clinicId !== 'all' && { clinicId }),
-                    deviceUsageInsights: {
-                      some: baseFilter
+          },
+          select: {
+            id: true,
+            name: true,
+            _count: {
+              select: {
+                appointmentServices: {
+                  where: {
+                    appointmentId: {
+                      in: appointmentIds
                     }
                   }
                 }
               }
             }
-          }
-        },
-        take: 50 // Limitar para evitar sobrecarga
-      })
+          },
+          take: 50 // Limitar para evitar sobrecarga
+        })
+      })()
     ])
 
     // 🎨 FORMATEAR RESPUESTA

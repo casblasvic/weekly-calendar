@@ -24,7 +24,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const callbackUrl = searchParams.get('callbackUrl') || '/dashboard';
+  const callbackUrl = searchParams.get('callbackUrl') || '/';
   const errorParam = searchParams.get('error'); // Leer el parámetro 'error' de la URL
 
   // useEffect para manejar errores pasados por NextAuth.js en la URL
@@ -103,11 +103,11 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-100 dark:bg-gray-950">
+    <div className="flex justify-center items-center min-h-screen bg-gray-100 dark:bg-gray-950">
       <Card className="w-full max-w-sm">
         <CardHeader className="space-y-1 text-center">
           {/* TODO: Añadir Logo aquí si existe */}
-          {/* <img src="/path/to/logo.png" alt="Logo" className="w-20 h-20 mx-auto mb-4" /> */}
+          {/* <img src="/path/to/logo.png" alt="Logo" className="mx-auto mb-4 w-20 h-20" /> */}
           <CardTitle className="text-2xl font-bold">Iniciar Sesión</CardTitle>
           <CardDescription>
             Ingresa tu email y contraseña para acceder a tu cuenta.
@@ -128,7 +128,7 @@ export default function LoginPage() {
               />
             </div>
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
+              <div className="flex justify-between items-center">
                 <Label htmlFor="password">Contraseña</Label>
                 {/* TODO: Enlazar a la página de recuperación si existe */}
                 {/* <Link href="/forgot-password" className="text-sm text-blue-600 hover:underline dark:text-blue-400">
@@ -155,7 +155,7 @@ export default function LoginPage() {
               {isLoading ? 'Cargando...' : 'Iniciar Sesión'}
             </Button>
              {/* TODO: Añadir enlace a registro si existe */}
-            {/* <p className="text-center text-sm text-gray-600 dark:text-gray-400">
+            {/* <p className="text-sm text-center text-gray-600 dark:text-gray-400">
               ¿No tienes cuenta?{" "}
               <Link href="/register" className="font-medium text-blue-600 hover:underline dark:text-blue-400">
                 Regístrate

@@ -67,7 +67,8 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // 🔥 CRÍTICO: isInitialized previene race condition con appointment queries
   // ❌ NUNCA ELIMINAR: Causa múltiples recargas + redirección a /dashboard
   // 📚 VER: docs/clinic-context-race-condition-fix.md
-  const [isInitialized, setIsInitialized] = useState(cachedDetailedClinic ? true : false)
+  // 🎯 CONSISTENCIA: Inicializar siempre como false para mostrar loading inicial
+  const [isInitialized, setIsInitialized] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [currentlyFetchingClinicId, setCurrentlyFetchingClinicId] = useState<string | null>(null);
   const [isFetchingClinics, setIsFetchingClinics] = useState(false);
@@ -636,7 +637,7 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   }, [activeClinic?.id, internalSetActiveClinic, fetchAndUpdateDetailedClinic]);
 
-  // ✅ MEMOIZAR fetchCabinsForClinic
+  // ✅ MEMOIZAR fetchCabinsForClinic - AHORA USA CACHE PRIMERO
   const fetchCabinsForClinic = useCallback(async (clinicId: string, systemId: string) => {
     if (!clinicId || !systemId) {
         setActiveClinicCabins(null);
@@ -644,6 +645,20 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         return;
     }
     
+    console.log(`[ClinicContext] 🔍 Buscando cabinas para ${clinicId} - verificando cache primero...`);
+    
+    // ✅ NUEVA OPTIMIZACIÓN: Usar cache pre-cargado primero
+    const cachedCabins = queryClient.getQueryData<Cabin[]>(['cabins', clinicId]);
+    
+    if (cachedCabins && cachedCabins.length > 0) {
+      console.log(`[ClinicContext] ✅ Usando cabinas desde cache pre-cargado: ${cachedCabins.length} cabinas`);
+      setActiveClinicCabins(cachedCabins);
+      setIsLoadingCabinsContext(false);
+      return;
+    }
+    
+    // ✅ SOLO HACER LLAMADA API SI NO HAY CACHE
+    console.log(`[ClinicContext] 🌐 No hay cache, haciendo llamada API para cabinas de ${clinicId}`);
     setIsLoadingCabinsContext(true);
     try {
       setError(null);
@@ -662,7 +677,7 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         const cabinsData: Cabin[] = await response.json();
         setActiveClinicCabins(cabinsData);
         // 🗄️ Guardar en React-Query para hidratación futura (IndexedDB persister)
-        queryClient.setQueryData(['cabins', clinicId], cabinsData); // TODO-MULTIUSER: invalidar vía WS
+        queryClient.setQueryData(['cabins', clinicId], cabinsData);
       }
     } catch (err) {
       console.error(`[ClinicContext] fetchCabinsForClinic - Error fetching cabins for clinic ${clinicId}:`, err);
@@ -673,24 +688,50 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   }, [setError, setActiveClinicCabins, queryClient]);
 
-  // ✅ MEMOIZAR refreshActiveClinicCabins
+  // ✅ MEMOIZAR refreshActiveClinicCabins - AHORA USA CACHE PRIMERO
   const refreshActiveClinicCabins = useCallback(async () => {
     const currentClinicId = activeClinic?.id;
     const currentSystemId = session?.user?.systemId; 
 
     if (currentClinicId && currentSystemId && status === 'authenticated') {
+        console.log(`[ClinicContext] 🔄 Refrescando cabinas para ${currentClinicId}...`);
+        
+        // ✅ OPTIMIZACIÓN: Intentar primero desde cache
+        const cachedCabins = queryClient.getQueryData<Cabin[]>(['cabins', String(currentClinicId)]);
+        
+        if (cachedCabins && cachedCabins.length > 0) {
+          console.log(`[ClinicContext] ✅ Refresh usando cache: ${cachedCabins.length} cabinas`);
+          setActiveClinicCabins(cachedCabins);
+          return;
+        }
+        
+        // ✅ SOLO HACER LLAMADA API SI NO HAY CACHE
         await fetchCabinsForClinic(String(currentClinicId), currentSystemId); 
     } else {
         console.warn(`refreshActiveClinicCabins - Cannot refresh: Missing clinicId (${currentClinicId}), systemId (${currentSystemId}), or session not authenticated (${status})`);
     }
-  }, [activeClinic?.id, fetchCabinsForClinic, session?.user?.systemId, status]);
+  }, [activeClinic?.id, fetchCabinsForClinic, session?.user?.systemId, status, queryClient]);
 
-  // ✅ useEffect para cargar cabinas cuando activeClinic cambia 
+  // ✅ useEffect para cargar cabinas cuando activeClinic cambia - AHORA USA CACHE PRIMERO
   useEffect(() => {
     const currentClinicId = activeClinic?.id;
     const currentSystemId = session?.user?.systemId; 
 
     if (currentClinicId && currentSystemId && status === 'authenticated') {
+      console.log(`[ClinicContext] 🔄 ActiveClinic cambió a ${currentClinicId} - verificando cache...`);
+      
+      // ✅ NUEVA OPTIMIZACIÓN: Usar cache pre-cargado primero
+      const cachedCabins = queryClient.getQueryData<Cabin[]>(['cabins', String(currentClinicId)]);
+      
+      if (cachedCabins && cachedCabins.length > 0) {
+        console.log(`[ClinicContext] ✅ Usando cabinas desde cache pre-cargado: ${cachedCabins.length} cabinas`);
+        setActiveClinicCabins(cachedCabins);
+        setIsLoadingCabinsContext(false);
+        return;
+      }
+      
+      // ✅ SOLO HACER LLAMADA API SI NO HAY CACHE
+      console.log(`[ClinicContext] 🌐 No hay cache, cargando cabinas para ${currentClinicId}`);
       fetchCabinsForClinic(String(currentClinicId), currentSystemId); 
     } else {
       // Solo limpiamos las cabinas si NO hay clínica activa
@@ -699,7 +740,7 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         setIsLoadingCabinsContext(false);
       }
     }
-  }, [activeClinic?.id, fetchCabinsForClinic, session?.user?.systemId, status]);
+  }, [activeClinic?.id, fetchCabinsForClinic, session?.user?.systemId, status, queryClient]);
 
   // --- Log para verificar cambios en activeClinicCabins ---
   useEffect(() => {
@@ -722,6 +763,17 @@ export const ClinicProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       console.log('[ClinicContext] Hidratando clínicas desde cache persistido.');
       setClinics(cached);
       setIsLoadingClinics(false);
+      
+      // 🎯 CONSISTENCIA: Marcar como inicializado después de hidratación exitosa
+      setTimeout(() => {
+        setIsInitialized(true);
+      }, 300); // 300ms delay para UX consistente
+    } else {
+      console.log('[ClinicContext] No hay cache de clínicas, iniciando carga.');
+      // Marcar como inicializado después de un tiempo mínimo
+      setTimeout(() => {
+        setIsInitialized(true);
+      }, 1000); // 1s delay para permitir carga inicial
     }
   }, []);
 

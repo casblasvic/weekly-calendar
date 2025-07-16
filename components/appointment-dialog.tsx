@@ -1532,6 +1532,7 @@ export function AppointmentDialog({
             console.log('Iniciar sin equipamiento desde modal de edición');
             setShowEquipmentSelector(false);
           }}
+          appointmentData={existingAppointment} // ⚡ Pasar datos pre-cargados del appointment
         />
       )}
     </React.Fragment>

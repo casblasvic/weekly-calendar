@@ -1043,8 +1043,8 @@ async function main() {
      });
      await prisma.serviceSetting.upsert({
         where: { serviceId: service.id },
-         update: { systemId: system!.id },
-         create: { serviceId: service.id, systemId: system!.id }
+         update: { system: { connect: { id: system!.id } } },
+         create: { service: { connect: { id: service.id } }, system: { connect: { id: system!.id } } }
      });
      if (!serviceMap.has(service.name)) serviceMap.set(service.name, service.id);
   }
