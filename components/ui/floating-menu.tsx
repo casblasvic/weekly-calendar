@@ -202,11 +202,7 @@ export function FloatingMenu({ className, smartPlugsData: propData }: FloatingMe
   const ctx = useSmartPlugsContextOptional();
   const smartPlugsData = propData ?? ctx?.smartPlugsData ?? null;
 
-  // Ocultar menú mientras el documento no esté listo (spinner global)
-  if (typeof document !== 'undefined' && document.readyState !== 'complete') {
-    return null;
-  }
-
+  // ✅ SIEMPRE EJECUTAR TODOS LOS HOOKS ANTES DE CUALQUIER RETURN CONDICIONAL
   // Función para cerrar el menú
   const closeMenu = useCallback(() => {
     setActiveMenu(null)
@@ -263,6 +259,12 @@ export function FloatingMenu({ className, smartPlugsData: propData }: FloatingMe
       // Si estamos colapsando, cerramos cualquier menú abierto
       closeMenu()
     }
+  }
+
+  // ✅ VERIFICACIÓN DE DOCUMENT READY DESPUÉS DE TODOS LOS HOOKS
+  // Ocultar menú mientras el documento no esté listo (spinner global)
+  if (typeof document !== 'undefined' && document.readyState !== 'complete') {
+    return null;
   }
 
   // Contenido del menú de cliente (completo)
@@ -439,13 +441,13 @@ export function FloatingMenu({ className, smartPlugsData: propData }: FloatingMe
         <div className="p-2.5 border-b bg-gradient-to-r from-blue-50 to-white">
           <div className="flex items-center space-x-2">
             <div className={cn(
-              "flex items-center justify-center w-8 h-8 rounded-full shadow-sm",
-              "bg-blue-100 text-blue-600 text-sm font-medium"
+              "flex justify-center items-center w-8 h-8 rounded-full shadow-sm",
+              "text-sm font-medium text-blue-600 bg-blue-100"
             )}>
               {person.name.split(" ").map(n => n[0]).join("")}
             </div>
             <div>
-              <div className="font-medium text-xs leading-tight">{person.name}</div>
+              <div className="text-xs font-medium leading-tight">{person.name}</div>
               <div className="text-[10px] text-gray-500">{person.role}</div>
             </div>
           </div>
@@ -481,11 +483,11 @@ export function FloatingMenu({ className, smartPlugsData: propData }: FloatingMe
         <Button
           variant="ghost"
           size="sm"
-          className="h-12 w-12 rounded-full bg-red-500/10 hover:bg-red-500/20 text-red-500"
+          className="w-12 h-12 text-red-500 rounded-full bg-red-500/10 hover:bg-red-500/20"
           disabled
           title="Sin dispositivos asignados a esta clínica"
         >
-          <Plug className="h-5 w-5" />
+          <Plug className="w-5 h-5" />
         </Button>
       );
     }
@@ -512,14 +514,14 @@ export function FloatingMenu({ className, smartPlugsData: propData }: FloatingMe
         variant="ghost"
         size="sm"
         className={cn(
-          "h-12 w-12 rounded-full relative",
+          "relative w-12 h-12 rounded-full",
           bgColor,
           iconColor
         )}
         onClick={() => handleMenuSelect("smart-plugs")}
         title={statusText}
       >
-        <Plug className="h-5 w-5" />
+        <Plug className="w-5 h-5" />
         
         {/* Badge de consumo total en tiempo real */}
         {smartPlugsData.totalPower > 0.1 && (
@@ -548,27 +550,27 @@ export function FloatingMenu({ className, smartPlugsData: propData }: FloatingMe
     return (
       <div 
         key={device.id}
-        className="p-3 border-b border-gray-100 hover:bg-emerald-50 transition-colors duration-200"
+        className="p-3 border-b border-gray-100 transition-colors duration-200 hover:bg-emerald-50"
       >
-        <div className="flex items-center justify-between">
+        <div className="flex justify-between items-center">
           {/* Información del dispositivo */}
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
+            <div className="flex gap-2 items-center mb-1">
               {/* Estado online/offline */}
               {device.online ? (
-                <Wifi className="w-3 h-3 text-emerald-500 flex-shrink-0" />
+                <Wifi className="flex-shrink-0 w-3 h-3 text-emerald-500" />
               ) : (
-                <WifiOff className="w-3 h-3 text-red-500 flex-shrink-0" />
+                <WifiOff className="flex-shrink-0 w-3 h-3 text-red-500" />
               )}
               
               {/* Nombre del dispositivo */}
-              <h4 className="font-medium text-sm text-gray-900 truncate">
+              <h4 className="text-sm font-medium text-gray-900 truncate">
                 {device.equipmentClinicAssignment?.deviceName || device.name}
               </h4>
             </div>
             
             {/* Estado y consumo */}
-            <div className="flex items-center gap-2">
+            <div className="flex gap-2 items-center">
               {/* Badge de estado ON/OFF */}
               <Badge 
                 className={cn(
@@ -590,7 +592,7 @@ export function FloatingMenu({ className, smartPlugsData: propData }: FloatingMe
                 )}
                 {/* Indicador visual si está ON pero sin dato válido */}
                 {device.online && isActive && !hasValidConsumption && (
-                  <span className="text-xs opacity-60 ml-1">
+                  <span className="ml-1 text-xs opacity-60">
                     (...)
                   </span>
                 )}
@@ -630,7 +632,7 @@ export function FloatingMenu({ className, smartPlugsData: propData }: FloatingMe
               closeMenu();
             }}
           >
-            <Power className="w-3 h-3 mr-1" />
+            <Power className="mr-1 w-3 h-3" />
             {isActive ? 'Apagar' : 'Encender'}
           </Button>
         </div>
@@ -642,7 +644,7 @@ export function FloatingMenu({ className, smartPlugsData: propData }: FloatingMe
     <div 
       ref={menuRef}
       className={cn(
-        "fixed right-0 z-[9999] transition-all duration-300 ease-in-out",
+        "fixed right-0 transition-all duration-300 ease-in-out z-[9999]",
         "floating-menu",
         className
       )}
@@ -651,7 +653,7 @@ export function FloatingMenu({ className, smartPlugsData: propData }: FloatingMe
         right: "2px"
       }}
     >
-      <div className="relative flex items-center">
+      <div className="flex relative items-center">
         {/* Botón o flecha de expansión/pliegue - Posición fija */}
         <div 
           className={cn(
@@ -662,9 +664,9 @@ export function FloatingMenu({ className, smartPlugsData: propData }: FloatingMe
           {/* Botón de despliegue/pliegue */}
           <div 
             className={cn(
-              "w-6 h-12 flex items-center justify-center cursor-pointer shadow-md",
+              "flex justify-center items-center w-6 h-12 shadow-md cursor-pointer",
               "rounded-l-lg transition-colors",
-              "bg-purple-600/80 hover:bg-purple-700/90 text-white"
+              "text-white bg-purple-600/80 hover:bg-purple-700/90"
             )}
             onClick={toggleExpansion}
           >
@@ -783,11 +785,11 @@ export function FloatingMenu({ className, smartPlugsData: propData }: FloatingMe
                   {/* Encabezado con información del cliente */}
                   <div className="p-2.5 border-b bg-gradient-to-r from-purple-50 to-white">
                     <div className="flex items-center space-x-2.5">
-                      <div className="flex items-center justify-center w-8 h-8 text-sm font-medium text-purple-600 bg-purple-100 rounded-full border-2 border-white shadow-sm">
+                      <div className="flex justify-center items-center w-8 h-8 text-sm font-medium text-purple-600 bg-purple-100 rounded-full border-2 border-white shadow-sm">
                         {lastClient.name ? lastClient.name.charAt(0) : "?"}
                       </div>
                       <div>
-                        <div className="font-semibold text-xs text-gray-800 leading-tight">{lastClient.name || "Sin nombre"}</div>
+                        <div className="text-xs font-semibold leading-tight text-gray-800">{lastClient.name || "Sin nombre"}</div>
                         {lastClient.clientNumber && (
                           <div className="text-[10px] text-gray-500 flex items-center">
                             <span className="inline-block w-1.5 h-1.5 bg-purple-500 rounded-full mr-1"></span>
@@ -852,8 +854,8 @@ export function FloatingMenu({ className, smartPlugsData: propData }: FloatingMe
               {/* Menú de notificaciones */}
               {activeMenu === "notifications" && (
                 <div className="w-full">
-                  <div className="flex items-center justify-between p-3 border-b">
-                    <h3 className="font-semibold text-sm">Notificaciones</h3>
+                  <div className="flex justify-between items-center p-3 border-b">
+                    <h3 className="text-sm font-semibold">Notificaciones</h3>
                     <Button 
                       variant="ghost" 
                       size="sm"
@@ -869,7 +871,7 @@ export function FloatingMenu({ className, smartPlugsData: propData }: FloatingMe
                   <div className="divide-y max-h-[300px] overflow-y-auto">
                     {notificationItems.map((notification, index) => (
                       <div key={index} className="p-3 cursor-pointer hover:bg-gray-50">
-                        <div className="flex items-start gap-3">
+                        <div className="flex gap-3 items-start">
                           <div className={`flex items-center justify-center flex-shrink-0 w-8 h-8 ${notification.iconBg} rounded-full`}>
                             <notification.icon className={`w-4 h-4 ${notification.iconColor}`} />
                           </div>
@@ -903,14 +905,14 @@ export function FloatingMenu({ className, smartPlugsData: propData }: FloatingMe
               {activeMenu === "smart-plugs" && smartPlugsData && (
                 <div className="w-full">
                   {/* Encabezado con información de la clínica y consumo total */}
-                  <div className="p-3 border-b bg-gradient-to-r from-emerald-50 to-white">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="flex items-center justify-center w-8 h-8 text-sm font-medium text-emerald-600 bg-emerald-100 rounded-full shadow-sm">
+                  <div className="p-3 bg-gradient-to-r from-emerald-50 to-white border-b">
+                    <div className="flex justify-between items-center">
+                      <div className="flex gap-2 items-center">
+                        <div className="flex justify-center items-center w-8 h-8 text-sm font-medium text-emerald-600 bg-emerald-100 rounded-full shadow-sm">
                           <Plug className="w-4 h-4" />
                         </div>
                         <div>
-                          <div className="font-semibold text-sm text-gray-800 leading-tight">
+                          <div className="text-sm font-semibold leading-tight text-gray-800">
                             {activeClinic?.name || 'Enchufes Inteligentes'}
                           </div>
                           <div className="text-[10px] text-gray-500 flex items-center">
@@ -922,9 +924,9 @@ export function FloatingMenu({ className, smartPlugsData: propData }: FloatingMe
                       
                       {/* Badge de consumo total de la clínica */}
                       {smartPlugsData.totalPower > 0.1 && (
-                        <div className="flex items-center gap-1 px-2 py-1 bg-yellow-100 rounded-full">
+                        <div className="flex gap-1 items-center px-2 py-1 bg-yellow-100 rounded-full">
                           <Zap className="w-3 h-3 text-yellow-600" />
-                          <span className="text-xs font-mono font-medium text-yellow-800">
+                          <span className="font-mono text-xs font-medium text-yellow-800">
                             {smartPlugsData.totalPower.toFixed(1)}W
                           </span>
                         </div>
@@ -936,13 +938,13 @@ export function FloatingMenu({ className, smartPlugsData: propData }: FloatingMe
                       {smartPlugsData.isConnected && smartPlugsData.activeDevices.length > 0 ? (
                         <>
                           <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
-                          <span className="text-green-600 font-medium">Conectado en tiempo real</span>
+                          <span className="font-medium text-green-600">Conectado en tiempo real</span>
                         </>
                       ) : (
                         !smartPlugsData.isConnected ? (
                         <>
                           <div className="w-1.5 h-1.5 bg-red-500 rounded-full"></div>
-                          <span className="text-red-600 font-medium">Desconectado</span>
+                          <span className="font-medium text-red-600">Desconectado</span>
                         </>
                         ) : null
                       )}
@@ -953,8 +955,8 @@ export function FloatingMenu({ className, smartPlugsData: propData }: FloatingMe
                   <div className="max-h-[350px] overflow-y-auto">
                     {smartPlugsData.activeDevices.length === 0 ? (
                       <div className="p-6 text-center">
-                        <div className="flex flex-col items-center gap-2">
-                          <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center">
+                        <div className="flex flex-col gap-2 items-center">
+                          <div className="flex justify-center items-center w-12 h-12 bg-gray-100 rounded-full">
                             <Plug className="w-6 h-6 text-gray-400" />
                           </div>
                           <div className="text-sm font-medium text-gray-900">
@@ -984,7 +986,7 @@ export function FloatingMenu({ className, smartPlugsData: propData }: FloatingMe
                           closeMenu()
                         }}
                       >
-                        <Plug className="w-3 h-3 mr-2" />
+                        <Plug className="mr-2 w-3 h-3" />
                         Gestionar enchufes
                       </Button>
                     </div>
@@ -1060,11 +1062,11 @@ export function FloatingMenu({ className, smartPlugsData: propData }: FloatingMe
                       
                       {/* Indicador de estado */}
                       {(person.status !== "offline" || person.absenceReason) && (
-                        <div className="absolute -bottom-1 -right-1">
+                        <div className="absolute -right-1 -bottom-1">
                           <div className={cn(
                             "w-4 h-4 rounded-full",
                             "border-2 border-white",
-                            "flex items-center justify-center",
+                            "flex justify-center items-center",
                             dotColor,
                             "shadow-sm"
                           )}>
