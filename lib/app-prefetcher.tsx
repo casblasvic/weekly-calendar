@@ -31,13 +31,19 @@ export function AppPrefetcher() {
   // Prefetching basado en la página actual
   useEffect(() => {
     const prefetchForPage = async () => {
+      console.log('[AppPrefetcher] 🔄 Iniciando prefetch para página:', pathname);
+      
       // Datos comunes que necesitamos en casi todas las páginas
-      if (!queryClient.getQueryData(['vat-types'])) {
+      const cachedVatTypes = queryClient.getQueryData(['vat-types']);
+      if (!cachedVatTypes) {
+        console.log('[AppPrefetcher] 📊 VAT-TYPES: No hay cache → llamando API');
         queryClient.prefetchQuery({
           queryKey: ['vat-types'],
           queryFn: () => api.cached.get('/api/vat-types'),
           staleTime: CACHE_TIME.ESTATICO // Datos que cambian raramente
         });
+      } else {
+        console.log('[AppPrefetcher] ✅ VAT-TYPES: Usando cache existente');
       }
       
       // Prefetching específico según la página
@@ -66,6 +72,8 @@ export function AppPrefetcher() {
       }
       
       else if (pathname?.includes('/agenda')) {
+        console.log('[AppPrefetcher] 🗓️ AGENDA: Iniciando prefetch de agenda');
+        
         // ✅ PREFETCH MEJORADO: Usar nuevo sistema de sliding window
         const { getCurrentWeekKey, getWeekKey, getDayKey } = await import('@/lib/hooks/use-appointments-query');
         
@@ -74,23 +82,31 @@ export function AppPrefetcher() {
         const nextWeek = getWeekKey(currentWeek, +1);
         const today = getDayKey(new Date());
         
+        console.log('[AppPrefetcher] 🗓️ AGENDA: Semanas a precargar:', { prevWeek, currentWeek, nextWeek, today });
+        
         // ✅ USAR CLÍNICA ACTIVA DEL CONTEXTO
         const activeClinicId = activeClinic?.id;
         
         // Solo hacer prefetch si hay una clínica activa
         if (!activeClinicId) {
-          console.log('[AppPrefetcher] No hay clínica activa, saltando prefetch de agenda');
+          console.log('[AppPrefetcher] ⚠️ No hay clínica activa, saltando prefetch de agenda');
           return;
         }
         
+        console.log('[AppPrefetcher] 🏥 AGENDA: Usando clínica activa:', activeClinicId);
+        
         // ✅ PREFETCH SLIDING WINDOW (3 semanas)
         [prevWeek, currentWeek, nextWeek].forEach(week => {
-          if (!queryClient.getQueryData(['appointments', 'week', week, activeClinicId])) {
+          const cachedAppointments = queryClient.getQueryData(['appointments', 'week', week, activeClinicId]);
+          if (!cachedAppointments) {
+            console.log(`[AppPrefetcher] 📅 CITAS ${week}: No hay cache → llamando API`);
             queryClient.prefetchQuery({
               queryKey: ['appointments', 'week', week, activeClinicId],
               queryFn: () => api.cached.get(`/api/appointments?clinicId=${activeClinicId}&week=${week}`),
               staleTime: CACHE_TIME.CORTO
             });
+          } else {
+            console.log(`[AppPrefetcher] ✅ CITAS ${week}: Usando cache existente (${(cachedAppointments as any)?.length || 0} citas)`);
           }
         });
         
@@ -104,22 +120,30 @@ export function AppPrefetcher() {
         }
 
         // 🗄️ PREFETCH CABINAS de la clínica (muy utilizadas para renderizar columnas)
-        if (!queryClient.getQueryData(['cabins', activeClinicId])) {
+        const cachedCabins = queryClient.getQueryData(['cabins', activeClinicId]);
+        if (!cachedCabins) {
+          console.log('[AppPrefetcher] 🏠 CABINAS: No hay cache → llamando API');
           queryClient.prefetchQuery({
             queryKey: ['cabins', activeClinicId],
             queryFn: () => api.cached.get(`/api/clinics/${activeClinicId}/cabins?systemId=${activeClinic?.systemId ?? ''}`),
             staleTime: CACHE_TIME.LARGO
           });
+        } else {
+          console.log(`[AppPrefetcher] ✅ CABINAS: Usando cache existente (${(cachedCabins as any)?.length || 0} cabinas)`);
         }
 
         // 🗄️ PREFETCH PLANTILLAS DE HORARIO del sistema (casi estáticas)
         const systemId = activeClinic?.systemId;
-        if (systemId && !queryClient.getQueryData(['scheduleTemplates', systemId])) {
+        const cachedTemplates = queryClient.getQueryData(['scheduleTemplates', systemId]);
+        if (systemId && !cachedTemplates) {
+          console.log('[AppPrefetcher] 📋 PLANTILLAS: No hay cache → llamando API');
           queryClient.prefetchQuery({
             queryKey: ['scheduleTemplates', systemId],
             queryFn: () => api.cached.get('/api/templates'),
             staleTime: CACHE_TIME.LARGO
           });
+        } else if (cachedTemplates) {
+          console.log(`[AppPrefetcher] ✅ PLANTILLAS: Usando cache existente (${(cachedTemplates as any)?.length || 0} plantillas)`);
         }
 
         if (systemId && !queryClient.getQueryData(['integrations', systemId])) {
@@ -166,21 +190,21 @@ export function AppPrefetcher() {
           const targetDate = new Date();
           targetDate.setDate(targetDate.getDate() + (weekOffset * 7));
           const monday = new Date(targetDate);
-          monday.setDate(monday.getDate() - ((monday.getDay()+6)%7)); // lunes
-          const sunday = new Date(monday);
-          sunday.setDate(monday.getDate()+6);
-          const mondayStr = monday.toISOString().split('T')[0];
-          const sundayStr = sunday.toISOString().split('T')[0];
+        monday.setDate(monday.getDate() - ((monday.getDay()+6)%7)); // lunes
+        const sunday = new Date(monday);
+        sunday.setDate(monday.getDate()+6);
+        const mondayStr = monday.toISOString().split('T')[0];
+        const sundayStr = sunday.toISOString().split('T')[0];
 
           const cacheKey = ['cabin-schedule-overrides', activeClinicId, mondayStr, sundayStr];
           
           if (!queryClient.getQueryData(cacheKey)) {
-            queryClient.prefetchQuery({
+          queryClient.prefetchQuery({
               queryKey: cacheKey,
-              queryFn: () => api.cached.get(`/api/cabin-schedule-overrides?clinicId=${activeClinicId}&startDate=${mondayStr}&endDate=${sundayStr}`),
-              staleTime: CACHE_TIME.CORTO,
-            });
-          }
+            queryFn: () => api.cached.get(`/api/cabin-schedule-overrides?clinicId=${activeClinicId}&startDate=${mondayStr}&endDate=${sundayStr}`),
+            staleTime: CACHE_TIME.CORTO,
+          });
+        }
         };
 
         // Prefetch semana anterior, actual y siguiente
@@ -205,6 +229,8 @@ export function AppPrefetcher() {
 
     const clinicId = activeClinic.id;
     const systemId = activeClinic.systemId;
+    
+    console.log('[AppPrefetcher] 🏥 CLÍNICA ACTIVA: Iniciando prefetch por clínica:', { clinicId, systemId });
 
     // 1️⃣ Integraciones (stripe, shelly, etc.)
     if (systemId && !queryClient.getQueryData(['integrations', systemId])) {
@@ -237,30 +263,42 @@ export function AppPrefetcher() {
     // Ruta antigua eliminada (devuelve 400). A la espera de nuevo endpoint por clínica.
 
     // 5️⃣ Servicios / Tarifas / Paquetes / Bonos
-    if (!queryClient.getQueryData(['services', clinicId])) {
+    const cachedServices = queryClient.getQueryData(['services', clinicId]);
+    if (!cachedServices) {
+      console.log('[AppPrefetcher] 🔧 SERVICIOS: No hay cache → llamando API');
       queryClient.prefetchQuery({
         queryKey: ['services', clinicId],
         queryFn: () => api.cached.get(`/api/services?clinicId=${clinicId}`),
         staleTime: CACHE_TIME.LARGO,
       });
+    } else {
+      console.log(`[AppPrefetcher] ✅ SERVICIOS: Usando cache existente (${(cachedServices as any)?.length || 0} servicios)`);
     }
 
     // ✅ NUEVO: Prefetch de bonos para agenda
-    if (!queryClient.getQueryData(['bonos', clinicId])) {
+    const cachedBonos = queryClient.getQueryData(['bonos', clinicId]);
+    if (!cachedBonos) {
+      console.log('[AppPrefetcher] 🎁 BONOS: No hay cache → llamando API');
       queryClient.prefetchQuery({
         queryKey: ['bonos', clinicId],
         queryFn: () => api.cached.get(`/api/bonos?clinicId=${clinicId}`),
         staleTime: CACHE_TIME.LARGO,
       });
+    } else {
+      console.log(`[AppPrefetcher] ✅ BONOS: Usando cache existente (${(cachedBonos as any)?.length || 0} bonos)`);
     }
 
     // ✅ NUEVO: Prefetch de paquetes para agenda
-    if (!queryClient.getQueryData(['packages', clinicId])) {
+    const cachedPackages = queryClient.getQueryData(['packages', clinicId]);
+    if (!cachedPackages) {
+      console.log('[AppPrefetcher] 📦 PAQUETES: No hay cache → llamando API');
       queryClient.prefetchQuery({
         queryKey: ['packages', clinicId],
         queryFn: () => api.cached.get(`/api/packages?clinicId=${clinicId}`),
         staleTime: CACHE_TIME.LARGO,
       });
+    } else {
+      console.log(`[AppPrefetcher] ✅ PAQUETES: Usando cache existente (${(cachedPackages as any)?.length || 0} paquetes)`);
     }
 
     if (!queryClient.getQueryData(['tariffs', clinicId])) {

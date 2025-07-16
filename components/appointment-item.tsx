@@ -1,7 +1,8 @@
 "use client"
 import { Calendar, Clock, MoreVertical, Tag, Plus, Trash2, CheckCircle, XCircle, MessageSquare, RefreshCw, Check, ChevronRight, Move, ChevronUp, ChevronDown, ExternalLink, Copy, Info, MoveHorizontal, X, RotateCcw, Play, Zap, Power, Loader2, AlertTriangle } from "lucide-react"
 import { useSession } from 'next-auth/react'
-import useSocket from '@/hooks/useSocket'
+import { useWebSocketOptional } from '@/contexts/websocket-context'
+
 import { AGENDA_CONFIG } from "@/config/agenda-config"
 import { Appointment } from "@/types/appointments"
 import { useAppointmentTags } from "@/contexts/appointment-tags-context"
@@ -942,7 +943,8 @@ export function AppointmentItem({
 
   // 🆕 -------- TRIGGER PARA RE-RENDER EN UPDATES LIVE ----------------------------
   const { data: session } = useSession()
-  const { subscribe, isConnected } = useSocket(session?.user?.systemId)
+  const websocketContext = useWebSocketOptional()
+  const { subscribe, isConnected } = websocketContext || { subscribe: () => () => {}, isConnected: false }
   const [hasInsight, setHasInsight] = useState(false)
   // Trigger para re-render en updates live
   const [, forceUpdate] = useState(0)
@@ -983,7 +985,7 @@ export function AppointmentItem({
 
 
   // 🆕 -------- ALERTA POR CONSUMO ANÓMALO ----------------------------
-
+  
   useEffect(() => {
     // Suscribirse solo si la feature-flag SHELLY está activa y hay conexión
     if (!process.env.NEXT_PUBLIC_FEATURE_SHELLY) return;

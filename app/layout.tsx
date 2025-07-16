@@ -1,5 +1,6 @@
 import "@/app/globals.css"
 import { ProvidersWrapper } from "@/app/components/providers-wrapper"
+import { GhostSocketMonitorProvider } from "@/components/providers/ghost-socket-monitor-provider"
 import { auth } from "@/lib/auth"
 import type { Metadata } from 'next'
 
@@ -17,6 +18,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <ProvidersWrapper session={session}>
           {children}
         </ProvidersWrapper>
+        <GhostSocketMonitorProvider />
       </body>
     </html>
   )

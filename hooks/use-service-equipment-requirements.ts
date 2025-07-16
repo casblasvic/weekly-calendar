@@ -4,7 +4,7 @@ import { useClinic } from '@/contexts/clinic-context'
 import { clientLogger } from '@/lib/utils/client-logger'
 import { useIntegrationModules } from '@/hooks/use-integration-modules'
 import { useQueryClient } from '@tanstack/react-query'
-import useSocket from '@/hooks/useSocket'
+import { useWebSocketOptional } from '@/contexts/websocket-context'
 import { findDeviceInList } from '@/lib/utils/device-id-matcher'
 
 // 🎯 CACHE GLOBAL - Una sola carga por clínica
@@ -309,7 +309,8 @@ export function useServiceEquipmentRequirements({
   }, [fetchRequiredEquipment])
 
   // 📡 SUSCRIPCIÓN TIEMPO REAL — actualiza estado local cuando llegue device-update
-  const { subscribe, isConnected: socketConnected } = useSocket(systemId)
+  const websocketContext = useWebSocketOptional()
+  const { subscribe, isConnected: socketConnected } = websocketContext || { subscribe: () => () => {}, isConnected: false }
 
   useEffect(() => {
     if (!socketConnected || !systemId || availableDevices.length === 0) return

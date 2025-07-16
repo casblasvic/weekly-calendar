@@ -153,6 +153,7 @@ import { ClinicScheduleProvider } from '@/contexts/clinic-schedule-context';
 import { ServiceProvider } from '@/contexts/service-context';
 import { ClinicProvider } from '@/contexts/clinic-context';
 import { SmartPlugsProvider } from '@/contexts/smart-plugs-context';
+import { WebSocketProvider } from '@/contexts/websocket-context';
 
 interface ProvidersWrapperProps {
   children: React.ReactNode
@@ -275,6 +276,7 @@ const AuthenticatedProviders = memo(function AuthenticatedProviders({ children }
               <DocumentProvider>
                 <ClientProvider>
                   <UserProvider>
+                    <WebSocketProvider>
                     <ScheduleTemplatesProvider>
                       <ScheduleBlocksProvider>
                         <AppointmentTagsProvider>
@@ -306,6 +308,7 @@ const AuthenticatedProviders = memo(function AuthenticatedProviders({ children }
                         </AppointmentTagsProvider>
                       </ScheduleBlocksProvider>
                     </ScheduleTemplatesProvider>
+                  </WebSocketProvider>
                   </UserProvider>
                 </ClientProvider>
               </DocumentProvider>

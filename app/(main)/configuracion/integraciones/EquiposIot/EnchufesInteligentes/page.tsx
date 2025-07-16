@@ -20,7 +20,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useSession } from "next-auth/react";
 import { DeviceConfigModalV2 } from '@/components/shelly/device-config-modal-v2';
 import { SmartPlugPowerButton } from '@/components/ui/smart-plug-power-button';
-import useSocket from '@/hooks/useSocket';
+import { useWebSocket } from '@/contexts/websocket-context';
 import { useIntegrationModules } from '@/hooks/use-integration-modules';
 import { isSmartPlug, getSmartPlugInfo } from '@/utils/shelly-device-utils';
 import {
@@ -112,7 +112,7 @@ const SmartPlugsPage = () => {
     const { t } = useTranslation();
     const router = useRouter();
     const { data: session } = useSession();
-    const { subscribe, isConnected, requestDeviceUpdate } = useSocket(session?.user?.systemId);
+    const { subscribe, isConnected, requestDeviceUpdate } = useWebSocket();
     
     // 🛡️ VERIFICACIÓN DE MÓDULO - Control total de acceso a funcionalidad Shelly
     const { isShellyActive, isLoading: isLoadingModules } = useIntegrationModules();
@@ -397,23 +397,7 @@ const SmartPlugsPage = () => {
 
 
 
-    // Inicializar Socket.io automáticamente
-    useEffect(() => {
-        const initializeSocket = async () => {
-            try {
-                console.log('🚀 Inicializando Socket.io server...');
-                const response = await fetch('/api/socket/init');
-                const result = await response.json();
-                console.log('📡 Socket.io init response:', result);
-            } catch (error) {
-                console.error('❌ Error inicializando Socket.io:', error);
-            }
-        };
-
-        if (session?.user?.systemId) {
-            initializeSocket();
-        }
-    }, [session?.user?.systemId]);
+    // ✅ INICIALIZACIÓN AUTOMÁTICA REMOVIDA - Ahora se hace en WebSocketProvider automáticamente
 
     // Suscribirse a actualizaciones Socket.io en tiempo real (optimizado)
     // Ref para evitar suscripciones duplicadas

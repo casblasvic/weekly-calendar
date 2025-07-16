@@ -144,9 +144,9 @@ export async function GET(request: NextRequest) {
                                   select: { id: true, name: true }
                                 },
                                                             smartPlugDevice: {
-                              select: {
-                                id: true,
-                                name: true,
+              select: {
+                id: true,
+                name: true,
                                 deviceId: true,
                                 online: true,
                                 relayOn: true,

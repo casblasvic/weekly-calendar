@@ -24,7 +24,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { useClinic } from '@/contexts/clinic-context';
-import useSocket from '@/hooks/useSocket';
+import { useWebSocketOptional } from '@/contexts/websocket-context';
 import { clientLogger } from '@/lib/utils/client-logger';
 import { deviceOfflineManager, OfflineUpdate } from '@/lib/shelly/device-offline-manager';
 import { useIntegrationModules } from '@/hooks/use-integration-modules';
@@ -101,7 +101,9 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
   const { isShellyActive, isLoading: isLoadingIntegrations } = useIntegrationModules();
   const { activeClinic } = useClinic();
   const { data: session } = useSession();
-  const systemId = session?.user?.systemId;
+  
+  // ✅ OPTIMIZACIÓN CRÍTICA: Memoizar systemId para evitar bucle infinito de useSocket
+  const systemId = useMemo(() => session?.user?.systemId, [session?.user?.systemId]);
   
   const queryClient = useQueryClient();
   const cacheKey = ['smartPlugDevices', systemId ?? 'unknown'];
@@ -119,8 +121,9 @@ export function useSmartPlugsFloatingMenu(): SmartPlugsFloatingMenuData | null {
   // Refs para tracking updates
   const messagesReceivedRef = useRef<Set<string>>(new Set());
   
-  // ✅ SOCKET - Igual que la página principal
-  const { isConnected, subscribe } = useSocket(systemId);
+  // ✅ SOCKET INTEGRADO - Usando contexto WebSocket centralizado
+  const websocketContext = useWebSocketOptional()
+  const { isConnected, subscribe } = websocketContext || { subscribe: () => () => {}, isConnected: false };
 
   // 🔥 FETCH INICIAL - DECLARAR CALLBACK SIEMPRE
   const fetchAllDevices = useCallback(async () => {

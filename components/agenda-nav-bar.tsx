@@ -1,7 +1,7 @@
 "use client"
 
 import { Button } from "@/components/ui/button"
-import { CalendarDays, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Lock, Printer, ChevronDown, Calendar } from "lucide-react"
+import { CalendarDays, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Lock, Printer, ChevronDown, Calendar, Settings } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { format, subDays, addDays, getDay } from "date-fns"
 import { useRouter } from "next/navigation"
@@ -12,6 +12,7 @@ import { useClinic } from "@/contexts/clinic-context"
 import { useToast } from "@/hooks/use-toast"
 import { convertCabinToRoom } from "@/types/fix-types"
 import { es } from 'date-fns/locale'
+import { AgendaConfigPanel } from "./agenda-config-panel"
 
 interface Room {
   id: string
@@ -39,6 +40,7 @@ export function AgendaNavBar({
 }: AgendaNavBarProps) {
   const router = useRouter()
   const [isBlockModalOpen, setIsBlockModalOpen] = useState(false)
+  const [isConfigPanelOpen, setIsConfigPanelOpen] = useState(false)
   const { activeClinic, activeClinicCabins, isLoadingCabinsContext } = useClinic()
   const [clinicRooms, setClinicRooms] = useState<Room[]>([])
   const currentClinic = activeClinic
@@ -401,6 +403,16 @@ export function AgendaNavBar({
         </Button>
 
         <Button 
+          variant="ghost" 
+          size="icon" 
+          className="text-purple-600"
+          onClick={() => setIsConfigPanelOpen(true)}
+          title="Configuración de agenda"
+        >
+          <Settings className="w-4 h-4" />
+        </Button>
+
+        <Button 
           variant="outline" 
           className="w-[180px] text-left justify-between"
         >
@@ -421,6 +433,12 @@ export function AgendaNavBar({
           }}
         />
       )}
+      
+      <AgendaConfigPanel
+        isOpen={isConfigPanelOpen}
+        onOpenChange={setIsConfigPanelOpen}
+        currentDate={currentDate}
+      />
     </div>
   )
 }

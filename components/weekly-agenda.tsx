@@ -139,6 +139,7 @@ import type { CabinScheduleOverride } from '@prisma/client'
 import { useServicesQuery, useBonosQuery, usePackagesQuery } from "@/lib/hooks/use-api-query"
 import { useWeeklyAgendaData, useWeeklyAgendaPrefetch, type WeeklyAgendaAppointment } from "@/lib/hooks/use-weekly-agenda-data"
 import { useQueryClient } from '@tanstack/react-query'
+import { useAgendaDiagnostics } from "@/lib/hooks/use-agenda-diagnostics"
 
 // Importar nuevos módulos de drag & drop
 import { useOptimizedDragAndDrop } from "@/lib/drag-drop/optimized-hooks"
@@ -270,14 +271,17 @@ function WeeklyAgendaContent({
     replaceOptimisticAppointment,
     removeAllOptimisticAppointments
   } = useWeeklyAgendaData(currentDate);
-  
 
+    
   
   // ✅ PREFETCH SLIDING WINDOW automático para navegación fluida
   const { allLoaded: prefetchComplete } = useWeeklyAgendaPrefetch(currentDate);
   
   // ✅ MEMORIZAR DEPENDENCIAS ESPECÍFICAS para evitar re-cálculos innecesarios
   const activeClinicId = activeClinic?.id;
+  
+  // ✅ SISTEMA DE DIAGNÓSTICO: Detectar problemas con citas faltantes
+  const { diagnostics, isEnabled: isDiagnosticsEnabled, runDiagnostics } = useAgendaDiagnostics(currentDate, activeClinicId);
   const templateBlocks = activeClinic?.linkedScheduleTemplate?.blocks;
   const independentBlocks = activeClinic?.independentScheduleBlocks;
   const formattedCurrentDate = format(currentDate, 'yyyy-MM-dd');
@@ -289,20 +293,23 @@ function WeeklyAgendaContent({
   // Solo ejecutar hooks si NO hay datos en cache para evitar llamadas API redundantes
   const queryClient = useQueryClient();
   
+  // ✅ MEMOIZAR queryClient para evitar re-renders innecesarios
+  const stableQueryClient = useMemo(() => queryClient, [queryClient]);
+  
   // ✅ SERVICIOS: Usar cache pre-cargado primero
-  const cachedServices = queryClient.getQueryData(['services', activeClinicId]);
+  const cachedServices = stableQueryClient.getQueryData(['services', activeClinicId]);
   const { data: allServicesData = [] } = useServicesQuery({ 
     enabled: !cachedServices && !!activeClinicId // Solo si no hay cache y hay clínica activa
   });
   
   // ✅ BONOS: Usar cache pre-cargado primero  
-  const cachedBonos = queryClient.getQueryData(['bonos', activeClinicId]);
+  const cachedBonos = stableQueryClient.getQueryData(['bonos', activeClinicId]);
   useBonosQuery({ 
     enabled: !cachedBonos && !!activeClinicId // Solo si no hay cache y hay clínica activa
   });
   
   // ✅ PAQUETES: Usar cache pre-cargado primero
-  const cachedPackages = queryClient.getQueryData(['packages', activeClinicId]);
+  const cachedPackages = stableQueryClient.getQueryData(['packages', activeClinicId]);
   usePackagesQuery({ 
     enabled: !cachedPackages && !!activeClinicId // Solo si no hay cache y hay clínica activa
   });
@@ -310,18 +317,65 @@ function WeeklyAgendaContent({
   // ✅ DATOS FINALES: Usar cache si existe, sino usar hook data
   const finalServicesData = cachedServices || allServicesData || [];
   
-  console.log(`[WeeklyAgenda] 🔍 Datos de servicios: ${finalServicesData.length} (cache: ${!!cachedServices})`);
-  console.log(`[WeeklyAgenda] 🔍 Datos de bonos: cache=${!!cachedBonos}`);
-  console.log(`[WeeklyAgenda] 🔍 Datos de paquetes: cache=${!!cachedPackages}`);
+  // ✅ LOGS MEJORADOS: Mostrar fuente de datos solo cuando sea relevante
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'development' && activeClinicId) {
+      const logPrefix = '[WeeklyAgenda] 📊 FUENTE DE DATOS';
+      const serviciosSource = cachedServices ? 'IndexedDB' : (allServicesData.length > 0 ? 'API' : 'Ninguna');
+      const bonosSource = cachedBonos ? 'IndexedDB' : 'API';
+      const paquetesSource = cachedPackages ? 'IndexedDB' : 'API';
+      
+      console.log(`${logPrefix} - Servicios: ${finalServicesData.length} (${serviciosSource})`);
+      console.log(`${logPrefix} - Bonos: ${bonosSource}`);
+      console.log(`${logPrefix} - Paquetes: ${paquetesSource}`);
+      
+      // Verificar consistencia de citas
+      if (cachedAppointments) {
+        const appointmentCount = Array.isArray(cachedAppointments) ? cachedAppointments.length : 0;
+        console.log(`${logPrefix} - Citas: ${appointmentCount} (${loadingAppointments ? 'Cargando...' : 'Cargadas'})`);
+        
+        if (appointmentCount === 0 && !loadingAppointments) {
+          console.warn('⚠️ [WeeklyAgenda] No hay citas - posible problema de datos');
+          if (isDiagnosticsEnabled) {
+            runDiagnostics();
+          }
+        }
+      }
+    }
+  }, [activeClinicId, cachedServices, allServicesData, cachedBonos, cachedPackages, finalServicesData.length, cachedAppointments, loadingAppointments, isDiagnosticsEnabled, runDiagnostics]);
   
   // ✅ SIMPLIFICADO: Usar directamente cachedAppointments del hook con cache estable
   const appointmentsList = useMemo(() => {
     const appointments = (cachedAppointments as any) || [];
-    // ✅ DEBUG temporal comentado para reducir spam
-    // console.log('[WeeklyAgenda] 🔍 appointmentsList recalculado:', appointments.length, 'citas');
+    
+    // ✅ LOGS DE DIAGNÓSTICO: Mostrar detalles de citas para debugging
+    if (process.env.NODE_ENV === 'development' && activeClinicId) {
+      const formattedDate = format(currentDate, 'yyyy-MM-dd');
+      console.log(`[WeeklyAgenda] 📅 CITAS PROCESADAS para ${formattedDate}:`, {
+        total: appointments.length,
+        isDataStable,
+        loadingAppointments,
+        hasData,
+        weekKey,
+        ids: appointments.map((apt: any) => apt.id).slice(0, 5)
+      });
+      
+      // Verificar si hay citas duplicadas
+      const ids = appointments.map((apt: any) => apt.id).filter(Boolean);
+      const uniqueIds = new Set(ids);
+      if (ids.length !== uniqueIds.size) {
+        console.warn('⚠️ [WeeklyAgenda] Detectadas citas duplicadas:', ids.length - uniqueIds.size);
+      }
+      
+      // Verificar si hay citas sin ID
+      const withoutId = appointments.filter((apt: any) => !apt.id);
+      if (withoutId.length > 0) {
+        console.warn('⚠️ [WeeklyAgenda] Citas sin ID:', withoutId.length);
+      }
+    }
     
     return appointments;
-  }, [cachedAppointments]);
+  }, [cachedAppointments, activeClinicId, currentDate, isDataStable, loadingAppointments, hasData, weekKey]);
   
 
   

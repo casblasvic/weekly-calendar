@@ -83,6 +83,7 @@ export class ShellyRobustWebSocketManager {
       const { id: dbConnectionId, isNew } = await webSocketConnectionService.findOrCreateConnection({
         type: 'SHELLY',
         referenceId: credentialId,
+        systemId: credential.systemId,
         status: 'connecting',
         metadata: {
           credentialName: credential.name,
@@ -96,6 +97,7 @@ export class ShellyRobustWebSocketManager {
         connectionId: dbConnectionId,
         eventType: 'connect',
         message: `Iniciando conexión para ${credential.name}`,
+        systemId: credential.systemId,
         metadata: {
           credentialId,
           deviceCount: credential.smartPlugs.length,
@@ -158,14 +160,22 @@ export class ShellyRobustWebSocketManager {
       );
 
       // Log del error
-      const connection = await webSocketConnectionService.getConnection('SHELLY', credentialId);
-      if (connection) {
-        await webSocketConnectionService.logEvent({
-          connectionId: connection.id,
-          eventType: 'error',
-          errorDetails: error instanceof Error ? error.message : 'Error desconocido',
-          metadata: { credentialId }
-        });
+      const credential = await prisma.shellyCredential.findUnique({
+        where: { id: credentialId },
+        select: { systemId: true }
+      });
+      
+      if (credential) {
+        const connection = await webSocketConnectionService.getConnection('SHELLY', credentialId, credential.systemId);
+        if (connection) {
+          await webSocketConnectionService.logEvent({
+            connectionId: connection.id,
+            eventType: 'error',
+            errorDetails: error instanceof Error ? error.message : 'Error desconocido',
+            systemId: credential.systemId,
+            metadata: { credentialId }
+          });
+        }
       }
 
       throw error;
@@ -189,14 +199,22 @@ export class ShellyRobustWebSocketManager {
       await webSocketConnectionService.markAsDisconnected('SHELLY', credentialId, 'Manual disconnect');
 
       // Log del evento
-      const connection = await webSocketConnectionService.getConnection('SHELLY', credentialId);
-      if (connection) {
-        await webSocketConnectionService.logEvent({
-          connectionId: connection.id,
-          eventType: 'disconnect',
-          message: 'Desconexión manual',
-          metadata: { credentialId }
-        });
+      const credential = await prisma.shellyCredential.findUnique({
+        where: { id: credentialId },
+        select: { systemId: true }
+      });
+      
+      if (credential) {
+        const connection = await webSocketConnectionService.getConnection('SHELLY', credentialId, credential.systemId);
+        if (connection) {
+          await webSocketConnectionService.logEvent({
+            connectionId: connection.id,
+            eventType: 'disconnect',
+            message: 'Desconexión manual',
+            systemId: credential.systemId,
+            metadata: { credentialId }
+          });
+        }
       }
 
       console.log(`🔌 Shelly desconectado: ${credentialId}`);

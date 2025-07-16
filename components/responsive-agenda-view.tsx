@@ -105,30 +105,9 @@ const MobileAgendaView = dynamic(
   { ssr: false }
 )
 
-// Importaciones dinámicas para las vistas de escritorio (igual que en AgendaContainer)
-const WeeklyAgenda = dynamic(
-  () => import("@/components/weekly-agenda"),
-  { 
-    ssr: false, 
-    loading: () => (
-      <div className="flex items-center justify-center h-full">
-        <Loader2 className="w-8 h-8 animate-spin text-purple-600" />
-      </div>
-    )
-  }
-);
-
-const DayView = dynamic(
-  () => import("@/components/day-view"),
-  { 
-    ssr: false, 
-    loading: () => (
-      <div className="flex items-center justify-center h-full">
-        <Loader2 className="w-8 h-8 animate-spin text-purple-600" />
-      </div>
-    )
-  }
-);
+// ✅ OPTIMIZACIÓN CRÍTICA: Importaciones estáticas para evitar delay de 6+ segundos
+import WeeklyAgenda from "@/components/weekly-agenda"
+import DayView from "@/components/day-view"
 
 interface ResponsiveAgendaViewProps {
   date: string

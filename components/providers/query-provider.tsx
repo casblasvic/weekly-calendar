@@ -69,7 +69,14 @@ export function QueryProvider({ children }: QueryProviderProps) {
         try {
           const db = await getDb();
           // Serializar como JSON plano para evitar DataCloneError con valores no clonables
-          await db.put('queries', JSON.stringify(client), 'react-query');
+          const serialized = JSON.stringify(client);
+          await db.put('queries', serialized, 'react-query');
+          
+          // Log de persistencia (menos verbose)
+          const parsed = JSON.parse(serialized);
+          const queries = parsed?.clientState?.queries || {};
+          const queryCount = Object.keys(queries).length;
+          console.log(`[QueryProvider] 💾 PERSISTIENDO ${queryCount} queries a IndexedDB`);
         } catch (err: any) {
           if (err?.name === 'DataCloneError') {
             console.warn('[QueryProvider] DataCloneError al persistir caché. Se ignorará este ciclo y se volverá a intentar más tarde.', err);
@@ -81,13 +88,62 @@ export function QueryProvider({ children }: QueryProviderProps) {
       restoreClient: async () => {
         const db = await getDb();
         const raw = await db.get('queries', 'react-query');
-        return raw ? JSON.parse(raw) : undefined;
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          const queries = parsed?.clientState?.queries || {};
+          const queryCount = Object.keys(queries).length;
+          console.log(`[QueryProvider] 🗄️ RESTAURANDO ${queryCount} queries desde IndexedDB`);
+          
+          // Log de queries importantes restauradas
+          Object.entries(queries).forEach(([key, query]: [string, any]) => {
+            if (key.includes('appointments') || key.includes('cabins') || key.includes('services')) {
+              const queryKey = query.queryKey;
+              const dataLength = query.state?.data?.length || 0;
+              console.log(`[QueryProvider] ✅ RESTAURADO: ${JSON.stringify(queryKey)} (${dataLength} items)`);
+            }
+          });
+          
+          return parsed;
+        }
+        console.log('[QueryProvider] 📭 IndexedDB vacío - empezando desde cero');
+        return undefined;
       },
       removeClient: async () => {
         const db = await getDb();
         await db.delete('queries', 'react-query');
       },
     } as const;
+  });
+
+  // ✅ SISTEMA DE LIMPIEZA AUTOMÁTICA en desarrollo
+  const [isInitialized, setIsInitialized] = useState(false);
+  
+  // Limpieza automática de IndexedDB en desarrollo si es necesario
+  useState(() => {
+    if (process.env.NODE_ENV === 'development' && typeof window !== 'undefined') {
+      const shouldClearCache = window.localStorage.getItem('clear-indexeddb-on-restart');
+      
+             if (shouldClearCache === 'true') {
+         console.log('🗑️ [QueryProvider] Limpiando IndexedDB automáticamente en desarrollo...');
+         const deleteRequest = indexedDB.deleteDatabase('rq_cache');
+         deleteRequest.onsuccess = () => {
+           console.log('✅ [QueryProvider] IndexedDB limpiado exitosamente');
+           window.localStorage.removeItem('clear-indexeddb-on-restart');
+         };
+         deleteRequest.onerror = (error) => {
+           console.error('❌ [QueryProvider] Error limpiando IndexedDB:', error);
+         };
+       }
+      
+      // Exponer función global para limpiar IndexedDB
+      (window as any).clearIndexedDB = () => {
+        console.log('🗑️ [QueryProvider] Marcando IndexedDB para limpieza en próximo reinicio...');
+        window.localStorage.setItem('clear-indexeddb-on-restart', 'true');
+        console.log('✅ [QueryProvider] IndexedDB se limpiará en el próximo reinicio del servidor');
+      };
+      
+      console.log('🔧 [QueryProvider] Función disponible: window.clearIndexedDB()');
+    }
   });
 
   // PersistQueryClientProvider se encarga de restaurar el caché **antes** de renderizar hijos.
@@ -102,6 +158,10 @@ export function QueryProvider({ children }: QueryProviderProps) {
           shouldDehydrateQuery: (query) =>
             query.state.status === 'success' && !(query.meta as any)?.noPersist,
         },
+      }}
+      onSuccess={() => {
+        setIsInitialized(true);
+        console.log('✅ [QueryProvider] Cache restaurado exitosamente');
       }}
     >
       {children}

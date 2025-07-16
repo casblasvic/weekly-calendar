@@ -123,9 +123,8 @@ const useSocket = (systemId?: string): SocketHook => {
     // Seleccionar URL final del WebSocket ----------------------------------
     // ---------------------------------------------------------------------
     const envWs = process.env.NEXT_PUBLIC_WS_URL;
-    const fallbackUrl = typeof window !== 'undefined'
-      ? `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`
-      : undefined;
+    // 🎯 CAMBIO QUIRÚRGICO: Usar siempre servidor remoto (Railway)
+    const fallbackUrl = 'https://socket-server-qleven.up.railway.app';
 
     console.log(`🔍 [useSocket] Debug URLs:`);
     console.log(`  - systemConfig.websocketUrl: ${(systemConfig as any)?.websocketUrl}`);
@@ -149,10 +148,11 @@ const useSocket = (systemId?: string): SocketHook => {
     let localSocket: Socket | null = null;
     let testTimeout: NodeJS.Timeout | null = null;
 
-    // Primero inicializar el servidor (cold-start en serverless)
-    fetch('/api/socket/init')
+    // 🎯 CAMBIO QUIRÚRGICO: Conectar directamente al servidor remoto (Railway)
+    // Eliminado fetch('/api/socket/init') que iniciaba servidor local
+    Promise.resolve()
       .then(() => {
-        console.log('✅ Socket.io server inicializado');
+        console.log('🔗 Conectando directamente al servidor remoto Railway');
 
         // 🔄 Estrategia robusta para producción SaaS
         console.log(`🔗 Creando conexión Socket.io a ${WS_URL}/socket.io`);

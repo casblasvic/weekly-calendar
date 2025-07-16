@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, memo, useMemo } from 'react';
+import { useState, useEffect, useCallback, memo, useMemo, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -241,6 +241,18 @@ export default function WebSocketManagerPage() {
 
     // 🔧 NUEVO: Estados para control de logging
     const [isUpdatingLogging, setIsUpdatingLogging] = useState<Record<string, boolean>>({});
+    
+    // 👻 GHOST SOCKET MONITOR STATE
+    const [ghostSocketStats, setGhostSocketStats] = useState<{
+        totalGhosts: number;
+        registry: any[];
+        isMonitoring: boolean;
+    }>({
+        totalGhosts: 0,
+        registry: [],
+        isMonitoring: false
+    });
+    const monitoringIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
     const fetchMetrics = useCallback(async () => {
         try {
@@ -585,6 +597,91 @@ export default function WebSocketManagerPage() {
         }
     }, [isShellyActive, isLoadingModules, fetchConnections]);
 
+    // 👻 GHOST SOCKET MONITOR FUNCTIONS
+    const inspectGhostSockets = useCallback(async () => {
+        try {
+            const ghostSocketMonitor = await import('@/lib/utils/ghost-socket-monitor');
+            const result = await ghostSocketMonitor.default.getRegistry();
+            setGhostSocketStats(prev => ({
+                ...prev,
+                totalGhosts: result.totalGhosts,
+                registry: result.registry
+            }));
+            
+            if (result.totalGhosts > 0) {
+                toast.warning(`${result.totalGhosts} socket(s) fantasma detectado(s)`);
+            } else {
+                toast.success('No hay sockets fantasma detectados');
+            }
+        } catch (error) {
+            console.error('Error inspeccionando sockets fantasma:', error);
+            toast.error('Error al inspeccionar sockets fantasma');
+        }
+    }, []);
+
+    const clearGhostSockets = useCallback(async () => {
+        try {
+            const ghostSocketMonitor = await import('@/lib/utils/ghost-socket-monitor');
+            ghostSocketMonitor.default.clear();
+            setGhostSocketStats(prev => ({
+                ...prev,
+                totalGhosts: 0,
+                registry: []
+            }));
+            toast.success('Registro de sockets fantasma limpiado');
+        } catch (error) {
+            console.error('Error limpiando sockets fantasma:', error);
+            toast.error('Error al limpiar sockets fantasma');
+        }
+    }, []);
+
+    const toggleGhostSocketMonitoring = useCallback(async (enabled: boolean) => {
+        try {
+            const ghostSocketMonitor = await import('@/lib/utils/ghost-socket-monitor');
+            
+            if (enabled) {
+                ghostSocketMonitor.default.startMonitoring();
+                setGhostSocketStats(prev => ({ ...prev, isMonitoring: true }));
+                toast.success('Monitoreo de sockets fantasma activado');
+            } else {
+                ghostSocketMonitor.default.stopMonitoring();
+                setGhostSocketStats(prev => ({ ...prev, isMonitoring: false }));
+                toast.success('Monitoreo de sockets fantasma desactivado');
+            }
+        } catch (error) {
+            console.error('Error toggle monitoreo sockets fantasma:', error);
+            toast.error('Error al cambiar estado del monitoreo');
+        }
+    }, []);
+
+    // Actualizar estadísticas de sockets fantasma automáticamente
+    useEffect(() => {
+        if (ghostSocketStats.isMonitoring) {
+            const interval = setInterval(async () => {
+                try {
+                    const ghostSocketMonitor = await import('@/lib/utils/ghost-socket-monitor');
+                    const result = await ghostSocketMonitor.default.getRegistry();
+                    setGhostSocketStats(prev => ({
+                        ...prev,
+                        totalGhosts: result.totalGhosts,
+                        registry: result.registry
+                    }));
+                } catch (error) {
+                    console.error('Error actualizando estadísticas sockets fantasma:', error);
+                }
+            }, 5000);
+            
+            return () => clearInterval(interval);
+        }
+    }, [ghostSocketStats.isMonitoring]);
+
+    // Cargar estadísticas de sockets fantasma cuando se cambia a la pestaña de configuración
+    useEffect(() => {
+        if (activeTab === 'configuration') {
+            inspectGhostSockets();
+        }
+    }, [activeTab, inspectGhostSockets]);
+
     // Memoizar estadísticas para evitar recálculos innecesarios
     const memoizedStats = useMemo(() => {
         if (!stats) return null;
@@ -710,7 +807,7 @@ export default function WebSocketManagerPage() {
             {renderGlobalShellyStart()}
 
             <Tabs defaultValue="connections" className="w-full" value={activeTab} onValueChange={setActiveTab}>
-                <TabsList className="grid grid-cols-2 w-full">
+                <TabsList className="grid grid-cols-3 w-full">
                     <TabsTrigger value="connections" className="flex gap-2 items-center">
                         <Activity className="w-4 h-4" />
                         Conexiones Activas
@@ -718,6 +815,15 @@ export default function WebSocketManagerPage() {
                     <TabsTrigger value="logs" className="flex gap-2 items-center">
                         <Eye className="w-4 h-4" />
                         Logs en Tiempo Real
+                    </TabsTrigger>
+                    <TabsTrigger value="configuration" className="flex gap-2 items-center">
+                        <AlertTriangle className="w-4 h-4" />
+                        Configuración
+                        {ghostSocketStats.totalGhosts > 0 && (
+                            <Badge variant="destructive" className="ml-1 text-xs">
+                                {ghostSocketStats.totalGhosts}
+                            </Badge>
+                        )}
                     </TabsTrigger>
                 </TabsList>
 
@@ -778,6 +884,204 @@ export default function WebSocketManagerPage() {
                             <WebSocketLogs />
                         </CardContent>
                     </Card>
+                </TabsContent>
+
+                <TabsContent value="configuration">
+                    <div className="space-y-6">
+                        {/* 👻 GHOST SOCKET MONITOR CARD */}
+                        <Card>
+                            <CardHeader>
+                                <CardTitle className="flex items-center gap-2">
+                                    <AlertTriangle className="w-5 h-5" />
+                                    Monitor de Sockets Fantasma
+                                </CardTitle>
+                                <CardDescription>
+                                    Detecta y monitorea conexiones WebSocket no autorizadas creadas por el hook useSocket obsoleto
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="space-y-4">
+                                    {/* Estado actual */}
+                                    <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                                        <div className="flex items-center gap-3">
+                                            <div className={`w-3 h-3 rounded-full ${
+                                                ghostSocketStats.totalGhosts > 0 ? 'bg-red-500' : 'bg-green-500'
+                                            }`} />
+                                            <div>
+                                                <p className="font-medium">
+                                                    {ghostSocketStats.totalGhosts > 0 
+                                                        ? `${ghostSocketStats.totalGhosts} socket(s) fantasma detectado(s)`
+                                                        : 'Sin sockets fantasma detectados'
+                                                    }
+                                                </p>
+                                                <p className="text-sm text-gray-600">
+                                                    Monitoreo: {ghostSocketStats.isMonitoring ? 'Activo' : 'Inactivo'}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <Button 
+                                                variant="outline" 
+                                                size="sm"
+                                                onClick={inspectGhostSockets}
+                                            >
+                                                <RefreshCw className="w-4 h-4 mr-2" />
+                                                Inspeccionar
+                                            </Button>
+                                            {ghostSocketStats.totalGhosts > 0 && (
+                                                <Button 
+                                                    variant="outline" 
+                                                    size="sm"
+                                                    onClick={clearGhostSockets}
+                                                >
+                                                    <XCircle className="w-4 h-4 mr-2" />
+                                                    Limpiar
+                                                </Button>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Control de monitoreo */}
+                                    <div className="flex items-center justify-between p-4 border rounded-lg">
+                                        <div>
+                                            <p className="font-medium">Monitoreo Continuo</p>
+                                            <p className="text-sm text-gray-600">
+                                                Verificar sockets fantasma cada 5 segundos automáticamente
+                                            </p>
+                                        </div>
+                                        <Switch
+                                            checked={ghostSocketStats.isMonitoring}
+                                            onCheckedChange={toggleGhostSocketMonitoring}
+                                        />
+                                    </div>
+
+                                    {/* Tabla de sockets fantasma */}
+                                    {ghostSocketStats.totalGhosts > 0 && (
+                                        <div className="border rounded-lg">
+                                            <div className="p-4 bg-gray-50 border-b">
+                                                <h4 className="font-medium">Sockets Fantasma Detectados</h4>
+                                                <p className="text-sm text-gray-600">
+                                                    Lista de conexiones no autorizadas que deben ser migradas
+                                                </p>
+                                            </div>
+                                            <div className="overflow-x-auto">
+                                                <Table>
+                                                    <TableHeader>
+                                                        <TableRow>
+                                                            <TableHead>Ghost ID</TableHead>
+                                                            <TableHead>Socket ID</TableHead>
+                                                            <TableHead>System ID</TableHead>
+                                                            <TableHead>Edad (min)</TableHead>
+                                                            <TableHead>Acción</TableHead>
+                                                        </TableRow>
+                                                    </TableHeader>
+                                                    <TableBody>
+                                                        {ghostSocketStats.registry.map((ghost: any) => (
+                                                            <TableRow key={ghost.ghostId}>
+                                                                <TableCell className="font-mono text-xs">
+                                                                    {ghost.ghostId}
+                                                                </TableCell>
+                                                                <TableCell className="font-mono text-xs">
+                                                                    {ghost.socketId}
+                                                                </TableCell>
+                                                                <TableCell className="font-mono text-xs">
+                                                                    {ghost.systemId}
+                                                                </TableCell>
+                                                                <TableCell>
+                                                                    <Badge variant="outline">
+                                                                        {ghost.ageMinutes}m
+                                                                    </Badge>
+                                                                </TableCell>
+                                                                <TableCell>
+                                                                    <Badge variant="destructive">
+                                                                        Migrar a useIntegratedSocket
+                                                                    </Badge>
+                                                                </TableCell>
+                                                            </TableRow>
+                                                        ))}
+                                                    </TableBody>
+                                                </Table>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Información adicional */}
+                                    <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                                        <div className="flex items-start gap-3">
+                                            <AlertTriangle className="w-5 h-5 text-blue-600 mt-0.5" />
+                                            <div>
+                                                <p className="font-medium text-blue-900">
+                                                    ¿Qué son los sockets fantasma?
+                                                </p>
+                                                <p className="text-sm text-blue-700 mt-1">
+                                                    Son conexiones WebSocket creadas por el hook <code>useSocket</code> obsoleto 
+                                                    que no se integran con el WebSocket Manager centralizado. Esto causa logs 
+                                                    verbosos y conexiones duplicadas.
+                                                </p>
+                                                <p className="text-sm text-blue-700 mt-2">
+                                                    <strong>Solución:</strong> Migrar todos los componentes a <code>useIntegratedSocket</code>
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </CardContent>
+                        </Card>
+
+                        {/* 🔧 DEVELOPMENT TOOLS CARD */}
+                        {process.env.NODE_ENV === 'development' && (
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle className="flex items-center gap-2">
+                                        <CheckCircle className="w-5 h-5" />
+                                        Herramientas de Desarrollo
+                                    </CardTitle>
+                                    <CardDescription>
+                                        Comandos útiles para desarrollo y debugging (solo en development)
+                                    </CardDescription>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className="space-y-3">
+                                        <div className="p-3 bg-gray-50 rounded-lg">
+                                            <p className="font-medium text-sm mb-2">Comandos de Consola Disponibles:</p>
+                                            <div className="space-y-1 text-sm font-mono">
+                                                <div className="flex items-center gap-2">
+                                                    <code className="bg-gray-200 px-2 py-1 rounded">
+                                                        window.ghostSocketMonitor.inspect()
+                                                    </code>
+                                                    <span className="text-gray-600">- Inspeccionar sockets fantasma</span>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <code className="bg-gray-200 px-2 py-1 rounded">
+                                                        window.ghostSocketMonitor.clear()
+                                                    </code>
+                                                    <span className="text-gray-600">- Limpiar registro</span>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <code className="bg-gray-200 px-2 py-1 rounded">
+                                                        window.ghostSocketMonitor.startMonitoring()
+                                                    </code>
+                                                    <span className="text-gray-600">- Iniciar monitoreo</span>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <code className="bg-gray-200 px-2 py-1 rounded">
+                                                        window.ghostSocketMonitor.stopMonitoring()
+                                                    </code>
+                                                    <span className="text-gray-600">- Detener monitoreo</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="p-3 bg-yellow-50 rounded-lg border border-yellow-200">
+                                            <p className="text-sm text-yellow-800">
+                                                <strong>Nota:</strong> Estos comandos también están disponibles directamente 
+                                                desde la consola del navegador (F12 → Console).
+                                            </p>
+                                        </div>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        )}
+                    </div>
                 </TabsContent>
             </Tabs>
         </div>
