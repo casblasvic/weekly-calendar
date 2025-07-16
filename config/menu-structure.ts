@@ -264,6 +264,20 @@ export const menuItems: MenuItem[] = [
         icon: Clock4,
         href: "/configuracion/plantillas-horarias",
       },
+      {
+        id: "integraciones",
+        label: "Integraciones",
+        icon: Terminal,
+        href: "/configuracion/integraciones",
+        submenu: [
+          {
+            id: "websocket-manager",
+            label: "WebSocket Manager",
+            icon: Terminal,
+            href: "/configuracion/integraciones/websocket-manager",
+          },
+        ],
+      },
     ],
   },
 ]
